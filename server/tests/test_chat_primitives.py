@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import re
+import typing
+from pathlib import Path
+
 import pytest
+from loregarden.agents.chat_role_prompt import chat_ui_primitives_blocks
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.models.domain.chat_primitives import (
+    KNOWN_PRIMITIVES,
     BranchHistoryPart,
+    ChatPart,
     CommitPart,
     EditPart,
     GiphyPart,
@@ -334,3 +342,108 @@ def test_qa_fence_with_no_questions_stays_visible_text():
 )
 def test_reply_preview_shows_prose_never_card_json(text: str, expected: str):
     assert reply_preview(text) == expected
+
+
+_CLIENT_TYPES = (
+    Path(__file__).resolve().parents[2] / "client/src/components/chat/primitives/types.ts"
+)
+
+#: The least each kind needs to be a card. Every kind the parser knows is here,
+#: so a kind added without a way to parse it fails below rather than in a chat.
+_MINIMAL_FENCES: dict[str, dict[str, object]] = {
+    "text": {"content": "hi"},
+    "thinking": {"content": "hmm"},
+    "ticket": {"ticket_id": "t1"},
+    "ticket_workflow": {"ticket_id": "t1"},
+    "parent_ticket": {"ticket_id": "t1"},
+    "ticket_list": {"ticket_ids": ["t1"]},
+    "status_column": {"status": "backlog"},
+    "kanban": {"statuses": ["backlog"]},
+    "filterable_kanban": {"filters": ["mine"]},
+    "agent": {"slug": "planner"},
+    "workflow": {"workflow_slug": "default"},
+    "gate": {"ticket_id": "t1", "stage_key": "verify"},
+    "terminal": {"lines": [{"kind": "command", "text": "ls"}]},
+    "edit": {"content": "x"},
+    "calendar": {"events": [{"title": "Run", "starts_at": "2026-10-21T09:00:00Z"}]},
+    "calendar_event": {"event": {"title": "Run", "starts_at": "2026-10-21T09:00:00Z"}},
+    "workspace": {"workspace_slug": "loregarden"},
+    "todo_list": {"items": [{"id": "a", "text": "Do it"}]},
+    "branch_history": {"workspace_slug": "loregarden", "branch": "main"},
+    "commit": {"workspace_slug": "loregarden", "sha": "HEAD"},
+    "qa": {"items": [{"id": "q", "question": "Which?"}]},
+    "btw": {"exchange_id": "e1", "ticket_id": "t1", "question": "Why?"},
+    "giphy": {"giphy_id": "abc"},
+}
+
+
+def _union_kinds() -> set[str]:
+    members = typing.get_args(typing.get_args(ChatPart)[0])
+    return {member.model_fields["primitive"].default for member in members}
+
+
+def test_every_kind_is_known_to_the_parser_the_union_and_the_client():
+    client_union = re.search(r"export type PrimitiveKind =([^;]+);", _CLIENT_TYPES.read_text())
+    assert client_union is not None
+    client_kinds = set(re.findall(r'"(\w+)"', client_union.group(1)))
+
+    assert set(_MINIMAL_FENCES) == KNOWN_PRIMITIVES
+    assert _union_kinds() == KNOWN_PRIMITIVES
+    assert client_kinds == KNOWN_PRIMITIVES
+
+
+def test_the_prompt_teaches_every_kind_a_model_may_emit():
+    """`text` is prose and `btw` is server-built; every other kind needs a name."""
+    prompt = " ".join(chat_ui_primitives_blocks())
+    listed = re.search(r"Kinds: ([^.]+)\.", prompt)
+    assert listed is not None
+
+    assert set(re.findall(r"\w+", listed.group(1))) == KNOWN_PRIMITIVES - {"text", "btw"}
+
+
+@pytest.mark.parametrize("kind", sorted(_MINIMAL_FENCES))
+def test_every_kind_parses_from_its_fence(kind: str):
+    payload = json.dumps({"primitive": kind, **_MINIMAL_FENCES[kind]})
+
+    (part,) = parse_primitive_parts(f"Lead in\n```loregarden\n{payload}\n```")[1:]
+
+    assert part.model_dump()["primitive"] == kind
+
+
+@pytest.mark.parametrize("kind", sorted(_MINIMAL_FENCES))
+def test_every_kind_survives_a_dropped_final_brace(kind: str):
+    """Models drop the last `}` of a card; the card is otherwise whole."""
+    payload = json.dumps({"primitive": kind, **_MINIMAL_FENCES[kind]})
+
+    intact = parse_primitive_parts(f"```loregarden\n{payload}\n```")
+
+    assert parse_primitive_parts(f"```loregarden\n{payload[:-1]}\n```") == intact
+
+
+def test_the_reported_qa_card_with_no_closing_brace_becomes_a_card():
+    raw = (
+        '```loregarden\n{"primitive":"qa","title":"Before I touch it","items":['
+        '{"id":"split","question":"Split UI AC20\u2013AC30 into a child ticket?"},'
+        '{"id":"cursor","question":"Why is the cursor at {plan} \\"synthesis\\"?"}]\n```'
+    )
+
+    (part,) = parse_primitive_parts(raw)
+
+    assert isinstance(part, QAPart)
+    assert [item.id for item in part.items] == ["split", "cursor"]
+    assert part.items[1].question == 'Why is the cursor at {plan} "synthesis"?'
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param('{"primitive":"qa","items":[{"id":"q","question":"Whi', id="ends-in-a-string"),
+        pytest.param('{"primitive":"ticket","ticket_id":"t1"]}', id="wrong-closer"),
+        pytest.param('{"primitive":"ticket","ticket_id":"t1"}}', id="extra-closer"),
+        pytest.param('{"primitive":"ticket","ticket_id":', id="ends-mid-pair"),
+    ],
+)
+def test_a_fence_broken_any_other_way_stays_visible_text(body: str):
+    raw = f"```loregarden\n{body}\n```"
+
+    assert parse_primitive_parts(raw) == [TextPart(content=raw)]

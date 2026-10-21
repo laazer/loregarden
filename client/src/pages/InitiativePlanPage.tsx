@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
@@ -7,17 +7,19 @@ import { ApiError } from "../api/http";
 import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
 import { InitiativeAutopilot } from "../components/initiatives/plan/InitiativeAutopilot";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
+import { InitiativeGantt } from "../components/initiatives/plan/InitiativeGantt";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
 import { RedraftConfirmModal } from "../components/initiatives/plan/RedraftConfirmModal";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
-import { TrackedTickets } from "../components/initiatives/plan/TrackedTickets";
+import { TrackTicketSearch } from "../components/initiatives/plan/TrackTicketSearch";
 import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { TicketRouteResolver } from "../components/TicketRouteResolver";
 import { Button } from "../components/ui/Button";
 import { planQueryKey, useInitiativePlanner } from "../hooks/useInitiativePlanner";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { boardQueryKey } from "../lib/initiativeBoard";
 import { navigateToPage, ticketUuidForRef } from "../lib/useAppNavigation";
 import { scheduleToReplace } from "../lib/scheduleFormat";
 import { useTicketRefStore } from "../state/ticketRefStore";
@@ -25,7 +27,7 @@ import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import "../components/initiatives/plan/InitiativePlan.css";
 
-type PlanTab = "schedule" | "board";
+type PlanTab = "schedule" | "gantt" | "board";
 
 /** Past roughly three lines the brief is clamped, with a toggle to read it all. */
 const BRIEF_PREVIEW_CHARS = 240;
@@ -35,10 +37,11 @@ const NARROW = "(max-width: 1100px)";
 
 const TAB_LABEL: Record<PlanTab, string> = {
   schedule: "Schedule",
+  gantt: "Gantt",
   board: "Board",
 };
 
-const TABS: PlanTab[] = ["schedule", "board"];
+const TABS: PlanTab[] = ["schedule", "gantt", "board"];
 
 /**
  * `/initiatives/:initiativeId`, addressed by the initiative's shareable id
@@ -102,6 +105,31 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
     enabled: Boolean(initiativeId),
   });
 
+  // Where each tracked ticket stays: the schedule names it on the ticket's row.
+  const view = useQuery({
+    queryKey: ["initiatives", initiativeId, "view"],
+    queryFn: () => api.initiative(initiativeId),
+    enabled: Boolean(initiativeId),
+  });
+  const homes = useMemo(
+    () => new Map((view.data?.milestones ?? []).filter((m) => m.home_milestone).map((m) => [m.id, m.home_milestone])),
+    [view.data],
+  );
+
+  /** Tracking changed: the phases, the tree under them and the list counts all move. */
+  const membershipChanged = () => {
+    void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
+    void qc.invalidateQueries({ queryKey: ["initiatives", initiativeId, "view"] });
+    void qc.invalidateQueries({ queryKey: boardQueryKey(initiativeId) });
+    void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
+  };
+
+  const untrack = useMutation({
+    meta: { errorTitle: "Remove a ticket from this initiative" },
+    mutationFn: (ticketId: string) => api.removeInitiativeMember(initiativeId, ticketId),
+    onSuccess: membershipChanged,
+  });
+
   const applyPlan = (next: InitiativePlan) => {
     qc.setQueryData(planQueryKey(initiativeId), next);
     void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
@@ -142,7 +170,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
     onSettled: () => void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) }),
   });
 
-  const busy = edit.isPending || resolve.isPending || autopilot.isPending || needsPerson.isPending;
+  const busy = edit.isPending || resolve.isPending || autopilot.isPending || needsPerson.isPending || untrack.isPending;
   const data = plan.data;
 
   const draftSchedule = () => {
@@ -167,16 +195,17 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
   return (
     <div className="plan-page">
       <PageTopbar
+        leading={
+          <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
+            ← All initiatives
+          </Button>
+        }
         title={
           <span className="plan-topbar-title" title={data?.title}>
             {data ? data.title : "Initiative"}
           </span>
         }
-      >
-        <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
-          ← All initiatives
-        </Button>
-      </PageTopbar>
+      />
 
       {plan.isPending ? (
         <div className="plan-main" aria-busy="true" aria-label="Loading the plan">
@@ -294,15 +323,17 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                     />
                   ) : null}
 
-                  <ScheduleTable plan={data} busy={busy} onReorder={reorder} onTarget={setTarget} />
-
-                  <TrackedTickets
-                    initiativeId={data.id}
-                    onChanged={() => {
-                      void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
-                      void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
-                    }}
+                  <ScheduleTable
+                    plan={data}
+                    busy={busy}
+                    homes={homes}
+                    untracking={untrack.isPending ? (untrack.variables ?? null) : null}
+                    onReorder={reorder}
+                    onTarget={setTarget}
+                    onUntrack={(row) => untrack.mutate(row.id)}
                   />
+
+                  <TrackTicketSearch initiativeId={data.id} onChanged={membershipChanged} />
 
                   {data.notes ? (
                     <details className="plan-notes">
@@ -311,6 +342,8 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                     </details>
                   ) : null}
                 </div>
+              ) : tab === "gantt" ? (
+                <InitiativeGantt plan={data} />
               ) : (
                 <InitiativeBoard
                   initiativeId={data.id}
