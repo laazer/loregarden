@@ -10,7 +10,7 @@ import {
   type BoardColumnKey,
 } from "../../../lib/ticketStates";
 import { descendantCount, nestByParent, type KanbanNode } from "../../../lib/kanbanTree";
-import { waitingOnSummary } from "../../../utils/blockKinds";
+import { WaitingOnLinks } from "../../waiting/WaitingOnLinks";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
 import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
@@ -77,8 +77,14 @@ export function TicketMini({ ticket, action }: { ticket: TicketSummary; action?:
         progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
       />
       {ticket.waiting_on?.length ? (
-        <p className="lg-primitive-ticket-tile-waiting" title={ticket.waiting_on.map((r) => r.title).join("\n")}>
-          {waitingOnSummary(ticket.waiting_on)}
+        // What has to move first, when its chain is deeper than the tile shows.
+        <p className="lg-primitive-ticket-tile-waiting">
+          Waiting on{" "}
+          <WaitingOnLinks
+            refs={ticket.root_blockers?.length ? ticket.root_blockers : ticket.waiting_on}
+            here={ticket.workspace_slug}
+            shown={2}
+          />
         </p>
       ) : null}
       <div className="lg-primitive-ticket-tile-action">

@@ -80,3 +80,12 @@ class OrchestratorDecision(StrEnum):
     #: requeue reason was an artifact nothing on the history rail read, so a
     #: block that cleared looked like it had cleared itself.
     REQUEUED = "requeued"
+    #: A stage was not dispatched because the ticket waits on prerequisites
+    #: that are not done and landed. Not a block: nothing on this ticket
+    #: failed, and it is resumed when they land (lg-milestone-that-1315).
+    HELD_ON_PREREQUISITES = "held_on_prerequisites"
+    #: A person started a held ticket anyway. The prerequisites unmet at that
+    #: moment stop holding it; one linked later holds it again.
+    PREREQUISITES_OVERRIDDEN = "prerequisites_overridden"
+    #: A held or parked ticket's prerequisites all landed, so it was resumed.
+    RELEASED_ON_PREREQUISITES = "released_on_prerequisites"

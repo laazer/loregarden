@@ -1,8 +1,10 @@
 import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
 import type { LogLine } from "./runLogTypes";
+import type { BlockedOn, BlockKind, WaitingOnRef } from "./waitingTypes";
 
 export type { TicketDependencyRef };
+export type { BlockedOn, BlockKind, WaitingOnRef };
 
 // Shared API type definitions for the Loregarden client.
 // Split out of client.ts so the module boundary separates data shapes from calls.
@@ -60,19 +62,9 @@ export interface TicketSummary {
   blocked_on?: BlockedOn | null;
   /** The tickets it waits for: blocked descendants, or unmet prerequisites. */
   waiting_on?: WaitingOnRef[];
-}
-
-/** What a stuck ticket waits for — mirrors `BlockedOn` in `models.domain.block_kinds`. */
-export type BlockedOn = "person" | "tickets" | "agent";
-
-/** A ticket another one waits on, and what it waits on in turn. */
-export interface WaitingOnRef {
-  id: string;
-  external_id: string;
-  title: string;
-  state: TicketState;
-  reason: "blocked_child" | "prerequisite";
-  blocked_on: BlockedOn | null;
+  /** The bottom of each unmet-prerequisite chain under it: what has to move
+   *  first. Equal to the direct prerequisites when no chain is deeper than one. */
+  root_blockers?: WaitingOnRef[];
 }
 
 /** Board-wide counts: tickets per state, and how many are actually moving. */
@@ -80,6 +72,8 @@ export interface TicketStatusSummary {
   backlog: number;
   in_progress: number;
   blocked: number;
+  /** Owed by a person; the rest of the subtree carries on without it. */
+  parked?: number;
   done: number;
   wont_do: number;
   running: number;
@@ -112,6 +106,8 @@ export interface TicketTreeNode {
   child_count: number;
   /** What it waits for, derived server-side; absent or null when it is not stuck. */
   blocked_on?: BlockedOn | null;
+  /** Its unfinished prerequisites — the waits the tree cannot draw. */
+  waiting_on?: WaitingOnRef[];
   children: TicketTreeNode[];
   /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
   member_link?: boolean;
@@ -152,8 +148,6 @@ export interface ExternalHarnessPrompt {
   prompt: string;
 }
 
-/** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
-export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
 
 export interface TicketDetail extends TicketSummary {
   /**

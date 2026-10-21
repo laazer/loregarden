@@ -35,6 +35,7 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
+from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
@@ -429,6 +430,7 @@ class OrchestrationCallbackService:
         # own check site. Before the first write, or a refusal would leave the
         # stage RUNNING with nothing behind it — and on this path there is no
         # AgentRun to make that visible.
+        refuse_held_dispatch(self.session, ticket, stage_key=stage_key)
         guard_standalone_stage_dispatch(
             self.session,
             ticket,

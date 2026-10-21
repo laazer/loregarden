@@ -1,9 +1,11 @@
-import type { TicketTreeNode } from "../../api/types";
+import type { TicketSummary, TicketTreeNode, WaitingOnRef } from "../../api/types";
 import type { WorkspacePullRequest } from "../../api/workspaceDashboardApi";
 import { workspaceDashboardPath, workspaceSlugFromPath } from "../appNavigation";
 import { beginVisit, resolveCatchUpWindow, SAME_VISIT_MS } from "../catchUpWindow";
 import {
+  blockedNeedingAction,
   collectMilestones,
+  groupByRootBlocker,
   highlightText,
   milestoneProgress,
   pullRequestHeadline,
@@ -164,5 +166,52 @@ describe("catch-up window", () => {
     } finally {
       getItem.mockRestore();
     }
+  });
+});
+
+describe("tickets waiting on other tickets", () => {
+  const root = (id: string, blocked_on: WaitingOnRef["blocked_on"] = null): WaitingOnRef => ({
+    id,
+    external_id: id,
+    title: id,
+    state: "in_progress",
+    reason: "prerequisite",
+    blocked_on,
+  });
+  const held = (id: string, roots: WaitingOnRef[], fields: Partial<TicketSummary> = {}) =>
+    ({ id, external_id: id, state: "backlog", blocked_on: "tickets", root_blockers: roots, ...fields }) as TicketSummary;
+
+  it("groups by what has to move first: a root needing a person, then the ones holding most", () => {
+    const busy = root("busy");
+    const mine = root("mine", "person");
+    const groups = groupByRootBlocker([
+      held("a", [busy]),
+      held("b", [busy]),
+      held("c", [busy, mine]),
+      held("d", [root("lone")]),
+    ]);
+
+    expect(groups.map((group) => [group.root.id, group.held.map((t) => t.id)])).toEqual([
+      ["mine", ["c"]],
+      ["busy", ["a", "b", "c"]],
+      ["lone", ["d"]],
+    ]);
+  });
+
+  it("files a rolled-up parent under the blocked tickets beneath it", () => {
+    const child = { ...root("child", "person"), reason: "blocked_child" as const };
+    const [group] = groupByRootBlocker([held("parent", [], { state: "blocked", waiting_on: [child] })]);
+    expect(group.root.id).toBe("child");
+  });
+
+  it("counts as waiting on you only the blocked tickets a person or an agent must clear", () => {
+    expect(
+      blockedNeedingAction([
+        held("on-tickets", [], { state: "blocked" }),
+        held("on-you", [], { state: "blocked", blocked_on: "person" }),
+        held("parked", [], { state: "parked", blocked_on: null }),
+      ]),
+    ).toBe(1);
+    expect(blockedNeedingAction(undefined)).toBeUndefined();
   });
 });

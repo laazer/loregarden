@@ -289,6 +289,8 @@ export const api = {
     ancestor_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
+    /** Only tickets waiting on this: a person, other tickets, or an agent. */
+    blocked_on?: BlockedOn[];
     /** Opt-in page size. Unset returns the whole filtered set, as before. */
     limit?: number;
     /** Only meaningful with `limit`; the API rejects it on its own. */
@@ -412,6 +414,8 @@ export const api = {
       timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
+      /** Start it although it waits on prerequisites; recorded on its history. */
+      ignore_prerequisites?: boolean;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
@@ -422,6 +426,7 @@ export const api = {
         auto_approve: options?.auto_approve,
         timeout_seconds: options?.timeout_seconds,
         slot_number: options?.slot_number ?? null,
+        ignore_prerequisites: options?.ignore_prerequisites ?? false,
       }),
     }),
   buildTerminalHandoffCommand: (id: string, stageKey: string) =>
@@ -462,6 +467,8 @@ export const api = {
       timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
+      /** Start it although it waits on prerequisites; recorded on its history. */
+      ignore_prerequisites?: boolean;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/orchestrate`, {

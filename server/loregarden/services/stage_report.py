@@ -9,6 +9,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.interruption_messages import (
@@ -61,6 +62,11 @@ class StageReport:
     #: ("awaiting_human" was seen live) — so the history can say so rather than
     #: "named no kind", which is a different mistake.
     kind_as_written: str = ""
+    #: On `blocked_kind: tickets`: the tickets this one waits for, as external
+    #: ids or UUIDs. The orchestrator links them as prerequisites and holds the
+    #: ticket until they land, instead of blocking it and spending a repair turn
+    #: on a wait no agent can shorten (lg-milestone-that-1315).
+    waiting_on: list[str] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -178,14 +184,23 @@ class _BlockPayload(BaseModel):
 
     blocked_kind: str | None = Field(default=None)
     options: list[str] | None = Field(default=None)
+    waiting_on: list[str] | None = Field(default=None)
 
 
-def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str], str]:
+class _BlockFields(NamedTuple):
+    kind: BlockKind | None
+    options: list[str]
+    kind_as_written: str
+    waiting_on: list[str]
+
+
+def _block_fields_of(payload: str) -> _BlockFields:
     try:
         parsed = _BlockPayload.model_validate_json(payload)
     except ValidationError:
         logger.warning("stage report block fields could not be parsed", exc_info=True)
-        return None, [], ""
+        return _BlockFields(None, [], "", [])
+    waiting_on = [item.strip() for item in (parsed.waiting_on or []) if item.strip()]
     kind: BlockKind | None = None
     unknown = ""
     if parsed.blocked_kind:
@@ -194,12 +209,12 @@ def _block_fields_of(payload: str) -> tuple[BlockKind | None, list[str], str]:
         except ValueError:
             unknown = parsed.blocked_kind.strip()
             logger.warning("stage report named an unknown blocked_kind %r", unknown)
-        if kind is BlockKind.TICKETS:
-            # The rollup's word, not an agent's: it names no ticket to wait on.
+        if kind is BlockKind.TICKETS and not waiting_on:
+            # Waiting on tickets it does not name: nothing to link or wait for.
             kind, unknown = None, parsed.blocked_kind.strip()
-            logger.warning("stage report named rollup-only blocked_kind %r", unknown)
+            logger.warning("stage report named blocked_kind %r with no waiting_on", unknown)
     options = [item.strip() for item in (parsed.options or []) if item.strip()]
-    return kind, options, unknown
+    return _BlockFields(kind, options, unknown, waiting_on if kind is BlockKind.TICKETS else [])
 
 
 def _build_report(payload: str) -> StageReport | None:
@@ -212,7 +227,7 @@ def _build_report(payload: str) -> StageReport | None:
         return None
     if parsed.status not in _VALID_STATUSES:
         return None
-    kind, options, unknown = _block_fields_of(payload)
+    block = _block_fields_of(payload)
     return StageReport(
         status=parsed.status,
         confidence=max(0.0, min(1.0, parsed.confidence or 0.0)),
@@ -220,9 +235,10 @@ def _build_report(payload: str) -> StageReport | None:
         reroute_context=parsed.reroute_context or "",
         reroute_to_agent=(parsed.reroute_to_agent or "").strip() or None,
         unmet_criteria=_criteria_of(payload),
-        blocked_kind=kind,
-        options=options,
-        kind_as_written=unknown,
+        blocked_kind=block.kind,
+        options=block.options,
+        kind_as_written=block.kind_as_written,
+        waiting_on=block.waiting_on,
     )
 
 

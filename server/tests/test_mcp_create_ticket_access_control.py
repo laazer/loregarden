@@ -1,112 +1,168 @@
-"""Access-control tests for the interim `loregarden_create_ticket` allowlist.
+"""Who may file a ticket through `loregarden_create_ticket`, and on what terms.
 
-Per the ticket's triage checkpoint (a9-create-ticket-mcp-tool): orchestrated pipeline
-agents (implementer, reviewer, test_designer, etc. — any agent run driven through
-`PermissionBridgeRunner`, whether kicked off by the builtin autopilot or a single
-manually-started stage) must be DENIED `loregarden_create_ticket` by default; an
-implementer spawning tickets mid-run is scope-creep and noise. Interactive/copilot
-contexts (Ticket Studio chat, a human's own terminal Claude Code session, direct
-operator MCP/HTTP calls) are ALLOWED. This is recorded as debt, superseded once
-a2-per-agent-server-policy's real per-agent x per-server policy table lands.
-
-These tests pin the *design proposal* recorded in this ticket's test-design checkpoint
-for where that interim gate lives — a new pure predicate in permission_bridge.py,
-mirroring the existing `is_auto_approved_mcp_tool` convention exactly, backed by a new
-frozenset. If the implementer picks a different shape, update these tests in the same
-change (compatibility posture for this ticket is `internal` — interfaces may be broken
-freely as long as every caller/test is migrated together).
-
-Expected to fail red (ImportError) until permission_bridge.py grows:
-    ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[str]
-    is_orchestrated_agent_denied_mcp_tool(tool_name: str) -> bool
+Interactive and operator callers file freely. A pipeline agent was denied the
+tool outright (a9-create-ticket-mcp-tool) while the review contract told it to
+file findings with it; denied, a review lane of lg-milestone-that-1314 curled
+the REST API instead and filed lg-milestone-that-1315 with no record of which
+run did it. So a pipeline agent may file again, on two conditions the curl
+lacked: the filing is attributed to its run, and a run files at most
+`MAX_TICKETS_PER_RUN`.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from loregarden.agents.executors.permission_bridge import AUTO_APPROVED_MCP_TOOLS
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
+from loregarden.models.domain import AgentRun, RunStatus, Ticket, TicketRelation
+from loregarden.services.agent_ticket_filing import MAX_TICKETS_PER_RUN, filed_by
+from loregarden.services.seed import seed_database
+from loregarden.services.ticket_dependencies import TicketDependencyService
+from sqlmodel import Session, select
+from tests.factories import make_workspace_ticket
 
 
-def test_create_ticket_is_registered_but_never_auto_approved():
-    """Baseline safety property, true regardless of the exact gating mechanism:
-    a tool an orchestrated agent must be denied can never be silently
-    auto-approved for anyone."""
+@pytest.fixture(name="run")
+def run_fixture(db_session: Session) -> AgentRun:
+    """A review lane's run on a ticket, the way 1314's was."""
+    seed_database(db_session)
+    ticket = make_workspace_ticket(db_session, "filing-reviewed")
+    run = AgentRun(
+        run_code="run_filing",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="architecture_reviewer",
+        stage_key="review",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+def _file(title: str, *, depends_on: list[str] | None = None) -> dict:
+    return normalize_tool_arguments(
+        "loregarden_create_ticket",
+        {
+            "workspace_slug": "loregarden",
+            "title": title,
+            "work_item_type": "milestone",
+            "depends_on": depends_on or [],
+        },
+    )
+
+
+def test_create_ticket_is_never_auto_approved():
+    """Allowed is not silent: on a run that asks before writes, a person still sees it."""
     assert "loregarden_create_ticket" not in AUTO_APPROVED_MCP_TOOLS
 
 
-def test_create_ticket_is_denied_for_orchestrated_agents():
-    from loregarden.agents.executors.permission_bridge import (
-        ORCHESTRATED_DENIED_MCP_TOOLS,
-        is_orchestrated_agent_denied_mcp_tool,
+def test_a_pipeline_agent_files_a_ticket_attributed_to_its_run(db_session, run):
+    created = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file("A finding no criterion covers"),
+            orchestrated=True,
+            run_id=run.id,
+        )
     )
 
-    assert "loregarden_create_ticket" in ORCHESTRATED_DENIED_MCP_TOOLS
-    assert (
-        is_orchestrated_agent_denied_mcp_tool("mcp__loregarden__loregarden_create_ticket") is True
+    relation = db_session.exec(
+        select(TicketRelation).where(TicketRelation.created_by == filed_by(run))
+    ).one()
+    assert {relation.ticket_id, relation.related_ticket_id} == {run.ticket_id, created["id"]}
+    assert db_session.get(Ticket, created["id"]).last_updated_by == "agent"
+
+
+def test_a_run_files_at_most_its_budget(db_session, run):
+    for index in range(MAX_TICKETS_PER_RUN):
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file(f"Finding {index}"),
+            orchestrated=True,
+            run_id=run.id,
+        )
+
+    with pytest.raises(ValueError, match="already filed"):
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file("One too many"),
+            orchestrated=True,
+            run_id=run.id,
+        )
+    assert not db_session.exec(select(Ticket).where(Ticket.title == "One too many")).first()
+
+
+def test_a_pipeline_call_that_names_no_run_is_refused(db_session, run):
+    with pytest.raises(ValueError, match="supervised run"):
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file("Unattributed"),
+            orchestrated=True,
+        )
+
+
+def test_a_filed_ticket_carries_its_prerequisites(db_session, run):
+    """1315's wait was in its prose only, so nothing held it."""
+    prerequisite = make_workspace_ticket(db_session, "filing-prereq")
+
+    created = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file("Waits on the prerequisite", depends_on=[prerequisite.external_id]),
+            orchestrated=True,
+            run_id=run.id,
+        )
     )
-    assert is_orchestrated_agent_denied_mcp_tool("loregarden_create_ticket") is True
+
+    assert TicketDependencyService(db_session).prerequisites(created["id"]) == [prerequisite.id]
 
 
-def test_read_only_and_bookkeeping_tools_are_not_denied_for_orchestrated_agents():
-    """The interim allowlist must be a narrow, additive carve-out — it must not
-    regress any tool orchestrated agents already rely on."""
-    from loregarden.agents.executors.permission_bridge import (
-        is_orchestrated_agent_denied_mcp_tool,
-    )
-
-    for tool in (
-        "loregarden_get_ticket",
-        "loregarden_update_ticket",
-        "loregarden_attach_artifact",
-        "loregarden_complete_stage",
-        "loregarden_write_handoff",
-    ):
-        assert is_orchestrated_agent_denied_mcp_tool(f"mcp__loregarden__{tool}") is False, tool
+def test_an_unknown_prerequisite_refuses_before_anything_is_created(db_session, run):
+    with pytest.raises(ValueError, match="not found"):
+        execute_tool(
+            db_session,
+            "loregarden_create_ticket",
+            _file(
+                "Waits on nothing real",
+                depends_on=["00000000-0000-4000-8000-000000000001"],
+            ),
+        )
+    assert not db_session.exec(
+        select(Ticket).where(Ticket.title == "Waits on nothing real")
+    ).first()
 
 
-# --- real dispatch entrypoint ----------------------------------------------
-#
-# The predicate above is necessary but not sufficient: `PermissionBridgeRunner`
-# (where `_try_fast_approve` consults it) is only reached via the CLI-subprocess
-# permission-request stream. A direct HTTP `/mcp` call or an `external_mcp`-driven
-# orchestrator calls `mcp.tools.execute_tool` directly and skips that runner
-# entirely — these tests pin the second, independent check that closes that gap.
+def test_an_interactive_caller_files_without_a_run(db_session, run):
+    execute_tool(db_session, "loregarden_create_ticket", _file("Interactive call"))
+    assert db_session.exec(select(Ticket).where(Ticket.title == "Interactive call")).one()
 
 
-def test_execute_tool_denies_create_ticket_when_orchestrated(db_session):
-    args = normalize_tool_arguments(
-        "loregarden_create_ticket",
-        {
-            "workspace_slug": "loregarden",
-            "title": "Should not be created",
-            "work_item_type": "task",
-        },
-    )
+def test_the_orchestrated_flag_still_denies_the_tools_on_the_list(db_session, run):
     with pytest.raises(ValueError, match="(?i)orchestrated"):
-        execute_tool(db_session, "loregarden_create_ticket", args, orchestrated=True)
+        execute_tool(
+            db_session,
+            "loregarden_start_orchestration",
+            {"ticket_id": run.ticket_id},
+            orchestrated=True,
+        )
 
 
-def test_execute_tool_allows_create_ticket_when_not_orchestrated(db_session):
-    args = normalize_tool_arguments(
-        "loregarden_create_ticket",
-        {
-            "workspace_slug": "loregarden",
-            "title": "Interactive call",
-            "work_item_type": "milestone",
-        },
-    )
-    # orchestrated defaults to False — the interactive/operator case.
-    execute_tool(db_session, "loregarden_create_ticket", args)
-
-
-def test_execute_tool_orchestrated_flag_does_not_affect_undenied_tools(db_session):
-    """The orchestrated check must be narrow — it must not block a tool that isn't
-    in ORCHESTRATED_DENIED_MCP_TOOLS, even when orchestrated=True."""
-    result = execute_tool(
-        db_session,
-        "loregarden_list_tickets",
-        {"workspace_slug": "loregarden"},
-        orchestrated=True,
-    )
-    assert result
+def test_the_denial_does_not_point_at_the_rest_api(db_session, run):
+    """It used to say "Use the REST API", and an agent did."""
+    with pytest.raises(ValueError) as refused:
+        execute_tool(
+            db_session,
+            "loregarden_start_orchestration",
+            {"ticket_id": run.ticket_id},
+            orchestrated=True,
+        )
+    assert "Use the REST API" not in str(refused.value)

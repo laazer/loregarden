@@ -76,6 +76,12 @@ ENDPOINTS = {
     "workspace-activity-blobert.json": ("/api/workspaces/blobert/activity", {"since": "{since}"}),
     # Every ticket as one forest: what the Work items table builds its rows from.
     "ticket-tree.json": ("/api/tickets/tree", {}),
+    # What the workspace dashboard groups by root blocker: every ticket waiting
+    # on other tickets, in any state.
+    "tickets-waiting-on-tickets.json": (
+        "/api/tickets",
+        {"workspace": "loregarden", "blocked_on": "tickets"},
+    ),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible

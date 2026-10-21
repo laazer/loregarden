@@ -197,10 +197,9 @@ def test_orchestrated_flag_applies_the_pipeline_tool_policy(client, capsys):
             [
                 "mcp",
                 "call",
-                "loregarden_create_ticket",
+                "loregarden_start_orchestration",
                 "--orchestrated",
-                "workspace_slug=loregarden",
-                "title=x",
+                "ticket_id=x",
             ]
         )
         == errors.EXIT_ERROR

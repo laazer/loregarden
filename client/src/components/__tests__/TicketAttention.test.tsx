@@ -174,7 +174,7 @@ describe("waiting on other tickets", () => {
     expect(within(strip).getByRole("button", { name: "lg-x-23" })).toBeInTheDocument();
   });
 
-  it("counts the blockers past the first five instead of listing them all", async () => {
+  it("names the first three and keeps the rest one disclosure away", async () => {
     const refs = Array.from({ length: 7 }, (_, i) => ({
       id: `p${i}`,
       external_id: `lg-p-${i}`,
@@ -186,7 +186,12 @@ describe("waiting on other tickets", () => {
     renderStrip(ticket({ state: "backlog", blocked_on: "tickets", waiting_on: refs }));
 
     const strip = await screen.findByRole("region", { name: "Needs attention" });
-    expect(within(strip).getAllByRole("button")).toHaveLength(5);
-    expect(strip).toHaveTextContent("+2 more");
+    expect(within(strip).getAllByRole("button", { name: /^lg-p-/ })).toHaveLength(3);
+    const more = within(strip).getByRole("button", { name: "+4 more" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(more);
+    expect(within(strip).getAllByRole("button", { name: /^lg-p-/ })).toHaveLength(7);
+    expect(within(strip).getByRole("button", { name: "fewer" })).toHaveAttribute("aria-expanded", "true");
   });
 });
