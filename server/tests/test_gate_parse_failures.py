@@ -19,12 +19,14 @@ from unittest import mock
 import pytest
 from tests.repo_templates import from_template
 from tests.test_gate_scope_visibility import (
+    DIFF_FILTER_SCRIPTS,
     GIT_SUBPROCESS_GATE,
     PY_ORGANIZATION_GATE,
     PY_SILENT_EXCEPT_GATE,
     REFUSAL_SENTENCE,
     _build_repo,
     _commit_agent_work,
+    _function_span_in_subprocess,
     _load_script,
     _out,
     _run_gate,
@@ -130,3 +132,31 @@ def test_a_parse_failure_that_is_not_a_syntax_error_is_unexaminable() -> None:
         with pytest.raises(module.UnexaminableFileError) as caught:
             module.parse_python_source("x = 1\n", Path(RELPATH))
     assert REFUSAL_SENTENCE in str(caught.value)
+
+
+@pytest.mark.parametrize("module", DIFF_FILTER_SCRIPTS)
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        pytest.param("x = 1\n\x00\n", "NUL byte", id="nul-byte"),
+        pytest.param("def (:\n", "invalid syntax", id="syntax-error"),
+    ],
+)
+def test_a_diff_filter_announces_a_file_it_cannot_parse(
+    module: str, repo: Path, body: str, reason: str
+) -> None:
+    """The span falls back to the reported line, and says why on stderr.
+
+    A parse failure used to fall back in silence, while a read failure was
+    announced: the same "no span" outcome, one of them invisible.
+    """
+    target = repo / RELPATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body)
+
+    result = _function_span_in_subprocess(module, target, repo)
+
+    assert result.returncode == 0, _out(result)
+    assert "(7, 7)" in result.stdout, _out(result)
+    assert "could not parse" in result.stderr, _out(result)
+    assert reason in result.stderr, _out(result)
