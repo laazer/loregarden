@@ -19,7 +19,12 @@ from uuid import uuid4
 
 from loregarden.db import versions
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
-from loregarden.db.migration_registry import Migration, chain_order, import_submodules
+from loregarden.db.migration_registry import (
+    Migration,
+    SiblingOrder,
+    chain_order,
+    import_submodules,
+)
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     index_exists,
@@ -1435,21 +1440,18 @@ FROZEN_MIGRATIONS: list[tuple[str, Migration]] = [
 
 import_submodules(versions)
 #: The versioned migrations, ordered by their `after` links below the frozen tail.
+#: Forks are allowed; `test_migration_forks_commute` proves each one commutes.
 VERSION_CHAIN = chain_order(FROZEN_MIGRATIONS[-1][0], versions.REGISTRY.registered())
-for _fork in VERSION_CHAIN.forks:
-    logger.error(
-        "Migrations %s all follow %s. Two branches merged against the same tip; the "
-        "order between them here is by id, which may not be the order they applied to "
-        "the live database. Point the later one's `after` at the earlier one.",
-        ", ".join(_fork.children),
-        _fork.parent,
-    )
+
+
+def ordered_migrations(siblings: SiblingOrder) -> list[tuple[str, Migration]]:
+    """Everything this build applies, with each fork's siblings in ``siblings`` order."""
+    chain = chain_order(FROZEN_MIGRATIONS[-1][0], versions.REGISTRY.registered(), siblings=siblings)
+    return [*FROZEN_MIGRATIONS, *((item.id, item.migrate) for item in chain.ordered)]
+
 
 #: Everything this build applies, in order.
-MIGRATIONS: list[tuple[str, Migration]] = [
-    *FROZEN_MIGRATIONS,
-    *((item.id, item.migrate) for item in VERSION_CHAIN.ordered),
-]
+MIGRATIONS: list[tuple[str, Migration]] = ordered_migrations(SiblingOrder.BY_ID)
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 

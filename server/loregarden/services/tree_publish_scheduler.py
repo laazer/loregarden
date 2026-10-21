@@ -40,9 +40,10 @@ from loregarden.models.domain import (
 )
 from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.git_automation_config import resolve_git_automation
-from loregarden.services.git_merge_noco import is_ancestor, rev, superseding_commit
+from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.publish_tree import PublishOutcome, publish_tree, published_branch
+from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
@@ -318,7 +319,7 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
 
     The remote's base first: a PR merged on GitHub is there as soon as anyone
     fetches, before the local base is pulled. A squash merge shares no commit
-    with the branch, so ancestry alone misses it; `superseding_commit` does not.
+    with the branch, so ancestry alone misses it; `landing_commit` does not.
     """
     repo_root = resolve_workspace_root(workspace)
     if not (repo_root / ".git").exists():
@@ -331,14 +332,14 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
         base_sha = rev(repo_root, ref)
         if not base_sha:
             continue
-        if is_ancestor(repo_root, tip, base_sha):
-            return f"{ref} contains {branch}"
         try:
-            holder = superseding_commit(repo_root, tip, base_sha)
+            holder = landing_commit(repo_root, tip, base_sha)
         except RuntimeError as exc:
             # silent-ok: retried on the next reconcile pass; the card stays open meanwhile
             logger.warning("Could not tell whether %s holds %s: %s", ref, branch, exc)
             continue
+        if holder == tip:
+            return f"{ref} contains {branch}"
         if holder:
             return f"{ref} holds everything {branch} adds, in {holder[:12]}"
     return ""

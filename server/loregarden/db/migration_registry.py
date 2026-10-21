@@ -13,24 +13,31 @@ Here a migration is a function in its own module under `db/versions/`:
     def m_workspace_flag(conn: Connection) -> None: ...
 
 The id is a date and a name, so two branches cannot claim the same one by
-accident. The order is the `after` chain, like Alembic's `down_revision`. Two
-branches that both follow X still merge without a textual conflict; the chain
-then forks, the suite fails on it, and the fix is to point the later one's
-`after` at the earlier one. The id does not change, so nothing runs twice, and
-a fresh database applies them in the order main merged them, the same order the
-live database saw.
+accident. The order is the `after` links, like Alembic's `down_revision`.
+
+**A fork is allowed; it must commute.** Two branches written at the same time
+both follow the same tip, and the second to merge used to fail the suite on the
+fork and re-point its `after` at the first. With several agents merging in
+parallel that was most merges with a migration, and it was the wrong test: what
+a fork risks is that a fresh database applies the siblings in id order while
+the live one applied them in merge order, and that only matters when the two
+interact. So `test_migration_forks_commute` applies the versioned migrations to
+a seeded database with every fork's siblings in id order and again reversed,
+and compares every table. Siblings that commute merge as they are; siblings
+that do not fail with both named, and then one names the other in `after`,
+because it genuinely depends on it.
 """
 
 from __future__ import annotations
 
 import ast
-import heapq
 import importlib
 import pkgutil
 import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from types import ModuleType
 
 from sqlalchemy import Connection
@@ -65,9 +72,20 @@ class ChainFork:
 @dataclass(frozen=True)
 class ChainOrder:
     ordered: tuple[VersionedMigration, ...]
-    #: Empty on a sound chain. A fork still orders deterministically (siblings
-    #: by id), but that order is a guess at merge order, not a record of it.
+    #: Ids that more than one migration follows. Ordered deterministically
+    #: (siblings by id), which is a guess at merge order rather than a record of
+    #: it, so the suite proves every fork's siblings commute.
     forks: tuple[ChainFork, ...]
+
+
+class SiblingOrder(Enum):
+    """How `chain_order` picks among migrations ready at the same point."""
+
+    #: The build's order.
+    BY_ID = "by_id"
+    #: Every fork the other way round: what a database that saw the siblings
+    #: merge in the opposite order applied. The commutation test's other half.
+    REVERSED = "reversed"
 
 
 class MigrationChainError(RuntimeError):
@@ -117,13 +135,18 @@ def import_submodules(package: ModuleType) -> list[str]:
     return names
 
 
-def chain_order(root: str, migrations: Sequence[VersionedMigration]) -> ChainOrder:
+def chain_order(
+    root: str,
+    migrations: Sequence[VersionedMigration],
+    *,
+    siblings: SiblingOrder = SiblingOrder.BY_ID,
+) -> ChainOrder:
     """Order ``migrations`` by their `after` links, starting below ``root``.
 
     Raises when an `after` names an id that is neither ``root`` nor another
     versioned migration, or when the links form a cycle: neither can be ordered
-    at all. A fork can, so it is returned rather than raised — a merge that
-    forked the chain must not stop the server booting.
+    at all. A fork can, so it is returned rather than raised: forks are
+    legitimate, and the suite proves each one commutes.
     """
     known = {item.id for item in migrations}
     dangling = sorted(
@@ -142,14 +165,13 @@ def chain_order(root: str, migrations: Sequence[VersionedMigration]) -> ChainOrd
     for item in migrations:
         children[item.after].append(item)
 
-    ready = [(item.id, item) for item in children[root]]
-    heapq.heapify(ready)
+    ready = list(children[root])
     ordered: list[VersionedMigration] = []
     while ready:
-        _, item = heapq.heappop(ready)
+        ready.sort(key=lambda item: item.id, reverse=siblings is SiblingOrder.REVERSED)
+        item = ready.pop(0)
         ordered.append(item)
-        for child in children[item.id]:
-            heapq.heappush(ready, (child.id, child))
+        ready.extend(children[item.id])
 
     if len(ordered) != len(migrations):
         reached = {item.id for item in ordered}
