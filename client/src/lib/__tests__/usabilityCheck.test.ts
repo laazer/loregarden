@@ -71,3 +71,88 @@ describe("key-value-table", () => {
     expect(kinds(`<table><tbody>${repeat(4, row)}</tbody></table>`)).not.toContain("key-value-table");
   });
 });
+
+describe("rendered lists (cards, not <ul>)", () => {
+  // The blindness this covers: /branch-triage rendered 224 `div.branch-triage-card`
+  // and the checks, reading `ul, ol, tbody`, saw the 11-item nav sidebar.
+  const card = (i: number) =>
+    `<div class="branch-triage-card"><span class="name">branch ${i}</span><span class="age">${i}d</span></div>`;
+
+  it("flags a long run of cards with nothing to click", () => {
+    expect(kinds(`<div>${repeat(16, card)}</div>`)).toContain("dead-end-list");
+  });
+
+  it("flags a run of cards past the long-list threshold with no way to narrow it", () => {
+    expect(kinds(`<div>${repeat(51, card)}</div>`)).toContain("unfiltered-long-list");
+  });
+
+  it("passes the same run when a filter sits near it", () => {
+    const html = `<section><input type="search" aria-label="Filter" /><div>${repeat(51, card)}</div></section>`;
+    expect(kinds(html)).not.toContain("unfiltered-long-list");
+  });
+
+  it("passes cards that each hold something to click", () => {
+    const linked = (i: number) =>
+      `<div class="branch-triage-card"><a href="/b/${i}">branch ${i}</a><span class="age">${i}d</span></div>`;
+    expect(kinds(`<div>${repeat(16, linked)}</div>`)).not.toContain("dead-end-list");
+  });
+
+  it("groups a card with its selected variant, since the block class is the same", () => {
+    const mixed = (i: number) =>
+      i === 0
+        ? `<div class="branch-triage-card is-selected"><span class="name">branch ${i}</span></div>`
+        : card(i);
+    expect(kinds(`<div>${repeat(16, mixed)}</div>`)).toContain("dead-end-list");
+  });
+
+  it("flags cards that repeat a name and four attributes", () => {
+    const row = (i: number) =>
+      `<div class="ticket-seg"><a href="/t/${i}">Ticket ${i}</a><span class="state">open</span>` +
+      `<span class="agent">planner</span><span class="age">${i}d</span><span class="cost">$${i}</span></div>`;
+    expect(kinds(`<div>${repeat(10, row)}</div>`)).toContain("tabular-list");
+  });
+
+  it("leaves an unclassed run alone, because that is layout and not a list", () => {
+    const plain = (i: number) => `<div><span>row ${i}</span><span>${i}d</span></div>`;
+    expect(kinds(`<div>${repeat(20, plain)}</div>`)).not.toContain("dead-end-list");
+  });
+
+  it("leaves a run of empty elements alone", () => {
+    const blank = () => `<div class="spark-bar"></div>`;
+    expect(kinds(`<div>${repeat(20, blank)}</div>`)).not.toContain("dead-end-list");
+  });
+
+  it("lets a board lane hold same-shaped cards", () => {
+    const row = (i: number) =>
+      `<div class="ticket-seg"><a href="/t/${i}">Ticket ${i}</a><span class="state">open</span>` +
+      `<span class="agent">planner</span><span class="age">${i}d</span><span class="cost">$${i}</span></div>`;
+    expect(kinds(`<div data-board-lane><div>${repeat(10, row)}</div></div>`)).not.toContain("tabular-list");
+  });
+
+  it("never asks a table to become a table", () => {
+    const tr = (i: number) =>
+      `<tr><td><a href="/t/${i}">Ticket ${i}</a></td><td>open</td><td>planner</td><td>${i}d</td><td>$${i}</td></tr>`;
+    expect(kinds(`<table><tbody>${repeat(10, tr)}</tbody></table>`)).not.toContain("tabular-list");
+  });
+
+  it("does not read a graph's edges as a list of items with nothing to click", () => {
+    // The memory map draws 50 `<line class="mm-inferred">` siblings. They repeat
+    // one shape and none is clickable, but they are edges, not items.
+    const edges = repeat(50, (i) => `<line class="mm-inferred" x1="${i}" y1="0" x2="0" y2="${i}">e${i}</line>`);
+    expect(kinds(`<svg><g>${edges}</g></svg>`)).not.toContain("dead-end-list");
+  });
+
+  it("still flags a long card run that merely sits beside a drawing", () => {
+    const html = `<div><svg><g><line class="e">x</line></g></svg><div>${repeat(16, card)}</div></div>`;
+    expect(kinds(html)).toContain("dead-end-list");
+  });
+
+  it("counts a semantic list once, not again as a run of siblings", () => {
+    const found = (() => {
+      const root = document.createElement("div");
+      root.innerHTML = `<ul>${repeat(16, (i) => `<li class="row"><span>row ${i}</span></li>`)}</ul>`;
+      return findUsabilityProblems(root).filter((p) => p.kind === "dead-end-list");
+    })();
+    expect(found).toHaveLength(1);
+  });
+});

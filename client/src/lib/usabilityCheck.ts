@@ -11,6 +11,12 @@
  * It flags shapes, not taste. A hit is a question for a person ("should 94 rows
  * of this be here?"); a pass is not a verdict that the surface is good.
  *
+ * A list here is a run of sibling elements repeating one shape, not a `<ul>`.
+ * The list checks once read `ul, ol, tbody` only, and this app renders its
+ * cards as `<div>`: they saw 11 nav items on /branch-triage while the surface
+ * held 224 unfilterable cards, and reported zero problems on all 19 surfaces.
+ * A check that cannot see the house style is not evidence of anything.
+ *
  * Deliberately self-contained — one function, no imports, nothing from module
  * scope: `scripts/visual-qa.mjs` transpiles this file and evaluates the
  * function inside the browser page, where nothing else from the app exists.
@@ -74,8 +80,53 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
     }
   }
 
+  // Every run of repeated siblings on the page, however it is marked up. A
+  // semantic list is one; so is a container whose children repeat a tag and a
+  // class and each carry text. `kind` is kept because the tabular check asks a
+  // question ("compare them in a table") that is already answered for a tbody.
+  type ItemList = { el: Element; items: Element[]; kind: "list" | "tbody" | "group" };
+  const itemLists: ItemList[] = [];
+
   for (const list of Array.from(root.querySelectorAll("ul, ol, tbody"))) {
-    const items = Array.from(list.children).filter((c) => c.tagName === "LI" || c.tagName === "TR");
+    itemLists.push({
+      el: list,
+      items: Array.from(list.children).filter((c) => c.tagName === "LI" || c.tagName === "TR"),
+      kind: list.tagName === "TBODY" ? "tbody" : "list",
+    });
+  }
+
+  // The smallest run any check below cares about; under it there is nothing to
+  // find and the grouping is not worth doing.
+  const MIN_RUN = TABULAR_ITEMS;
+  for (const container of Array.from(root.querySelectorAll("*"))) {
+    // Not inside a drawing. A graph's 50 edges are siblings repeating one shape
+    // and none of them is clickable, which reads as a dead-end list of 50 items
+    // — the memory map tripped exactly this. What an `<svg>` is missing is a
+    // different question, and `edgeless-graph` below already asks it.
+    if (container.closest("svg")) continue;
+    const children = Array.from(container.children);
+    if (children.length < MIN_RUN) continue;
+    const runs = new Map<string, Element[]>();
+    for (const child of children) {
+      // The pass above owns these; counting them again would double-report.
+      if (child.tagName === "LI" || child.tagName === "TR") continue;
+      // The first class is the block in this tree's naming, so a card and a
+      // selected card group together while a card and a toolbar do not. An
+      // unclassed run is layout, not a list.
+      const block = (child.getAttribute("class") ?? "").trim().split(/\s+/)[0];
+      if (!block) continue;
+      if (((child.textContent ?? "").trim()) === "") continue;
+      const signature = `${child.tagName}.${block}`;
+      const run = runs.get(signature);
+      if (run) run.push(child);
+      else runs.set(signature, [child]);
+    }
+    for (const items of runs.values()) {
+      if (items.length >= MIN_RUN) itemLists.push({ el: container, items, kind: "group" });
+    }
+  }
+
+  for (const { el: list, items } of itemLists) {
     if (items.length > DEAD_END_ITEMS && !items.some((item) => item.matches(ACTIONABLE) || item.querySelector(ACTIONABLE))) {
       problems.push({
         kind: "dead-end-list",
@@ -106,9 +157,10 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   // shape by design, and the board, which answers "what stage is each item
   // in?", is the layout CLAUDE.md prescribes for them. The other list checks
   // still apply to it.
-  for (const list of Array.from(root.querySelectorAll("ul, ol"))) {
+  for (const { el: list, items, kind } of itemLists) {
+    // A tbody is already the table this check would ask for.
+    if (kind === "tbody") continue;
     if (list.closest("[data-board-lane]")) continue;
-    const items = Array.from(list.children).filter((c) => c.tagName === "LI");
     if (items.length < TABULAR_ITEMS) continue;
     const shapes = new Map<string, number>();
     for (const item of items) {
