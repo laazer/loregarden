@@ -30,7 +30,8 @@ from loregarden.services.agent_turn_runner import (
     resolve_chat_intent,
     run_agent_turn,
 )
-from loregarden.services.chat_primitives import parts_json_for_reply
+from loregarden.services.chat_primitives import cli_card_corrector, settle_reply
+from loregarden.services.chat_primitives.repair import CardCorrector
 from loregarden.services.chat_publish import report_ticket_turn
 from loregarden.services.chat_thinking import (
     finish_chat_turn_thinking,
@@ -189,7 +190,14 @@ class TriageTurnExecutor:
             reply = turn.reply
             if acting:
                 reply += self._work_note(turn.run_id, ticket, effective_workspace)
-            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")
+            self._finish(
+                run,
+                ticket,
+                status=RunStatus.SUCCEEDED,
+                reply=reply,
+                stderr="",
+                corrector=cli_card_corrector(TRIAGE_CLI_PROFILE, effective_workspace),
+            )
         except Exception as exc:  # noqa: BLE001 - any provider error is recorded as a FAILED run
             self._finish(
                 run,
@@ -214,8 +222,16 @@ class TriageTurnExecutor:
         return outcome.as_note() if outcome else ""
 
     def _finish(
-        self, run: AgentRun, ticket: Ticket, *, status: RunStatus, reply: str, stderr: str
+        self,
+        run: AgentRun,
+        ticket: Ticket,
+        *,
+        status: RunStatus,
+        reply: str,
+        stderr: str,
+        corrector: CardCorrector | None = None,
     ) -> None:
+        """Settle the run and store its reply; ``corrector`` is for a model's reply only."""
         # Held before the re-read: the run row is what identifies this turn's
         # thinking channel, and a re-read that comes back empty must still
         # release it rather than leave the row behind.
@@ -226,20 +242,22 @@ class TriageTurnExecutor:
             run.stderr = stderr[:4000]
             run.finished_at = datetime.now(timezone.utc)
             self.session.add(run)
-        content = reply or (stderr[:2000] if status == RunStatus.FAILED else "(no reply)")
+        settled = settle_reply(
+            self.session,
+            reply or (stderr[:2000] if status == RunStatus.FAILED else "(no reply)"),
+            workspace_id=ticket.workspace_id,
+            corrector=corrector,
+        )
         # Always taken, including on the failure paths: what the agent was
         # working through when it died is the most useful thing it produced.
         thinking = finish_chat_turn_thinking(self.session, turn_id)
         assistant_message = TriageMessage(
             ticket_id=ticket.id,
             role="assistant",
-            content=content,
+            content=settled.content,
             # Resolved at write time so the thread renders its cards after a
             # reload instead of degrading to the raw fenced JSON.
-            parts_json=with_thinking_part(
-                parts_json_for_reply(self.session, content, workspace_id=ticket.workspace_id),
-                thinking,
-            ),
+            parts_json=with_thinking_part(settled.parts_json, thinking),
             run_id=run.id if run else None,
         )
         self.session.add(assistant_message)

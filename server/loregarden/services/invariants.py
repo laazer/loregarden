@@ -78,7 +78,10 @@ class Invariant:
     detect: Callable[[Session], Sequence[Violation]]
     #: Undo the violations; returns how many it repaired. Repair re-checks each
     #: subject itself: the world may have moved between detect and repair.
-    repair: Callable[[Session, Sequence[Violation]], int]
+    #: None for a state only a person can resolve (`unrepaired_action` says how):
+    #: every violation is then reported on every pass, backlog included, since
+    #: nothing else will ever clear it.
+    repair: Callable[[Session, Sequence[Violation]], int] | None
     reentry: InvariantReentry
     #: When the guard landed (DEFECT) or the invariant was registered (EXPECTED).
     #: A violation that entered before this is backlog, not re-entry.
@@ -88,12 +91,22 @@ class Invariant:
     prevented_by: str = ""
     #: EXPECTED only: why the state is entered legitimately.
     expected_because: str = ""
+    #: Report-only (no `repair`): what a person does to resolve one violation.
+    unrepaired_action: str = ""
 
     def __post_init__(self) -> None:
         if self.reentry is InvariantReentry.DEFECT and not self.prevented_by:
             raise ValueError(f"DEFECT invariant {self.name!r} names no prevented_by test")
         if self.reentry is InvariantReentry.EXPECTED and not self.expected_because:
             raise ValueError(f"EXPECTED invariant {self.name!r} gives no expected_because")
+        if self.repair is None and not self.unrepaired_action:
+            raise ValueError(
+                f"report-only invariant {self.name!r} says no unrepaired_action for a person"
+            )
+
+    @property
+    def report_only(self) -> bool:
+        return self.repair is None
 
 
 @dataclass(frozen=True)
@@ -104,6 +117,8 @@ class InvariantCheck:
     found: int
     reentered: int
     repaired: int
+    #: Report-only: violations from before `since`, left for a person.
+    unrepaired: int = 0
 
 
 def _since(invariant: Invariant) -> datetime:
@@ -131,16 +146,27 @@ def reentries(invariant: Invariant, violations: Sequence[Violation]) -> list[Vio
     return [v for v in violations if _entered_after(v, since)]
 
 
-def _finding(invariant: Invariant, violation: Violation) -> MonitorFinding:
-    return MonitorFinding(
-        condition=MonitorCondition.INVARIANT_REENTERED,
-        ticket_id=violation.ticket_id or "",
-        stage_key=invariant.name,
-        summary=(
+def _summary(invariant: Invariant, condition: MonitorCondition) -> str:
+    if condition is MonitorCondition.INVARIANT_REENTERED:
+        return (
             f"'{invariant.statement}' was violated again after its guard landed "
             f"({invariant.ticket}, {invariant.since.isoformat()}); "
             f"{invariant.prevented_by} does not cover the writer that did this."
-        ),
+        )
+    return (
+        f"'{invariant.statement}' is violated, and nothing repairs it automatically "
+        f"({invariant.ticket}). {invariant.unrepaired_action}"
+    )
+
+
+def _finding(
+    invariant: Invariant, violation: Violation, condition: MonitorCondition
+) -> MonitorFinding:
+    return MonitorFinding(
+        condition=condition,
+        ticket_id=violation.ticket_id or "",
+        stage_key=invariant.name,
+        summary=_summary(invariant, condition),
         evidence={
             "invariant": invariant.name,
             "subject_id": violation.subject_id,
@@ -150,38 +176,53 @@ def _finding(invariant: Invariant, violation: Violation) -> MonitorFinding:
     )
 
 
-def _report(session: Session, invariant: Invariant, reentered: list[Violation]) -> None:
-    """Record re-entries before repair erases them, then escalate."""
-    ticketless = [v for v in reentered if not v.ticket_id]
+def _report(
+    session: Session, invariant: Invariant, violations: list[Violation], condition: MonitorCondition
+) -> None:
+    """Record violations as findings (before any repair erases them), then escalate."""
+    ticketless = [v for v in violations if not v.ticket_id]
     if ticketless:
         # A finding needs a ticket to hang on (artifacts.ticket_id is NOT NULL),
         # so these are reported here instead, at a level the handler shows.
         logger.warning(
-            "Invariant %s re-entered on %d row(s) with no ticket: %s",
+            "Invariant %s (%s) on %d row(s) with no ticket: %s",
             invariant.name,
+            condition.value,
             len(ticketless),
             ", ".join(v.subject_id for v in ticketless),
         )
-    findings = [_finding(invariant, v) for v in reentered if v.ticket_id]
+    findings = [_finding(invariant, v, condition) for v in violations if v.ticket_id]
     if not findings:
         return
     record_findings(session, findings)
-    escalate_invariant_reentries(session, invariant_name=invariant.name)
+    escalate_invariant_reentries(session, invariant_name=invariant.name, condition=condition)
     logger.warning(
-        "Invariant %s re-entered on %d ticket(s); its guard (%s) is missing a writer",
+        "Invariant %s: %s on %d ticket(s): %s",
         invariant.name,
+        condition.value,
         len(findings),
-        invariant.prevented_by,
+        _summary(invariant, condition),
     )
 
 
 def run_invariant(session: Session, invariant: Invariant) -> InvariantCheck:
-    """Detect, report re-entry, repair. The reconcile pass's one call per invariant."""
+    """Detect, report, repair. The reconcile pass's one call per invariant."""
     violations = list(invariant.detect(session))
     if not violations:
         return InvariantCheck(invariant.name, found=0, reentered=0, repaired=0)
     reentered = reentries(invariant, violations)
-    _report(session, invariant, reentered)
+    _report(session, invariant, reentered, MonitorCondition.INVARIANT_REENTERED)
+    if invariant.repair is None:
+        reentered_ids = {v.subject_id for v in reentered}
+        backlog = [v for v in violations if v.subject_id not in reentered_ids]
+        _report(session, invariant, backlog, MonitorCondition.INVARIANT_UNREPAIRED)
+        return InvariantCheck(
+            invariant.name,
+            found=len(violations),
+            reentered=len(reentered),
+            repaired=0,
+            unrepaired=len(backlog),
+        )
     repaired = invariant.repair(session, violations)
     if repaired < len(violations):
         logger.warning(

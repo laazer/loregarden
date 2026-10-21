@@ -40,6 +40,21 @@ def _require_criteria_partition(parent: list[str], children: list[HierarchyWorkI
         )
 
 
+def _relationship_rules() -> str:
+    """The prompt's parent-child lines, from `VALID_HIERARCHY` so the two cannot drift."""
+    lines = []
+    for parent, children in VALID_HIERARCHY.items():
+        if parent is WorkItemType.INITIATIVE:
+            continue
+        allowed = ", ".join(child.value for child in children)
+        lines.append(
+            f"  - {parent.value} can contain: {allowed}"
+            if children
+            else f"  - {parent.value} cannot contain children"
+        )
+    return "\n".join(lines)
+
+
 class DecompositionService:
     """Generates hierarchical work item breakdowns via an injected model turn."""
 
@@ -177,11 +192,7 @@ Acceptance Criteria:
 HIERARCHY RULES:
 - Valid hierarchy levels are: milestone, feature, capability, task, bug
 - Valid parent-child relationships:
-  - milestone can contain: feature, bug
-  - feature can contain: capability, bug
-  - capability can contain: task, bug
-  - task cannot contain children
-  - bug cannot contain children
+{_relationship_rules()}
 - Each item must have:
   - external_id (unique string identifier, e.g., "auth-feature-001")
   - title (clear, concise name)

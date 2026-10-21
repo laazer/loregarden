@@ -9,14 +9,23 @@ pass picks it up from `INVARIANTS` by name (`reconciliation.PERIODIC_STEPS`).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from datetime import date
 
-from loregarden.models.domain import InvariantReentry, Ticket
+from loregarden.models.domain import (
+    InvariantReentry,
+    Ticket,
+    TicketState,
+    Workspace,
+    Worktree,
+    WorktreeState,
+)
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
 from loregarden.services.invariants import Invariant, Violation
+from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
@@ -27,7 +36,9 @@ from loregarden.services.tree_publish_scheduler import (
     close_held_cards,
     published_cards_held,
 )
-from sqlmodel import Session
+from sqlmodel import Session, col, select
+
+logger = logging.getLogger(__name__)
 
 
 def _tickets(session: Session, violations: Sequence[Violation]) -> list[Ticket]:
@@ -90,6 +101,47 @@ def _close_cards(session: Session, violations: Sequence[Violation]) -> int:
     return close_held_cards(
         session, [item for item in published_cards_held(session) if item.card.id in wanted]
     )
+
+
+def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
+    """Done tickets whose live worktree still holds their own uncommitted work.
+
+    Only trees that outlived their ticket: `worktree_lifecycle` keeps a dirty
+    tree rather than delete work, so these are exactly the trees it kept.
+    `entered_at` is the ticket's `resolved_at`, the landing that left them.
+    """
+    rows = session.exec(
+        select(Ticket, Worktree)
+        .join(Worktree, col(Worktree.ticket_id) == col(Ticket.id))
+        .where(
+            Ticket.state == TicketState.DONE,
+            Worktree.state == WorktreeState.ACTIVE,
+            col(Worktree.chat_session_id).is_(None),
+        )
+    ).all()
+    found: list[Violation] = []
+    for ticket, worktree in rows:
+        workspace = session.get(Workspace, ticket.workspace_id)
+        if workspace is None:
+            continue
+        try:
+            paths = uncommitted_at_landing(session, ticket, workspace)
+        except RuntimeError:
+            # Not "clean": logged where the handler shows it, and read again
+            # next pass. One unreadable tree must not hide every other one.
+            logger.warning("Could not read %s's worktree", ticket.external_id, exc_info=True)
+            continue
+        if paths:
+            found.append(
+                Violation(
+                    subject_id=worktree.id,
+                    ticket_id=ticket.id,
+                    entered_at=ticket.resolved_at,
+                    detail=f"{ticket.external_id}: {len(paths)} file(s) uncommitted in "
+                    f"{worktree.worktree_path}: {', '.join(paths)}",
+                )
+            )
+    return found
 
 
 EVERY_BLOCK_IS_SETTLED = Invariant(
@@ -271,6 +323,25 @@ CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS = Invariant(
     ),
 )
 
+LANDED_WORK_IS_COMMITTED = Invariant(
+    name="landed_work_is_committed",
+    ticket="lg-milestone-that-1314",
+    statement="no done ticket's worktree holds its own uncommitted work",
+    detect=_landed_with_uncommitted_work,
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 21),
+    prevented_by=(
+        "server/tests/test_landing_uncommitted.py"
+        "::test_a_ticket_with_uncommitted_work_does_not_land"
+    ),
+    unrepaired_action=(
+        "Open the worktree the finding names. If the files are the ticket's work, commit them "
+        "to its branch and land it again; if not, discard them with `git checkout -- <path>`. "
+        "A clean tree is removed by the next startup's worktree sweep."
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
@@ -280,4 +351,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     HELD_TICKETS_RESUME,
+    LANDED_WORK_IS_COMMITTED,
 )

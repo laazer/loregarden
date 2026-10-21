@@ -554,6 +554,9 @@ class MonitorCondition(StrEnum):
     #: A DEFECT invariant found violated by a row that entered the state after
     #: its guard landed (`services.invariants`). Report-only; escalates at one.
     INVARIANT_REENTERED = "invariant_reentered"
+    #: A report-only invariant's violation from before its guard landed: nothing
+    #: repairs it, so a person must (`Invariant.unrepaired_action`). Escalates at one.
+    INVARIANT_UNREPAIRED = "invariant_unrepaired"
 
 
 #: Auto-fix may only repair these (idempotent, zero agent runs). Lives here so

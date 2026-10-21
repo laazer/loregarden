@@ -23,10 +23,11 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.branch_triage_chat_service import (
+    BRANCH_TRIAGE_CLI_PROFILE,
     invoke_branch_triage_model,
     latest_pending_turn,
 )
-from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corrector, settle_reply
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
@@ -166,12 +167,18 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
                     run_id=assistant.run_id or "",
                     turn_id=assistant_id,
                 )
+                settled = settle_reply(
+                    session,
+                    reply,
+                    workspace_id=workspace.id,
+                    corrector=cli_card_corrector(BRANCH_TRIAGE_CLI_PROFILE, workspace),
+                )
                 _settle(
                     session,
                     assistant_id,
-                    content=reply,
+                    content=settled.content,
                     status="complete",
-                    parts_json=parts_json_for_reply(session, reply, workspace_id=workspace.id),
+                    parts_json=settled.parts_json,
                 )
             except Exception as exc:
                 logger.exception("Branch triage turn failed: %s", assistant_id)

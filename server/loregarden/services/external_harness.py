@@ -52,6 +52,7 @@ from loregarden.services.handoff_tree_status import (
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.oversized_ticket_split import split_oversized_ticket
 from loregarden.services.parallel_stage import (
     latest_member_run,
     member_passed,
@@ -70,7 +71,13 @@ from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
 from loregarden.services.stage_shape import describe_stage_shape
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
+from loregarden.services.subtree_auto_run import (
+    finalize_aggregator_ticket,
+    order_children_for_subtree,
+    ticket_workflow_complete,
+)
 from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -366,6 +373,43 @@ def _begin_parallel_stage(
     )
 
 
+def _aggregator_view(session: Session, ticket: Ticket, stage_key: str) -> ExternalStageView | None:
+    """The builtin driver's aggregator rule, for a ticket an external harness drives.
+
+    An oversized ticket is split here exactly as the builtin driver splits it,
+    and a ticket with children never serves its own stages: the children carry
+    the work, and the parent finalizes once they are all complete. None when
+    the ticket has no children and its stages are the harness's to run.
+    """
+    split_oversized_ticket(session, ticket, OrchestrationCallbackService(session))
+    children = list(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all())
+    if not children:
+        return None
+    orch = OrchestrationService(session)
+    prereqs = TicketDependencyService(session).prerequisites_map([c.id for c in children])
+    incomplete = []
+    for child in order_children_for_subtree(children, prereqs):
+        # A child with no instance yet reads complete to the check below.
+        orch.ensure_workflow_instance(child, commit=True)
+        if not ticket_workflow_complete(orch, child):
+            incomplete.append(child)
+    if not incomplete:
+        finalize_aggregator_ticket(session, orch, ticket)
+        session.refresh(ticket)
+        return ExternalStageView(stage_key=ticket.workflow_stage_key, message=_FINISHED_MESSAGE)
+    order = ", ".join(child.external_id for child in incomplete)
+    return ExternalStageView(
+        stage_key=stage_key,
+        message=(
+            f"{ticket.external_id} has child tickets, which carry its work, so it runs "
+            "none of its own stages. Finish this orchestration with "
+            "loregarden_complete_orchestration, then drive each child with "
+            f"loregarden_start_orchestration in this order: {order}. Once they are "
+            "all complete, an orchestration started on this ticket finalizes it."
+        ),
+    )
+
+
 def begin_external_stage(
     session: Session, orch_run: OrchestrationRun, *, stage_key: str | None = None
 ) -> ExternalStageView:
@@ -423,6 +467,10 @@ def _begin_external_stage(
         refuse_held_dispatch(session, ticket, stage_key=target_key)
     except DependencyHold as hold:
         return ExternalStageView(stage_key=target_key, message=str(hold))
+
+    parent_view = _aggregator_view(session, ticket, target_key)
+    if parent_view is not None:
+        return parent_view
 
     orch = OrchestrationService(session)
     stage_def = orch.stage_definition(ticket, target_key)

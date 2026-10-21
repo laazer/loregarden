@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.baxter_chat_service import (
+    BAXTER_CHAT_CLI_PROFILE,
     UNTITLED_SESSION_TITLE,
     BaxterChatConflictError,
     derive_session_title,
@@ -37,7 +38,7 @@ from loregarden.services.chat_attachments import (
     dump_attachments_json,
     load_attachments_json,
 )
-from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corrector, settle_reply
 from loregarden.services.chat_publish import publish_chat_turn
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
@@ -202,19 +203,21 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                     status="failed",
                 )
                 return
+            settled = settle_reply(
+                session,
+                outcome.reply,
+                # A global thread's refs may name a ticket in any workspace.
+                workspace_id=(
+                    None if chat_session.scope == BaxterChatScope.GLOBAL else workspace.id
+                ),
+                corrector=cli_card_corrector(BAXTER_CHAT_CLI_PROFILE, effective_workspace),
+            )
             _settle(
                 session,
                 assistant_id,
-                content=outcome.reply,
+                content=settled.content,
                 status="complete",
-                parts_json=parts_json_for_reply(
-                    session,
-                    outcome.reply,
-                    # A global thread's refs may name a ticket in any workspace.
-                    workspace_id=(
-                        None if chat_session.scope == BaxterChatScope.GLOBAL else workspace.id
-                    ),
-                ),
+                parts_json=settled.parts_json,
             )
             # After the row settles, never before: publishing runs `git push`,
             # which runs lefthook's pre-push suite, and a `pending` assistant row

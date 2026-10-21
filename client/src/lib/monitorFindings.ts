@@ -100,6 +100,7 @@ const CONDITION_MEANINGS: Record<string, string> = {
   timeout_floor_stale: "This stage's timeout is below how long it really takes (measured p95).",
   harness_failure_cluster: "Most recent failures are harness interruptions, not the agents' work.",
   invariant_reentered: "A state a fix was supposed to make unreachable came back, so its guard is missing a writer.",
+  invariant_unrepaired: "Something is in a state nothing repairs automatically; the finding says what a person does about it.",
 };
 
 export function conditionMeaning(condition: string): string | null {

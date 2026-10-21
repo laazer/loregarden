@@ -20,7 +20,11 @@ describe("workItemHierarchy", () => {
 
   it("disallows leaf types", () => {
     expect(canHaveChildren("task")).toBe(false);
-    expect(canHaveChildren("bug")).toBe(false);
+  });
+
+  it("lets a bug hold tasks, so an oversized bug can be split", () => {
+    expect(allowedChildTypes("bug")).toEqual(["task"]);
+    expect(addChildActionLabel("bug")).toBe("Add task");
   });
 
   it("labels add actions", () => {
@@ -31,7 +35,7 @@ describe("workItemHierarchy", () => {
   it("resolves parent types for children", () => {
     // Initiatives hold features and bugs too, for sprint-style initiatives.
     expect(allowedParentTypes("feature")).toEqual(["initiative", "milestone"]);
-    expect(allowedParentTypes("task")).toEqual(["capability"]);
+    expect(allowedParentTypes("task")).toEqual(["capability", "bug"]);
     expect(allowedParentTypes("bug")).toEqual(["initiative", "milestone", "feature", "capability"]);
   });
 });

@@ -55,7 +55,10 @@ _WORKSPACE_SCOPED_VALUES = frozenset(
 
 
 #: Not escalated by `escalate_recurring_findings`; see the module docstring.
-_INVARIANT_PREFIX = f"{MonitorCondition.INVARIANT_REENTERED.value}:"
+_INVARIANT_PREFIXES = (
+    f"{MonitorCondition.INVARIANT_REENTERED.value}:",
+    f"{MonitorCondition.INVARIANT_UNREPAIRED.value}:",
+)
 
 
 def escalation_legacy_id(condition: str, stage_key: str) -> str:
@@ -91,12 +94,19 @@ def escalate_recurring_findings(session: Session, *, sweep_started_at: datetime)
     return upserted
 
 
-def escalate_invariant_reentries(session: Session, *, invariant_name: str) -> int:
-    """Upsert one Bug per workspace for every ticket the invariant re-entered on.
+def escalate_invariant_reentries(
+    session: Session,
+    *,
+    invariant_name: str,
+    condition: MonitorCondition = MonitorCondition.INVARIANT_REENTERED,
+) -> int:
+    """Upsert one Bug per workspace for every ticket ``condition`` was found on.
 
-    Returns the number of workspaces whose Bug was created or refreshed.
+    ``condition`` is `INVARIANT_REENTERED` (a guard failing) or
+    `INVARIANT_UNREPAIRED` (a violation only a person can resolve). Returns the
+    number of workspaces whose Bug was created or refreshed.
     """
-    title = f"{_INVARIANT_PREFIX}{invariant_name}"
+    title = f"{condition.value}:{invariant_name}"
     rows = session.exec(
         select(Artifact, Ticket)
         .join(Ticket, col(Artifact.ticket_id) == col(Ticket.id))
@@ -166,7 +176,7 @@ def _current_groups(
     groups: dict[tuple[str, str], list[_CurrentFinding]] = defaultdict(list)
     for artifact, ticket in rows:
         if _title_is_workspace_scoped(artifact.title or "") or (artifact.title or "").startswith(
-            _INVARIANT_PREFIX
+            _INVARIANT_PREFIXES
         ):
             continue
         payload = _parse_payload(artifact.content_json)

@@ -19,9 +19,9 @@ import os
 import threading
 
 from loregarden.db.session import engine
-from loregarden.models.domain import TicketStudioMessage, TicketStudioSession
+from loregarden.models.domain import TicketStudioMessage, TicketStudioSession, Workspace
 from loregarden.models.domain.enums import utcnow
-from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corrector, settle_reply
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.ticket_studio_service import (
@@ -29,6 +29,7 @@ from loregarden.services.ticket_studio_service import (
     STUDIO_TURN_BOOTSTRAP_CLARIFY,
     STUDIO_TURN_CHAT,
     STUDIO_TURN_SCOPE,
+    TICKET_STUDIO_CLI_PROFILE,
     apply_settled_turn,
     has_open_questions,
     invoke_ticket_studio_model,
@@ -113,6 +114,17 @@ def execute_studio_turn_background(assistant_id: str) -> None:
                 )
                 return
 
+            workspace = session.get(Workspace, row.workspace_id)
+            # Before the stop check below, so a stop during the correction turn
+            # is honoured like one during the reply.
+            settled = settle_reply(
+                session,
+                reply,
+                workspace_id=row.workspace_id,
+                corrector=(
+                    cli_card_corrector(TICKET_STUDIO_CLI_PROFILE, workspace) if workspace else None
+                ),
+            )
             # The model call is in-process and uninterruptible, so a stop lands
             # while it is still running: the row is already settled by the time
             # the reply arrives. Settling again would resurrect a turn the
@@ -131,11 +143,11 @@ def execute_studio_turn_background(assistant_id: str) -> None:
             _settle(
                 session,
                 assistant,
-                content=reply,
+                content=settled.content,
                 status="complete",
-                parts_json=parts_json_for_reply(session, reply, workspace_id=row.workspace_id),
+                parts_json=settled.parts_json,
             )
-            apply_settled_turn(session, row, reply, mode=mode)
+            apply_settled_turn(session, row, settled.content, mode=mode)
             row.updated_at = utcnow()
             session.add(row)
             session.commit()

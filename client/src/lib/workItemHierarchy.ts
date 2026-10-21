@@ -7,7 +7,7 @@ export const VALID_HIERARCHY: Record<WorkItemType, WorkItemType[]> = {
   feature: ["capability", "bug"],
   capability: ["task", "bug"],
   task: [],
-  bug: [],
+  bug: ["task"],
 };
 
 const TYPE_LABELS: Record<WorkItemType, string> = {

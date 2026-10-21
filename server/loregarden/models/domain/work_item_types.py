@@ -28,7 +28,8 @@ VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
     WorkItemType.FEATURE: [WorkItemType.CAPABILITY, WorkItemType.BUG],
     WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],
     WorkItemType.TASK: [],
-    WorkItemType.BUG: [],
+    # Tasks under a bug, so an oversized bug can be split like a feature is.
+    WorkItemType.BUG: [WorkItemType.TASK],
 }
 
 # Explicit five-type set — never frozenset(WorkItemType), which would auto-include
