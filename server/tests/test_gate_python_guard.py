@@ -41,6 +41,7 @@ GUARDED_ENTRY_POINTS = [
     "py_silent_except_check.py",
     "py_git_subprocess_check.py",
     "gate_scope_json.py",
+    "select_pytest_targets.py",
 ]
 
 #: Modules whose import is what actually raises on an old interpreter. The guard
