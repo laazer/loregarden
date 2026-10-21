@@ -30,11 +30,21 @@ export function TopbarPageSlot() {
  * until the slot exists — the first paint of a route happens before the
  * topbar's node is attached.
  */
-export function PageTopbar({ title, children }: { title: ReactNode; children?: ReactNode }) {
+export function PageTopbar({
+  title,
+  leading,
+  children,
+}: {
+  title: ReactNode;
+  /** Drawn before the title: a way back to the screen this one sits under. */
+  leading?: ReactNode;
+  children?: ReactNode;
+}) {
   const { node } = useContext(SlotContext);
   if (!node) return null;
   return createPortal(
     <>
+      {leading}
       <h1 className="topbar-page-title">{title}</h1>
       {children ? <div className="topbar-page-actions">{children}</div> : null}
     </>,

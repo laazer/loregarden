@@ -403,7 +403,7 @@
   height: var(--plan-control-h);
 }
 
-/* Tracked tickets: a framed section on the Schedule tab. */
+/* Track a ticket: a framed search under the schedule. */
 .plan-members {
   border: 1px solid var(--bd);
   border-radius: 10px;
@@ -838,8 +838,8 @@
   }
 }
 
-/* The Schedule tab holds the proposal, tracked tickets and autopilot with the
-   dates they act on, so the Board is one click below the summary. */
+/* The Schedule tab holds the proposal, the phases (owned and tracked) and the
+   search that tracks more, so the Board is one click below the summary. */
 .plan-schedule-panel {
   display: flex;
   flex-direction: column;
@@ -879,11 +879,373 @@
   color: var(--txm);
 }
 
-/* Only the title wraps; ids and states read as one token each. */
-.plan-members-table td {
-  white-space: nowrap;
+/* The Schedule/Board switch heads its panel like a card's top edge. */
+.plan-main .tab-bar {
+  border: 1px solid var(--bd);
+  border-radius: 10px 10px 0 0;
 }
 
-.plan-members-table td:last-child {
-  text-align: right;
+/* A phase opens into the tree of work under it, inside the schedule table. */
+.plan-phase-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.plan-tree-toggle {
+  flex: none;
+  width: 22px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.plan-tree-spacer {
+  flex: none;
+  width: 22px;
+}
+
+.plan-tree-row > td {
+  padding: 4px 8px 10px 40px;
+  background: var(--bg1);
+}
+
+.plan-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-tree-root {
+  padding-left: 0;
+}
+
+.plan-tree-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.plan-tree-meta {
+  font-size: 11.5px;
+}
+
+/* Gantt: phases as spans, their work as bars, prerequisites as the lines
+   between them. The label column stays put while the timeline scrolls. */
+.plan-gantt {
+  --gantt-label: 320px;
+  --gantt-row: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-gantt-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.plan-gantt-scales {
+  display: inline-flex;
+  gap: 0;
+}
+
+.plan-gantt-scales > button {
+  border-radius: 0;
+}
+
+.plan-gantt-scales > button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.plan-gantt-scales > button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.plan-gantt-scales > button.active {
+  background: color-mix(in srgb, var(--ac) 18%, transparent);
+  color: var(--ac2);
+}
+
+.plan-gantt-filter {
+  width: min(260px, 100%);
+}
+
+.plan-gantt-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.plan-gantt-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bar) 35%, transparent);
+  border-left: 3px solid var(--bar);
+}
+
+.plan-gantt-swatch-critical {
+  background: transparent;
+  border: 1px solid var(--vio);
+}
+
+.plan-gantt-swatch-today {
+  width: 2px;
+  height: 12px;
+  border: 0;
+  background: var(--red);
+}
+
+.plan-gantt-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg0);
+}
+
+.plan-gantt-scroll:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.plan-gantt-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--bd);
+}
+
+.plan-gantt-label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: none;
+  width: var(--gantt-label);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--bg1);
+  border-right: 1px solid var(--bd);
+  min-width: 0;
+}
+
+.plan-gantt-corner {
+  z-index: 5;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.plan-gantt-scale {
+  position: relative;
+  flex: none;
+  height: 44px;
+}
+
+.plan-gantt-tier {
+  position: relative;
+  height: 22px;
+}
+
+.plan-gantt-tier > span {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  padding: 4px 6px 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--txm);
+  border-left: 1px solid var(--bd);
+}
+
+.plan-gantt-tier + .plan-gantt-tier > span {
+  color: var(--txl);
+}
+
+.plan-gantt-tier > span.weekend {
+  background: var(--bg2);
+}
+
+.plan-gantt-body {
+  position: relative;
+}
+
+.plan-gantt-grid,
+.plan-gantt-links {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--gantt-label);
+  pointer-events: none;
+}
+
+.plan-gantt-grid {
+  z-index: 0;
+}
+
+.plan-gantt-grid > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid color-mix(in srgb, var(--bd) 60%, transparent);
+}
+
+.plan-gantt-grid > span.weekend {
+  background: color-mix(in srgb, var(--bg2) 60%, transparent);
+}
+
+.plan-gantt-grid > .plan-gantt-today {
+  width: 0;
+  border-left: 2px solid var(--red);
+  z-index: 2;
+}
+
+.plan-gantt-links {
+  z-index: 1;
+  overflow: visible;
+}
+
+.plan-gantt-link {
+  fill: none;
+  stroke: var(--bd2);
+  stroke-width: 1.25;
+}
+
+.plan-gantt-link.hot {
+  stroke: var(--vio);
+}
+
+.plan-gantt-arrowhead {
+  fill: var(--bd2);
+}
+
+.plan-gantt-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.plan-gantt-row {
+  display: flex;
+  height: var(--gantt-row);
+}
+
+.plan-gantt-row.plan-row-done {
+  opacity: 1;
+}
+
+.plan-gantt-row.plan-row-done .plan-gantt-name,
+.plan-gantt-row.plan-row-done .plan-gantt-bar {
+  opacity: 0.6;
+}
+
+.plan-gantt-group > .plan-gantt-label {
+  font-weight: 500;
+}
+
+.plan-gantt-child {
+  padding-left: 34px;
+}
+
+.plan-gantt-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.plan-gantt-track {
+  position: relative;
+  flex: 1;
+  z-index: 2;
+}
+
+.plan-gantt-bar {
+  position: absolute;
+  top: 5px;
+  height: calc(var(--gantt-row) - 10px);
+  line-height: calc(var(--gantt-row) - 10px);
+  padding: 0 8px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--tx);
+  text-align: left;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bar) 28%, var(--bg1));
+  border-left: 3px solid var(--bar);
+}
+
+.plan-gantt-bar:hover {
+  background: color-mix(in srgb, var(--bar) 42%, var(--bg1));
+}
+
+.plan-gantt-bar.critical {
+  box-shadow: 0 0 0 1px var(--vio);
+}
+
+.plan-gantt-summary {
+  top: 8px;
+  height: calc(var(--gantt-row) - 16px);
+  line-height: calc(var(--gantt-row) - 16px);
+  border-left: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bar) 22%, transparent);
+  font-size: 11px;
+}
+
+.plan-gantt-after {
+  position: absolute;
+  top: 0;
+  height: var(--gantt-row);
+  line-height: var(--gantt-row);
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--txm);
+  pointer-events: none;
+}
+
+.plan-gantt-target {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--tx);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.plan-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .plan-gantt {
+    --gantt-label: 160px;
+  }
 }
