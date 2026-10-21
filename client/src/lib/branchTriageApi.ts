@@ -68,16 +68,36 @@ export interface BranchTriageEntry {
   linked_tickets: BranchTriageLinkedTicket[];
   last_commit: { date: string; message: string };
   issues: BranchTriageIssue[];
+  /** Null when the branch has no PR, or when its PR status is not known yet. */
   pr: BranchTriagePrStatus | null;
 }
+
+/** A branch as the snapshot sends it: local git only, so it paints without GitHub. */
+export type BranchTriageLocalEntry = Omit<BranchTriageEntry, "pr">;
 
 export interface BranchTriageSnapshot {
   workspace_id: string;
   workspace_slug: string;
   base_branch: string;
   current_branch: string;
-  branches: BranchTriageEntry[];
+  branches: BranchTriageLocalEntry[];
   issue_count: number;
+}
+
+/**
+ * Whether the PR listing is every PR the repository has, as GitHub reported it.
+ * Only `complete` lets a branch missing from `pull_requests` read as "no PR";
+ * otherwise its status is unknown.
+ */
+export type BranchPrListingState = "complete" | "incomplete" | "unavailable";
+
+export interface BranchPullRequests {
+  workspace_slug: string;
+  state: BranchPrListingState;
+  listed_count: number;
+  total_count: number | null;
+  reason: string;
+  pull_requests: Record<string, BranchTriagePrStatus>;
 }
 
 export interface BranchActivityCommit {
@@ -169,6 +189,39 @@ function branchCommentsPath(slug: string, branch: string, suffix = "") {
 
 export async function fetchBranchTriage(slug: string): Promise<BranchTriageSnapshot> {
   return branchTriageRequest(`/api/workspaces/${encodeURIComponent(slug)}/branch-triage`);
+}
+
+/** PR status for the branch list; fetched after it, since GitHub can take seconds. */
+export async function fetchBranchPullRequests(slug: string): Promise<BranchPullRequests> {
+  return branchTriageRequest(
+    `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/pull-requests`,
+  );
+}
+
+export function withPullRequests(
+  branches: BranchTriageLocalEntry[],
+  prs: BranchPullRequests | undefined,
+): BranchTriageEntry[] {
+  return branches.map((branch) => ({ ...branch, pr: prs?.pull_requests[branch.name] ?? null }));
+}
+
+/**
+ * One line on what the PR column can be trusted for, or null when it is all there.
+ * Loading, partial and unavailable each say so, because each leaves branches
+ * showing no PR that may well have one.
+ */
+export function pullRequestStatusNote(
+  prs: BranchPullRequests | undefined,
+  { loading, error }: { loading: boolean; error: string | null },
+): string | null {
+  if (error) return `Pull requests could not be loaded: ${error}`;
+  if (loading || !prs) return "Loading pull request status…";
+  if (prs.state === "complete") return null;
+  if (prs.state === "incomplete") {
+    const total = prs.total_count === null ? "?" : String(prs.total_count);
+    return `Pull request status is partial (${prs.listed_count} of ${total} read): ${prs.reason}`;
+  }
+  return `Pull request status unavailable: ${prs.reason}`;
 }
 
 export async function fetchBranchDiffManifest(
