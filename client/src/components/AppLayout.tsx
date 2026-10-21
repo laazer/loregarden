@@ -14,6 +14,7 @@ import { ToastHost } from "./ToastHost";
 import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 import { ViewAgentActions } from "./ViewAgentActions";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -28,9 +29,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const runtimeOptions = useQuery({
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", workspace],
-    queryFn: () => api.runtimeOptions({ workspace }),
+    params: { workspace },
   });
 
   const setRuntime = useMutation({

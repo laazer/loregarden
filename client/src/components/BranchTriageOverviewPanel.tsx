@@ -17,6 +17,7 @@ import { useUiStore } from "../state/uiStore";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 /** Coarse "2m ago" for a commit timestamp; precision past the day is noise here. */
 function commitAgo(iso: string): string {
@@ -101,7 +102,7 @@ export function BranchTriageOverviewPanel({
   const setCopilotOpen = useUiStore((s) => s.setCopilotOpen);
   const [modelModalOpen, setModelModalOpen] = useState(false);
 
-  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: () => api.runtimeOptions() });
+  const runtimeOptions = useRuntimeOptionsQuery({ queryKey: ["runtime-options"] });
 
   const activity = useQuery({
     queryKey: ["branch-triage-activity", workspaceSlug, branch],

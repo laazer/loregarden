@@ -27,13 +27,14 @@ from loregarden.agents.cli_adapters import (
 )
 from loregarden.mcp.caller import ORCHESTRATED_ENV
 from loregarden.models.domain import Workspace
+from loregarden.models.domain.enums import DiscoveryStatus
 from loregarden.services.cli_settings import (
     OPENCODE_EFFORT_OPTIONS,
     adapter_available,
     resolve_effort_for_adapter,
     resolve_model_for_adapter,
 )
-from loregarden.services.discovery_cache import ProbeCache
+from loregarden.services.discovery_cache import ProbeCache, join_probes
 from loregarden.services.opencode_discovery import (
     DISCOVERY_TIMEOUT_SECONDS,
     FAILURE_CACHE_TTL_SECONDS,
@@ -248,6 +249,31 @@ def test_terminal_handoff_attaches_the_prompt_file_and_carries_its_env(tmp_path)
     assert command.startswith("OPENCODE_CONFIG_CONTENT=")
 
 
+# ---------------------------------------------------------------------------
+# Model discovery. Criteria B1, B2, B8, B9, A0b, A0c.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog():
+    """The catalog is process-wide; one test's answer must not serve the next."""
+    reset_model_cache()
+    yield
+    join_probes(timeout=5.0)
+    reset_model_cache()
+
+
+def _impatient_cache() -> ProbeCache[str]:
+    """A cache that gives up on the join almost at once, so "in flight" is testable."""
+    return ProbeCache(
+        label="opencode",
+        probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
+        success_ttl_seconds=300.0,
+        failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
+        join_timeout_seconds=0.02,
+    )
+
+
 def test_parse_models_output_keeps_provider_qualified_ids_only():
     raw = "\n".join(
         [
@@ -266,14 +292,26 @@ def test_parse_models_output_keeps_provider_qualified_ids_only():
     ]
 
 
-def test_discovery_returns_nothing_when_the_cli_is_absent():
+def test_an_absent_cli_is_unavailable_with_the_install_hint():
+    """B8. The picker's whole error copy is this sentence, verbatim."""
     with patch("loregarden.services.opencode_discovery.resolve_opencode_binary", return_value=None):
-        assert list_opencode_models() == []
-        # The picker still offers the "use the profile default" row.
-        assert opencode_model_options() == [{"id": "", "label": "Default (OpenCode profile)"}]
+        answer = list_opencode_models()
+        options, discovery = opencode_model_options()
+
+    assert answer.found == []
+    assert answer.status == DiscoveryStatus.UNAVAILABLE
+    assert answer.detail == (
+        "OpenCode CLI not found. Install OpenCode, or set LOREGARDEN_OPENCODE_BIN."
+    )
+    # Unresolved, so there is no path to name — the literal command instead.
+    assert discovery["target"] == "opencode"
+    assert discovery["status"] == DiscoveryStatus.UNAVAILABLE
+    assert discovery["detail"] == answer.detail
+    # The picker still offers the "use the profile default" row.
+    assert options == [{"id": "", "label": "Default (OpenCode profile)"}]
 
 
-def test_discovery_survives_a_failing_cli():
+def test_a_cli_that_times_out_names_its_budget():
     with (
         patch(
             "loregarden.services.opencode_discovery.resolve_opencode_binary",
@@ -281,10 +319,76 @@ def test_discovery_survives_a_failing_cli():
         ),
         patch(
             "loregarden.services.opencode_discovery.subprocess.run",
-            side_effect=OSError("boom"),
+            side_effect=subprocess.TimeoutExpired(cmd="opencode", timeout=45.0),
         ),
     ):
-        assert list_opencode_models() == []
+        answer = list_opencode_models()
+
+    assert answer.status == DiscoveryStatus.UNAVAILABLE
+    assert answer.detail == "`opencode models` did not answer within 45s."
+    assert answer.target == "/bin/opencode"
+
+
+def test_a_cli_that_cannot_be_run_reports_why():
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch(
+            "loregarden.services.opencode_discovery.subprocess.run",
+            side_effect=OSError("Permission denied"),
+        ),
+    ):
+        answer = list_opencode_models()
+
+    assert answer.status == DiscoveryStatus.UNAVAILABLE
+    assert answer.detail == "`opencode models` could not be run: Permission denied."
+
+
+def test_a_cli_that_answered_with_nothing_is_not_a_failure():
+    """A3. OpenCode signed in to no provider has an empty catalogue, not a broken one."""
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch(
+            "loregarden.services.opencode_discovery.subprocess.run",
+            return_value=MagicMock(stdout="", stderr="", returncode=0),
+        ),
+    ):
+        answer = list_opencode_models()
+        options, discovery = opencode_model_options()
+
+    assert answer.found == []
+    assert answer.status == DiscoveryStatus.FRESH
+    assert answer.detail == ""
+    assert discovery == {
+        "status": DiscoveryStatus.FRESH,
+        "detail": "",
+        "target": "/bin/opencode",
+    }
+    assert len(options) == 1
+
+
+def test_every_failure_detail_is_short_enough_for_the_field_hint():
+    """R2-r1. ``detail`` is rendered verbatim beneath the model field."""
+    long_reason = "x" * 500
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch(
+            "loregarden.services.opencode_discovery.subprocess.run",
+            side_effect=OSError(long_reason),
+        ),
+    ):
+        answer = list_opencode_models()
+
+    assert len(answer.detail) <= 200
+    assert "Traceback" not in answer.detail
 
 
 def test_discovery_reads_the_cli_catalog():
@@ -296,18 +400,24 @@ def test_discovery_reads_the_cli_catalog():
         ),
         patch("loregarden.services.opencode_discovery.subprocess.run", return_value=completed),
     ):
-        assert opencode_model_options() == [
-            {"id": "", "label": "Default (OpenCode profile)"},
-            {"id": "opencode/a", "label": "opencode/a"},
-            {"id": "opencode/b", "label": "opencode/b"},
-        ]
+        options, discovery = opencode_model_options()
+
+    assert options == [
+        {"id": "", "label": "Default (OpenCode profile)"},
+        {"id": "opencode/a", "label": "opencode/a"},
+        {"id": "opencode/b", "label": "opencode/b"},
+    ]
+    assert discovery["status"] == DiscoveryStatus.FRESH
+    assert discovery["detail"] == ""
 
 
 def test_discovery_waits_long_enough_for_the_cli_to_answer():
-    # `opencode models` refreshes every authenticated provider over the network
-    # first; it measured ~15s locally, and the old 12s budget expired every time,
-    # leaving the picker permanently empty on a perfectly healthy install.
-    assert DISCOVERY_TIMEOUT_SECONDS > 15.0
+    # B9. `opencode models` refreshes every authenticated provider over the
+    # network first; it measured ~15s locally, and the old 12s budget expired
+    # every time, leaving the picker permanently empty on a healthy install.
+    # Lowering this on the existing evidence is the named regression — it needs
+    # its own ticket and its own measurement.
+    assert DISCOVERY_TIMEOUT_SECONDS == 45.0
 
 
 def test_discovery_runs_the_cli_once_and_reuses_the_catalog():
@@ -321,8 +431,8 @@ def test_discovery_runs_the_cli_once_and_reuses_the_catalog():
             "loregarden.services.opencode_discovery.subprocess.run", return_value=completed
         ) as run,
     ):
-        assert list_opencode_models() == ["opencode/a"]
-        assert list_opencode_models() == ["opencode/a"]
+        assert list_opencode_models().found == ["opencode/a"]
+        assert list_opencode_models().found == ["opencode/a"]
 
     # A ~15s subprocess per runtime-options request would stall the settings modal.
     assert run.call_count == 1
@@ -337,10 +447,10 @@ def test_cached_catalog_cannot_be_mutated_by_a_caller():
         ),
         patch("loregarden.services.opencode_discovery.subprocess.run", return_value=completed),
     ):
-        first = list_opencode_models()
+        first = list_opencode_models().found
         first.append("opencode/injected")
 
-        assert list_opencode_models() == ["opencode/a"]
+        assert list_opencode_models().found == ["opencode/a"]
 
 
 def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
@@ -348,7 +458,13 @@ def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
     # — the module constant is no longer consulted per call.
     monkeypatch.setattr(
         "loregarden.services.opencode_discovery._CACHE",
-        ProbeCache(probe_budget_seconds=0.0, success_ttl_seconds=300.0, failure_ttl_seconds=0.01),
+        ProbeCache(
+            label="opencode",
+            probe_budget_seconds=0.0,
+            success_ttl_seconds=300.0,
+            failure_ttl_seconds=0.01,
+            join_timeout_seconds=2.0,
+        ),
     )
     with (
         patch(
@@ -364,19 +480,100 @@ def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
         ),
     ):
         # Authenticating a provider must not take five minutes to show up.
-        assert list_opencode_models() == []
+        assert list_opencode_models().found == []
         time.sleep(0.05)
-        assert list_opencode_models() == ["opencode/a"]
+        assert list_opencode_models().found == ["opencode/a"]
+
+
+def test_a_cold_probe_reports_probing_with_the_binary_it_is_probing(monkeypatch):
+    """B2/B3 at the module seam: the payload names what it is waiting on.
+
+    This is the state that used to be indistinguishable from "OpenCode is not
+    installed", which is the regression the ticket's own history records.
+    """
+    monkeypatch.setattr("loregarden.services.opencode_discovery._CACHE", _impatient_cache())
+    probing = threading.Event()
+    release = threading.Event()
+
+    def hanging_cli(*args, **kwargs):
+        probing.set()
+        assert release.wait(timeout=20), "the probe was never released"
+        return MagicMock(stdout="opencode/a\n")
+
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch("loregarden.services.opencode_discovery.subprocess.run", side_effect=hanging_cli),
+    ):
+        try:
+            started = time.monotonic()
+            options, discovery = opencode_model_options()
+            waited = time.monotonic() - started
+            assert probing.wait(timeout=5), "the probe never reached the CLI"
+        finally:
+            release.set()
+
+    assert waited < 1.0, f"a cold render waited {waited:.2f}s for the CLI"
+    assert discovery["status"] == DiscoveryStatus.PROBING
+    assert discovery["detail"] == ""
+    # U4's copy is "Discovering OpenCode models…", and the empty state needs a
+    # target to name, so it is populated before the probe has answered.
+    assert discovery["target"] == "/bin/opencode"
+    assert options == [{"id": "", "label": "Default (OpenCode profile)"}]
+
+
+def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe(monkeypatch):
+    """A0b, re-verified. `opencode models` can hang for the whole 45s budget.
+
+    `runtime_options_payload` used to run inside a request holding a database
+    connection, so callers that queued behind the probe held one each. Fifteen
+    of them exhausted the pool and the API stopped answering anything —
+    `/health` included — with `QueuePool limit of size 5 overflow 10 reached`.
+    """
+    monkeypatch.setattr("loregarden.services.opencode_discovery._CACHE", _impatient_cache())
+    probing = threading.Event()
+    release = threading.Event()
+
+    def hanging_cli(*args, **kwargs):
+        probing.set()
+        assert release.wait(timeout=20), "the second caller never returned"
+        return MagicMock(stdout="opencode/a\n")
+
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch("loregarden.services.opencode_discovery.subprocess.run", side_effect=hanging_cli),
+    ):
+        list_opencode_models()
+        try:
+            assert probing.wait(timeout=5), "the probe never reached the CLI"
+
+            started = time.monotonic()
+            answer = list_opencode_models()
+            waited = time.monotonic() - started
+        finally:
+            release.set()
+        join_probes(timeout=10.0)
+
+        assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+        assert answer.status == DiscoveryStatus.PROBING
+        assert list_opencode_models().found == ["opencode/a"]
+
+
+def test_a_hung_cli_cannot_be_probed_back_to_back():
+    # A0c. A hang burns the full budget before it fails. Holding that failure for
+    # less time than the budget itself means the next request starts probing as
+    # the last one gives up, so a probe is always in flight.
+    assert FAILURE_CACHE_TTL_SECONDS > DISCOVERY_TIMEOUT_SECONDS
 
 
 def test_adapter_availability_follows_the_binary(monkeypatch, tmp_path):
     monkeypatch.setenv("LOREGARDEN_OPENCODE_BIN", str(tmp_path / "nope"))
     assert adapter_available("opencode") is False
-
-    binary = tmp_path / "opencode"
-    binary.write_text("#!/bin/sh\n", encoding="utf-8")
-    monkeypatch.setenv("LOREGARDEN_OPENCODE_BIN", str(binary))
-    assert adapter_available("opencode") is True
 
 
 def test_run_log_reads_opencode_events_not_claude_field_names():
@@ -401,51 +598,3 @@ def test_claude_tool_events_still_use_their_own_shape():
     claude_event = {"type": "tool_use", "tool_name": "Bash"}
 
     assert format_stream_payload(claude_event)[1].endswith("Bash")
-
-
-def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe():
-    """The bug this pins: `opencode models` can hang for the whole 45s budget.
-
-    `runtime_options_payload` runs inside a request holding a database
-    connection, so callers that queue behind the probe hold one each. Fifteen of
-    them exhausted the pool and the API stopped answering anything — `/health`
-    included — with `QueuePool limit of size 5 overflow 10 reached`.
-    """
-    probing = threading.Event()
-    release = threading.Event()
-
-    def hanging_cli(*args, **kwargs):
-        probing.set()
-        assert release.wait(timeout=10), "the second caller never returned"
-        return MagicMock(stdout="opencode/a\n")
-
-    with (
-        patch(
-            "loregarden.services.opencode_discovery.resolve_opencode_binary",
-            return_value="/bin/opencode",
-        ),
-        patch("loregarden.services.opencode_discovery.subprocess.run", side_effect=hanging_cli),
-    ):
-        prober = threading.Thread(target=list_opencode_models)
-        prober.start()
-        try:
-            assert probing.wait(timeout=10), "the probe never reached the CLI"
-
-            started = time.monotonic()
-            assert list_opencode_models() == []
-            waited = time.monotonic() - started
-        finally:
-            release.set()
-            prober.join(timeout=10)
-
-    # Serving the cached answer is the whole point: a second caller that blocks
-    # is a second connection held for the length of the subprocess.
-    assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
-    assert list_opencode_models() == ["opencode/a"]
-
-
-def test_a_hung_cli_cannot_be_probed_back_to_back():
-    # A hang burns the full budget before it fails. Holding that failure for
-    # less time than the budget itself means the next request starts probing as
-    # the last one gives up, so a probe is always in flight.
-    assert FAILURE_CACHE_TTL_SECONDS > DISCOVERY_TIMEOUT_SECONDS

@@ -510,7 +510,11 @@ export interface RuntimeOptions {
   /** Cursor model ids that accept an `[effort=...]` bracket override. */
   cursor_effort_models?: string[];
   effective?: RuntimeEffective;
+  /** Per-provider discovery state. `claude`/`cursor` are static catalogs and never appear. Optional: a cached 200 from a pre-deploy server has no block, and a missing one reads as `fresh`. `detail` is non-empty only for `unavailable`; `target` is the binary or base URL probed, which the client cannot reconstruct. */
+  model_discovery?: Record<"codex" | "lmstudio" | "opencode", { status: DiscoveryStatus; detail: string; target: string }>;
 }
+
+export type DiscoveryStatus = "probing" | "fresh" | "stale" | "unavailable";
 
 export interface StudioExitActionRequirementCatalog {
   requirement_kinds: StudioExitActionRequirement["kind"][];

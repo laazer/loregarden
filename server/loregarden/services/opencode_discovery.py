@@ -6,6 +6,10 @@ signed in to Zen sees different ids than one wired to a local LM Studio. No
 static list would be right for both, so there is nothing to fall back to when
 the CLI is missing: the picker shows only the "use the profile default" row and
 the run uses whatever OpenCode itself selects.
+
+Which is why the *reason* the row is alone has to travel with it. "OpenCode is
+still being asked" and "OpenCode is not installed" both used to render an empty
+picker that asserted the second.
 """
 
 from __future__ import annotations
@@ -16,7 +20,12 @@ import subprocess
 from shutil import which
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES
-from loregarden.services.discovery_cache import ProbeCache
+from loregarden.services.discovery_cache import (
+    ProbeAnswer,
+    ProbeCache,
+    ProbeOutcome,
+    clamp_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +46,7 @@ FAILURE_CACHE_TTL_SECONDS = 60.0
 DEFAULT_OPTION = {"id": "", "label": "Default (OpenCode profile)"}
 
 _CACHE: ProbeCache[str] = ProbeCache(
+    label="opencode",
     probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
     success_ttl_seconds=CACHE_TTL_SECONDS,
     failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
@@ -52,6 +62,15 @@ def resolve_opencode_binary() -> str | None:
     if override:
         return override if os.path.exists(override) else None
     return which(name)
+
+
+def discovery_target() -> str:
+    """What the probe is (or would be) asking — resolvable without probing.
+
+    A cold key has no outcome to read a target from, and the picker's own copy
+    names the thing it is waiting on, so the module answers for it.
+    """
+    return resolve_opencode_binary() or ADAPTER_BINARIES["opencode"][0]
 
 
 def _parse_models_output(raw: str) -> list[str]:
@@ -74,10 +93,15 @@ def _parse_models_output(raw: str) -> list[str]:
     return ids
 
 
-def _list_from_cli() -> list[str]:
+def _list_from_cli() -> ProbeOutcome[str]:
     binary = resolve_opencode_binary()
     if not binary:
-        return []
+        return ProbeOutcome(
+            found=[],
+            ok=False,
+            detail="OpenCode CLI not found. Install OpenCode, or set LOREGARDEN_OPENCODE_BIN.",
+            target=ADAPTER_BINARIES["opencode"][0],
+        )
     try:
         completed = subprocess.run(
             [binary, "models"],
@@ -86,19 +110,30 @@ def _list_from_cli() -> list[str]:
             text=True,
             timeout=DISCOVERY_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
+        detail = f"`opencode models` did not answer within {DISCOVERY_TIMEOUT_SECONDS:g}s."
         # Warning, not debug: this is the only signal that an empty picker is a
         # discovery failure rather than an OpenCode install with no providers.
-        logger.warning("OpenCode model discovery CLI failed: %s", exc)
-        return []
+        logger.warning("OpenCode model discovery timed out running %s", binary)
+        return ProbeOutcome(found=[], ok=False, detail=detail, target=binary)
+    except OSError as exc:
+        logger.warning("OpenCode model discovery could not run %s: %s", binary, exc)
+        return ProbeOutcome(
+            found=[],
+            ok=False,
+            detail=clamp_detail(f"`opencode models` could not be run: {exc}."),
+            target=binary,
+        )
     models = _parse_models_output(completed.stdout)
     if not models:
+        # The CLI answered, so this is not a failure: OpenCode signed in to no
+        # provider has an empty catalogue rather than a broken one.
         logger.warning(
             "OpenCode model discovery listed nothing (exit %s): %r",
             completed.returncode,
             (completed.stderr or completed.stdout or "")[:200],
         )
-    return models
+    return ProbeOutcome(found=models, ok=True, target=binary)
 
 
 def reset_model_cache() -> None:
@@ -106,14 +141,15 @@ def reset_model_cache() -> None:
     _CACHE.reset()
 
 
-def list_opencode_models() -> list[str]:
-    """Return the local OpenCode CLI's model ids, or []. Memoized for a few minutes."""
-    return _CACHE.get(_CACHE_KEY, _list_from_cli)
+def list_opencode_models() -> ProbeAnswer[str]:
+    """The local OpenCode CLI's model ids, and which discovery state they are in."""
+    return _CACHE.get(_CACHE_KEY, _list_from_cli, target=discovery_target())
 
 
-def opencode_model_options() -> list[dict[str, str]]:
-    """Runtime-options shaped list for the OpenCode model picker."""
+def opencode_model_options() -> tuple[list[dict[str, str]], dict[str, object]]:
+    """Runtime-options shaped list for the OpenCode model picker, and its state."""
+    answer = list_opencode_models()
     options: list[dict[str, str]] = [dict(DEFAULT_OPTION)]
-    for model_id in list_opencode_models():
+    for model_id in answer.found:
         options.append({"id": model_id, "label": model_id})
-    return options
+    return options, answer.as_discovery_block()
