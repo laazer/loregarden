@@ -117,3 +117,105 @@ def test_the_template_comment_is_not_an_answer():
 
 def test_the_registry_is_read_without_importing_it():
     assert REAL_INVARIANT in check.registered_invariants(_ROOT)
+
+
+#: A jest test that exists in this checkout, named the way the check reads it.
+REAL_JEST_TEST = (
+    'client/src/lib/__tests__/usabilityCheck.test.ts::"passes a name with three short tags"'
+)
+_NO_DETECTOR = "no detector: the state lives in a browser store the server never sees"
+_JEST_FILE = "client/src/__tests__/guard.test.ts"
+_JEST_SOURCE = """
+describe("guard", () => {
+  it("refuses a write with no owner", () => {});
+  test('keeps the "last" row', () => {});
+  it(`holds a template name with no placeholders`, () => {});
+  it.skip("is skipped for now", () => {});
+  it.todo("is not written yet");
+  it(`renders ${kind} rows`, () => {});
+  it.each([1, 2])("handles %s", () => {});
+});
+"""
+
+
+@pytest.fixture
+def jest_root(tmp_path: Path) -> Path:
+    file = tmp_path / _JEST_FILE
+    file.parent.mkdir(parents=True)
+    file.write_text(_JEST_SOURCE, encoding="utf-8")
+    (file.parent / "plain.test.ts").write_text(
+        'it("refuses a write", () => {});\n', encoding="utf-8"
+    )
+    (tmp_path / "client/src/lib").mkdir()
+    (tmp_path / "client/src/lib/guard.test.ts").write_text(_JEST_SOURCE, encoding="utf-8")
+    return tmp_path
+
+
+def _jest_problems(root: Path, prevention: str) -> list[str]:
+    return check.problems("fix: x", _body(reentry=_NO_DETECTOR, prevention=prevention), root)
+
+
+def test_a_jest_test_in_this_checkout_passes():
+    assert _problems("fix: x", _body(prevention=f"`{REAL_JEST_TEST}`")) == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "refuses a write with no owner",
+        'keeps the \\"last\\" row',
+        "holds a template name with no placeholders",
+    ],
+)
+def test_a_literally_named_jest_test_passes(jest_root, name):
+    assert _jest_problems(jest_root, f'{_JEST_FILE}::"{name}"') == []
+
+
+def test_a_jest_file_with_no_such_test_fails(jest_root):
+    found = _jest_problems(jest_root, 'client/src/__tests__/plain.test.ts::"refuses a writ"')
+    assert any("does not exist" in p for p in found)
+
+
+def test_a_jest_file_that_does_not_exist_fails(jest_root):
+    found = _jest_problems(jest_root, 'client/src/__tests__/nope.test.ts::"refuses a write"')
+    assert any("does not exist" in p for p in found)
+
+
+@pytest.mark.parametrize("name", ["renders table rows", "renders ${kind} rows", "handles %s"])
+def test_a_jest_test_named_at_runtime_cannot_be_verified(jest_root, name):
+    found = _jest_problems(jest_root, f'{_JEST_FILE}::"{name}"')
+    assert any("cannot be verified" in p for p in found)
+
+
+def test_an_unverifiable_jest_test_fails_beside_one_that_exists(jest_root):
+    prevention = f'{_JEST_FILE}::"refuses a write with no owner", {_JEST_FILE}::"handles %s"'
+    assert any("cannot be verified" in p for p in _jest_problems(jest_root, prevention))
+
+
+def test_a_jest_each_table_alone_cannot_be_verified(jest_root):
+    file = jest_root / "client/src/__tests__/each.test.ts"
+    file.write_text('it.each([1, 2])("handles %s", () => {});\n', encoding="utf-8")
+    found = _jest_problems(jest_root, 'client/src/__tests__/each.test.ts::"handles 1"')
+    assert any("cannot be verified" in p for p in found)
+
+
+@pytest.mark.parametrize("name", ["is skipped for now", "is not written yet"])
+def test_a_skipped_jest_test_fails(jest_root, name):
+    assert any("skipped" in p for p in _jest_problems(jest_root, f'{_JEST_FILE}::"{name}"'))
+
+
+def test_a_jest_file_jest_does_not_collect_fails(jest_root):
+    reference = 'client/src/lib/guard.test.ts::"refuses a write with no owner"'
+    found = _jest_problems(jest_root, reference)
+    assert any("testMatch" in p for p in found)
+
+
+def test_an_unquoted_jest_name_says_to_quote_it(jest_root):
+    found = _jest_problems(jest_root, f"{_JEST_FILE}::refuses a write with no owner")
+    assert any("without quoting" in p for p in found)
+
+
+def test_a_jest_reference_does_not_need_the_test_prefix_or_a_def(jest_root):
+    """The Python branch still wants a `def test_…`; a jest name is just its string."""
+    found = _jest_problems(jest_root, "server/tests/test_invariants.py::refuses_a_write")
+    assert any("names no test" in p for p in found)
