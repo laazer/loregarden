@@ -22,7 +22,7 @@ from loregarden.models.domain import TicketState
 from sqlalchemy import Connection, bindparam, text
 
 
-@migration("20261020_closed_tickets_close_workflows", after="20261021_tickets_block_kind_in_roles")
+@migration("20261020_closed_tickets_close_workflows", after="20261021_repair_timeout_for_merges")
 def m_closed_tickets_close_workflows(conn: Connection) -> None:
     if not (table_exists(conn, "tickets") and table_exists(conn, "workflow_instances")):
         return
