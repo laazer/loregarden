@@ -21,6 +21,7 @@ from loregarden.services.artifact_service import (
     capture_branch_file_diff,
     git_base_ref,
 )
+from loregarden.services.branch_landed import landed_branches
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_gh, run_git
@@ -189,42 +190,6 @@ def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, 
         )
         return 0, 0
     return ahead, behind
-
-
-def _branch_squash_merged(repo_root: Path, base: str, branch: str) -> bool:
-    """Detect a branch whose commits were squashed and merged into base.
-
-    Commit counts compare by SHA, so a branch that was squashed into a single
-    commit on `base` still looks "ahead" even though its changes already landed
-    — the squash commit has a different SHA than the branch's original commits.
-    Treat the branch as merged if every file it touched since the merge-base is
-    byte-identical between the branch tip and `base`. `base...branch` already
-    diffs from the merge-base, so no separate merge-base lookup is needed.
-    """
-    files_proc = _git(repo_root, "diff", "--name-only", f"{base}...{branch}")
-    if files_proc.returncode != 0:
-        return False
-    changed_files = [line for line in (files_proc.stdout or "").splitlines() if line.strip()]
-    if not changed_files:
-        return True
-
-    diff_proc = _git(repo_root, "diff", "--quiet", base, branch, "--", *changed_files)
-    if diff_proc.returncode not in (0, 1):
-        return False
-    return diff_proc.returncode == 0
-
-
-def branch_work_has_landed(repo_root: Path, base: str, branch: str) -> bool:
-    """Public name for :func:`_branch_squash_merged`, for callers that delete.
-
-    The same predicate the cleanup dialog pre-selects on, and the only bar at
-    which removing a ref destroys nothing: the branch's content is already in
-    `base`, so what the ref was keeping reachable is reachable without it.
-    Exported because `chat_branch_sweep` deletes on it unattended, and a sweep
-    reaching into another module's underscore is how a safety bar gets changed
-    by someone who never saw the caller.
-    """
-    return _branch_squash_merged(repo_root, base, branch)
 
 
 def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:
@@ -598,16 +563,11 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         read_refs = _branch_refs_per_branch(repo_root, base, branch_names)
     branch_refs = {name: read_refs.get(name) or _unknown_branch_ref() for name in branch_names}
 
-    # Only branches that still look ahead can be squash-merged, and the check is
-    # two git calls each — so it runs on the pool, over that subset alone.
-    squash_merged = {
-        name
-        for name, merged in _map_parallel(
-            lambda name: (name, _branch_squash_merged(repo_root, base, name)),
-            [name for name in branch_names if branch_refs[name].ahead > 0],
-        )
-        if merged
-    }
+    # Only branches that still look ahead can be squash-merged; `landed_branches`
+    # recomputes only those whose answer the base or tip can have changed.
+    squash_merged = landed_branches(
+        repo_root, base, [name for name in branch_names if branch_refs[name].ahead > 0]
+    )
 
     pr_statuses = _branch_pr_statuses(repo_root, [name for name in branch_names if name != base])
 
