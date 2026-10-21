@@ -46,6 +46,18 @@ export function milestoneOf(tickets: TicketSummary[], milestoneIds: Set<string>)
   return owner;
 }
 
+/** Each ticket's children, in the order the API sent them. */
+export function childrenByParent(tickets: TicketSummary[]): Map<string, TicketSummary[]> {
+  const out = new Map<string, TicketSummary[]>();
+  for (const ticket of tickets) {
+    if (!ticket.parent_ticket_id) continue;
+    const siblings = out.get(ticket.parent_ticket_id);
+    if (siblings) siblings.push(ticket);
+    else out.set(ticket.parent_ticket_id, [ticket]);
+  }
+  return out;
+}
+
 /**
  * Columns for the board. Every column is capped, not only done: a phase can
  * hold eighty backlog tickets, and a column that long hides the others. The
