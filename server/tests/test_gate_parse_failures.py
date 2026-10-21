@@ -17,16 +17,17 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from tests.repo_templates import from_template
 from tests.test_gate_scope_visibility import (
     GIT_SUBPROCESS_GATE,
     PY_ORGANIZATION_GATE,
     PY_SILENT_EXCEPT_GATE,
     REFUSAL_SENTENCE,
+    _build_repo,
     _commit_agent_work,
     _load_script,
     _out,
     _run_gate,
-    repo,  # noqa: F401 - fixture, used by name
 )
 
 PY_GATES = [
@@ -47,10 +48,16 @@ PY_GATE_MODULES = [
 RELPATH = "src/pkg/new_mod.py"
 
 
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """The scope-visibility repository: `main` plus a checked-out ticket branch."""
+    return from_template(tmp_path / "repo", "gate_scope_visibility", _build_repo)
+
+
 @pytest.mark.parametrize("gate", PY_GATES)
 def test_a_nul_byte_names_the_file_rather_than_crashing_the_gate(
     repo: Path,
-    gate: list[str],  # noqa: F811 - the imported fixture
+    gate: list[str],
 ) -> None:
     """All three gates refuse a NUL-bearing file by name, in the refusal sentence.
 
@@ -73,7 +80,7 @@ def test_a_nul_byte_names_the_file_rather_than_crashing_the_gate(
 
 @pytest.mark.parametrize(("module_name", "argv0"), PY_GATE_MODULES)
 def test_a_value_error_from_the_parser_is_unexaminable_in_every_gate(
-    repo: Path,  # noqa: F811 - the imported fixture
+    repo: Path,
     module_name: str,
     argv0: list[str],
     capsys: pytest.CaptureFixture[str],
