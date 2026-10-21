@@ -99,6 +99,16 @@ def is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
     return _git(repo_root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
 
 
+def merge_base(repo_root: Path, one: str, other: str) -> str:
+    """The best common ancestor, or "" for unrelated histories. Raises when git fails."""
+    found = _git(repo_root, "merge-base", one, other)
+    if found.returncode == 1:
+        return ""
+    if found.returncode != 0:
+        raise RuntimeError(f"git merge-base failed: {(found.stderr or found.stdout).strip()}")
+    return found.stdout.strip()
+
+
 def signs_commits(repo_root: Path) -> bool:
     """Whether this repository signs its commits (`commit.gpgsign`).
 

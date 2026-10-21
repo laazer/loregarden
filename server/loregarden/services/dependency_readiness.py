@@ -32,11 +32,11 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, TicketState, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import superseding_commit
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -70,20 +70,6 @@ def _rev(repo_root: Path, ref: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
-    if not ancestor or not descendant:
-        return False
-    return (
-        run_git(
-            ["merge-base", "--is-ancestor", ancestor, descendant],
-            cwd=str(repo_root),
-            check=False,
-            capture_output=True,
-        ).returncode
-        == 0
-    )
-
-
 def work_is_reachable(
     repo_root: Path, prerequisite: Ticket, *, target: str, base: str
 ) -> bool | None:
@@ -101,19 +87,16 @@ def work_is_reachable(
     branch_tip = _rev(repo_root, f"refs/heads/{resolve_ticket_branch(prerequisite)}")
     if not branch_tip:
         return None
-    for ref in (target, base):
-        ref_sha = _rev(repo_root, f"refs/heads/{ref}")
-        if _is_ancestor(repo_root, branch_tip, ref_sha):
-            return True
-        if ref_sha and _holds(repo_root, branch_tip, ref_sha, ref=ref):
-            return True
-    return False
+    return any(
+        _holds(repo_root, branch_tip, _rev(repo_root, f"refs/heads/{ref}"), ref=ref)
+        for ref in (target, base)
+    )
 
 
 def _holds(repo_root: Path, branch_tip: str, ref_sha: str, *, ref: str) -> bool:
     """Whether ``ref`` already holds everything ``branch_tip`` adds."""
     try:
-        return bool(superseding_commit(repo_root, branch_tip, ref_sha))
+        return bool(landing_commit(repo_root, branch_tip, ref_sha))
     except RuntimeError as exc:
         # Not proved landed, so the dependent keeps waiting, and says why here.
         logger.warning("Could not tell whether %s holds %s: %s", ref, branch_tip[:12], exc)
