@@ -32,6 +32,7 @@ import { ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerNotes } from "./chat/ComposerNotes";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
 
@@ -111,9 +112,9 @@ export function AppActionBar() {
     enabled: Boolean(ticketId),
   });
   const modelWorkspace = model?.workspaceSlug ?? "";
-  const runtimeOptions = useQuery({
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", modelWorkspace],
-    queryFn: () => api.runtimeOptions(modelWorkspace ? { workspace: modelWorkspace } : undefined),
+    params: modelWorkspace ? { workspace: modelWorkspace } : undefined,
     enabled: Boolean(model),
   });
 

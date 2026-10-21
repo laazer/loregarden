@@ -34,6 +34,7 @@ import { AddToTabMenu } from "../components/AddToTabMenu";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -120,7 +121,7 @@ export function StudioPage() {
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: () => api.runtimeOptions() });
+  const runtimeOptions = useRuntimeOptionsQuery({ queryKey: ["runtime-options"] });
 
   // Inherit the app-wide active workspace so Ticket Studio (and its Smart import)
   // opens on the workspace the user is already working in, not the first in the list.

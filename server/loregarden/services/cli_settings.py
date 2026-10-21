@@ -884,29 +884,3 @@ def resolve_runtime_effective(
         "supports_model": adapter in MODEL_PIN_ADAPTERS,
         "supports_effort": adapter in EFFORT_PIN_ADAPTERS,
     }
-
-
-def runtime_options_payload(
-    *,
-    lmstudio_base_url: str = "",
-    workspace: Workspace | None = None,
-    ticket_runtime: WorkspaceRuntimeSettings | None = None,
-) -> dict:
-    from loregarden.services.codex_discovery import codex_model_options
-    from loregarden.services.lmstudio_discovery import lmstudio_model_options
-    from loregarden.services.opencode_discovery import opencode_model_options
-
-    return {
-        "cli_adapters": cli_adapter_options(),
-        "claude_models": CLAUDE_MODEL_OPTIONS,
-        "cursor_models": CURSOR_MODEL_OPTIONS,
-        "codex_models": codex_model_options(),
-        "lmstudio_models": lmstudio_model_options(lmstudio_base_url),
-        "opencode_models": opencode_model_options(),
-        "claude_efforts": CLAUDE_EFFORT_OPTIONS,
-        "cursor_efforts": CURSOR_EFFORT_OPTIONS,
-        "lmstudio_efforts": LMSTUDIO_EFFORT_OPTIONS,
-        "opencode_efforts": OPENCODE_EFFORT_OPTIONS,
-        "cursor_effort_models": sorted(CURSOR_EFFORT_MODELS),
-        "effective": resolve_runtime_effective(workspace, ticket_runtime=ticket_runtime),
-    }

@@ -209,6 +209,21 @@ class StageStatus(StrEnum):
     WONT_DO = "wont_do"
 
 
+class DiscoveryStatus(StrEnum):
+    """What a model-discovery probe can tell a caller right now.
+
+    ``probing`` and ``unavailable`` used to be the same answer — an empty list —
+    which made "the catalogue has not arrived" indistinguishable from "the CLI is
+    not installed". The picker then asserted the second whenever the first was
+    true, which is what left it permanently empty.
+    """
+
+    PROBING = "probing"
+    FRESH = "fresh"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+
+
 class RunStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"

@@ -14,10 +14,10 @@ from loregarden.models.domain.enums import utcnow
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     get_ticket_orchestration_runtime,
-    runtime_options_payload,
     validated_effort_pins,
     workspace_cli_settings,
 )
+from loregarden.services.runtime_options import runtime_options_payload
 from loregarden.services.workflow_service import WorkflowService, resolve_workspace_stages
 from loregarden.services.workspace_paths import (
     resolve_workspace_root,
@@ -151,7 +151,8 @@ def get_runtime_options(
     # Hand the connection back before discovery. Everything below shells out to
     # CLIs and calls a local HTTP server, and none of it reads the database: the
     # payload is built from ``ws`` plus environment and settings. The pool is
-    # fifteen connections for the whole process — every request, every
+    # sixty connections for the whole process (20 + 40 overflow, raised from
+    # SQLAlchemy's default 5 + 10 in PR #324) — every request, every
     # ``/ws/queue`` snapshot, the reconciliation timer — and a probe can spend
     # its entire budget before answering, 45s in OpenCode's case. Holding one
     # across that is how every endpoint, ``/health`` included, began failing

@@ -23,6 +23,7 @@ import { describeError } from '../state/toastStore';
 import { queueLanesApi } from '../lib/queueLanesApi';
 import { AgentsAssembleModal, type AgentsAssembleOptions } from './AgentsAssembleModal';
 import { runtimeSettingsEqual } from './WorkspaceRuntimeFields';
+import { useRuntimeOptionsQuery } from '../hooks/useRuntimeOptionsQuery';
 
 export interface QueueAddRequest {
   ticketId: string;
@@ -65,9 +66,9 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
     enabled: open && Boolean(request?.workspaceSlug),
   });
 
-  const runtimeOptions = useQuery({
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ['runtime-options', request?.workspaceSlug],
-    queryFn: () => api.runtimeOptions({ workspace: request!.workspaceSlug }),
+    params: { workspace: request?.workspaceSlug ?? '' },
     enabled: open && Boolean(request?.workspaceSlug),
   });
 

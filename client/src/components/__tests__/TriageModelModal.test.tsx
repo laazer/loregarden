@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../../api/client";
 import { TriageModelModal } from "../TriageModelModal";
@@ -138,5 +138,45 @@ describe("TriageModelModal", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Ticket not found");
     expect(screen.queryByText(/Loading runtime options/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("saves a typed model id without waiting for discovery to finish", async () => {
+    // U10. Save keeps `disabled={isSaving || !runtimeOptions || !dirty}` and must
+    // NOT gain a probing condition: an operator who knows their model id is not
+    // made to wait for a 7.4s probe to agree with them.
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    render(
+      <TriageModelModal
+        open
+        runtime={{ ...DEFAULT_RUNTIME, cli_adapter: "opencode" }}
+        runtimeOptions={{
+          ...RUNTIME_OPTIONS,
+          cli_adapters: [...RUNTIME_OPTIONS.cli_adapters, { id: "opencode", label: "OpenCode" }],
+          opencode_models: [{ id: "", label: "Default (OpenCode profile)" }],
+          model_discovery: {
+            codex: { status: "fresh", detail: "", target: "/bin/codex" },
+            lmstudio: { status: "fresh", detail: "", target: "http://127.0.0.1:1234/v1" },
+            opencode: { status: "probing", detail: "", target: "opencode" },
+          },
+        }}
+        isSaving={false}
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("OpenCode model id"), {
+      target: { value: "anthropic/claude-opus-5" },
+    });
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ opencode_model: "anthropic/claude-opus-5" }),
+      ),
+    );
   });
 });
