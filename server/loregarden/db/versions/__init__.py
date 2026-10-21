@@ -12,8 +12,10 @@ Add a migration by adding a module here — no shared list to append to:
 - The id is today's date and a name. It is permanent once merged: the database
   records it, and renaming it runs the body again under the new name.
 - `after` is the newest migration on main when you write yours — the frozen
-  list's last id while this package is empty. If another branch merges first
-  with the same `after`, the suite reports a fork: point yours at theirs.
+  list's last id while this package is empty. Another branch merging first
+  with the same `after` is fine: that is a fork, and nothing needs re-pointing
+  unless `test_migration_forks_commute` fails, which means the two interact.
+  Then make yours follow theirs, since it really does depend on it.
 - Guard your own changes (`add_columns_if_missing`, `table_exists`, …). The
   suite runs every migration twice.
 
