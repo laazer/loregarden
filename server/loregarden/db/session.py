@@ -4,6 +4,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from loregarden.config import settings
+
+# Same side effect, on every session's flush: a closed ticket's stages are closed.
+from loregarden.db.closed_workflow_guard import CLOSED_WITH_TICKET  # noqa: F401
 from loregarden.db.enum_integrity import report_unreadable_enum_values
 from loregarden.db.migrations import apply_migrations
 

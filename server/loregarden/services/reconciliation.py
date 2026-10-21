@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
+    CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
@@ -165,6 +166,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A probe once wrote three workspaces on temp-directory repos into the live
     # database (lg-milestone-that-1319); every sweep over workspaces met them.
     _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),
+    # Closing a ticket never touched its stages, so 361 of 466 closed tickets
+    # still showed pending or blocked ones (lg-workflow-integrity-1328). The
+    # flush guard closes them now; this repairs the backlog and reports a writer
+    # that gets past it.
+    _invariant(CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS),
 )
 
 
