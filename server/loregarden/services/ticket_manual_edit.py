@@ -28,6 +28,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.acceptance_criteria import (
+    guard_criteria_growth,
     load_checked,
     load_criteria,
     serialize_checked,
@@ -118,6 +119,9 @@ def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
         ticket.description = body.description
 
     if body.acceptance_criteria is not None:
+        guard_criteria_growth(
+            load_criteria(ticket.acceptance_criteria_json), body.acceptance_criteria
+        )
         ticket.acceptance_criteria_json = serialize_criteria(body.acceptance_criteria)
 
     if body.tags is not None:

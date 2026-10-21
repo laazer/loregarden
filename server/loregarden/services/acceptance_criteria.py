@@ -20,6 +20,19 @@ CriteriaMode = Literal["replace", "append"]
 
 CRITERIA_MODES: tuple[str, ...] = ("replace", "append")
 
+#: The most criteria a ticket may grow to. Past it, the work is a second ticket: a
+#: list this long stops being checkable by one reviewer in one pass. Lists already
+#: longer (78 tickets when the cap landed, 2026-10-21) stay editable, because the
+#: guard refuses growth, not size.
+MAX_ACCEPTANCE_CRITERIA = 12
+
+CRITERIA_CAP_MESSAGE = (
+    "A ticket holds at most {cap} acceptance criteria; this write would take it from "
+    "{before} to {after}. Put the extra criteria on a new ticket under the same parent "
+    "and relate the two (loregarden_create_ticket, then loregarden_link_relation), "
+    "rather than adding a criterion or rewriting the ones there."
+)
+
 #: Only this module writes ``checked_criteria_json``, so anything else is a bug worth raising.
 _CRITERIA_LIST = TypeAdapter(list[str])
 
@@ -27,6 +40,26 @@ _CRITERIA_LIST = TypeAdapter(list[str])
 def normalize_criteria(criteria: Iterable[str] | None) -> list[str]:
     """Strip each criterion and drop the ones that were only whitespace."""
     return [line.strip() for line in (criteria or []) if line.strip()]
+
+
+class AcceptanceCriteriaCapError(ValueError):
+    """A write would grow a ticket's criteria past :data:`MAX_ACCEPTANCE_CRITERIA`."""
+
+
+def guard_criteria_growth(before: Iterable[str] | None, after: Iterable[str] | None) -> None:
+    """Refuse a write that grows a criteria list past the cap.
+
+    Every writer calls this with the list it found and the list it is about to
+    store, so a list already over the cap may be edited or shortened, never grown.
+    """
+    before_count = len(normalize_criteria(before))
+    after_count = len(normalize_criteria(after))
+    if after_count > MAX_ACCEPTANCE_CRITERIA and after_count > before_count:
+        raise AcceptanceCriteriaCapError(
+            CRITERIA_CAP_MESSAGE.format(
+                cap=MAX_ACCEPTANCE_CRITERIA, before=before_count, after=after_count
+            )
+        )
 
 
 def load_criteria(raw: str | None) -> list[str]:

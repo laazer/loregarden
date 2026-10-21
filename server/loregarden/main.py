@@ -79,6 +79,7 @@ from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
 from loregarden.services.reconciliation import reconcile_once
+from loregarden.services.reference_survey.feeder import start_survey_loop
 from loregarden.services.run_reattach import reattach_surviving_runs
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
@@ -183,6 +184,7 @@ def _start_background_loops() -> list[asyncio.Task]:
         start_push_worker(),
         start_autopilot_loop(),
         start_ci_poll_loop(),
+        start_survey_loop(),
     ]
     return [task for task in started if task is not None]
 
