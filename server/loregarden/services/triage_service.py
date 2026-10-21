@@ -33,7 +33,7 @@ from loregarden.services.agent_turn_runner import (
 )
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_mode import resolve_chat_mode
-from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
+from loregarden.services.chat_primitives import cli_card_corrector, load_parts_json, settle_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
@@ -208,16 +208,24 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     session.commit()
     session.refresh(user_message)
 
+    workspace = session.get(Workspace, ticket.workspace_id)
+    corrector = (
+        cli_card_corrector(TRIAGE_CLI_PROFILE, apply_triage_runtime_overrides(workspace, ticket))
+        if workspace
+        else None
+    )
     try:
         reply = invoke_triage_model(session, ticket, text)
     except Exception as exc:  # noqa: BLE001 - any provider error becomes a visible "unavailable" reply
         reply = format_agent_unavailable(TRIAGE_AGENT_NAME, exc)
+        corrector = None
 
+    settled = settle_reply(session, reply, workspace_id=ticket.workspace_id, corrector=corrector)
     assistant_message = TriageMessage(
         ticket_id=ticket.id,
         role="assistant",
-        content=reply,
-        parts_json=parts_json_for_reply(session, reply, workspace_id=ticket.workspace_id),
+        content=settled.content,
+        parts_json=settled.parts_json,
     )
     session.add(assistant_message)
     session.add(ticket)

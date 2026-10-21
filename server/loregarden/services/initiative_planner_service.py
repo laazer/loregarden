@@ -38,8 +38,9 @@ from loregarden.models.domain import (
 )
 from loregarden.services.chat_primitives import (
     EMPTY_PARTS_JSON,
+    cli_card_corrector,
     load_parts_json,
-    parts_json_for_reply,
+    settle_reply,
 )
 from loregarden.services.chat_thinking import (
     ChatTurnThinkingSink,
@@ -440,6 +441,17 @@ def execute_planner_turn_background(assistant_id: str) -> None:
                     status=PlannerTurnStatus.FAILED,
                 )
                 return
+            workspace = planner_workspace(
+                session, load_initiative(session, assistant.initiative_id)
+            )
+            # Before the stop check below, so a stop during the correction turn
+            # is honoured like one during the reply.
+            settled = settle_reply(
+                session,
+                reply,
+                workspace_id=workspace.id,
+                corrector=cli_card_corrector(INITIATIVE_PLANNER_CLI_PROFILE, workspace),
+            )
             # A stop settles the row while the model is still running; settling
             # again would resurrect a turn the operator ended.
             session.refresh(assistant)
@@ -450,15 +462,12 @@ def execute_planner_turn_background(assistant_id: str) -> None:
                     assistant.status.value,
                 )
                 return
-            initiative = load_initiative(session, assistant.initiative_id)
             _settle(
                 session,
                 assistant,
-                content=reply,
+                content=settled.content,
                 status=PlannerTurnStatus.COMPLETE,
-                parts_json=parts_json_for_reply(
-                    session, reply, workspace_id=planner_workspace(session, initiative).id
-                ),
+                parts_json=settled.parts_json,
             )
     except Exception:
         # Never leave the row pending: a pending row locks the composer for good.
