@@ -38,6 +38,7 @@ from loregarden.services.approval_resolution import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
+from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
 from loregarden.services.exit_action_approvals import ExitActionApprovalMixin
 from loregarden.services.exit_actions import resolve_exit_actions
@@ -858,7 +859,7 @@ class OrchestrationService:
         instance = target.instance
         target_key = target.target_key
 
-        # Both refusals are settled before a single write. `_prepare_stage_start`
+        # Every refusal is settled before a single write. `_prepare_stage_start`
         # clears blocking text and can flip the ticket to IN_PROGRESS, and a
         # guard that raised after it returned a 409 having already erased the
         # operator's blocking diagnosis and left the ticket started.
@@ -872,6 +873,7 @@ class OrchestrationService:
             orchestration_run_id=orchestration_run_id,
             live_statuses=LIVE_ORCHESTRATION_STATUSES,
         )
+        refuse_held_dispatch(self.session, ticket, stage_key=target_key)
 
         # Read before `_prepare_stage_start`, which erases the blocking text this
         # decision is partly read from.

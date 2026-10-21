@@ -28,6 +28,7 @@ from loregarden.models.domain import (
     ParallelAgentSpec,
     ReworkStopReason,
     RunStatus,
+    StageReportStatus,
     StageStatus,
     Ticket,
     WorkflowStageDef,
@@ -35,6 +36,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.branch_takes_target import MergeTurnSeat
+from loregarden.services.dependency_hold import link_reported_prerequisites
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -330,6 +332,22 @@ def reconcile_parallel_stage(
     return True, ""
 
 
+def _link_reported_waits(
+    session: Session, ticket: Ticket, results: list[ParallelMemberResult]
+) -> str:
+    """Link every prerequisite a member's `blocked_kind: tickets` names; what failed."""
+    problems: list[str] = []
+    for result in results:
+        report = result.report
+        if (
+            report
+            and report.status == StageReportStatus.BLOCKED
+            and report.blocked_kind is BlockKind.TICKETS
+        ):
+            problems += link_reported_prerequisites(session, ticket, report.waiting_on)
+    return "; ".join(problems)
+
+
 def _route_parallel_stage_failures(
     session: Session,
     ticket: Ticket,
@@ -348,6 +366,12 @@ def _route_parallel_stage_failures(
     orch = OrchestrationService(session)
     callbacks = OrchestrationCallbackService(session)
     message = "; ".join(result.failure for result in results if result.failure)
+    # A lens that says the ticket waits on others has its wait linked, so the
+    # dispatch this routing leads to is held until they land. The routing below
+    # still runs: the other lenses' feedback is the rework once it does.
+    unlinked = _link_reported_waits(session, ticket, results)
+    if unlinked:
+        message = f"{message}; prerequisites that could not be linked: {unlinked}"
     transient = any(result.transient for result in results)
     transitions = orch._resolve_transitions(ticket)
 

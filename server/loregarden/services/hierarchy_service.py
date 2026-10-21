@@ -7,6 +7,7 @@ from loregarden.models.domain import (
     BlockedOn,
     Ticket,
     TicketTreeNode,
+    WaitingOnRef,
     WorkItemType,
     Workspace,
 )
@@ -64,6 +65,7 @@ def build_tree(
     stage_names: dict[str, str] | None = None,
     members: dict[str, list[str]] | None = None,
     blocked_on: dict[str, BlockedOn] | None = None,
+    waiting_on: dict[str, list[WaitingOnRef]] | None = None,
 ) -> list[TicketTreeNode]:
     """Assemble a forest from a flat ticket list (roots = no parent).
 
@@ -74,6 +76,7 @@ def build_tree(
     stage_names = stage_names or {}
     members = members or {}
     blocked_on = blocked_on or {}
+    waiting_on = waiting_on or {}
     by_id = {t.id: t for t in tickets}
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
@@ -112,6 +115,7 @@ def build_tree(
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
             blocked_on=blocked_on.get(ticket.id),
+            waiting_on=waiting_on.get(ticket.id, []),
         )
 
     def member_node(ticket: Ticket) -> TicketTreeNode:

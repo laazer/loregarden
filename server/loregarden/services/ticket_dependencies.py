@@ -25,12 +25,36 @@ still override it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from loregarden.models.domain import Ticket, TicketDependency, TicketState
+from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from sqlmodel import Session, select
 
 
 class DependencyCycleError(ValueError):
     """Adding an edge would create a cycle in the dependency graph."""
+
+
+def resolve_prerequisites(session: Session, refs: Iterable[str]) -> list[Ticket]:
+    """The tickets ``refs`` name (UUIDs or external ids), in order, deduplicated.
+
+    Raises `TicketNotFound` naming the first that resolves to nothing, so a
+    caller can refuse before writing anything.
+    """
+    found: dict[str, Ticket] = {}
+    for ref in refs:
+        value = ref.strip()
+        if not value:
+            continue
+        ticket = session.get(Ticket, value)
+        if ticket is None:
+            if looks_like_ticket_uuid(value):
+                raise TicketNotFound(value)
+            ticket = resolve_one(session, value)
+        found.setdefault(ticket.id, ticket)
+    return list(found.values())
 
 
 class TicketDependencyService:

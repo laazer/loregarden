@@ -419,10 +419,10 @@ def test_http_layer_happy_path_returns_created_ticket(client):
 # orchestrated-agent deny too, not just the CLI-subprocess permission bridge ---
 
 
-def test_http_layer_denies_create_ticket_when_orchestrated_header_set(client):
-    """A run Loregarden's own CLI invocation builders mark as orchestrated (see
-    agents/mcp_context.py) must be denied here even though it reaches `/mcp` directly,
-    bypassing the CLI-subprocess permission bridge entirely."""
+def test_http_layer_refuses_an_orchestrated_create_ticket_that_names_no_run(client):
+    """A call marked orchestrated reaches `/mcp` directly, past the permission
+    bridge. A pipeline agent may file a ticket, but only as its run: one marked
+    orchestrated with no run behind it is refused, and nothing is created."""
     res = client.post(
         "/mcp",
         headers={"X-Loregarden-Orchestrated": "1"},
@@ -435,7 +435,7 @@ def test_http_layer_denies_create_ticket_when_orchestrated_header_set(client):
                 "arguments": {
                     "workspace_slug": "loregarden",
                     "title": "Should never be created",
-                    "work_item_type": "task",
+                    "work_item_type": "milestone",
                 },
             },
         },
@@ -444,7 +444,7 @@ def test_http_layer_denies_create_ticket_when_orchestrated_header_set(client):
     body = res.json()
     result = body["result"]
     assert result.get("isError"), result
-    assert "orchestrated" in result["content"][0]["text"].lower()
+    assert "supervised run" in result["content"][0]["text"]
 
 
 def test_http_layer_allows_create_ticket_without_orchestrated_header(client):

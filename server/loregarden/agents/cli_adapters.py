@@ -14,6 +14,7 @@ from loregarden.agents.mcp_context import (
     resolve_api_base_url,
     resolve_mcp_url,
     supervised_run_env,
+    unverified_api_base_url,
 )
 from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
@@ -160,9 +161,33 @@ def stage_report_hook_settings() -> str:
     report is out (see ``agents/stage_report_stop_hook``). Run by this server's own
     interpreter, so the hook parses reports with the same code completion does.
     """
+    return json.dumps({"hooks": {"Stop": [_stage_report_stop_hook()]}})
+
+
+def _stage_report_stop_hook() -> dict[str, object]:
     command = f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook"
-    hook = {"type": "command", "command": command}
-    return json.dumps({"hooks": {"Stop": [{"hooks": [hook]}]}})
+    return {"hooks": [{"type": "command", "command": command}]}
+
+
+def _control_plane_http_hook() -> dict[str, object]:
+    command = (
+        f"{shlex.quote(sys.executable)} -m loregarden.agents.control_plane_http_hook "
+        f"{shlex.quote(unverified_api_base_url())}"
+    )
+    return {"matcher": "Bash", "hooks": [{"type": "command", "command": command}]}
+
+
+def stage_run_hook_settings(*, stage_report: bool) -> str:
+    """``--settings`` JSON for a run this control plane supervises.
+
+    Every supervised run gets the ``PreToolUse`` hook that keeps its Bash off
+    this control plane's HTTP API (``agents/control_plane_http_hook``); a stage
+    run also gets the stage-report ``Stop`` hook.
+    """
+    hooks: dict[str, list[dict[str, object]]] = {"PreToolUse": [_control_plane_http_hook()]}
+    if stage_report:
+        hooks["Stop"] = [_stage_report_stop_hook()]
+    return json.dumps({"hooks": hooks})
 
 
 def _append_model_flag(argv: list[str], model: str) -> None:
@@ -303,8 +328,8 @@ def build_interactive_invocation(
             argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        if require_stage_report:
-            argv.extend(["--settings", stage_report_hook_settings()])
+        if orchestrated or require_stage_report:
+            argv.extend(["--settings", stage_run_hook_settings(stage_report=require_stage_report)])
         argv.extend(
             claude_tool_flags(
                 tool_grants,
@@ -535,7 +560,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
-    argv.extend(["--settings", stage_report_hook_settings()])
+    argv.extend(["--settings", stage_run_hook_settings(stage_report=True)])
     append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 

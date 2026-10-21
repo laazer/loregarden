@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
 import { ticketPullRequestKey } from "../api/ticketPullRequestApi";
+import { notifyIfQueued } from "../lib/notifyIfQueued";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { CopyValueButton } from "../components/CopyValueButton";
@@ -48,7 +49,7 @@ import { useUiStore, type PaneId } from "../state/uiStore";
 import { useExpandSearchMatches } from "../hooks/useExpandSearchMatches";
 import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
-import { pushToast, toastWarning } from "../state/toastStore";
+import { toastWarning } from "../state/toastStore";
 import { copyStageTerminalHandoffCommand } from "../lib/terminalCommands";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
@@ -85,24 +86,6 @@ function treeHasRunningWorkflow(nodes: TicketTreeNode[]): boolean {
   return false;
 }
 
-
-/**
- * Say when a start became a wait.
- *
- * The execution slots are shared with the queue board, so a full pool turns
- * "run this" into "queued behind two others" — and the ticket that comes back
- * looks the same either way. Silence here would read as nothing happening,
- * which is exactly the confusion that made the board look broken.
- */
-function notifyIfQueued(detail: { admission?: { admitted: boolean; message: string } | null }) {
-  const admission = detail?.admission;
-  if (!admission || admission.admitted) return;
-  pushToast({
-    tone: "info",
-    title: "Queued — all slots busy",
-    message: admission.message,
-  });
-}
 
 export function Dashboard() {
   const qc = useQueryClient();

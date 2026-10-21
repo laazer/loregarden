@@ -44,16 +44,20 @@ export const BLOCKED_ON_LABELS: Record<BlockedOn, string> = {
   agent: "Agent can clear",
 };
 
-/** One blocker, as a link label: "lg-x-22 · needs you". */
-export function waitingOnLabel(ref: WaitingOnRef): string {
-  return ref.blocked_on === "person" ? `${ref.external_id} · needs you` : ref.external_id;
+/** One blocker, as a link label: "lg-x-22 · needs you". A blocker in another
+ *  workspace than `here` is prefixed with it, since it is not on this board. */
+export function waitingOnLabel(ref: WaitingOnRef, here?: string): string {
+  const where = here && ref.workspace_slug && ref.workspace_slug !== here ? `${ref.workspace_slug}: ` : "";
+  return ref.blocked_on === "person"
+    ? `${where}${ref.external_id} · needs you`
+    : `${where}${ref.external_id}`;
 }
 
-/** "Waiting on lg-x-22 · needs you, lg-x-23 +2" — short enough for a board tile. */
-export function waitingOnSummary(refs: WaitingOnRef[], shown = 2): string {
-  const names = refs.slice(0, shown).map(waitingOnLabel).join(", ");
-  const more = refs.length > shown ? ` +${refs.length - shown}` : "";
-  return `Waiting on ${names}${more}`;
+/** What the blocker itself is doing, in words: "needs you", "in progress". */
+export function waitingOnStatus(ref: WaitingOnRef): string {
+  if (ref.blocked_on === "person") return "needs you";
+  if (ref.blocked_on === "tickets") return "waiting on others";
+  return ticketStateLabel(ref.state).toLowerCase();
 }
 
 /** "Blocked · Needs you", "Backlog · Waiting on tickets", or just the state. */
