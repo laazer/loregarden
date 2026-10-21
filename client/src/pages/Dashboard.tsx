@@ -50,6 +50,7 @@ import { useTicketBranchSave } from "../hooks/useTicketBranchSave";
 import { useTicketCommitPush } from "../hooks/useTicketCommitPush";
 import { pushToast, toastWarning } from "../state/toastStore";
 import { copyStageTerminalHandoffCommand } from "../lib/terminalCommands";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -470,9 +471,9 @@ export function Dashboard() {
   };
 
   const { save: saveTicketBranch, saveOrThrow: saveTicketBranchOrThrow } = useTicketBranchSave();
-  const runtimeOptions = useQuery({
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", workspace],
-    queryFn: () => api.runtimeOptions({ workspace }),
+    params: { workspace },
   });
 
   const setRuntime = useMutation({
@@ -493,9 +494,9 @@ export function Dashboard() {
   // The ticket's Model settings dialog reports what *this ticket's* runs use —
   // its own pin over its own workspace. The page-level query above is scoped to
   // the sidebar's workspace (often "all"), which can only name the global fallback.
-  const ticketRuntimeOptions = useQuery({
+  const ticketRuntimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", "ticket", selectedId],
-    queryFn: () => api.runtimeOptions({ ticket: selectedId ?? "" }),
+    params: { ticket: selectedId ?? "" },
     enabled: ticketModelModalOpen && Boolean(selectedId),
   });
 
