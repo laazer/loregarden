@@ -58,6 +58,7 @@ from loregarden.services.reference_survey.queue import (
     next_queued_pass,
     open_passes,
     promote_resolved_sources,
+    target_workspaces,
 )
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
@@ -183,7 +184,11 @@ def _prepare_repo(session: Session, source: SurveySource) -> tuple[Path, Licence
 
 
 def _brief(
-    source: SurveySource, survey_pass: SurveyPass, slice_paths: list[str], clone: Path | None
+    source: SurveySource,
+    survey_pass: SurveyPass,
+    slice_paths: list[str],
+    clone: Path | None,
+    workspaces: list[str],
 ) -> str:
     where = (
         f"Clone (read-only, never run anything in it): `{clone}`"
@@ -197,6 +202,8 @@ def _brief(
             f"**Pass id:** `{survey_pass.id}` — read the full brief with "
             f"`loregarden_survey_pass action=brief pass_id={survey_pass.id}`.",
             f"**Question:** {survey_pass.question}",
+            f"**For workspaces:** {', '.join(workspaces)} — one reading serves all of them; "
+            "their own questions are in the brief.",
             f"**Licence:** {source.licence_constraint or 'unclassified'}",
             where + (f" @ `{source.pinned_commit[:12]}`" if source.pinned_commit else ""),
             f"**Slice ({len(slice_paths)} map paths, budget {survey_pass.file_budget} files):** "
@@ -328,7 +335,17 @@ def _dispatch(
         result.notes.append(f"{source.name}: nothing unread; closed")
         return
     carrier = _create_carrier(
-        session, source, survey_pass, parent, _brief(source, survey_pass, slice_paths, clone)
+        session,
+        source,
+        survey_pass,
+        parent,
+        _brief(
+            source,
+            survey_pass,
+            slice_paths,
+            clone,
+            [w.slug for w, _ in target_workspaces(session, source.id)],
+        ),
     )
     survey_pass.carrier_ticket_id = carrier.id
     survey_pass.read_commit = source.pinned_commit

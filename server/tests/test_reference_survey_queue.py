@@ -42,6 +42,7 @@ from loregarden.services.reference_survey.queue import (
     enqueue_source,
     promote_resolved_sources,
     request_pass,
+    target_workspaces,
 )
 from loregarden.services.reference_survey.record import open_unknown
 from loregarden.services.reference_survey.schemas import (
@@ -52,7 +53,14 @@ from loregarden.services.reference_survey.schemas import (
     UnknownOpenIn,
 )
 from sqlmodel import Session, select
-from tests.survey_support import MIT_TEXT, build_world, running_pass, write_tree
+from tests.survey_support import (
+    MIT_TEXT,
+    build_world,
+    running_pass,
+    second_workspace,
+    serve,
+    write_tree,
+)
 
 TREE = {
     "README.md": "r",
@@ -77,18 +85,18 @@ def ctx_fixture(isolated_db, tmp_path):
 
 def _source_in(world, **kw):
     return SourceIn(
-        **({"workspace_slug": world.workspace_slug, "kind": SurveySourceKind.REPO, "url": "https://github.com/acme/widget",
+        **({"workspace_slugs": [world.workspace_slug], "kind": SurveySourceKind.REPO, "url": "https://github.com/acme/widget",
             "question": "How do they gate?", "queued_reason": "it ships a gate"} | kw)
     )  # fmt: skip
 
 
 def test_a_new_source_waits_for_a_person_and_is_queued_only_on_approval(ctx):
     session, world, _ = ctx
-    source = enqueue_source(session, _source_in(world))
+    source = enqueue_source(session, _source_in(world)).source
     assert source.status is SurveySourceStatus.PROPOSED
     card = session.get(Approval, source.approval_id)
     assert card.status is ApprovalStatus.PENDING and "Admit reference source" in card.title
-    with pytest.raises(SurveyError, match="already in the queue"):
+    with pytest.raises(SurveyError, match="already serves loregarden"):
         enqueue_source(session, _source_in(world, url="https://github.com/acme/widget.git"))
     assert promote_resolved_sources(session) == []
     ApprovalService(session).resolve(card.id, approved=True)
@@ -105,7 +113,7 @@ def test_a_new_source_waits_for_a_person_and_is_queued_only_on_approval(ctx):
 
 def test_a_rejected_source_is_refused_and_never_queued(ctx):
     session, world, _ = ctx
-    source = enqueue_source(session, _source_in(world))
+    source = enqueue_source(session, _source_in(world)).source
     ApprovalService(session).resolve(source.approval_id, approved=False)
     promote_resolved_sources(session)
     session.refresh(source)
@@ -122,8 +130,58 @@ def test_an_imported_candidate_is_proposed_by_enqueueing_it(ctx):
     )
     session.add(imported)
     session.commit()
-    proposed = enqueue_source(session, _source_in(world))
+    proposed = enqueue_source(session, _source_in(world)).source
     assert proposed.id == imported.id and proposed.approval_id is not None
+
+
+def test_a_second_workspace_joins_the_source_rather_than_surveying_it_again(ctx):
+    """One reading serves every backlog: a known URL gains workspaces, not passes."""
+    session, world, _ = ctx
+    second_workspace(session, world)
+    source = enqueue_source(session, _source_in(world)).source
+    joined = enqueue_source(
+        session, _source_in(world, workspace_slugs=["blobert"], question="Their asset pipeline?")
+    )
+    assert (joined.source.id, joined.attached, joined.scoped_pass) == (source.id, ["blobert"], None)
+    assert len(session.exec(select(SurveySource)).all()) == 1
+    targets = target_workspaces(session, source.id)
+    assert [(w.slug, link.question) for w, link in targets] == [
+        ("loregarden", "How do they gate?"),
+        ("blobert", "Their asset pipeline?"),
+    ]
+    ApprovalService(session).resolve(source.approval_id, approved=True)
+    promote_resolved_sources(session)
+    # Still one pass: it reads for both workspaces.
+    assert len(session.exec(select(SurveyPass).where(SurveyPass.source_id == source.id)).all()) == 1
+
+
+def test_a_finished_source_gets_one_scoped_pass_for_a_new_workspace(ctx):
+    session, world, tree = ctx
+    second_workspace(session, world, "lore-eden")
+    source, survey_pass = running_pass(session, world, tree)
+    record_reads(
+        session, survey_pass.id, [ReadIn(path="src/ui", state=SurveyReadState.READ, files_read=1)]
+    )
+    finish_pass(
+        session,
+        PassFinishIn(
+            pass_id=survey_pass.id,
+            outcome=SurveyPassOutcome.ANSWERED,
+            outcome_note="n",
+            stopped_at="s",
+        ),
+    )
+    joined = enqueue_source(
+        session,
+        _source_in(world, workspace_slugs=["lore-eden"], question="Does the UI kit fit ours?"),
+    )
+    assert joined.scoped_pass is not None
+    assert (joined.scoped_pass.mode, joined.scoped_pass.question) == (
+        SurveyPassMode.SCOPED,
+        "Does the UI kit fit ours?",
+    )
+    assert joined.source.status is SurveySourceStatus.ACTIVE
+    assert joined.source.approval_id is None  # admitted once; no second card
 
 
 def test_the_map_is_lstat_only_and_its_leaves_sum_to_the_tree(tmp_path):
@@ -331,6 +389,7 @@ def _queued_source(session, world, *, licence_basis=None, licence_kind=None, lic
     )  # fmt: skip
     session.add(source)
     session.commit()
+    serve(session, source, world.workspace_id)
     survey_pass = SurveyPass(
         source_id=source.id, ordinal=1, mode=SurveyPassMode.INITIAL, question=source.question
     )

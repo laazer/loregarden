@@ -48,6 +48,10 @@ Then read `agent_context/skills/reference-survey/SKILL.md` **in full from disk**
 
 ## Landing findings
 
+A source may serve several workspaces; the brief lists each with its own
+question. One pass reads for all of them: match every finding against every
+listed backlog, and when creating a ticket name `create.workspace_slug`.
+
 Match the backlog first (`references/backlog-match.md`). Then
 `loregarden_survey_write` with the findings and either `ticket` (append) or
 `create`. The tool writes the criteria through the safe path, appends the block to

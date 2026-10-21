@@ -45,6 +45,7 @@ from loregarden.models.domain.survey_tables import (
     SurveyPass,
     SurveyPassTicket,
     SurveySource,
+    SurveySourceWorkspace,
 )
 from loregarden.services.reference_survey.licence import recorded_verdict
 from sqlmodel import Session, select
@@ -143,11 +144,7 @@ def _licence_name(note: str) -> str:
 def _source_for(
     session: Session, workspace: Workspace, url: str, name: str, report: ImportReport
 ) -> SurveySource:
-    source = session.exec(
-        select(SurveySource).where(
-            SurveySource.workspace_id == workspace.id, SurveySource.url == url
-        )
-    ).first()
+    source = session.exec(select(SurveySource).where(SurveySource.url == url)).first()
     report.sources_seen += 1
     if source is None:
         source = SurveySource(
@@ -161,6 +158,16 @@ def _source_for(
         session.add(source)
         session.flush()
         report.sources_created += 1
+    if session.get(SurveySourceWorkspace, (source.id, workspace.id)) is None:
+        session.add(
+            SurveySourceWorkspace(
+                source_id=source.id,
+                workspace_id=workspace.id,
+                question=source.question,
+                queued_reason=source.queued_reason,
+            )
+        )
+        session.flush()
     return source
 
 

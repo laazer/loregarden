@@ -5,7 +5,8 @@ lines nothing could query. The shape here is set by its two richest entries,
 openharness (23 passes and a prioritised unread list) and ThinkTerm (8 passes):
 
 - `SurveySource` is one queued target, with its licence classification and why
-  it is queued.
+  it is queued: one row per URL, serving every workspace in
+  `SurveySourceWorkspace`, so a repository is read once for all of them.
 - `SurveyPass` is one bounded read of it, against one question.
 - `SurveyCoverage` is the directory map with file counts; `SurveyPassRead` marks
   what each pass did with each entry, so "read 3 of 400 files" is a query.
@@ -56,6 +57,7 @@ __all__ = [
     "SurveyPassRead",
     "SurveyPassTicket",
     "SurveySource",
+    "SurveySourceWorkspace",
     "SurveyUnknown",
     "SurveyUnknownEvidence",
 ]
@@ -67,10 +69,13 @@ def _id() -> str:
 
 class SurveySource(SQLModel, table=True):
     __tablename__ = "survey_sources"
-    __table_args__ = (UniqueConstraint("workspace_id", "url", name="ux_survey_sources_url"),)
+    #: One record per URL, whichever workspaces it serves: a repository is read
+    #: once, and every backlog it answers shares that reading.
+    __table_args__ = (UniqueConstraint("url", name="ux_survey_sources_url"),)
 
     id: str = Field(default_factory=_id, primary_key=True)
-    #: The workspace whose backlog the findings land on.
+    #: The home workspace: where carrier tickets and inbox cards live. Findings
+    #: may land on any workspace in `SurveySourceWorkspace`, home included.
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     kind: SurveySourceKind = Field(sa_column=str_enum_column(SurveySourceKind))
     url: str
@@ -108,6 +113,22 @@ class SurveySource(SQLModel, table=True):
     notes: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SurveySourceWorkspace(SQLModel, table=True):
+    """A backlog a source serves, and what that workspace wants from it.
+
+    A pass reads for every workspace here at once, so a repository relevant to
+    two products is not surveyed twice.
+    """
+
+    __tablename__ = "survey_source_workspaces"
+
+    source_id: str = Field(foreign_key="survey_sources.id", primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", primary_key=True)
+    question: str = ""
+    queued_reason: str = ""
+    added_at: datetime = Field(default_factory=utcnow)
 
 
 class SurveyPass(SQLModel, table=True):

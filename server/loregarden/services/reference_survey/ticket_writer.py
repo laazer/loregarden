@@ -53,10 +53,11 @@ from loregarden.services.reference_survey.errors import (
     TicketWriteMismatch,
 )
 from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
 from loregarden.services.reference_survey.schemas import NewTicketIn, TicketWriteIn
 from loregarden.services.ticket_documents import write_document
-from loregarden.services.ticket_ids import resolve_one
+from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, col, select
@@ -310,7 +311,7 @@ def _overflow_spec(
 
 def _load(
     session: Session, body: TicketWriteIn
-) -> tuple[SurveyPass, SurveySource, Workspace, list[SurveyFinding]]:
+) -> tuple[SurveyPass, SurveySource, list[Workspace], list[SurveyFinding]]:
     survey_pass = session.get(SurveyPass, body.pass_id)
     if survey_pass is None:
         raise SurveyNotFound(f"No survey pass {body.pass_id!r}")
@@ -319,9 +320,11 @@ def _load(
             f"Pass {survey_pass.id} is {survey_pass.status.value}; findings land while it runs"
         )
     source = session.get(SurveySource, survey_pass.source_id)
-    workspace = session.get(Workspace, source.workspace_id) if source else None
-    if source is None or workspace is None:
-        raise SurveyNotFound(f"Pass {survey_pass.id} has no source or workspace")
+    targets = [w for w, _ in target_workspaces(session, source.id)] if source else []
+    if source is None or not targets:
+        raise SurveyNotFound(
+            f"Pass {survey_pass.id} has no source, or its source serves no workspace"
+        )
     findings = [session.get(SurveyFinding, i) for i in dict.fromkeys(body.finding_ids)]
     missing = [
         i for i, f in zip(dict.fromkeys(body.finding_ids), findings, strict=True) if f is None
@@ -334,15 +337,51 @@ def _load(
     ]
     if bad:
         raise SurveyError(f"Findings {', '.join(bad)} are retracted or about another source")
-    return survey_pass, source, workspace, rows
+    return survey_pass, source, targets, rows
+
+
+def _create_workspace(body: TicketWriteIn, targets: list[Workspace]) -> Workspace:
+    """Where a new ticket goes: the named target, the only target, or for a
+    defect in our own tooling, home."""
+    slug = body.create.workspace_slug if body.create else None
+    if slug:
+        named = [w for w in targets if w.slug == slug]
+        if not named:
+            raise SurveyError(
+                f"{slug} is not one of this source's workspaces ({', '.join(w.slug for w in targets)})"
+            )
+        return named[0]
+    if len(targets) == 1 or body.self_defect:
+        return targets[0]
+    raise SurveyError(
+        f"This source serves {', '.join(w.slug for w in targets)}: name create.workspace_slug for the new ticket."
+    )
+
+
+def _resolve_across(session: Session, ref: str, targets: list[Workspace]) -> Ticket:
+    """The one ticket `ref` names in any of the source's workspaces."""
+    found: list[Ticket] = []
+    for workspace in targets:
+        try:
+            found.append(resolve_one(session, ref, workspace_id=workspace.id))
+        except TicketNotFound:  # silent-ok: absent from this workspace; the others are tried, and none at all is raised below
+            continue
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise SurveyNotFound(f"No ticket {ref!r} in {', '.join(w.slug for w in targets)}")
+    raise SurveyError(
+        f"{ref!r} names a ticket in more than one workspace: {', '.join(t.external_id for t in found)}"
+    )
 
 
 def _choose_target(
-    session: Session, body: TicketWriteIn, workspace: Workspace, source: SurveySource
+    session: Session, body: TicketWriteIn, targets: list[Workspace], source: SurveySource
 ) -> tuple[Ticket, SurveyTicketAction, Ticket | None, list[str]]:
     """The ticket the finding lands on, and why, creating one when it must."""
     notes: list[str] = []
     if body.create is not None:
+        workspace = _create_workspace(body, targets)
         similar = similar_open_tickets(session, workspace.id, body.create.title)
         if similar and not body.force_new_reason:
             raise SurveyError(
@@ -356,7 +395,8 @@ def _choose_target(
             )
         action = SurveyTicketAction.SELF_DEFECT if body.self_defect else SurveyTicketAction.CREATED
         return _create(session, workspace, body.create, []), action, None, notes
-    target = resolve_one(session, body.ticket or "", workspace_id=workspace.id)
+    target = _resolve_across(session, body.ticket or "", targets)
+    workspace = next(w for w in targets if w.id == target.workspace_id)
     if target.state in _CLOSED and body.criteria:
         # Only the criteria are frozen: a finding with none still lands on the
         # done ticket's document, where its history is.
@@ -382,9 +422,9 @@ def _choose_target(
 
 
 def write_findings_to_ticket(session: Session, body: TicketWriteIn) -> TicketWriteResult:
-    survey_pass, source, workspace, findings = _load(session, body)
+    survey_pass, source, targets, findings = _load(session, body)
     try:
-        ticket, action, aimed_at, notes = _choose_target(session, body, workspace, source)
+        ticket, action, aimed_at, notes = _choose_target(session, body, targets, source)
         if body.self_defect:
             OrchestrationService(session).update_ticket_manual(
                 ticket, UpdateTicketRequest(tags=[SELF_DEFECT_TAG])
@@ -403,7 +443,7 @@ def write_findings_to_ticket(session: Session, body: TicketWriteIn) -> TicketWri
     except TicketWriteMismatch as exc:
         report_exception(
             session,
-            workspace_id=workspace.id,
+            workspace_id=source.workspace_id,
             title=f"Survey write did not land: pass {survey_pass.id[:8]}",
             detail=f"{exc}\n\nSource {source.url}, pass {survey_pass.ordinal}. Nothing was retried.",
         )

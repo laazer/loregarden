@@ -88,6 +88,9 @@ _NEW_TICKET = {
     "description": "A ticket to create when no existing ticket answers the finding.",
     "properties": {
         "title": string_prop("Ticket title."),
+        "workspace_slug": string_prop(
+            "Which of the source's workspaces the ticket belongs to; required when it serves several."
+        ),
         "parent": string_prop("Parent ticket external id. Hierarchy is checked before creating."),
         "work_item_type": enum_string_prop("Work item type (default task).", _values(WorkItemType)),
         "description": string_prop("The spec. The finding itself goes in block, not here."),
@@ -100,7 +103,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.SURVEY_QUEUE,
         "description": (
-            "The reference-survey queue. action=enqueue proposes a source (a person admits it "
+            "The reference-survey queue. action=enqueue proposes a source for one or more "
+            "workspaces; one reading serves them all, and a URL already known gains the new "
+            "workspaces instead of a second survey (a person admits a new source "
             "from the inbox before anything reads it); list shows waiting and running passes; "
             "request_pass queues a continuation (pick up the unread list) or a scoped re-read "
             "against one new question on an admitted source; status returns a source's whole "
@@ -110,9 +115,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": tool_schema(
             properties={
                 "action": enum_string_prop("What to do.", _values(SurveyQueueAction)),
-                "workspace_slug": string_prop(
-                    "enqueue/list: the workspace whose backlog findings land on."
+                "workspace_slugs": string_list_prop(
+                    "enqueue: every workspace whose backlog the source should answer; the first is "
+                    "home. A URL already known gains these workspaces instead of a second survey."
                 ),
+                "workspace_slug": string_prop("list: only sources serving this workspace."),
                 "kind": enum_string_prop("enqueue: what the source is.", _values(SurveySourceKind)),
                 "url": string_prop("enqueue: repository or https URL."),
                 "name": string_prop("enqueue: display name (default: last URL segment)."),
@@ -278,6 +285,7 @@ _COERCE: dict[str, Callable[[Any, str], Any]] = {
             "unread_priority",
             "criteria",
             "finding_ids",
+            "workspace_slugs",
         ),
         _strings,
     ),
@@ -306,12 +314,14 @@ Handler = Callable[[Session, dict[str, Any]], Any]
 
 
 def _enqueue(session: Session, args: dict[str, Any]) -> dict:
-    source = queue.enqueue_source(session, _model(SourceIn, args))
+    enqueued = queue.enqueue_source(session, _model(SourceIn, args))
     return {
         "ok": True,
-        "source_id": source.id,
-        "status": source.status.value,
-        "approval_id": source.approval_id,
+        "source_id": enqueued.source.id,
+        "status": enqueued.source.status.value,
+        "approval_id": enqueued.source.approval_id,
+        "workspaces_attached": enqueued.attached,
+        "scoped_pass_id": enqueued.scoped_pass.id if enqueued.scoped_pass else None,
     }
 
 

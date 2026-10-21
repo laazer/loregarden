@@ -10,6 +10,7 @@ question. The feeder (`feeder.py`) dispatches the head of the queue.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from loregarden.models.domain import Approval, ApprovalStatus, Workspace
@@ -20,7 +21,7 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceKind,
     SurveySourceStatus,
 )
-from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
+from loregarden.models.domain.survey_tables import SurveyPass, SurveySource, SurveySourceWorkspace
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.inbox import file_card
@@ -56,44 +57,107 @@ def admission_title(source: SurveySource) -> str:
     return f"Admit reference source: {source.url}"
 
 
-def enqueue_source(session: Session, body: SourceIn) -> SurveySource:
-    """Propose a source. It is read only after a person approves the card this files."""
-    workspace = session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
-    if workspace is None:
-        raise SurveyNotFound(f"No workspace {body.workspace_slug!r}")
-    url = _canonical_url(body.kind, body.url)
-    existing = session.exec(
-        select(SurveySource).where(
-            SurveySource.workspace_id == workspace.id, SurveySource.url == url
+@dataclass
+class Enqueued:
+    source: SurveySource
+    #: Workspaces this call added to the source's targets.
+    attached: list[str] = field(default_factory=list)
+    #: A scoped pass queued because a finished source gained a workspace.
+    scoped_pass: SurveyPass | None = None
+
+
+def _workspaces(session: Session, slugs: list[str]) -> list[Workspace]:
+    found = []
+    for slug in dict.fromkeys(slugs):
+        workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+        if workspace is None:
+            raise SurveyNotFound(f"No workspace {slug!r}")
+        found.append(workspace)
+    return found
+
+
+def target_workspaces(
+    session: Session, source_id: str
+) -> list[tuple[Workspace, SurveySourceWorkspace]]:
+    """Every workspace a source serves, home first."""
+    rows = session.exec(
+        select(Workspace, SurveySourceWorkspace)
+        .join(SurveySourceWorkspace, col(SurveySourceWorkspace.workspace_id) == Workspace.id)
+        .where(SurveySourceWorkspace.source_id == source_id)
+        .order_by(col(SurveySourceWorkspace.added_at))
+    ).all()
+    return [(w, link) for w, link in rows]
+
+
+def _attach(
+    session: Session, source: SurveySource, workspaces: list[Workspace], body: SourceIn
+) -> list[str]:
+    have = {w.id for w, _ in target_workspaces(session, source.id)}
+    added = []
+    for workspace in workspaces:
+        if workspace.id in have:
+            continue
+        session.add(
+            SurveySourceWorkspace(
+                source_id=source.id,
+                workspace_id=workspace.id,
+                question=body.question,
+                queued_reason=body.queued_reason,
+            )
         )
-    ).first()
-    if (
-        existing is not None
-        and existing.status is SurveySourceStatus.PROPOSED
-        and existing.approval_id is None
-    ):
-        # An imported candidate nobody has proposed yet: this is its proposal.
-        return _file_admission(session, existing, body)
-    if existing is not None:
-        raise SurveyError(
-            f"{url} is already in the queue ({existing.status.value}, source {existing.id}). "
-            "To read it again, request a continuation or scoped pass on that source."
-        )
-    source = SurveySource(
-        workspace_id=workspace.id,
-        kind=body.kind,
-        url=url,
-        name=body.name or url.rstrip("/").rsplit("/", 1)[-1],
-        question=body.question,
-        queued_reason=body.queued_reason,
-        priority=body.priority,
-    )
-    session.add(source)
+        added.append(workspace.slug)
     session.flush()
-    return _file_admission(session, source, body)
+    return added
+
+
+def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
+    """Propose a source for one or more workspaces, or add workspaces to one known.
+
+    A URL is surveyed once. Enqueueing a known one attaches the new workspaces
+    to it: a pass still waiting reads for them too, and a finished source gets
+    one scoped pass against the new question rather than a second survey. Only a
+    source nobody has admitted yet files an admission card.
+    """
+    workspaces = _workspaces(session, body.workspace_slugs)
+    url = _canonical_url(body.kind, body.url)
+    existing = session.exec(select(SurveySource).where(SurveySource.url == url)).first()
+    if existing is None:
+        source = SurveySource(
+            workspace_id=workspaces[0].id,
+            kind=body.kind,
+            url=url,
+            name=body.name or url.rstrip("/").rsplit("/", 1)[-1],
+        )
+        session.add(source)
+        session.flush()
+        attached = _attach(session, source, workspaces, body)
+        return Enqueued(_file_admission(session, source, body), attached)
+    if existing.status is SurveySourceStatus.REFUSED:
+        raise SurveyError(
+            f"{url} was refused ({existing.refused_reason or 'no reason recorded'}); it is not read."
+        )
+    attached = _attach(session, existing, workspaces, body)
+    if existing.status is SurveySourceStatus.PROPOSED and existing.approval_id is None:
+        # An imported candidate nobody has proposed yet: this is its proposal.
+        return Enqueued(_file_admission(session, existing, body), attached)
+    if not attached:
+        raise SurveyError(
+            f"{url} already serves {', '.join(body.workspace_slugs)} ({existing.status.value}, source "
+            f"{existing.id}). To read it against a new question, request a scoped pass."
+        )
+    scoped = None
+    if existing.status is SurveySourceStatus.DONE:
+        existing.status = SurveySourceStatus.ACTIVE
+        existing.updated_at = utcnow()
+        session.add(existing)
+        scoped = _new_pass(session, existing, SurveyPassMode.SCOPED, body.question, [])
+    session.commit()
+    session.refresh(existing)
+    return Enqueued(existing, attached, scoped)
 
 
 def _file_admission(session: Session, source: SurveySource, body: SourceIn) -> SurveySource:
+    targets = ", ".join(w.slug for w, _ in target_workspaces(session, source.id))
     source.question = body.question
     source.queued_reason = body.queued_reason
     source.priority = body.priority
@@ -102,7 +166,7 @@ def _file_admission(session: Session, source: SurveySource, body: SourceIn) -> S
         workspace_id=source.workspace_id,
         title=admission_title(source),
         impact=(
-            f"A {source.kind.value} proposed for the reference survey.\n\n"
+            f"A {source.kind.value} proposed for the reference survey, for {targets}.\n\n"
             f"Question: {body.question}\nWhy: {body.queued_reason}\n\n"
             "Approve to queue it: its licence is classified before anything else is read, "
             "and passes then run unattended, appending findings to tickets. Reject to refuse it."
@@ -229,6 +293,12 @@ def next_queued_pass(session: Session) -> tuple[SurveyPass, SurveySource] | None
     return None if row is None else (row[0], row[1])
 
 
+def _serving(workspace_id: str):
+    return select(SurveySourceWorkspace.source_id).where(
+        SurveySourceWorkspace.workspace_id == workspace_id
+    )
+
+
 def queue_listing(
     session: Session, *, workspace_id: str | None = None, limit: int = 50
 ) -> list[dict]:
@@ -242,7 +312,7 @@ def queue_listing(
         )
     )
     if workspace_id is not None:
-        query = query.where(SurveySource.workspace_id == workspace_id)
+        query = query.where(col(SurveySource.id).in_(_serving(workspace_id)))
     rows = [
         {
             "pass_id": p.id,
@@ -257,6 +327,7 @@ def queue_listing(
         }
         for p, s in session.exec(query.limit(limit)).all()
     ]
+    serving = set(session.exec(_serving(workspace_id)).all()) if workspace_id is not None else set()
     proposed = session.exec(
         select(SurveySource)
         .where(SurveySource.status == SurveySourceStatus.PROPOSED)
@@ -271,6 +342,6 @@ def queue_listing(
             "priority": s.priority,
         }
         for s in proposed
-        if workspace_id is None or s.workspace_id == workspace_id
+        if workspace_id is None or s.id in serving
     )
     return rows

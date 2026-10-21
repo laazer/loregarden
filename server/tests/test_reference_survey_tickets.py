@@ -19,7 +19,7 @@ from loregarden.models.domain.survey_enums import (
     SurveyFindingClaim,
     SurveyTicketAction,
 )
-from loregarden.models.domain.survey_tables import SurveyPassTicket
+from loregarden.models.domain.survey_tables import SurveyPassTicket, SurveySource
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.reference_survey.errors import SurveyError, TicketWriteMismatch
@@ -45,7 +45,8 @@ from loregarden.services.reference_survey.ticket_writer import (
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_tags import load_tags
 from sqlmodel import Session, col, select
-from tests.survey_support import build_world, running_pass, write_tree
+from tests.factories import make_ticket
+from tests.survey_support import build_world, running_pass, second_workspace, serve, write_tree
 
 
 @pytest.fixture(name="ctx")
@@ -257,3 +258,51 @@ def test_a_retracted_finding_cannot_be_landed(ctx):
     retract_finding(session, RetractIn(finding_id=finding.id, reason="wrong"))
     with pytest.raises(SurveyError, match="retracted"):
         _write(session, survey_pass, finding, ticket=world.feature_ext)
+
+
+def test_one_pass_lands_findings_in_every_workspace_its_source_serves(ctx):
+    session, world, survey_pass, finding = ctx
+    blobert = second_workspace(session, world)
+    source = session.get(SurveySource, survey_pass.source_id)
+    serve(session, source, blobert.id, question="Their asset pipeline?")
+    milestone = make_ticket(
+        session, workspace_id=blobert.id, external_id="blob-m-1", title="Assets",
+        work_item_type=WorkItemType.MILESTONE,
+    )  # fmt: skip
+    feature = make_ticket(
+        session, workspace_id=blobert.id, external_id="blob-f-2", title="Asset import",
+        work_item_type=WorkItemType.FEATURE, parent_ticket_id=milestone.id,
+    )  # fmt: skip
+
+    # Append: the external id is found in whichever workspace holds it.
+    there = _write(
+        session, survey_pass, finding, ticket="blob-f-2", criteria=["Imports are validated."]
+    )
+    assert (there.ticket.id, there.ticket.workspace_id) == (feature.id, blobert.id)
+    here = _write(session, survey_pass, finding, ticket=world.feature_ext)
+    assert here.ticket.workspace_id == world.workspace_id
+
+    # Create: with two workspaces served, the new ticket's workspace must be named.
+    spec = {
+        "title": "Validate imported meshes",
+        "parent": "blob-f-2",
+        "work_item_type": "capability",
+        "description": "d",
+    }
+    with pytest.raises(SurveyError, match="name create.workspace_slug"):
+        _write(session, survey_pass, finding, create=spec)
+    with pytest.raises(SurveyError, match="not one of this source's workspaces"):
+        _write(session, survey_pass, finding, create=spec | {"workspace_slug": "nowhere"})
+    created = _write(session, survey_pass, finding, create=spec | {"workspace_slug": "blobert"})
+    assert (created.ticket.workspace_id, created.ticket.parent_ticket_id) == (
+        blobert.id,
+        feature.id,
+    )
+
+
+def test_a_ticket_outside_the_sources_workspaces_is_not_found(ctx):
+    session, world, survey_pass, finding = ctx
+    elsewhere = second_workspace(session, world, "elsewhere")
+    make_ticket(session, workspace_id=elsewhere.id, external_id="else-1", title="x")
+    with pytest.raises(SurveyError, match="No ticket 'else-1' in loregarden"):
+        _write(session, survey_pass, finding, ticket="else-1")

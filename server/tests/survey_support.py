@@ -16,7 +16,7 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceKind,
     SurveySourceStatus,
 )
-from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
+from loregarden.models.domain.survey_tables import SurveyPass, SurveySource, SurveySourceWorkspace
 from loregarden.services.reference_survey.coverage import map_tree
 from loregarden.services.reference_survey.passes import store_map
 from loregarden.services.seed import seed_database
@@ -80,6 +80,29 @@ def write_tree(root: Path, files: dict[str, str]) -> Path:
     return root
 
 
+def serve(session: Session, source: SurveySource, workspace_id: str, question: str = "q") -> None:
+    """Make `source` answer `workspace_id`'s backlog."""
+    session.add(
+        SurveySourceWorkspace(source_id=source.id, workspace_id=workspace_id, question=question)
+    )
+    session.commit()
+
+
+def second_workspace(session: Session, world: SurveyWorld, slug: str = "blobert") -> Workspace:
+    """Another workspace with the same workflow, so tickets can be created in it."""
+    home = session.get(Workspace, world.workspace_id)
+    other = Workspace(
+        slug=slug,
+        name=slug,
+        repo_path=home.repo_path,
+        workflow_template_id=home.workflow_template_id,
+    )
+    session.add(other)
+    session.commit()
+    session.refresh(other)
+    return other
+
+
 def running_pass(
     session: Session, world: SurveyWorld, tree: Path, *, url: str = "https://github.com/acme/widget"
 ) -> tuple[SurveySource, SurveyPass]:
@@ -92,6 +115,7 @@ def running_pass(
     )  # fmt: skip
     session.add(source)
     session.commit()
+    serve(session, source, world.workspace_id)
     store_map(session, source, map_tree(tree), "abc1234def")
     survey_pass = SurveyPass(
         source_id=source.id, ordinal=1, mode=SurveyPassMode.INITIAL, question=source.question,

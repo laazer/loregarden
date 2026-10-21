@@ -24,6 +24,7 @@ from loregarden.models.domain.survey_tables import (
 from loregarden.services.reference_repo_service import clone_path_for, parse_repo_url
 from loregarden.services.reference_survey.errors import SurveyNotFound
 from loregarden.services.reference_survey.passes import coverage_report, get_pass, pass_counts_line
+from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import (
     finding_evidence,
     open_unknowns,
@@ -95,6 +96,13 @@ def _unknown_view(session: Session, unknown: SurveyUnknown) -> dict:
     }
 
 
+def _targets_view(session: Session, source_id: str) -> list[dict]:
+    return [
+        {"workspace": w.slug, "question": link.question, "why": link.queued_reason}
+        for w, link in target_workspaces(session, source_id)
+    ]
+
+
 def pass_brief(session: Session, pass_id: str) -> dict:
     """Everything a pass needs to start: its question, source, slice, and what came before."""
     survey_pass, source = get_pass(session, pass_id)
@@ -110,6 +118,7 @@ def pass_brief(session: Session, pass_id: str) -> dict:
     return {
         "pass": _pass_view(session, survey_pass),
         "source": _source_view(source),
+        "workspaces": _targets_view(session, source.id),
         "clone_path": clone,
         "coverage": {k: v for k, v in report.items() if k not in ("finer_entries",)},
         "earlier_passes": [
@@ -124,6 +133,7 @@ def pass_brief(session: Session, pass_id: str) -> dict:
             "Absence needs evidence whose corpus is recorded complete; otherwise claim not_found.",
             "Every count travels with its denominator.",
             "Stop when the question is answered and record where you stopped.",
+            "Read once for every workspace listed: match each finding against all their backlogs.",
         ],
     }
 
@@ -152,6 +162,7 @@ def source_status(session: Session, source_id: str) -> dict:
     unknowns = session.exec(select(SurveyUnknown).where(SurveyUnknown.source_id == source.id)).all()
     return {
         "source": _source_view(source),
+        "workspaces": _targets_view(session, source.id),
         "passes": [_pass_view(session, p) for p in passes],
         "tickets": [
             {

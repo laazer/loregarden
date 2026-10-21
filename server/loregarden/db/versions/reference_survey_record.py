@@ -31,8 +31,15 @@ _TABLES: tuple[tuple[str, str], ...] = (
         "NULL, pinned_commit VARCHAR NOT NULL, fetched_at DATETIME, mapped_commit VARCHAR NOT "
         "NULL, refused_reason VARCHAR NOT NULL, notes VARCHAR NOT NULL, created_at DATETIME NOT "
         "NULL, updated_at DATETIME NOT NULL, PRIMARY KEY (id), CONSTRAINT ux_survey_sources_url "
-        "UNIQUE (workspace_id, url), FOREIGN KEY(workspace_id) REFERENCES workspaces (id), "
-        "FOREIGN KEY(approval_id) REFERENCES approvals (id) )",
+        "UNIQUE (url), FOREIGN KEY(workspace_id) REFERENCES workspaces (id), FOREIGN "
+        "KEY(approval_id) REFERENCES approvals (id) )",
+    ),
+    (
+        "survey_source_workspaces",
+        "CREATE TABLE survey_source_workspaces ( source_id VARCHAR NOT NULL, workspace_id "
+        "VARCHAR NOT NULL, question VARCHAR NOT NULL, queued_reason VARCHAR NOT NULL, added_at "
+        "DATETIME NOT NULL, PRIMARY KEY (source_id, workspace_id), FOREIGN KEY(source_id) "
+        "REFERENCES survey_sources (id), FOREIGN KEY(workspace_id) REFERENCES workspaces (id) )",
     ),
     (
         "survey_passes",
@@ -51,10 +58,10 @@ _TABLES: tuple[tuple[str, str], ...] = (
     (
         "survey_coverage",
         "CREATE TABLE survey_coverage ( id VARCHAR NOT NULL, source_id VARCHAR NOT NULL, path "
-        "VARCHAR NOT NULL, file_count INTEGER, byte_count INTEGER, mapped_commit VARCHAR NOT "
-        "NULL, priority INTEGER, note VARCHAR NOT NULL, PRIMARY KEY (id), CONSTRAINT "
-        "ux_survey_coverage_path UNIQUE (source_id, path), FOREIGN KEY(source_id) REFERENCES "
-        "survey_sources (id) )",
+        "VARCHAR NOT NULL, in_map BOOLEAN NOT NULL, file_count INTEGER, byte_count INTEGER, "
+        "mapped_commit VARCHAR NOT NULL, priority INTEGER, note VARCHAR NOT NULL, PRIMARY KEY "
+        "(id), CONSTRAINT ux_survey_coverage_path UNIQUE (source_id, path), FOREIGN "
+        "KEY(source_id) REFERENCES survey_sources (id) )",
     ),
     (
         "survey_pass_reads",

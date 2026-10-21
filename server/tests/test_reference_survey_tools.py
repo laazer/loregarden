@@ -50,7 +50,7 @@ def test_a_pass_from_the_queue_to_its_finish(isolated_db, tmp_path):
     with Session(isolated_db) as session:
         world = build_world(session)
         queued = _call(
-            session, "loregarden_survey_queue", action="enqueue", workspace_slug="loregarden", kind="repo",
+            session, "loregarden_survey_queue", action="enqueue", workspace_slugs=["loregarden"], kind="repo",
             url="https://github.com/RoversX/ThinkTerm", question="How does the mux decide an agent's status?",
             queued_reason="closest product analogue", priority=10,
         )  # fmt: skip
@@ -69,6 +69,7 @@ def test_a_pass_from_the_queue_to_its_finish(isolated_db, tmp_path):
         brief = _call(session, "loregarden_survey_pass", action="brief", pass_id=pass_id)
         assert brief["source"]["licence"]["use"] == LicenceUse.PATTERNS_ONLY.value
         assert brief["coverage"]["tree_files"] == 7
+        assert [w["workspace"] for w in brief["workspaces"]] == ["loregarden"]
         source_id = brief["source"]["source_id"]
 
         reads = _call(

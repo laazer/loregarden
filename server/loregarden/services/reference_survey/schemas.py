@@ -101,7 +101,9 @@ class UnknownUpdateIn(_In):
 
 
 class SourceIn(_In):
-    workspace_slug: str
+    #: Every workspace whose backlog this source should answer; the first is home
+    #: (where carrier tickets and inbox cards live). One pass reads for all.
+    workspace_slugs: list[str] = Field(min_length=1)
     kind: SurveySourceKind
     url: str = Field(min_length=1)
     name: str = ""
@@ -138,6 +140,8 @@ class PassFinishIn(_In):
 
 class NewTicketIn(_In):
     title: str = Field(min_length=1)
+    #: Which of the source's workspaces the ticket belongs to; needed when it serves several.
+    workspace_slug: str | None = None
     #: The parent, by external id. Hierarchy is checked before anything is created.
     parent: str = Field(min_length=1)
     work_item_type: WorkItemType = WorkItemType.TASK
