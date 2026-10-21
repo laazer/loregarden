@@ -59,7 +59,7 @@ from loregarden.services.git_automation import (
 )
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import MergeOutcome, adds_nothing, rev, squash_onto
+from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
@@ -71,6 +71,7 @@ from loregarden.services.tree_ux_section import (
     report_missing_ux_answers,
     tree_ux_section,
 )
+from loregarden.services.work_landed import work_is_on
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -116,7 +117,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     config = resolve_git_automation(workspace, ticket)
     base_sha = rev(repo_root, f"refs/heads/{config.base_branch}")
     try:
-        already_there = adds_nothing(repo_root, base_sha, tip)
+        already_there = work_is_on(repo_root, tip, base_sha)
     except RuntimeError as exc:
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
         _emit(session, ticket, config.base_branch, failed)

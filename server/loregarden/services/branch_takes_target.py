@@ -11,7 +11,7 @@ commits of real work against a `chat_branch_sweep.py` main had rewritten.
 
 Three answers, tried in order, before a person is asked:
 
-1. **The branch adds nothing the target lacks** (`superseding_commit`: some
+1. **The branch adds nothing the target lacks** (`work_landed.landing_commit`: some
    commit in the target's history already holds all of it, which a squash
    merge leaves invisible to ancestry). The branch is moved to the target by
    compare-and-swap. Its commits stay in the reflog, and their content is on
@@ -43,10 +43,10 @@ from loregarden.services.git_merge_noco import (
     record_merged,
     rev,
     squash_twin,
-    superseding_commit,
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_merge_agent import merge_base_by_agent
+from loregarden.services.work_landed import landing_commit
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ def _without_a_turn(
 ) -> _Settled:
     """Answers 1 and 2 of the module docstring: history alone, no agent."""
     try:
-        superseded = superseding_commit(repo_root, branch_sha, target_sha)
+        superseded = landing_commit(repo_root, branch_sha, target_sha)
     except RuntimeError as exc:
         return _Settled(
             TakeTarget(False, f"could not tell whether {target!r} holds {branch!r}: {exc}")

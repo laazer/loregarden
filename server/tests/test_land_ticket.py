@@ -147,6 +147,24 @@ def test_landing_is_idempotent(session, workspace, repo, milestone):
     assert first.landed_sha == landed
 
 
+def test_a_target_holding_the_work_by_squash_is_already_landed(session, workspace, repo, milestone):
+    """The integration branch moves onto the base after its tree publishes as
+    one squash (#621), so a re-landed ticket shares no commit with it. The
+    target then rewrote the same file: refreshing the branch from it conflicted
+    on work the target already had, and a person was asked to resolve nothing."""
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-sq")
+    squash = commit_on(repo, target, "lg-l-sq.txt", "work\n")
+    commit_on(repo, target, "lg-l-sq.txt", "work, revised on the target\n")
+    target_before = _sha(repo, target)
+
+    result = land_ticket(session, ticket, workspace)
+
+    assert result.ok and result.skipped is LandSkip.ALREADY_LANDED
+    assert _sha(repo, target) == target_before, "nothing merged"
+    session.refresh(ticket)
+    assert (ticket.landed_branch, ticket.landed_sha) == (target, squash)
+
+
 def test_landing_never_touches_a_checkout(session, workspace, repo, milestone):
     ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-l-3")
     git(repo, "checkout", "-q", "-b", "somewhere-else")
