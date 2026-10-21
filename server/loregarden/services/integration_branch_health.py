@@ -35,6 +35,7 @@ from pathlib import Path
 from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import Ticket, Workspace
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.git_merge_noco import MergeOutcome, merge_preview, superseding_commit
 from loregarden.services.git_subprocess import run_git
@@ -300,7 +301,7 @@ def check_integration_branches(session: Session) -> list[BranchHealth]:
     """The reconcile step: every active workspace. A workspace that fails is
     logged and the rest still run; the step itself raises only if every one did,
     so `reconcile_once` names it as failed."""
-    workspaces = session.exec(select(Workspace).where(col(Workspace.archived_at).is_(None))).all()
+    workspaces = active_workspaces(session)
     report: list[BranchHealth] = []
     failures = 0
     for workspace in workspaces:

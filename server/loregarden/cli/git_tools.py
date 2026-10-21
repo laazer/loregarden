@@ -17,7 +17,7 @@ from pathlib import Path
 
 from loregarden.cli.errors import UsageError
 from loregarden.db.session import engine
-from loregarden.models.domain import Workspace
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.change_pr import (
     ChangeOutcome,
     ChangePrError,
@@ -27,16 +27,14 @@ from loregarden.services.change_pr import (
 from loregarden.services.git_subprocess import GhAccountUnavailable, gh_token_for_user
 from loregarden.services.workspace_integration import is_loregarden, primary_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 
 def _workspace_repos() -> list[Path]:
     """Every live workspace's root except loregarden's own repository."""
     checkout = primary_checkout()
     with Session(engine) as session:
-        workspaces = session.exec(
-            select(Workspace).where(col(Workspace.archived_at).is_(None)).order_by(Workspace.slug)
-        ).all()
+        workspaces = active_workspaces(session)
         return [
             resolve_workspace_root(workspace)
             for workspace in workspaces

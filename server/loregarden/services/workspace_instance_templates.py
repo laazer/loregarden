@@ -42,6 +42,7 @@ from lore_eden.instances import (
 )
 from loregarden.db import session as db
 from loregarden.models.domain import InstanceTemplateRecord, Workspace
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -194,7 +195,7 @@ def collect(
     """Every workspace's templates, with what is wrong with any of them."""
     code = code_templates()
     result = []
-    for workspace in session.exec(select(Workspace).order_by(Workspace.name)).all():
+    for workspace in sorted(active_workspaces(session), key=lambda ws: ws.name):
         root = resolve_workspace_root(workspace)
         found = WorkspaceTemplates(
             slug=workspace.slug,
