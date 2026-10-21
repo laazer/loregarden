@@ -79,6 +79,9 @@ test("blocked splits by who has to act; a held backlog ticket waits beside it", 
   // A server that predates `blocked_on` keeps every block where it was.
   expect(columnFor(ticket("e", null, "blocked"))).toBe("blocked");
   expect(columnFor(ticket("f", null, "backlog"))).toBe("backlog");
-  // Started by name past its prerequisite: it is running, not waiting.
-  expect(columnFor(ticket("g", null, "in_progress", "tickets"))).toBe("in_progress");
+  // In progress and held: every dispatch waits for its prerequisites to land.
+  // (One started past them by name has the override recorded, and the server
+  // answers null for it, so it stays in its state's column.)
+  expect(columnFor(ticket("g", null, "in_progress", "tickets"))).toBe("waiting");
+  expect(columnFor(ticket("h", null, "in_progress"))).toBe("in_progress");
 });

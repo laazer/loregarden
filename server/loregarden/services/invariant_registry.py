@@ -14,6 +14,7 @@ from datetime import date
 
 from loregarden.models.domain import InvariantReentry, Ticket
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
+from loregarden.services.dependency_release import releasable_tickets, release_tickets
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
@@ -170,6 +171,40 @@ TICKET_BRANCHES_HOLD_HISTORY = Invariant(
 )
 
 
+def _releasable(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=ticket.id,
+            ticket_id=ticket.id,
+            entered_at=None,
+            detail=f"{ticket.external_id} ({ticket.state.value}) waits on nothing unmet",
+        )
+        for ticket in releasable_tickets(session)
+    ]
+
+
+def _release(session: Session, violations: Sequence[Violation]) -> int:
+    return len(release_tickets(session, _tickets(session, violations)))
+
+
+HELD_TICKETS_RESUME = Invariant(
+    name="held_tickets_resume_when_their_prerequisites_land",
+    ticket="lg-milestone-that-1315",
+    statement=(
+        "no ticket held or parked on prerequisites stays waiting once every one of them "
+        "is done and landed"
+    ),
+    detect=_releasable,
+    repair=_release,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 10, 21),
+    expected_because=(
+        "a prerequisite landing is the event the hold waits for; nothing resumes the held "
+        "ticket at that moment, so every release starts here"
+    ),
+)
+
+
 def _temp_workspaces(session: Session) -> list[Violation]:
     return [
         Violation(
@@ -208,4 +243,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     PUBLISH_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
+    HELD_TICKETS_RESUME,
 )

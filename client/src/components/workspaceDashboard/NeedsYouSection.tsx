@@ -6,6 +6,7 @@ import type { WorkspacePullRequests } from "../../api/workspaceDashboardApi";
 import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { DashboardSection } from "./DashboardSection";
+import { HeldTicketsGroup } from "./HeldTicketsGroup";
 import { MiniTicketGrid } from "./MiniTicketCard";
 
 interface ApprovalGroup {
@@ -73,11 +74,14 @@ function waitingLine(ticket: TicketSummary): string {
 }
 
 interface NeedsYouSectionProps {
+  workspaceSlug: string;
   /** Every ticket in the workspace by id: approvals carry only an id, and a card wants the title. */
   ticketIndex: Map<string, TicketTreeNode>;
   /** Pending approvals in this workspace (the inbox's own query, filtered). */
   approvals: UseQueryResult<Approval[]>;
   stuck: UseQueryResult<TicketSummary[]>;
+  /** Tickets in any state waiting on other tickets. */
+  held: UseQueryResult<TicketSummary[]>;
   pullRequests: UseQueryResult<WorkspacePullRequests>;
 }
 
@@ -92,12 +96,21 @@ interface NeedsYouSectionProps {
  * each, and 14 of them buried the rest of this section on real data. Each row
  * opens its ticket's Approvals tab; "Open inbox" resolves them in bulk.
  */
-export function NeedsYouSection({ ticketIndex, approvals, stuck, pullRequests }: NeedsYouSectionProps) {
+export function NeedsYouSection({
+  workspaceSlug,
+  ticketIndex,
+  approvals,
+  stuck,
+  held,
+  pullRequests,
+}: NeedsYouSectionProps) {
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const pending = approvals.data ?? [];
   const approvalGroups = groupApprovals(pending);
   const approvalCount = pending.length;
-  const tickets = [...(stuck.data ?? [])].sort(
+  // A ticket waiting on others is not yours to unblock: it is listed below,
+  // under what it waits on, and not counted here.
+  const tickets = (stuck.data ?? []).filter((ticket) => blockGroup(ticket) !== "tickets").sort(
     (a, b) => BLOCK_ORDER.indexOf(blockGroup(a)) - BLOCK_ORDER.indexOf(blockGroup(b)) || b.priority - a.priority,
   );
   const brokenPrs = (pullRequests.data?.pull_requests ?? []).filter(
@@ -110,9 +123,9 @@ export function NeedsYouSection({ ticketIndex, approvals, stuck, pullRequests }:
       id="wsd-needs-you"
       title="Needs you now"
       count={String(total)}
-      queries={[approvals, stuck]}
+      queries={[approvals, stuck, held]}
       errorTitle="Could not load what needs you"
-      empty={total === 0}
+      empty={total === 0 && (held.data ?? []).length === 0}
       emptyMessage="Nothing is waiting on you: no approvals, no blocked tickets, no pull requests that cannot merge."
       actions={
         approvalCount > 0 ? (
@@ -176,6 +189,8 @@ export function NeedsYouSection({ ticketIndex, approvals, stuck, pullRequests }:
           />
         </div>
       ) : null}
+
+      <HeldTicketsGroup held={held.data ?? []} workspaceSlug={workspaceSlug} />
 
       {brokenPrs.length > 0 ? (
         <div className="wsd-group">

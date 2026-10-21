@@ -85,12 +85,19 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
+from loregarden.services.agent_ticket_filing import (
+    check_filing_budget,
+    filing_run,
+    record_filing,
+)
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
+from loregarden.services.dependency_hold import admit_named_start
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
 from loregarden.services.stage_shape import current_stage_shape
+from loregarden.services.ticket_dependencies import resolve_prerequisites
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
@@ -263,6 +270,7 @@ def _normalize_stage_scoped(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "loregarden_start_stage":
         payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
         payload["force"] = _coerce_optional_bool(args.get("force"))
+        payload["ignore_prerequisites"] = _coerce_optional_bool(args.get("ignore_prerequisites"))
     if name == "loregarden_complete_stage":
         payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
         payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
@@ -420,6 +428,7 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "priority": _coerce_optional_int(args.get("priority"), field="priority"),
             "external_id": _coerce_optional_string(args.get("external_id")),
             "parent": _coerce_optional_string(args.get("parent")),
+            "depends_on": _coerce_string_list(args.get("depends_on") or [], field="depends_on"),
         }
         if payload["priority"] is None:
             payload["priority"] = 3
@@ -580,6 +589,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "force": _boolean_prop(
                     "Dispatch the stage even though it has reached its retry budget. "
                     "The override is recorded."
+                ),
+                "ignore_prerequisites": _boolean_prop(
+                    "Start the stage although the ticket waits on prerequisites that are "
+                    "not done and landed. The override is recorded."
                 ),
             },
             required=["run_id", "stage_key"],
@@ -876,7 +889,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Create a new ticket. Mirrors the TicketCreate schema — validation "
             "(hierarchy rules: initiatives are parentless and own milestones) is owned "
             "by TicketService.create_ticket, not reimplemented here. Returns the "
-            "created ticket's id, external_id, and title."
+            "created ticket's id, external_id, and title. A pipeline agent may file "
+            "up to three per run; each is related to the ticket the run is working on."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -903,6 +917,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Parent ticket, as a UUID or external id — resolved the same "
                     "way loregarden_get_ticket resolves ticket_id."
                 ),
+                "depends_on": {
+                    "type": "array",
+                    "description": (
+                        "Tickets this one waits for, as UUIDs or external ids. Name them "
+                        "here, not only in the description: nothing dispatches a ticket "
+                        "until these are done and landed."
+                    ),
+                    "items": {"type": "string"},
+                },
             },
             required=["title"],
         ),
@@ -1152,7 +1175,12 @@ TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 
 
 def _create_ticket(
-    session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
+    session: Session,
+    svc: OrchestrationCallbackService,
+    arguments: dict[str, Any],
+    *,
+    orchestrated: bool,
+    run_id: str,
 ) -> str:
     """`parent` is resolved via `svc.resolve_ticket` — the same UUID/external_id
     resolution `loregarden_get_ticket` uses — rather than a second lookup, so the two
@@ -1172,6 +1200,11 @@ def _create_ticket(
             parent_ticket_id = svc.resolve_ticket(ticket_id=parent).id
         except ValueError as exc:
             raise ValueError(f"Parent ticket not found: {parent}") from exc
+    prerequisites = resolve_prerequisites(session, arguments.get("depends_on") or [])
+
+    run = filing_run(session, run_id) if orchestrated else None
+    if run is not None:
+        check_filing_budget(session, run)
 
     ticket = TicketService(session).create_ticket(
         workspace_slug=arguments.get("workspace_slug"),
@@ -1182,7 +1215,11 @@ def _create_ticket(
         acceptance_criteria=arguments.get("acceptance_criteria") or [],
         priority=arguments.get("priority", 3),
         external_id=arguments.get("external_id", ""),
+        depends_on=prerequisites,
+        created_by="agent" if run is not None else "user",
     )
+    if run is not None:
+        record_filing(session, run, ticket)
     return json.dumps(
         {
             "id": ticket.id,
@@ -1300,7 +1337,7 @@ def execute_tool(
         return delegated
 
     if name == "loregarden_create_ticket":
-        return _create_ticket(session, svc, arguments)
+        return _create_ticket(session, svc, arguments, orchestrated=orchestrated, run_id=run_id)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff
@@ -1348,6 +1385,13 @@ def execute_tool(
     run = run_ref.require_orchestration(name)
 
     if name == "loregarden_start_stage":
+        admit_named_start(
+            session,
+            ticket,
+            stage_key=arguments["stage_key"],
+            ignore_prerequisites=bool(arguments.get("ignore_prerequisites")),
+            actor="mcp",
+        )
         reservation, _ = run_admitted(
             session,
             ticket,

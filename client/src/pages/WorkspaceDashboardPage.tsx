@@ -20,7 +20,7 @@ import { Button } from "../components/ui/Button";
 import { INSTANCES_KEY } from "../hooks/useLocalInstances";
 import { workspacesPath } from "../lib/appNavigation";
 import { beginVisit, resolveCatchUpWindow, type CatchUpSpan } from "../lib/catchUpWindow";
-import { indexTree } from "../lib/workspaceDashboard";
+import { blockedNeedingAction, indexTree } from "../lib/workspaceDashboard";
 import "./WorkspaceDashboardPage.css";
 
 /** GitHub is asked again at most this often; every refetch is a `gh` call. */
@@ -96,6 +96,12 @@ export function WorkspaceDashboardPage({ workspaceSlug }: WorkspaceDashboardPage
     queryKey: ["tickets", "workspace-dashboard", workspaceSlug, "stuck"],
     queryFn: () => api.tickets({ workspace: workspaceSlug, state: ["blocked", "parked"] }),
   });
+  // Every state, not only blocked: a backlog or in-progress ticket held by a
+  // prerequisite waits as surely, and was missing from this page.
+  const held = useQuery({
+    queryKey: ["tickets", "workspace-dashboard", workspaceSlug, "held"],
+    queryFn: () => api.tickets({ workspace: workspaceSlug, blocked_on: ["tickets"] }),
+  });
   // The inbox's own query and cadence; filtered here rather than asked per workspace.
   const approvals = useQuery({
     queryKey: ["approvals"],
@@ -158,10 +164,18 @@ export function WorkspaceDashboardPage({ workspaceSlug }: WorkspaceDashboardPage
           remote={remote}
           summary={summary}
           approvals={approvals}
+          blockedNeedingAction={blockedNeedingAction(stuck.data)}
           pullRequests={pullRequests}
         />
         <div className="wsd-columns">
-          <NeedsYouSection ticketIndex={ticketIndex} approvals={approvals} stuck={stuck} pullRequests={pullRequests} />
+          <NeedsYouSection
+            workspaceSlug={workspaceSlug}
+            ticketIndex={ticketIndex}
+            approvals={approvals}
+            stuck={stuck}
+            held={held}
+            pullRequests={pullRequests}
+          />
           <ActivitySection
             query={activity}
             span={span}

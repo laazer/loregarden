@@ -19,6 +19,8 @@ interface WorkspaceHeaderProps {
   remote: UseQueryResult<WorkspaceRemote>;
   summary: UseQueryResult<TicketStatusSummary>;
   approvals: UseQueryResult<Approval[]>;
+  /** Blocked tickets a person or an agent has to clear; undefined while loading. */
+  blockedNeedingAction: number | undefined;
   pullRequests: UseQueryResult<WorkspacePullRequests>;
 }
 
@@ -44,6 +46,7 @@ export function WorkspaceHeader({
   remote,
   summary,
   approvals,
+  blockedNeedingAction,
   pullRequests,
 }: WorkspaceHeaderProps) {
   const navigate = useNavigate();
@@ -107,7 +110,7 @@ export function WorkspaceHeader({
           <p className="wsd-standing">
             {standingSentence({
               approvals: approvals.data?.length,
-              blocked: counts?.blocked,
+              blocked: blockedNeedingAction,
               pullRequests: prs,
             })}
           </p>

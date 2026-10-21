@@ -944,11 +944,9 @@ class PermissionBridgeRunner:
         streamer: RunStreamSink | None,
     ) -> bool:
         message = (
-            f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
-            "allowlist, a9-create-ticket-mcp-tool; superseded once "
-            "a2-per-agent-server-policy lands). Use it only from interactive "
-            "contexts (Ticket Studio chat, a human's terminal session, direct "
-            "operator MCP/HTTP calls)."
+            f"{bare_mcp} is denied to orchestrated pipeline agents. Do not route "
+            "around this through the REST API or the database: say in your stage "
+            "report what you needed it for, and a person decides."
         )
         self._send_response(
             proc,
@@ -1036,8 +1034,8 @@ class PermissionBridgeRunner:
             )
         ):
             # Checked first, ahead of every approval path including the human
-            # inbox — an orchestrated stage agent must never be able to spawn
-            # tickets mid-run, not even with a click. See ORCHESTRATED_DENIED_MCP_TOOLS,
+            # inbox — a tool an orchestrated stage agent may not call is not
+            # one it may call with a click either. See ORCHESTRATED_DENIED_MCP_TOOLS,
             # and ORCHESTRATED_DENIED_MCP_ARGUMENTS for the tools where only one
             # argument is off limits (`start_stage(force=…)` clears the retry
             # budget that stopped the caller). `mcp.tools.execute_tool` refuses

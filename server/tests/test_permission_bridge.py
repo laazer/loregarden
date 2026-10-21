@@ -1426,12 +1426,13 @@ def test_permission_bridge_triage_read_only_mcp_tool_auto_approved(tmp_path):
         assert approvals == []
 
 
-def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tmp_path):
-    """Per a9-create-ticket-mcp-tool's triage decision: an orchestrated pipeline
-    agent (track_workflow_stage=True, the default every stage run uses) must be
-    auto-*denied* `loregarden_create_ticket` — never even reaching the human
-    approval inbox. This pins the orchestrated side of the interim allowlist end
-    to end, not just the pure predicate in `is_orchestrated_agent_denied_mcp_tool`."""
+def test_permission_bridge_orchestrated_agent_denied_start_orchestration_end_to_end(tmp_path):
+    """An orchestrated pipeline agent (track_workflow_stage=True, the default every
+    stage run uses) is auto-*denied* a tool in ORCHESTRATED_DENIED_MCP_TOOLS —
+    never even reaching the human approval inbox. This pins the orchestrated side
+    of the policy end to end, not just the pure predicate in
+    `is_orchestrated_agent_denied_mcp_tool`. (`create_ticket` was the tool here
+    until it was allowed back, capped, for lg-milestone-that-1315.)"""
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
     from loregarden.services.seed import seed_database
@@ -1451,7 +1452,7 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
         ).first()
 
         run = AgentRun(
-            run_code="run_orchestrated_create_ticket_denied",
+            run_code="run_orchestrated_start_orchestration_denied",
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="backend_implementer",
@@ -1475,11 +1476,11 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
         permission_line = json.dumps(
             {
                 "type": "control_request",
-                "request_id": "perm_create_ticket_denied",
+                "request_id": "perm_start_orchestration_denied",
                 "request": {
                     "subtype": "can_use_tool",
-                    "tool_name": "mcp__loregarden__loregarden_create_ticket",
-                    "tool_input": {"workspace_slug": "loregarden", "title": "spawned mid-run"},
+                    "tool_name": "mcp__loregarden__loregarden_start_orchestration",
+                    "tool_input": {"ticket_id": ticket.id},
                 },
             }
         )
@@ -1496,7 +1497,7 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
 
         def fail_wait_for_approval(approval_id, **kwargs):
             raise AssertionError(
-                "orchestrated create_ticket must be auto-denied, not routed to the "
+                "orchestrated start_orchestration must be auto-denied, not routed to the "
                 "human approval inbox"
             )
 
@@ -1531,7 +1532,7 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
 def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(tmp_path):
     """Interactive chat (track_workflow_stage=False) gets full Loregarden MCP access.
 
-    Pipeline stage runs still deny create_ticket; triage / Home / branch auto-approve
+    Pipeline stage runs take create_ticket through the bridge; triage / Home / branch auto-approve
     it instead of routing to the inbox or the orchestrated deny path.
     """
     from loregarden.agents.cli_adapters import build_interactive_invocation

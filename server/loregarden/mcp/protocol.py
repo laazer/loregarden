@@ -58,6 +58,7 @@ def handle_request(
                 arguments=arguments,
                 decision=DECISION_FAILED,
                 decision_ms=int((time.monotonic() - started) * 1000),
+                transport_run_id=run_id,
             )
             return {
                 "jsonrpc": "2.0",
@@ -73,6 +74,7 @@ def handle_request(
             arguments=arguments,
             decision=DECISION_EXECUTED,
             decision_ms=int((time.monotonic() - started) * 1000),
+            transport_run_id=run_id,
         )
         return {
             "jsonrpc": "2.0",

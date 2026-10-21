@@ -22,7 +22,13 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.blocked_on import blocked_on_clause, blocked_on_map, waiting_on_map
+from loregarden.services.blocked_on import (
+    blocked_on_clause,
+    blocked_on_map,
+    root_blockers_map,
+    waiting_on_map,
+)
+from loregarden.services.dependency_hold import override_prerequisites
 from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.ticket_rollup import reconcile_all_parents, reconcile_ancestors
 from sqlmodel import Session, col, select
@@ -140,7 +146,28 @@ def test_the_startup_sweep_stamps_parents_already_blocked(session, workspace):
     assert feature.block_kind is BlockKind.TICKETS
 
 
+def test_an_agent_declares_a_wait_on_tickets_by_naming_them():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        + json.dumps(
+            {
+                "status": "blocked",
+                "confidence": 0.9,
+                "blocked_kind": "tickets",
+                "waiting_on": ["lg-milestone-that-1314", " "],
+            }
+        )
+        + "\n<<<END_STAGE_REPORT>>>\n"
+    )
+    assert report is not None
+    assert (report.blocked_kind, report.waiting_on) == (
+        BlockKind.TICKETS,
+        ["lg-milestone-that-1314"],
+    )
+
+
 def test_an_agent_cannot_declare_the_rollups_kind():
+    """Without `waiting_on` the kind names no ticket to wait on, so it is not one."""
     report = parse_stage_report(
         "<<<LOREGARDEN_STAGE_REPORT>>>\n"
         + json.dumps({"status": "blocked", "confidence": 0.9, "blocked_kind": "tickets"})
@@ -176,14 +203,29 @@ def board_fixture(session, workspace) -> dict[str, Ticket]:
         "held": _ticket(session, workspace, "held"),
         "met": _ticket(session, workspace, "met"),
         "started": _ticket(session, workspace, "started", state=TicketState.IN_PROGRESS),
+        "held_mid_workflow": _ticket(
+            session, workspace, "held-mid-workflow", state=TicketState.IN_PROGRESS
+        ),
+        "harness_and_held": _ticket(
+            session,
+            workspace,
+            "harness-and-held",
+            state=TicketState.BLOCKED,
+            kind=BlockKind.HARNESS,
+        ),
         "parked": _ticket(session, workspace, "parked", state=TicketState.PARKED),
         "done": done,
         "open_prereq": open_prereq,
     }
     _depends(session, board["held"], open_prereq)
     _depends(session, board["met"], done)
-    # Started by name past its prerequisite: running, not held.
+    # Started by name past its prerequisite, which is recorded: running, not held.
     _depends(session, board["started"], open_prereq)
+    override_prerequisites(session, board["started"], stage_key="implement", actor="operator")
+    # Every dispatch holds an in-progress ticket too (lg-milestone-that-1315).
+    _depends(session, board["held_mid_workflow"], open_prereq)
+    # A repair would be held at its dispatch, so it is not the agent's to clear.
+    _depends(session, board["harness_and_held"], open_prereq)
     return board
 
 
@@ -195,6 +237,8 @@ EXPECTED = {
     "work": BlockedOn.AGENT,
     "rolled_up": BlockedOn.TICKETS,
     "held": BlockedOn.TICKETS,
+    "held_mid_workflow": BlockedOn.TICKETS,
+    "harness_and_held": BlockedOn.TICKETS,
 }
 
 
@@ -242,6 +286,26 @@ def test_a_rolled_up_parent_names_the_ticket_at_the_bottom_of_the_chain(session,
     assert [(r.external_id, r.reason, r.blocked_on) for r in refs] == [
         ("t", WaitingReason.BLOCKED_CHILD, BlockedOn.PERSON)
     ]
+
+
+def test_a_held_ticket_leads_with_the_root_of_its_chain(session, workspace):
+    """A waits on B, B waits on C, and C is the one a person can move."""
+    root = _ticket(session, workspace, "c", state=TicketState.BLOCKED, kind=BlockKind.DECISION)
+    middle = _ticket(session, workspace, "b", state=TicketState.IN_PROGRESS)
+    sibling_root = _ticket(session, workspace, "d", state=TicketState.IN_PROGRESS)
+    held = _ticket(session, workspace, "a")
+    _depends(session, held, middle)
+    _depends(session, middle, root)
+    _depends(session, held, sibling_root)
+
+    roots = root_blockers_map(session, [held, middle, root])
+
+    assert {(r.external_id, r.blocked_on, r.workspace_slug) for r in roots[held.id]} == {
+        ("c", BlockedOn.PERSON, "proj"),
+        ("d", None, "proj"),
+    }
+    assert [r.external_id for r in roots[middle.id]] == ["c"]
+    assert root.id not in roots
 
 
 def test_a_held_ticket_names_its_unfinished_prerequisites(session, board):

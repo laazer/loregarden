@@ -324,8 +324,9 @@ def reject_orchestrated_tool_denial(name: str, *, orchestrated: bool) -> None:
     """Refuse a whole tool an orchestrated agent may not call at all."""
     if orchestrated and is_orchestrated_agent_denied_mcp_tool(name):
         raise ValueError(
-            f"{name} is not available to orchestrated pipeline agents (interim policy, "
-            "a9-create-ticket-mcp-tool). Use the REST API or an interactive session instead."
+            f"{name} is not available to orchestrated pipeline agents. Do not route around "
+            "this through the REST API or the database: say in your stage report what you "
+            "needed it for, and a person decides."
         )
 
 

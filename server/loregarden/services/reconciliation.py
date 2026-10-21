@@ -42,10 +42,12 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
+    HELD_TICKETS_RESUME,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     PUBLISH_CARDS_CLOSE,
@@ -165,6 +167,12 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A probe once wrote three workspaces on temp-directory repos into the live
     # database (lg-milestone-that-1319); every sweep over workspaces met them.
     _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),
+    # A ticket held on prerequisites, or parked on them by a person, waits for
+    # them to land, and nothing else reads a landing (lg-milestone-that-1315).
+    # The mark comes first, so a park seen waiting in this pass is releasable in
+    # a later one; last overall, so every settler and landing above has run.
+    SweepStep("mark_parked_waits", mark_parked_waits),
+    _invariant(HELD_TICKETS_RESUME),
 )
 
 

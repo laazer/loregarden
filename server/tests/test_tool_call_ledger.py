@@ -141,3 +141,63 @@ def test_the_bridge_leaves_loregarden_calls_it_waved_through_to_dispatch():
     )
     assert not bridge_would_double_count("mcp__github__create_issue", DECISION_ALLOWLIST)
     assert not bridge_would_double_count("Bash", DECISION_ALLOWLIST)
+
+
+def test_a_call_is_credited_to_the_lane_that_made_it_not_its_sibling(
+    client: TestClient, db_session: Session
+):
+    """Two lanes of one parallel stage are in flight on the same ticket. Guessed
+    from the ticket, every call went to whichever the query returned first;
+    1315's plan-risk lane's `link_dependency` was credited to plan-simplest."""
+    ticket = _ticket(db_session)
+    _running(db_session, ticket)
+    caller = AgentRun(
+        run_code="run-ledger-sibling",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="planner",
+        stage_key="plan",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(caller)
+    db_session.commit()
+
+    res = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {"name": "loregarden_get_ticket", "arguments": {"ticket_id": ticket.id}},
+        },
+        headers={"X-Loregarden-Orchestrated": "1", "X-Loregarden-Run": caller.id},
+    )
+
+    assert res.status_code == 200
+    [row] = _rows(db_session)
+    assert (row.run_id, row.agent_id) == (caller.id, "planner")
+
+
+def test_a_call_naming_no_ticket_is_still_credited_to_its_run(
+    client: TestClient, db_session: Session
+):
+    """`search_memory` names no ticket; the transport still says who called."""
+    ticket = _ticket(db_session)
+    run = _running(db_session, ticket)
+
+    client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {
+                "name": "loregarden_list_tickets",
+                "arguments": {"workspace_slug": "loregarden"},
+            },
+        },
+        headers={"X-Loregarden-Orchestrated": "1", "X-Loregarden-Run": run.id},
+    )
+
+    [row] = _rows(db_session)
+    assert (row.run_id, row.ticket_id) == (run.id, ticket.id)

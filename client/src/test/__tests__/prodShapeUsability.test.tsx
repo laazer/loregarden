@@ -6,11 +6,18 @@ import { MemoryRouter } from "react-router-dom";
 import { api } from "../../api/client";
 import type { KnowledgeGraph } from "../../api/memoryApi";
 import type { InitiativeMilestone, InitiativeSuggestionSet, InitiativeView, TicketDetail } from "../../api/client";
-import type { CIStatusResponse, MonitorFinding, TicketArtifactsFeed, TicketLedger } from "../../api/types";
+import type {
+  CIStatusResponse,
+  MonitorFinding,
+  TicketArtifactsFeed,
+  TicketLedger,
+  TicketSummary,
+} from "../../api/types";
 import { TicketCIAutoFix } from "../../components/dashboard/TicketCIAutoFix";
 import { TicketOutputs } from "../../components/dashboard/TicketOutputs";
 import { TicketTimeline } from "../../components/dashboard/TicketTimeline";
 import { WorkflowMonitorView } from "../../components/dashboard/WorkflowMonitorView";
+import { HeldTicketsGroup } from "../../components/workspaceDashboard/HeldTicketsGroup";
 import { stageFanoutApi } from "../../lib/stageFanoutApi";
 import { MemoryMap } from "../../components/knowledge/MemoryMap";
 import { StructuredContent } from "../../components/reader/StructuredContent";
@@ -27,6 +34,7 @@ import monitorFindings from "../fixtures/prod-shape/monitor-findings.json";
 import historyArtifacts from "../fixtures/prod-shape/ticket-history-artifacts.json";
 import historyLedger from "../fixtures/prod-shape/ticket-history-ledger.json";
 import ciStatus from "../fixtures/prod-shape/ticket-ci-status.json";
+import heldTickets from "../fixtures/prod-shape/tickets-waiting-on-tickets.json";
 
 /**
  * The surfaces that shipped unusable, rendered over the API's own responses on
@@ -213,6 +221,33 @@ describe("CI auto-fix history at its retry limit", () => {
     expect(screen.getByText(refused.result_summary!)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry auto-fix" })).not.toBeInTheDocument();
 
+    expect(findUsabilityProblems(container)).toEqual([]);
+  });
+});
+
+describe("Tickets waiting on other tickets, at production volume", () => {
+  const held = heldTickets as unknown as TicketSummary[];
+
+  it("control: one row per held ticket, named in plain text, is flagged", () => {
+    const { container } = render(
+      <ul>
+        {held.map((ticket) => (
+          <li key={ticket.id}>
+            {ticket.title} waiting on {(ticket.waiting_on ?? []).map((ref) => ref.external_id).join(", ")}
+          </li>
+        ))}
+      </ul>,
+    );
+    expect(findUsabilityProblems(container).length).toBeGreaterThan(0);
+  });
+
+  it("the dashboard groups them by root blocker, each one a link", () => {
+    const { container } = render(withProviders(<HeldTicketsGroup held={held} workspaceSlug="loregarden" />));
+
+    expect(screen.getByRole("heading", { name: /Waiting on other tickets/ })).toHaveTextContent(
+      `${held.length} held by`,
+    );
+    expect(screen.getByRole("button", { name: /^Show all \d+$/ })).toBeInTheDocument();
     expect(findUsabilityProblems(container)).toEqual([]);
   });
 });

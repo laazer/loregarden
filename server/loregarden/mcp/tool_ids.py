@@ -387,9 +387,11 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         #: still be running. An agent that finds the pool full has a legitimate
         #: reason to want this and no way to know whose work it would break.
         McpTool.FORCE_RELEASE_DOCKER_LEASE,
-        #: Orchestrated agents may not spawn tickets mid-run
-        #: (a9-create-ticket-mcp-tool).
-        McpTool.CREATE_TICKET,
+        # CREATE_TICKET was here (a9-create-ticket-mcp-tool) while the review
+        # contract told reviewers to file findings with it. Denied the tool, a
+        # reviewer filed lg-milestone-that-1315 by curling the REST API instead,
+        # unattributed. It is allowed again, attributed and capped per run, in
+        # `services.agent_ticket_filing`.
         # An agent this control plane dispatched is *inside* a stage; checking
         # another one out to an outside harness from there would fork the
         # pipeline it is running.
@@ -426,7 +428,9 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: writes no `approvals` row while doing it, and a direct `/mcp` POST never
 #: reaches the bridge at all.
 ORCHESTRATED_DENIED_MCP_ARGUMENTS: dict[McpTool, frozenset[str]] = {
-    McpTool.START_STAGE: frozenset({"force"}),
+    # `ignore_prerequisites` starts a ticket past the prerequisites holding it:
+    # a person's call, never the call of an agent inside the stage it would start.
+    McpTool.START_STAGE: frozenset({"force", "ignore_prerequisites"}),
 }
 
 
