@@ -12,9 +12,12 @@ Dispatch is the one point every adapter passes through: the HTTP `/mcp`
 endpoint and the stdio server both hand `tools/call` to `protocol.handle_request`.
 Recording there sees the call and its outcome, which the bridge never could —
 so `decision_ms` here is real execution time, and `decision` says whether the
-tool ran. It cannot see who is calling: the MCP request carries no run. The
-attribution comes from the arguments — the ticket or orchestration run the
-tool names — and the in-flight agent run under it. A call naming neither is
+tool ran. A supervised run's MCP config names its run (the transport run, a
+header or an env var), and that is who called. Without one, the attribution
+comes from the arguments — the ticket or orchestration run the tool names —
+and the in-flight agent run under it. That guess credited one parallel lane's
+calls to whichever sibling lane the query returned first (lg-milestone-that-1315's
+plan lanes, 2026-10-20), so it is only the fallback. A call naming nothing is
 recorded unattributed rather than dropped: the count is the point.
 
 Never raises. Telemetry that can fail a tool call is worse than none.
@@ -25,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from loregarden.models.domain import OrchestrationRun, Ticket
+from loregarden.models.domain import AgentRun, OrchestrationRun, Ticket
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
@@ -63,13 +66,19 @@ def record_dispatch(
     arguments: dict[str, Any],
     decision: str,
     decision_ms: int,
+    transport_run_id: str,
 ) -> None:
-    """One row for one `tools/call`, attributed as far as the arguments allow."""
+    """One row for one `tools/call`: the calling run when the transport names
+    one, otherwise as far as the arguments allow."""
     try:
         # Raw JSON-RPC params: a caller that sent something other than an
         # object lands here as an AttributeError and is counted unattributed.
         ticket = _ticket_named_by(session, arguments)
-        run = find_active_run(session, ticket.id) if ticket is not None else None
+        run = session.get(AgentRun, transport_run_id) if transport_run_id else None
+        if run is None:
+            run = find_active_run(session, ticket.id) if ticket is not None else None
+        elif ticket is None:
+            ticket = session.get(Ticket, run.ticket_id)
     except Exception:  # noqa: BLE001 - attribution is best effort; the row still lands
         logger.warning("Could not attribute tool call %s", name, exc_info=True)
         ticket, run = None, None

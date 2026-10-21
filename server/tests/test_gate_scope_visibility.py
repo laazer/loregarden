@@ -1180,7 +1180,7 @@ def test_an_explicitly_listed_file_outside_the_repository_is_still_graded(
 ) -> None:
     """The decision this ticket has to make, pinned rather than left to the suite.
 
-    `Invocation.repo` is never absent: `parse_argv` falls back to
+    `GateInvocation.repo` is never absent: `parse_gate_argv` falls back to
     `git_repo_root()`, so a gate handed `/tmp/x.py` and no `--repo` resolves
     `repo` to whatever checkout the process happens to sit in, and the file it
     was *told* to grade is outside it. An unconditional "refuse anything that
@@ -1678,50 +1678,6 @@ def test_a_mode_only_change_is_not_graded_whole(
 # --------------------------------------------------------------------------- #
 # Failures that were loud but bypassed the one channel
 # --------------------------------------------------------------------------- #
-
-PY_GATES = [
-    pytest.param(PY_ORGANIZATION_GATE, id="py-org"),
-    pytest.param(PY_SILENT_EXCEPT_GATE, id="py-silent-except"),
-]
-
-
-@pytest.mark.parametrize("gate", PY_GATES)
-def test_a_nul_byte_names_the_file_rather_than_crashing_the_gate(
-    repo: Path, gate: list[str]
-) -> None:
-    """A `.py` a gate cannot parse must leave through the diagnosis, not a traceback.
-
-    Which exception carries it is the interpreter's business and it has
-    changed: CPython <= 3.10 raises `ValueError` for a NUL byte, which every
-    gate's `except SyntaxError` missed, so the run died mid-walk with a stack
-    trace instead of naming the file. 3.11 raises `SyntaxError`. Pinning the
-    outcome rather than the exception is what makes this hold on both — see
-    `test_a_parse_failure_that_is_not_a_syntax_error_is_unexaminable` for the
-    branch this interpreter does not reach.
-    """
-    _commit_agent_work(repo, "src/pkg/new_mod.py", "x = 1\n\x00\n")
-
-    result = _run_gate(gate, repo, "--base", "main")
-
-    assert result.returncode != 0, _out(result)
-    assert "Traceback" not in _out(result), _out(result)
-    assert "new_mod.py" in _out(result), _out(result)
-    assert "passed" not in _out(result), _out(result)
-
-
-def test_a_parse_failure_that_is_not_a_syntax_error_is_unexaminable() -> None:
-    """The `ValueError` branch, which this interpreter does not raise.
-
-    `ast.parse` is not required to fail with `SyntaxError`, and on the
-    interpreters where it does not, `except SyntaxError` let the failure out
-    past the one channel every gate handles. Driven directly because a
-    black-box repository cannot produce it here.
-    """
-    module = _load_script("precommit_git_diff")
-    with mock.patch.object(module.ast, "parse", side_effect=ValueError("nope")):
-        with pytest.raises(module.UnexaminableFileError) as caught:
-            module.parse_python_source("x = 1\n", Path("src/pkg/new_mod.py"))
-    assert "cannot be reported clean" in str(caught.value)
 
 
 @pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)

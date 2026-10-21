@@ -191,6 +191,31 @@ def test_cli_runs_everything_on_an_empty_diff(git_repo: Path):
     assert result.returncode == selector.EXIT_RUN_EVERYTHING
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("from loregarden.services.leaf import VALUE\n\x00\n", id="nul-byte"),
+        pytest.param("from loregarden.services.leaf import VALUE\ndef (:\n", id="syntax-error"),
+    ],
+)
+def test_cli_runs_everything_when_a_module_cannot_be_parsed(git_repo: Path, body: str):
+    """An unparseable module is a hole in the graph, not a module importing nothing.
+
+    test_middle reaches leaf only through middle. Recording middle as edgeless
+    dropped test_middle from a leaf change while test_dynamic kept the run
+    looking narrowed and green.
+    """
+    pkg = git_repo / "server" / "loregarden" / "services"
+    (pkg / "middle.py").write_text(body, encoding="utf-8")
+    (pkg / "leaf.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _git(git_repo, "commit", "-aqm", "break middle, change leaf")
+
+    result = _run_cli(git_repo, "HEAD~1")
+    assert result.returncode == selector.EXIT_RUN_EVERYTHING, result.stdout
+    assert "middle.py" in result.stderr, result.stderr
+    assert result.stdout == "", result.stdout
+
+
 # --------------------------------------------------------------------------- #
 # the hook wiring
 # --------------------------------------------------------------------------- #
@@ -217,6 +242,8 @@ def test_server_hook_falls_back_to_the_full_suite():
     """
     script = (_ROOT / ".lefthook" / "scripts" / "server-tests.sh").read_text(encoding="utf-8")
     assert "select_pytest_targets.py" in script
+    # Not a bare `python3`: a 3.9 on PATH cannot parse a module using `match`.
+    assert 'server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py"' in script
     assert "LOREGARDEN_FULL_TESTS" in script
     assert "-n auto" not in script, "a worker per core is what the budget replaced"
     # Two invocation sites: the full-suite fallback and the narrowed run.

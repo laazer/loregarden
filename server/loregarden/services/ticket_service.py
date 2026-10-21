@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Sequence
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
@@ -41,6 +42,7 @@ from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.initiative_coverage import initiatives_tracking
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_lineage
 from loregarden.services.ticket_workspace_binding import validate_workspace_binding
@@ -105,7 +107,16 @@ class TicketService:
         milestone: str = "",
         external_id: str = "",
         is_integration_review: bool = False,
+        depends_on: Sequence[Ticket] = (),
+        created_by: str = "user",
     ) -> Ticket:
+        """Create a ticket, and with ``depends_on`` the prerequisites it waits for.
+
+        The edges are written before the ticket can be seen by any dispatcher,
+        so a ticket filed as waiting on unfinished work is never picked up
+        before it says so. lg-milestone-that-1315 was filed with "blocked on
+        1314" only in its prose, and spent five agent turns finding that out.
+        """
         with _create_ticket_lock:
             return self._create_ticket_impl(
                 workspace_slug=workspace_slug,
@@ -118,6 +129,8 @@ class TicketService:
                 milestone=milestone,
                 external_id=external_id,
                 is_integration_review=is_integration_review,
+                depends_on=depends_on,
+                created_by=created_by,
             )
 
     def _validated_parent(
@@ -236,6 +249,8 @@ class TicketService:
         milestone: str = "",
         external_id: str = "",
         is_integration_review: bool = False,
+        depends_on: Sequence[Ticket] = (),
+        created_by: str = "user",
     ) -> Ticket:
         title = title.strip()
         if not title:
@@ -269,7 +284,7 @@ class TicketService:
             parent_ticket_id=parent_ticket_id,
             acceptance_criteria_json=serialize_criteria(acceptance_criteria),
             is_integration_review=is_integration_review,
-            last_updated_by="user",
+            last_updated_by=created_by,
         )
 
         template, stages = self._assign_create_identity(
@@ -284,6 +299,11 @@ class TicketService:
         ticket_id = ticket.id
         self.session.commit()
         ticket = self.session.get(Ticket, ticket_id) or ticket
+
+        # A new ticket has no dependents yet, so no edge from it can close a cycle.
+        dependencies = TicketDependencyService(self.session)
+        for prerequisite in depends_on:
+            dependencies.add_dependency(ticket.id, prerequisite.id, created_by=created_by)
 
         if work_item_type in WORKFLOW_WORK_ITEM_TYPES and template and stages:
             instance = WorkflowInstance(

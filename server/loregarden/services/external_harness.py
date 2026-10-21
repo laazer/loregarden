@@ -44,6 +44,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.handoff_tree_status import (
     describe_handoff_failure,
     describe_handoff_tree,
@@ -415,6 +416,13 @@ def _begin_external_stage(
             stage_key=ticket.workflow_stage_key,
             message=_FINISHED_MESSAGE if _workflow_finished(session, ticket) else _BLOCKED_MESSAGE,
         )
+
+    try:
+        # Before the reap below, which would otherwise fail a run it then has
+        # no stage to replace.
+        refuse_held_dispatch(session, ticket, stage_key=target_key)
+    except DependencyHold as hold:
+        return ExternalStageView(stage_key=target_key, message=str(hold))
 
     orch = OrchestrationService(session)
     stage_def = orch.stage_definition(ticket, target_key)

@@ -16,7 +16,8 @@ const OPTIONAL_COLUMNS: BoardColumnKey[] = ["parked", "wont_do"];
 /** Which column a ticket sits in. A server that predates `blocked_on` leaves it in its state's. */
 export function columnFor(ticket: TicketSummary): BoardColumnKey {
   if (ticket.state === "blocked" && ticket.blocked_on === "person") return "needs_you";
-  if (ticket.blocked_on === "tickets" && (ticket.state === "blocked" || ticket.state === "backlog")) {
+  if (ticket.blocked_on === "tickets" && ticket.state !== "parked") {
+    // In progress too: every dispatch holds it until its prerequisites land.
     return "waiting";
   }
   return ticket.state;

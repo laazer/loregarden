@@ -160,6 +160,11 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # Normal: a block cleared by a requeue, shown with its reason and actor
         # rather than as a block that cleared itself (lg-milestone-that-916).
         "requeued",
+        # Normal, all three (client/src/utils/ticketHistory.ts): waiting on
+        # another ticket is not this one failing, nor is either way out of it.
+        "held_on_prerequisites",
+        "prerequisites_overridden",
+        "released_on_prerequisites",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

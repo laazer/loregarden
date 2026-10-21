@@ -24,6 +24,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
+from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.dependency_readiness import (
     UnmetPrerequisite,
     UnmetReason,
@@ -202,13 +203,17 @@ class BuiltinOrchestrator:
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
 
-                child_pause = _orchestrate_incomplete_children(
-                    self,
-                    ticket,
-                    profile,
-                    auto_approve=auto_approve,
-                    timeout_seconds=agent_timeout,
-                    subtree_budget=budget,
+                # The ticket's own prerequisites first: a parent waiting on
+                # another ticket holds its whole subtree.
+                child_pause = _dependency_hold(self.session, ticket) or (
+                    _orchestrate_incomplete_children(
+                        self,
+                        ticket,
+                        profile,
+                        auto_approve=auto_approve,
+                        timeout_seconds=agent_timeout,
+                        subtree_budget=budget,
+                    )
                 )
                 if child_pause:
                     return self._pause_orchestration(orch_run, ticket, message=child_pause)
@@ -217,10 +222,9 @@ class BuiltinOrchestrator:
                 # carry the work and it never runs its own workflow stages. Running
                 # them would create an unused ticket branch (ensure_ticket_branch
                 # fires per stage agent) and sweep a parent commit onto whatever
-                # branch is checked out — the last child's — and they cannot even
-                # decompose the parent, since orchestrated agents are denied
-                # loregarden_create_ticket (decomposition happens in Ticket Studio,
-                # before orchestration). Reaching here means every child is complete
+                # branch is checked out — the last child's — and decomposition
+                # happens in Ticket Studio, before orchestration, not in a stage
+                # agent. Reaching here means every child is complete
                 # (the pause above returns otherwise), so finalize the parent and stop.
                 if self._has_child_tickets(ticket):
                     return self._finalize_aggregator_parent(orch_run, ticket)
@@ -1001,6 +1005,15 @@ def _partition_children(
             continue
         runnable.append(child)
     return runnable, parked, waiting
+
+
+def _dependency_hold(session: Session, ticket: Ticket) -> str:
+    """Why ``ticket`` may not take its next stage yet, or "" when it may."""
+    try:
+        refuse_held_dispatch(session, ticket, stage_key=ticket.workflow_stage_key)
+    except DependencyHold as hold:
+        return str(hold)
+    return ""
 
 
 def _unmet_for(

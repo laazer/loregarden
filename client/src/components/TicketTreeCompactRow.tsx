@@ -6,6 +6,7 @@ import { blockedOnStateLabel } from "../utils/blockKinds";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
 import { Button } from "./ui/Button";
+import { WaitingOnLinks } from "./waiting/WaitingOnLinks";
 import "./TicketTreeCompactRow.css";
 
 /**
@@ -48,6 +49,14 @@ export function TicketTreeCompactRowBody({
       )}
       <PrioBars priority={node.priority} />
       <span className="tree-compact-title">{node.title}</span>
+      {node.waiting_on?.length ? (
+        <WaitingOnLinks
+          refs={node.waiting_on}
+          here={node.workspace_slug}
+          shown={1}
+          className="tree-compact-wait"
+        />
+      ) : null}
       <span
         className="tree-state-dot"
         style={{ background: TICKET_STATE_COLORS[node.state] }}

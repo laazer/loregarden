@@ -112,7 +112,9 @@ elif [ -z "$BASE" ]; then
 else
   ERR_FILE="$(mktemp)"
   set +e
-  TARGETS="$(python3 "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" 2>"$ERR_FILE")"
+  # The server interpreter, not `python3`: a 3.9 on PATH cannot parse a module
+  # using `match`, and an import graph missing its edges selects too little.
+  TARGETS="$(bash "$ROOT/.lefthook/scripts/server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" 2>"$ERR_FILE")"
   SELECT_STATUS=$?
   set -e
   if [ $SELECT_STATUS -ne 0 ]; then

@@ -5,17 +5,15 @@ import { api } from "../api/client";
 import type { TicketDetail } from "../api/client";
 import type { MonitorFinding } from "../api/types";
 import { formatRelativeAge } from "../lib/timestamps";
-import { navigateToTicket, navigateToTicketTab } from "../lib/useAppNavigation";
+import { navigateToTicketTab } from "../lib/useAppNavigation";
 import { openReader } from "../state/readerStore";
-import { blockKindLabel, waitingOnLabel } from "../utils/blockKinds";
+import { blockKindLabel } from "../utils/blockKinds";
 import { Button } from "./ui/Button";
+import { TicketWaitingOn } from "./waiting/TicketWaitingOn";
 import "./TicketAttention.css";
 
 /** Past this, the one visible line is a teaser and the full text opens in the reader. */
 const TEASER_CHARS = 140;
-
-/** Blockers named as links before the rest become a count. */
-const WAITING_SHOWN = 5;
 
 function firstLine(markdown: string): string {
   const line = markdown.split("\n").find((text) => text.trim()) ?? "";
@@ -55,8 +53,10 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
   });
 
   const block = ticket.blocking_issues?.trim() ?? "";
-  const waiting = ticket.waiting_on ?? [];
-  if (!block && !hasRunErrors && findings.length === 0 && waiting.length === 0) return null;
+  const waiting = (ticket.waiting_on?.length ?? 0) > 0 || (ticket.dependencies ?? []).some(
+    (dep) => dep.unmet_reason === "not_landed" && !dep.overridden,
+  );
+  if (!block && !hasRunErrors && findings.length === 0 && !waiting) return null;
 
   const teaser = firstLine(block);
   const truncated = block.length > TEASER_CHARS || teaser !== block;
@@ -69,7 +69,8 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
   return (
     <section className="attn" aria-label="Needs attention">
       {block ? (
-        <div className="attn-row attn-row--bad">
+        // Waiting on other tickets is not this ticket's failure: the quiet tone.
+        <div className={`attn-row ${ticket.blocked_on === "tickets" ? "attn-row--wait" : "attn-row--bad"}`}>
           <span className="attn-label">{blockLabel}</span>
           <span className="attn-text" title={block}>
             {teaser}
@@ -97,29 +98,9 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
         </div>
       ) : null}
 
-      {waiting.length > 0 ? (
-        // The tickets to open instead of this one: a rolled-up parent has
-        // nothing of its own to fix, and a held one starts when these finish.
-        <div className="attn-row attn-row--wait">
-          <span className="attn-label">Waiting on</span>
-          <span className="attn-links">
-            {waiting.slice(0, WAITING_SHOWN).map((ref) => (
-              <Button
-                key={ref.id}
-                variant="plain"
-                className="attn-action"
-                title={`${ref.title} (${ref.reason === "prerequisite" ? "prerequisite" : "blocked below this one"})`}
-                onClick={() => navigateToTicket(ref.id)}
-              >
-                {waitingOnLabel(ref)}
-              </Button>
-            ))}
-            {waiting.length > WAITING_SHOWN ? (
-              <span className="attn-age">+{waiting.length - WAITING_SHOWN} more</span>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
+      {/* The tickets to open instead of this one: a rolled-up parent has nothing
+          of its own to fix, and a held one starts when these land. */}
+      <TicketWaitingOn ticket={ticket} />
 
       {findings.length > 0 ? (
         <>

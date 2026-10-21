@@ -45,6 +45,7 @@ from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     UnexaminableError,
     UnexaminableFileError,
     parse_gate_argv,
+    parse_python_source,
     read_source_text,
     resolve_gate_scope,
 )
@@ -146,7 +147,7 @@ def _has_explicit_env(node: ast.Call) -> bool:
 def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str, str]]:
     source = read_source_text(path, repo=repo)
     try:
-        tree = ast.parse(source)
+        tree = parse_python_source(source, path)
     except SyntaxError as exc:
         # A file this gate could not parse is not a file it cleared.
         raise UnexaminableFileError(

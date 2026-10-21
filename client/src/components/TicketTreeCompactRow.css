@@ -59,3 +59,22 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* What a held row waits on, beside its title: one link, the rest one click away.
+   Only where the row has room for both: at the Console sidebar's width an id
+   beside the title cut both to a few letters. There the row's state still says
+   "Waiting on tickets", and the Workflow pane names them. */
+.ticket-tree--compact {
+  container-type: inline-size;
+}
+
+.tree-compact-wait {
+  flex: none;
+  font-size: 11.5px;
+}
+
+@container (max-width: 420px) {
+  .tree-compact-wait {
+    display: none;
+  }
+}

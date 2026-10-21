@@ -45,12 +45,11 @@ from gate_python_guard import require_supported_python  # noqa: E402 - path set 
 require_supported_python(Path(__file__).name)
 
 from precommit_git_diff import (  # noqa: E402 - path set above
-    DEFAULT_BASE_REF,
-    STAGED,
+    GateInvocation,
     UnexaminableError,
     UnexaminableFileError,
-    git_repo_root,
     located_path,
+    parse_gate_argv,
     parse_python_source,
     read_source_text,
     repo_relative_posix,
@@ -693,48 +692,8 @@ def codebase_dry_errors(
     return errors
 
 
-@dataclass(frozen=True)
-class Invocation:
-    """How this run was asked to scope itself.
-
-    Two callers: lefthook passes staged file paths and nothing else; an
-    orchestration gate passes ``--repo``/``--scope`` and no file list, because it
-    is judging whatever an agent just did to a workspace it does not enumerate.
-    """
-
-    files: list[Path]
-    repo: Optional[Path]
-    diff_scope: str
-    base_ref: str
-    label: str
-
-
-def parse_argv(argv: list[str]) -> Invocation:
-    files: list[Path] = []
-    repo_arg: Optional[str] = None
-    diff_scope = STAGED
-    base_ref = DEFAULT_BASE_REF
-    rest = argv[1:]
-    index = 0
-    while index < len(rest):
-        arg = rest[index]
-        if arg == "--repo" and index + 1 < len(rest):
-            repo_arg, index = rest[index + 1], index + 2
-        elif arg == "--scope" and index + 1 < len(rest):
-            diff_scope, index = rest[index + 1], index + 2
-        elif arg == "--base" and index + 1 < len(rest):
-            base_ref, index = rest[index + 1], index + 2
-        else:
-            if arg.endswith(".py"):
-                files.append(Path(arg))
-            index += 1
-    repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
-    label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
-    return Invocation(files, repo, diff_scope, base_ref, label)
-
-
 def main(argv: list[str]) -> int:
-    invocation = parse_argv(argv)
+    invocation = parse_gate_argv(argv)
     try:
         return _check(invocation)
     except UnexaminableError as exc:
@@ -745,7 +704,7 @@ def main(argv: list[str]) -> int:
         return 1
 
 
-def _check(invocation: Invocation) -> int:
+def _check(invocation: GateInvocation) -> int:
     run = resolve_gate_scope(
         label=invocation.label,
         repo=invocation.repo,
@@ -788,4 +747,4 @@ def _check(invocation: Invocation) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))

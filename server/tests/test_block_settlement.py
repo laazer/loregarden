@@ -328,6 +328,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:_held_for_operation_criteria": "settles",
     "services/run_completion.py:_rearmed_for_transient_retry": "settles",
     "services/run_completion.py:advance_stage_after_run": "settles",
+    "services/run_completion.py:_block_on_report": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",
     "services/stage_retry_budget.py:enforce_stage_retry_budget": (
         "delegates: orchestration_callbacks.block_ticket"

@@ -62,7 +62,7 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "blocked_kind": "harness|work|decision|human_action|null", "options": ["<choice a person can pick, when blocked_kind is decision>"]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
 <<<END_STAGE_REPORT>>>
 ```
 
@@ -73,7 +73,10 @@ Field rules:
   Before rejecting, name the acceptance criterion your finding makes false, and put it in
   `unmet_criteria`. If you cannot name one, the work in front of you is done and your finding
   is a **new ticket** — file it with `loregarden_create_ticket` and report `pass`, saying in
-  your response what you filed and why it did not block.
+  your response what you filed and why it did not block. If the new ticket cannot start until
+  other work lands, pass those tickets in `depends_on` when you create it: a dependency written
+  only in the description holds nothing, and the ticket is dispatched straight into the wall.
+  A run may file three tickets; findings that are instances of one defect are one ticket.
 
   This is the difference between a review that converges and one that does not. A defect
   *family* — "the gate can be made to examine nothing", "the parser mishandles some inputs" —
@@ -107,7 +110,11 @@ Field rules:
   only a person should make (a spec bar tripped, two valid approaches) — you MUST also give
   `options`, 2–4 short choices a person can pick in one click; the answer comes back to the
   ticket and the stage reruns without anyone asking. `human_action`: a person's hands are needed
-  (credentials, hardware, an external account). A `blocked` report with no kind is treated as
+  (credentials, hardware, an external account). `tickets`: this ticket cannot proceed until
+  other tickets land (the code it builds on is not merged yet) — you MUST also give `waiting_on`,
+  their external ids. The orchestrator links them as prerequisites and holds the ticket, with no
+  repair turn and no person paged; the stage reruns by itself once they are done and landed.
+  Do not use `work` for this: a repair agent cannot make another ticket land. A `blocked` report with no kind is treated as
   `work`, and the history says the agent did not say — earn the person's attention by naming it.
   **A `decision` is also the only way to get a person's go-ahead for an irreversible or outward
   action** (force-pushing or publishing a ref, opening or closing a pull request, re-cutting
@@ -130,6 +137,9 @@ Field rules:
   split them out or keep them.
 - `options`: only with `blocked_kind: decision`. Each is the answer itself ("Relax the bar to
   0.5", "Try approach B", "Accept and continue"), not a question.
+- `waiting_on`: only with `blocked_kind: tickets`. External ids (`lg-milestone-that-1314`), one
+  per ticket this one waits for. An id that does not resolve, or a ticket already done and
+  landed, turns the report into an ordinary block that says so.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.
 
 If you emit no report, or a malformed one, the orchestrator **blocks the stage** (fail-closed).

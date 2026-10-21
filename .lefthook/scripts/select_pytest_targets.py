@@ -38,6 +38,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+_LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
+if str(_LEFTHOOK_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
+
+# Before the sibling import. Below 3.11 a module using 3.10+ syntax (`match`)
+# does not parse, so its imports are unknown and every narrowed run would fall
+# back to the full suite. Refusing with EX_UNAVAILABLE says why in one line;
+# server-tests.sh then runs everything with that line as the reason.
+from gate_python_guard import require_supported_python  # noqa: E402 - path set just above
+
+require_supported_python(Path(__file__).name)
+
+from precommit_git_diff import (  # noqa: E402 - path set above
+    UnexaminableError,
+    UnexaminableFileError,
+    parse_python_source,
+)
+
 EXIT_SELECTED = 0
 EXIT_RUN_EVERYTHING = 2
 
@@ -115,11 +133,20 @@ def _imported_modules(tree: ast.AST) -> set[str]:
     return found
 
 
-def _parse(path: Path) -> ast.AST | None:
+def _parse(path: Path) -> ast.AST:
+    """The module's AST, or `UnexaminableFileError` naming why there is none.
+
+    This used to return ``None`` for a file it could not read or parse, and the
+    graph recorded that module as importing nothing. A test reaching a changed
+    module only through it was then not selected: a hole in the graph read as a
+    fact about the code, which is the narrowing this selector exists to avoid.
+    """
     try:
-        return ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        return None
+        return parse_python_source(path.read_text(encoding="utf-8"), path)
+    except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+        raise UnexaminableFileError(
+            f"{path}: could not read its imports ({type(exc).__name__}: {exc})"
+        ) from exc
 
 
 def build_graph(
@@ -135,12 +162,12 @@ def build_graph(
     module_edges: dict[str, set[str]] = {}
     for name, py in known.items():
         tree = _parse(py)
-        module_edges[name] = {m for m in _imported_modules(tree) if m in known} if tree else set()
+        module_edges[name] = {m for m in _imported_modules(tree) if m in known}
 
     test_edges: dict[Path, set[str]] = {}
     for py in sorted(test_root.rglob("test_*.py")):
         tree = _parse(py)
-        test_edges[py] = {m for m in _imported_modules(tree) if m in known} if tree else set()
+        test_edges[py] = {m for m in _imported_modules(tree) if m in known}
 
     return module_edges, test_edges
 
@@ -206,7 +233,13 @@ def main() -> int:
         print(reason, file=sys.stderr)
         return EXIT_RUN_EVERYTHING
 
-    selected = select(repo, paths)
+    try:
+        selected = select(repo, paths)
+    except UnexaminableError as exc:
+        # A module whose imports are unknown may be the only path from a test
+        # to the change, so no subset is honest.
+        print(f"cannot map the import graph: {exc}", file=sys.stderr)
+        return EXIT_RUN_EVERYTHING
     if not selected:
         # More often a hole in the graph than a module nothing tests.
         print("no test file reaches the changed modules", file=sys.stderr)

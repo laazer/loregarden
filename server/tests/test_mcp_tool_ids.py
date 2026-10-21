@@ -30,7 +30,7 @@ def test_policy_sets_only_reference_known_tools():
 
 
 def test_str_enum_membership_accepts_bare_tool_names():
-    assert McpTool.CREATE_TICKET in ORCHESTRATED_DENIED_MCP_TOOLS
-    assert "loregarden_create_ticket" in ORCHESTRATED_DENIED_MCP_TOOLS
+    assert McpTool.START_ORCHESTRATION in ORCHESTRATED_DENIED_MCP_TOOLS
+    assert "loregarden_start_orchestration" in ORCHESTRATED_DENIED_MCP_TOOLS
     assert "loregarden_create_ticket" not in AUTO_APPROVED_MCP_TOOLS
     assert "loregarden_attach_evidence" in AUTO_APPROVED_MCP_TOOLS

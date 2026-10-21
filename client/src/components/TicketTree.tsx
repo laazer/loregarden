@@ -16,6 +16,7 @@ import {
   childProgressSegments,
 } from "./chat/primitives/TicketCardMeta";
 import "./chat/primitives/PrimitiveCard.css";
+import { WaitingOnLinks } from "./waiting/WaitingOnLinks";
 
 export type TicketTreePresentation = "default" | "v6" | "compact";
 
@@ -250,6 +251,12 @@ function TreeRow({
                   <span className="tree-state-dot" style={{ background: stateColor }} />
                   {blockedOnStateLabel(node.state, node.blocked_on)}
                 </span>
+                {node.waiting_on?.length ? (
+                  <>
+                    <span style={{ color: "var(--bd2)" }}>·</span>
+                    <WaitingOnLinks refs={node.waiting_on} here={node.workspace_slug} shown={2} />
+                  </>
+                ) : null}
                 {node.workspace_slug ? (
                   <>
                     <span style={{ color: "var(--bd2)" }}>·</span>

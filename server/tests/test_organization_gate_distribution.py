@@ -57,14 +57,14 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_bare_file_list_is_precommit_mode():
-    inv = checker.parse_argv(["prog", "server/loregarden/foo.py"])
+    inv = checker.parse_gate_argv(["server/loregarden/foo.py"])
     assert inv.diff_scope == "staged"
     assert inv.label == "pre-commit"
     assert [p.name for p in inv.files] == ["foo.py"]
 
 
 def test_repo_and_scope_flags_are_gate_mode():
-    inv = checker.parse_argv(["prog", "--repo", "/tmp/ws", "--scope", "worktree"])
+    inv = checker.parse_gate_argv(["--repo", "/tmp/ws", "--scope", "worktree"])
     assert inv.diff_scope == "worktree"
     assert inv.label == "gate"
     assert inv.repo == Path("/tmp/ws").resolve()
@@ -75,17 +75,15 @@ def test_unknown_scope_is_carried_through_to_be_refused_not_coerced():
     """Coercing a typo'd `--scope` to `staged` examined the index and exited 0.
 
     At a stage transition the index is empty, so `--scope wortree` read nothing
-    over a committed violation. `parse_argv` now reports what it was given and
+    over a committed violation. `parse_gate_argv` now reports what it was given and
     `resolve_gate_scope` raises on it — see
     `test_gate_scope_visibility.py::test_an_unrecognised_scope_is_refused_...`.
     """
-    assert checker.parse_argv(["prog", "--scope", "nonsense"]).diff_scope == "nonsense"
+    assert checker.parse_gate_argv(["--scope", "nonsense"]).diff_scope == "nonsense"
 
 
 def test_branch_scope_takes_a_base_ref():
-    inv = checker.parse_argv(
-        ["prog", "--repo", "/tmp/ws", "--scope", "branch", "--base", "develop"]
-    )
+    inv = checker.parse_gate_argv(["--repo", "/tmp/ws", "--scope", "branch", "--base", "develop"])
     assert (inv.diff_scope, inv.base_ref) == ("branch", "develop")
 
 
