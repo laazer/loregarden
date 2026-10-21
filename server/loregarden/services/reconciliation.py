@@ -49,6 +49,7 @@ from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     HELD_TICKETS_RESUME,
+    LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     PUBLISH_CARDS_CLOSE,
@@ -161,6 +162,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
     _invariant(PUBLISH_CARDS_CLOSE),
+    # Report-only: work left in a finished ticket's tree is a person's call to
+    # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
+    # kept, which is a handful, not one per ticket.
+    _invariant(LANDED_WORK_IS_COMMITTED),
     # A branch that merged a squash of its integration branch conflicts on every
     # later checkout merge (lg-external-harness-1318). The next checkout repairs
     # it too; this catches the idle ones and reports one entering after #654.
