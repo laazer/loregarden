@@ -14,6 +14,7 @@ from datetime import date
 
 from loregarden.models.domain import InvariantReentry, Ticket
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
+from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
@@ -236,6 +237,40 @@ LIVE_WORKSPACES_HAVE_REAL_REPOS = Invariant(
     ),
 )
 
+
+def _open_workflows(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=item.ticket.id,
+            ticket_id=item.ticket.id,
+            entered_at=item.entered_at,
+            detail=f"{item.ticket.external_id} is {item.ticket.state.value} with "
+            f"{', '.join(item.open_stages) or 'its cursor'} open "
+            f"('{item.ticket.workflow_stage_key}/{item.ticket.workflow_stage_status.value}')",
+        )
+        for item in open_workflows(session)
+    ]
+
+
+def _close_workflows(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    return close_workflows(session, [w for w in open_workflows(session) if w.ticket.id in wanted])
+
+
+CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS = Invariant(
+    name="closed_tickets_have_closed_workflows",
+    ticket="lg-workflow-integrity-1328",
+    statement="no done or wont_do ticket has a stage pending, running, awaiting or blocked",
+    detect=_open_workflows,
+    repair=_close_workflows,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 20),
+    prevented_by=(
+        "server/tests/test_closed_workflow_guard.py"
+        "::test_every_writer_leaves_a_closed_ticket_with_a_closed_workflow"
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
@@ -243,5 +278,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     PUBLISH_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
+    CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     HELD_TICKETS_RESUME,
 )

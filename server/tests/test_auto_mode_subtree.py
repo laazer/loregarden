@@ -37,6 +37,7 @@ from loregarden.services.oversized_ticket_split import (
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
+from sqlalchemy import text
 from sqlmodel import Session, select
 from tests.hold_line_helpers import (
     assert_plain_single_line,
@@ -1068,7 +1069,9 @@ def test_done_child_with_incomplete_stages_does_not_block_later_siblings(
     parent = _make_ticket(db_session, ws, external_id="di-parent-1", title="Parent")
     # First child: DONE at the ticket level, but its stage instance is untouched
     # (every required stage still PENDING) — exactly the divergent state the bug
-    # tripped on. Set it directly so no stage ever gets ticked.
+    # tripped on. Written in raw SQL: `db.closed_workflow_guard` closes the
+    # stages of any ticket closed through the ORM, so this state now exists only
+    # in rows that predate it, which is what the skip still has to tolerate.
     done_child = _make_ticket(
         db_session,
         ws,
@@ -1076,8 +1079,10 @@ def test_done_child_with_incomplete_stages_does_not_block_later_siblings(
         title="Done child",
         parent_ticket_id=parent.id,
     )
-    done_child.state = TicketState.DONE
-    db_session.add(done_child)
+    db_session.execute(
+        text("UPDATE tickets SET state = :s WHERE id = :id"),
+        {"s": TicketState.DONE.value, "id": done_child.id},
+    )
     db_session.commit()
     db_session.refresh(done_child)
     assert _stage_status(db_session, done_child, "work") == StageStatus.PENDING, (
