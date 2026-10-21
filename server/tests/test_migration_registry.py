@@ -20,6 +20,7 @@ from loregarden.db.migration_registry import (
     ChainFork,
     MigrationChainError,
     MigrationRegistry,
+    SiblingOrder,
     VersionedMigration,
     chain_order,
     ids_declared_in_source,
@@ -57,6 +58,23 @@ def test_the_chain_orders_by_after_not_by_id_or_declaration():
 
     assert _ids(order) == ["20261005_merged_first", "20261001_written_first", "20261007_tip"]
     assert order.forks == ()
+
+
+def test_reversed_siblings_swap_every_fork_and_keep_every_dependency():
+    """The commutation test's other order: each fork the other way round, and
+    every migration still after the one it follows."""
+    steps = [
+        _step("20261002_a", ROOT),
+        _step("20261002_b", ROOT),
+        _step("20261003_after_a", "20261002_a"),
+    ]
+    by_id = [item.id for item in chain_order(ROOT, steps).ordered]
+    reversed_ = [
+        item.id for item in chain_order(ROOT, steps, siblings=SiblingOrder.REVERSED).ordered
+    ]
+
+    assert by_id == ["20261002_a", "20261002_b", "20261003_after_a"]
+    assert reversed_ == ["20261002_b", "20261002_a", "20261003_after_a"]
 
 
 def test_two_branches_following_one_tip_are_a_fork_not_a_crash():
@@ -151,11 +169,6 @@ def test_migrations_is_the_frozen_list_then_the_chain():
     assert M.FROZEN_MIGRATIONS[-1][0] == ROOT
 
 
-def test_the_real_chain_does_not_fork():
-    """A fork means two branches merged against one tip. Point the later `after` at the earlier."""
-    assert M.VERSION_CHAIN.forks == ()
-
-
 def test_the_guard_reads_every_id_the_registry_holds():
     """The guard parses source; a migration it cannot see would be refused nowhere."""
     package_dir = Path(versions.__file__).parent
@@ -208,7 +221,8 @@ def test_the_doctor_chain_check_runs_against_the_real_chain(db_session, tmp_path
     assert finding.status == DoctorStatus.PASS
 
 
-def test_the_doctor_warns_on_a_fork_and_names_both_sides(db_session, tmp_path: Path):
+def test_the_doctor_reports_a_fork_naming_both_sides_and_passes(db_session, tmp_path: Path):
+    """A fork is legitimate; `test_migration_forks_commute` is what proves it harmless."""
     forked = chain_order(ROOT, [_step("20261002_branch_a", ROOT), _step("20261002_branch_b", ROOT)])
     assert forked.forks  # the injected chain really is forked
     workspace = db_session.exec(select(Workspace)).first()
@@ -216,6 +230,6 @@ def test_the_doctor_warns_on_a_fork_and_names_both_sides(db_session, tmp_path: P
     with mock.patch.object(doctor, "VERSION_CHAIN", forked):
         finding = doctor.check_migration_chain(db_session, workspace, tmp_path)
 
-    assert finding.status == DoctorStatus.WARN
+    assert finding.status == DoctorStatus.PASS
     assert "20261002_branch_a, 20261002_branch_b" in finding.finding
     assert ROOT in finding.finding
