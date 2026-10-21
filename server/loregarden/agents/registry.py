@@ -148,7 +148,9 @@ AGENTS: dict[str, dict] = {
         "name": "Repair",
         "role_file": "agents/misc_agents/repair_v1.md",
         "adapter": "claude",
-        "timeout": 900,
+        # 20261021_repair_timeout_for_merges: a merge turn reads both sides'
+        # history and runs the covering tests; 900s cut off two that had resolved.
+        "timeout": 2400,
         "claude_model": "sonnet",
     },
     "security_reviewer": {

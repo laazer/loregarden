@@ -17,6 +17,8 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    Artifact,
+    ArtifactKind,
     BlockKind,
     RunStatus,
     Ticket,
@@ -25,6 +27,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import integration_merge_agent
+from loregarden.services.cli_agent_runner import CliTurnTimeout
 from loregarden.services.integration_merge_budget import (
     HARNESS_RETRY_BASE,
     HARNESS_RETRY_CAP,
@@ -226,6 +229,70 @@ def test_a_crash_settles_the_run_as_harness_and_still_surfaces(tree: Tree):
     [run] = tree.runs()
     assert (run.status, run.failure_kind) == (RunStatus.FAILED, BlockKind.HARNESS)
     assert "crashed: boom" in run.stderr
+
+
+# --- a turn that runs out of time ------------------------------------------------
+
+#: How both turns on lg-milestone-that-1216 ended, 2026-10-19.
+TIMED_OUT = "Integration merge timed out after 900s"
+
+
+def _resolving_then_timing_out(*_args, tree: Path, **_kwargs) -> str:
+    _resolving(tree=tree)
+    raise CliTurnTimeout(TIMED_OUT, "Resolved shared.txt; running the tests.")
+
+
+def _timing_out_halfway(*_args, **_kwargs) -> str:
+    raise CliTurnTimeout(TIMED_OUT, "Halfway through shared.txt.")
+
+
+def test_a_turn_that_staged_before_it_ran_out_of_time_still_lands(tree: Tree):
+    with mock.patch.object(
+        integration_merge_agent, "_run_agent", side_effect=_resolving_then_timing_out
+    ):
+        assert tree.resolve() == BRANCH
+
+    git(tree.repo, "merge-base", "--is-ancestor", "main", BRANCH)
+    [run] = tree.runs()
+    assert run.status is RunStatus.SUCCEEDED
+    assert run.stdout == "Resolved shared.txt; running the tests."
+
+
+def test_a_timed_out_turn_keeps_what_it_said_and_the_retry_is_told(tree: Tree):
+    with mock.patch.object(
+        integration_merge_agent, "_run_agent", side_effect=_timing_out_halfway
+    ) as turn:
+        for _ in range(2):
+            with pytest.raises(IntegrationConflictError):
+                tree.resolve()
+
+    first, _second = tree.runs()
+    assert first.stdout == "Halfway through shared.txt."
+    assert TIMED_OUT in first.stderr
+    retry = turn.call_args_list[1].kwargs["refused"]
+    assert TIMED_OUT in retry
+    assert "Halfway through shared.txt." in retry
+
+
+def test_the_turn_streams_into_its_run_log(tree: Tree, monkeypatch):
+    # conftest stubs every merge turn; this one drives the real `_run_agent`.
+    monkeypatch.delenv("LOREGARDEN_INTEGRATION_MERGE_STUB_RESPONSE")
+
+    def turn(_profile, *, workspace_root: Path, thinking_sink, **_kwargs) -> str:
+        thinking_sink.append_stream_line(
+            '{"type": "assistant", "message": {"content": [{"type": "text", '
+            '"text": "Reading both sides."}]}}\n'
+        )
+        return _resolving(tree=workspace_root)
+
+    with mock.patch.object(integration_merge_agent, "run_cli_agent_turn", side_effect=turn):
+        assert tree.resolve() == BRANCH
+
+    [run] = tree.runs()
+    log = tree.session.exec(
+        select(Artifact).where(Artifact.run_id == run.id, Artifact.kind == ArtifactKind.LOG)
+    ).first()
+    assert log is not None, "a merge turn's output reaches the run's log as it arrives"
 
 
 # --- the backoff ----------------------------------------------------------------
