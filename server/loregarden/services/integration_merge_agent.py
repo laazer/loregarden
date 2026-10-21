@@ -44,15 +44,18 @@ import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from loregarden.agents.registry import REPAIR_AGENT_ID
+from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.models.domain import AgentRun, BlockKind, RunStatus, Ticket, Workspace, utcnow
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
+    CliTurnTimeout,
+    resolve_agent_timeout,
     run_cli_agent_turn,
     stub_response,
 )
 from loregarden.services.cli_auth_errors import format_cli_auth_hint, format_cli_missing_hint
+from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_merge_noco import (
     is_ancestor,
@@ -70,6 +73,7 @@ from loregarden.services.integration_merge_budget import (
 from loregarden.services.organization_gate_service import OrganizationScope, check_repo
 from loregarden.services.run_concurrency import new_run_code
 from loregarden.services.run_lease import lease_renewal
+from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -187,9 +191,9 @@ def merge_base_by_agent(
                     base=base,
                     tips=(branch_sha, base_sha),
                     files=files,
-                    # A retry on the same tip is told why the last one was refused,
-                    # so it is not the same turn again.
-                    refused=refused[-1].stderr if refused else "",
+                    # A retry on the same tip is told why the last one was refused
+                    # and what it said, so it is not the same turn again.
+                    refused=_previous_turn(refused[-1]) if refused else "",
                     about=about,
                 )
         except Exception as exc:
@@ -210,6 +214,14 @@ def merge_base_by_agent(
                 ),
             )
         return resolution
+
+
+def _previous_turn(run: AgentRun) -> str:
+    """Why ``run`` was refused, then what its agent said, for the retry's brief."""
+    said = run.stdout.strip()
+    if not said:
+        return run.stderr
+    return f"{run.stderr.strip()}\n\nWhat that turn said before it ended:\n{said[-2000:]}"
 
 
 def _start_run(
@@ -246,6 +258,7 @@ def _finish_run(session: Session, run: AgentRun, resolution: MergeResolution, re
     run.finished_at = utcnow()
     session.add(run)
     session.commit()
+    finalize_run_log_artifact(run, status=run.status, stderr=run.stderr)
     if resolution.ok:
         logger.info("Merge turn %s resolved %s", run.run_code, run.start_branch)
     else:
@@ -362,8 +375,12 @@ def _attempt(
                 about=about,
             )
         )
+    except CliTurnTimeout as exc:
+        # First: TimeoutError is an OSError. The agent ran out of time on the merge;
+        # what it said until then is kept, so the run shows how far it got.
+        logger.warning("Merge turn %s for %s timed out: %s", run.run_code, branch, exc)
+        return AgentTurn(reply=extract_triage_reply(exc.output), error=str(exc))
     except TimeoutError as exc:
-        # First: TimeoutError is an OSError. The agent ran out of time on the merge.
         logger.warning("Merge turn %s for %s timed out: %s", run.run_code, branch, exc)
         return AgentTurn(error=str(exc))
     except (OSError, ValueError) as exc:
@@ -473,15 +490,29 @@ def _run_agent(
     stub = stub_response(INTEGRATION_MERGE_CLI_PROFILE)
     if stub is not None:
         return stub
+    agent = get_agent(REPAIR_AGENT_ID)
+    if not agent:
+        raise ValueError(f"Unknown integration merge agent: {REPAIR_AGENT_ID}")
+    budget = resolve_agent_timeout(agent, INTEGRATION_MERGE_CLI_PROFILE.timeout_env)
     return run_cli_agent_turn(
         INTEGRATION_MERGE_CLI_PROFILE,
         workspace=workspace,
         prompt=merge_brief(
-            root, branch=branch, base=base, tips=tips, files=files, refused=refused, about=about
+            root,
+            branch=branch,
+            base=base,
+            tips=tips,
+            files=files,
+            refused=refused,
+            about=about,
+            budget_seconds=budget,
         ),
         run_id=run.id,
         workspace_slug=workspace.slug or "",
         workspace_root=tree,
+        # Streamed into the run's log as it arrives: a turn killed by its timeout
+        # still shows what it did (both turns on lg-milestone-that-1216 left nothing).
+        thinking_sink=bootstrap_run_log(run),
     )
 
 
@@ -494,6 +525,7 @@ def merge_brief(
     files: tuple[str, ...],
     refused: str = "",
     about: str = "",
+    budget_seconds: int | None = None,
 ) -> str:
     branch_sha, base_sha = tips
     about = about or (
@@ -509,25 +541,41 @@ def merge_brief(
         if refused.strip()
         else ""
     )
+    # Both turns on lg-milestone-that-1216 (2026-10-19) had every conflict
+    # resolved within seven minutes and then ran tests until the timeout killed
+    # them with nothing staged, so the resolution was thrown away with the tree.
+    # Staging comes before testing, and the budget is stated, so a turn that runs
+    # out of time still hands over its resolution.
+    budget = (
+        f"You have {budget_seconds // 60} minutes. When they run out the turn is killed, and "
+        "only what you have staged by then counts.\n\n"
+        if budget_seconds
+        else ""
+    )
     return (
         f"# Merge `{base}` into `{branch}`\n\n"
         f"{about}\n\n"
         f"This working tree is detached at `{branch}` ({branch_sha[:12]}) and mid-merge with "
         f"`{base}` ({base_sha[:12]}). git stopped on conflicts in:\n{listed}\n\n"
+        f"{budget}"
         f"{previous}"
         "## Do\n"
         f"1. For each file, read what each side meant: `git log --oneline HEAD...MERGE_HEAD -- <file>` "
         "and the commits it lists.\n"
         "2. Resolve every conflict so both intents survive. Do not drop either side to make "
         "the conflict go away.\n"
-        "3. Run the tests that cover the files you resolved, and fix what the merge broke.\n"
-        "4. `git add` the resolved files, and anything you changed to fix a test. Leave no "
-        "unstaged change and no untracked file.\n\n"
+        "3. `git add` each file as soon as it is resolved, before running anything.\n"
+        "4. Run the tests that cover the files you resolved, once, and fix what the merge "
+        "broke. `git add` every fix as you make it. Leave no unstaged change and no "
+        "untracked file.\n\n"
         "Do not commit. Loregarden writes the merge commit from what you staged, then runs the "
         f"workspace gates on what the merge adds over `{base}`, and moves `{branch}` only if "
         "they pass.\n\n"
         "## Do not\n"
         "- commit, push, switch branches, rebase, reset, or abort the merge;\n"
+        "- build another checkout or worktree to compare test results against; a failure "
+        "this merge did not cause is not yours to fix here;\n"
+        "- run the whole suite, or rerun a test file that already passed;\n"
         "- edit files the merge did not touch, beyond what a broken test or a gate finding "
         "needs.\n\n"
         "If a conflict needs a decision only a person can make, leave it unresolved and say why "
