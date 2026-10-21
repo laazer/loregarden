@@ -198,6 +198,10 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv(
         "LOREGARDEN_INTEGRATION_MERGE_STUB_RESPONSE", "Stubbed merge turn: resolved nothing."
     )
+    # A chat reply whose card fails to parse gets a correction turn, which runs
+    # the surface agent's own CLI. An empty answer corrects nothing; a test that
+    # wants a correction sets its own.
+    monkeypatch.setenv("LOREGARDEN_CARD_CORRECTION_STUB_RESPONSE", "")
 
 
 @pytest.fixture(autouse=True)

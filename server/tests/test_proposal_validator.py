@@ -192,22 +192,22 @@ class TestProposalValidatorHierarchyTypes:
         with pytest.raises(ProposalValidationError, match="task cannot contain task"):
             ProposalValidator.validate_all([item])
 
-    def test_bug_cannot_have_children(self):
-        """Bug cannot have any children."""
-        item = HierarchyWorkItem(
-            external_id="b1",
-            title="Bug",
-            work_item_type=WorkItemType.BUG,
-            children=[
-                HierarchyWorkItem(
-                    external_id="t1",
-                    title="Task",
-                    work_item_type=WorkItemType.TASK,
-                )
-            ],
-        )
-        with pytest.raises(ProposalValidationError, match="bug cannot contain task"):
-            ProposalValidator.validate_all([item])
+    def test_bug_holds_tasks_only(self):
+        """A bug holds tasks, so an oversized bug can be split; nothing coarser."""
+
+        def bug_with(child_type: WorkItemType) -> HierarchyWorkItem:
+            return HierarchyWorkItem(
+                external_id="b1",
+                title="Bug",
+                work_item_type=WorkItemType.BUG,
+                children=[
+                    HierarchyWorkItem(external_id="c1", title="Child", work_item_type=child_type)
+                ],
+            )
+
+        ProposalValidator.validate_all([bug_with(WorkItemType.TASK)])
+        with pytest.raises(ProposalValidationError, match="bug cannot contain capability"):
+            ProposalValidator.validate_all([bug_with(WorkItemType.CAPABILITY)])
 
     def test_full_valid_hierarchy_chain(self):
         """Full chain milestone→feature→capability→task should pass."""

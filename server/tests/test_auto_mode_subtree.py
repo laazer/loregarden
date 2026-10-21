@@ -36,7 +36,7 @@ from loregarden.services.oversized_ticket_split import (
     TICKET_SPLIT_CLI_PROFILE,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
-from loregarden.services.workflow_state import parse_stage_map
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlalchemy import text
 from sqlmodel import Session, select
 from tests.hold_line_helpers import (
@@ -1552,6 +1552,58 @@ def test_oversized_ticket_is_split_and_its_parts_run_to_completion(
         title="Oversized parent",
         work_item_type=WorkItemType.FEATURE,
     )
+    parent.acceptance_criteria_json = serialize_criteria(criteria)
+    db_session.add(parent)
+    db_session.commit()
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+
+    children = db_session.exec(select(Ticket).where(Ticket.parent_ticket_id == parent.id)).all()
+    assert len([c for c in children if not c.is_integration_review]) == 2
+    assert all(child.state == TicketState.DONE for child in children)
+    assert parent.state == TicketState.DONE
+    assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == []
+
+
+def test_a_ticket_that_grows_oversized_after_a_stage_is_split_at_the_next_boundary(
+    db_session: Session, tmp_path, monkeypatch
+):
+    """The criteria that make a ticket oversized are written by its early
+    stages, so the split is asked again after one has run — here, with "work"
+    done and nothing committed, the remaining stages are never run on the
+    parent; its parts carry them."""
+    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    reply = json.dumps(
+        {
+            "children": [
+                {
+                    "external_id": f"part-{i}",
+                    "title": f"Part {i}",
+                    "work_item_type": "capability",
+                    "description": f"Part {i}.",
+                    "acceptance_criteria": group,
+                    "priority": 2,
+                    "children": [],
+                }
+                for i, group in enumerate([criteria[:8], criteria[8:]], start=1)
+            ]
+        }
+    )
+    monkeypatch.setenv(TICKET_SPLIT_CLI_PROFILE.stub_env, reply)
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-late-split")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="late-split-parent",
+        title="Grew during spec",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    orch = OrchestrationService(db_session)
+    instance, stages = orch._resolve_stages(parent)
+    set_stage_status(parent, instance, stages, "work", StageStatus.DONE)
+    db_session.add(instance)
     parent.acceptance_criteria_json = serialize_criteria(criteria)
     db_session.add(parent)
     db_session.commit()

@@ -25,7 +25,9 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WorkItemType,
 )
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.external_harness import (
     _FINISHED_MESSAGE,
     EXTERNAL_HARNESS_COMMAND_PREFIX,
@@ -35,6 +37,11 @@ from loregarden.services.external_harness import (
     start_external_orchestration,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.oversized_ticket_split import (
+    MAX_ACCEPTANCE_CRITERIA,
+    TICKET_SPLIT_CLI_PROFILE,
+    split_child_type,
+)
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
@@ -725,3 +732,77 @@ def test_the_stale_base_sentence_appears_once_in_the_prompt_not_per_section(
     assert run_view.prompt.count(run_view.tree_warning) == 1, (
         f"the warning appears {run_view.prompt.count(run_view.tree_warning)} times in the prompt"
     )
+
+
+# The builtin driver's aggregator rule holds for an external harness too: an
+# oversized ticket is split when its stage is asked for, and a ticket whose
+# children carry the work never checks out a stage of its own.
+
+
+def _split_reply(ticket: Ticket, groups: list[list[str]]) -> str:
+    child_type = split_child_type(ticket.work_item_type)
+    return json.dumps(
+        {
+            "children": [
+                {
+                    "external_id": f"part-{i}",
+                    "title": f"Part {i}",
+                    "work_item_type": child_type.value,
+                    "description": f"Part {i}.",
+                    "acceptance_criteria": group,
+                    "priority": 2,
+                    "children": [],
+                }
+                for i, group in enumerate(groups, start=1)
+            ]
+        }
+    )
+
+
+def test_an_oversized_ticket_is_split_when_a_harness_asks_for_its_stage(
+    db_session: Session, monkeypatch
+):
+    ticket = _ticket(db_session)
+    # A bug, the type 32 of the live database's 67 oversized tickets have.
+    ticket.work_item_type = WorkItemType.BUG
+    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    ticket.acceptance_criteria_json = serialize_criteria(criteria)
+    db_session.add(ticket)
+    db_session.commit()
+    monkeypatch.setenv(
+        TICKET_SPLIT_CLI_PROFILE.stub_env, _split_reply(ticket, [criteria[:8], criteria[8:]])
+    )
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+
+    stage = begin_external_stage(db_session, orch_run)
+
+    assert stage.runs == []
+    children = db_session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
+    parts = [c for c in children if not c.is_integration_review]
+    assert len(parts) == 2
+    assert all(part.external_id in stage.message for part in parts)
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == ticket.id)).all() == []
+
+
+def test_a_parent_whose_children_are_done_finalizes_instead_of_serving_a_stage(
+    db_session: Session,
+):
+    ticket = _ticket(db_session)
+    child = Ticket(
+        workspace_id=ticket.workspace_id,
+        external_id="harness-child-done",
+        title="Done child",
+        work_item_type=WorkItemType.TASK,
+        parent_ticket_id=ticket.id,
+        state=TicketState.DONE,
+    )
+    db_session.add(child)
+    db_session.commit()
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+
+    stage = begin_external_stage(db_session, orch_run)
+    db_session.refresh(ticket)
+
+    assert stage.runs == []
+    assert stage.message == _FINISHED_MESSAGE
+    assert ticket.state == TicketState.DONE

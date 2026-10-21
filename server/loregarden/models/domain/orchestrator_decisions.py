@@ -89,3 +89,10 @@ class OrchestratorDecision(StrEnum):
     PREREQUISITES_OVERRIDDEN = "prerequisites_overridden"
     #: A held or parked ticket's prerequisites all landed, so it was resumed.
     RELEASED_ON_PREREQUISITES = "released_on_prerequisites"
+    #: A ticket over the size threshold was split into ordered children, which
+    #: carry its work from here; it runs none of its own stages again.
+    SPLIT_OVERSIZED_TICKET = "split_oversized_ticket"
+    #: A ticket over the size threshold runs whole: its split failed, its type
+    #: holds no children, or its branch already carries work a split would strand.
+    #: Recorded once per content, so a ticket that grows again is tried again.
+    RAN_OVERSIZED_UNSPLIT = "ran_oversized_unsplit"
