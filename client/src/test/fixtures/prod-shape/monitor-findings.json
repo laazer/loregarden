@@ -1603,6 +1603,576 @@
    "configured_floor_seconds": "1800",
    "min_samples": "3",
    "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "blobert"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "backend-impl",
+  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "branch-triage",
+  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2100",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "domain_consultation",
+  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "frontend-impl",
+  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "gate",
+  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "2700",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "implement",
+  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "learning",
+  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "plan",
+  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1200",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "review",
+  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "script_review",
+  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "spec",
+  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1500",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-break",
+  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "test-design",
+  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "900",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "triage",
+  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
+   "workspace_slug": "lore-eden"
+  },
+  "first_seen": null,
+  "last_seen": null,
+  "occurrences": 1,
+  "stage_key": "verify",
+  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
+  "ticket_external_id": "",
+  "ticket_id": "",
+  "ticket_state": null,
+  "ticket_title": "",
+  "workspace_slug": ""
+ },
+ {
+  "condition": "timeout_floor_stale",
+  "evidence": {
+   "configured_floor_seconds": "1800",
+   "min_samples": "3",
+   "sample_count": "0",
    "workspace_slug": "loregarden"
   },
   "first_seen": null,
@@ -1839,576 +2409,6 @@
   "occurrences": 1,
   "stage_key": "verify",
   "summary": "Stage 'verify' has 2 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "backend-impl",
-  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2100",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "branch-triage",
-  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2100",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "domain_consultation",
-  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "frontend-impl",
-  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "gate",
-  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2700",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "implement",
-  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "learning",
-  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1200",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "plan",
-  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1200",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "review",
-  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "script_review",
-  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "spec",
-  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1500",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "test-break",
-  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "test-design",
-  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "triage",
-  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "blobert"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "verify",
-  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "backend-impl",
-  "summary": "Stage 'backend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2100",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "branch-triage",
-  "summary": "Stage 'branch-triage' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2100",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "domain_consultation",
-  "summary": "Stage 'domain_consultation' has 0 successful duration samples (need 3); configured floor is 2100s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "frontend-impl",
-  "summary": "Stage 'frontend-impl' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "gate",
-  "summary": "Stage 'gate' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "2700",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "implement",
-  "summary": "Stage 'implement' has 0 successful duration samples (need 3); configured floor is 2700s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "learning",
-  "summary": "Stage 'learning' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1200",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "plan",
-  "summary": "Stage 'plan' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1200",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "review",
-  "summary": "Stage 'review' has 0 successful duration samples (need 3); configured floor is 1200s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "script_review",
-  "summary": "Stage 'script_review' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "spec",
-  "summary": "Stage 'spec' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1500",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "test-break",
-  "summary": "Stage 'test-break' has 0 successful duration samples (need 3); configured floor is 1500s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "test-design",
-  "summary": "Stage 'test-design' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "900",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "triage",
-  "summary": "Stage 'triage' has 0 successful duration samples (need 3); configured floor is 900s. Not enough data to compare against the timeout floor.",
-  "ticket_external_id": "",
-  "ticket_id": "",
-  "ticket_state": null,
-  "ticket_title": "",
-  "workspace_slug": ""
- },
- {
-  "condition": "timeout_floor_stale",
-  "evidence": {
-   "configured_floor_seconds": "1800",
-   "min_samples": "3",
-   "sample_count": "0",
-   "workspace_slug": "lore-eden"
-  },
-  "first_seen": null,
-  "last_seen": null,
-  "occurrences": 1,
-  "stage_key": "verify",
-  "summary": "Stage 'verify' has 0 successful duration samples (need 3); configured floor is 1800s. Not enough data to compare against the timeout floor.",
   "ticket_external_id": "",
   "ticket_id": "",
   "ticket_state": null,

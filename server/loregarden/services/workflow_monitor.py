@@ -52,6 +52,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
 from loregarden.services.monitor_escalation import escalate_recurring_findings
@@ -378,7 +379,7 @@ def _detect_timeout_floor_stale(session: Session) -> list[MonitorFinding]:
     another's thin sample into a trusted p95.
     """
     findings: list[MonitorFinding] = []
-    for workspace in session.exec(select(Workspace)).all():
+    for workspace in active_workspaces(session):
         profiles = load_stage_duration_profiles(session, workspace_id=workspace.id)
         for stage_key, floor_seconds in sorted(STAGE_TIMEOUT_BUDGETS.items()):
             profile = profiles.get(stage_key)

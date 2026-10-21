@@ -47,6 +47,7 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
+    LIVE_WORKSPACES_HAVE_REAL_REPOS,
     PUBLISH_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
 )
@@ -161,6 +162,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # later checkout merge (lg-external-harness-1318). The next checkout repairs
     # it too; this catches the idle ones and reports one entering after #654.
     _invariant(TICKET_BRANCHES_HOLD_HISTORY),
+    # A probe once wrote three workspaces on temp-directory repos into the live
+    # database (lg-milestone-that-1319); every sweep over workspaces met them.
+    _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),
 )
 
 
