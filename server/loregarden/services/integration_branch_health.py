@@ -37,7 +37,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.drain import is_draining, refuse_reason
-from loregarden.services.git_merge_noco import MergeOutcome, merge_preview, superseding_commit
+from loregarden.services.git_merge_noco import MergeOutcome, merge_preview
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_conflict_card import (
     clear_integration_conflict,
@@ -47,6 +47,7 @@ from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.integration_merge_budget import merge_turn_refusal
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
+from loregarden.services.work_landed import work_is_on
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
@@ -123,7 +124,7 @@ def _preview(repo_root: Path, branch_sha: str, base_sha: str) -> MergeOutcome:
     cached = _PREVIEWS.get(key)
     if cached is None:
         cached = merge_preview(repo_root, branch_sha, base_sha)
-        if cached.conflicted and superseding_commit(repo_root, branch_sha, base_sha):
+        if cached.conflicted and work_is_on(repo_root, branch_sha, base_sha):
             # The base already holds the branch's work (a squash merge); the next
             # cut moves the branch to the base tip instead of merging, so there
             # is nothing for a person to resolve.

@@ -41,7 +41,6 @@ from loregarden.services.git_merge_noco import (
     describe_signing,
     merge_tips,
     read_branch_tips,
-    superseding_commit,
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.hierarchy_service import validate_parent_child
@@ -52,6 +51,7 @@ from loregarden.services.integration_conflict_card import (
 from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
+from loregarden.services.work_landed import landing_commit
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -237,7 +237,7 @@ def _fast_forward_superseded(
     the tip just read, so a branch that gained a commit meanwhile is refused.
     """
     branch_sha, base_sha = tips.of(branch), tips.of(base_branch)
-    holder = superseding_commit(repo_root, branch_sha, base_sha)
+    holder = landing_commit(repo_root, branch_sha, base_sha)
     if not holder:
         return False
     moved = run_git(

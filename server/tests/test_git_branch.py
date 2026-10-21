@@ -942,7 +942,8 @@ def test_the_ancestry_check_is_the_one_public_helper(target_tree, held_ticket):
         for path in root.rglob("*.py")
         if pattern.search(path.read_text(encoding="utf-8"))
     )
-    assert private == ["services/dependency_readiness.py", "services/handoff_boundary.py"], (
+    # dependency_readiness's copy went when its question moved to work_landed.
+    assert private == ["services/handoff_boundary.py"], (
         f"a new private ancestry helper was added: {private}"
     )
 
