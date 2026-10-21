@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import PrListingState, Ticket, Workspace
 from loregarden.services.artifact_service import (
     _resolve_upstream_ref,
     branch_diff_manifest,
@@ -27,6 +26,7 @@ from loregarden.services.git_branch import resolve_ticket_branch, validate_branc
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -35,15 +35,32 @@ STALE_DAYS = 30
 RECENT_COMMIT_LIMIT = 8
 COMMIT_SHA_RE = re.compile(r"^(?:HEAD|[0-9a-fA-F]{7,40})$")
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
-PR_STATUS_TTL_SECONDS = 120
-PR_STATUS_TERMINAL_TTL_SECONDS = 600
-PR_STATUS_TERMINAL_STATES = ("closed", "merged")
-PR_STATUS_MAX_WORKERS = 6
-PR_LIST_LIMIT = 500
 BRANCH_SCAN_MAX_WORKERS = 8
 REF_FIELD_SEP = "\x1f"
+#: The branch snapshot reads local git only. On 2026-10-21, at 223 branches and
+#: 47 worktrees, it took 4.8s in-process (3.6s of it the squash-merge check over
+#: 212 ahead branches) and 7-10s through the API. The budget is half a browser's
+#: 30s navigation timeout; a test holds the snapshot to it with no remote call.
+SNAPSHOT_BUDGET_SECONDS = 15.0
+#: The whole listing, every page, in one `gh` process. 674 PRs read in
+#: 3.2-4.6s on 2026-10-21; past this GitHub is stalling, and the page says
+#: PR status is unavailable rather than waiting on it.
+PR_LISTING_TIMEOUT_SECONDS = 25.0
+PR_LISTING_TTL_SECONDS = 120
 
-_pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
+_PR_LISTING_QUERY = """
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 100, after: $endCursor) {
+      totalCount
+      pageInfo { hasNextPage endCursor }
+      nodes { number headRefName state isDraft url title }
+    }
+  }
+}
+"""
+
+_pr_listing_cache: dict[str, tuple[float, PrListing]] = {}
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
@@ -209,170 +226,203 @@ def _worktree_dirty(worktree_path: str) -> bool:
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
 
 
-def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None:
-    """Look up the PR associated with a branch via the `gh` CLI (network call)."""
-    try:
-        proc = run_gh(
-            ["pr", "view", branch, "--json", "state,url,number,isDraft,title"],
-            cwd=repo_root,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        data = json.loads(proc.stdout or "{}")
-    except ValueError:
-        return None
-    if not data:
-        return None
-    return _serialize_pr_row(data)
+class _GhPageInfo(BaseModel):
+    has_next_page: bool = Field(alias="hasNextPage")
 
 
-def _serialize_pr_row(row: dict[str, Any]) -> dict[str, Any]:
+class _GhPullRequest(BaseModel):
+    number: int
+    head_ref_name: str = Field(alias="headRefName")
+    state: str
+    is_draft: bool = Field(alias="isDraft")
+    url: str
+    title: str
+
+
+class _GhPullRequestPage(BaseModel):
+    total_count: int = Field(alias="totalCount")
+    page_info: _GhPageInfo = Field(alias="pageInfo")
+    nodes: list[_GhPullRequest]
+
+
+class _GhRepository(BaseModel):
+    pull_requests: _GhPullRequestPage = Field(alias="pullRequests")
+
+
+class _GhData(BaseModel):
+    repository: _GhRepository | None
+
+
+class _GhPage(BaseModel):
+    data: _GhData
+
+
+_GhPages = TypeAdapter(list[_GhPage])
+
+
+class _PrListingError(Exception):
+    """The listing could not be read at all; the message says why."""
+
+
+@dataclass(frozen=True)
+class PrListing:
+    """A repository's pull requests keyed by head branch, and whether that is all of them.
+
+    ``state`` comes from GitHub's ``pageInfo.hasNextPage`` on the last page read,
+    not from comparing a row count with the number asked for: a page holding
+    exactly ``first`` rows says nothing about whether more remain.
+    """
+
+    state: PrListingState
+    by_head: dict[str, dict[str, Any]]
+    listed_count: int
+    #: GitHub's own count, from the first page; None when no page was read.
+    total_count: int | None
+    reason: str = ""
+
+
+def _serialize_pr(pr: _GhPullRequest) -> dict[str, Any]:
     return {
-        "state": str(row.get("state", "")).lower(),
-        "is_draft": bool(row.get("isDraft")),
-        "url": row.get("url", ""),
-        "number": row.get("number"),
-        "title": row.get("title", ""),
+        "state": pr.state.lower(),
+        "is_draft": pr.is_draft,
+        "url": pr.url,
+        "number": pr.number,
+        "title": pr.title,
     }
 
 
-def _pr_row_rank(row: dict[str, Any]) -> tuple[int, int]:
+def _pr_rank(pr: _GhPullRequest) -> tuple[int, int]:
     """Rank PRs sharing a head branch the way `gh pr view` picks one: open, then newest."""
-    state = str(row.get("state", "")).lower()
+    return (0 if pr.state.lower() == "open" else 1, -pr.number)
+
+
+def _fetch_pr_pages(repo_root: Path) -> list[_GhPullRequestPage]:
+    """Every page of the repository's PRs, in one `gh` process.
+
+    `--paginate` follows `pageInfo` itself; `--slurp` returns the pages as one
+    array, so the last page's `hasNextPage` is still there for the caller to
+    read. One process matters: a process per page re-authenticates each time
+    and took 9-13s for the same seven pages.
+    """
+    args = [
+        "api",
+        "graphql",
+        "--paginate",
+        "--slurp",
+        "-F",
+        "owner={owner}",
+        "-F",
+        "name={repo}",
+        "-f",
+        f"query={_PR_LISTING_QUERY}",
+    ]
     try:
-        number = int(row.get("number") or 0)
-    except (TypeError, ValueError):
-        # silent-ok: sort key only; a gh row with no numeric number ranks last
-        number = 0
-    return (0 if state == "open" else 1, -number)
+        proc = run_gh(args, cwd=repo_root, timeout=PR_LISTING_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise _PrListingError(
+            f"GitHub did not answer within {PR_LISTING_TIMEOUT_SECONDS:.0f}s"
+        ) from exc
+    except OSError as exc:
+        raise _PrListingError(f"could not run gh: {exc}") from exc
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip() or "no output"
+        raise _PrListingError(f"gh exited {proc.returncode}: {detail}")
+    try:
+        pages = _GhPages.validate_json(proc.stdout or "")
+    except ValidationError as exc:
+        raise _PrListingError(f"unreadable GitHub response: {exc.error_count()} error(s)") from exc
+    if not pages:
+        raise _PrListingError("GitHub returned no pages")
+    if any(page.data.repository is None for page in pages):
+        raise _PrListingError("GitHub has no repository for this checkout's remote")
+    return [page.data.repository.pull_requests for page in pages if page.data.repository]
 
 
-def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
-    """Every PR in one `gh` call, keyed by head branch.
+def _fetch_pr_listing(repo_root: Path) -> PrListing:
+    """Every PR in the repository, and whether GitHub said that is all of them.
 
-    Returns the mapping plus whether the listing is exhaustive. A truncated page
-    (or a failed call) means a branch missing from the mapping may still have a
-    PR, so the caller falls back to a per-branch lookup for those rather than
-    reporting "no PR".
+    Completeness is the last page's `hasNextPage`, which GitHub sets, and never
+    the number of rows: a page holding exactly as many rows as were asked for
+    says nothing about whether more remain.
     """
     try:
-        proc = run_gh(
-            [
-                "pr",
-                "list",
-                "--state",
-                "all",
-                "--limit",
-                str(PR_LIST_LIMIT),
-                "--json",
-                "headRefName,state,url,number,isDraft,title",
-            ],
-            cwd=repo_root,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        logger.warning(
-            "`gh pr list` failed in %s; falling back to per-branch lookups",
-            repo_root,
-            exc_info=True,
-        )
-        return {}, False
-    if proc.returncode != 0:
-        logger.warning(
-            "`gh pr list` exited %s in %s; falling back to per-branch lookups: %s",
-            proc.returncode,
-            repo_root,
-            (proc.stderr or "").strip(),
-        )
-        return {}, False
-    try:
-        rows = json.loads(proc.stdout or "[]")
-    except ValueError:
-        logger.warning(
-            "Unparseable `gh pr list` JSON in %s; falling back to per-branch lookups",
-            repo_root,
-            exc_info=True,
-        )
-        return {}, False
-    if not isinstance(rows, list):
-        logger.warning("`gh pr list` returned %s, not a list; falling back", type(rows).__name__)
-        return {}, False
-
-    best: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        head = branch_for_pr_head(str(row.get("headRefName") or ""))
-        if not head:
-            continue
+        pages = _fetch_pr_pages(repo_root)
+    except _PrListingError as exc:
+        return PrListing(PrListingState.UNAVAILABLE, {}, 0, None, str(exc))
+    best: dict[str, _GhPullRequest] = {}
+    for pr in (pr for page in pages for pr in page.nodes):
+        head = branch_for_pr_head(pr.head_ref_name)
         current = best.get(head)
-        if current is None or _pr_row_rank(row) < _pr_row_rank(current):
-            best[head] = row
-    return {head: _serialize_pr_row(row) for head, row in best.items()}, len(rows) < PR_LIST_LIMIT
+        if head and (current is None or _pr_rank(pr) < _pr_rank(current)):
+            best[head] = pr
+    listed = sum(len(page.nodes) for page in pages)
+    total = pages[0].total_count
+    if pages[-1].page_info.has_next_page:
+        return PrListing(
+            PrListingState.INCOMPLETE,
+            _serialize_heads(best),
+            listed,
+            total,
+            "GitHub reported more pages after the last one returned",
+        )
+    return PrListing(PrListingState.COMPLETE, _serialize_heads(best), listed, total)
 
 
-def _pr_status_ttl(value: dict[str, Any] | None) -> int:
-    """Closed/merged PRs are done changing, so cache them far longer than open ones."""
-    if value and value.get("state") in PR_STATUS_TERMINAL_STATES:
-        return PR_STATUS_TERMINAL_TTL_SECONDS
-    return PR_STATUS_TTL_SECONDS
+def _serialize_heads(best: dict[str, _GhPullRequest]) -> dict[str, dict[str, Any]]:
+    return {head: _serialize_pr(pr) for head, pr in best.items()}
 
 
-def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[str, Any] | None]:
-    """Resolve PR status for each branch, serving from a TTL cache where possible."""
+def _pr_listing(repo_root: Path) -> PrListing:
+    """`_fetch_pr_listing`, served from a TTL cache when the cached read was complete.
+
+    Only a complete listing is cached: a partial one is a failure to report,
+    and the next request should try again rather than repeat it.
+    """
+    key = str(repo_root)
     now = time.monotonic()
-    results: dict[str, dict[str, Any] | None] = {}
-    stale: list[str] = []
+    cached = _pr_listing_cache.get(key)
+    if cached and now - cached[0] < PR_LISTING_TTL_SECONDS:
+        return cached[1]
+    listing = _fetch_pr_listing(repo_root)
+    if listing.state is PrListingState.COMPLETE:
+        _pr_listing_cache[key] = (now, listing)
+    else:
+        logger.warning(
+            "PR listing for %s is %s: read %d of %s PRs (%s); branches outside it show PR "
+            "status unknown",
+            repo_root,
+            listing.state.value,
+            listing.listed_count,
+            "unknown" if listing.total_count is None else listing.total_count,
+            listing.reason,
+        )
+    return listing
 
-    for name in branches:
-        cached = _pr_status_cache.get((str(repo_root), name))
-        if cached and now - cached[0] < _pr_status_ttl(cached[1]):
-            results[name] = cached[1]
-        else:
-            stale.append(name)
 
-    if not stale:
-        return results
+def branch_pull_requests(workspace: Workspace) -> dict[str, Any]:
+    """PR status for the workspace's local branches, and whether it is all of it.
 
-    listed, exhaustive = _fetch_pr_list(repo_root)
-    unresolved: list[str] = []
-    for name in stale:
-        if name in listed:
-            value = listed[name]
-        elif exhaustive:
-            value = None
-        else:
-            unresolved.append(name)
-            continue
-        _pr_status_cache[(str(repo_root), name)] = (now, value)
-        results[name] = value
-
-    if not unresolved:
-        return results
-
-    with ThreadPoolExecutor(max_workers=min(PR_STATUS_MAX_WORKERS, len(unresolved))) as pool:
-        future_map = {
-            pool.submit(_fetch_pr_status_live, repo_root, name): name for name in unresolved
-        }
-        for future in as_completed(future_map):
-            name = future_map[future]
-            try:
-                value = future.result()
-            except Exception:  # noqa: BLE001 - future.result() re-raises whatever the worker raised
-                logger.warning(
-                    "PR status lookup failed for branch %s; reporting unknown",
-                    name,
-                    exc_info=True,
-                )
-                value = None
-            _pr_status_cache[(str(repo_root), name)] = (now, value)
-            results[name] = value
-
-    return results
+    Separate from `branch_triage_snapshot` so the page paints from local git
+    without waiting on GitHub. When ``state`` is ``complete``, a branch absent
+    from ``pull_requests`` has no PR; otherwise its status is unknown.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    if not _is_git_repo(repo_root):
+        listing = PrListing(PrListingState.UNAVAILABLE, {}, 0, None, "not a git repository")
+        branch_names: list[str] = []
+    else:
+        listing = _pr_listing(repo_root)
+        branch_names = _list_branches(repo_root)
+    return {
+        "workspace_slug": workspace.slug,
+        "state": listing.state.value,
+        "listed_count": listing.listed_count,
+        "total_count": listing.total_count,
+        "reason": listing.reason,
+        "pull_requests": {
+            name: listing.by_head[name] for name in branch_names if name in listing.by_head
+        },
+    }
 
 
 def _ticket_branch_map(session: Session, workspace_id: str) -> dict[str, list[dict[str, str]]]:
@@ -569,8 +619,6 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         repo_root, base, [name for name in branch_names if branch_refs[name].ahead > 0]
     )
 
-    pr_statuses = _branch_pr_statuses(repo_root, [name for name in branch_names if name != base])
-
     branches: list[dict[str, Any]] = []
     issue_count = 0
 
@@ -630,7 +678,6 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "linked_tickets": linked,
                 "last_commit": last,
                 "issues": issues,
-                "pr": pr_statuses.get(name),
             }
         )
 

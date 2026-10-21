@@ -109,6 +109,21 @@ class ChatAttachmentKind(StrEnum):
     IMAGE = "image"
 
 
+class PrListingState(StrEnum):
+    """Whether a repository's pull-request listing is every PR it has.
+
+    Read from GitHub's own page boundary, never from a row count: ``COMPLETE``
+    means the last page said there was no next page, so a branch missing from
+    the listing has no PR. ``INCOMPLETE`` means pages remained when reading
+    stopped, and ``UNAVAILABLE`` means not one page was read; in both, a
+    missing branch's PR status is unknown, which is not the same as none.
+    """
+
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    UNAVAILABLE = "unavailable"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 
