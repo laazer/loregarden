@@ -37,7 +37,7 @@ from loregarden.services.target_branch import (
     target_branch_name,
 )
 from loregarden.services.workspace_paths import resolve_workspace_root
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,13 @@ class GhCheck(BaseModel):
     state: str = ""
     details_url: str = Field("", alias="detailsUrl")
     target_url: str = Field("", alias="targetUrl")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _absent_is_empty(cls, value: str | None) -> str:
+        # GitHub's GraphQL API reports an absent value (a running check's
+        # conclusion) as null; `gh pr view --json` reports it as "".
+        return "" if value is None else value
 
 
 class GhPullRequest(BaseModel):

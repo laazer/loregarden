@@ -17,8 +17,9 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Generic, TypeVar
 
-from loregarden.models.domain import CIStatus, PullRequestCheckOutcome
+from loregarden.models.domain import CIStatus, PrListingState, PullRequestCheckOutcome
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
@@ -28,15 +29,62 @@ GH_TIMEOUT_SECONDS = 30
 #: Enough of a failing job's log for an agent to find the error, and small
 #: enough to sit in a prompt. The tail is kept, because that is where it fails.
 LOG_TAIL_CHARS = 20_000
-#: `gh pr list` pages; a workspace with more open PRs than this is not one we have.
-PR_LIST_LIMIT = 100
-_LIST_FIELDS = "number,url,headRefName,headRefOid,statusCheckRollup"
+#: GitHub's largest page. `gh api graphql --paginate` follows `pageInfo` to the
+#: last page, so this sizes the requests, not the listing.
+PR_PAGE_SIZE = 100
+#: The head commit's checks, the `statusCheckRollup` `gh pr list` flattens.
+HEAD_CHECKS_FIELDS = """
+commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+  ... on CheckRun { name status conclusion detailsUrl }
+  ... on StatusContext { context state targetUrl }
+} } } } } }
+"""
+_OPEN_PRS_QUERY = """
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: %(page_size)d, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { %(fields)s }
+    }
+  }
+}
+"""
+_OPEN_FIELDS = "number url headRefName headRefOid " + HEAD_CHECKS_FIELDS
 #: A GitHub Actions check run's details URL names its run and its job.
 _ACTIONS_JOB_URL = re.compile(r"/actions/runs/\d+/job/(\d+)")
 
 
 class GitHubReadError(RuntimeError):
     """`gh` could not be asked, or answered with something unreadable."""
+
+
+class _GhCheckNodes(BaseModel):
+    nodes: list[GhCheck]
+
+
+class _GhRollup(BaseModel):
+    contexts: _GhCheckNodes
+
+
+class _GhCommit(BaseModel):
+    #: Null when nothing has reported on the commit yet. Required, so a query
+    #: that stops asking for it fails to parse instead of reading as no checks.
+    status_check_rollup: _GhRollup | None = Field(alias="statusCheckRollup")
+
+
+class _GhCommitNode(BaseModel):
+    commit: _GhCommit
+
+
+class GhHeadCommit(BaseModel):
+    """`commits(last: 1)` from `HEAD_CHECKS_FIELDS`: the head commit and its checks."""
+
+    nodes: list[_GhCommitNode]
+
+    def checks(self) -> list[GhCheck]:
+        if not self.nodes or self.nodes[0].commit.status_check_rollup is None:
+            return []
+        return self.nodes[0].commit.status_check_rollup.contexts.nodes
 
 
 class OpenPullRequest(BaseModel):
@@ -46,7 +94,11 @@ class OpenPullRequest(BaseModel):
     url: str
     head: str = Field(alias="headRefName")
     head_sha: str = Field(alias="headRefOid")
-    checks: list[GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
+    commits: GhHeadCommit
+
+    @property
+    def checks(self) -> list[GhCheck]:
+        return self.commits.checks()
 
     @property
     def branch(self) -> str:
@@ -54,7 +106,48 @@ class OpenPullRequest(BaseModel):
         return branch_for_pr_head(self.head)
 
 
-_PULL_REQUESTS = TypeAdapter(list[OpenPullRequest])
+NodeT = TypeVar("NodeT", bound=BaseModel)
+
+
+class _GhPageInfo(BaseModel):
+    has_next_page: bool = Field(alias="hasNextPage")
+
+
+class _GhPullRequestPage(BaseModel, Generic[NodeT]):
+    page_info: _GhPageInfo = Field(alias="pageInfo")
+    nodes: list[NodeT]
+
+
+class _GhRepository(BaseModel, Generic[NodeT]):
+    pull_requests: _GhPullRequestPage[NodeT] = Field(alias="pullRequests")
+
+
+class _GhData(BaseModel, Generic[NodeT]):
+    repository: _GhRepository[NodeT] | None
+
+
+class GhPage(BaseModel, Generic[NodeT]):
+    """One page of `list_open`'s query; a caller parses the slurped array as `list[GhPage[Node]]`."""
+
+    data: _GhData[NodeT]
+
+
+_OPEN_PAGES = TypeAdapter(list[GhPage[OpenPullRequest]])
+
+
+@dataclass(frozen=True)
+class OpenPullRequests(Generic[NodeT]):
+    """Every open PR GitHub returned, and whether GitHub said that is all of them.
+
+    ``state`` is the last page's ``pageInfo.hasNextPage``, never a row count: a
+    page holding exactly as many rows as were asked for says nothing about
+    whether more remain. It is ``COMPLETE`` or ``INCOMPLETE``; a listing that
+    could not be read at all raises `GitHubReadError` instead of being
+    ``UNAVAILABLE`` with no rows, which would read as "no open pull requests".
+    """
+
+    state: PrListingState
+    pull_requests: list[NodeT]
 
 
 @dataclass(frozen=True)
@@ -78,16 +171,54 @@ def _gh(repo_root: Path, args: list[str]) -> str:
     return proc.stdout or ""
 
 
-def list_open_pull_requests(repo_root: Path) -> list[OpenPullRequest]:
-    """Every open pull request in the repository at ``repo_root``, with its checks."""
+def list_open(
+    repo_root: Path, fields: str, pages_of: TypeAdapter[list[GhPage[NodeT]]]
+) -> OpenPullRequests[NodeT]:
+    """Every open PR in the repository at ``repo_root``, each parsed by ``pages_of``.
+
+    One `gh` process: `--paginate` follows `pageInfo` itself and `--slurp`
+    returns the pages as one array, so the last page's `hasNextPage` is still
+    there to read. ``fields`` is the GraphQL selection each node holds.
+    """
+    query = _OPEN_PRS_QUERY % {"page_size": PR_PAGE_SIZE, "fields": fields}
     stdout = _gh(
         repo_root,
-        ["pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", _LIST_FIELDS],
+        [
+            "api",
+            "graphql",
+            "--paginate",
+            "--slurp",
+            "-F",
+            "owner={owner}",
+            "-F",
+            "name={repo}",
+            "-f",
+            f"query={query}",
+        ],
     )
     try:
-        return _PULL_REQUESTS.validate_json(stdout or "[]")
+        pages = pages_of.validate_json(stdout)
     except ValidationError as exc:
-        raise GitHubReadError(f"unexpected gh pr list output: {exc}") from exc
+        raise GitHubReadError(f"unexpected GitHub pull request listing: {exc}") from exc
+    repositories = [page.data.repository for page in pages]
+    if not repositories:
+        raise GitHubReadError("GitHub returned no pages of pull requests")
+    if None in repositories:
+        raise GitHubReadError("GitHub has no repository for this checkout's remote")
+    listed = [repo.pull_requests for repo in repositories if repo is not None]
+    return OpenPullRequests(
+        state=(
+            PrListingState.INCOMPLETE
+            if listed[-1].page_info.has_next_page
+            else PrListingState.COMPLETE
+        ),
+        pull_requests=[pr for page in listed for pr in page.nodes],
+    )
+
+
+def list_open_pull_requests(repo_root: Path) -> OpenPullRequests[OpenPullRequest]:
+    """Every open pull request in the repository at ``repo_root``, with its checks."""
+    return list_open(repo_root, _OPEN_FIELDS, _OPEN_PAGES)
 
 
 def rollup(checks: list[GhCheck]) -> CIStatus:
