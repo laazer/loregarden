@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import type { TicketDetail } from "../../api/client";
 import type { TicketDependencyRef, WaitingOnRef } from "../../api/types";
-import { navigateToTicket } from "../../lib/useAppNavigation";
+import { peekTicket } from "../../state/ticketPeekStore";
 import { notifyIfQueued } from "../../lib/notifyIfQueued";
 import { ReasonConfirmDialog } from "../memory/ReasonConfirmDialog";
 import { Button } from "../ui/Button";
@@ -110,7 +110,7 @@ export function TicketWaitingOn({ ticket }: { ticket: TicketDetail }) {
                   variant="plain"
                   className="wait-link"
                   title={dep.title}
-                  onClick={() => navigateToTicket(dep.id)}
+                  onClick={() => peekTicket(dep.id)}
                 >
                   {dep.external_id}
                 </Button>

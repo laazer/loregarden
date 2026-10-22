@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
@@ -10,7 +10,6 @@ import { Input } from "../components/ui/Input";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import { WorkItemsFilterBar } from "../components/workItems/WorkItemsFilterBar";
 import { WorkItemsTable } from "../components/workItems/WorkItemsTable";
-import { ticketPath } from "../lib/appNavigation";
 import { runningTickets } from "../lib/runningTickets";
 import {
   DEFAULT_WORK_ITEMS_SORT,
@@ -33,6 +32,7 @@ import {
   writeWorkItemsFilters,
 } from "../lib/workItemsTable";
 import { useQueueStatus } from "../state/QueueStatusContext";
+import { peekTicket } from "../state/ticketPeekStore";
 import { describeError, pushToast } from "../state/toastStore";
 import "./WorkItemsPage.css";
 
@@ -56,7 +56,6 @@ const EMPTY_COPY: Record<WorkItemsView, string> = {
  */
 export function WorkItemsPage() {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const view = parseWorkItemsView(params.get("view"));
   const paramsKey = params.toString();
   // Keyed on the string, so a re-render with equal params keeps the same object.
@@ -137,7 +136,7 @@ export function WorkItemsPage() {
         <span className="topbar-page-note">Every ticket across workspaces; open one in the Console</span>
       </PageTopbar>
 
-      <DashboardActiveTickets onSelect={(ticketId) => navigate(ticketPath(ticketId))} />
+      <DashboardActiveTickets onSelect={(ticketId) => peekTicket(ticketId)} />
 
       <div className="wi-toolbar">
         <div className="wi-views" role="group" aria-label="Which work items">

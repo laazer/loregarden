@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useTicketPeekStore } from "../../../state/ticketPeekStore";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import type { TicketDetail } from "../../../api/client";
 import type { TicketDependencyRef, WaitingOnRef } from "../../../api/types";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
 import { TicketWaitingOn } from "../TicketWaitingOn";
 
 const orchestrate = jest.fn();
@@ -11,11 +11,6 @@ const orchestrate = jest.fn();
 jest.mock("../../../api/client", () => ({
   api: { orchestrate: (...args: unknown[]) => orchestrate(...args) },
 }));
-jest.mock("../../../lib/useAppNavigation", () => ({
-  ...jest.requireActual("../../../lib/useAppNavigation"),
-  navigateToTicket: jest.fn(),
-}));
-
 function ref(id: string, overrides: Partial<WaitingOnRef> = {}): WaitingOnRef {
   return {
     id,
@@ -89,7 +84,7 @@ it("leads with the root of a deeper chain and names what it holds this through",
   const panel = screen.getByRole("region", { name: "panel" });
   expect(panel).toHaveTextContent(/Waiting on\s*lg-x-1237 · needs you\s*through\s*lg-x-1314/);
   fireEvent.click(within(panel).getByRole("button", { name: "lg-x-1237 · needs you" }));
-  expect(navigateToTicket).toHaveBeenCalledWith("1237");
+  expect(useTicketPeekStore.getState().peek).toEqual({ ticketId: "1237", tab: undefined });
 });
 
 it("names a root that is also a direct prerequisite once, first", () => {

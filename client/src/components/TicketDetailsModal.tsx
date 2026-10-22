@@ -15,6 +15,7 @@ import { CopyValueButton } from './CopyValueButton';
 import { TicketCriteriaEditor, TicketCriteriaView } from './TicketCriteriaChecklist';
 import { criteriaDrafts, draftChecked, draftCriteria, type CriterionDraft } from '../lib/criterionDrafts';
 import './TicketDetailsModal.css';
+import { Button } from "./ui/Button";
 import { Select } from "./ui/Select";
 
 const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
@@ -60,6 +61,8 @@ export interface TicketDetailsModalProps {
   /** Saves which criteria are checked off, from read mode. Rejects when it failed. */
   onSaveChecks?: (checked: string[]) => Promise<void>;
   isSavingChecks?: boolean;
+  /** Leaves the modal for the ticket's own page. Omitted where the modal is opened from that page. */
+  onOpenTicket?: () => void;
 }
 
 type ModalMode = 'view' | 'edit';
@@ -126,6 +129,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   onSave,
   onSaveChecks,
   isSavingChecks = false,
+  onOpenTicket,
 }) => {
   const [mode, setMode] = useState<ModalMode>('view');
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -411,9 +415,16 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               </button>
             </>
           ) : (
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
-              Close
-            </button>
+            <>
+              <Button variant="secondary" onClick={onClose} disabled={busy}>
+                Close
+              </Button>
+              {onOpenTicket ? (
+                <Button variant="primary" onClick={onOpenTicket} disabled={busy || !ticket}>
+                  Open ticket
+                </Button>
+              ) : null}
+            </>
           )}
         </div>
       </div>

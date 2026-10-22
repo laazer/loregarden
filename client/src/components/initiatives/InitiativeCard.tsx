@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
 import { MarkdownContent } from "../chat/MarkdownContent";
-import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigation";
+import { navigateToInitiative } from "../../lib/useAppNavigation";
+import { peekTicket } from "../../state/ticketPeekStore";
 import { Button } from "../ui/Button";
 import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
@@ -113,14 +114,14 @@ function MilestoneRow({
         style={{ background: TICKET_STATE_COLORS[milestone.state] }}
         aria-hidden
       />
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="initiative-milestone-link"
         title={`Open ${milestone.external_id}`}
-        onClick={() => navigateToTicket(milestone.id)}
+        onClick={() => peekTicket(milestone.id)}
       >
         <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
-      </button>
+      </Button>
       <span className="initiative-ws-pill">{placeLabel(milestone)}</span>
       <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
       {milestone.member ? (

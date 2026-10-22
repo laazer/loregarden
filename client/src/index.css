@@ -2656,6 +2656,18 @@ label:is(
   cursor: default;
 }
 
+/* Docked right the bar is a narrow column, and inline the switch shoved the
+   composer onto a squeezed tail of the first row. It heads the bar instead, on
+   a row of its own and full width, the way a pane's tabs head the pane. */
+.app-action-bar--edge-right .app-action-bar-agents {
+  order: -1;
+  flex-basis: 100%;
+}
+
+.app-action-bar--edge-right .app-action-bar-agent {
+  flex: 1 1 0;
+}
+
 .app-action-bar-auto,
 .app-action-bar-logs,
 .app-action-bar-chat-model,

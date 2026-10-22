@@ -23,6 +23,8 @@ import {
   ticketActivityLabel,
   ticketStateLabel,
 } from "../lib/ticketStates";
+import { Button } from "../components/ui/Button";
+import { peekTicket } from "../state/ticketPeekStore";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
 import { AddToTabMenu } from "../components/AddToTabMenu";
@@ -230,11 +232,11 @@ export function HomePage() {
           onAction={() => navigate("/console")}
         >
           {activeTickets.slice(0, 12).map((t: TicketSummary) => (
-            <button
+            <Button
+              variant="plain"
               key={t.id}
-              type="button"
               className="home-row"
-              onClick={() => navigate(ticketPath(t.id, "diff"))}
+              onClick={() => peekTicket(t.id, "diff")}
             >
               <span className="home-row-title">{t.title}</span>
               <span className="home-row-tags">
@@ -248,7 +250,7 @@ export function HomePage() {
                   {ticketActivityLabel(t.activity)}
                 </span>
               </span>
-            </button>
+            </Button>
           ))}
         </HomeCard>
 
@@ -292,13 +294,13 @@ export function HomePage() {
                 return (
                   <li key={run.id} className="home-activity-item">
                     {ticketId ? (
-                      <button
-                        type="button"
+                      <Button
+                        variant="plain"
                         className="home-activity-row"
-                        onClick={() => navigate(ticketPath(ticketId))}
+                        onClick={() => peekTicket(ticketId)}
                       >
                         {content}
-                      </button>
+                      </Button>
                     ) : (
                       <span className="home-activity-row home-activity-row--static">{content}</span>
                     )}

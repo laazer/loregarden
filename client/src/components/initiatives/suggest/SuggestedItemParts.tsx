@@ -1,6 +1,6 @@
 import type { SuggestedItem } from "../../../api/client";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../../lib/ticketStates";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 
 /** What one row says about an item: where it lives, where it would leave, and how much is open. */
@@ -26,7 +26,7 @@ export function OpenItemButton({ item }: { item: SuggestedItem }) {
       className="initiative-open-btn"
       aria-label={`Open ${item.external_id}`}
       title={`Open ${item.external_id}`}
-      onClick={() => navigateToTicket(item.id)}
+      onClick={() => peekTicket(item.id)}
     >
       ↗
     </Button>

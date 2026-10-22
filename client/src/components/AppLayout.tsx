@@ -10,6 +10,7 @@ import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
 import { QueueNotificationsHost } from "./QueueNotificationsHost";
+import { TicketPeekHost } from "./TicketPeekHost";
 import { ToastHost } from "./ToastHost";
 import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
@@ -148,6 +149,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         />
 
         <ReaderHost />
+        <TicketPeekHost />
         <ViewAgentActions />
         <ToastHost />
         <QueueNotificationsHost />

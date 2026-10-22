@@ -1,6 +1,4 @@
-import { Link } from "react-router-dom";
 
-import { ticketPath } from "../../lib/appNavigation";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
@@ -15,6 +13,7 @@ import {
 } from "../../lib/workItemsTable";
 import { PrioBars } from "../PrioBars";
 import { Button } from "../ui/Button";
+import { TicketLink } from "../TicketLink";
 
 interface Column {
   key: WorkItemsSortKey;
@@ -93,9 +92,9 @@ export function WorkItemsTable({
             </td>
             <td className="wi-col-id">{node.external_id}</td>
             <td className="wi-col-title">
-              <Link className="wi-title" to={ticketPath(node.id)} title={node.title}>
+              <TicketLink className="wi-title" ticketId={node.id} title={node.title}>
                 {node.title}
-              </Link>
+              </TicketLink>
             </td>
             <td className="wi-col-state">
               <span className="wi-dot" style={{ background: TICKET_STATE_COLORS[node.state] }} aria-hidden />
@@ -113,9 +112,9 @@ export function WorkItemsTable({
             <td className="wi-col-workspace">{node.workspace_slug ?? ""}</td>
             <td className="wi-col-parent">
               {parent ? (
-                <Link className="wi-parent" to={ticketPath(parent.id)} title={`${parent.external_id} · ${parent.title}`}>
+                <TicketLink className="wi-parent" ticketId={parent.id} title={`${parent.external_id} · ${parent.title}`}>
                   {parent.title}
-                </Link>
+                </TicketLink>
               ) : null}
             </td>
             {showWhy ? <td className="wi-col-why">{needsMeReason(node)}</td> : null}

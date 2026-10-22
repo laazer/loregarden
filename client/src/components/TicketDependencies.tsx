@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { TicketDetail } from "../api/client";
 import type { TicketDependencyRef } from "../api/types";
-import { navigateToTicket } from "../lib/useAppNavigation";
+import { peekTicket } from "../state/ticketPeekStore";
 import { ticketStateLabel } from "../lib/ticketStates";
 import { describeError } from "../state/toastStore";
 
@@ -104,7 +104,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
                   variant="plain"
                   className="prereq-row-title"
                   title={`${dep.title} — ${ticketStateLabel(dep.state)}`}
-                  onClick={() => navigateToTicket(dep.id)}
+                  onClick={() => peekTicket(dep.id)}
                 >
                   <span className="count-pill">
                     {elsewhere}
@@ -175,7 +175,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
                 variant="plain"
                 className="prereq-row-title"
                 aria-label={`Open ${dep.external_id}: ${dep.title}`}
-                onClick={() => navigateToTicket(dep.id)}
+                onClick={() => peekTicket(dep.id)}
               >
                 <TicketRefLabel ticket={dep} />
               </Button>

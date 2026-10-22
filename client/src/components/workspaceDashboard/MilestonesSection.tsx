@@ -1,12 +1,11 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 
 import type { TicketTreeNode } from "../../api/types";
-import { ticketPath } from "../../lib/appNavigation";
 import { collectMilestones, FINISHED, milestoneProgress } from "../../lib/workspaceDashboard";
 import { Button } from "../ui/Button";
 import { DashboardSection } from "./DashboardSection";
+import { TicketLink } from "../TicketLink";
 
 interface MilestonesSectionProps {
   /** The workspace's whole ticket tree; milestones are found in it at any depth. */
@@ -59,9 +58,9 @@ export function MilestonesSection({ query }: MilestonesSectionProps) {
             return (
               <li key={node.id} className="wsd-row wsd-row--stack">
                 <div className="wsd-row-line">
-                  <Link to={ticketPath(node.id)} className="wsd-row-link">
+                  <TicketLink ticketId={node.id} className="wsd-row-link">
                     <span className="wsd-row-title">{node.title}</span>
-                  </Link>
+                  </TicketLink>
                   <span className="wsd-row-aside wsd-mono">
                     {progress.total === 0 ? "empty" : `${progress.finished}/${progress.total}`}
                   </span>
