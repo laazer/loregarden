@@ -193,7 +193,12 @@ describe("the five states", () => {
     mockApi.referenceLibrary.mockResolvedValue(listOf([awaiting]));
     mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: awaiting, tickets: [], unresolved_refs: [], passes: [] });
     renderAt("/memory/library/a1");
-    fireEvent.click(await screen.findByRole("button", { name: "Review in inbox" }));
+    // An agent's proposal: queue it here, or decide in the inbox.
+    expect(await screen.findByRole("button", { name: "Add to the review queue…" })).toHaveAttribute(
+      "aria-haspopup",
+      "dialog",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review in inbox" }));
     expect(useUiStore.getState().inboxOpen).toBe(true);
   });
 
@@ -475,8 +480,8 @@ describe("adding a reference", () => {
     fireEvent.change(within(form).getByRole("textbox", { name: /Why this one\?/ }), { target: { value: "A retry ledger" } });
   }
 
-  it("proposes a repository, sends it to the inbox, and opens it", async () => {
-    const added = row({ id: "new1", name: "retry-kit", state: "awaiting_approval", approval_id: "card-9" });
+  it("adds a repository straight to the review queue and opens it", async () => {
+    const added = row({ id: "new1", name: "retry-kit", state: "queued", approval_id: null });
     mockApi.addReferenceSource.mockResolvedValue({ source: added, attached: ["loregarden"], scoped_pass: null, initiatives_linked: [] });
     renderAt("/memory/library?view=queue");
     const toggle = await screen.findByRole("button", { name: "Add a reference" });
@@ -484,7 +489,7 @@ describe("adding a reference", () => {
     fireEvent.click(toggle);
     expect(await screen.findByRole("dialog", { name: "Add a reference" })).toBeInTheDocument();
     const form = screen.getByRole("form", { name: "Add a reference" });
-    const submit = within(form).getByRole("button", { name: "Propose for review" });
+    const submit = within(form).getByRole("button", { name: "Add to queue" });
     expect(submit).toBeDisabled();
     fill(form);
     fireEvent.click(submit);
@@ -495,7 +500,9 @@ describe("adding a reference", () => {
       }),
     );  // prettier-ignore
     await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/memory/library/new1"));
-    expect(useUiStore.getState().inboxOpen).toBe(true);
+    // A person adding it is its admission: nothing waits in the inbox.
+    expect(useUiStore.getState().inboxOpen).toBe(false);
+    expect(useToastStore.getState().toasts[0]?.title).toBe("Added retry-kit to the review queue");
     expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
   });
 
@@ -505,7 +512,7 @@ describe("adding a reference", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
     const form = screen.getByRole("form", { name: "Add a reference" });
     fill(form);
-    fireEvent.click(within(form).getByRole("button", { name: "Propose for review" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Add to queue" }));
     expect(await within(form).findByRole("alert")).toHaveTextContent(/Not added: .*Not a repository URL/);
     fireEvent.keyDown(within(form).getByRole("textbox", { name: "URL" }), { key: "Escape" });
     expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
@@ -514,7 +521,7 @@ describe("adding a reference", () => {
   it("adds several pasted URLs at once and keeps only the failed ones to fix", async () => {
     const proposed = row({ id: "n1", name: "one", state: "awaiting_approval", approval_id: "card-1" });
     mockApi.addReferenceSources.mockResolvedValue([
-      { url: "https://github.com/acme/one", outcome: "proposed", kind: "repo", source: proposed, detail: "", initiatives_linked: [] },
+      { url: "https://github.com/acme/one", outcome: "queued", kind: "repo", source: proposed, detail: "", initiatives_linked: [] },
       { url: "https://docs.example.dev", outcome: "already", kind: "site", source: proposed, detail: "", initiatives_linked: [] },
       { url: "ftp://nope", outcome: "failed", kind: "site", source: null, detail: "A site is named by an https URL", initiatives_linked: [] },
     ]);
@@ -532,7 +539,7 @@ describe("adding a reference", () => {
       target: { value: "How do they retry?" },
     });
     fireEvent.change(within(form).getByRole("textbox", { name: /Why these\?/ }), { target: { value: "Retry ledgers" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Propose 3 for review" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Add 3 to queue" }));
     await waitFor(() =>
       expect(mockApi.addReferenceSources).toHaveBeenCalledWith({
         workspace_slugs: ["loregarden"], kind: null, question: "How do they retry?", queued_reason: "Retry ledgers", initiative_ids: [],
@@ -547,11 +554,11 @@ describe("adding a reference", () => {
       "href",
       "/memory/library/n1?view=queue",
     );
+    expect(useUiStore.getState().inboxOpen).toBe(false);
     expect(useToastStore.getState().toasts[0]).toMatchObject({
-      title: "Added 1 of 3 references",
+      title: "Added 1 of 3 to the review queue",
       message: "1 already in the library; 1 could not be added and is left in the box, the reason beside each.",
     });
-    expect(useUiStore.getState().inboxOpen).toBe(true);
   });
 
   it("refuses more URLs than one bulk add takes, before sending", async () => {
@@ -562,15 +569,15 @@ describe("adding a reference", () => {
     const many = Array.from({ length: 51 }, (_, i) => `https://github.com/a/r${i}`).join("\n");
     fireEvent.change(within(form).getByRole("textbox", { name: "URLs" }), { target: { value: many } });
     expect(within(form).getByText("51 URLs; at most 50 at a time.")).toBeInTheDocument();
-    expect(within(form).getByRole("button", { name: "Propose 51 for review" })).toBeDisabled();
+    expect(within(form).getByRole("button", { name: "Add 51 to queue" })).toBeDisabled();
   });
 
-  it("proposes a listed candidate from its own page, URL fixed", async () => {
+  it("queues a listed candidate from its own page, URL fixed", async () => {
     const candidate = row({ id: "c1", name: "agent-mux", state: "candidate", url: "https://github.com/openwork/agent-mux" });
     mockApi.referenceLibrary.mockResolvedValue(listOf([candidate]));
     mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: candidate, passes: [], tickets: [], unresolved_refs: [], record: "" });
     renderAt("/memory/library/c1");
-    fireEvent.click(await screen.findByRole("button", { name: "Propose it for review…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add to the review queue…" }));
     const form = screen.getByRole("form", { name: "Add a reference" });
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveAttribute("readonly");
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveValue("https://github.com/openwork/agent-mux");
@@ -579,7 +586,7 @@ describe("adding a reference", () => {
 
 describe("who a review is for", () => {
   it("adds a reference for another workspace too and feeds an initiative, hiding archived workspaces", async () => {
-    const added = row({ id: "new1", name: "retry-kit", state: "awaiting_approval", approval_id: "card-9" });
+    const added = row({ id: "new1", name: "retry-kit", state: "queued", approval_id: null });
     mockApi.addReferenceSource.mockResolvedValue({
       source: added, attached: ["loregarden", "blobert"], scoped_pass: null, initiatives_linked: ["init-survey-1"],
     });  // prettier-ignore
@@ -595,7 +602,7 @@ describe("who a review is for", () => {
     fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/retry-kit" } });
     fireEvent.change(within(form).getByRole("textbox", { name: /What should the survey answer from it\?/ }), { target: { value: "q" } });
     fireEvent.change(within(form).getByRole("textbox", { name: /Why this one\?/ }), { target: { value: "r" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Propose for review" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Add to queue" }));
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
         workspace_slugs: ["loregarden", "blobert"], kind: "repo", url: "https://github.com/acme/retry-kit",
@@ -652,14 +659,14 @@ describe("who a review is for", () => {
 });
 
 describe("linking is enough to start a review", () => {
-  it("proposes a reference with only a URL, the question and reason left empty", async () => {
-    const added = row({ id: "new2", name: "bare", state: "awaiting_approval", approval_id: "card-2" });
+  it("queues a reference with only a URL, the question and reason left empty", async () => {
+    const added = row({ id: "new2", name: "bare", state: "queued", approval_id: null });
     mockApi.addReferenceSource.mockResolvedValue({ source: added, attached: ["loregarden"], scoped_pass: null, initiatives_linked: [] });
     renderAt("/memory/library?view=queue");
     fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
     const form = screen.getByRole("form", { name: "Add a reference" });
     fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/bare" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Propose for review" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Add to queue" }));
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith(expect.objectContaining({ question: "", queued_reason: "" })),
     );

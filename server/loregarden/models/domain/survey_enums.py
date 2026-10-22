@@ -185,6 +185,8 @@ class SurveyEvidenceStance(StrEnum):
 class BulkAddOutcome(StrEnum):
     """What adding one URL of a bulk add did."""
 
+    #: A new source (or a listed candidate), now in the review queue.
+    QUEUED = "queued"
     #: A new source, waiting for its admission card in the inbox.
     PROPOSED = "proposed"
     #: A known source that now serves the workspace too.

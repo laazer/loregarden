@@ -104,7 +104,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
         <p>
           No repositories or sites are in the reference library for this workspace yet. Add one
           with <strong>Add a reference</strong> above (agents use <code>loregarden_survey_queue</code>);
-          it appears here, waiting for your approval in the inbox.
+          it joins the review queue at once.
         </p>
       </div>
     );

@@ -124,7 +124,7 @@ export interface BulkAddRequest {
 
 export interface BulkAddItem {
   url: string;
-  outcome: "proposed" | "attached" | "rescoped" | "already" | "failed";
+  outcome: "queued" | "proposed" | "attached" | "rescoped" | "already" | "failed";
   kind: SourceKind;
   source: LibraryRow | null;
   /** Why it failed; "" otherwise. */

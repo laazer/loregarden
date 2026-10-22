@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { ApiError } from "../../api/http";
@@ -33,15 +33,21 @@ import { TicketLink } from "../TicketLink";
 const PREVIEW = 12;
 const PASS_PREVIEW = 5;
 
-function Propose({ detail, workspace }: { detail: LibraryDetail; workspace: string }) {
+function AddToQueue({ detail, workspace, note }: { detail: LibraryDetail; workspace: string; note: ReactNode }) {
+  const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const [open, setOpen] = useState(false);
   if (!open) {
     return (
       <div className="rl-next">
-        <p>Never proposed, so nothing in it has been read.</p>
-        <Button variant="primary" compact aria-expanded={false} onClick={() => setOpen(true)}>
-          Propose it for review…
+        <p>{note}</p>
+        <Button variant="primary" compact aria-expanded={false} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+          Add to the review queue…
         </Button>
+        {detail.source.state === "awaiting_approval" ? (
+          <Button variant="secondary" compact onClick={() => setInboxOpen(true)}>
+            Review in inbox
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -65,9 +71,19 @@ function NextStep({
   workspace: string;
   position: number | null;
 }) {
-  const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const { state } = detail.source;
-  if (state === "candidate") return <Propose detail={detail} workspace={workspace} />;
+  if (state === "candidate") {
+    return <AddToQueue detail={detail} workspace={workspace} note="Not in the review queue, so nothing in it has been read." />;
+  }
+  if (state === "awaiting_approval") {
+    return (
+      <AddToQueue
+        detail={detail}
+        workspace={workspace}
+        note="An agent proposed it; nothing in it is read until it is queued. Queue it here, or decide in the inbox."
+      />
+    );
+  }
   if (state === "queued") {
     const waiting = detail.passes.find((p) => p.status === "queued");
     return (
@@ -98,16 +114,6 @@ function NextStep({
           following={detail.initiatives.map((i) => i.id)}
           openLabel="Review again now…"
         />
-      </div>
-    );
-  }
-  if (state === "awaiting_approval") {
-    return (
-      <div className="rl-next">
-        <p>Nothing in it is read until you approve it.</p>
-        <Button variant="primary" compact onClick={() => setInboxOpen(true)}>
-          Review in inbox
-        </Button>
       </div>
     );
   }

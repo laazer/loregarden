@@ -21,12 +21,14 @@ from loregarden.services.orchestration import ApprovalService
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.errors import SurveyError
 from loregarden.services.reference_survey.inbox import file_card
+from loregarden.services.reference_survey.queue import enqueue_source
 from loregarden.services.reference_survey.schedule import (
     FIRST_IN_LINE,
     ReviewNowIn,
     queue_schedule,
     review_now,
 )
+from loregarden.services.reference_survey.schemas import SourceIn
 from sqlmodel import Session, select
 from tests.survey_support import MIT_TEXT, build_world, running_pass, serve, write_tree
 
@@ -196,7 +198,7 @@ def test_dispatch_now_leaves_a_pass_the_loop_already_took(ctx):
     assert result.waiting == "pass 1 is dispatched, not queued"
 
 
-def test_the_api_adds_a_source_that_waits_for_its_card(client: TestClient, isolated_db):
+def test_the_api_adds_a_source_straight_into_the_queue(client: TestClient, isolated_db):
     with Session(isolated_db) as session:
         build_world(session)
     body = {
@@ -208,13 +210,14 @@ def test_the_api_adds_a_source_that_waits_for_its_card(client: TestClient, isola
     added = response.json()
     assert (added["source"]["url"], added["source"]["state"]) == (
         "https://github.com/acme/newone",
-        "awaiting_approval",
+        "queued",
     )
+    assert added["source"]["approval_id"] is None
     assert added["attached"] == ["loregarden"]
     bad = client.post("/api/reference-library/sources", json=body | {"url": "not a url"})
     assert bad.status_code == 422
     listing = client.get("/api/reference-library", params={"workspace_slug": "loregarden"}).json()
-    assert listing["schedule"]["next"] is None
+    assert listing["schedule"]["next"]["name"] == "newone"
 
 
 def test_the_api_review_now_answers_409_for_a_source_not_admitted(client: TestClient, isolated_db):
@@ -275,14 +278,14 @@ def test_an_approved_card_reads_as_queued_without_waiting_for_a_tick(
     client: TestClient, isolated_db
 ):
     with Session(isolated_db) as session:
-        build_world(session)
-    body = {
-        "workspace_slugs": ["loregarden"], "kind": "repo", "url": "https://github.com/acme/approved",
-        "question": "q", "queued_reason": "r",
-    }  # fmt: skip
-    added = client.post("/api/reference-library/sources", json=body).json()["source"]
-    with Session(isolated_db) as session:
-        ApprovalService(session).resolve(added["approval_id"], approved=True)
+        world = build_world(session)
+        # An agent's proposal: it waits for its card.
+        added = enqueue_source(
+            session,
+            SourceIn(workspace_slugs=[world.workspace_slug], kind=SurveySourceKind.REPO, url="https://github.com/acme/approved"),
+        ).source  # fmt: skip
+        ApprovalService(session).resolve(added.approval_id, approved=True)
+        added = {"id": added.id}
     detail = client.get(f"/api/reference-library/{added['id']}").json()
     assert detail["source"]["state"] == "queued"
     listing = client.get("/api/reference-library", params={"workspace_slug": "loregarden"}).json()

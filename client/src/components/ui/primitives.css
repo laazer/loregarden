@@ -40,7 +40,7 @@
   z-index: 1000;
   box-sizing: border-box;
   max-width: min(480px, calc(100vw - 16px));
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--bd2);
   border-radius: 8px;
   background: var(--bg1);
@@ -51,7 +51,7 @@
 }
 
 :where(.ui-select-group) {
-  padding: 8px 10px 4px;
+  padding: 10px 12px 6px;
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -59,7 +59,8 @@
 }
 
 :where(.ui-select-option) {
-  padding: 6px 10px 6px 26px;
+  padding: 8px 12px 8px 30px;
+  line-height: 1.4;
   border-radius: 6px;
   cursor: pointer;
   overflow-wrap: anywhere;
@@ -77,7 +78,7 @@
 :where(.ui-select-option[aria-selected="true"])::before {
   content: "✓";
   position: absolute;
-  left: 9px;
+  left: 11px;
 }
 
 :where(.ui-select-option[aria-disabled="true"]) {
