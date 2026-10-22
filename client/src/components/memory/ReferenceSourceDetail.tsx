@@ -280,7 +280,7 @@ function Facts({ detail }: { detail: LibraryDetail }) {
         {coverage.mapped_commit
           ? `${coverage.read} of ${coverage.tree_files} files read in full, ${coverage.partial} in partly read folders, ${coverage.unopened} never opened`
           : detail.passes.length > 0
-            ? "Not mapped: its passes predate the directory map, so what they read is in their notes; the next pass maps the tree."
+            ? "Not mapped: its passes predate the directory map, so what they read is only in their records; the next pass maps the tree."
             : "Not mapped yet: the tree is mapped when its first pass is dispatched."}
       </dd>
     </dl>
