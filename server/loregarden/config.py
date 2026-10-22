@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     github_sync_tick_seconds: float = 60.0
     #: How often initiative autopilot looks for ready work. Non-positive is off.
     autopilot_interval_seconds: float = 60.0
+    #: How often the reference survey dispatches the head of its queue. Non-positive is off.
+    reference_survey_interval_seconds: float = 120.0
+    #: Survey passes running at once. Each holds a queue lane like any ticket.
+    reference_survey_max_concurrent_passes: int = 1
+    #: Files a map-bounded pass is assigned; one entry over it is still assigned whole.
+    reference_survey_pass_file_budget: int = 60
     # Push-on-edit: how often the worker drains edited tickets (0 disables the
     # worker), and how long an edit waits for more before it is pushed.
     github_push_poll_seconds: float = 0.5

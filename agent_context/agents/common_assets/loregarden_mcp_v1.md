@@ -209,6 +209,8 @@ page outside DevDocs — a project's own docs, a changelog, an RFC.
 | Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Find the right documentation page | `loregarden_search_reference` — not a guessed URL |
 | Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
+| Queue an outside project for the reference survey, or ask what was concluded about one | `loregarden_survey_queue` (`enqueue`, `status`, `coverage`, `request_pass`) |
+| Run a survey pass: brief, reads, evidence, findings, unknowns, landing on tickets | `loregarden_survey_pass`, `loregarden_survey_record`, `loregarden_survey_write` |
 | Run the change you are checking (a branch server or client) | `loregarden_launch_instance`, then `loregarden_instance_status`, then `loregarden_stop_instance` |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
