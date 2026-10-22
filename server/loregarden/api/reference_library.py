@@ -11,12 +11,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
+from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_survey.bulk import BulkAddItem, enqueue_many
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import (
     LinkResult,
     UnlinkResult,
+    follow,
     link_initiative,
+    resolve_initiatives,
     unlink_initiative,
 )
 from loregarden.services.reference_survey.library import (
@@ -32,7 +35,7 @@ from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNow
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
 from loregarden.services.reference_survey.upstream import check_upstream_by_id
 from loregarden.services.ticket_ids import TicketNotFound
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 router = APIRouter(prefix="/reference-library", tags=["reference-library"])
@@ -61,6 +64,8 @@ class AddSourceResult(BaseModel):
     attached: list[str]
     #: A scoped pass was queued because a surveyed source gained a workspace.
     scoped_pass: int | None
+    #: Initiatives now following the source, by external id.
+    initiatives_linked: list[str]
 
 
 @router.post("/sources", response_model=AddSourceResult)
@@ -68,23 +73,65 @@ def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSo
     """Propose a repository or site. A new one waits for its admission card in the
     inbox; a known one gains the workspaces, as `loregarden_survey_queue` does."""
     try:
-        added = enqueue_source(session, body)
+        return _added(session, body)
     except SurveyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SurveyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _added(session: Session, body: SourceIn) -> AddSourceResult:
+    initiatives = resolve_initiatives(session, body.initiative_ids)
+    added = enqueue_source(session, body)
+    linked = follow(session, added.source.id, initiatives, actor="operator")
     return AddSourceResult(
         source=library_row(session, added.source),
         attached=added.attached,
         scoped_pass=added.scoped_pass.ordinal if added.scoped_pass else None,
+        initiatives_linked=[link.initiative for link in linked],
     )
+
+
+class ServeRequest(BaseModel):
+    workspace_slugs: list[str] = Field(min_length=1)
+    #: What the source should answer for these workspaces.
+    question: str = ""
+    queued_reason: str = ""
+
+
+@router.post("/{source_id}/workspaces", response_model=AddSourceResult)
+def serve_more(
+    source_id: str, body: ServeRequest, session: Session = Depends(get_session)
+) -> AddSourceResult:
+    """Make a source answer more workspaces, as enqueueing its URL from them would:
+    a surveyed source gets one scoped pass on the new question, a waiting one reads
+    for them too, and one not yet admitted still waits for its card."""
+    source = session.get(SurveySource, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail=f"No survey source {source_id!r}")
+    request = SourceIn(
+        workspace_slugs=body.workspace_slugs, kind=source.kind, url=source.url, name=source.name,
+        question=body.question, queued_reason=body.queued_reason,
+    )  # fmt: skip
+    try:
+        return _added(session, request)
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/sources/bulk", response_model=list[BulkAddItem])
 def add_sources(body: BulkSourceIn, session: Session = Depends(get_session)) -> list[BulkAddItem]:
     """Propose several URLs; each is added on its own and reported on its own, so
-    one bad URL is a failed row in the answer, not a failed request."""
-    return enqueue_many(session, body)
+    one bad URL is a failed row in the answer, not a failed request. An unknown
+    initiative refuses the whole request before any URL is added."""
+    try:
+        return enqueue_many(session, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/{source_id}/review-now", response_model=ReviewNowResult)

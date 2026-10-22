@@ -31,7 +31,7 @@ from loregarden.services.initiative_membership import (
 )
 from loregarden.services.initiative_service import load_initiative
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
-from loregarden.services.ticket_ids import resolve_one
+from loregarden.services.ticket_ids import AmbiguousTicketReference, TicketNotFound, resolve_one
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
@@ -83,6 +83,25 @@ def _initiative(session: Session, ref: str) -> Ticket:
         return load_initiative(session, ticket.id)
     except LookupError as exc:
         raise SurveyError(f"{ticket.external_id} is not an initiative: {exc}") from exc
+
+
+def resolve_initiatives(session: Session, refs: list[str]) -> list[Ticket]:
+    """Every initiative named, or a refusal naming the first that is not one, before
+    anything is written: a caller links them only after its own write succeeds."""
+    found = []
+    for ref in dict.fromkeys(refs):
+        try:
+            found.append(_initiative(session, ref))
+        except (TicketNotFound, AmbiguousTicketReference) as exc:
+            raise SurveyNotFound(f"No initiative {ref!r}: {exc}") from exc
+    return found
+
+
+def follow(
+    session: Session, source_id: str, initiatives: list[Ticket], *, actor: str
+) -> list[LinkResult]:
+    """Link each initiative to the source (see `link_initiative`)."""
+    return [link_initiative(session, source_id, i.id, actor=actor) for i in initiatives]
 
 
 def _source_tickets(
@@ -263,3 +282,39 @@ def linked_initiatives(session: Session, source_id: str) -> list[LinkedInitiativ
             )
         )
     return views
+
+
+#: How much of an initiative's description a pass is given as its goal.
+GOAL_CHARS = 400
+
+
+class InitiativeContext(BaseModel):
+    """An initiative following a source, as a pass reads it: what it is trying to do."""
+
+    external_id: str
+    title: str
+    goal: str
+
+
+def initiative_context(session: Session, source_id: str) -> list[InitiativeContext]:
+    contexts = []
+    for linked in linked_initiatives(session, source_id):
+        initiative = session.get(Ticket, linked.id)
+        description = (initiative.description if initiative else "").strip()
+        goal = (
+            description if len(description) <= GOAL_CHARS else description[: GOAL_CHARS - 1] + "…"
+        )
+        contexts.append(
+            InitiativeContext(external_id=linked.external_id, title=linked.title, goal=goal)
+        )
+    return contexts
+
+
+def open_question(workspaces: list[str], initiatives: list[InitiativeContext]) -> str:
+    """What a pass with no question reads for: what it serves is the question."""
+    serves = f"the backlogs of {', '.join(workspaces)}"
+    if initiatives:
+        serves += " and the goals of " + ", ".join(
+            f"{i.external_id} ({i.title})" for i in initiatives
+        )
+    return f"No question was given: read for what would serve {serves}."

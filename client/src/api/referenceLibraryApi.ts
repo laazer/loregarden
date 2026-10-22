@@ -75,12 +75,30 @@ export interface AddSourceRequest {
   url: string;
   question: string;
   queued_reason: string;
+  /** Initiatives to follow the source: its open tickets join them, now and later. */
+  initiative_ids: string[];
 }
 
 export interface AddSourceResult {
   source: LibraryRow;
   attached: string[];
   scoped_pass: number | null;
+  /** Initiatives now following the source, by external id. */
+  initiatives_linked: string[];
+}
+
+export interface ReviewNowRequest {
+  /** What a new pass on a surveyed source answers; "" keeps the source's own. */
+  question: string;
+  /** Workspaces the pass should read for as well. */
+  workspace_slugs: string[];
+  initiative_ids: string[];
+}
+
+export interface ServeRequest {
+  workspace_slugs: string[];
+  question: string;
+  queued_reason: string;
 }
 
 export interface BulkAddRequest {
@@ -90,6 +108,7 @@ export interface BulkAddRequest {
   kind: SourceKind | null;
   question: string;
   queued_reason: string;
+  initiative_ids: string[];
 }
 
 export interface BulkAddItem {
@@ -99,6 +118,7 @@ export interface BulkAddItem {
   source: LibraryRow | null;
   /** Why it failed; "" otherwise. */
   detail: string;
+  initiatives_linked: string[];
 }
 
 export interface ReviewNowResult {
@@ -109,6 +129,8 @@ export interface ReviewNowResult {
   waiting: string;
   /** Set when the dispatch closed the pass instead (licence, nothing unread). */
   refused: string;
+  workspaces_added: string[];
+  initiatives_linked: string[];
 }
 
 export interface LibraryPass {
@@ -218,10 +240,15 @@ export const referenceLibraryApi = {
     request<AddSourceResult>("/api/reference-library/sources", { method: "POST", body: JSON.stringify(body) }),
   addReferenceSources: (body: BulkAddRequest) =>
     request<BulkAddItem[]>("/api/reference-library/sources/bulk", { method: "POST", body: JSON.stringify(body) }),
-  reviewSourceNow: (sourceId: string, question: string) =>
+  reviewSourceNow: (sourceId: string, body: ReviewNowRequest) =>
     request<ReviewNowResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/review-now`, {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(body),
+    }),
+  serveSourceInWorkspaces: (sourceId: string, body: ServeRequest) =>
+    request<AddSourceResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   checkSourceUpstream: (sourceId: string) =>
     request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/check-upstream`, {

@@ -49,6 +49,11 @@ from loregarden.services.reference_repo_service import (
 )
 from loregarden.services.reference_survey.coverage import map_tree
 from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.initiatives import (
+    InitiativeContext,
+    initiative_context,
+    open_question,
+)
 from loregarden.services.reference_survey.licence import LicenceVerdict, classify_tree
 from loregarden.services.reference_survey.passes import (
     assign_slice,
@@ -204,6 +209,7 @@ def _brief(
     slice_paths: list[str],
     clone: Path | None,
     workspaces: list[str],
+    initiatives: list[InitiativeContext],
 ) -> str:
     where = (
         f"Clone (read-only, never run anything in it): `{clone}`"
@@ -216,9 +222,18 @@ def _brief(
             "",
             f"**Pass id:** `{survey_pass.id}` — read the full brief with "
             f"`loregarden_survey_pass action=brief pass_id={survey_pass.id}`.",
-            f"**Question:** {survey_pass.question}",
+            f"**Question:** {survey_pass.question or open_question(workspaces, initiatives)}",
             f"**For workspaces:** {', '.join(workspaces)} — one reading serves all of them; "
             "their own questions are in the brief.",
+            *(
+                [
+                    "**For initiatives:** "
+                    + "; ".join(f"{i.external_id} ({i.title})" for i in initiatives)
+                    + " — their goals are in the brief."
+                ]
+                if initiatives
+                else []
+            ),
             f"**Licence:** {source.licence_constraint or 'unclassified'}",
             where + (f" @ `{source.pinned_commit[:12]}`" if source.pinned_commit else ""),
             f"**Slice ({len(slice_paths)} map paths, budget {survey_pass.file_budget} files):** "
@@ -252,11 +267,8 @@ def _create_carrier(
     workspace = session.get(Workspace, source.workspace_id)
     if workspace is None:
         raise ValueError(f"Source {source.id} names a missing workspace")
-    question = (
-        survey_pass.question
-        if len(survey_pass.question) <= 70
-        else survey_pass.question[:67] + "..."
-    )
+    asked = survey_pass.question or "open read for what it serves"
+    question = asked if len(asked) <= 70 else asked[:67] + "..."
     carrier = TicketService(session).create_ticket(
         workspace_slug=workspace.slug,
         title=f"Survey pass {survey_pass.ordinal}: {source.name} — {question}",
@@ -360,6 +372,7 @@ def _dispatch(
             slice_paths,
             clone,
             [w.slug for w, _ in target_workspaces(session, source.id)],
+            initiative_context(session, source.id),
         ),
     )
     survey_pass.carrier_ticket_id = carrier.id

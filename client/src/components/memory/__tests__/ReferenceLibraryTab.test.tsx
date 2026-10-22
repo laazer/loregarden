@@ -12,6 +12,7 @@ import { useUiStore } from "../../../state/uiStore";
 import deepSource from "../../../test/fixtures/prod-shape/reference-library-deep-source.json";
 import libraryFixture from "../../../test/fixtures/prod-shape/reference-library-loregarden.json";
 import { TopbarPageSlot, TopbarPageSlotProvider } from "../../TopbarPageSlot";
+import { ReferenceTargetsPicker } from "../ReferenceTargetsPicker";
 
 jest.mock("../../../api/client");
 
@@ -53,6 +54,8 @@ function renderAt(path: string) {
   );
 }
 
+const NOTHING_MORE = { question: "", workspace_slugs: [], initiative_ids: [] };
+
 function row(overrides: Partial<LibraryRow>): LibraryRow {
   return { ...LIBRARY.sources[0], ...overrides };
 }
@@ -67,9 +70,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   useToastStore.setState({ toasts: [] });
   useUiStore.setState({ inboxOpen: false });
-  mockApi.workspaces.mockResolvedValue([
-    { id: "w1", slug: "loregarden", name: "loregarden" } as Awaited<ReturnType<typeof api.workspaces>>[number],
-  ]);
+  mockApi.workspaces.mockResolvedValue(
+    [
+      { id: "w1", slug: "loregarden", name: "loregarden", archived_at: null },
+      { id: "w2", slug: "blobert", name: "blobert", archived_at: null },
+      { id: "w3", slug: "old-one", name: "old-one", archived_at: "2026-09-01T00:00:00" },
+    ] as Awaited<ReturnType<typeof api.workspaces>>,
+  );
   mockApi.referenceLibrary.mockResolvedValue(LIBRARY);
   mockApi.referenceSource.mockResolvedValue(DEEP);
   mockApi.initiatives.mockResolvedValue([INITIATIVE]);
@@ -376,12 +383,12 @@ describe("the review queue", () => {
       ...listOf([queued("q1", "retry-kit"), queued("q2", "later-kit")]),
       schedule: schedule({}),
     });
-    mockApi.reviewSourceNow.mockResolvedValue({ started: true, ordinal: 1, carrier: "lg-survey-9", waiting: "", refused: "" });
+    mockApi.reviewSourceNow.mockResolvedValue({ started: true, ordinal: 1, carrier: "lg-survey-9", waiting: "", refused: "" , workspaces_added: [], initiatives_linked: [] });
     renderAt("/memory/library?view=queue");
     const status = await screen.findByRole("status", { name: "Review queue" });
     expect(status).toHaveTextContent("Next review retry-kit, pass 1 (1 more after it) — starts at the next check, within 2 minutes.");
     fireEvent.click(within(status).getByRole("button", { name: "Review now" }));
-    await waitFor(() => expect(mockApi.reviewSourceNow).toHaveBeenCalledWith("q1", ""));
+    await waitFor(() => expect(mockApi.reviewSourceNow).toHaveBeenCalledWith("q1", NOTHING_MORE));
     await waitFor(() => expect(useToastStore.getState().toasts[0]?.title).toBe("Reviewing retry-kit"));
   });
 
@@ -405,11 +412,12 @@ describe("the review queue", () => {
       passes: [{ ...DEEP.passes[0], ordinal: 1, status: "queued", finished_at: null, record: "" }],
     });  // prettier-ignore
     mockApi.reviewSourceNow.mockResolvedValue({
-      started: false, ordinal: 1, carrier: null, waiting: "1 pass(es) running, at the limit of 1", refused: "",
+      started: false, ordinal: 1, carrier: null, waiting: "1 pass(es) running, at the limit of 1", refused: "", workspaces_added: [], initiatives_linked: [],
     });  // prettier-ignore
     renderAt("/memory/library/q2?view=queue");
     const detail = await screen.findByRole("region", { name: "later-kit" });
     expect(await within(detail).findByText(/Pass 1 is 2nd in line\./)).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "Review now…" }));
     fireEvent.click(within(detail).getByRole("button", { name: "Review now" }));
     await waitFor(() =>
       expect(useToastStore.getState().toasts[0]).toMatchObject({
@@ -420,14 +428,18 @@ describe("the review queue", () => {
   });
 
   it("reviews a surveyed source again against a question it can edit", async () => {
-    mockApi.reviewSourceNow.mockResolvedValue({ started: true, ordinal: 25, carrier: "lg-survey-10", waiting: "", refused: "" });
+    mockApi.reviewSourceNow.mockResolvedValue({ started: true, ordinal: 25, carrier: "lg-survey-10", waiting: "", refused: "" , workspaces_added: [], initiatives_linked: [] });
     renderAt(`/memory/library/${DEEP.source.id}`);
     fireEvent.click(await screen.findByRole("button", { name: "Review again now…" }));
-    const question = screen.getByRole("textbox", { name: "What should this review answer?" });
+    const question = screen.getByRole("textbox", { name: /What should this review answer\?/ });
     fireEvent.change(question, { target: { value: "What changed in their verdict ledger?" } });
     fireEvent.click(screen.getByRole("button", { name: "Review now" }));
     await waitFor(() =>
-      expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, "What changed in their verdict ledger?"),
+      expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, {
+        question: "What changed in their verdict ledger?",
+        workspace_slugs: [],
+        initiative_ids: [],
+      }),
     );
   });
 });
@@ -435,15 +447,15 @@ describe("the review queue", () => {
 describe("adding a reference", () => {
   function fill(form: HTMLElement) {
     fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/retry-kit" } });
-    fireEvent.change(within(form).getByRole("textbox", { name: "What should the survey answer from it?" }), {
+    fireEvent.change(within(form).getByRole("textbox", { name: /What should the survey answer from it\?/ }), {
       target: { value: "How do they retry?" },
     });
-    fireEvent.change(within(form).getByRole("textbox", { name: "Why this one?" }), { target: { value: "A retry ledger" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: /Why this one\?/ }), { target: { value: "A retry ledger" } });
   }
 
   it("proposes a repository, sends it to the inbox, and opens it", async () => {
     const added = row({ id: "new1", name: "retry-kit", state: "awaiting_approval", approval_id: "card-9" });
-    mockApi.addReferenceSource.mockResolvedValue({ source: added, attached: ["loregarden"], scoped_pass: null });
+    mockApi.addReferenceSource.mockResolvedValue({ source: added, attached: ["loregarden"], scoped_pass: null, initiatives_linked: [] });
     renderAt("/memory/library?view=queue");
     const toggle = await screen.findByRole("button", { name: "Add a reference" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -456,7 +468,7 @@ describe("adding a reference", () => {
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
         workspace_slugs: ["loregarden"], kind: "repo", url: "https://github.com/acme/retry-kit",
-        question: "How do they retry?", queued_reason: "A retry ledger",
+        question: "How do they retry?", queued_reason: "A retry ledger", initiative_ids: [],
       }),
     );  // prettier-ignore
     await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/memory/library/new1"));
@@ -479,9 +491,9 @@ describe("adding a reference", () => {
   it("adds several pasted URLs at once and keeps only the failed ones to fix", async () => {
     const proposed = row({ id: "n1", name: "one", state: "awaiting_approval", approval_id: "card-1" });
     mockApi.addReferenceSources.mockResolvedValue([
-      { url: "https://github.com/acme/one", outcome: "proposed", kind: "repo", source: proposed, detail: "" },
-      { url: "https://docs.example.dev", outcome: "already", kind: "site", source: proposed, detail: "" },
-      { url: "ftp://nope", outcome: "failed", kind: "site", source: null, detail: "A site is named by an https URL" },
+      { url: "https://github.com/acme/one", outcome: "proposed", kind: "repo", source: proposed, detail: "", initiatives_linked: [] },
+      { url: "https://docs.example.dev", outcome: "already", kind: "site", source: proposed, detail: "", initiatives_linked: [] },
+      { url: "ftp://nope", outcome: "failed", kind: "site", source: null, detail: "A site is named by an https URL", initiatives_linked: [] },
     ]);
     renderAt("/memory/library?view=queue");
     fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
@@ -493,14 +505,14 @@ describe("adding a reference", () => {
       target: { value: "https://github.com/acme/one,https://docs.example.dev\tftp://nope\n\nhttps://github.com/acme/one\n" },
     });
     expect(within(form).getByText(/3 URLs\./)).toBeInTheDocument();
-    fireEvent.change(within(form).getByRole("textbox", { name: "What should the survey answer from them?" }), {
+    fireEvent.change(within(form).getByRole("textbox", { name: /What should the survey answer from them\?/ }), {
       target: { value: "How do they retry?" },
     });
-    fireEvent.change(within(form).getByRole("textbox", { name: "Why these?" }), { target: { value: "Retry ledgers" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: /Why these\?/ }), { target: { value: "Retry ledgers" } });
     fireEvent.click(within(form).getByRole("button", { name: "Propose 3 for review" }));
     await waitFor(() =>
       expect(mockApi.addReferenceSources).toHaveBeenCalledWith({
-        workspace_slugs: ["loregarden"], kind: null, question: "How do they retry?", queued_reason: "Retry ledgers",
+        workspace_slugs: ["loregarden"], kind: null, question: "How do they retry?", queued_reason: "Retry ledgers", initiative_ids: [],
         urls: ["https://github.com/acme/one", "https://docs.example.dev", "ftp://nope"],
       }),
     );  // prettier-ignore
@@ -539,5 +551,131 @@ describe("adding a reference", () => {
     const form = screen.getByRole("form", { name: "Add a reference" });
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveAttribute("readonly");
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveValue("https://github.com/openwork/agent-mux");
+  });
+});
+
+describe("who a review is for", () => {
+  it("adds a reference for another workspace too and feeds an initiative, hiding archived workspaces", async () => {
+    const added = row({ id: "new1", name: "retry-kit", state: "awaiting_approval", approval_id: "card-9" });
+    mockApi.addReferenceSource.mockResolvedValue({
+      source: added, attached: ["loregarden", "blobert"], scoped_pass: null, initiatives_linked: ["init-survey-1"],
+    });  // prettier-ignore
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    const readFor = within(form).getByRole("group", { name: "Read it for" });
+    expect(await within(readFor).findByRole("checkbox", { name: /loregarden/ })).toBeDisabled();
+    expect(within(readFor).queryByRole("checkbox", { name: /old-one/ })).not.toBeInTheDocument();
+    fireEvent.click(within(readFor).getByRole("checkbox", { name: "blobert" }));
+    const feed = within(form).getByRole("group", { name: "Feed its tickets into" });
+    fireEvent.click(await within(feed).findByRole("checkbox", { name: /init-survey-1/ }));
+    fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/retry-kit" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: /What should the survey answer from it\?/ }), { target: { value: "q" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: /Why this one\?/ }), { target: { value: "r" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Propose for review" }));
+    await waitFor(() =>
+      expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
+        workspace_slugs: ["loregarden", "blobert"], kind: "repo", url: "https://github.com/acme/retry-kit",
+        question: "q", queued_reason: "r", initiative_ids: [INITIATIVE.id],
+      }),
+    );  // prettier-ignore
+  });
+
+  it("reviews a surveyed source for another workspace and an initiative, with what it already serves fixed", async () => {
+    mockApi.reviewSourceNow.mockResolvedValue({
+      started: true, ordinal: 25, carrier: "lg-survey-10", waiting: "", refused: "",
+      workspaces_added: ["blobert"], initiatives_linked: ["init-survey-1"],
+    });  // prettier-ignore
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Review again now…" }));
+    const form = screen.getByRole("form", { name: `Review ${DEEP.source.name} now` });
+    expect(await within(form).findByRole("checkbox", { name: /loregarden/ })).toBeChecked();
+    fireEvent.click(within(form).getByRole("checkbox", { name: "blobert" }));
+    fireEvent.click(await within(form).findByRole("checkbox", { name: /init-survey-1/ }));
+    fireEvent.change(within(form).getByRole("textbox", { name: /What should this review answer\?/ }), {
+      target: { value: "What changed?" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Review now" }));
+    await waitFor(() =>
+      expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, {
+        question: "What changed?", workspace_slugs: ["blobert"], initiative_ids: [INITIATIVE.id],
+      }),
+    );  // prettier-ignore
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts[0]?.message).toMatch(
+        /it now reads for blobert too; init-survey-1 now follow it\./,
+      ),
+    );
+  });
+
+  it("adds a workspace from the source page, needing a question and a reason", async () => {
+    mockApi.serveSourceInWorkspaces.mockResolvedValue({
+      source: DEEP.source, attached: ["blobert"], scoped_pass: 25, initiatives_linked: [],
+    });  // prettier-ignore
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a workspace…" }));
+    const form = screen.getByRole("form", { name: `Add a workspace to ${DEEP.source.name}` });
+    expect(within(form).queryByRole("group", { name: "Feed its tickets into" })).not.toBeInTheDocument();
+    const add = within(form).getByRole("button", { name: "Add" });
+    expect(add).toBeDisabled(); // a workspace is what it needs, not words
+    fireEvent.click(await within(form).findByRole("checkbox", { name: "blobert" }));
+    expect(add).toBeEnabled();
+    fireEvent.change(within(form).getByRole("textbox", { name: /What should it answer for them\?/ }), { target: { value: "How does it gate?" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: /Why there\?/ }), { target: { value: "blobert needs a gate" } });
+    fireEvent.click(add);
+    await waitFor(() =>
+      expect(mockApi.serveSourceInWorkspaces).toHaveBeenCalledWith(DEEP.source.id, {
+        workspace_slugs: ["blobert"], question: "How does it gate?", queued_reason: "blobert needs a gate",
+      }),
+    );  // prettier-ignore
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts[0]?.message).toBe(`Pass 25 reads ${DEEP.source.name} again for blobert.`),
+    );
+  });
+
+  it("says when workspaces could not be listed instead of offering none", async () => {
+    mockApi.workspaces.mockRejectedValue(new ApiError(500, "boom"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ReferenceTargetsPicker
+            fixedWorkspaces={["loregarden"]}
+            workspaces={[]}
+            onWorkspaces={jest.fn()}
+            initiatives={[]}
+            onInitiatives={jest.fn()}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/Could not list workspaces .*it reads for loregarden only\./)).toBeInTheDocument();
+  });
+});
+
+describe("linking is enough to start a review", () => {
+  it("proposes a reference with only a URL, the question and reason left empty", async () => {
+    const added = row({ id: "new2", name: "bare", state: "awaiting_approval", approval_id: "card-2" });
+    mockApi.addReferenceSource.mockResolvedValue({ source: added, attached: ["loregarden"], scoped_pass: null, initiatives_linked: [] });
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/bare" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Propose for review" }));
+    await waitFor(() =>
+      expect(mockApi.addReferenceSource).toHaveBeenCalledWith(expect.objectContaining({ question: "", queued_reason: "" })),
+    );
+  });
+
+  it("starts a review of a surveyed source without a question", async () => {
+    mockApi.reviewSourceNow.mockResolvedValue({
+      started: true, ordinal: 25, carrier: "lg-survey-10", waiting: "", refused: "", workspaces_added: [], initiatives_linked: [],
+    });  // prettier-ignore
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: { ...DEEP.source, question: "" }, passes: DEEP.passes.map((p) => ({ ...p, question: "" })) });
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Review again now…" }));
+    const form = screen.getByRole("form", { name: `Review ${DEEP.source.name} now` });
+    fireEvent.click(within(form).getByRole("button", { name: "Review now" }));
+    await waitFor(() => expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, NOTHING_MORE));
   });
 });

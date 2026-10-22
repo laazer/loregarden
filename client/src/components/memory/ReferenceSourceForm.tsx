@@ -12,6 +12,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Textarea } from "../ui/Textarea";
+import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
 
 /** The server takes this many URLs per bulk add (`MAX_BULK_URLS`). */
 const MAX_BULK_URLS = 50;
@@ -123,6 +124,9 @@ export function ReferenceSourceForm({
   const [why, setWhy] = useState("");
   const [failure, setFailure] = useState("");
   const [results, setResults] = useState<BulkAddItem[]>([]);
+  const [alsoFor, setAlsoFor] = useState<string[]>([]);
+  const [initiativeIds, setInitiativeIds] = useState<string[]>([]);
+  const workspaceSlugs = [workspace, ...alsoFor.filter((slug) => slug !== workspace)];
   const ids = { url: useId(), kind: useId(), question: useId(), why: useId(), hint: useId() };
   const urls = splitUrls(urlsText);
 
@@ -140,11 +144,12 @@ export function ReferenceSourceForm({
   const add = useMutation({
     mutationFn: () =>
       api.addReferenceSource({
-        workspace_slugs: [workspace],
+        workspace_slugs: workspaceSlugs,
         kind,
         url: url.trim(),
         question: question.trim(),
         queued_reason: why.trim(),
+        initiative_ids: initiativeIds,
       }),
     onSuccess: (result) => {
       setFailure("");
@@ -159,11 +164,12 @@ export function ReferenceSourceForm({
   const addMany = useMutation({
     mutationFn: () =>
       api.addReferenceSources({
-        workspace_slugs: [workspace],
+        workspace_slugs: workspaceSlugs,
         urls,
         kind: bulkKind === DETECT ? null : bulkKind,
         question: question.trim(),
         queued_reason: why.trim(),
+        initiative_ids: initiativeIds,
       }),
     onSuccess: (items) => {
       setFailure("");
@@ -179,8 +185,7 @@ export function ReferenceSourceForm({
 
   const pending = add.isPending || addMany.isPending;
   const tooMany = several && urls.length > MAX_BULK_URLS;
-  const shared = question.trim() && why.trim();
-  const ready = several ? shared && urls.length > 0 && !tooMany : shared && url.trim();
+  const ready = several ? urls.length > 0 && !tooMany : Boolean(url.trim());
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!ready || pending) return;
@@ -275,9 +280,20 @@ export function ReferenceSourceForm({
           </div>
         </div>
       )}
+      <ReferenceTargetsPicker
+        fixedWorkspaces={[workspace]}
+        workspaces={alsoFor}
+        onWorkspaces={setAlsoFor}
+        initiatives={initiativeIds}
+        onInitiatives={setInitiativeIds}
+      />
+      <p className="rl-muted rl-optional-note">
+        That is enough to review {several ? "them" : "it"}: the survey reads for those workspaces and initiatives.
+        Add specifics below if you have them.
+      </p>
       <div className="rl-field">
         <label htmlFor={ids.question}>
-          What should the survey answer from {several ? "them" : "it"}?
+          What should the survey answer from {several ? "them" : "it"}? (optional)
         </label>
         <Textarea
           id={ids.question}
@@ -286,18 +302,16 @@ export function ReferenceSourceForm({
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="How do they retry a failed run without losing its state?"
           autoFocus={Boolean(initialUrl)}
-          required
         />
       </div>
       <div className="rl-field">
-        <label htmlFor={ids.why}>{several ? "Why these?" : "Why this one?"}</label>
+        <label htmlFor={ids.why}>{several ? "Why these?" : "Why this one?"} (optional)</label>
         <Textarea
           id={ids.why}
           rows={2}
           value={why}
           onChange={(event) => setWhy(event.target.value)}
           placeholder="It ships a retry ledger we could compare with ours."
-          required
         />
       </div>
       {failure ? (

@@ -50,6 +50,7 @@ export const API_WRITE_COVERAGE = {
   addReferenceSource: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   addReferenceSources: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   reviewSourceNow: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  serveSourceInWorkspaces: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
   // The bulk form of the same write: an agent creates the tickets directly,

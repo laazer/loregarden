@@ -13,10 +13,11 @@ from loregarden.models.domain.survey_enums import BulkAddOutcome, SurveySourceKi
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
 from loregarden.services.reference_survey.errors import AlreadyServes, SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
 from loregarden.services.reference_survey.library import LibraryRow, library_row
 from loregarden.services.reference_survey.queue import enqueue_source
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 #: Hosts whose URLs are repositories. Any other https URL is read as a site,
@@ -43,9 +44,13 @@ class BulkAddItem(BaseModel):
     source: LibraryRow | None
     #: Why it failed; "" otherwise.
     detail: str
+    #: Initiatives now following this source, by external id.
+    initiatives_linked: list[str] = Field(default_factory=list)
 
 
 def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
+    # Refused here, before any URL is added, rather than half-way down the list.
+    initiatives = resolve_initiatives(session, body.initiative_ids)
     items = []
     for url in dict.fromkeys(u.strip() for u in body.urls if u.strip()):
         kind = body.kind or infer_kind(url)
@@ -58,10 +63,12 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
         except AlreadyServes as exc:
             session.rollback()
             known = session.get(SurveySource, exc.source_id)
+            linked = follow(session, known.id, initiatives, actor="operator") if known else []
             items.append(
                 BulkAddItem(
                     url=url, outcome=BulkAddOutcome.ALREADY, kind=known.kind if known else kind,
                     source=library_row(session, known) if known else None, detail="",
+                    initiatives_linked=[link.initiative for link in linked],
                 )
             )  # fmt: skip
             continue
@@ -74,6 +81,7 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
             )  # fmt: skip
             items.append(failed)
             continue
+        linked = follow(session, added.source.id, initiatives, actor="operator")
         row = library_row(session, added.source)
         if added.scoped_pass is not None:
             outcome = BulkAddOutcome.RESCOPED
@@ -81,5 +89,10 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
             outcome = BulkAddOutcome.PROPOSED
         else:
             outcome = BulkAddOutcome.ATTACHED
-        items.append(BulkAddItem(url=url, outcome=outcome, kind=kind, source=row, detail=""))
+        items.append(
+            BulkAddItem(
+                url=url, outcome=outcome, kind=kind, source=row, detail="",
+                initiatives_linked=[link.initiative for link in linked],
+            )
+        )  # fmt: skip
     return items
