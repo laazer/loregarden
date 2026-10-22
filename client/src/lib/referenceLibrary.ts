@@ -248,3 +248,8 @@ export function nextCheckText(schedule: QueueSchedule, now: Date = new Date()): 
   const minutes = Math.round(ms / 60_000);
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
+
+/** The URLs in pasted text: split on commas, tabs and new lines, blanks and repeats dropped. */
+export function splitUrls(text: string): string[] {
+  return [...new Set(text.split(/[,\t\r\n]+/).map((part) => part.trim()).filter(Boolean))];
+}

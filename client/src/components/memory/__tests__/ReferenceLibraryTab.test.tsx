@@ -476,6 +476,60 @@ describe("adding a reference", () => {
     expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
   });
 
+  it("adds several pasted URLs at once and keeps only the failed ones to fix", async () => {
+    const proposed = row({ id: "n1", name: "one", state: "awaiting_approval", approval_id: "card-1" });
+    mockApi.addReferenceSources.mockResolvedValue([
+      { url: "https://github.com/acme/one", outcome: "proposed", kind: "repo", source: proposed, detail: "" },
+      { url: "https://docs.example.dev", outcome: "already", kind: "site", source: proposed, detail: "" },
+      { url: "ftp://nope", outcome: "failed", kind: "site", source: null, detail: "A site is named by an https URL" },
+    ]);
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    fireEvent.click(within(form).getByRole("button", { name: "Several" }));
+    expect(within(form).getByRole("button", { name: "Several" })).toHaveAttribute("aria-pressed", "true");
+    const box = within(form).getByRole("textbox", { name: "URLs" });
+    fireEvent.change(box, {
+      target: { value: "https://github.com/acme/one,https://docs.example.dev\tftp://nope\n\nhttps://github.com/acme/one\n" },
+    });
+    expect(within(form).getByText(/3 URLs\./)).toBeInTheDocument();
+    fireEvent.change(within(form).getByRole("textbox", { name: "What should the survey answer from them?" }), {
+      target: { value: "How do they retry?" },
+    });
+    fireEvent.change(within(form).getByRole("textbox", { name: "Why these?" }), { target: { value: "Retry ledgers" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Propose 3 for review" }));
+    await waitFor(() =>
+      expect(mockApi.addReferenceSources).toHaveBeenCalledWith({
+        workspace_slugs: ["loregarden"], kind: null, question: "How do they retry?", queued_reason: "Retry ledgers",
+        urls: ["https://github.com/acme/one", "https://docs.example.dev", "ftp://nope"],
+      }),
+    );  // prettier-ignore
+    const results = await within(form).findByRole("list", { name: "What each URL did" });
+    expect(within(results).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(results).getByText(/not added: A site is named by an https URL/)).toBeInTheDocument();
+    expect(box).toHaveValue("ftp://nope");
+    expect(within(results).getByRole("link", { name: "https://docs.example.dev" })).toHaveAttribute(
+      "href",
+      "/memory/library/n1?view=queue",
+    );
+    expect(useToastStore.getState().toasts[0]).toMatchObject({
+      title: "Added 1 of 3 references",
+      message: "1 already in the library; 1 could not be added and is left in the box, the reason beside each.",
+    });
+    expect(useUiStore.getState().inboxOpen).toBe(true);
+  });
+
+  it("refuses more URLs than one bulk add takes, before sending", async () => {
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    fireEvent.click(within(form).getByRole("button", { name: "Several" }));
+    const many = Array.from({ length: 51 }, (_, i) => `https://github.com/a/r${i}`).join("\n");
+    fireEvent.change(within(form).getByRole("textbox", { name: "URLs" }), { target: { value: many } });
+    expect(within(form).getByText("51 URLs; at most 50 at a time.")).toBeInTheDocument();
+    expect(within(form).getByRole("button", { name: "Propose 51 for review" })).toBeDisabled();
+  });
+
   it("proposes a listed candidate from its own page, URL fixed", async () => {
     const candidate = row({ id: "c1", name: "agent-mux", state: "candidate", url: "https://github.com/openwork/agent-mux" });
     mockApi.referenceLibrary.mockResolvedValue(listOf([candidate]));

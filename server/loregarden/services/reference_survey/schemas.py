@@ -112,6 +112,22 @@ class SourceIn(_In):
     priority: int = Field(default=100, ge=0)
 
 
+#: URLs one bulk add takes: each is its own source and, when new, its own inbox card.
+MAX_BULK_URLS = 50
+
+
+class BulkSourceIn(_In):
+    """Several URLs proposed together, for the same workspaces, question and reason."""
+
+    workspace_slugs: list[str] = Field(min_length=1)
+    urls: list[str] = Field(min_length=1, max_length=MAX_BULK_URLS)
+    #: One kind for every URL, or None to tell each URL's kind from its host.
+    kind: SurveySourceKind | None = None
+    question: str = Field(min_length=1)
+    queued_reason: str = Field(min_length=1)
+    priority: int = Field(default=100, ge=0)
+
+
 class PassRequestIn(_In):
     source_id: str
     mode: SurveyPassMode

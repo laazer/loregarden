@@ -182,6 +182,21 @@ class SurveyEvidenceStance(StrEnum):
     CONTRADICTING = "contradicting"
 
 
+class BulkAddOutcome(StrEnum):
+    """What adding one URL of a bulk add did."""
+
+    #: A new source, waiting for its admission card in the inbox.
+    PROPOSED = "proposed"
+    #: A known source that now serves the workspace too.
+    ATTACHED = "attached"
+    #: A surveyed source that gained the workspace, and a scoped pass for it.
+    RESCOPED = "rescoped"
+    #: Already in the library for these workspaces; nothing changed.
+    ALREADY = "already"
+    #: Nothing was added; `detail` says why.
+    FAILED = "failed"
+
+
 class SurveyQueueAction(StrEnum):
     """`loregarden_survey_queue` actions."""
 

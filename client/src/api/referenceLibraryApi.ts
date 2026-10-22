@@ -83,6 +83,24 @@ export interface AddSourceResult {
   scoped_pass: number | null;
 }
 
+export interface BulkAddRequest {
+  workspace_slugs: string[];
+  urls: string[];
+  /** One kind for every URL, or null to tell each URL's kind from its host. */
+  kind: SourceKind | null;
+  question: string;
+  queued_reason: string;
+}
+
+export interface BulkAddItem {
+  url: string;
+  outcome: "proposed" | "attached" | "rescoped" | "already" | "failed";
+  kind: SourceKind;
+  source: LibraryRow | null;
+  /** Why it failed; "" otherwise. */
+  detail: string;
+}
+
 export interface ReviewNowResult {
   started: boolean;
   ordinal: number;
@@ -198,6 +216,8 @@ export const referenceLibraryApi = {
     }),
   addReferenceSource: (body: AddSourceRequest) =>
     request<AddSourceResult>("/api/reference-library/sources", { method: "POST", body: JSON.stringify(body) }),
+  addReferenceSources: (body: BulkAddRequest) =>
+    request<BulkAddItem[]>("/api/reference-library/sources/bulk", { method: "POST", body: JSON.stringify(body) }),
   reviewSourceNow: (sourceId: string, question: string) =>
     request<ReviewNowResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/review-now`, {
       method: "POST",

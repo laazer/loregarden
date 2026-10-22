@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
+from loregarden.services.reference_survey.bulk import BulkAddItem, enqueue_many
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import (
     LinkResult,
@@ -28,7 +29,7 @@ from loregarden.services.reference_survey.library import (
 )
 from loregarden.services.reference_survey.queue import enqueue_source, promote_resolved_sources
 from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
-from loregarden.services.reference_survey.schemas import SourceIn
+from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
 from loregarden.services.reference_survey.upstream import check_upstream_by_id
 from loregarden.services.ticket_ids import TicketNotFound
 from pydantic import BaseModel
@@ -77,6 +78,13 @@ def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSo
         attached=added.attached,
         scoped_pass=added.scoped_pass.ordinal if added.scoped_pass else None,
     )
+
+
+@router.post("/sources/bulk", response_model=list[BulkAddItem])
+def add_sources(body: BulkSourceIn, session: Session = Depends(get_session)) -> list[BulkAddItem]:
+    """Propose several URLs; each is added on its own and reported on its own, so
+    one bad URL is a failed row in the answer, not a failed request."""
+    return enqueue_many(session, body)
 
 
 @router.post("/{source_id}/review-now", response_model=ReviewNowResult)
