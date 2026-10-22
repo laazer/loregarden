@@ -223,6 +223,9 @@ def add_survey_shape(
     the memory graph draws learnings from.
     """
     cal = SURVEY_CALIBRATION
+    if session.get(SurveySource, id_fn("survey-source", 0)) is not None:
+        # Idempotent like the rest of the scenario: the record is built once.
+        return cal.surveyed + cal.candidates + cal.refused
     n = 0
     for offset, deep in enumerate(cal.deep):
         source = _source(

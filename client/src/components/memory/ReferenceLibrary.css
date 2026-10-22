@@ -170,6 +170,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+.rl-table .rl-col-state {
+  white-space: nowrap;
+}
+
+.rl-table .rl-col-passes,
+.rl-table .rl-col-tickets {
+  width: 88px;
+}
+
 .rl-row--selected td {
   background: color-mix(in srgb, var(--ac) 7%, transparent);
 }
@@ -455,6 +464,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 11.5px;
+}
+
+.rl-findings li {
+  overflow-wrap: anywhere;
 }
 
 .rl-retracted {
