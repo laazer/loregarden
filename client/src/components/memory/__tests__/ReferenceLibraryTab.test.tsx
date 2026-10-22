@@ -439,7 +439,8 @@ describe("the review queue", () => {
     const detail = await screen.findByRole("region", { name: "later-kit" });
     expect(await within(detail).findByText(/Pass 1 is 2nd in line\./)).toBeInTheDocument();
     fireEvent.click(within(detail).getByRole("button", { name: "Review now…" }));
-    fireEvent.click(within(detail).getByRole("button", { name: "Review now" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review later-kit now" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Review now" }));
     await waitFor(() =>
       expect(useToastStore.getState().toasts[0]).toMatchObject({
         title: "later-kit is first in line but has not started",

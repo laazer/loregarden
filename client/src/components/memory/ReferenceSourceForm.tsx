@@ -226,7 +226,7 @@ export function ReferenceSourceForm({
 
   let submitLabel = "Propose for review";
   if (pending) submitLabel = "Adding…";
-  else if (several) submitLabel = `Propose ${urls.length} for review`;
+  else if (several && urls.length > 0) submitLabel = `Propose ${urls.length} for review`;
 
   return (
     <ModalShell
@@ -255,7 +255,7 @@ export function ReferenceSourceForm({
               <Button
                 variant="plain"
                 compact
-                className="rl-view"
+                className={`rl-view${several ? "" : " rl-view--active"}`}
                 aria-pressed={!several}
                 onClick={() => setSeveral(false)}
               >
@@ -264,7 +264,7 @@ export function ReferenceSourceForm({
               <Button
                 variant="plain"
                 compact
-                className="rl-view"
+                className={`rl-view${several ? " rl-view--active" : ""}`}
                 aria-pressed={several}
                 onClick={() => setSeveral(true)}
               >
