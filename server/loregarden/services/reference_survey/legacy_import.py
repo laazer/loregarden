@@ -58,6 +58,14 @@ from sqlmodel import Session, select
 
 LEGACY_FILES: tuple[str, ...] = ("SURVEY_QUEUE.md", "ref_gh_links.md", "UXBRIEF.md")
 
+#: Why an imported source is in the record. The library does not show it.
+IMPORTED_REASON = "imported from scratch/ref_projects"
+#: What earlier imports wrote where the record says nothing; cleared on re-run.
+_PLACEHOLDER = "(not recorded in the legacy"
+_BOILERPLATE_OUTCOME = "Imported from the legacy survey queue"
+#: The pass made from a link note that names no pass label.
+_RECORD_LABEL = "RECORD"
+
 _HEADING_RE = re.compile(r"^#{1,2} ", re.MULTILINE)
 _SOURCE_HEADING_RE = re.compile(r"^## (?P<n>\d+)\. (?P<name>.+?) — (?P<status>.+)$")
 #: A lettered pass ("PASS J", "pass AI", "PASSES AA-AE"). Labels are capitals only,
@@ -71,7 +79,7 @@ _PASS_MARKER_RE = re.compile(
 _OWNER_REPO_RE = re.compile(r"`?(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+)`?")
 _COMMIT_RE = re.compile(r"@(?P<sha>[0-9a-f]{7,40})\b")
 _TICKET_RE = re.compile(r"\b(?:lg|lor)-[a-z0-9-]*?-?\d+\b|\blor-\d+\b")
-_APPENDS_RE = re.compile(r"(?is)\bAppends? \(\d+\):(?P<ids>[^.\]]*)")
+_APPENDS_RE = re.compile(r"(?is)\bAppends? \(\d+\):(?P<ids>[^.;\]]*)")
 _BARE_ID_RE = re.compile(r"(?<![\w-])\d{2,4}(?![\w-])")
 _LINK_RE = re.compile(
     r"^\s*[-*]?\s*(?:\((?P<ws>[A-Za-z-]+)\)\s*)?(?P<url>https?://\S+?)(?:\s+\((?P<note>.*)\))?\s*$"
@@ -175,12 +183,21 @@ def _source_for(
             kind=SurveySourceKind.REPO if "github.com/" in url else SurveySourceKind.SITE,
             url=url,
             name=name,
-            question="(not recorded in the legacy files)",
-            queued_reason="imported from scratch/ref_projects",
+            queued_reason=IMPORTED_REASON,
         )
         session.add(source)
         session.flush()
         report.sources_created += 1
+    # An earlier import wrote a placeholder where the record says nothing; an
+    # empty field is what the library hides, so a re-run clears it.
+    if source.question.startswith(_PLACEHOLDER):
+        source.question = ""
+    for link in session.exec(
+        select(SurveySourceWorkspace).where(SurveySourceWorkspace.source_id == source.id)
+    ):
+        if link.question.startswith(_PLACEHOLDER):
+            link.question = ""
+            session.add(link)
     if session.get(SurveySourceWorkspace, (source.id, workspace.id)) is None:
         session.add(
             SurveySourceWorkspace(
@@ -207,11 +224,21 @@ def _apply_recorded_licence(source: SurveySource, name: str) -> None:
 
 
 def import_links(
-    session: Session, text: str, default_ws: Workspace, report: ImportReport
+    session: Session,
+    sections: list[SurveyLegacySection],
+    default_ws: Workspace,
+    report: ImportReport,
 ) -> dict[str, list[SurveySource]]:
-    """Index every linked target. Returns sources by the pass label recorded for them."""
+    """Index every linked target. Returns sources by the pass label recorded for them.
+
+    A surveyed target's note is that survey's record: what it is, what was found,
+    and the tickets it landed on. It becomes the source's pass (labelled as the
+    note labels it, dated by its SURVEYED date) and those tickets are linked to
+    it, the same as a per-source section's passes.
+    """
     by_label: dict[str, list[SurveySource]] = {}
-    for line in text.splitlines():
+    lines = [(section, line) for section in sections for line in section.body.splitlines()]
+    for section, line in lines:
         match = _LINK_RE.match(line)
         if not match:
             continue
@@ -243,6 +270,10 @@ def import_links(
         if label:
             by_label.setdefault(label.group("label").upper(), []).append(source)
         session.add(source)
+        session.flush()
+        if note and source.status is SurveySourceStatus.DONE:
+            pass_label = f"PASS {label.group('label').upper()}" if label else _RECORD_LABEL
+            _pass(session, source, 1, pass_label, note, section, report)
     session.flush()
     return by_label
 
@@ -321,8 +352,6 @@ def _pass(
             label=label,
             mode=SurveyPassMode.INITIAL if ordinal == 1 else SurveyPassMode.CONTINUATION,
             status=SurveyPassStatus.FINISHED,
-            question="(not recorded in the legacy entry)",
-            outcome_note="Imported from the legacy survey queue; the outcome was recorded as prose.",
             read_commit=commit.group("sha") if commit else "",
             legacy_section_id=section.id,
             legacy_text=text,
@@ -331,6 +360,19 @@ def _pass(
         session.add(row)
         session.flush()
         report.passes_created += 1
+    else:
+        # A re-run upgrades what an earlier import left: no placeholder text, and
+        # the record text and date when the earlier row was created without them.
+        if row.question.startswith(_PLACEHOLDER):
+            row.question = ""
+        if row.outcome_note.startswith(_BOILERPLATE_OUTCOME):
+            row.outcome_note = ""
+        if not row.legacy_text and text:
+            row.legacy_text = text
+        date = _DATE_RE.search(text)
+        if row.finished_at is None and date:
+            row.finished_at = datetime.fromisoformat(date.group("d"))
+        session.add(row)
     _link_tickets(session, row, text, report)
     return row
 
@@ -492,7 +534,7 @@ def import_legacy(
             continue
         texts[name] = path.read_text(encoding="utf-8")
     stored = {name: _store_sections(session, name, text, report) for name, text in texts.items()}
-    by_label = import_links(session, texts.get("ref_gh_links.md", ""), default_ws, report)
+    by_label = import_links(session, stored.get("ref_gh_links.md", []), default_ws, report)
     import_queue(session, stored.get("SURVEY_QUEUE.md", []), default_ws, by_label, report)
     if commit and all(report.lossless.values()):
         session.commit()

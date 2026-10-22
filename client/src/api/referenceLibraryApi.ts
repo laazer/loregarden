@@ -52,6 +52,8 @@ export interface LibraryPass {
   stopped_at: string;
   refused_reason: string;
   finished_at: string | null;
+  /** What the pass recorded, as written; "" when it recorded through the tools. */
+  record: string;
   files_read: number;
   files_examined: number;
   carrier: string | null;
@@ -107,8 +109,8 @@ export interface LibraryDetail {
   pinned_commit: string;
   refused_reason: string;
   queued_reason: string;
-  notes: string;
-  notes_truncated: boolean;
+  /** What the record says about the source, in full (markdown). */
+  record: string;
   workspaces: { slug: string; question: string; why: string }[];
   passes: LibraryPass[];
   tickets: LibraryTicket[];

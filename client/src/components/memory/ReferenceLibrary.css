@@ -64,7 +64,7 @@
 .rl-count {
   margin-left: auto;
   font-size: 11.5px;
-  color: var(--txl);
+  color: var(--txm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -124,8 +124,8 @@
   border-bottom: 1px solid var(--bd2);
   text-align: left;
   font-weight: 500;
-  font-size: 10.5px;
-  color: var(--txl);
+  font-size: 11.5px;
+  color: var(--txm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 6px 8px;
@@ -203,7 +203,7 @@
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: var(--txl);
+  color: var(--txm);
   overflow-wrap: anywhere;
 }
 
@@ -212,7 +212,7 @@
 .rl-change {
   display: block;
   font-size: 11px;
-  color: var(--txl);
+  color: var(--txm);
 }
 
 .rl-change--moved {
@@ -221,7 +221,7 @@
 
 .rl-change--same,
 .rl-change--unknown {
-  color: var(--txl);
+  color: var(--txm);
 }
 
 .rl-upstream {
@@ -269,8 +269,8 @@
 
 .rl-unresolved {
   display: block;
-  font-size: 10.5px;
-  color: var(--txl);
+  font-size: 11.5px;
+  color: var(--txm);
 }
 
 /* State is said in words; the colour only reinforces it. */
@@ -278,35 +278,36 @@
   display: inline-block;
   padding: 1px 7px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   white-space: nowrap;
-  color: var(--txm);
+  color: var(--tx);
   background: var(--bg3);
 }
 
 .rl-state-badge--awaiting_approval {
-  color: var(--amb);
-  background: var(--aml);
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 16%, transparent);
 }
 
 .rl-state-badge--reading {
-  color: var(--vio);
-  background: var(--vil);
+  color: var(--vil);
+  background: color-mix(in srgb, var(--vio) 16%, transparent);
 }
 
 .rl-state-badge--queued {
-  color: var(--blue);
-  background: var(--bll);
+  color: var(--bll);
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
 }
 
 .rl-state-badge--surveyed {
-  color: var(--grn);
-  background: var(--grl);
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 16%, transparent);
 }
 
 .rl-state-badge--refused {
-  color: var(--red);
-  background: var(--rdl);
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
 }
 
 /* ---- the detail ---------------------------------------------------------- */
@@ -395,7 +396,7 @@
 }
 
 .rl-facts dt {
-  color: var(--txl);
+  color: var(--txm);
   font-size: 11.5px;
 }
 
@@ -425,7 +426,7 @@
   margin: 0 0 4px;
   font-size: 11.5px;
   font-weight: 500;
-  color: var(--txl);
+  color: var(--txm);
 }
 
 .rl-ticket-search {
@@ -475,7 +476,7 @@
 .rl-pass-outcome {
   display: block;
   font-size: 11px;
-  color: var(--txl);
+  color: var(--txm);
 }
 
 .rl-pass-title {
@@ -491,7 +492,7 @@
 }
 
 .rl-muted {
-  color: var(--txl);
+  color: var(--txm);
   margin: 0;
 }
 
@@ -510,11 +511,6 @@
   outline-offset: 2px;
 }
 
-.rl-notes {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11.5px;
-}
 
 .rl-initiative {
   display: flex;
@@ -564,7 +560,7 @@
 }
 
 .rl-link-form label {
-  color: var(--txl);
+  color: var(--txm);
   font-size: 11.5px;
 }
 
@@ -585,7 +581,7 @@
 
 .rl-retracted {
   text-decoration: line-through;
-  color: var(--txl);
+  color: var(--txm);
 }
 
 .rl-sr-only {
@@ -672,4 +668,24 @@
   .rl-table .rl-unresolved {
     display: none;
   }
+}
+
+/* The record: what the survey said about this source, as it was written. */
+.rl-record {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--tx);
+}
+
+.rl-pass-record {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.rl-summary {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--tx);
 }

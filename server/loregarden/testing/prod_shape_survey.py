@@ -97,6 +97,31 @@ _OWNERS = [
 ]
 
 
+# Live records are a survey's own prose (median ~1,100 characters, longest 80k):
+# what the project is, what was found, and the tickets it landed on. The scenario
+# writes distinct prose per source so nothing reads as a repeated template.
+_FINDINGS = [
+    "keeps a verdict only when a second instrument agrees with the first",
+    "records every gate's corpus beside its result, so a zero names its denominator",
+    "splits a long-running task at each boundary its branch carries work across",
+    "retries a failing check once and then asks a person, never a third time",
+    "stores a learning with the ticket it came from and retires it when that work is undone",
+    "renders a table at phone width as one block per row, name first",
+    "names the authority still needed to settle each open question",
+    "reads its licence at the pinned commit before it reads anything else",
+]
+
+
+def _record(name: str, n: int) -> str:
+    finding = _FINDINGS[n % len(_FINDINGS)]
+    other = _FINDINGS[(n * 3 + 1) % len(_FINDINGS)]
+    return (
+        f"**{name}**: surveyed in one pass, nothing executed. {name.replace('-', ' ').capitalize()} "
+        f"{finding}; separately it {other}. The pattern is worth reimplementing on our own "
+        f"components, and the finding was appended to the tickets it answers ({n % 9 + 1} of them)."
+    )
+
+
 def _name(n: int) -> str:
     return f"{_FIRST[n % len(_FIRST)]}-{_SECOND[(n * 7 + n // len(_FIRST)) % len(_SECOND)]}"
 
@@ -134,7 +159,6 @@ def _source(
         if is_site
         else f"https://github.com/{_OWNERS[n % len(_OWNERS)]}/{name}",
         name=name,
-        question="(not recorded in the legacy files)",
         queued_reason="imported from scratch/ref_projects",
         status=status,
         licence_name="" if status is SurveySourceStatus.PROPOSED else licence_name,
@@ -146,6 +170,7 @@ def _source(
         refused_reason="NOT SURVEYED: declined on its measurement"
         if status is SurveySourceStatus.REFUSED
         else "",
+        notes=_record(name, n) if status is SurveySourceStatus.DONE else "",
         created_at=_BASE,
         updated_at=_BASE,
     )
@@ -171,8 +196,7 @@ def _passes(
             label=f"PASS {ordinal}",
             mode=SurveyPassMode.INITIAL if ordinal == 1 else SurveyPassMode.CONTINUATION,
             status=SurveyPassStatus.FINISHED,
-            question="(not recorded in the legacy entry)",
-            outcome_note="Imported from the legacy survey queue; the outcome was recorded as prose.",
+            legacy_text=_record(source.name, ordinal),
             queued_at=_BASE,
             finished_at=_BASE + timedelta(hours=ordinal),
         )

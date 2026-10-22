@@ -140,14 +140,24 @@ class _Reading:
     excluding: bool = False
 
 
+#: SPDX matching is case-insensitive ("APACHE-2.0" is Apache-2.0); names are
+#: compared lowercased and reported in their canonical spelling.
+_OPEN_BY_LOWER = {name.lower(): name for name in OPEN_IDS}
+_EXCLUDING_LOWER = tuple(p.lower() for p in EXCLUDING_PREFIXES)
+_COPYLEFT_LOWER = tuple(p.lower() for p in COPYLEFT_PREFIXES)
+
+
 def _id_reading(identifier: str) -> _Reading:
-    ident = identifier.strip().removesuffix("+").strip()
-    base = re.sub(r"-(only|or-later)$", "", ident)
-    if ident in OPEN_IDS or base in OPEN_IDS:
-        return _Reading(LicenceKind.OPEN, ident)
-    if ident.startswith(EXCLUDING_PREFIXES):
+    ident = identifier.strip().strip("*`").removesuffix("+").strip()
+    lower = ident.lower()
+    base = re.sub(r"-(only|or-later)$", "", lower)
+    if lower in _OPEN_BY_LOWER or base in _OPEN_BY_LOWER:
+        return _Reading(
+            LicenceKind.OPEN, _OPEN_BY_LOWER.get(lower) or _OPEN_BY_LOWER.get(base, ident)
+        )
+    if lower.startswith(_EXCLUDING_LOWER):
         return _Reading(LicenceKind.LIMITED, ident, excluding=True)
-    if ident.startswith(COPYLEFT_PREFIXES) or f"{ident}-" in COPYLEFT_PREFIXES:
+    if lower.startswith(_COPYLEFT_LOWER) or f"{lower}-" in _COPYLEFT_LOWER:
         # A bare family name ("GPL", as package.json often says) is copyleft at
         # any version, so it reads as the family without needing one.
         return _Reading(LicenceKind.LIMITED, ident)

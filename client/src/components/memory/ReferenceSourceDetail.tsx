@@ -8,15 +8,16 @@ import { api } from "../../api/client";
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
 import { recordTitle } from "../../lib/memoryInferred";
 import {
-  STATE_HINTS,
   STATE_LABELS,
   filterTickets,
   groupTickets,
   licenceLabel,
   shortDate,
+  sourceSummary,
 } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { useUiStore } from "../../state/uiStore";
+import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
@@ -211,10 +212,17 @@ function Passes({ passes }: { passes: LibraryPass[] }) {
                   {pass.label && pass.label !== `PASS ${pass.ordinal}` ? ` (${pass.label})` : ""}
                 </span>
                 <span className="rl-tags">{passLine(pass)}</span>
-                {pass.outcome ? (
+                {pass.outcome && pass.outcome_note ? (
                   <span className="rl-pass-outcome">
                     {pass.outcome}: {pass.outcome_note}
                   </span>
+                ) : null}
+                {pass.record ? (
+                  <MarkdownContent
+                    className="rl-pass-record"
+                    content={pass.record}
+                    readerTitle={`Pass ${pass.ordinal}${pass.label ? ` (${pass.label})` : ""}`}
+                  />
                 ) : null}
                 {pass.stopped_at ? <span className="rl-pass-outcome">Stopped: {pass.stopped_at}</span> : null}
                 {pass.refused_reason ? <span className="rl-pass-outcome">Refused: {pass.refused_reason}</span> : null}
@@ -240,6 +248,12 @@ function Facts({ detail }: { detail: LibraryDetail }) {
       <dd>
         {licenceLabel(detail.source)}
         {detail.licence_constraint ? <span className="rl-muted"> — {detail.licence_constraint}</span> : null}
+        {detail.source.licence_use ? null : (
+          <span className="rl-muted">
+            {" "}
+            — the record names no licence this survey recognises, so its findings copy nothing until the next pass reads the licence file.
+          </span>
+        )}
       </dd>
       <dt>Serves</dt>
       <dd>
@@ -277,6 +291,12 @@ function Body({ detail }: { detail: LibraryDetail }) {
   return (
     <>
       <NextStep detail={detail} />
+      {detail.record ? (
+        <section className="rl-section" aria-labelledby="rl-record-heading">
+          <h3 id="rl-record-heading">What the survey recorded</h3>
+          <MarkdownContent className="rl-record" content={detail.record} readerTitle={detail.source.name} />
+        </section>
+      ) : null}
       <Facts detail={detail} />
       <Tickets detail={detail} />
       <ReferenceSourceInitiatives detail={detail} />
@@ -309,15 +329,6 @@ function Body({ detail }: { detail: LibraryDetail }) {
             ))}
           </ul>
         </section>
-      ) : null}
-      {detail.notes ? (
-        <details className="rl-details">
-          <summary>Notes from the old record</summary>
-          <p className="rl-notes">
-            {detail.notes}
-            {detail.notes_truncated ? "…" : ""}
-          </p>
-        </details>
       ) : null}
     </>
   );
@@ -396,7 +407,7 @@ export function ReferenceSourceDetail({ sourceId, onClose }: { sourceId: string;
                 <span className="rl-sr-only"> (opens in a new tab)</span>
               </a>
             </p>
-            <p className="rl-muted">{STATE_HINTS[detail.source.state]}</p>
+            <p className="rl-summary">{sourceSummary(detail)}</p>
           </>
         ) : null}
       </div>

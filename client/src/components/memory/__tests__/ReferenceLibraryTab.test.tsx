@@ -112,6 +112,12 @@ describe("the reference library at production volume", () => {
     renderAt(`/memory/library/${DEEP.source.id}?view=all`);
     const heading = await screen.findByRole("heading", { level: 2, name: "openharness" });
     await waitFor(() => expect(heading).toHaveFocus());
+    // Under the name: what happened and what it left, not a gloss on the badge.
+    expect(
+      screen.getByText(/^Surveyed .* \(24 passes\)\. 71 tickets carry its findings, plus 41 old references/),
+    ).toBeInTheDocument();
+    const record = screen.getByRole("region", { name: "What the survey recorded" });
+    expect(within(record).getByText(/keeps a verdict only when a second instrument agrees/)).toBeInTheDocument();
     const tickets = screen.getByRole("region", { name: /Tickets it shaped/ });
     expect(within(tickets).getByRole("searchbox", { name: "Filter this source's tickets" })).toBeInTheDocument();
     expect(within(tickets).getByText(/41 references from the old record matched no ticket/)).toBeInTheDocument();

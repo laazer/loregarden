@@ -60,7 +60,8 @@ One repository, MIT, nothing executed. Mentions lg-legacy-a-3.
 LINKS = """# Ref Projects and Brainstorming
 
 ## Ref GitHub Links 8/24/2026
-- https://github.com/nextlevelbuilder/ui-ux-pro-max-skill (MIT — SURVEYED 2026-10-16, pass P. A UI/UX knowledge base.)
+- https://github.com/nextlevelbuilder/ui-ux-pro-max-skill (MIT — SURVEYED 2026-10-16, pass P. A UI/UX knowledge base. Appends (2): lg-legacy-a-1, lg-legacy-a-2; also names lg-legacy-a-3.)
+- https://github.com/acme/unlabelled (**APACHE-2.0**, full text verified. A monorepo of separate services whose memory layer distils each finished task into a skill; the gate is unreachable on the failure path. Filed on lg-legacy-a-2.)
 - https://github.com/mikjee/warpdrv (AGPL-3.0, resolved at source — NOT SURVEYED 2026-10-16, pass Q, declined.)
 - (blobert) https://github.com/VAST-AI-Research/TripoSplat
 - https://github.com/acme/oneliner (the survey drill itself, as a skill)
@@ -260,3 +261,41 @@ def test_a_licence_written_as_prose_is_still_recorded(ctx, name, licence, use):
     import_legacy(session, directory, workspace_slug="loregarden")
     source = _source(session, name)
     assert (source.licence_name, source.licence_use) == (licence, use)
+
+
+def test_a_link_note_is_the_surveys_record_and_its_tickets_are_linked(ctx):
+    """65 of the live link notes name tickets; none were linked at first."""
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    surveyed = _source(session, "ui-ux-pro-max-skill")
+    (record,) = _passes(session, surveyed)
+    assert record.label == "PASS P"
+    assert record.finished_at is not None and record.finished_at.date().isoformat() == "2026-10-16"
+    assert "A UI/UX knowledge base." in record.legacy_text
+    assert {(ref, action) for ref, action, _ in _links(session, record)} == {
+        ("lg-legacy-a-1", SurveyTicketAction.APPENDED),
+        ("lg-legacy-a-2", SurveyTicketAction.APPENDED),
+        ("lg-legacy-a-3", SurveyTicketAction.MENTIONED),
+    }
+    unlabelled = _source(session, "unlabelled")
+    assert (unlabelled.licence_name, unlabelled.licence_use) == ("Apache-2.0", LicenceUse.FULL)
+    assert [p.label for p in _passes(session, unlabelled)] == ["RECORD"]
+
+
+def test_nothing_is_written_as_a_placeholder_and_a_rerun_clears_old_ones(ctx):
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    assert all(not s.question for s in session.exec(select(SurveySource)))
+    assert all(not p.question and not p.outcome_note for p in session.exec(select(SurveyPass)))
+    # What the first import of 2026-10-22 wrote, before this fix.
+    harness = _source(session, "openharness")
+    harness.question = "(not recorded in the legacy files)"
+    first = _passes(session, harness)[0]
+    first.question = "(not recorded in the legacy entry)"
+    first.outcome_note = "Imported from the legacy survey queue; the outcome was recorded as prose."
+    session.add_all([harness, first])
+    session.commit()
+    import_legacy(session, directory, workspace_slug="loregarden")
+    session.refresh(harness)
+    session.refresh(first)
+    assert (harness.question, first.question, first.outcome_note) == ("", "", "")
