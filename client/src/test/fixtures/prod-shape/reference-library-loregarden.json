@@ -10,6 +10,7 @@
  "sources": [
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "e37bf3a1-bcf0-59b0-9f59-f51bdecc6de8",
    "kind": "repo",
    "last_read_at": "2026-10-12T18:00:00",
@@ -23,6 +24,9 @@
    "state": "surveyed",
    "tickets": 40,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/ThinkTerm",
    "workspaces": [
     "loregarden"
@@ -30,6 +34,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c4a872c3-8558-50c0-968a-c39348120af6",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -43,6 +48,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/agent-bench",
    "workspaces": [
     "loregarden"
@@ -50,6 +58,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "54013524-9706-56be-b85e-e8616b96a161",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -63,6 +72,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/agent-garden",
    "workspaces": [
     "loregarden"
@@ -70,6 +82,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "387b41e2-59c5-55aa-a74e-f27b15d5d6da",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -83,6 +96,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/agent-kit",
    "workspaces": [
     "loregarden"
@@ -90,6 +106,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a157e266-0c2f-5834-b105-d76009b958d5",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -103,6 +120,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/agent-lens",
    "workspaces": [
     "loregarden"
@@ -110,6 +130,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "07126cbd-2536-5794-a495-7009cdf8ef25",
    "kind": "repo",
    "last_read_at": null,
@@ -123,6 +144,9 @@
    "state": "candidate",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/agent-mux",
    "workspaces": [
     "loregarden"
@@ -130,6 +154,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "90d68cc0-f80b-5174-a180-f0b7c0c79ea9",
    "kind": "repo",
    "last_read_at": null,
@@ -143,6 +168,9 @@
    "state": "candidate",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/atomic-deck",
    "workspaces": [
     "loregarden"
@@ -150,6 +178,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b64642f2-afa0-5650-88e9-ecb120b4627a",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -163,6 +192,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/atomic-flow",
    "workspaces": [
     "loregarden"
@@ -170,6 +202,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "1f78453f-6419-599f-b174-17c51245ff81",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -183,6 +216,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/atomic-forge",
    "workspaces": [
     "loregarden"
@@ -190,6 +226,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a4309655-2dc4-5229-b71b-f8d3ce5bea9d",
    "kind": "repo",
    "last_read_at": "2026-10-12T11:00:00",
@@ -203,6 +240,9 @@
    "state": "surveyed",
    "tickets": 9,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/atomic-harness",
    "workspaces": [
     "loregarden"
@@ -210,6 +250,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b0f93b53-5d44-5a9c-b6d5-a1fc980df825",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -223,6 +264,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/atomic-ledger",
    "workspaces": [
     "loregarden"
@@ -230,6 +274,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "750ee13e-8046-5b2e-98b6-25d2af3ab21b",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -243,6 +288,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/atomic-term",
    "workspaces": [
     "loregarden"
@@ -250,6 +298,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "19cd5e33-8b47-5776-84dc-7fdce415edd7",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -263,6 +312,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/civic-atlas",
    "workspaces": [
     "loregarden"
@@ -270,6 +322,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0ed7f94d-086b-51d0-add1-35c8f5a022a6",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -283,6 +336,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/civic-bench",
    "workspaces": [
     "loregarden"
@@ -290,6 +346,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a4adcd41-d020-5022-a94f-43dc080757b0",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -303,6 +360,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/civic-deck",
    "workspaces": [
     "loregarden"
@@ -310,6 +370,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "6e2c7848-8c2c-58b0-890f-85b88162eb4e",
    "kind": "repo",
    "last_read_at": "2026-10-12T11:00:00",
@@ -323,6 +384,9 @@
    "state": "surveyed",
    "tickets": 3,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/civic-forge",
    "workspaces": [
     "loregarden"
@@ -330,6 +394,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "6d1cab9f-de9b-5394-ab5e-f6b345475624",
    "kind": "repo",
    "last_read_at": null,
@@ -343,6 +408,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/civic-garden",
    "workspaces": [
     "loregarden"
@@ -350,6 +418,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "e26db367-f372-5234-b3d3-80a834e44bf5",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -363,6 +432,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/civic-ledger",
    "workspaces": [
     "loregarden"
@@ -370,6 +442,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "878b70a9-7b2d-5285-9ea7-ad83574ba258",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -383,6 +456,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/drift-board",
    "workspaces": [
     "loregarden"
@@ -390,6 +466,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "93a58d15-41d7-5ea6-9908-861f681f5fda",
    "kind": "repo",
    "last_read_at": null,
@@ -403,6 +480,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/drift-harness",
    "workspaces": [
     "loregarden"
@@ -410,6 +490,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "1a5d7d64-c29b-5ff3-8235-f6b89a2ba800",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -423,6 +504,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/drift-notebook",
    "workspaces": [
     "loregarden"
@@ -430,6 +514,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "ce683d7f-3bf9-55f6-972d-e9358d564338",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -443,6 +528,9 @@
    "state": "surveyed",
    "tickets": 4,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/drift-vault",
    "workspaces": [
     "loregarden"
@@ -450,6 +538,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c2a5c961-0535-5bfd-b966-657d78f2c129",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -463,6 +552,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/drift-weave",
    "workspaces": [
     "loregarden"
@@ -470,6 +562,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "4ce44601-af62-5ab9-a494-083e947298c0",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -483,6 +576,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/drift-yard",
    "workspaces": [
     "loregarden"
@@ -490,6 +586,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "fd3a110f-d2c0-56e6-b9ab-8192c18ec5b2",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -503,6 +600,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/ember-atlas",
    "workspaces": [
     "loregarden"
@@ -510,6 +610,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "ebb2b74b-2fdb-5526-a74c-aa15261e1985",
    "kind": "repo",
    "last_read_at": null,
@@ -523,6 +624,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/ember-bench",
    "workspaces": [
     "loregarden"
@@ -530,6 +634,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "e0664790-bd4a-592c-beca-75d4efb6884a",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -543,6 +648,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/ember-deck",
    "workspaces": [
     "loregarden"
@@ -550,6 +658,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b82c1de3-ae64-52bf-ba72-7b9ca8cdcc4a",
    "kind": "repo",
    "last_read_at": "2026-10-12T11:00:00",
@@ -563,6 +672,9 @@
    "state": "surveyed",
    "tickets": 4,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/ember-flow",
    "workspaces": [
     "loregarden"
@@ -570,6 +682,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "661bad29-6e91-5238-a0a5-91d29a28949f",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -583,6 +696,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/ember-forge",
    "workspaces": [
     "loregarden"
@@ -590,6 +706,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2d11622b-c37f-587f-819a-67fce313a5e1",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -603,6 +720,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/ember-ledger",
    "workspaces": [
     "loregarden"
@@ -610,6 +730,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "04e95518-b275-5a5a-8a5e-0f5ca6946be8",
    "kind": "repo",
    "last_read_at": null,
@@ -623,6 +744,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/hollow-atlas",
    "workspaces": [
     "loregarden"
@@ -630,6 +754,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "4d6cef72-6b8d-58a1-b2fa-fbd9773c9cf0",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -643,6 +768,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/hollow-deck",
    "workspaces": [
     "loregarden"
@@ -650,6 +778,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "6392cdc4-e1f3-5c2c-aa27-0337e947d3be",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -663,6 +792,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/hollow-flow",
    "workspaces": [
     "loregarden"
@@ -670,6 +802,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "85252cb9-f981-5e0c-a798-7e2a93fd2135",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -683,6 +816,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/hollow-forge",
    "workspaces": [
     "loregarden"
@@ -690,6 +826,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "707c934f-f720-5eb3-9455-41212f955a80",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -703,6 +840,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/hollow-ledger",
    "workspaces": [
     "loregarden"
@@ -710,6 +850,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a91f0f74-1067-5a45-b769-3089a2a12c21",
    "kind": "repo",
    "last_read_at": "2026-10-12T11:00:00",
@@ -723,6 +864,9 @@
    "state": "surveyed",
    "tickets": 6,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/hollow-term",
    "workspaces": [
     "loregarden"
@@ -730,6 +874,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "bfb38e41-0142-5291-9da2-1594e260d123",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -743,6 +888,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/kindle-atlas",
    "workspaces": [
     "loregarden"
@@ -750,6 +898,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "ce4ac8af-c27b-5fd9-aaec-4cfb6649925f",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -763,6 +912,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/kindle-bench",
    "workspaces": [
     "loregarden"
@@ -770,6 +922,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c82ccd49-45ee-503e-bf44-27aae479f330",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -783,6 +936,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/kindle-deck",
    "workspaces": [
     "loregarden"
@@ -790,6 +946,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "98e680eb-e30d-5ac8-a6f3-8f0c10233c3c",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -803,6 +960,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/kindle-garden",
    "workspaces": [
     "loregarden"
@@ -810,6 +970,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "3af55974-74d1-568b-810f-76069ff9d70d",
    "kind": "repo",
    "last_read_at": "2026-10-12T11:00:00",
@@ -823,6 +984,9 @@
    "state": "surveyed",
    "tickets": 1,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/kindle-ledger",
    "workspaces": [
     "loregarden"
@@ -830,6 +994,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c6783d4c-e49b-533e-800e-f5acbb25f15c",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -843,6 +1008,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/lumen-board",
    "workspaces": [
     "loregarden"
@@ -850,6 +1018,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "1784acef-dbf2-5537-8bc9-d51c0245a402",
    "kind": "repo",
    "last_read_at": null,
@@ -863,6 +1032,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/lumen-notebook",
    "workspaces": [
     "loregarden"
@@ -870,6 +1042,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "7b28d8d0-17b3-55c8-8129-bf2bfb2516fa",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -883,6 +1056,9 @@
    "state": "surveyed",
    "tickets": 7,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/lumen-shelf",
    "workspaces": [
     "loregarden"
@@ -890,6 +1066,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "1f8b61c0-521f-5e02-b793-7d7b48b3c242",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -903,6 +1080,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/lumen-vault",
    "workspaces": [
     "loregarden"
@@ -910,6 +1090,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "4d9b4537-e4bf-5334-8f92-534021af4499",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -923,6 +1104,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/lumen-weave",
    "workspaces": [
     "loregarden"
@@ -930,6 +1114,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "61f90d21-9b7d-54c8-b7ff-ea0e88c8904e",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -943,6 +1128,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/lumen-yard",
    "workspaces": [
     "loregarden"
@@ -950,6 +1138,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "f49b982b-7abe-5ae8-bc9c-8e0b0152b9f4",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -963,6 +1152,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/maple-atlas",
    "workspaces": [
     "loregarden"
@@ -970,6 +1162,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "bb95d05d-d80e-50f3-9810-05cad6199ddf",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -983,6 +1176,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/maple-bench",
    "workspaces": [
     "loregarden"
@@ -990,6 +1186,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "44219521-2752-5a02-9ac1-9c2a4de6e4f3",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1003,6 +1200,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/maple-deck",
    "workspaces": [
     "loregarden"
@@ -1010,6 +1210,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "338f9078-26ce-573d-b88e-34f908cc9cba",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1023,6 +1224,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/maple-garden",
    "workspaces": [
     "loregarden"
@@ -1030,6 +1234,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "d9368d96-32aa-59a6-ab3b-dcc8be5f949f",
    "kind": "site",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1043,6 +1248,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://maple-kit.dev/docs",
    "workspaces": [
     "loregarden"
@@ -1050,6 +1258,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0610f827-31cc-5560-9d75-5c530158903c",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1063,6 +1272,9 @@
    "state": "surveyed",
    "tickets": 4,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/north-kit",
    "workspaces": [
     "loregarden"
@@ -1070,6 +1282,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "d30f9adc-9e01-5313-b6cd-da08e35fa28d",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1083,6 +1296,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/north-lens",
    "workspaces": [
     "loregarden"
@@ -1090,6 +1306,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "34ab139d-30a9-5a34-8f54-31fe419b1acd",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1103,6 +1320,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/north-mux",
    "workspaces": [
     "loregarden"
@@ -1110,6 +1330,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "50f300f5-8550-5ecc-b463-a47e8696812d",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1123,6 +1344,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/north-pilot",
    "workspaces": [
     "loregarden"
@@ -1130,6 +1354,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2bd37b54-d1c2-5db6-951e-26081dafa849",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1143,6 +1368,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/north-scope",
    "workspaces": [
     "loregarden"
@@ -1150,6 +1378,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "987876a5-6e49-55b0-baa1-151290b0e8b1",
    "kind": "repo",
    "last_read_at": null,
@@ -1163,6 +1392,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/north-shelf",
    "workspaces": [
     "loregarden"
@@ -1170,6 +1402,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "20a15572-e91a-504f-8a19-df53262af3c9",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1183,6 +1416,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/open-flow",
    "workspaces": [
     "loregarden"
@@ -1190,6 +1426,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "4ea5c5fc-36a2-56ce-96c3-7424d57b9d11",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1203,6 +1440,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/open-forge",
    "workspaces": [
     "loregarden"
@@ -1210,6 +1450,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "99efa0f0-43d8-53bc-8355-74c00fafb919",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1223,6 +1464,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/open-harness",
    "workspaces": [
     "loregarden"
@@ -1230,6 +1474,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "9b6e25be-d574-5439-990b-1771be4605b1",
    "kind": "repo",
    "last_read_at": null,
@@ -1243,6 +1488,9 @@
    "state": "candidate",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/open-ledger",
    "workspaces": [
     "loregarden"
@@ -1250,6 +1498,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0742fe13-e797-5ef6-a5f4-037aca943ab6",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1263,6 +1512,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/open-term",
    "workspaces": [
     "loregarden"
@@ -1270,6 +1522,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "5cf7bf47-a957-5fab-8eb4-92dba4a0e55f",
    "kind": "repo",
    "last_read_at": "2026-10-13T09:00:00",
@@ -1283,6 +1536,9 @@
    "state": "surveyed",
    "tickets": 71,
    "unresolved_refs": 41,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/openharness",
    "workspaces": [
     "loregarden"
@@ -1290,6 +1546,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "513fcd86-6aa1-5ebc-832d-865bc1ef10e0",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1303,6 +1560,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/orbit-pilot",
    "workspaces": [
     "loregarden"
@@ -1310,6 +1570,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "bb5b6008-9154-58f0-951f-6f5b9c43fa20",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1323,6 +1584,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/orbit-scope",
    "workspaces": [
     "loregarden"
@@ -1330,6 +1594,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "59ef54f2-11b7-566f-809a-7344a7d30b8e",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1343,6 +1608,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/orbit-shelf",
    "workspaces": [
     "loregarden"
@@ -1350,6 +1618,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0cdca820-633a-5235-9f5b-2faa6fe2375b",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1363,6 +1632,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/orbit-vault",
    "workspaces": [
     "loregarden"
@@ -1370,6 +1642,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a178a316-44df-5181-8c62-6b746833f695",
    "kind": "repo",
    "last_read_at": null,
@@ -1383,6 +1656,9 @@
    "state": "candidate",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/orbit-weave",
    "workspaces": [
     "loregarden"
@@ -1390,6 +1666,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c49385aa-cacd-542c-9421-8d17b60ebb44",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1403,6 +1680,9 @@
    "state": "surveyed",
    "tickets": 5,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/patch-garden",
    "workspaces": [
     "loregarden"
@@ -1410,6 +1690,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2d003a49-109a-5a02-93a7-5ef10dc6dc8f",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1423,6 +1704,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/patch-kit",
    "workspaces": [
     "loregarden"
@@ -1430,6 +1714,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b5fa0940-dac8-5b03-830d-b0d14c89d772",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1443,6 +1728,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/patch-lens",
    "workspaces": [
     "loregarden"
@@ -1450,6 +1738,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2a98d445-76bc-51b9-a57c-d7a92b8eb6da",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1463,6 +1752,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/patch-mux",
    "workspaces": [
     "loregarden"
@@ -1470,6 +1762,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "3ab34e9f-1941-5c52-b33f-7d502648ad65",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1483,6 +1776,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/patch-pilot",
    "workspaces": [
     "loregarden"
@@ -1490,6 +1786,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b8addfab-b4b3-504f-9904-5321d8fe3946",
    "kind": "repo",
    "last_read_at": null,
@@ -1503,6 +1800,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/patch-scope",
    "workspaces": [
     "loregarden"
@@ -1510,6 +1810,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "fd4bf886-a44b-5999-b07b-f5dd888875ac",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1523,6 +1824,9 @@
    "state": "surveyed",
    "tickets": 2,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/pixel-lens",
    "workspaces": [
     "loregarden"
@@ -1530,6 +1834,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "b032b1de-6bbe-5b22-a633-ff635d10e78e",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1543,6 +1848,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/pixel-mux",
    "workspaces": [
     "loregarden"
@@ -1550,6 +1858,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "eb0962a4-f1bb-5e59-bc8c-6e6273cb2e07",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1563,6 +1872,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/pixel-pilot",
    "workspaces": [
     "loregarden"
@@ -1570,6 +1882,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "49bb146d-ed92-580c-8e0e-91b183586b9e",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1583,6 +1896,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/pixel-scope",
    "workspaces": [
     "loregarden"
@@ -1590,6 +1906,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "6daa2cbf-c7f0-568f-bd12-6f7a95874c1c",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1603,6 +1920,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/pixel-shelf",
    "workspaces": [
     "loregarden"
@@ -1610,6 +1930,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "eb10eed9-7b5d-5c91-8c76-1335daae632a",
    "kind": "repo",
    "last_read_at": null,
@@ -1623,6 +1944,9 @@
    "state": "candidate",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/quiet-board",
    "workspaces": [
     "loregarden"
@@ -1630,6 +1954,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "34d36f12-72bf-521f-b98b-81da961d653f",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1643,6 +1968,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/quiet-shelf",
    "workspaces": [
     "loregarden"
@@ -1650,6 +1978,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2c19bd4c-15c1-5a02-b4b8-7770128c74f3",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1663,6 +1992,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/quiet-vault",
    "workspaces": [
     "loregarden"
@@ -1670,6 +2002,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "24b7c28a-aef4-5ac5-85ea-3b0c3b060895",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1683,6 +2016,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/quiet-weave",
    "workspaces": [
     "loregarden"
@@ -1690,6 +2026,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "ebd9f210-9a96-51d4-8f81-327c65a66268",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1703,6 +2040,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/quiet-yard",
    "workspaces": [
     "loregarden"
@@ -1710,6 +2050,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "f6ac4333-5738-5dff-8f40-b0da838289a7",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1723,6 +2064,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/rapid-board",
    "workspaces": [
     "loregarden"
@@ -1730,6 +2074,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "270e73bd-e295-512f-9a84-39c3208a7632",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1743,6 +2088,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/rapid-harness",
    "workspaces": [
     "loregarden"
@@ -1750,6 +2098,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c7f477b8-c361-56e4-8238-23671d078822",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1763,6 +2112,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/lambda-house/rapid-notebook",
    "workspaces": [
     "loregarden"
@@ -1770,6 +2122,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "a5b38d6c-a07a-58f5-b965-3b8ae0f70763",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1783,6 +2136,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/rapid-term",
    "workspaces": [
     "loregarden"
@@ -1790,6 +2146,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "9a67bc69-f9d7-5292-b8e5-52b249017132",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1803,6 +2160,9 @@
    "state": "surveyed",
    "tickets": 1,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/rapid-yard",
    "workspaces": [
     "loregarden"
@@ -1810,6 +2170,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2b889646-5b5d-55b2-a86c-91902a95c078",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1823,6 +2184,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/relay-board",
    "workspaces": [
     "loregarden"
@@ -1830,6 +2194,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "be1dd3b0-fcb5-513e-b4cb-145dfbc8704a",
    "kind": "site",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1843,6 +2208,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://relay-flow.dev/docs",
    "workspaces": [
     "loregarden"
@@ -1850,6 +2218,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "5a81f9a7-f099-500d-996b-de462eb08bab",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1863,6 +2232,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/relay-harness",
    "workspaces": [
     "loregarden"
@@ -1870,6 +2242,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "554a7779-c2d2-5bc6-a562-fb591e5ed183",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1883,6 +2256,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/relay-notebook",
    "workspaces": [
     "loregarden"
@@ -1890,6 +2266,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "c958f930-9ecc-5d3e-9e00-148aadf91de1",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1903,6 +2280,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/relay-term",
    "workspaces": [
     "loregarden"
@@ -1910,6 +2290,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "48536b01-e86e-50e2-ad9c-e5d4c8cb88c8",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1923,6 +2304,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/stone-mux",
    "workspaces": [
     "loregarden"
@@ -1930,6 +2314,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "748409a9-4859-5288-b2b7-2a2cf2ab7771",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1943,6 +2328,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/stone-pilot",
    "workspaces": [
     "loregarden"
@@ -1950,6 +2338,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "159be9e8-9b25-5584-9d94-1b0f99c66d27",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1963,6 +2352,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/stone-scope",
    "workspaces": [
     "loregarden"
@@ -1970,6 +2362,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "72adaed5-dd62-5064-b07b-f7089cb00045",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -1983,6 +2376,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/stone-shelf",
    "workspaces": [
     "loregarden"
@@ -1990,6 +2386,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "f474a283-1511-5ecb-86c5-2ca254bcd3c3",
    "kind": "site",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2003,6 +2400,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://stone-vault.dev/docs",
    "workspaces": [
     "loregarden"
@@ -2010,6 +2410,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "093d60e8-a9b2-5615-a285-9618ba6625fa",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2023,6 +2424,9 @@
    "state": "surveyed",
    "tickets": 69,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/superpowers",
    "workspaces": [
     "loregarden"
@@ -2030,6 +2434,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0c2be9d6-ceac-5946-86b7-13064f8eec17",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2043,6 +2448,9 @@
    "state": "surveyed",
    "tickets": 8,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/swift-bench",
    "workspaces": [
     "loregarden"
@@ -2050,6 +2458,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "21386ca7-4b39-5730-9055-dcc5ef3b705c",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2063,6 +2472,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/swift-garden",
    "workspaces": [
     "loregarden"
@@ -2070,6 +2482,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "37110a34-5f9f-515b-9d52-bc751325e92b",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2083,6 +2496,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/swift-kit",
    "workspaces": [
     "loregarden"
@@ -2090,6 +2506,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "0f4f9d5e-9dbf-5e47-a08c-6624b1af95dd",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2103,6 +2520,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/swift-lens",
    "workspaces": [
     "loregarden"
@@ -2110,6 +2530,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "e037c22c-7ee3-5ef3-9e6a-d579d33969f3",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2123,6 +2544,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/swift-mux",
    "workspaces": [
     "loregarden"
@@ -2130,6 +2554,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "9477f6a9-75f2-598b-b431-7cd200ba5d24",
    "kind": "repo",
    "last_read_at": null,
@@ -2143,6 +2568,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/swift-pilot",
    "workspaces": [
     "loregarden"
@@ -2150,6 +2578,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "2ca39e30-3c8f-5c8c-9a9c-d7b3adfadbd4",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2163,6 +2592,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/fieldnotes/tiny-board",
    "workspaces": [
     "loregarden"
@@ -2170,6 +2602,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "d6e0efe1-2a18-5077-92f9-82bd27f49ecc",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2183,6 +2616,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/acme-labs/tiny-harness",
    "workspaces": [
     "loregarden"
@@ -2190,6 +2626,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "9f5d8b00-fd87-5db4-8fcd-4c2d68c37708",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2203,6 +2640,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/northwind/tiny-notebook",
    "workspaces": [
     "loregarden"
@@ -2210,6 +2650,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "56fa22cc-c76c-5111-bf85-ea29eacbc284",
    "kind": "repo",
    "last_read_at": null,
@@ -2223,6 +2664,9 @@
    "state": "refused",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/sourcecraft/tiny-term",
    "workspaces": [
     "loregarden"
@@ -2230,6 +2674,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "f2f2d342-6109-55e8-9811-e0dc57124725",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2243,6 +2688,9 @@
    "state": "surveyed",
    "tickets": 3,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/tinyco/tiny-weave",
    "workspaces": [
     "loregarden"
@@ -2250,6 +2698,7 @@
   },
   {
    "approval_id": null,
+   "commits_since_review": null,
    "id": "7945eb62-4748-56cb-a238-ea41f4d17181",
    "kind": "repo",
    "last_read_at": "2026-10-12T10:00:00",
@@ -2263,6 +2712,9 @@
    "state": "surveyed",
    "tickets": 0,
    "unresolved_refs": 0,
+   "upstream_check_error": "",
+   "upstream_checked_at": null,
+   "upstream_committed_at": null,
    "url": "https://github.com/openwork/tiny-yard",
    "workspaces": [
     "loregarden"

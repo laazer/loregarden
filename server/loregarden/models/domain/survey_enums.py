@@ -192,6 +192,7 @@ class SurveyQueueAction(StrEnum):
     COVERAGE = "coverage"
     LINK_INITIATIVE = "link_initiative"
     UNLINK_INITIATIVE = "unlink_initiative"
+    CHECK_UPSTREAM = "check_upstream"
 
 
 class SurveyPassAction(StrEnum):

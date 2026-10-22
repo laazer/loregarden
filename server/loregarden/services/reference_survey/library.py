@@ -67,6 +67,12 @@ class LibraryRow(BaseModel):
     open_unknowns: int
     approval_id: str | None
     priority: int
+    #: Upstream, as of `upstream_checked_at`: the default branch's newest commit
+    #: date and how many commits it is ahead of the reviewed one.
+    upstream_committed_at: datetime | None
+    commits_since_review: int | None
+    upstream_checked_at: datetime | None
+    upstream_check_error: str
 
 
 class LibraryList(BaseModel):
@@ -281,6 +287,10 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
                 if states[source.id] is LibraryState.AWAITING_APPROVAL
                 else None,
                 priority=source.priority,
+                upstream_committed_at=source.upstream_committed_at,
+                commits_since_review=source.commits_since_review,
+                upstream_checked_at=source.upstream_checked_at,
+                upstream_check_error=source.upstream_check_error,
             )
         )
     return rows
@@ -295,6 +305,10 @@ def _serving(session: Session, workspace: Workspace) -> list[SurveySource]:
             .order_by(col(SurveySource.priority), col(SurveySource.name))
         ).all()
     )
+
+
+def library_row(session: Session, source: SurveySource) -> LibraryRow:
+    return _rows(session, [source])[0]
 
 
 def library_list(session: Session, workspace_slug: str) -> LibraryList:

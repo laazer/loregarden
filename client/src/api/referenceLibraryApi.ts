@@ -26,6 +26,13 @@ export interface LibraryRow {
   open_unknowns: number;
   approval_id: string | null;
   priority: number;
+  /** The default branch's newest commit, as of `upstream_checked_at`. */
+  upstream_committed_at: string | null;
+  /** Commits that branch is ahead of the reviewed commit; null when unknown. */
+  commits_since_review: number | null;
+  upstream_checked_at: string | null;
+  /** Why the last check could not answer; "" when it did. */
+  upstream_check_error: string;
 }
 
 export interface LibraryList {
@@ -134,6 +141,11 @@ export const referenceLibraryApi = {
     request<LinkResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/initiatives`, {
       method: "POST",
       body: JSON.stringify({ initiative_id: initiativeId }),
+    }),
+  checkSourceUpstream: (sourceId: string) =>
+    request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/check-upstream`, {
+      method: "POST",
+      body: "{}",
     }),
   unlinkSourceInitiative: (sourceId: string, initiativeId: string) =>
     request<UnlinkResult>(

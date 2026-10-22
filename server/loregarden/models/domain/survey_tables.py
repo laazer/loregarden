@@ -113,6 +113,16 @@ class SurveySource(SQLModel, table=True):
     mapped_commit: str = ""
     refused_reason: str = ""
     notes: str = ""
+    #: Upstream, as GitHub reported it at `upstream_checked_at`
+    #: (`services.reference_survey.upstream`): the default branch's newest
+    #: commit, and how many commits it is ahead of `pinned_commit`.
+    upstream_branch: str = ""
+    upstream_head: str = ""
+    upstream_committed_at: datetime | None = None
+    commits_since_review: int | None = None
+    upstream_checked_at: datetime | None = None
+    #: Why the last check could not answer; "" when it did.
+    upstream_check_error: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
