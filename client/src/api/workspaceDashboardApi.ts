@@ -44,7 +44,12 @@ export interface WorkspacePullRequests {
   workspace_slug: string;
   /** Every open PR, already in review order. */
   pull_requests: WorkspacePullRequest[];
-  truncated: boolean;
+  /**
+   * GitHub's own `hasNextPage` on the last page read. `incomplete` means there
+   * are open PRs this list does not hold. A listing that could not be read is
+   * an error response, never an empty `complete` one.
+   */
+  listing_state: "complete" | "incomplete";
 }
 
 /** Mirrors `ActivityHighlightKind`, in display order. */

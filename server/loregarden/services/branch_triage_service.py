@@ -23,10 +23,16 @@ from loregarden.services.artifact_service import (
 from loregarden.services.branch_landed import landed_branches
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
-from loregarden.services.git_subprocess import run_gh, run_git
+from loregarden.services.git_subprocess import run_git
+from loregarden.services.github_pr_listing import (
+    GhPage,
+    GitHubReadError,
+    PullRequestStates,
+    list_pull_requests,
+)
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -48,17 +54,7 @@ SNAPSHOT_BUDGET_SECONDS = 15.0
 PR_LISTING_TIMEOUT_SECONDS = 25.0
 PR_LISTING_TTL_SECONDS = 120
 
-_PR_LISTING_QUERY = """
-query($owner: String!, $name: String!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(first: 100, after: $endCursor) {
-      totalCount
-      pageInfo { hasNextPage endCursor }
-      nodes { number headRefName state isDraft url title }
-    }
-  }
-}
-"""
+_PR_FIELDS = "number headRefName state isDraft url title"
 
 _pr_listing_cache: dict[str, tuple[float, PrListing]] = {}
 
@@ -226,10 +222,6 @@ def _worktree_dirty(worktree_path: str) -> bool:
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
 
 
-class _GhPageInfo(BaseModel):
-    has_next_page: bool = Field(alias="hasNextPage")
-
-
 class _GhPullRequest(BaseModel):
     number: int
     head_ref_name: str = Field(alias="headRefName")
@@ -239,29 +231,7 @@ class _GhPullRequest(BaseModel):
     title: str
 
 
-class _GhPullRequestPage(BaseModel):
-    total_count: int = Field(alias="totalCount")
-    page_info: _GhPageInfo = Field(alias="pageInfo")
-    nodes: list[_GhPullRequest]
-
-
-class _GhRepository(BaseModel):
-    pull_requests: _GhPullRequestPage = Field(alias="pullRequests")
-
-
-class _GhData(BaseModel):
-    repository: _GhRepository | None
-
-
-class _GhPage(BaseModel):
-    data: _GhData
-
-
-_GhPages = TypeAdapter(list[_GhPage])
-
-
-class _PrListingError(Exception):
-    """The listing could not be read at all; the message says why."""
+_PR_PAGES = TypeAdapter(list[GhPage[_GhPullRequest]])
 
 
 @dataclass(frozen=True)
@@ -296,48 +266,6 @@ def _pr_rank(pr: _GhPullRequest) -> tuple[int, int]:
     return (0 if pr.state.lower() == "open" else 1, -pr.number)
 
 
-def _fetch_pr_pages(repo_root: Path) -> list[_GhPullRequestPage]:
-    """Every page of the repository's PRs, in one `gh` process.
-
-    `--paginate` follows `pageInfo` itself; `--slurp` returns the pages as one
-    array, so the last page's `hasNextPage` is still there for the caller to
-    read. One process matters: a process per page re-authenticates each time
-    and took 9-13s for the same seven pages.
-    """
-    args = [
-        "api",
-        "graphql",
-        "--paginate",
-        "--slurp",
-        "-F",
-        "owner={owner}",
-        "-F",
-        "name={repo}",
-        "-f",
-        f"query={_PR_LISTING_QUERY}",
-    ]
-    try:
-        proc = run_gh(args, cwd=repo_root, timeout=PR_LISTING_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as exc:
-        raise _PrListingError(
-            f"GitHub did not answer within {PR_LISTING_TIMEOUT_SECONDS:.0f}s"
-        ) from exc
-    except OSError as exc:
-        raise _PrListingError(f"could not run gh: {exc}") from exc
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip() or "no output"
-        raise _PrListingError(f"gh exited {proc.returncode}: {detail}")
-    try:
-        pages = _GhPages.validate_json(proc.stdout or "")
-    except ValidationError as exc:
-        raise _PrListingError(f"unreadable GitHub response: {exc.error_count()} error(s)") from exc
-    if not pages:
-        raise _PrListingError("GitHub returned no pages")
-    if any(page.data.repository is None for page in pages):
-        raise _PrListingError("GitHub has no repository for this checkout's remote")
-    return [page.data.repository.pull_requests for page in pages if page.data.repository]
-
-
 def _fetch_pr_listing(repo_root: Path) -> PrListing:
     """Every PR in the repository, and whether GitHub said that is all of them.
 
@@ -346,26 +274,31 @@ def _fetch_pr_listing(repo_root: Path) -> PrListing:
     says nothing about whether more remain.
     """
     try:
-        pages = _fetch_pr_pages(repo_root)
-    except _PrListingError as exc:
+        listing = list_pull_requests(
+            repo_root,
+            _PR_FIELDS,
+            _PR_PAGES,
+            states=PullRequestStates.ALL,
+            timeout_seconds=PR_LISTING_TIMEOUT_SECONDS,
+        )
+    except GitHubReadError as exc:
         return PrListing(PrListingState.UNAVAILABLE, {}, 0, None, str(exc))
     best: dict[str, _GhPullRequest] = {}
-    for pr in (pr for page in pages for pr in page.nodes):
+    for pr in listing.pull_requests:
         head = branch_for_pr_head(pr.head_ref_name)
         current = best.get(head)
         if head and (current is None or _pr_rank(pr) < _pr_rank(current)):
             best[head] = pr
-    listed = sum(len(page.nodes) for page in pages)
-    total = pages[0].total_count
-    if pages[-1].page_info.has_next_page:
+    listed = len(listing.pull_requests)
+    if listing.state is PrListingState.INCOMPLETE:
         return PrListing(
             PrListingState.INCOMPLETE,
             _serialize_heads(best),
             listed,
-            total,
+            listing.total_count,
             "GitHub reported more pages after the last one returned",
         )
-    return PrListing(PrListingState.COMPLETE, _serialize_heads(best), listed, total)
+    return PrListing(PrListingState.COMPLETE, _serialize_heads(best), listed, listing.total_count)
 
 
 def _serialize_heads(best: dict[str, _GhPullRequest]) -> dict[str, dict[str, Any]]:

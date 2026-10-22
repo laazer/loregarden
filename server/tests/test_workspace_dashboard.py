@@ -11,13 +11,14 @@ from loregarden.models.domain import (
     CIStatus,
     DomainEvent,
     EventType,
+    PrListingState,
     PullRequestReviewTier,
     Ticket,
     TicketState,
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.services.ci_checks import GitHubReadError
+from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.workspace_activity import workspace_activity
 from loregarden.services.workspace_pull_requests import workspace_pull_requests
 from loregarden.services.workspace_remote import web_url_for, workspace_remote
@@ -27,7 +28,10 @@ PASSING = {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "concl
 FAILING = {"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}
 
 
-def _pr(number: int, *, files: list[str], size: int = 10, **fields) -> dict:
+def _pr(
+    number: int, *, files: list[str], size: int = 10, checks: list[dict] | None = None, **fields
+) -> dict:
+    """One node of the GraphQL listing, shaped as GitHub returns it."""
     row = {
         "number": number,
         "url": f"https://github.com/o/r/pull/{number}",
@@ -39,13 +43,17 @@ def _pr(number: int, *, files: list[str], size: int = 10, **fields) -> dict:
         "additions": size,
         "deletions": 0,
         "changedFiles": len(files),
-        "reviewDecision": "",
+        "reviewDecision": None,
         "mergeable": "MERGEABLE",
         "mergeStateStatus": "CLEAN",
         "headRefOid": f"sha{number}",
-        "statusCheckRollup": [PASSING],
+        "commits": {
+            "nodes": [
+                {"commit": {"statusCheckRollup": {"contexts": {"nodes": checks or [PASSING]}}}}
+            ]
+        },
         "body": "",
-        "files": [{"path": path, "additions": 1, "deletions": 0} for path in files],
+        "files": {"nodes": [{"path": path} for path in files]},
         "createdAt": "2026-10-01T00:00:00Z",
         "updatedAt": "2026-10-02T00:00:00Z",
         "author": {"login": "someone"},
@@ -54,11 +62,31 @@ def _pr(number: int, *, files: list[str], size: int = 10, **fields) -> dict:
     return row
 
 
-def _gh(rows: list[dict] | None = None, *, returncode: int = 0, stderr: str = ""):
-    proc = subprocess.CompletedProcess(
-        ["gh"], returncode, stdout=json.dumps(rows or []), stderr=stderr
-    )
-    return mock.patch("loregarden.services.workspace_pull_requests.run_gh", return_value=proc)
+def _page(rows: list[dict], *, has_next_page: bool = False) -> dict:
+    return {
+        "data": {
+            "repository": {
+                "pullRequests": {
+                    "totalCount": len(rows),
+                    "pageInfo": {"hasNextPage": has_next_page, "endCursor": "c"},
+                    "nodes": rows,
+                }
+            }
+        }
+    }
+
+
+def _gh(
+    rows: list[dict] | None = None,
+    *,
+    pages: list[dict] | None = None,
+    returncode: int = 0,
+    stderr: str = "",
+):
+    """`gh api graphql --paginate --slurp`: one array holding every page."""
+    stdout = json.dumps(pages if pages is not None else [_page(rows or [])])
+    proc = subprocess.CompletedProcess(["gh"], returncode, stdout=stdout, stderr=stderr)
+    return mock.patch("loregarden.services.github_pr_listing.run_gh", return_value=proc)
 
 
 @pytest.fixture(name="session")
@@ -124,7 +152,7 @@ def test_review_order_is_tier_then_overlap_then_size(session, workspace):
     rows = [
         _pr(1, files=["a.py"], isDraft=True),
         _pr(2, files=["b.py"], mergeable="CONFLICTING"),
-        _pr(3, files=["c.py"], statusCheckRollup=[FAILING]),
+        _pr(3, files=["c.py"], checks=[FAILING]),
         _pr(4, files=["shared.py", "d.py"], size=5),
         _pr(5, files=["shared.py"], size=500),
         _pr(6, files=["e.py"], size=900),
@@ -149,7 +177,38 @@ def test_review_order_is_tier_then_overlap_then_size(session, workspace):
     assert [(o.number, o.shared_files) for o in by_number[4].overlaps] == [(5, 1)]
     assert by_number[3].ci is CIStatus.FAILING
     assert by_number[4].pull_request.body == ""
-    assert result.truncated is False
+    assert result.listing_state is PrListingState.COMPLETE
+
+
+@pytest.mark.parametrize(
+    ("has_next_page", "expected"),
+    [(True, PrListingState.INCOMPLETE), (False, PrListingState.COMPLETE)],
+)
+def test_a_full_page_is_complete_only_when_github_says_no_page_follows(
+    session, workspace, has_next_page, expected
+):
+    # Exactly a page of rows: the count is the same either way, so only
+    # GitHub's `hasNextPage` can tell the two apart.
+    rows = [_pr(n, files=[f"{n}.py"]) for n in range(1, PR_PAGE_SIZE + 1)]
+    with _gh(pages=[_page(rows, has_next_page=has_next_page)]):
+        result = workspace_pull_requests(session, workspace)
+    assert len(result.pull_requests) == PR_PAGE_SIZE
+    assert result.listing_state is expected
+
+
+def test_every_page_is_listed_and_the_last_one_decides_completeness(session, workspace):
+    first = [_pr(n, files=[f"{n}.py"]) for n in range(1, PR_PAGE_SIZE + 1)]
+    pages = [_page(first, has_next_page=True), _page([_pr(101, files=["x.py"])])]
+    with _gh(pages=pages):
+        result = workspace_pull_requests(session, workspace)
+    assert len(result.pull_requests) == PR_PAGE_SIZE + 1
+    assert result.listing_state is PrListingState.COMPLETE
+
+
+def test_a_listing_with_no_repository_raises_rather_than_reporting_no_prs(session, workspace):
+    with _gh(pages=[{"data": {"repository": None}}]):
+        with pytest.raises(GitHubReadError, match="no repository"):
+            workspace_pull_requests(session, workspace)
 
 
 def test_tickets_link_by_branch_and_by_an_exact_id_mention(session, workspace):

@@ -188,7 +188,7 @@ beforeEach(() => {
   });
   mockDashboard.pullRequests.mockResolvedValue({
     workspace_slug: "blobert",
-    truncated: false,
+    listing_state: "complete",
     pull_requests: [
       pullRequest(103, {
         review_rank: 1,
@@ -281,7 +281,7 @@ describe("WorkspaceDashboardPage", () => {
   it("says when there is nothing to review, without looking like an error", async () => {
     mockDashboard.pullRequests.mockResolvedValue({
       workspace_slug: "blobert",
-      truncated: false,
+      listing_state: "complete",
       pull_requests: [],
     });
     renderDashboard();

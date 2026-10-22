@@ -21,10 +21,11 @@ from dataclasses import dataclass, field
 
 from loregarden.config import settings
 from loregarden.db.session import engine
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import PrListingState, Workspace
 from loregarden.services.active_workspaces import active_workspaces
-from loregarden.services.ci_checks import GitHubReadError, list_open_pull_requests
+from loregarden.services.ci_checks import list_open_pull_requests
 from loregarden.services.ci_service import CIService
+from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -65,15 +66,25 @@ def poll_workspace(session: Session, workspace: Workspace) -> WorkspacePoll:
     if not (repo_root / ".git").exists():
         return poll
     try:
-        pulls = list_open_pull_requests(repo_root)
+        listing = list_open_pull_requests(repo_root)
     except GitHubReadError as exc:
         poll.errors.append(f"could not list pull requests: {exc}")
         _report_list_failure(workspace.slug, str(exc))
         return poll
-    if _last_list_error.pop(workspace.slug, None) is not None:
-        logger.warning("CI poll for %s: listing pull requests works again", workspace.slug)
+    if listing.state is PrListingState.COMPLETE:
+        if _last_list_error.pop(workspace.slug, None) is not None:
+            logger.warning("CI poll for %s: listing pull requests works again", workspace.slug)
+    else:
+        # The PRs that were read are still observed; the ones past the last
+        # page are not, and that is reported rather than read as "no more PRs".
+        partial = (
+            f"GitHub reported more open pull requests after the last page; "
+            f"only {len(listing.pull_requests)} were observed"
+        )
+        poll.errors.append(f"could not list pull requests: {partial}")
+        _report_list_failure(workspace.slug, partial)
     service = CIService(session)
-    for pr in pulls:
+    for pr in listing.pull_requests:
         ticket = service.ticket_for_branch(workspace, pr.branch)
         if ticket is None:
             continue
