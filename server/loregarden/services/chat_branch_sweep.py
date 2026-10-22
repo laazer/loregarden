@@ -31,7 +31,7 @@ from pathlib import Path
 from loregarden.models.domain import Workspace, Worktree, WorktreeState
 from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.artifact_service import git_base_ref
-from loregarden.services.branch_triage_service import branch_work_has_landed
+from loregarden.services.branch_landed import branch_work_has_landed
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root

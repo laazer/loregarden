@@ -3,6 +3,7 @@ import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
+import { referenceLibraryApi } from "./referenceLibraryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketPullRequestApi } from "./ticketPullRequestApi";
 import type { ApprovalHistoryItem, ApprovalResolutionAction } from "./chatTypes";
@@ -28,6 +29,7 @@ export type {
   SubtreeAutopilot,
 } from "./initiativeApi";
 export type * from "./memoryApi";
+export type * from "./referenceLibraryApi";
 import type {
   WorkflowReassignmentPreview,
   BlockedOn,
@@ -479,6 +481,7 @@ export const api = {
   ...ticketPullRequestApi,
   ...initiativeApi,
   ...memoryApi,
+  ...referenceLibraryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",

@@ -62,6 +62,8 @@ interface BranchCleanupModalProps {
   workspaceSlug: string;
   baseBranch: string;
   branches: BranchTriageEntry[];
+  /** Set while PR status is loading, partial or unavailable: "PR merged" may be undercounted. */
+  prStatusNote?: string | null;
   onClose: () => void;
   onBranchesDeleted?: (branches: string[]) => void;
 }
@@ -99,6 +101,7 @@ function BranchCleanupModalBody({
   workspaceSlug,
   baseBranch,
   branches,
+  prStatusNote,
   onClose,
   onBranchesDeleted,
   onBusyChange,
@@ -200,6 +203,11 @@ function BranchCleanupModalBody({
           <p className="modal-subtitle">
             Deleting a branch also removes the worktrees checked out on it.
           </p>
+          {prStatusNote ? (
+            <p className="modal-subtitle" role="status">
+              {prStatusNote} Branches with a merged PR may not be listed under it yet.
+            </p>
+          ) : null}
         </div>
         <IconCloseButton disabled={isDeleting} onClick={onClose} />
       </div>

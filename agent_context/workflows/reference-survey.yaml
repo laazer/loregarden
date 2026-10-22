@@ -1,0 +1,23 @@
+slug: reference-survey
+name: Reference survey pass
+description: >-
+  Carrier workflow for one reference-survey pass, dispatched from the survey queue
+  (services/reference_survey/feeder.py). One agent stage runs the pass against its
+  slice of the source's directory map and lands findings on tickets; the pass record,
+  not this ticket, is the deliverable. Nothing is built or tested, so there is no
+  test, review or gate stage.
+stages:
+  - key: survey
+    name: Survey pass
+    agent_id: reference_surveyor
+    skill_name: reference-survey
+    order: 1
+  - key: done
+    name: Done
+    agent_id: ""
+    skill_name: ""
+    terminal: true
+    order: 2
+transitions:
+  - from: survey
+    to: done

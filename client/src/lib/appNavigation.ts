@@ -287,16 +287,21 @@ export function viewIdFromPath(pathname: string): string | null {
 }
 
 /** The Memory page's tabs, in the order they are drawn. The map is the default. */
-export const MEMORY_TABS = ["map", "records", "health"] as const;
+export const MEMORY_TABS = ["map", "records", "library", "health"] as const;
 export type MemoryTab = (typeof MEMORY_TABS)[number];
 
-const MEMORY_TAB_PATH_RE = /^\/memory\/(records|health)(?:\/|$)/;
+const MEMORY_TAB_PATH_RE = /^\/memory\/(records|library|health)(?:\/|$)/;
 const MEMORY_NODE_PATH_RE = /^\/memory\/map\/([^/]+)/;
+const MEMORY_LIBRARY_SOURCE_PATH_RE = /^\/memory\/library\/([^/]+)/;
 /** The browser's old home, kept so links and bookmarks into it still land. */
 const LEGACY_KNOWLEDGE_PATH_RE = /^\/knowledge(?:\/([^/]+))?\/?$/;
 
-/** A Memory tab's URL; on the map, optionally with one record selected. */
+/**
+ * A Memory tab's URL; on the map, optionally with one record selected, and in
+ * the reference library, optionally with one source open.
+ */
 export function memoryPath(tab: MemoryTab, nodeId?: string): string {
+  if (tab === "library" && nodeId) return `/memory/library/${encodeURIComponent(nodeId)}`;
   if (tab !== "map") return `/memory/${tab}`;
   return nodeId ? `/memory/map/${encodeURIComponent(nodeId)}` : "/memory";
 }
@@ -313,6 +318,12 @@ export function memoryTabFromPath(pathname: string): MemoryTab {
  */
 export function memoryNodeIdFromPath(pathname: string): string | null {
   const match = pathname.match(MEMORY_NODE_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
+}
+
+/** The reference source a `/memory/library/:sourceId` URL opens, or null. */
+export function memoryLibrarySourceFromPath(pathname: string): string | null {
+  const match = pathname.match(MEMORY_LIBRARY_SOURCE_PATH_RE);
   return match ? decodeSegment(match[1]) : null;
 }
 

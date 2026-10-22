@@ -1,0 +1,622 @@
+/* The reference library (Memory → Reference library). A table of sources and,
+   when one is open, its detail beside it; below the width two panes can hold,
+   the open source replaces the list and "Back to sources" returns to it. */
+
+.screen-view--memory-library .memory-page-body {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.rl-page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Inside the list pane, because the views and search narrow the list and
+   nothing else; it scrolls away so the table header can stick in its place. */
+.rl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px 0 10px;
+  margin-bottom: 4px;
+}
+
+.rl-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rl-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.rl-view:hover,
+.rl-view:focus-visible {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.rl-view--active {
+  color: var(--ac2);
+  border-color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 8%, transparent);
+}
+
+.rl-search {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+.rl-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+.rl-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rl-page--open .rl-body {
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr);
+}
+
+.rl-list,
+.rl-detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+.rl-list {
+  padding: 0 18px 24px;
+}
+
+.rl-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 600px;
+  padding: 28px 0;
+  color: var(--txm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rl-state p {
+  margin: 0;
+}
+
+/* ---- the table ---------------------------------------------------------- */
+
+.rl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.rl-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bd2);
+  text-align: left;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: var(--txl);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.rl-table th:has(.rl-sort) {
+  padding: 0;
+}
+
+.rl-sort {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.rl-num .rl-sort {
+  justify-content: flex-end;
+}
+
+.rl-sort:hover,
+.rl-sort:focus-visible {
+  color: var(--tx);
+}
+
+.rl-sort-mark {
+  min-width: 1ch;
+}
+
+.rl-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: top;
+  color: var(--txm);
+}
+
+.rl-table .rl-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rl-table .rl-col-state {
+  white-space: nowrap;
+}
+
+.rl-table .rl-col-passes,
+.rl-table .rl-col-tickets {
+  width: 88px;
+}
+
+.rl-row--selected td {
+  background: color-mix(in srgb, var(--ac) 7%, transparent);
+}
+
+.rl-name {
+  display: block;
+  color: var(--tx);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.rl-name:hover,
+.rl-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.rl-url {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--txl);
+  overflow-wrap: anywhere;
+}
+
+.rl-also {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--blue);
+}
+
+/* The column header names the unit on a wide table; at phone width there is no
+   header, so each count carries its own. */
+.rl-unit {
+  display: none;
+}
+
+.rl-unresolved {
+  display: block;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+/* State is said in words; the colour only reinforces it. */
+.rl-state-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--txm);
+  background: var(--bg3);
+}
+
+.rl-state-badge--awaiting_approval {
+  color: var(--amb);
+  background: var(--aml);
+}
+
+.rl-state-badge--reading {
+  color: var(--vio);
+  background: var(--vil);
+}
+
+.rl-state-badge--queued {
+  color: var(--blue);
+  background: var(--bll);
+}
+
+.rl-state-badge--surveyed {
+  color: var(--grn);
+  background: var(--grl);
+}
+
+.rl-state-badge--refused {
+  color: var(--red);
+  background: var(--rdl);
+}
+
+/* ---- the detail ---------------------------------------------------------- */
+
+.rl-detail {
+  border-left: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.rl-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 18px 10px;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--bd);
+}
+
+.rl-detail-head h2 {
+  margin: 4px 0 6px;
+  font-family: var(--dp);
+  font-size: 17px;
+  color: var(--tx);
+}
+
+.rl-detail-head h2:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.rl-back {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.rl-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.rl-external {
+  color: var(--ac2);
+  overflow-wrap: anywhere;
+}
+
+.rl-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 14px 18px 32px;
+  font-size: 12.5px;
+  color: var(--txm);
+  line-height: 1.5;
+}
+
+.rl-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+
+.rl-next p {
+  margin: 0;
+  color: var(--tx);
+}
+
+.rl-next--quiet {
+  color: var(--txm);
+}
+
+.rl-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+}
+
+.rl-facts dt {
+  color: var(--txl);
+  font-size: 11.5px;
+}
+
+.rl-facts dd {
+  margin: 0;
+  color: var(--tx);
+}
+
+.rl-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.rl-group + .rl-group {
+  margin-top: 10px;
+}
+
+.rl-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--txl);
+}
+
+.rl-ticket-search {
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 8px;
+}
+
+.rl-tickets,
+.rl-learnings,
+.rl-passes,
+.rl-plain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rl-passes {
+  border-left: 2px solid var(--bd2);
+  padding-left: 12px;
+}
+
+.rl-ticket-link,
+.rl-learning-link {
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.rl-ticket-link:hover,
+.rl-ticket-link:focus-visible,
+.rl-learning-link:hover,
+.rl-learning-link:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.rl-ticket-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+.rl-tags,
+.rl-pass-outcome {
+  display: block;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.rl-pass-title {
+  display: block;
+  color: var(--tx);
+  font-weight: 500;
+}
+
+.rl-more {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ac2);
+}
+
+.rl-muted {
+  color: var(--txl);
+  margin: 0;
+}
+
+.rl-warn {
+  margin: 0;
+  color: var(--amb);
+}
+
+.rl-details summary {
+  cursor: pointer;
+  color: var(--txm);
+}
+
+.rl-details summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.rl-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+}
+
+.rl-initiative {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.rl-initiative .rl-tags {
+  display: inline;
+}
+
+.rl-unlink {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+.rl-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1 0 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.rl-link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+}
+
+/* Initiative titles run long; the picker shrinks with the pane rather than
+   pushing the Link button out of it. */
+.rl-link-form select {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.rl-link-form label {
+  color: var(--txl);
+  font-size: 11.5px;
+}
+
+.rl-result {
+  margin: 6px 0 0;
+  color: var(--grn);
+}
+
+/* Kept in the tree when empty: a live region that appears with its text is
+   not announced by every screen reader. */
+.rl-result:empty {
+  margin: 0;
+}
+
+.rl-findings li {
+  overflow-wrap: anywhere;
+}
+
+.rl-retracted {
+  text-decoration: line-through;
+  color: var(--txl);
+}
+
+.rl-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Licence and "serves" give way first; the name, state and counts stay. */
+@container (max-width: 1100px) {
+  .rl-page--open .rl-table .rl-col-licence {
+    display: none;
+  }
+}
+
+/* One pane: an open source replaces the list. */
+@container (max-width: 860px) {
+  .rl-page--open .rl-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rl-page--open .rl-list {
+    display: none;
+  }
+
+  .rl-detail {
+    border-left: 0;
+  }
+}
+
+/* Phone width: each source becomes one block — name, then state and counts. */
+@container (max-width: 640px) {
+  .rl-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .rl-table,
+  .rl-table tbody,
+  .rl-table tr,
+  .rl-table td {
+    display: block;
+    width: auto;
+  }
+
+  .rl-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .rl-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .rl-table .rl-col-name {
+    flex: 1 0 100%;
+  }
+
+  .rl-table .rl-col-licence,
+  .rl-table .rl-col-last_read {
+    display: none;
+  }
+
+  .rl-table .rl-unit {
+    display: inline;
+  }
+
+  .rl-table .rl-unresolved {
+    display: none;
+  }
+}

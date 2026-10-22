@@ -39,6 +39,7 @@ from loregarden.mcp.initiative_plan_tools import HANDLERS as INITIATIVE_PLAN_HAN
 from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDLERS
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
+from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
 from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
@@ -82,4 +83,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **DOCUMENT_HANDLERS,
     **UX_ANSWERS_HANDLERS,
     **FIX_COVERAGE_HANDLERS,
+    **SURVEY_HANDLERS,
 }

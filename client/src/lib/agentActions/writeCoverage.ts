@@ -40,6 +40,10 @@ const DRAFT = "computes or drafts; nothing is saved";
 export const API_WRITE_COVERAGE = {
   // Tickets
   createTicket: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
+  // Reference library: an agent links or unlinks with loregarden_survey_queue
+  // (action link_initiative / unlink_initiative), the same service write.
+  linkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  unlinkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
   // The bulk form of the same write: an agent creates the tickets directly,

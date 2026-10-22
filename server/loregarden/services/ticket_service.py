@@ -38,7 +38,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.services.acceptance_criteria import serialize_criteria
+from loregarden.services.acceptance_criteria import guard_criteria_growth, serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.initiative_coverage import initiatives_tracking
 from loregarden.services.orchestration import OrchestrationService
@@ -258,6 +258,7 @@ class TicketService:
 
         if priority < 1 or priority > 3:
             raise ValueError("Priority must be between 1 and 3")
+        guard_criteria_growth([], acceptance_criteria)
 
         ws, workspace_id = self._resolve_create_workspace(
             workspace_slug=workspace_slug,

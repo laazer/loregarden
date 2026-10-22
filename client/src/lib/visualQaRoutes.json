@@ -10,6 +10,7 @@
   { "name": "workspaces-instances", "path": "/workspaces/instances" },
   { "name": "memory-map", "path": "/memory/map" },
   { "name": "memory-records", "path": "/memory/records" },
+  { "name": "memory-library", "path": "/memory/library" },
   { "name": "memory-health", "path": "/memory/health" },
   { "name": "chat", "path": "/chat" },
   { "name": "mcp", "path": "/mcp" },

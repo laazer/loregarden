@@ -171,6 +171,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "reference_surveyor": {
+        "name": "Reference Surveyor",
+        "role_file": "agents/misc_agents/reference_surveyor_v1.md",
+        "adapter": "claude",
+        "timeout": 3600,
+    },
     "retriever": {
         "name": "Research Librarian",
         "role_file": "agents/misc_agents/research_librarian_v1.md",

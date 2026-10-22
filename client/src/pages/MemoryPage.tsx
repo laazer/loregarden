@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import { MemoryMapTab } from "../components/knowledge/MemoryMapTab";
 import { LearningsPanel } from "../components/memory/LearningsPanel";
 import { MemoryHealthTab } from "../components/memory/MemoryHealthTab";
+import { ReferenceLibraryTab } from "../components/memory/ReferenceLibraryTab";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import {
@@ -22,6 +23,7 @@ import "./MemoryPage.css";
 const TAB_LABELS: Record<MemoryTab, string> = {
   map: "Map",
   records: "Records",
+  library: "Reference library",
   health: "Health",
 };
 
@@ -38,14 +40,16 @@ function RecordsTab({ slug }: { slug: string }) {
 function ActiveTab({ tab, slug }: { tab: MemoryTab; slug: string }) {
   if (tab === "records") return <RecordsTab key={slug} slug={slug} />;
   if (tab === "health") return <MemoryHealthTab key={slug} slug={slug} />;
+  if (tab === "library") return <ReferenceLibraryTab key={slug} slug={slug} />;
   return <MemoryMapTab key={slug} slug={slug} />;
 }
 
 /**
  * Everything about agent memory, in one place: the map of what is recorded
  * and how it links, the records themselves with their confidence and
- * discredit/restore control, and whether memory is being recorded and used at
- * all. One workspace picker scopes all three; the tab is in the URL.
+ * discredit/restore control, the reference library of outside sources the
+ * survey has read and what they changed, and whether memory is being recorded
+ * and used at all. One workspace picker scopes them all; the tab is in the URL.
  */
 export function MemoryPage() {
   const location = useLocation();
