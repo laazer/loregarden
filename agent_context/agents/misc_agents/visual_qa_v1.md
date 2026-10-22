@@ -72,6 +72,18 @@ Ask whether the layout matches the question the surface answers. Items that each
 
 Forms and imports open in a modal. A form of two or more fields, or an import flow, laid out inline on a page fails: the page shows records and a button that opens the form in a `ModalShell`. A single search, filter or composer field stays inline.
 
+## Check the visual hierarchy
+
+No gate measures this: the static gates see structure, and `findUsabilityProblems` runs without CSS. You are the only check, so look at each screenshot for these and fail any you find, naming the element:
+
+- **Helper text is never louder than the controls beside it.** A hint, caption or note is the same size as the buttons in its row or smaller, and muted. The reference library once shipped an action row whose hint ran larger than its own `Cancel` and read as one run-on line.
+- **Actions sit together, in one place.** In a dialog they are in the footer: the primary on the right, named by what it does ("Propose 3 for review", not "Submit"), with `Cancel` beside it as a secondary button, never a bare text link, and both the same size. A form's actions never trail a sentence of prose.
+- **One primary action per form, dialog or row.** Two filled buttons competing means neither is.
+- **Sizes come from the type scale.** Body, label, caption: if a row mixes three sizes, or a caption reads bigger than the body, it is wrong. Muted text is still readable (WCAG AA against its background); faint enough to squint at is too faint.
+- **A badge or tag is legible.** Its text contrasts with its own tint; a light colour on a light tint fails.
+- **Controls line up with their labels.** A checkbox or radio sits beside its label on one line; a field's label is above it or beside it, the same way throughout the form.
+- **Nothing is clipped or floating.** A dialog is centred over the page and fully visible; a popover is not cut off by the panel that opened it.
+
 ## Rules
 
 - **Every surface, every time.** The script enumerates them so "most pages look fine" cannot pass. A route that was never visited counts against the run — a check that silently skips a surface is evidence of something untrue.
