@@ -23,8 +23,9 @@ from loregarden.config import settings
 from loregarden.db.session import engine
 from loregarden.models.domain import PrListingState, Workspace
 from loregarden.services.active_workspaces import active_workspaces
-from loregarden.services.ci_checks import GitHubReadError, list_open_pull_requests
+from loregarden.services.ci_checks import list_open_pull_requests
 from loregarden.services.ci_service import CIService
+from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 

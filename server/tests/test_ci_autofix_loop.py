@@ -27,11 +27,18 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
-from loregarden.services import ci_autofix_dispatch, ci_checks, ci_poll_scheduler, git_automation
+from loregarden.services import (
+    ci_autofix_dispatch,
+    ci_checks,
+    ci_poll_scheduler,
+    git_automation,
+    github_pr_listing,
+)
 from loregarden.services import publish_tree as publish_tree_module
-from loregarden.services.ci_checks import PR_PAGE_SIZE, GitHubReadError, OpenPullRequest, rollup
+from loregarden.services.ci_checks import OpenPullRequest, rollup
 from loregarden.services.ci_poll_scheduler import poll_workspace
 from loregarden.services.ci_service import AutoFixRefusal, CIService
+from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.ticket_pull_request import GhCheck
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import set_stage_status
@@ -96,7 +103,7 @@ def done_ticket_fixture(session, workspace, repo):
 def gh_logs_fixture():
     """`gh run view --log-failed` answers with a pytest failure."""
     done = subprocess.CompletedProcess(["gh"], 0, stdout=LOG, stderr="")
-    with mock.patch.object(ci_checks, "run_gh", return_value=done) as run_gh:
+    with mock.patch.object(github_pr_listing, "run_gh", return_value=done) as run_gh:
         yield run_gh
 
 
@@ -138,6 +145,7 @@ def _listing(nodes: list[dict], *, has_next_page: bool) -> subprocess.CompletedP
         "data": {
             "repository": {
                 "pullRequests": {
+                    "totalCount": len(nodes),
                     "pageInfo": {"hasNextPage": has_next_page, "endCursor": "c"},
                     "nodes": nodes,
                 }
@@ -198,6 +206,13 @@ def test_a_full_page_is_complete_only_when_github_says_no_page_follows(
     listing = ci_checks.list_open_pull_requests(tmp_path)
     assert len(listing.pull_requests) == PR_PAGE_SIZE
     assert listing.state is expected
+
+
+def test_the_poller_lists_only_open_prs(tmp_path, gh_logs):
+    gh_logs.return_value = _listing([], has_next_page=False)
+    ci_checks.list_open_pull_requests(tmp_path)
+    (query,) = [arg for arg in gh_logs.call_args.args[0] if arg.startswith("query=")]
+    assert "pullRequests(states: OPEN," in query
 
 
 def test_a_commit_nothing_has_reported_on_has_no_checks(tmp_path, gh_logs):

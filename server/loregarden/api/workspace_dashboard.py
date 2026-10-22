@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import ActivityHighlightKind, Workspace
 from loregarden.models.domain.enums import comparable_utc, utcnow
-from loregarden.services.ci_checks import GitHubReadError
+from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.workspace_activity import WorkspaceActivity, workspace_activity
 from loregarden.services.workspace_pull_requests import (
     WorkspacePullRequests,

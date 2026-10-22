@@ -1,10 +1,10 @@
 """A workspace's open pull requests, in the order a person should review them.
 
 The dashboard's answer to "where do PRs stand, and in what order do I review
-them?". One paginated GraphQL listing (`ci_checks.list_open`) returns every open PR with its checks, review
-decision, mergeability and changed files. This module then adds what GitHub
-cannot know: which tickets each PR carries, which other open PRs touch the same
-files, and a review order.
+them?". One paginated GraphQL listing (`github_pr_listing`) returns every open
+PR with its checks, review decision, mergeability and changed files. This
+module then adds what GitHub cannot know: which tickets each PR carries, which
+other open PRs touch the same files, and a review order.
 
 **The order** is a tier (`PullRequestReviewTier`: ready to merge, to review,
 needs work, conflicting, draft), then the fewest overlapping PRs, then the
@@ -35,13 +35,13 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.ci_checks import (
+    GH_TIMEOUT_SECONDS,
     HEAD_CHECKS_FIELDS,
     GhHeadCommit,
-    GhPage,
-    list_open,
     rollup,
 )
 from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.github_pr_listing import GhPage, PullRequestStates, list_pull_requests
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import (
     GhPullRequest,
@@ -217,7 +217,13 @@ def _ranked(rows: list[WorkspacePullRequest]) -> list[WorkspacePullRequest]:
 
 def workspace_pull_requests(session: Session, workspace: Workspace) -> WorkspacePullRequests:
     """Every open PR in ``workspace``'s repository, in review order."""
-    listing = list_open(resolve_workspace_root(workspace), _LIST_FIELDS, _LISTED_PAGES)
+    listing = list_pull_requests(
+        resolve_workspace_root(workspace),
+        _LIST_FIELDS,
+        _LISTED_PAGES,
+        states=PullRequestStates.OPEN,
+        timeout_seconds=GH_TIMEOUT_SECONDS,
+    )
     listed = listing.pull_requests
     index = _TicketIndex(
         list(session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all())

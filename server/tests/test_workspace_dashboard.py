@@ -18,7 +18,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.services.ci_checks import PR_PAGE_SIZE, GitHubReadError
+from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.workspace_activity import workspace_activity
 from loregarden.services.workspace_pull_requests import workspace_pull_requests
 from loregarden.services.workspace_remote import web_url_for, workspace_remote
@@ -67,6 +67,7 @@ def _page(rows: list[dict], *, has_next_page: bool = False) -> dict:
         "data": {
             "repository": {
                 "pullRequests": {
+                    "totalCount": len(rows),
                     "pageInfo": {"hasNextPage": has_next_page, "endCursor": "c"},
                     "nodes": rows,
                 }
@@ -85,7 +86,7 @@ def _gh(
     """`gh api graphql --paginate --slurp`: one array holding every page."""
     stdout = json.dumps(pages if pages is not None else [_page(rows or [])])
     proc = subprocess.CompletedProcess(["gh"], returncode, stdout=stdout, stderr=stderr)
-    return mock.patch("loregarden.services.ci_checks.run_gh", return_value=proc)
+    return mock.patch("loregarden.services.github_pr_listing.run_gh", return_value=proc)
 
 
 @pytest.fixture(name="session")
