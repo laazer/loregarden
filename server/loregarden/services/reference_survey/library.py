@@ -41,6 +41,7 @@ from loregarden.services.reference_survey.initiatives import LinkedInitiative, l
 from loregarden.services.reference_survey.passes import coverage_report, pass_counts
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
+from loregarden.services.reference_survey.schedule import QueueSchedule, queue_schedule
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
@@ -77,6 +78,8 @@ class LibraryList(BaseModel):
     workspace_slug: str
     counts: dict[LibraryState, int]
     sources: list[LibraryRow]
+    #: What the feeder dispatches next and what holds it, across all workspaces.
+    schedule: QueueSchedule
 
 
 class LibraryWorkspace(BaseModel):
@@ -321,6 +324,7 @@ def library_list(session: Session, workspace_slug: str) -> LibraryList:
         workspace_slug=workspace_slug,
         counts={state: counts[state] for state in LibraryState},
         sources=rows,
+        schedule=queue_schedule(session),
     )
 
 

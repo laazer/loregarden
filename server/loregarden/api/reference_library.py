@@ -1,9 +1,10 @@
 """The reference library: the survey record for the Memory section.
 
-Reads, plus one write a person makes here: linking an initiative to a source
-so the source's open tickets join it (agents do the same through
-`loregarden_survey_queue`). Every other write to the record goes through the
-survey's MCP tools and the admission card in the inbox.
+Reads, plus the writes a person makes here: proposing a source (it still waits
+for its admission card in the inbox), reviewing one now, and linking an
+initiative so the source's open tickets join it. Agents do the same through
+`loregarden_survey_queue`; every other write to the record goes through the
+survey's MCP tools.
 """
 
 from __future__ import annotations
@@ -25,6 +26,9 @@ from loregarden.services.reference_survey.library import (
     library_list,
     library_row,
 )
+from loregarden.services.reference_survey.queue import enqueue_source
+from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
+from loregarden.services.reference_survey.schemas import SourceIn
 from loregarden.services.reference_survey.upstream import check_upstream_by_id
 from loregarden.services.ticket_ids import TicketNotFound
 from pydantic import BaseModel
@@ -44,6 +48,45 @@ def list_library(workspace_slug: str, session: Session = Depends(get_session)) -
         return library_list(session, workspace_slug)
     except SurveyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class AddSourceResult(BaseModel):
+    source: LibraryRow
+    #: Workspaces this call added to the source (empty when it already served them all).
+    attached: list[str]
+    #: A scoped pass was queued because a surveyed source gained a workspace.
+    scoped_pass: int | None
+
+
+@router.post("/sources", response_model=AddSourceResult)
+def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSourceResult:
+    """Propose a repository or site. A new one waits for its admission card in the
+    inbox; a known one gains the workspaces, as `loregarden_survey_queue` does."""
+    try:
+        added = enqueue_source(session, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AddSourceResult(
+        source=library_row(session, added.source),
+        attached=added.attached,
+        scoped_pass=added.scoped_pass.ordinal if added.scoped_pass else None,
+    )
+
+
+@router.post("/{source_id}/review-now", response_model=ReviewNowResult)
+def review_source_now(
+    source_id: str, body: ReviewNowIn, session: Session = Depends(get_session)
+) -> ReviewNowResult:
+    """Put the source first in line and dispatch its pass now, unless the pass limit,
+    a sandbox or a missing carrier parent holds it (then `waiting` says which)."""
+    try:
+        return review_now(session, source_id, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{source_id}", response_model=LibraryDetail)

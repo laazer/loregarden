@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { ApiError } from "../../api/http";
-import type { LibraryDetail, LibraryPass, LibraryTicket } from "../../api/referenceLibraryApi";
+import type { LibraryDetail, LibraryPass, LibraryTicket, SourceKind } from "../../api/referenceLibraryApi";
 import { api } from "../../api/client";
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
 import { recordTitle } from "../../lib/memoryInferred";
@@ -12,6 +12,7 @@ import {
   filterTickets,
   groupTickets,
   licenceLabel,
+  placeInLine,
   shortDate,
   sourceSummary,
 } from "../../lib/referenceLibrary";
@@ -21,6 +22,8 @@ import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { ReviewAgain, ReviewNowButton } from "./ReferenceReviewNow";
+import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
 import { ReferenceSourceUpstream } from "./ReferenceSourceUpstream";
 import { TicketLink } from "../TicketLink";
@@ -29,9 +32,64 @@ import { TicketLink } from "../TicketLink";
 const PREVIEW = 12;
 const PASS_PREVIEW = 5;
 
-function NextStep({ detail }: { detail: LibraryDetail }) {
+function Propose({ detail, workspace }: { detail: LibraryDetail; workspace: string }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <div className="rl-next">
+        <p>Never proposed, so nothing in it has been read.</p>
+        <Button variant="primary" compact aria-expanded={false} onClick={() => setOpen(true)}>
+          Propose it for review…
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <ReferenceSourceForm
+      workspace={workspace}
+      initialUrl={detail.source.url}
+      initialKind={detail.source.kind as SourceKind}
+      onCancel={() => setOpen(false)}
+      onDone={() => setOpen(false)}
+    />
+  );
+}
+
+function NextStep({
+  detail,
+  workspace,
+  position,
+}: {
+  detail: LibraryDetail;
+  workspace: string;
+  position: number | null;
+}) {
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const { state } = detail.source;
+  if (state === "candidate") return <Propose detail={detail} workspace={workspace} />;
+  if (state === "queued") {
+    const waiting = detail.passes.find((p) => p.status === "queued");
+    return (
+      <div className="rl-next">
+        <p>
+          {waiting ? `Pass ${waiting.ordinal} is ` : ""}
+          {position ? placeInLine(position) : "queued"}. Review now dispatches it without waiting its turn.
+        </p>
+        <ReviewNowButton sourceId={detail.source.id} name={detail.source.name} />
+      </div>
+    );
+  }
+  if (state === "surveyed") {
+    return (
+      <div className="rl-next rl-next--quiet">
+        <ReviewAgain
+          sourceId={detail.source.id}
+          name={detail.source.name}
+          question={detail.source.question || detail.passes[detail.passes.length - 1]?.question || ""}
+        />
+      </div>
+    );
+  }
   if (state === "awaiting_approval") {
     return (
       <div className="rl-next">
@@ -287,10 +345,10 @@ function Facts({ detail }: { detail: LibraryDetail }) {
   );
 }
 
-function Body({ detail }: { detail: LibraryDetail }) {
+function Body({ detail, workspace, position }: { detail: LibraryDetail; workspace: string; position: number | null }) {
   return (
     <>
-      <NextStep detail={detail} />
+      <NextStep detail={detail} workspace={workspace} position={position} />
       {detail.record ? (
         <section className="rl-section" aria-labelledby="rl-record-heading">
           <h3 id="rl-record-heading">What the survey recorded</h3>
@@ -339,7 +397,18 @@ function Body({ detail }: { detail: LibraryDetail }) {
  * Focus moves to its heading when it opens; Escape or "Back to sources"
  * closes it and returns to the list.
  */
-export function ReferenceSourceDetail({ sourceId, onClose }: { sourceId: string; onClose: () => void }) {
+export function ReferenceSourceDetail({
+  sourceId,
+  workspace,
+  position,
+  onClose,
+}: {
+  sourceId: string;
+  workspace: string;
+  /** Its place in the review queue, when it has a pass waiting. */
+  position: number | null;
+  onClose: () => void;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
   const source = useQuery({
     queryKey: ["reference-source", sourceId],
@@ -383,7 +452,7 @@ export function ReferenceSourceDetail({ sourceId, onClose }: { sourceId: string;
       </div>
     );
   } else {
-    body = <Body detail={source.data} />;
+    body = <Body detail={source.data} workspace={workspace} position={position} />;
   }
 
   const detail = source.data;

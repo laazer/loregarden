@@ -13,6 +13,7 @@ import type {
   LibraryRow,
   LibraryState,
   LibraryTicket,
+  QueueSchedule,
 } from "../api/referenceLibraryApi";
 
 export type LibraryView = "queue" | "surveyed" | "refused" | "all";
@@ -162,9 +163,14 @@ export function filterTickets(tickets: LibraryTicket[], search: string): Library
 }
 
 /** "Oct 13, 2026" — the day is what a person compares; the time is noise here. */
+/** The server writes naive UTC; read it as UTC whichever way it arrives. */
+function parseUtc(iso: string): Date {
+  return new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+}
+
 export function shortDate(iso: string | null): string {
   if (!iso) return "—";
-  const date = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+  const date = parseUtc(iso);
   return Number.isNaN(date.getTime())
     ? "—"
     : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -222,4 +228,23 @@ export function sourceSummary(detail: LibraryDetail): string {
     return "Listed in the old record but never proposed. An agent proposes it with loregarden_survey_queue.";
   }
   return IN_MOTION[source.state];
+}
+
+/** "next", "2nd in line", "3rd in line"… */
+export function placeInLine(position: number): string {
+  if (position <= 1) return "next in line";
+  const rem100 = position % 100;
+  const suffix =
+    rem100 >= 11 && rem100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[position % 10] ?? "th";
+  return `${position}${suffix} in line`;
+}
+
+/** When the feeder next checks the queue, in words, from `now`. */
+export function nextCheckText(schedule: QueueSchedule, now: Date = new Date()): string {
+  const every = Math.max(1, Math.round(schedule.interval_seconds / 60));
+  if (!schedule.next_tick_at) return `within ${every} minute${every === 1 ? "" : "s"}`;
+  const ms = parseUtc(schedule.next_tick_at).getTime() - now.getTime();
+  if (ms <= 60_000) return "within a minute";
+  const minutes = Math.round(ms / 60_000);
+  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }

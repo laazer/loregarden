@@ -7,6 +7,16 @@
   "refused": 9,
   "surveyed": 99
  },
+ "schedule": {
+  "enabled": true,
+  "interval_seconds": 120.0,
+  "last_tick_at": null,
+  "max_concurrent": 1,
+  "next": null,
+  "next_tick_at": null,
+  "positions": {},
+  "running": []
+ },
  "sources": [
   {
    "approval_id": null,

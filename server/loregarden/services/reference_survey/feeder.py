@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from loregarden.config import settings
@@ -68,6 +70,18 @@ from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
+#: One dispatch at a time in this process: the loop's tick and a person's
+#: "Review now" must not both pick the same queued pass while a clone runs.
+_DISPATCH_LOCK = threading.Lock()
+
+
+@dataclass
+class _Clock:
+    last_tick_at: datetime | None = None
+
+
+_CLOCK = _Clock()
+
 SURVEY_WORKFLOW_SLUG = "reference-survey"
 #: The ticket carrier tickets are filed under, found by this tag in the source's workspace.
 CARRIER_PARENT_TAG = "reference-survey-carrier"
@@ -83,7 +97,7 @@ class FeedResult:
     notes: list[str] = field(default_factory=list)
 
 
-def _carrier_parent(session: Session, workspace_id: str) -> Ticket | None:
+def carrier_parent(session: Session, workspace_id: str) -> Ticket | None:
     candidates = session.exec(
         select(Ticket).where(
             Ticket.workspace_id == workspace_id,
@@ -268,7 +282,7 @@ def _create_carrier(
 def _dispatch(
     session: Session, survey_pass: SurveyPass, source: SurveySource, result: FeedResult
 ) -> None:
-    parent = _carrier_parent(session, source.workspace_id)
+    parent = carrier_parent(session, source.workspace_id)
     if parent is None:
         result.waiting = "no carrier parent"
         report_exception(
@@ -370,29 +384,71 @@ def _dispatch(
     result.dispatched = survey_pass.id
 
 
+def running_passes(session: Session) -> int:
+    return len(
+        session.exec(
+            select(SurveyPass.id).where(SurveyPass.status == SurveyPassStatus.DISPATCHED)
+        ).all()
+    )
+
+
+def at_limit(running: int) -> str:
+    """Why nothing more dispatches while `running` passes run, or "" when one can."""
+    limit = settings.reference_survey_max_concurrent_passes
+    return f"{running} pass(es) running, at the limit of {limit}" if running >= limit else ""
+
+
 def feed_once(session: Session) -> FeedResult:
     """One tick: admit resolved sources, settle abandoned passes, dispatch the head."""
     result = FeedResult()
     result.promoted = len(promote_resolved_sources(session))
     result.abandoned = _settle_abandoned(session)
-    running = session.exec(
-        select(SurveyPass.id).where(SurveyPass.status == SurveyPassStatus.DISPATCHED)
-    ).all()
-    if len(running) >= settings.reference_survey_max_concurrent_passes:
-        result.waiting = f"{len(running)} pass(es) running, at the limit"
-        return result
-    head = next_queued_pass(session)
-    if head is None:
-        result.waiting = "queue empty"
-        return result
-    if settings.sandbox:
-        result.waiting = "sandbox server: no passes are dispatched here"
-        return result
-    _dispatch(session, head[0], head[1], result)
+    with _DISPATCH_LOCK:
+        result.waiting = at_limit(running_passes(session))
+        if result.waiting:
+            return result
+        head = next_queued_pass(session)
+        if head is None:
+            result.waiting = "queue empty"
+            return result
+        if settings.sandbox:
+            result.waiting = SANDBOX_WAITING
+            return result
+        _dispatch(session, head[0], head[1], result)
     return result
 
 
+SANDBOX_WAITING = "sandbox server: no passes are dispatched here"
+
+
+def dispatch_now(session: Session, survey_pass: SurveyPass, source: SurveySource) -> FeedResult:
+    """Dispatch this queued pass now, out of turn, when nothing stops a dispatch.
+
+    The same limit, sandbox rule, licence gate and carrier parent apply as on a
+    tick; `waiting` says which one held it, and the pass stays queued.
+    """
+    result = FeedResult()
+    with _DISPATCH_LOCK:
+        session.refresh(survey_pass)
+        if survey_pass.status is not SurveyPassStatus.QUEUED:
+            result.waiting = f"pass {survey_pass.ordinal} is {survey_pass.status.value}, not queued"
+            return result
+        result.waiting = at_limit(running_passes(session))
+        if not result.waiting and settings.sandbox:
+            result.waiting = SANDBOX_WAITING
+        if result.waiting:
+            return result
+        _dispatch(session, survey_pass, source, result)
+    return result
+
+
+def last_tick_at() -> datetime | None:
+    """When this process last ran a tick; None before the first one."""
+    return _CLOCK.last_tick_at
+
+
 def _tick() -> None:
+    _CLOCK.last_tick_at = utcnow()
     with Session(engine) as session:
         result = feed_once(session)
     # Its own session: a slow or failing GitHub read must not hold up dispatch,

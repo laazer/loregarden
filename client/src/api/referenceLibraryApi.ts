@@ -39,6 +39,55 @@ export interface LibraryList {
   workspace_slug: string;
   counts: Record<LibraryState, number>;
   sources: LibraryRow[];
+  /** What the survey reviews next and what holds it, across all workspaces. */
+  schedule: QueueSchedule;
+}
+
+export interface QueueSchedule {
+  /** False when the survey loop is switched off on this server. */
+  enabled: boolean;
+  interval_seconds: number;
+  last_tick_at: string | null;
+  /** When the next check runs; null until this server's first check. */
+  next_tick_at: string | null;
+  max_concurrent: number;
+  running: { source_id: string; name: string; ordinal: number; carrier: string | null }[];
+  next: {
+    source_id: string;
+    name: string;
+    ordinal: number;
+    mode: string;
+    /** Why it is not starting; "" when it starts at the next check. */
+    waiting: string;
+  } | null;
+  /** Each queued source's place in line, 1 being next. */
+  positions: Record<string, number>;
+}
+
+export type SourceKind = "repo" | "site" | "released_app";
+
+export interface AddSourceRequest {
+  workspace_slugs: string[];
+  kind: SourceKind;
+  url: string;
+  question: string;
+  queued_reason: string;
+}
+
+export interface AddSourceResult {
+  source: LibraryRow;
+  attached: string[];
+  scoped_pass: number | null;
+}
+
+export interface ReviewNowResult {
+  started: boolean;
+  ordinal: number;
+  carrier: string | null;
+  /** Why it did not start; it stays first in line. */
+  waiting: string;
+  /** Set when the dispatch closed the pass instead (licence, nothing unread). */
+  refused: string;
 }
 
 export interface LibraryPass {
@@ -143,6 +192,13 @@ export const referenceLibraryApi = {
     request<LinkResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/initiatives`, {
       method: "POST",
       body: JSON.stringify({ initiative_id: initiativeId }),
+    }),
+  addReferenceSource: (body: AddSourceRequest) =>
+    request<AddSourceResult>("/api/reference-library/sources", { method: "POST", body: JSON.stringify(body) }),
+  reviewSourceNow: (sourceId: string, question: string) =>
+    request<ReviewNowResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/review-now`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
     }),
   checkSourceUpstream: (sourceId: string) =>
     request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/check-upstream`, {

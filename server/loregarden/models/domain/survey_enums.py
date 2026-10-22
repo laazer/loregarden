@@ -193,6 +193,7 @@ class SurveyQueueAction(StrEnum):
     LINK_INITIATIVE = "link_initiative"
     UNLINK_INITIATIVE = "unlink_initiative"
     CHECK_UPSTREAM = "check_upstream"
+    REVIEW_NOW = "review_now"
 
 
 class SurveyPassAction(StrEnum):
