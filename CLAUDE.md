@@ -243,6 +243,26 @@ Whatever the layout:
 - **One primary action per row or item**, on its name.
 - **Volume decides the rest.** Over 12 near-identical rows, group them with a count; over 50, add a filter beside the list.
 
+### Forms and imports open in a modal
+
+A form that creates or changes something, and every import flow, opens in a modal
+(`ModalShell`), never laid out inline on the page. The page keeps answering its
+question with records; the form gets one place with one focus trap, one Escape and
+one footer; and the operator can always tell editing from reading. The page holds
+the button that opens it (with `aria-expanded` where it toggles), and the result
+lands back on the page: a toast, the new row, or the record it opened.
+
+- **Inline is for one field.** A search or filter box, a chat composer, or a rename
+  in place stays where it is. Two or more fields is a form.
+- **An import is a flow,** whatever its field count: choosing the file, previewing
+  what it will do, and confirming all happen in the modal.
+- **The modal says what it changes,** names its submit by the action ("Propose 3 for
+  review", not "Submit"), and keeps its fields on failure with the reason inline.
+
+`ts_ux_states_check.cjs` check 9 enforces it, diff-scoped. A `<form>` with two or more
+fields, or a file picker in an `*Import*` component, in a file that renders no
+`ModalShell` or dialog fails; waive with `ux-ok:` and why it must stay inline.
+
 `findUsabilityProblems` flags the two mix-ups a static gate cannot see: `tabular-list` (8+ list items sharing one shape of five or more text fields) and `key-value-table` (two-cell rows with no column header).
 
 ### The five states
@@ -290,6 +310,8 @@ clicks or types. It cannot reliably hover or drag, and a canvas is one opaque no
   `onClick` flips a boolean and exposes none of `aria-expanded`/`aria-pressed`;
 - `onMouseEnter` with no `onFocus`, a drag source with no key handler, a drop zone with no
   `<input type="file">` in the file;
+- a form of two or more fields, or an import component's file picker, laid out inline
+  instead of in a modal (see *Forms and imports open in a modal*);
 - a `<canvas>` that takes input; waive it by naming the DOM controls that do the same thing.
 
 Those make a surface *readable* by an agent. To let one *act* on it directly, register the

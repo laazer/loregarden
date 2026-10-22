@@ -36,6 +36,16 @@
  *      zone with no other way in.
  *   8. A <canvas> that takes input — its targets exist only as pixels.
  *
+ * 9. A form or an import flow laid inline on a page. A <form> with two or more
+ *    fields, or a file picker in an import component (a file named *Import*; an
+ *    attachment picker in a composer is not an import), belongs in a modal
+ *    (ModalShell): the page keeps
+ *    showing records, the form gets one place with one focus trap, one Escape and
+ *    one footer, and the operator can tell "editing" from "reading". Checked per
+ *    file: the file that renders the form also renders the dialog it opens in.
+ *    A single-field form (search, a composer, a rename in place) stays inline,
+ *    as does role="search".
+ *
  * A case that is genuinely fine says so on the line, with a reason:
  *
  *     <div onClick={close} /> {/* ux-ok: backdrop; Esc closes and the dialog traps focus *\/}
@@ -485,6 +495,56 @@ const CANVAS_INPUT_ATTR = /^on(?:Click|DoubleClick|Pointer\w+|Mouse\w+|Touch\w+|
 const CANVAS_LISTENER = /\.addEventListener\(\s*["'`](?:click|dblclick|pointer\w+|mouse\w+|touch\w+|wheel|key\w+|drag\w*|drop)["'`]/;
 
 /** Like `walk`, but hands each node the JSX elements that enclose it. */
+/** 9. A multi-field form or a file picker on the page instead of in a modal. */
+const DIALOG_PATTERNS = [/\bModalShell\b/, /role=["']dialog["']/, /<dialog\b/];
+const FORM_FIELD_NAMES = new Set(["input", "select", "textarea", "Input", "Select", "Textarea"]);
+const NOT_A_FIELD_TYPES = new Set(["hidden", "submit", "button", "reset", "image"]);
+
+function formFieldCount(formElement) {
+  let fields = 0;
+  walk(formElement, (node) => {
+    if (node.type !== "JSXOpeningElement" || !FORM_FIELD_NAMES.has(elementName(node))) return;
+    if (!NOT_A_FIELD_TYPES.has(attributeValue(node, "type"))) fields += 1;
+  });
+  return fields;
+}
+
+function inlineFormErrors(filePath, ast, lines, added, waivers, content) {
+  if (DIALOG_PATTERNS.some((re) => re.test(content))) return [];
+  const importFile = /import/i.test(path.basename(filePath));
+  const found = [];
+  walk(ast, (node) => {
+    if (node.type !== "JSXElement") return;
+    const opening = node.openingElement;
+    const name = elementName(opening);
+    let what = "";
+    if (name === "form") {
+      if (attributeValue(opening, "role") === "search") return;
+      const fields = formFieldCount(node);
+      if (fields < 2) return;
+      what = `a form with ${fields} fields`;
+    } else if (
+      importFile &&
+      FORM_FIELD_NAMES.has(name) &&
+      attributeValue(opening, "type") === "file"
+    ) {
+      what = "a file picker (an import flow)";
+    } else {
+      return;
+    }
+    const start = opening.loc.start.line;
+    const end = opening.loc.end.line;
+    if (!spanTouched(added, start, end)) return;
+    if (waivers.waived(start, end)) return;
+    found.push(
+      `${filePath}:${start}: ${what} is laid out on the page, and nothing in this file ` +
+        `opens a dialog — forms and import flows open in a modal; render it in a ModalShell ` +
+        `from this file (or waive with 'ux-ok:' and why it must stay inline)`,
+    );
+  });
+  return found;
+}
+
 function walkElements(node, visit, ancestors = []) {
   if (!node || typeof node.type !== "string") return;
   const isElement = node.type === "JSXElement";
@@ -848,6 +908,7 @@ for (const filePath of args) {
   errors.push(...widgetStateErrors(filePath, ast, lines, added, waivers));
   errors.push(...pointerOnlyErrors(filePath, ast, lines, added, waivers, content));
   errors.push(...interactiveCanvasErrors(filePath, ast, lines, added, waivers, content));
+  errors.push(...inlineFormErrors(filePath, ast, lines, added, waivers, content));
   errors.push(
     ...shortWaiverErrors(
       ALLOW_MARKER,

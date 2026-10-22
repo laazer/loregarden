@@ -57,10 +57,11 @@ it("leaves the DOM after Escape once its exit has played, and focus returns to t
 
 it("closes on the backdrop", async () => {
   const user = userEvent.setup();
-  const { container } = render(<Harness />);
+  render(<Harness />);
 
   await user.click(screen.getByRole("button", { name: "Open settings" }));
-  const backdrop = container.querySelector(".modal-overlay");
+  // Portalled to document.body, outside the render container.
+  const backdrop = document.body.querySelector(".modal-overlay");
   if (!backdrop) throw new Error("no backdrop");
   await user.click(backdrop);
 

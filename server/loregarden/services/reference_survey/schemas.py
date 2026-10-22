@@ -107,9 +107,12 @@ class SourceIn(_In):
     kind: SurveySourceKind
     url: str = Field(min_length=1)
     name: str = ""
-    question: str = Field(min_length=1)
-    queued_reason: str = Field(min_length=1)
+    question: str = ""  # optional: the workspaces and initiatives it serves are context enough
+    queued_reason: str = ""
     priority: int = Field(default=100, ge=0)
+    #: Initiatives to follow the source: its open tickets join them, now and as
+    #: passes add more (`initiatives.link_initiative`), by UUID or external id.
+    initiative_ids: list[str] = Field(default_factory=list)
 
 
 #: URLs one bulk add takes: each is its own source and, when new, its own inbox card.
@@ -123,15 +126,16 @@ class BulkSourceIn(_In):
     urls: list[str] = Field(min_length=1, max_length=MAX_BULK_URLS)
     #: One kind for every URL, or None to tell each URL's kind from its host.
     kind: SurveySourceKind | None = None
-    question: str = Field(min_length=1)
-    queued_reason: str = Field(min_length=1)
+    question: str = ""  # optional: the workspaces and initiatives it serves are context enough
+    queued_reason: str = ""
     priority: int = Field(default=100, ge=0)
+    initiative_ids: list[str] = Field(default_factory=list)
 
 
 class PassRequestIn(_In):
     source_id: str
     mode: SurveyPassMode
-    question: str = Field(min_length=1)
+    question: str = ""  # optional: the workspaces and initiatives it serves are context enough
     #: Map paths to read; empty means the feeder slices the map itself.
     paths: list[str] = Field(default_factory=list)
 

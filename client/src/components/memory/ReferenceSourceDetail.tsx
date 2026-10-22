@@ -22,9 +22,10 @@ import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
-import { ReviewAgain, ReviewNowButton } from "./ReferenceReviewNow";
+import { ReviewForm } from "./ReferenceReviewNow";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
+import { ReferenceLinkButton } from "./ReferenceLinkModal";
 import { ReferenceSourceUpstream } from "./ReferenceSourceUpstream";
 import { TicketLink } from "../TicketLink";
 
@@ -75,17 +76,27 @@ function NextStep({
           {waiting ? `Pass ${waiting.ordinal} is ` : ""}
           {position ? placeInLine(position) : "queued"}. Review now dispatches it without waiting its turn.
         </p>
-        <ReviewNowButton sourceId={detail.source.id} name={detail.source.name} />
+        <ReviewForm
+          sourceId={detail.source.id}
+          name={detail.source.name}
+          question={null}
+          served={detail.source.workspaces}
+          following={detail.initiatives.map((i) => i.id)}
+          openLabel="Review now…"
+        />
       </div>
     );
   }
   if (state === "surveyed") {
     return (
       <div className="rl-next rl-next--quiet">
-        <ReviewAgain
+        <ReviewForm
           sourceId={detail.source.id}
           name={detail.source.name}
           question={detail.source.question || detail.passes[detail.passes.length - 1]?.question || ""}
+          served={detail.source.workspaces}
+          following={detail.initiatives.map((i) => i.id)}
+          openLabel="Review again now…"
         />
       </div>
     );
@@ -324,6 +335,7 @@ function Facts({ detail }: { detail: LibraryDetail }) {
             </li>
           ))}
         </ul>
+        <ReferenceLinkButton detail={detail} />
       </dd>
       {detail.queued_reason && detail.queued_reason !== "imported from scratch/ref_projects" ? (
         <>

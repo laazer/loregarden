@@ -13,6 +13,7 @@ import type {
   LibraryRow,
   LibraryState,
   LibraryTicket,
+  LinkTargetsResult,
   QueueSchedule,
 } from "../api/referenceLibraryApi";
 
@@ -253,3 +254,30 @@ export function nextCheckText(schedule: QueueSchedule, now: Date = new Date()): 
 export function splitUrls(text: string): string[] {
   return [...new Set(text.split(/[,\t\r\n]+/).map((part) => part.trim()).filter(Boolean))];
 }
+
+function pluralOf(n: number, one: string): string {
+  return `${n} ${n === 1 ? one : `${one}s`}`;
+}
+
+/** What one link call did, in a sentence a person can check against the source. */
+export function linkTargetsSummary(name: string, result: LinkTargetsResult): string {
+  const parts = [];
+  if (result.attached.length) {
+    parts.push(
+      `${name} now reads for ${result.attached.join(", ")}` +
+        (result.scoped_pass ? ` (pass ${result.scoped_pass} reads it again for them)` : ""),
+    );
+  }
+  for (const link of result.initiatives) {
+    const extra = [
+      link.settled_left_out ? `${pluralOf(link.settled_left_out, "settled ticket")} stayed out` : "",
+      link.skipped.length ? `${link.skipped.length} it already covers` : "",
+    ].filter(Boolean);
+    parts.push(
+      `${pluralOf(link.added.length, "open ticket")} joined ${link.initiative}` +
+        (extra.length ? ` (${extra.join("; ")})` : ""),
+    );
+  }
+  return `${parts.join("; ")}.`;
+}
+

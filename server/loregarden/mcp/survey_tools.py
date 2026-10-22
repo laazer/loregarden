@@ -133,10 +133,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "url": string_prop("enqueue: repository or https URL."),
                 "name": string_prop("enqueue: display name (default: last URL segment)."),
                 "question": string_prop(
-                    "enqueue/request_pass/review_now: what the source or pass is meant to answer "
-                    "(review_now: only for a surveyed source; default its own question)."
+                    "enqueue/request_pass/review_now: what the source or pass is meant to answer. "
+                    "Optional: without one, a pass reads for what would serve the workspaces and "
+                    "initiatives it serves (review_now: only for a surveyed source)."
                 ),
-                "queued_reason": string_prop("enqueue: why it is worth reading now."),
+                "queued_reason": string_prop("enqueue: why it is worth reading now (optional)."),
                 "priority": integer_prop("enqueue: lower runs first (default 100)."),
                 "source_id": _SOURCE_ID,
                 "mode": enum_string_prop(

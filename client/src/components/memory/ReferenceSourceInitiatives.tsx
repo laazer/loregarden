@@ -1,24 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { LibraryDetail, LinkResult, LinkedInitiative } from "../../api/referenceLibraryApi";
-import { initiativePath, pathForPage } from "../../lib/appNavigation";
+import { initiativePath } from "../../lib/appNavigation";
+import { linkTargetsSummary } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
-import { Select } from "../ui/Select";
+import { ReferenceLinkButton } from "./ReferenceLinkModal";
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
-}
-
-/** What a link did, in one sentence a person can check against the initiative. */
-function linkSummary(result: LinkResult): string {
-  const parts = [`${plural(result.added.length, "open ticket")} joined ${result.initiative}`];
-  if (result.settled_left_out > 0) parts.push(`${plural(result.settled_left_out, "settled ticket")} stayed out`);
-  if (result.skipped.length > 0) parts.push(`${result.skipped.length} the initiative already covers`);
-  return `${parts.join("; ")}.`;
 }
 
 function LinkedRow({
@@ -92,74 +85,9 @@ function LinkedRow({
  * the tickets they touch; unlinking takes out only what the link added.
  */
 export function ReferenceSourceInitiatives({ detail }: { detail: LibraryDetail }) {
-  const queryClient = useQueryClient();
-  const pickerId = useId();
   const sourceId = detail.source.id;
-  const [chosen, setChosen] = useState("");
   const [message, setMessage] = useState("");
   const [skipped, setSkipped] = useState<LinkResult["skipped"]>([]);
-
-  const initiatives = useQuery({ queryKey: ["initiatives"], queryFn: api.initiatives });
-  const linkedIds = new Set(detail.initiatives.map((i) => i.id));
-  const choices = (initiatives.data ?? []).filter((i) => !linkedIds.has(i.id));
-
-  const link = useMutation({
-    mutationFn: (initiativeId: string) => api.linkSourceInitiative(sourceId, initiativeId),
-    onSuccess: (result) => {
-      setChosen("");
-      setMessage(linkSummary(result));
-      setSkipped(result.skipped);
-      void queryClient.invalidateQueries({ queryKey: ["reference-source", sourceId] });
-      void queryClient.invalidateQueries({ queryKey: ["initiatives"] });
-    },
-    onError: (error) =>
-      pushToast({ tone: "error", title: "Could not link the initiative", message: describeError(error) }),
-  });
-
-  let picker;
-  if (initiatives.isPending) {
-    picker = <p className="rl-muted">Loading initiatives…</p>;
-  } else if (initiatives.isError) {
-    picker = (
-      <p className="rl-warn" role="alert">
-        Initiatives did not load: {describeError(initiatives.error, "the request failed")}.{" "}
-        <Button variant="plain" compact onClick={() => void initiatives.refetch()}>
-          Retry
-        </Button>
-      </p>
-    );
-  } else if ((initiatives.data ?? []).length === 0) {
-    picker = (
-      <p className="rl-muted">
-        No initiatives yet. <Link to={pathForPage("initiatives")}>Create one on the Initiatives page</Link>, then link it here.
-      </p>
-    );
-  } else if (choices.length === 0) {
-    picker = <p className="rl-muted">Every initiative already follows this source.</p>;
-  } else {
-    picker = (
-      <form
-        className="rl-link-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (chosen && !link.isPending) link.mutate(chosen);
-        }}
-      >
-        <label htmlFor={pickerId}>Link an initiative</label>
-        <Select id={pickerId} value={chosen} onChange={(event) => setChosen(event.target.value)}>
-          <option value="">Choose an initiative…</option>
-          {choices.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.external_id} — {i.title}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit" variant="secondary" compact disabled={!chosen || link.isPending}>
-          {link.isPending ? "Linking…" : "Link"}
-        </Button>
-      </form>
-    );
-  }
 
   return (
     <section className="rl-section" aria-labelledby="rl-initiatives-heading">
@@ -186,7 +114,13 @@ export function ReferenceSourceInitiatives({ detail }: { detail: LibraryDetail }
           ))}
         </ul>
       )}
-      {picker}
+      <ReferenceLinkButton
+        detail={detail}
+        onLinked={(result) => {
+          setMessage(linkTargetsSummary(detail.source.name, result));
+          setSkipped(result.initiatives.flatMap((link) => link.skipped));
+        }}
+      />
       <p className="rl-result" role="status">
         {message}
       </p>

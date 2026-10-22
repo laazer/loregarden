@@ -92,7 +92,7 @@ def target_workspaces(
 
 
 def _attach(
-    session: Session, source: SurveySource, workspaces: list[Workspace], body: SourceIn
+    session: Session, source: SurveySource, workspaces: list[Workspace], question: str, why: str
 ) -> list[str]:
     have = {w.id for w, _ in target_workspaces(session, source.id)}
     added = []
@@ -103,12 +103,23 @@ def _attach(
             SurveySourceWorkspace(
                 source_id=source.id,
                 workspace_id=workspace.id,
-                question=body.question,
-                queued_reason=body.queued_reason,
+                question=question,
+                queued_reason=why,
             )
         )
         added.append(workspace.slug)
     session.flush()
+    return added
+
+
+def serve_workspaces(
+    session: Session, source: SurveySource, slugs: list[str], question: str, why: str
+) -> list[str]:
+    """Make an admitted source answer these workspaces too, queueing nothing: the
+    caller is about to run a pass, which reads for every workspace it serves.
+    Unknown slugs are refused before anything is written."""
+    added = _attach(session, source, _workspaces(session, slugs), question, why)
+    session.commit()
     return added
 
 
@@ -132,13 +143,13 @@ def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
         )
         session.add(source)
         session.flush()
-        attached = _attach(session, source, workspaces, body)
+        attached = _attach(session, source, workspaces, body.question, body.queued_reason)
         return Enqueued(_file_admission(session, source, body), attached, proposed=True)
     if existing.status is SurveySourceStatus.REFUSED:
         raise SurveyError(
             f"{url} was refused ({existing.refused_reason or 'no reason recorded'}); it is not read."
         )
-    attached = _attach(session, existing, workspaces, body)
+    attached = _attach(session, existing, workspaces, body.question, body.queued_reason)
     if existing.status is SurveySourceStatus.PROPOSED and existing.approval_id is None:
         # An imported candidate nobody has proposed yet: this is its proposal.
         return Enqueued(_file_admission(session, existing, body), attached, proposed=True)
@@ -170,7 +181,8 @@ def _file_admission(session: Session, source: SurveySource, body: SourceIn) -> S
         title=admission_title(source),
         impact=(
             f"A {source.kind.value} proposed for the reference survey, for {targets}.\n\n"
-            f"Question: {body.question}\nWhy: {body.queued_reason}\n\n"
+            f"Question: {body.question or '(none given; it reads for the workspaces it serves)'}\n"
+            f"Why: {body.queued_reason or '(none given)'}\n\n"
             "Approve to queue it: its licence is classified before anything else is read, "
             "and passes then run unattended, appending findings to tickets. Reject to refuse it."
         ),

@@ -21,9 +21,10 @@ from loregarden.models.domain.survey_enums import (
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
-from loregarden.services.reference_survey.queue import open_passes, request_pass
+from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
+from loregarden.services.reference_survey.queue import open_passes, request_pass, serve_workspaces
 from loregarden.services.reference_survey.schemas import PassRequestIn
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 #: "Review now" puts the source first in line: lower priority dispatches first.
@@ -157,6 +158,10 @@ def queue_schedule(session: Session) -> QueueSchedule:
 class ReviewNowIn(BaseModel):
     #: What a new pass on a surveyed source answers; a queued pass keeps its own.
     question: str = ""
+    #: Workspaces the pass should read for as well; the source serves them from now on.
+    workspace_slugs: list[str] = Field(default_factory=list)
+    #: Initiatives to follow the source (its open tickets join them), by UUID or external id.
+    initiative_ids: list[str] = Field(default_factory=list)
 
 
 class ReviewNowResult(BaseModel):
@@ -168,9 +173,14 @@ class ReviewNowResult(BaseModel):
     waiting: str
     #: Set when the dispatch itself closed the pass (licence, nothing unread).
     refused: str
+    #: Workspaces this call made the source serve.
+    workspaces_added: list[str]
+    #: Initiatives this call linked, by external id.
+    initiatives_linked: list[str]
 
 
-def _pass_to_run(session: Session, source: SurveySource, question: str) -> SurveyPass:
+def _refuse_unrunnable(session: Session, source: SurveySource) -> None:
+    """Refuse, before anything is written, a source no review can start on now."""
     if source.status is SurveySourceStatus.REFUSED:
         raise SurveyError(
             f"{source.name} was refused ({source.refused_reason or 'no reason recorded'})."
@@ -181,15 +191,20 @@ def _pass_to_run(session: Session, source: SurveySource, question: str) -> Surve
             if source.approval_id
             else f"{source.name} has not been proposed: add it to the queue first."
         )
-    waiting = sorted(open_passes(session, source.id), key=lambda p: p.ordinal)
-    reading = next((p for p in waiting if p.status is SurveyPassStatus.DISPATCHED), None)
+    reading = next(
+        (p for p in open_passes(session, source.id) if p.status is SurveyPassStatus.DISPATCHED),
+        None,
+    )
     if reading is not None:
         raise SurveyError(f"Pass {reading.ordinal} is reading {source.name} now.")
+
+
+def _pass_to_run(session: Session, source: SurveySource, question: str) -> SurveyPass:
+    waiting = sorted(open_passes(session, source.id), key=lambda p: p.ordinal)
     if waiting:
         return waiting[0]
+    # No question is fine: the pass reads for the workspaces and initiatives it serves.
     asked = question.strip() or source.question
-    if not asked:
-        raise SurveyError("Say what this review should answer: the source records no question.")
     return request_pass(
         session, PassRequestIn(source_id=source.id, mode=SurveyPassMode.SCOPED, question=asked)
     )
@@ -204,7 +219,17 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     source = session.get(SurveySource, source_id)
     if source is None:
         raise SurveyNotFound(f"No survey source {source_id!r}")
+    _refuse_unrunnable(session, source)
+    initiatives = resolve_initiatives(session, body.initiative_ids)
+    added = (
+        serve_workspaces(
+            session, source, body.workspace_slugs, body.question.strip() or source.question, ""
+        )
+        if body.workspace_slugs
+        else []
+    )
     survey_pass = _pass_to_run(session, source, body.question)
+    linked = follow(session, source.id, initiatives, actor="operator")
     source.priority = FIRST_IN_LINE
     session.add(source)
     session.commit()
@@ -224,4 +249,6 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
         carrier=carrier.external_id if carrier else None,
         waiting=result.waiting,
         refused=survey_pass.refused_reason if result.refused == survey_pass.id else "",
+        workspaces_added=added,
+        initiatives_linked=[link.initiative for link in linked],
     )

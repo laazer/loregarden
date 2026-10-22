@@ -63,6 +63,11 @@ The question from the step above picks the layout. Name the layout in the criter
 
 A table is a real `<table>`, never a CSS grid of `<div>`s styled as rows; a grid is one opaque blob to a screen reader and to an agent. At the volume you measured, say what groups the rows (over ~12 near-identical rows) and what filters them (over ~50).
 
+Forms and imports open in a modal (`ModalShell`), whatever the layout around them: the
+page shows records and holds the button that opens the form. Only a single field (search,
+filter, a composer, a rename in place) stays inline. Name the modal's title, its submit
+label, and where the result lands when it closes.
+
 ## The five states
 
 When a ticket does touch a surface, every one of these is a decision. A ticket that does not

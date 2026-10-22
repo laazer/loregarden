@@ -1,5 +1,6 @@
 import { AnimatePresence, LazyMotion, domAnimation, m, useIsPresent } from "motion/react";
 import { useLayoutEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
@@ -32,6 +33,13 @@ interface ModalShellProps {
  * so the centring is carried as Motion's own `x`/`y` percentages and the exit
  * moves `y` by 2% of the panel's height. Reduced motion: the global CSS rule
  * covers the entrance, the root `MotionConfig` the exit.
+ *
+ * Rendered into `document.body`, not where it is declared. The overlay and panel
+ * are `position: fixed`, and an ancestor with `container-type`, `transform`,
+ * `filter` or `contain` becomes their containing block: the reference library's
+ * list (a container-query root that scrolls) drew its dialog inside itself,
+ * clipped to nothing. Several dialogs portalled themselves to dodge this; now
+ * every one is.
  */
 export function ModalShell({
   open,
@@ -48,7 +56,7 @@ export function ModalShell({
   // Its own features, not only the app root's: `m.*` does nothing without a
   // LazyMotion above it, so a dialog rendered under another root (a test, a
   // portal) would lose its exit. domAnimation is already in the bundle.
-  return (
+  return createPortal(
     <LazyMotion features={domAnimation} strict>
       <AnimatePresence>
         {open ? (
@@ -63,7 +71,8 @@ export function ModalShell({
           </ModalShellContent>
         ) : null}
       </AnimatePresence>
-    </LazyMotion>
+    </LazyMotion>,
+    document.body,
   );
 }
 

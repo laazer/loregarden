@@ -733,21 +733,16 @@
   color: var(--aml);
 }
 
-.rl-add,
-.rl-review-again {
+/* The add, review and link forms are modals; their bodies stack fields. */
+.rl-modal-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 0 12px;
-  padding: 12px;
-  border: 1px solid var(--bd2);
-  border-radius: 8px;
-  background: var(--bg2);
 }
 
-.rl-review-again {
-  width: 100%;
-  margin: 0;
+.rl-modal-body > label {
+  font-size: 12px;
+  color: var(--txm);
 }
 
 .rl-add-row {
@@ -756,8 +751,7 @@
   gap: 10px;
 }
 
-.rl-field,
-.rl-review-again label {
+.rl-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -769,12 +763,6 @@
   flex: 1 1 280px;
 }
 
-.rl-form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-}
 
 .rl-add-mode {
   display: flex;
@@ -799,4 +787,52 @@
 
 .rl-bulk-failed {
   color: var(--aml);
+}
+
+/* Who a review is for: workspaces to read for, initiatives to feed. */
+.rl-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+
+.rl-target-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.rl-target-group legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+/* Scoped under .rl-targets: modal bodies style their direct labels as captions. */
+.rl-targets .rl-check-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.rl-optional-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* The shared input style is full-width; a checkbox sits beside its label. */
+.rl-check-option input {
+  width: auto;
+  flex: none;
+  margin: 0;
 }
