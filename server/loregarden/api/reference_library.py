@@ -20,9 +20,12 @@ from loregarden.services.reference_survey.initiatives import (
 from loregarden.services.reference_survey.library import (
     LibraryDetail,
     LibraryList,
+    LibraryRow,
     library_detail,
     library_list,
+    library_row,
 )
+from loregarden.services.reference_survey.upstream import check_upstream_by_id
 from loregarden.services.ticket_ids import TicketNotFound
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -76,3 +79,13 @@ def unlink(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SurveyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{source_id}/check-upstream", response_model=LibraryRow)
+def check_upstream(source_id: str, session: Session = Depends(get_session)) -> LibraryRow:
+    """Read the repository's newest commit now. A check that cannot answer still
+    returns 200 with the reason in `upstream_check_error`: the row is the answer."""
+    try:
+        return library_row(session, check_upstream_by_id(session, source_id))
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

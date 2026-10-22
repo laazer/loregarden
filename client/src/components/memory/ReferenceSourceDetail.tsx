@@ -21,6 +21,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
+import { ReferenceSourceUpstream } from "./ReferenceSourceUpstream";
 
 /** Lists past this many rows show the first ones and say how many more there are. */
 const PREVIEW = 12;
@@ -256,6 +257,7 @@ function Facts({ detail }: { detail: LibraryDetail }) {
           <dd>{detail.queued_reason}</dd>
         </>
       ) : null}
+      <ReferenceSourceUpstream detail={detail} />
       <dt>Read at</dt>
       <dd>{detail.pinned_commit ? <code>{detail.pinned_commit.slice(0, 12)}</code> : "Not recorded"}</dd>
       <dt>Coverage</dt>

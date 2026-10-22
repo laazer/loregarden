@@ -44,6 +44,9 @@ export const API_WRITE_COVERAGE = {
   // (action link_initiative / unlink_initiative), the same service write.
   linkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   unlinkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // A read of GitHub stored on the source (action check_upstream); the
+  // background refresh does the same daily.
+  checkSourceUpstream: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
   // The bulk form of the same write: an agent creates the tickets directly,

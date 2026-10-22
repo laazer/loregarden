@@ -288,3 +288,63 @@ describe("initiatives following a source", () => {
     );
   });
 });
+
+describe("how far each repository has moved since review", () => {
+  const checked = (overrides: Partial<LibraryRow>) =>
+    row({ upstream_checked_at: "2026-10-22T08:00:00", upstream_check_error: "", ...overrides });
+
+  it("shows the newest commit date and the change since review, sortable most-changed first", async () => {
+    mockApi.referenceLibrary.mockResolvedValue(
+      listOf([
+        checked({ id: "a", name: "quiet-repo", state: "surveyed", upstream_committed_at: "2026-09-01T00:00:00", commits_since_review: 0 }),
+        checked({ id: "b", name: "busy-repo", state: "surveyed", upstream_committed_at: "2026-10-21T00:00:00", commits_since_review: 142 }),
+        row({ id: "c", name: "unchecked-repo", state: "surveyed", upstream_checked_at: null, upstream_committed_at: null, commits_since_review: null }),
+        checked({ id: "d", name: "broken-repo", state: "surveyed", upstream_committed_at: null, commits_since_review: null, upstream_check_error: "gh: Not Found (HTTP 404)" }),
+      ]),
+    );
+    renderAt("/memory/library?view=surveyed");
+    const table = await screen.findByRole("table");
+    const cellFor = (name: string) => {
+      const tr = within(table).getByRole("link", { name }).closest("tr") as HTMLElement;
+      return tr.querySelector(".rl-col-since_review")?.textContent;
+    };
+    expect(cellFor("busy-repo")).toBe("+142 commits");
+    expect(cellFor("quiet-repo")).toBe("no change");
+    expect(cellFor("unchecked-repo")).toBe("not checked");
+    expect(cellFor("broken-repo")).toBe("couldn’t check");
+    const since = within(table).getByRole("columnheader", { name: /Since review/ });
+    fireEvent.click(within(since).getByRole("button"));
+    expect(since).toHaveAttribute("aria-sort", "descending");
+    expect(within(within(table).getAllByRole("row")[1]).getByRole("link")).toHaveTextContent("busy-repo");
+  });
+
+  it("checks now from the source and says why a check could not answer", async () => {
+    const source = checked({
+      id: "s1", name: "broken-repo", state: "surveyed", last_read_at: "2026-10-14T00:00:00",
+      upstream_committed_at: null, commits_since_review: null, upstream_check_error: "gh: Not Found (HTTP 404)",
+    });
+    mockApi.referenceLibrary.mockResolvedValue(listOf([source]));
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source, initiatives: [] });
+    mockApi.checkSourceUpstream.mockResolvedValue(source);
+    renderAt("/memory/library/s1");
+    expect(await screen.findByText("gh: Not Found (HTTP 404)")).toBeInTheDocument();
+    expect(screen.getAllByText("couldn’t check").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(mockApi.checkSourceUpstream).toHaveBeenCalledWith("s1"));
+  });
+
+  it("stays usable when every repository at production volume has been checked", async () => {
+    mockApi.referenceLibrary.mockResolvedValue({
+      ...LIBRARY,
+      sources: LIBRARY.sources.map((r, i) => ({
+        ...r,
+        upstream_checked_at: "2026-10-22T08:00:00",
+        upstream_committed_at: "2026-10-20T00:00:00",
+        commits_since_review: i % 3 === 0 ? 0 : i,
+      })),
+    });
+    renderAt("/memory/library?view=all");
+    await screen.findByRole("table");
+    expect(findUsabilityProblems(document.body)).toEqual([]);
+  });
+});

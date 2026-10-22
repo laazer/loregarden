@@ -72,7 +72,7 @@ export function parseView(raw: string | null): LibraryView | null {
   return LIBRARY_VIEWS.some((view) => view.key === raw) ? (raw as LibraryView) : null;
 }
 
-export type LibrarySortKey = "name" | "state" | "passes" | "tickets" | "last_read";
+export type LibrarySortKey = "name" | "state" | "passes" | "tickets" | "last_read" | "upstream" | "since_review";
 export interface LibrarySort {
   key: LibrarySortKey;
   dir: "ascending" | "descending";
@@ -105,6 +105,11 @@ function compare(a: LibraryRow, b: LibraryRow, key: LibrarySortKey): number {
       return a.tickets - b.tickets;
     case "last_read":
       return (a.last_read_at ?? "").localeCompare(b.last_read_at ?? "");
+    case "upstream":
+      return (a.upstream_committed_at ?? "").localeCompare(b.upstream_committed_at ?? "");
+    case "since_review":
+      // Unknown sorts below any count, so "most changed" leads descending.
+      return (a.commits_since_review ?? -1) - (b.commits_since_review ?? -1);
   }
 }
 
@@ -116,7 +121,7 @@ export function sortRows(rows: LibraryRow[], sort: LibrarySort): LibraryRow[] {
 /** Numeric columns read biggest-first on the first click; names A to Z. */
 export function nextSort(current: LibrarySort, key: LibrarySortKey): LibrarySort {
   if (current.key === key) return { key, dir: current.dir === "ascending" ? "descending" : "ascending" };
-  const numeric = key === "passes" || key === "tickets" || key === "last_read";
+  const numeric = ["passes", "tickets", "last_read", "upstream", "since_review"].includes(key);
   return { key, dir: numeric ? "descending" : "ascending" };
 }
 
@@ -160,4 +165,24 @@ export function shortDate(iso: string | null): string {
   return Number.isNaN(date.getTime())
     ? "—"
     : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+export type UpstreamTone = "moved" | "same" | "unknown";
+
+/**
+ * How far a repository has moved since we reviewed it. `short` fits a table
+ * cell; `long` is the sentence for one source. "Not checked", "could not
+ * check" and "no change" are three answers and never read alike.
+ */
+export function upstreamChange(
+  row: Pick<LibraryRow, "upstream_checked_at" | "upstream_committed_at" | "commits_since_review">,
+): { short: string; long: string; tone: UpstreamTone } {
+  if (!row.upstream_checked_at) return { short: "not checked", long: "not checked yet", tone: "unknown" };
+  if (!row.upstream_committed_at) return { short: "couldn’t check", long: "couldn’t check", tone: "unknown" };
+  if (row.commits_since_review === null) {
+    return { short: "unknown", long: "commits since review unknown", tone: "unknown" };
+  }
+  if (row.commits_since_review === 0) return { short: "no change", long: "no change since review", tone: "same" };
+  const commits = `+${row.commits_since_review} commit${row.commits_since_review === 1 ? "" : "s"}`;
+  return { short: commits, long: `${commits} since review`, tone: "moved" };
 }
