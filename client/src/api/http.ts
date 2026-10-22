@@ -35,10 +35,23 @@ export const API_BASE = resolveApiBase(VITE_API_BASE, globalThis.location?.origi
 export class ApiError extends Error {
   status: number;
 
-  constructor(status: number, message: string) {
+  /** The parsed response body, when the body was JSON; undefined when it was not.
+   *
+   * `message` only ever carries a *string* `detail`, so an endpoint whose error
+   * is structured — a 409 carrying `{error, expected_revision,
+   * current_revision, message}` — reached its caller as raw JSON text and
+   * nothing else, and the caller had to re-parse in a component a string this
+   * wrapper had already parsed. The whole body is kept, not a hand-picked
+   * field: the one fetch wrapper every endpoint throws through is not the place
+   * that decides which keys an endpoint's error carries.
+   */
+  payload?: unknown;
+
+  constructor(status: number, message: string, payload?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.payload = payload;
   }
 }
 
@@ -56,15 +69,18 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     let message = text || res.statusText;
+    let payload: unknown;
     try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.detail === "string") message = parsed.detail;
+      const parsed: unknown = JSON.parse(text);
+      payload = parsed;
+      const detail = (parsed as { detail?: unknown } | null)?.detail;
+      if (typeof detail === "string") message = detail;
     } catch {
       // silent-ok: the body is not JSON, so the raw text already read into
       // `message` is the best description there is; the ApiError below still
       // throws and still carries the status.
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, payload);
   }
   // No Content has no body to parse; `res.json()` would throw on success.
   if (res.status === 204) return undefined as T;
