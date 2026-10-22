@@ -308,8 +308,9 @@ function Facts({ detail }: { detail: LibraryDetail }) {
         {detail.licence_constraint ? <span className="rl-muted"> — {detail.licence_constraint}</span> : null}
         {detail.source.licence_use ? null : (
           <span className="rl-muted">
-            {" "}
-            — the record names no licence this survey recognises, so its findings copy nothing until the next pass reads the licence file.
+            {detail.source.last_read_at
+              ? " — the record names no licence this survey recognises, so its findings copy nothing until the next pass reads the licence file."
+              : " — it is classified from its licence file before anything else in it is read."}
           </span>
         )}
       </dd>
@@ -337,7 +338,7 @@ function Facts({ detail }: { detail: LibraryDetail }) {
       <dd>
         {coverage.mapped_commit
           ? `${coverage.read} of ${coverage.tree_files} files read in full, ${coverage.partial} in partly read folders, ${coverage.unopened} never opened`
-          : detail.passes.length > 0
+          : detail.passes.some((p) => p.finished_at)
             ? "Not mapped: its passes predate the directory map, so what they read is only in their records; the next pass maps the tree."
             : "Not mapped yet: the tree is mapped when its first pass is dispatched."}
       </dd>

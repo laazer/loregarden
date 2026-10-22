@@ -20,7 +20,7 @@ function report(name: string, result: ReviewNowResult) {
     pushToast({
       tone: "warning",
       title: `${name} is first in line but has not started`,
-      message: `Pass ${result.ordinal} is waiting: ${result.waiting}.`,
+      message: `Pass ${result.ordinal} is waiting: ${result.waiting.replace(/`/g, "")}.`,
     });
   }
 }

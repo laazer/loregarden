@@ -44,7 +44,7 @@ export const STATE_LABELS: Record<LibraryState, string> = {
 const IN_MOTION: Record<"awaiting_approval" | "reading" | "queued", string> = {
   awaiting_approval: "Proposed for a survey; nothing is read until you approve it in the inbox.",
   reading: "A pass is reading it now.",
-  queued: "Approved; its next pass is waiting for a free lane.",
+  queued: "Approved; its next pass waits in the review queue.",
 };
 
 /** Queue order: what needs a person first, then what is moving, then the backlog. */

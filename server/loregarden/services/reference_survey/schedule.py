@@ -44,11 +44,14 @@ class NextUp(BaseModel):
     mode: str
     #: Why it is not dispatching; "" when it goes at the next tick.
     waiting: str
+    #: Whether "Review now" would start it: nothing but the clock holds it.
+    can_start_now: bool
 
 
 class QueueSchedule(BaseModel):
-    #: False when the feeder loop is switched off (a non-positive interval).
+    #: False when this server runs no survey loop; `disabled_reason` says why.
     enabled: bool
+    disabled_reason: str
     interval_seconds: float
     #: When this server last ran a tick; None until its first one.
     last_tick_at: datetime | None
@@ -84,6 +87,16 @@ def _no_carrier(session: Session, source: SurveySource) -> str:
     )
 
 
+def _blocker(session: Session, source: SurveySource, running: int) -> str:
+    """What stops a dispatch of `source` now, in the order the bar and Review now
+    both report it; "" when nothing does. The clock is not a blocker."""
+    return (
+        (feeder.SANDBOX_WAITING if settings.sandbox else "")
+        or feeder.at_limit(running)
+        or _no_carrier(session, source)
+    )
+
+
 def _running(session: Session) -> list[RunningPass]:
     rows = session.exec(
         select(SurveyPass, SurveySource, Ticket)
@@ -102,31 +115,35 @@ def _running(session: Session) -> list[RunningPass]:
 
 def queue_schedule(session: Session) -> QueueSchedule:
     interval = settings.reference_survey_interval_seconds
-    enabled = interval > 0
+    if settings.sandbox:
+        disabled = "this is a sandbox server: it runs no survey loop and dispatches nothing"
+    elif interval <= 0:
+        disabled = "the survey loop is switched off on this server"
+    else:
+        disabled = ""
+    enabled = not disabled
     last = feeder.last_tick_at()
     queued = _queued_in_order(session)
     running = _running(session)
     next_up = None
     if queued:
         survey_pass, source = queued[0]
-        waiting = (
-            ("the survey loop is switched off on this server" if not enabled else "")
-            or feeder.at_limit(len(running))
-            or (feeder.SANDBOX_WAITING if settings.sandbox else "")
-            or _no_carrier(session, source)
-        )
+        # What "Review now" cannot get past; a loop that is merely off it can.
+        blocked = _blocker(session, source, len(running))
         next_up = NextUp(
             source_id=source.id,
             name=source.name,
             ordinal=survey_pass.ordinal,
             mode=survey_pass.mode.value,
-            waiting=waiting,
+            waiting=blocked or disabled,
+            can_start_now=not blocked,
         )
     positions: dict[str, int] = {}
     for _, source in queued:
         positions.setdefault(source.id, len(positions) + 1)
     return QueueSchedule(
         enabled=enabled,
+        disabled_reason=disabled,
         interval_seconds=interval,
         last_tick_at=last,
         next_tick_at=last + timedelta(seconds=interval) if enabled and last else None,
@@ -191,7 +208,7 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     source.priority = FIRST_IN_LINE
     session.add(source)
     session.commit()
-    waiting = _no_carrier(session, source)
+    waiting = _blocker(session, source, feeder.running_passes(session))
     result = feeder.FeedResult(waiting=waiting)
     if not waiting:
         result = feeder.dispatch_now(session, survey_pass, source)

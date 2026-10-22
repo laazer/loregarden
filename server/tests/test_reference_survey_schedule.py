@@ -17,6 +17,7 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceStatus,
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
+from loregarden.services.orchestration import ApprovalService
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.errors import SurveyError
 from loregarden.services.reference_survey.inbox import file_card
@@ -79,7 +80,7 @@ def test_the_schedule_names_the_head_and_every_place_in_line(ctx):
     _source(session, world, "candidate", status=SurveySourceStatus.PROPOSED)
     schedule = queue_schedule(session)
     assert schedule.next.name == "first"
-    assert schedule.next.waiting == ""
+    assert (schedule.next.waiting, schedule.next.can_start_now) == ("", True)
     assert schedule.positions == {first.id: 1, later.id: 2}
     assert schedule.running == []
 
@@ -88,7 +89,9 @@ def test_the_schedule_says_what_holds_the_head(ctx):
     session, world, tree = ctx
     _source(session, world, "waiting")
     _untag_carrier_parent(session, world)
-    assert "tagged `reference-survey-carrier`" in queue_schedule(session).next.waiting
+    held = queue_schedule(session).next
+    assert "tagged `reference-survey-carrier`" in held.waiting
+    assert not held.can_start_now
     running_pass(session, world, tree)
     schedule = queue_schedule(session)
     assert "at the limit of 1" in schedule.next.waiting
@@ -240,3 +243,47 @@ def test_an_agent_reviews_now_through_the_queue_tool(ctx):
     answer = json.loads(raw)
     assert (answer["started"], answer["ordinal"]) == (False, 1)
     assert "tagged `reference-survey-carrier`" in answer["waiting"]
+
+
+def test_a_server_with_no_loop_says_so_and_review_now_still_can_start(ctx):
+    session, world, _ = ctx
+    _source(session, world, "waiting")
+    with mock.patch.object(feeder.settings, "reference_survey_interval_seconds", 0):
+        schedule = queue_schedule(session)
+    assert (schedule.enabled, schedule.disabled_reason) == (
+        False,
+        "the survey loop is switched off on this server",
+    )
+    assert (schedule.next.waiting, schedule.next.can_start_now) == (schedule.disabled_reason, True)
+
+
+def test_a_sandbox_runs_no_loop_and_nothing_starts_there(ctx):
+    session, world, _ = ctx
+    _source(session, world, "waiting")
+    _untag_carrier_parent(session, world)
+    with mock.patch.object(feeder.settings, "sandbox", True):
+        schedule = queue_schedule(session)
+        reviewed = review_now(session, schedule.next.source_id, ReviewNowIn())
+    # The bar and the button name the same first reason, though both apply.
+    assert schedule.next.waiting == reviewed.waiting == feeder.SANDBOX_WAITING
+    assert not schedule.enabled
+    assert "sandbox" in schedule.disabled_reason
+    assert not schedule.next.can_start_now
+
+
+def test_an_approved_card_reads_as_queued_without_waiting_for_a_tick(
+    client: TestClient, isolated_db
+):
+    with Session(isolated_db) as session:
+        build_world(session)
+    body = {
+        "workspace_slugs": ["loregarden"], "kind": "repo", "url": "https://github.com/acme/approved",
+        "question": "q", "queued_reason": "r",
+    }  # fmt: skip
+    added = client.post("/api/reference-library/sources", json=body).json()["source"]
+    with Session(isolated_db) as session:
+        ApprovalService(session).resolve(added["approval_id"], approved=True)
+    detail = client.get(f"/api/reference-library/{added['id']}").json()
+    assert detail["source"]["state"] == "queued"
+    listing = client.get("/api/reference-library", params={"workspace_slug": "loregarden"}).json()
+    assert listing["schedule"]["positions"] == {added["id"]: 1}

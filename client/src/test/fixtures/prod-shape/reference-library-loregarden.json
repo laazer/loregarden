@@ -8,6 +8,7 @@
   "surveyed": 99
  },
  "schedule": {
+  "disabled_reason": "",
   "enabled": true,
   "interval_seconds": 120.0,
   "last_tick_at": null,

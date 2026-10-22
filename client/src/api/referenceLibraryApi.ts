@@ -44,8 +44,9 @@ export interface LibraryList {
 }
 
 export interface QueueSchedule {
-  /** False when the survey loop is switched off on this server. */
+  /** False when this server runs no survey loop; `disabled_reason` says why. */
   enabled: boolean;
+  disabled_reason: string;
   interval_seconds: number;
   last_tick_at: string | null;
   /** When the next check runs; null until this server's first check. */
@@ -59,6 +60,8 @@ export interface QueueSchedule {
     mode: string;
     /** Why it is not starting; "" when it starts at the next check. */
     waiting: string;
+    /** Whether Review now would start it: nothing but the clock holds it. */
+    can_start_now: boolean;
   } | null;
   /** Each queued source's place in line, 1 being next. */
   positions: Record<string, number>;

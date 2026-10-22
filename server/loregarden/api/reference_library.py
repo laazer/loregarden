@@ -26,7 +26,7 @@ from loregarden.services.reference_survey.library import (
     library_list,
     library_row,
 )
-from loregarden.services.reference_survey.queue import enqueue_source
+from loregarden.services.reference_survey.queue import enqueue_source, promote_resolved_sources
 from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
 from loregarden.services.reference_survey.schemas import SourceIn
 from loregarden.services.reference_survey.upstream import check_upstream_by_id
@@ -44,6 +44,10 @@ class LinkInitiativeRequest(BaseModel):
 @router.get("", response_model=LibraryList)
 def list_library(workspace_slug: str, session: Session = Depends(get_session)) -> LibraryList:
     """Every source serving the workspace, queued, surveyed or refused, with counts."""
+    # A card resolved in the inbox takes effect here too, not only at the feeder's
+    # next tick: an approved source reads "queued", never "candidate" in between,
+    # and a server with no clock running (a sandbox) still shows the decision.
+    promote_resolved_sources(session)
     try:
         return library_list(session, workspace_slug)
     except SurveyNotFound as exc:
@@ -92,6 +96,7 @@ def review_source_now(
 @router.get("/{source_id}", response_model=LibraryDetail)
 def source_detail(source_id: str, session: Session = Depends(get_session)) -> LibraryDetail:
     """One source: passes, tickets touched, learnings on those tickets, what it left open."""
+    promote_resolved_sources(session)
     try:
         return library_detail(session, source_id)
     except SurveyNotFound as exc:

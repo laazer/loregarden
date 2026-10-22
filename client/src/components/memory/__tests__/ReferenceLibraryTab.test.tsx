@@ -360,7 +360,7 @@ describe("the review queue", () => {
     row({ id, name, state: "queued", passes: 0, tickets: 0, last_read_at: null, question: "How do they retry?" });
   const schedule = (overrides: Partial<QueueSchedule>): QueueSchedule => ({
     ...LIBRARY.schedule,
-    next: { source_id: "q1", name: "retry-kit", ordinal: 1, mode: "initial", waiting: "" },
+    next: { source_id: "q1", name: "retry-kit", ordinal: 1, mode: "initial", waiting: "", can_start_now: true },
     positions: { q1: 1, q2: 2 },
     ...overrides,
   });
@@ -389,7 +389,7 @@ describe("the review queue", () => {
     const waiting = "no open ticket in loregarden is tagged `reference-survey-carrier`; tag the feature survey passes should be filed under";
     mockApi.referenceLibrary.mockResolvedValue({
       ...listOf([queued("q1", "retry-kit")]),
-      schedule: schedule({ next: { source_id: "q1", name: "retry-kit", ordinal: 1, mode: "initial", waiting } }),
+      schedule: schedule({ next: { source_id: "q1", name: "retry-kit", ordinal: 1, mode: "initial", waiting, can_start_now: false } }),
     });
     renderAt("/memory/library?view=queue");
     const status = await screen.findByRole("status", { name: "Review queue" });

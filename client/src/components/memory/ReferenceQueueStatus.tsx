@@ -39,14 +39,13 @@ export function ReferenceQueueStatus({ schedule, search }: { schedule: QueueSche
               <span> — starts at the next check, {nextCheckText(schedule)}.</span>
             )}
           </p>
-          {!next.waiting ? <ReviewNowButton sourceId={next.source_id} name={next.name} variant="secondary" /> : null}
+          {next.can_start_now ? <ReviewNowButton sourceId={next.source_id} name={next.name} variant="secondary" /> : null}
         </div>
       ) : (
         <p>
           <span className="rl-queue-label">Next review</span>{" "}
-          {schedule.enabled
-            ? "Nothing is queued. Add a reference, or open a surveyed source to review it again."
-            : "The survey loop is switched off on this server, so nothing is reviewed on its own."}
+          Nothing is queued. Add a reference, or open a surveyed source to review it again.
+          {schedule.enabled ? null : <span className="rl-queue-held"> Note: {schedule.disabled_reason}.</span>}
         </p>
       )}
     </div>
