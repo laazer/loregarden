@@ -84,6 +84,7 @@ export function ReviewForm({
   served,
   following,
   openLabel,
+  refusedBecause,
 }: {
   sourceId: string;
   name: string;
@@ -93,13 +94,17 @@ export function ReviewForm({
   /** Initiative ids already following the source. */
   following: string[];
   openLabel: string;
+  /** Set for a refused source: reviewing it again needs a reason, shown beside this. */
+  refusedBecause?: string;
 }) {
   const review = useReviewNow(sourceId, name);
   const [open, setOpen] = useState(false);
   const [asked, setAsked] = useState(question ?? "");
   const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [initiatives, setInitiatives] = useState<string[]>([]);
-  const ids = { title: useId(), question: useId() };
+  const ids = { title: useId(), question: useId(), reason: useId() };
+  const [reason, setReason] = useState("");
+  const needsReason = refusedBecause !== undefined;
   const needsQuestion = question !== null;
   function close() {
     setOpen(false);
@@ -118,7 +123,12 @@ export function ReviewForm({
             event.preventDefault();
             if (review.isPending) return;
             review.mutate(
-              { question: needsQuestion ? asked.trim() : "", workspace_slugs: workspaces, initiative_ids: initiatives },
+              {
+                question: needsQuestion ? asked.trim() : "",
+                workspace_slugs: workspaces,
+                initiative_ids: initiatives,
+                ...(needsReason ? { reason: reason.trim() } : {}),
+              },
               { onSuccess: close },
             );
           }}
@@ -135,6 +145,20 @@ export function ReviewForm({
             <IconCloseButton disabled={review.isPending} onClick={close} />
           </div>
           <div className="modal-body rl-modal-body">
+            {needsReason ? (
+              <>
+                <p className="rl-refusal">It was refused: {refusedBecause || "no reason recorded"}</p>
+                <label htmlFor={ids.reason}>Why should it be read after all?</label>
+                <Textarea
+                  id={ids.reason}
+                  rows={2}
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="They relicensed to MIT in v2."
+                  required
+                />
+              </>
+            ) : null}
             <ReferenceTargetsPicker
               fixedWorkspaces={served}
               workspaces={workspaces}
@@ -154,7 +178,7 @@ export function ReviewForm({
             <Button variant="secondary" disabled={review.isPending} onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={review.isPending}>
+            <Button type="submit" variant="primary" disabled={review.isPending || (needsReason && !reason.trim())}>
               {review.isPending ? "Starting…" : "Review now"}
             </Button>
           </div>

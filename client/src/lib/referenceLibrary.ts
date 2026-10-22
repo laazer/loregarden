@@ -281,3 +281,10 @@ export function linkTargetsSummary(name: string, result: LinkTargetsResult): str
   return `${parts.join("; ")}.`;
 }
 
+
+/** "Rust · ★ 2.3k · agents, verification": what GitHub says about it, at a glance. */
+export function sourceFacts(row: Pick<LibraryRow, "language" | "stars" | "topics">): string {
+  const stars =
+    row.stars === null ? "" : `★ ${row.stars >= 1000 ? `${(row.stars / 1000).toFixed(1).replace(/\.0$/, "")}k` : row.stars}`;
+  return [row.language, stars, row.topics].filter(Boolean).join(" · ");
+}

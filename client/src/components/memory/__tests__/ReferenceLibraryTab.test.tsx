@@ -684,3 +684,64 @@ describe("linking is enough to start a review", () => {
     await waitFor(() => expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, NOTHING_MORE));
   });
 });
+
+describe("what a source is, and a refused one read again", () => {
+  it("says what each source is in the list and in full on its page, with what GitHub says about it", async () => {
+    const described = LIBRARY.sources.find((r) => r.description && r.language && r.stars) as LibraryRow;
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: described });
+    renderAt(`/memory/library/${described.id}?view=all`);
+    const detail = await screen.findByRole("region", { name: described.name });
+    expect(within(detail).getByText(described.description as string)).toBeInTheDocument();
+    expect(within(detail).getByText(new RegExp(`^${described.language} · ★`))).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByTitle(/: a toolkit that /).length).toBeGreaterThan(50);
+    expect(findUsabilityProblems(document.body)).toEqual([]);
+  });
+
+  it("says a source is not described yet, or why its page could not be read", async () => {
+    const pending = row({ id: "p1", name: "pending", description: null, describe_error: "" });
+    mockApi.referenceLibrary.mockResolvedValue(listOf([pending]));
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: pending });
+    renderAt("/memory/library/p1");
+    expect(await screen.findByText(/Not described yet; the background refresh reads it within the hour/)).toBeInTheDocument();
+  });
+
+  it("says why a page could not be read, and when a source describes itself in no words", async () => {
+    const dead = row({ id: "d1", name: "dead", description: null, describe_error: "HTTP 404" });
+    mockApi.referenceLibrary.mockResolvedValue(listOf([dead]));
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: dead });
+    const { unmount } = renderAt("/memory/library/d1");
+    expect(await screen.findByText("Could not read what it is: HTTP 404.")).toBeInTheDocument();
+    unmount();
+    const silent = row({ id: "s1", name: "silent", description: "" });
+    mockApi.referenceLibrary.mockResolvedValue(listOf([silent]));
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: silent });
+    renderAt("/memory/library/s1");
+    expect(await screen.findByText("It describes itself in no words.")).toBeInTheDocument();
+  });
+
+  it("reviews a refused source again only with a reason, and sends it", async () => {
+    const refused = row({ id: "r1", name: "gpl-kit", state: "refused" });
+    mockApi.referenceLibrary.mockResolvedValue(listOf([refused]));
+    mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: refused, refused_reason: "Licence gate: GPL-3.0 excludes it." });
+    mockApi.reviewSourceNow.mockResolvedValue({
+      started: false, ordinal: 1, carrier: null, waiting: "", refused: "Licence gate: GPL-3.0 excludes it.",
+      workspaces_added: [], initiatives_linked: [],
+    });  // prettier-ignore
+    renderAt("/memory/library/r1");
+    fireEvent.click(await screen.findByRole("button", { name: "Review again…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review gpl-kit now" });
+    expect(within(dialog).getByText("It was refused: Licence gate: GPL-3.0 excludes it.")).toBeInTheDocument();
+    const submit = within(dialog).getByRole("button", { name: "Review now" });
+    expect(submit).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Why should it be read after all?" }), {
+      target: { value: "They relicensed to MIT in v2." },
+    });
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(mockApi.reviewSourceNow).toHaveBeenCalledWith("r1", expect.objectContaining({ reason: "They relicensed to MIT in v2." })),
+    );
+    // Refused again by the licence gate: said plainly, not as a silent no-op.
+    await waitFor(() => expect(useToastStore.getState().toasts[0]?.title).toBe("gpl-kit was not reviewed"));
+  });
+});

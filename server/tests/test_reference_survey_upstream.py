@@ -108,22 +108,59 @@ def test_only_github_repositories_are_checked(ctx):
 
 def test_the_background_refresh_takes_the_longest_unchecked_first_and_skips_fresh_ones(ctx):
     session, world, source = ctx
+    described = utcnow() - timedelta(days=1)
     stale = SurveySource(
         workspace_id=world.workspace_id, kind=SurveySourceKind.REPO, url="https://github.com/acme/stale", name="stale",
-        upstream_checked_at=utcnow() - timedelta(days=3),
+        upstream_checked_at=utcnow() - timedelta(days=3), described_at=described,
     )  # fmt: skip
     fresh = SurveySource(
         workspace_id=world.workspace_id, kind=SurveySourceKind.REPO, url="https://github.com/acme/fresh", name="fresh",
-        upstream_checked_at=utcnow() - timedelta(hours=1),
+        upstream_checked_at=utcnow() - timedelta(hours=1), described_at=described,
     )  # fmt: skip
-    session.add_all([stale, fresh])
+    source.described_at = described
+    session.add_all([stale, fresh, source])
     session.commit()
     seen: list[str] = []
-    with mock.patch.object(
-        upstream, "check_upstream", side_effect=lambda _s, src: seen.append(src.name)
+    with (
+        mock.patch.object(
+            upstream, "check_upstream", side_effect=lambda _s, src: seen.append(src.name)
+        ),
+        mock.patch.object(upstream, "describe_page") as describe,
     ):
         assert refresh_stale(session, limit=5) == 2
     assert seen == [source.name, "stale"]
+    describe.assert_not_called()
+
+
+def test_an_undescribed_source_is_described_once_even_when_its_upstream_is_fresh(ctx):
+    """A site, or a repository checked before descriptions were kept."""
+    session, world, source = ctx
+    source.upstream_checked_at = utcnow()
+    site = SurveySource(
+        workspace_id=world.workspace_id, kind=SurveySourceKind.SITE, url="https://docs.x.dev/", name="x",
+    )  # fmt: skip
+    session.add_all([source, site])
+    session.commit()
+    with (
+        mock.patch.object(upstream, "check_upstream") as check,
+        mock.patch.object(upstream, "describe_page") as describe,
+    ):
+        assert refresh_stale(session, limit=5) == 2
+    assert [c.args[1].name for c in check.call_args_list] == [source.name]
+    assert sorted(c.args[1].name for c in describe.call_args_list) == sorted([source.name, "x"])
+
+
+def test_the_github_read_keeps_what_the_repository_says_it_is(ctx):
+    session, _world, source = ctx
+    about = REPO | {"description": "  Agents that verify  ", "language": "Rust", "stargazers_count": 2300,
+                    "topics": ["agents", "verification"]}  # fmt: skip
+    responses = {"repos/acme/widget/commits/main": HEAD, "repos/acme/widget": about}
+    with mock.patch.object(upstream, "run_gh", side_effect=_gh(responses)):
+        checked = check_upstream(session, source)
+    assert (checked.description, checked.language, checked.stars, checked.topics) == (
+        "Agents that verify", "Rust", 2300, "agents, verification",
+    )  # fmt: skip
+    assert checked.described_at is not None
 
 
 def test_the_api_checks_now_and_returns_the_row(client: TestClient, isolated_db, tmp_path):

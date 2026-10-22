@@ -290,3 +290,21 @@ def test_an_approved_card_reads_as_queued_without_waiting_for_a_tick(
     assert detail["source"]["state"] == "queued"
     listing = client.get("/api/reference-library", params={"workspace_slug": "loregarden"}).json()
     assert listing["schedule"]["positions"] == {added["id"]: 1}
+
+
+def test_a_refused_source_is_reviewed_again_only_with_a_reason_and_keeps_both_on_record(ctx):
+    session, world, tree = ctx
+    source = _source(session, world, "gpl", status=SurveySourceStatus.REFUSED, queued=False)
+    source.refused_reason = "Licence gate: GPL-3.0 excludes it."
+    session.add(source)
+    session.commit()
+    with pytest.raises(SurveyError, match="Say why it should be read after all"):
+        review_now(session, source.id, ReviewNowIn())
+    clone, lanes, lane = _dispatching(tree)
+    with clone, lanes, lane:
+        result = review_now(session, source.id, ReviewNowIn(reason="They relicensed to MIT in v2."))
+    session.refresh(source)
+    assert result.ordinal == 1
+    assert result.started  # its licence file now reads MIT, so the gate lets it through
+    assert "It had been refused: Licence gate: GPL-3.0 excludes it." in source.notes
+    assert "Reason to read it now: They relicensed to MIT in v2." in source.notes

@@ -14,6 +14,7 @@ import {
   licenceLabel,
   placeInLine,
   shortDate,
+  sourceFacts,
   sourceSummary,
 } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
@@ -59,6 +60,26 @@ function AddToQueue({ detail, workspace, note }: { detail: LibraryDetail; worksp
       onCancel={() => setOpen(false)}
       onDone={() => setOpen(false)}
     />
+  );
+}
+
+/** What the source is, from the source itself, so nobody has to open it to remember. */
+function SourceAbout({ source }: { source: LibraryDetail["source"] }) {
+  const facts = sourceFacts(source);
+  if (source.description === null) {
+    return (
+      <p className="rl-about rl-about--pending">
+        {source.describe_error
+          ? `Could not read what it is: ${source.describe_error}.`
+          : "Not described yet; the background refresh reads it within the hour."}
+      </p>
+    );
+  }
+  return (
+    <div className="rl-about">
+      {source.description ? <p>{source.description}</p> : <p className="rl-muted">It describes itself in no words.</p>}
+      {facts ? <p className="rl-about-facts">{facts}</p> : null}
+    </div>
   );
 }
 
@@ -128,8 +149,21 @@ function NextStep({
       </div>
     );
   }
-  if (state === "refused" && detail.refused_reason) {
-    return <p className="rl-next rl-next--quiet">Refused: {detail.refused_reason}</p>;
+  if (state === "refused") {
+    return (
+      <div className="rl-next rl-next--quiet">
+        <p>Refused: {detail.refused_reason || "no reason recorded"}</p>
+        <ReviewForm
+          sourceId={detail.source.id}
+          name={detail.source.name}
+          question={detail.source.question || ""}
+          served={detail.source.workspaces}
+          following={detail.initiatives.map((i) => i.id)}
+          openLabel="Review again…"
+          refusedBecause={detail.refused_reason}
+        />
+      </div>
+    );
   }
   return null;
 }
@@ -495,6 +529,7 @@ export function ReferenceSourceDetail({
                 <span className="rl-sr-only"> (opens in a new tab)</span>
               </a>
             </p>
+            <SourceAbout source={detail.source} />
             <p className="rl-summary">{sourceSummary(detail)}</p>
           </>
         ) : null}

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from loregarden.config import settings
 from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
     SurveyPassMode,
     SurveyPassStatus,
@@ -158,6 +159,9 @@ def queue_schedule(session: Session) -> QueueSchedule:
 class ReviewNowIn(BaseModel):
     #: What a new pass on a surveyed source answers; a queued pass keeps its own.
     question: str = ""
+    #: Why a refused source should be read after all. Required to reopen one;
+    #: kept on its record beside the refusal it overrides.
+    reason: str = ""
     #: Workspaces the pass should read for as well; the source serves them from now on.
     workspace_slugs: list[str] = Field(default_factory=list)
     #: Initiatives to follow the source (its open tickets join them), by UUID or external id.
@@ -179,11 +183,12 @@ class ReviewNowResult(BaseModel):
     initiatives_linked: list[str]
 
 
-def _refuse_unrunnable(session: Session, source: SurveySource) -> None:
+def _refuse_unrunnable(session: Session, source: SurveySource, reason: str) -> None:
     """Refuse, before anything is written, a source no review can start on now."""
-    if source.status is SurveySourceStatus.REFUSED:
+    if source.status is SurveySourceStatus.REFUSED and not reason.strip():
         raise SurveyError(
-            f"{source.name} was refused ({source.refused_reason or 'no reason recorded'})."
+            f"{source.name} was refused ({source.refused_reason or 'no reason recorded'}). "
+            "Say why it should be read after all to review it again."
         )
     if source.status is SurveySourceStatus.PROPOSED:
         raise SurveyError(
@@ -197,6 +202,28 @@ def _refuse_unrunnable(session: Session, source: SurveySource) -> None:
     )
     if reading is not None:
         raise SurveyError(f"Pass {reading.ordinal} is reading {source.name} now.")
+
+
+def _reopen(session: Session, source: SurveySource, reason: str) -> None:
+    """Put a refused source back in the queue on a person's reason.
+
+    The refusal and the reason stay on its record, so the next reader sees both.
+    The licence gate still runs before its pass reads anything: a source refused
+    for its licence is refused again unless the licence file has changed.
+    """
+    stamp = utcnow().strftime("%Y-%m-%d")
+    note = (
+        f"**Reviewed again {stamp}.** It had been refused: "
+        f"{source.refused_reason or 'no reason recorded'}. Reason to read it now: {reason.strip()}"
+    )
+    source.notes = f"{source.notes}\n\n{note}".strip()
+    source.queued_reason = reason.strip()
+    source.refused_reason = ""
+    source.approval_id = None
+    source.status = SurveySourceStatus.ACTIVE
+    source.updated_at = utcnow()
+    session.add(source)
+    session.commit()
 
 
 def _pass_to_run(session: Session, source: SurveySource, question: str) -> SurveyPass:
@@ -219,7 +246,7 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     source = session.get(SurveySource, source_id)
     if source is None:
         raise SurveyNotFound(f"No survey source {source_id!r}")
-    _refuse_unrunnable(session, source)
+    _refuse_unrunnable(session, source, body.reason)
     initiatives = resolve_initiatives(session, body.initiative_ids)
     added = (
         serve_workspaces(
@@ -228,6 +255,8 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
         if body.workspace_slugs
         else []
     )
+    if source.status is SurveySourceStatus.REFUSED:
+        _reopen(session, source, body.reason)
     survey_pass = _pass_to_run(session, source, body.question)
     linked = follow(session, source.id, initiatives, actor="operator")
     source.priority = FIRST_IN_LINE

@@ -122,6 +122,14 @@ def _record(name: str, n: int) -> str:
     )
 
 
+_LANGUAGES = ("TypeScript", "Python", "Rust", "Go", "")
+
+
+def _description(name: str, n: int) -> str:
+    """Distinct one-liners, as GitHub descriptions are: what the project is."""
+    return f"{name.replace('-', ' ').capitalize()}: a toolkit that {_FINDINGS[(n * 5 + 2) % len(_FINDINGS)]}."
+
+
 def _name(n: int) -> str:
     return f"{_FIRST[n % len(_FIRST)]}-{_SECOND[(n * 7 + n // len(_FIRST)) % len(_SECOND)]}"
 
@@ -171,6 +179,11 @@ def _source(
         if status is SurveySourceStatus.REFUSED
         else "",
         notes=_record(name, n) if status is SurveySourceStatus.DONE else "",
+        # Every source is described once the refresh has run; a few say nothing.
+        description="" if n % 17 == 0 else _description(name, n),
+        language="" if is_site else _LANGUAGES[n % len(_LANGUAGES)],
+        stars=None if is_site else (n * 137) % 9000,
+        described_at=_BASE,
         created_at=_BASE,
         updated_at=_BASE,
     )

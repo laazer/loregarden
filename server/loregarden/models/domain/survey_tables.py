@@ -123,6 +123,16 @@ class SurveySource(SQLModel, table=True):
     upstream_checked_at: datetime | None = None
     #: Why the last check could not answer; "" when it did.
     upstream_check_error: str = ""
+    #: What the source says it is, as last read: GitHub's repository description,
+    #: or a page's title and opening. None until read; "" when it says nothing.
+    description: str | None = None
+    #: GitHub's primary language, star count and topics (comma-separated).
+    language: str = ""
+    stars: int | None = None
+    topics: str = ""
+    described_at: datetime | None = None
+    #: Why the last read of the description failed; "" when it did not.
+    describe_error: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

@@ -836,3 +836,40 @@
   flex: none;
   margin: 0;
 }
+
+/* What a source is, under its name: in the table one line, in the detail in full. */
+.rl-description {
+  display: block;
+  max-width: 52ch;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--txm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rl-about {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx);
+}
+
+.rl-about p {
+  margin: 0;
+}
+
+.rl-about--pending,
+.rl-about-facts {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.rl-refusal {
+  margin: 0;
+  font-size: 13px;
+  color: var(--aml);
+}
