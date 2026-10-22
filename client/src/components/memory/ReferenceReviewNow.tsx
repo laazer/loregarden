@@ -124,15 +124,6 @@ export function ReviewForm({
         }
       }}
     >
-      {needsQuestion ? (
-        <>
-          <label htmlFor={fieldId}>What should this review answer? (optional)</label>
-          <Textarea id={fieldId} rows={2} value={asked} onChange={(event) => setAsked(event.target.value)} />
-        </>
-      ) : null}
-      <p className="rl-muted rl-optional-note">
-        It reads for every workspace and initiative ticked; a question narrows it.
-      </p>
       <ReferenceTargetsPicker
         fixedWorkspaces={served}
         workspaces={workspaces}
@@ -141,6 +132,15 @@ export function ReviewForm({
         initiatives={initiatives}
         onInitiatives={setInitiatives}
       />
+      <p className="rl-muted rl-optional-note">
+        It reads for every workspace and initiative ticked{needsQuestion ? "; a question narrows it" : ""}.
+      </p>
+      {needsQuestion ? (
+        <>
+          <label htmlFor={fieldId}>What should this review answer? (optional)</label>
+          <Textarea id={fieldId} rows={2} value={asked} onChange={(event) => setAsked(event.target.value)} />
+        </>
+      ) : null}
       <div className="rl-form-actions">
         <Button
           type="submit"
