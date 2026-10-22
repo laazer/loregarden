@@ -201,10 +201,6 @@ select {
   border: 1px solid var(--bd);
   border-radius: 8px;
   font-family: inherit;
-  /* Without it the UA's ~2px leaves text pressed against the border. A field
-     with its own class sets its own padding and wins (this scores 0,0,1). */
-  padding: 7px 10px;
-  line-height: 1.4;
 }
 
 /* The UA placeholder grey is a light-background choice and reads as noise on

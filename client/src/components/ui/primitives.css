@@ -85,3 +85,19 @@
   color: var(--txl);
   cursor: default;
 }
+
+/* Room inside a field, where people fill fields in: dialogs and the reference
+   library. Not on the element-level floor in index.css, which must set no box
+   metrics: the transparent bar inputs (`.app-action-bar-input`, `.topbar-search
+   input`) sit flush in their bars and do not override padding
+   (formControlBaseline.test.ts). Scores zero, so a field with its own class
+   that sets padding still wins. */
+:where(.modal-panel, .rl-page)
+  :where(
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]),
+    textarea,
+    select
+  ) {
+  padding: 7px 10px;
+  line-height: 1.4;
+}
