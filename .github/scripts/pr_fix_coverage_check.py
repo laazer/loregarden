@@ -15,7 +15,8 @@ section with:
 - **Re-entry:** the registered invariant that catches the state coming back,
   in backticks (`every_block_is_settled`), or `no detector: <reason>`;
 - **Prevention:** the test proving the state cannot be entered, as
-  `path/to/test_file.py::test_name`;
+  `path/to/test_file.py::test_name`, or for a jest test
+  `client/src/.../__tests__/file.test.ts::"its exact name"`;
 - **Learning:** why the state was reachable, as a rule the next change can use;
 
 or `**Not a state bug:** <reason>` for a fix that leaves no state behind (a
@@ -25,6 +26,15 @@ A tree PR's section holds one `####` block per ticket; each is checked alone.
 Unlike the UX section, two answers are checked against the checkout: the
 invariant must be registered and the test must exist. The rest it cannot check
 are true; that is the reviewer's job, as with `silent-ok:`.
+
+A pytest test is an identifier, so `path::name` finds its `def`. A jest test is
+named by a string, so its reference quotes the string and the check finds an
+`it(...)`/`test(...)` whose first argument is that string literally. A name
+built at runtime (a template literal with `${...}`, an `.each` table) cannot be
+found that way, and a reference to one fails rather than passing unchecked;
+so does one to a skipped or todo test, and one to a file outside `__tests__`,
+which jest's `testMatch` does not collect. A test skipped by an enclosing
+`describe.skip` is not detected, as a pytest `skip` mark is not.
 
     pr_fix_coverage_check.py --title TITLE --body BODY_FILE [--root REPO]
 
@@ -57,6 +67,18 @@ _FIELD = re.compile(
 )
 _BACKTICKED = re.compile(r"`([a-z][a-z0-9_]*)`")
 _TEST_REF = re.compile(r"(?P<path>[\w./-]+\.py)::(?P<name>test_\w+)")
+_JEST_FILE = r"[\w./-]+\.(?:test|spec)\.tsx?"
+_JEST_REF = re.compile(rf'(?P<path>{_JEST_FILE})::"(?P<name>(?:[^"\\\n]|\\.)+)"')
+_JEST_UNQUOTED = re.compile(rf'(?P<path>{_JEST_FILE})::(?!")')
+#: `it("name"`, `test.concurrent('name'`, `xit(\`name\``: the call and its first argument.
+_JEST_CALL = re.compile(
+    r"(?<![\w.$])(?P<fn>[xf]?it|[xf]?test)(?P<mods>(?:\.\w+)*)\s*\(\s*"
+    r"(?P<quote>[\"'`])(?P<name>(?:\\.|(?!(?P=quote)).)*?)(?P=quote)",
+    re.DOTALL,
+)
+_JEST_EACH = re.compile(r"(?<![\w.$])[xf]?(?:it|test)(?:\.\w+)*\.each\b")
+_JEST_SKIPPED_MODS = {"skip", "todo"}
+_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
 
 
 def is_fix_title(title: str) -> bool:
@@ -116,6 +138,47 @@ def _test_exists(root: Path, path: str, name: str) -> bool:
     return bool(pattern.search(file.read_text(encoding="utf-8")))
 
 
+def _jest_tests(source: str) -> tuple[dict[str, bool], int]:
+    """({literal name: runs}, count of names built at runtime) for the jest calls in a file."""
+    literal: dict[str, bool] = {}
+    runtime = len(_JEST_EACH.findall(source))
+    for call in _JEST_CALL.finditer(source):
+        if call["quote"] == "`" and "${" in call["name"]:
+            runtime += 1
+            continue
+        mods = set(call["mods"].split(".")[1:])
+        runs = not call["fn"].startswith("x") and not mods & _JEST_SKIPPED_MODS
+        name = _ESCAPE.sub(r"\1", call["name"])
+        literal[name] = literal.get(name, False) or runs
+    return literal, runtime
+
+
+def _jest_problem(root: Path, path: str, name: str) -> tuple[bool, str | None]:
+    """(missing, unverifiable): a reference that names nothing, or one no checkout can confirm."""
+    ref = f'{path}::"{name}"'
+    if "/__tests__/" not in f"/{path}":
+        return False, (
+            f"'Prevention' names {ref}, which is outside a __tests__ directory, so jest's "
+            "testMatch never runs it."
+        )
+    file = root / path
+    if not file.is_file():
+        return True, None
+    literal, runtime = _jest_tests(file.read_text(encoding="utf-8"))
+    runs = literal.get(_ESCAPE.sub(r"\1", name))
+    if runs is None:
+        if runtime:
+            return False, (
+                f"'Prevention' names {ref}, and {path} has no test with that literal name; its "
+                f"{runtime} test(s) named at runtime (a template literal with ${{...}}, or .each) "
+                "cannot be verified against the checkout. Name the prevention test literally."
+            )
+        return True, None
+    if not runs:
+        return False, f"'Prevention' names {ref}, which is skipped (.skip, .todo or x-prefixed)."
+    return False, None
+
+
 def _reentry_problem(value: str, invariants: set[str]) -> str | None:
     if value.strip().lower().startswith(NO_DETECTOR):
         reason = value.strip()[len(NO_DETECTOR) :]
@@ -137,16 +200,33 @@ def _reentry_problem(value: str, invariants: set[str]) -> str | None:
     return None
 
 
-def _prevention_problem(value: str, root: Path) -> str | None:
-    refs = list(_TEST_REF.finditer(value))
-    if not refs:
-        return "'Prevention' names no test: give it as `path/to/test_file.py::test_name`."
+def _prevention_problems(value: str, root: Path) -> list[str]:
+    python = list(_TEST_REF.finditer(value))
+    jest = list(_JEST_REF.finditer(value))
+    if not python and not jest:
+        unquoted = _JEST_UNQUOTED.search(value)
+        if unquoted:
+            return [
+                f"'Prevention' names a test in {unquoted['path']} without quoting it: give it as "
+                f'`{unquoted["path"]}::"the exact name passed to it()/test()"`.'
+            ]
+        return [
+            "'Prevention' names no test: give it as `path/to/test_file.py::test_name`, or "
+            '`path/to/__tests__/file.test.ts::"the exact jest test name"`.'
+        ]
     missing = [
-        f"{m['path']}::{m['name']}" for m in refs if not _test_exists(root, m["path"], m["name"])
+        f"{m['path']}::{m['name']}" for m in python if not _test_exists(root, m["path"], m["name"])
     ]
-    if len(missing) == len(refs):
-        return f"'Prevention' names {', '.join(missing)}, which does not exist in this checkout."
-    return None
+    unverifiable = []
+    for m in jest:
+        absent, problem = _jest_problem(root, m["path"], m["name"])
+        if absent:
+            missing.append(f'{m["path"]}::"{m["name"]}"')
+        if problem:
+            unverifiable.append(problem)
+    if len(missing) == len(python) + len(jest):
+        return [f"'Prevention' names {', '.join(missing)}, which does not exist in this checkout."]
+    return unverifiable
 
 
 def _block_problems(text: str, root: Path, invariants: set[str]) -> list[str]:
@@ -168,9 +248,7 @@ def _block_problems(text: str, root: Path, invariants: set[str]) -> list[str]:
             found.append(problem)
     prevention = fields.get("prevention", "")
     if _answered(prevention, MIN_ANSWER):
-        problem = _prevention_problem(prevention, root)
-        if problem:
-            found.append(problem)
+        found += _prevention_problems(prevention, root)
     return found
 
 

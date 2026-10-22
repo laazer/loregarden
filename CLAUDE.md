@@ -594,7 +594,19 @@ way it is) has four jobs, and a fix that does one of them is a quarter of a fix:
 3. **Prevention.** The guard at every writer, and a test proving it, named as the
    invariant's `prevented_by`. Prefer a test that enumerates the writers
    (`test_block_settlement` is the model) over one that exercises one path.
+   The PR names it as `path/to/test_x.py::test_name`, or, for a client fix, a jest
+   test as `client/src/.../__tests__/file.test.ts::"its exact name"`. The check
+   finds that literal name in an `it`/`test` call; a name built at runtime (a
+   `${…}` template, `.each`) or a skipped test fails, so name it literally.
+   `prevented_by` stays a pytest test: a server invariant's guard is a server writer.
 4. **Learning.** Why the state was reachable, as a rule the next change can use.
+
+**Client fixes and re-entry.** Invariants run server-side on the reconcile timer, and
+nothing on the client is their equivalent. If the client wrote the bad state through
+the API, it is a row: register the invariant against the row like any other. If it
+lives only in the browser (a store, `localStorage`, the URL), answer
+`no detector: browser-local state the server never sees`; Existing is then usually
+"none persisted", and the jest test carries the weight.
 
 What checks it:
 
