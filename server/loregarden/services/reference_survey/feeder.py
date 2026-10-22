@@ -60,6 +60,7 @@ from loregarden.services.reference_survey.queue import (
     promote_resolved_sources,
     target_workspaces,
 )
+from loregarden.services.reference_survey.upstream import refresh_stale
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.workflow_service import WorkflowService
@@ -394,6 +395,10 @@ def feed_once(session: Session) -> FeedResult:
 def _tick() -> None:
     with Session(engine) as session:
         result = feed_once(session)
+    # Its own session: a slow or failing GitHub read must not hold up dispatch,
+    # and each check records its own answer or reason (`upstream`).
+    with Session(engine) as session:
+        refresh_stale(session)
     if result.dispatched or result.refused or result.abandoned:
         logger.info("Reference survey feed: %s", result)
 

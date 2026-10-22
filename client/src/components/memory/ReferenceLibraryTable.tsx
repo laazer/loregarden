@@ -5,6 +5,7 @@ import { memoryPath } from "../../lib/appNavigation";
 import {
   STATE_LABELS,
   licenceUse,
+  upstreamChange,
   shortDate,
   type LibrarySort,
   type LibrarySortKey,
@@ -24,7 +25,9 @@ const COLUMNS: Column[] = [
   { key: "licence", label: "Use" },
   { key: "passes", label: "Passes", sort: "passes", numeric: true },
   { key: "tickets", label: "Tickets", sort: "tickets", numeric: true },
-  { key: "last_read", label: "Last read", sort: "last_read" },
+  { key: "last_read", label: "Last reviewed", sort: "last_read" },
+  { key: "upstream", label: "Repo updated", sort: "upstream" },
+  { key: "since_review", label: "Since review", sort: "since_review" },
 ];
 
 /**
@@ -114,6 +117,10 @@ export function ReferenceLibraryTable({
                 ) : null}
               </td>
               <td className="rl-col-last_read">{shortDate(row.last_read_at)}</td>
+              <td className="rl-col-upstream">{shortDate(row.upstream_committed_at)}</td>
+              <td className={`rl-col-since_review rl-change--${row.kind === "repo" ? upstreamChange(row).tone : "unknown"}`}>
+                {row.kind === "repo" ? upstreamChange(row).short : "—"}
+              </td>
             </tr>
           );
         })}

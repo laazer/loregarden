@@ -584,6 +584,7 @@
  "refused_reason": "",
  "source": {
   "approval_id": null,
+  "commits_since_review": null,
   "id": "5cf7bf47-a957-5fab-8eb4-92dba4a0e55f",
   "kind": "repo",
   "last_read_at": "2026-10-13T09:00:00",
@@ -597,6 +598,9 @@
   "state": "surveyed",
   "tickets": 71,
   "unresolved_refs": 41,
+  "upstream_check_error": "",
+  "upstream_checked_at": null,
+  "upstream_committed_at": null,
   "url": "https://github.com/acme-labs/openharness",
   "workspaces": [
    "loregarden"

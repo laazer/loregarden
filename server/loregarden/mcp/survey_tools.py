@@ -47,6 +47,7 @@ from loregarden.models.domain.survey_enums import (
 from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, queue, record, report
 from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
+from loregarden.services.reference_survey.library import library_row
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
     FindingIn,
@@ -63,6 +64,7 @@ from loregarden.services.reference_survey.ticket_writer import (
     publish_retraction,
     write_findings_to_ticket,
 )
+from loregarden.services.reference_survey.upstream import check_upstream_by_id
 
 
 def _values(enum: type) -> list[str]:
@@ -111,7 +113,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "request_pass queues a continuation (pick up the unread list) or a scoped re-read "
             "against one new question on an admitted source; link_initiative makes an "
             "initiative follow the source (its open tickets join it, now and as passes add "
-            "more) and unlink_initiative undoes that; status returns a source's whole "
+            "more) and unlink_initiative undoes that; check_upstream reads the repository's "
+            "newest commit and how far it has moved since review; status returns a source's whole "
             "record (passes, tickets touched, findings, unknowns, coverage); coverage returns "
             "the directory map with what every pass read, each count with its denominator."
         ),
@@ -354,6 +357,11 @@ def _link(session: Session, args: dict[str, Any]) -> dict:
     return result.model_dump()
 
 
+def _check_upstream(session: Session, args: dict[str, Any]) -> dict:
+    row = library_row(session, check_upstream_by_id(session, args["source_id"]))
+    return row.model_dump(mode="json")
+
+
 def _unlink(session: Session, args: dict[str, Any]) -> dict:
     return unlink_initiative(session, args["source_id"], args["initiative_id"]).model_dump()
 
@@ -366,6 +374,7 @@ _QUEUE: dict[SurveyQueueAction, Handler] = {
     SurveyQueueAction.COVERAGE: lambda s, a: passes.coverage_report(s, a["source_id"]),
     SurveyQueueAction.LINK_INITIATIVE: _link,
     SurveyQueueAction.UNLINK_INITIATIVE: _unlink,
+    SurveyQueueAction.CHECK_UPSTREAM: _check_upstream,
 }
 
 
