@@ -41,11 +41,10 @@ from loregarden.services.reference_survey.initiatives import LinkedInitiative, l
 from loregarden.services.reference_survey.passes import coverage_report, pass_counts
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
+from loregarden.services.reference_survey.schedule import QueueSchedule, queue_schedule
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
-#: Notes are prose a person wrote; the detail shows the start and says so.
-NOTES_PREVIEW_CHARS = 1200
 #: Enough of a learning's body to name it by its lead sentence.
 EXCERPT_CHARS = 300
 
@@ -79,6 +78,8 @@ class LibraryList(BaseModel):
     workspace_slug: str
     counts: dict[LibraryState, int]
     sources: list[LibraryRow]
+    #: What the feeder dispatches next and what holds it, across all workspaces.
+    schedule: QueueSchedule
 
 
 class LibraryWorkspace(BaseModel):
@@ -98,6 +99,9 @@ class LibraryPass(BaseModel):
     stopped_at: str
     refused_reason: str
     finished_at: datetime | None
+    #: What the pass recorded, as written (the legacy record's text for an
+    #: imported pass); "" for a pass that recorded through the tools.
+    record: str
     files_read: int
     files_examined: int
     carrier: str | None
@@ -159,8 +163,9 @@ class LibraryDetail(BaseModel):
     pinned_commit: str
     refused_reason: str
     queued_reason: str
-    notes: str
-    notes_truncated: bool
+    #: What the record says about the source: the survey's own summary for an
+    #: imported one (its link note), in full. The reader shows it as markdown.
+    record: str
     workspaces: list[LibraryWorkspace]
     passes: list[LibraryPass]
     tickets: list[LibraryTicket]
@@ -319,6 +324,7 @@ def library_list(session: Session, workspace_slug: str) -> LibraryList:
         workspace_slug=workspace_slug,
         counts={state: counts[state] for state in LibraryState},
         sources=rows,
+        schedule=queue_schedule(session),
     )
 
 
@@ -351,6 +357,7 @@ def _passes(session: Session, source_id: str) -> list[LibraryPass]:
                 stopped_at=p.stopped_at,
                 refused_reason=p.refused_reason,
                 finished_at=p.finished_at,
+                record=p.legacy_text,
                 files_read=read,
                 files_examined=examined,
                 carrier=carriers.get(p.carrier_ticket_id or ""),
@@ -492,8 +499,7 @@ def library_detail(session: Session, source_id: str) -> LibraryDetail:
         pinned_commit=source.pinned_commit,
         refused_reason=source.refused_reason,
         queued_reason=source.queued_reason,
-        notes=source.notes[:NOTES_PREVIEW_CHARS],
-        notes_truncated=len(source.notes) > NOTES_PREVIEW_CHARS,
+        record=source.notes,
         workspaces=[
             LibraryWorkspace(slug=w.slug, question=link.question, why=link.queued_reason)
             for w, link in target_workspaces(session, source.id)

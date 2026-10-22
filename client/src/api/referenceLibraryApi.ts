@@ -39,6 +39,76 @@ export interface LibraryList {
   workspace_slug: string;
   counts: Record<LibraryState, number>;
   sources: LibraryRow[];
+  /** What the survey reviews next and what holds it, across all workspaces. */
+  schedule: QueueSchedule;
+}
+
+export interface QueueSchedule {
+  /** False when this server runs no survey loop; `disabled_reason` says why. */
+  enabled: boolean;
+  disabled_reason: string;
+  interval_seconds: number;
+  last_tick_at: string | null;
+  /** When the next check runs; null until this server's first check. */
+  next_tick_at: string | null;
+  max_concurrent: number;
+  running: { source_id: string; name: string; ordinal: number; carrier: string | null }[];
+  next: {
+    source_id: string;
+    name: string;
+    ordinal: number;
+    mode: string;
+    /** Why it is not starting; "" when it starts at the next check. */
+    waiting: string;
+    /** Whether Review now would start it: nothing but the clock holds it. */
+    can_start_now: boolean;
+  } | null;
+  /** Each queued source's place in line, 1 being next. */
+  positions: Record<string, number>;
+}
+
+export type SourceKind = "repo" | "site" | "released_app";
+
+export interface AddSourceRequest {
+  workspace_slugs: string[];
+  kind: SourceKind;
+  url: string;
+  question: string;
+  queued_reason: string;
+}
+
+export interface AddSourceResult {
+  source: LibraryRow;
+  attached: string[];
+  scoped_pass: number | null;
+}
+
+export interface BulkAddRequest {
+  workspace_slugs: string[];
+  urls: string[];
+  /** One kind for every URL, or null to tell each URL's kind from its host. */
+  kind: SourceKind | null;
+  question: string;
+  queued_reason: string;
+}
+
+export interface BulkAddItem {
+  url: string;
+  outcome: "proposed" | "attached" | "rescoped" | "already" | "failed";
+  kind: SourceKind;
+  source: LibraryRow | null;
+  /** Why it failed; "" otherwise. */
+  detail: string;
+}
+
+export interface ReviewNowResult {
+  started: boolean;
+  ordinal: number;
+  carrier: string | null;
+  /** Why it did not start; it stays first in line. */
+  waiting: string;
+  /** Set when the dispatch closed the pass instead (licence, nothing unread). */
+  refused: string;
 }
 
 export interface LibraryPass {
@@ -52,6 +122,8 @@ export interface LibraryPass {
   stopped_at: string;
   refused_reason: string;
   finished_at: string | null;
+  /** What the pass recorded, as written; "" when it recorded through the tools. */
+  record: string;
   files_read: number;
   files_examined: number;
   carrier: string | null;
@@ -107,8 +179,8 @@ export interface LibraryDetail {
   pinned_commit: string;
   refused_reason: string;
   queued_reason: string;
-  notes: string;
-  notes_truncated: boolean;
+  /** What the record says about the source, in full (markdown). */
+  record: string;
   workspaces: { slug: string; question: string; why: string }[];
   passes: LibraryPass[];
   tickets: LibraryTicket[];
@@ -141,6 +213,15 @@ export const referenceLibraryApi = {
     request<LinkResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/initiatives`, {
       method: "POST",
       body: JSON.stringify({ initiative_id: initiativeId }),
+    }),
+  addReferenceSource: (body: AddSourceRequest) =>
+    request<AddSourceResult>("/api/reference-library/sources", { method: "POST", body: JSON.stringify(body) }),
+  addReferenceSources: (body: BulkAddRequest) =>
+    request<BulkAddItem[]>("/api/reference-library/sources/bulk", { method: "POST", body: JSON.stringify(body) }),
+  reviewSourceNow: (sourceId: string, question: string) =>
+    request<ReviewNowResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/review-now`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
     }),
   checkSourceUpstream: (sourceId: string) =>
     request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/check-upstream`, {

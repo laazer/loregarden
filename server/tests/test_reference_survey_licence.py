@@ -103,6 +103,8 @@ def test_classifies_trees(tmp_path, files, kind, use, basis):
         ("GPL-2.0-or-later WITH Classpath-exception-2.0", LicenceKind.LIMITED, False),
         ("LicenseRef-Proprietary", LicenceKind.CUSTOM, False),
         ("GPL", LicenceKind.LIMITED, False),
+        ("APACHE-2.0", LicenceKind.OPEN, False),
+        ("**MIT**", LicenceKind.OPEN, False),
         ("AGPL", LicenceKind.LIMITED, False),
         ("((MIT))", LicenceKind.OPEN, False),
     ],

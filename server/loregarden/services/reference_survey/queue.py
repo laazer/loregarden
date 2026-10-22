@@ -23,7 +23,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource, SurveySourceWorkspace
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
-from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.errors import AlreadyServes, SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.inbox import file_card
 from loregarden.services.reference_survey.schemas import PassRequestIn, SourceIn
 from sqlalchemy import func
@@ -64,6 +64,8 @@ class Enqueued:
     attached: list[str] = field(default_factory=list)
     #: A scoped pass queued because a finished source gained a workspace.
     scoped_pass: SurveyPass | None = None
+    #: This call filed the source's admission card (a new source, or a candidate).
+    proposed: bool = False
 
 
 def _workspaces(session: Session, slugs: list[str]) -> list[Workspace]:
@@ -131,7 +133,7 @@ def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
         session.add(source)
         session.flush()
         attached = _attach(session, source, workspaces, body)
-        return Enqueued(_file_admission(session, source, body), attached)
+        return Enqueued(_file_admission(session, source, body), attached, proposed=True)
     if existing.status is SurveySourceStatus.REFUSED:
         raise SurveyError(
             f"{url} was refused ({existing.refused_reason or 'no reason recorded'}); it is not read."
@@ -139,11 +141,12 @@ def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
     attached = _attach(session, existing, workspaces, body)
     if existing.status is SurveySourceStatus.PROPOSED and existing.approval_id is None:
         # An imported candidate nobody has proposed yet: this is its proposal.
-        return Enqueued(_file_admission(session, existing, body), attached)
+        return Enqueued(_file_admission(session, existing, body), attached, proposed=True)
     if not attached:
-        raise SurveyError(
+        raise AlreadyServes(
             f"{url} already serves {', '.join(body.workspace_slugs)} ({existing.status.value}, source "
-            f"{existing.id}). To read it against a new question, request a scoped pass."
+            f"{existing.id}). To read it against a new question, request a scoped pass.",
+            existing.id,
         )
     scoped = None
     if existing.status is SurveySourceStatus.DONE:

@@ -12,6 +12,14 @@ class SurveyNotFound(SurveyError):
     """A source, pass, finding, evidence record or unknown that does not exist."""
 
 
+class AlreadyServes(SurveyError):
+    """The source is already in the record for every workspace asked for."""
+
+    def __init__(self, message: str, source_id: str) -> None:
+        super().__init__(message)
+        self.source_id = source_id
+
+
 class StaleRevision(SurveyError):
     """An unknown changed since the caller read it. Reread; do not retry blindly."""
 

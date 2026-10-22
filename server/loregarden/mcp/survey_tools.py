@@ -48,6 +48,7 @@ from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, queue, record, report
 from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
 from loregarden.services.reference_survey.library import library_row
+from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
     FindingIn,
@@ -114,7 +115,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "against one new question on an admitted source; link_initiative makes an "
             "initiative follow the source (its open tickets join it, now and as passes add "
             "more) and unlink_initiative undoes that; check_upstream reads the repository's "
-            "newest commit and how far it has moved since review; status returns a source's whole "
+            "newest commit and how far it has moved since review; review_now puts the source first "
+            "in line and dispatches its waiting pass now (a surveyed source first gets a scoped "
+            "pass on `question`), or says what holds it; status returns a source's whole "
             "record (passes, tickets touched, findings, unknowns, coverage); coverage returns "
             "the directory map with what every pass read, each count with its denominator."
         ),
@@ -130,7 +133,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "url": string_prop("enqueue: repository or https URL."),
                 "name": string_prop("enqueue: display name (default: last URL segment)."),
                 "question": string_prop(
-                    "enqueue/request_pass: what the source or pass is meant to answer."
+                    "enqueue/request_pass/review_now: what the source or pass is meant to answer "
+                    "(review_now: only for a surveyed source; default its own question)."
                 ),
                 "queued_reason": string_prop("enqueue: why it is worth reading now."),
                 "priority": integer_prop("enqueue: lower runs first (default 100)."),
@@ -362,6 +366,11 @@ def _check_upstream(session: Session, args: dict[str, Any]) -> dict:
     return row.model_dump(mode="json")
 
 
+def _review_now(session: Session, args: dict[str, Any]) -> dict:
+    body = ReviewNowIn(question=args.get("question") or "")
+    return review_now(session, args["source_id"], body).model_dump()
+
+
 def _unlink(session: Session, args: dict[str, Any]) -> dict:
     return unlink_initiative(session, args["source_id"], args["initiative_id"]).model_dump()
 
@@ -375,6 +384,7 @@ _QUEUE: dict[SurveyQueueAction, Handler] = {
     SurveyQueueAction.LINK_INITIATIVE: _link,
     SurveyQueueAction.UNLINK_INITIATIVE: _unlink,
     SurveyQueueAction.CHECK_UPSTREAM: _check_upstream,
+    SurveyQueueAction.REVIEW_NOW: _review_now,
 }
 
 

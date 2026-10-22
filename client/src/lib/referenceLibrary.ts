@@ -7,7 +7,14 @@
  * "Queue" is that first clause, so it is the default view whenever it holds
  * anything.
  */
-import type { LibraryList, LibraryRow, LibraryState, LibraryTicket } from "../api/referenceLibraryApi";
+import type {
+  LibraryDetail,
+  LibraryList,
+  LibraryRow,
+  LibraryState,
+  LibraryTicket,
+  QueueSchedule,
+} from "../api/referenceLibraryApi";
 
 export type LibraryView = "queue" | "surveyed" | "refused" | "all";
 
@@ -33,14 +40,11 @@ export const STATE_LABELS: Record<LibraryState, string> = {
   refused: "Refused",
 };
 
-/** What each state means for the operator, shown beside the badge. */
-export const STATE_HINTS: Record<LibraryState, string> = {
+/** What a source in motion is waiting on, shown under its name. */
+const IN_MOTION: Record<"awaiting_approval" | "reading" | "queued", string> = {
   awaiting_approval: "Proposed for a survey; nothing is read until you approve it in the inbox.",
   reading: "A pass is reading it now.",
-  queued: "Approved; its next pass is waiting for a free lane.",
-  candidate: "Listed in the old record but never proposed. An agent proposes it with loregarden_survey_queue.",
-  surveyed: "Read; its findings are on the tickets below.",
-  refused: "Not read, and the reason is recorded.",
+  queued: "Approved; its next pass waits in the review queue.",
 };
 
 /** Queue order: what needs a person first, then what is moving, then the backlog. */
@@ -159,9 +163,14 @@ export function filterTickets(tickets: LibraryTicket[], search: string): Library
 }
 
 /** "Oct 13, 2026" — the day is what a person compares; the time is noise here. */
+/** The server writes naive UTC; read it as UTC whichever way it arrives. */
+function parseUtc(iso: string): Date {
+  return new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+}
+
 export function shortDate(iso: string | null): string {
   if (!iso) return "—";
-  const date = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+  const date = parseUtc(iso);
   return Number.isNaN(date.getTime())
     ? "—"
     : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -185,4 +194,62 @@ export function upstreamChange(
   if (row.commits_since_review === 0) return { short: "no change", long: "no change since review", tone: "same" };
   const commits = `+${row.commits_since_review} commit${row.commits_since_review === 1 ? "" : "s"}`;
   return { short: commits, long: `${commits} since review`, tone: "moved" };
+}
+
+/** "PASS W" → "pass W"; the label-less record pass has no name worth showing. */
+function passName(label: string, ordinal: number): string {
+  if (!label || label === "RECORD") return `pass ${ordinal}`;
+  return label.replace(/^PASS\s+/i, "pass ");
+}
+
+/**
+ * One factual sentence under a source's name: what happened to it and what it
+ * left behind. Not a description of the state; the badge already names that.
+ */
+export function sourceSummary(detail: LibraryDetail): string {
+  const { source } = detail;
+  if (source.state === "surveyed") {
+    const finished = detail.passes.filter((p) => p.finished_at);
+    const last = finished.length ? finished[finished.length - 1].finished_at : source.last_read_at;
+    const names = detail.passes.map((p) => passName(p.label, p.ordinal));
+    const passes = names.length === 0 ? "" : names.length <= 3 ? ` (${names.join(", ")})` : ` (${names.length} passes)`;
+    const when = last ? `Surveyed ${shortDate(last)}${passes}.` : `Surveyed${passes}.`;
+    const n = detail.tickets.length;
+    const tickets = n ? `${n} ticket${n === 1 ? " carries" : "s carry"} its findings` : "No ticket is linked to it";
+    const unmatched = detail.unresolved_refs.length
+      ? `, plus ${detail.unresolved_refs.length} old references that match no ticket`
+      : "";
+    return `${when} ${tickets}${unmatched}.`;
+  }
+  if (source.state === "refused") {
+    return detail.refused_reason ? "Not surveyed; the reason is below." : "Not surveyed, and the record gives no reason.";
+  }
+  if (source.state === "candidate") {
+    return "Listed in the old record but never proposed. An agent proposes it with loregarden_survey_queue.";
+  }
+  return IN_MOTION[source.state];
+}
+
+/** "next", "2nd in line", "3rd in line"… */
+export function placeInLine(position: number): string {
+  if (position <= 1) return "next in line";
+  const rem100 = position % 100;
+  const suffix =
+    rem100 >= 11 && rem100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[position % 10] ?? "th";
+  return `${position}${suffix} in line`;
+}
+
+/** When the feeder next checks the queue, in words, from `now`. */
+export function nextCheckText(schedule: QueueSchedule, now: Date = new Date()): string {
+  const every = Math.max(1, Math.round(schedule.interval_seconds / 60));
+  if (!schedule.next_tick_at) return `within ${every} minute${every === 1 ? "" : "s"}`;
+  const ms = parseUtc(schedule.next_tick_at).getTime() - now.getTime();
+  if (ms <= 60_000) return "within a minute";
+  const minutes = Math.round(ms / 60_000);
+  return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+/** The URLs in pasted text: split on commas, tabs and new lines, blanks and repeats dropped. */
+export function splitUrls(text: string): string[] {
+  return [...new Set(text.split(/[,\t\r\n]+/).map((part) => part.trim()).filter(Boolean))];
 }

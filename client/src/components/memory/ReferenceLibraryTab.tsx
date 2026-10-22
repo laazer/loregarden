@@ -23,6 +23,8 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
+import { ReferenceQueueStatus } from "./ReferenceQueueStatus";
+import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceDetail } from "./ReferenceSourceDetail";
 import "./ReferenceLibrary.css";
 
@@ -47,6 +49,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
   const selectedId = memoryLibrarySourceFromPath(location.pathname);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<LibrarySort>(DEFAULT_SORT);
+  const [adding, setAdding] = useState(false);
 
   const library = useQuery({
     queryKey: ["reference-library", slug],
@@ -99,10 +102,9 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
     list = (
       <div className="rl-state">
         <p>
-          No repositories or sites are in the reference library for this workspace yet. A survey
-          source is proposed with <code>loregarden_survey_queue</code> (action <code>enqueue</code>)
-          and appears here, waiting for your approval in the inbox. The old scratch record is
-          brought in once with <code>loregarden survey import-legacy</code>.
+          No repositories or sites are in the reference library for this workspace yet. Add one
+          with <strong>Add a reference</strong> above (agents use <code>loregarden_survey_queue</code>);
+          it appears here, waiting for your approval in the inbox.
         </p>
       </div>
     );
@@ -166,15 +168,41 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               placeholder="Search name, URL or licence"
               aria-label="Search sources"
             />
+            <Button
+              variant={adding ? "secondary" : "primary"}
+              compact
+              className="rl-add-toggle"
+              aria-expanded={adding}
+              onClick={() => setAdding((open) => !open)}
+            >
+              {adding ? "Close the form" : "Add a reference"}
+            </Button>
             <span className="rl-count" aria-live="polite">
               {library.data ? `${rows.length} source${rows.length === 1 ? "" : "s"}` : ""}
               {library.isFetching && library.data ? " · refreshing" : ""}
             </span>
           </div>
+          {adding ? (
+            <ReferenceSourceForm
+              workspace={slug}
+              onCancel={() => setAdding(false)}
+              onDone={(result) => {
+                setAdding(false);
+                navigate({ pathname: memoryPath("library", result.source.id), search: location.search });
+              }}
+            />
+          ) : null}
+          {library.data ? <ReferenceQueueStatus schedule={library.data.schedule} search={location.search} /> : null}
           {list}
         </section>
         {selectedId ? (
-          <ReferenceSourceDetail key={selectedId} sourceId={selectedId} onClose={close} />
+          <ReferenceSourceDetail
+            key={selectedId}
+            sourceId={selectedId}
+            workspace={slug}
+            position={library.data?.schedule.positions[selectedId] ?? null}
+            onClose={close}
+          />
         ) : null}
       </div>
     </div>
