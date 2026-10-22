@@ -22,16 +22,15 @@ const COLUMNS: Column[] = [
   { key: "name", label: "Source", sort: "name" },
   { key: "state", label: "State", sort: "state" },
   { key: "licence", label: "Use" },
-  { key: "workspaces", label: "Serves" },
   { key: "passes", label: "Passes", sort: "passes", numeric: true },
   { key: "tickets", label: "Tickets", sort: "tickets", numeric: true },
   { key: "last_read", label: "Last read", sort: "last_read" },
 ];
 
 /**
- * One row per source. The name opens it; everything else is for comparing.
- * "Serves" appears only when some source serves more than one workspace, since
- * otherwise every row would repeat the workspace already picked above.
+ * One row per source. The name opens it; everything else is for comparing. A
+ * source that also serves other workspaces says so under its name — a column
+ * would repeat the workspace already picked above on every row.
  */
 export function ReferenceLibraryTable({
   rows,
@@ -39,16 +38,16 @@ export function ReferenceLibraryTable({
   onSort,
   selectedId,
   search,
-  showWorkspaces,
+  workspace,
 }: {
   rows: LibraryRow[];
   sort: LibrarySort;
   onSort: (key: LibrarySortKey) => void;
   selectedId: string | null;
   search: string;
-  showWorkspaces: boolean;
+  workspace: string;
 }) {
-  const columns = COLUMNS.filter((column) => showWorkspaces || column.key !== "workspaces");
+  const columns = COLUMNS;
   return (
     <table className="rl-table">
       <thead>
@@ -91,6 +90,11 @@ export function ReferenceLibraryTable({
                   {row.name}
                 </Link>
                 <span className="rl-url">{row.kind === "site" ? "site · " : ""}{row.url.replace(/^https?:\/\//, "")}</span>
+                {row.workspaces.length > 1 ? (
+                  <span className="rl-also">
+                    also for {row.workspaces.filter((slug) => slug !== workspace).join(", ")}
+                  </span>
+                ) : null}
               </td>
               <td className="rl-col-state">
                 <span className={`rl-state-badge rl-state-badge--${row.state}`}>{STATE_LABELS[row.state]}</span>
@@ -98,10 +102,13 @@ export function ReferenceLibraryTable({
               <td className="rl-col-licence" title={row.licence_name || undefined}>
                 {licenceUse(row)}
               </td>
-              {showWorkspaces ? <td className="rl-col-workspaces">{row.workspaces.join(", ")}</td> : null}
-              <td className="rl-col-passes rl-num">{row.passes}</td>
+              <td className="rl-col-passes rl-num">
+                {row.passes}
+                <span className="rl-unit">{row.passes === 1 ? " pass" : " passes"}</span>
+              </td>
               <td className="rl-col-tickets rl-num">
                 {row.tickets}
+                <span className="rl-unit">{row.tickets === 1 ? " ticket" : " tickets"}</span>
                 {row.unresolved_refs > 0 ? (
                   <span className="rl-unresolved">+{row.unresolved_refs} unmatched</span>
                 ) : null}

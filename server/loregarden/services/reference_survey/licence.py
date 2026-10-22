@@ -87,8 +87,8 @@ _TEXT_MARKERS: tuple[_TextMarker, ...] = (
     _TextMarker("GPL-3.0", ("gnu general public license", "version 3"), subsumes="GPL-2.0"),
     _TextMarker("GPL-2.0", ("gnu general public license", "version 2")),
     _TextMarker("MPL-2.0", ("mozilla public license", "2.0")),
-    _TextMarker("PolyForm-Noncommercial-1.0.0", ("polyform noncommercial license",)),
-    _TextMarker("PolyForm-Shield-1.0.0", ("polyform shield license",)),
+    _TextMarker("PolyForm-Noncommercial-1.0.0", ("polyform noncommercial",)),
+    _TextMarker("PolyForm-Shield-1.0.0", ("polyform shield",)),
     _TextMarker("FSL-1.1", ("functional source license",)),
     _TextMarker("BUSL-1.1", ("business source license",)),
     _TextMarker("SSPL-1.0", ("server side public license",)),
@@ -147,7 +147,9 @@ def _id_reading(identifier: str) -> _Reading:
         return _Reading(LicenceKind.OPEN, ident)
     if ident.startswith(EXCLUDING_PREFIXES):
         return _Reading(LicenceKind.LIMITED, ident, excluding=True)
-    if ident.startswith(COPYLEFT_PREFIXES):
+    if ident.startswith(COPYLEFT_PREFIXES) or f"{ident}-" in COPYLEFT_PREFIXES:
+        # A bare family name ("GPL", as package.json often says) is copyleft at
+        # any version, so it reads as the family without needing one.
         return _Reading(LicenceKind.LIMITED, ident)
     return _Reading(LicenceKind.CUSTOM, ident)
 
@@ -156,6 +158,21 @@ def _stricter(a: _Reading, b: _Reading) -> _Reading:
     if _RANK[a.kind] != _RANK[b.kind]:
         return a if _RANK[a.kind] < _RANK[b.kind] else b
     return a if a.excluding or not b.excluding else b
+
+
+def strictest_name(readings: list[_Reading]) -> str:
+    """The name of the strictest known reading, or "" when none is known.
+
+    Fail-closed: a sentence naming a source-available licence and a permissive
+    future grant is the source-available licence today.
+    """
+    known = [r for r in readings if r.kind is not LicenceKind.CUSTOM]
+    if not known:
+        return ""
+    result = known[0]
+    for reading in known[1:]:
+        result = _stricter(result, reading)
+    return result.name
 
 
 def _looser(a: _Reading, b: _Reading) -> _Reading:

@@ -395,6 +395,8 @@ def _learnings(
     service = AgentMemoryService.from_settings()
     items: list[LibraryLearning] = []
     unavailable: list[str] = []
+    #: Records in each graph searched: the denominator a "none found" is read against.
+    searched: list[str] = []
     for workspace, _link in target_workspaces(session, source.id):
         try:
             graph = service.require_graph(workspace.slug)
@@ -403,6 +405,10 @@ def _learnings(
             continue
         placeholders = ",".join("?" for _ in refs)
         with graph.connection() as conn:
+            total = conn.execute("SELECT count(*) FROM memory_nodes").fetchone()[0]
+            searched.append(
+                f"the {workspace.slug} memory graph holds {total} record{'' if total == 1 else 's'}"
+            )
             node_ids = [
                 row[0]
                 for row in conn.execute(
@@ -438,7 +444,7 @@ def _learnings(
         )
     return LibraryLearnings(
         availability=LearningsAvailability.EMPTY,
-        reason=f"No learnings are recorded on its {len(tickets)} linked tickets.",
+        reason=f"No learnings are recorded on its {len(tickets)} linked tickets; {', '.join(searched)}.",
         items=[],
     )
 

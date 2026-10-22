@@ -102,6 +102,8 @@ def test_classifies_trees(tmp_path, files, kind, use, basis):
         ("(Apache-2.0 OR MIT) AND PolyForm-Noncommercial-1.0.0", LicenceKind.LIMITED, True),
         ("GPL-2.0-or-later WITH Classpath-exception-2.0", LicenceKind.LIMITED, False),
         ("LicenseRef-Proprietary", LicenceKind.CUSTOM, False),
+        ("GPL", LicenceKind.LIMITED, False),
+        ("AGPL", LicenceKind.LIMITED, False),
         ("((MIT))", LicenceKind.OPEN, False),
     ],
 )

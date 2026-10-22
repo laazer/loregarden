@@ -129,7 +129,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
         onSort={(key: LibrarySortKey) => setSort((current) => nextSort(current, key))}
         selectedId={selectedId}
         search={location.search}
-        showWorkspaces={rows.some((row) => row.workspaces.length > 1)}
+        workspace={slug}
       />
     );
   }

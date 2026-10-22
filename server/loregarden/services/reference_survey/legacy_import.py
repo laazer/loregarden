@@ -33,6 +33,7 @@ from pathlib import Path
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.models.domain.survey_enums import (
     LicenceBasis,
+    LicenceKind,
     SurveyPassMode,
     SurveyPassStatus,
     SurveySourceKind,
@@ -47,7 +48,12 @@ from loregarden.models.domain.survey_tables import (
     SurveySource,
     SurveySourceWorkspace,
 )
-from loregarden.services.reference_survey.licence import recorded_verdict
+from loregarden.services.reference_survey.licence import (
+    expression_reading,
+    recorded_verdict,
+    strictest_name,
+    text_reading,
+)
 from sqlmodel import Session, select
 
 LEGACY_FILES: tuple[str, ...] = ("SURVEY_QUEUE.md", "ref_gh_links.md", "UXBRIEF.md")
@@ -70,6 +76,8 @@ _BARE_ID_RE = re.compile(r"(?<![\w-])\d{2,4}(?![\w-])")
 _LINK_RE = re.compile(
     r"^\s*[-*]?\s*(?:\((?P<ws>[A-Za-z-]+)\)\s*)?(?P<url>https?://\S+?)(?:\s+\((?P<note>.*)\))?\s*$"
 )
+#: An SPDX-shaped identifier inside a sentence: "GPL-3.0-or-later", "MPL-2.0".
+_SPDX_TOKEN_RE = re.compile(r"\b(?:[A-Z][A-Za-z]*-)+\d[\w.+-]*|\bMIT\b|\bISC\b")
 _LICENCE_TOKEN_RE = re.compile(r"^(?P<id>[A-Za-z][A-Za-z0-9.+-]*(?:-\d[\w.]*)?)\b")
 _DATE_RE = re.compile(r"(?P<d>20\d\d-\d\d-\d\d)")
 #: How much of a link note states its outcome before the prose begins.
@@ -142,8 +150,18 @@ def _licence_name(note: str) -> str:
     text = note.strip().lstrip("*`( ")
     if re.match(r"(?i)no licen[cs]e", text):
         return "none"
+    # A word counts as a licence only when the classifier knows it as one.
+    # "the survey drill itself…" opens with "the", which once read as a licence
+    # nobody could classify and excluded an MIT repository.
     match = _LICENCE_TOKEN_RE.match(text)
-    return match.group("id").rstrip(",") if match else ""
+    if match and expression_reading(match.group("id").rstrip(",")).kind is not LicenceKind.CUSTOM:
+        return match.group("id").rstrip(",")
+    # Every licence the opening clause names, identifiers and prose alike
+    # ("Functional Source License 1.1 with an Apache-2.0 future grant"), and the
+    # strictest wins: the future grant is not today's licence.
+    lead = text.split(" — ", 1)[0][:_NOTE_LEAD_CHARS]
+    readings = [expression_reading(token) for token in _SPDX_TOKEN_RE.findall(lead)]
+    return strictest_name([*readings, text_reading(lead)])
 
 
 def _source_for(

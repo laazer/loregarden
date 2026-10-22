@@ -169,6 +169,21 @@ def test_learnings_recorded_on_linked_tickets_are_found_by_id_or_external_id(ctx
     assert {item.ticket for item in learnings.items} == {world.feature_ext}
 
 
+def test_none_found_says_how_much_was_searched(ctx):
+    """A graph with no records and one with records but none on these tickets
+    must not read alike: the reason carries the graph's size."""
+    session, world, tmp_path = ctx
+    source = _with_links(session, world, tmp_path)
+    graph = MemoryGraphStore(tmp_path / "empty.db")
+    with mock.patch.object(AgentMemoryService, "require_graph", return_value=graph):
+        learnings = library_detail(session, source.id).learnings
+    assert learnings.availability is LearningsAvailability.EMPTY
+    assert (
+        learnings.reason
+        == "No learnings are recorded on its 1 linked tickets; the loregarden memory graph holds 0 records."
+    )
+
+
 def test_a_source_with_no_linked_tickets_has_empty_learnings(ctx):
     session, world, _ = ctx
     source = _source(session, world, "bare", SurveySourceStatus.DONE)

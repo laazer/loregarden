@@ -195,6 +195,19 @@
   overflow-wrap: anywhere;
 }
 
+.rl-also {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--blue);
+}
+
+/* The column header names the unit on a wide table; at phone width there is no
+   header, so each count carries its own. */
+.rl-unit {
+  display: none;
+}
+
 .rl-unresolved {
   display: block;
   font-size: 10.5px;
@@ -463,8 +476,7 @@
 
 /* Licence and "serves" give way first; the name, state and counts stay. */
 @container (max-width: 1100px) {
-  .rl-page--open .rl-table .rl-col-licence,
-  .rl-page--open .rl-table .rl-col-workspaces {
+  .rl-page--open .rl-table .rl-col-licence {
     display: none;
   }
 }
@@ -520,17 +532,12 @@
   }
 
   .rl-table .rl-col-licence,
-  .rl-table .rl-col-workspaces,
   .rl-table .rl-col-last_read {
     display: none;
   }
 
-  .rl-table .rl-col-passes::after {
-    content: " passes";
-  }
-
-  .rl-table .rl-col-tickets::after {
-    content: " tickets";
+  .rl-table .rl-unit {
+    display: inline;
   }
 
   .rl-table .rl-unresolved {

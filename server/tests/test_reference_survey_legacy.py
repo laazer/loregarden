@@ -64,6 +64,9 @@ LINKS = """# Ref Projects and Brainstorming
 - https://github.com/mikjee/warpdrv (AGPL-3.0, resolved at source — NOT SURVEYED 2026-10-16, pass Q, declined.)
 - (blobert) https://github.com/VAST-AI-Research/TripoSplat
 - https://github.com/acme/oneliner (the survey drill itself, as a skill)
+- https://github.com/acme/fsl (Functional Source License 1.1 with an Apache-2.0 future grant — NOT SURVEYED 2026-10-16, pass Q.)
+- https://github.com/acme/polyform (PolyForm Noncommercial 1.0.0 — NOT SURVEYED 2026-10-16, pass Q, and declined on licence.)
+- https://github.com/acme/triple (Triple-licensed GPL-3.0-or-later / LGPL-3.0-or-later with SPDX headers — NOT SURVEYED 2026-10-16.)
 - https://github.com/acme/written (Apache-2.0, Python; the find is a REVERSAL: v1 reconciled ADD/UPDATE/DELETE, v3 is ADD-only with a dedupe on read, and the migration note says why: updates destroyed provenance faster than they fixed errors.)
 - https://github.com/autonomous-ai/openharness (MIT, TypeScript, 16,869 files, @0ad6af54. The same product as ours at ten times the size: a value then AGGREGATES DIFFERENTLY IN TWO PLACES, excluded from total() because it would double count, and EXCLUDED ITEMS STAY REACHABLE SOMEWHERE.)
 - https://github.com/acme/lean (MIT — SURVEYED 2026-10-17, pass Q. Long prose follows here for a while so that the word appears only well past the opening clause of the note, as the real notes do: three candidates excluded for failing.)
@@ -231,3 +234,29 @@ def test_a_written_finding_marks_a_source_surveyed_and_a_one_liner_does_not(ctx)
     import_legacy(session, directory, workspace_slug="loregarden")
     assert _source(session, "written").status is SurveySourceStatus.DONE
     assert _source(session, "oneliner").status is SurveySourceStatus.PROPOSED
+
+
+def test_a_note_that_does_not_open_with_a_licence_leaves_it_unclassified(ctx):
+    """rea's note opens "the survey drill itself…": "the" is not a licence."""
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    oneliner = _source(session, "oneliner")
+    assert (oneliner.licence_name, oneliner.licence_use, oneliner.licence_basis) == ("", None, None)
+    assert _source(session, "written").licence_name == "Apache-2.0"
+
+
+@pytest.mark.parametrize(
+    "name, licence, use",
+    [
+        ("fsl", "FSL-1.1", LicenceUse.EXCLUDED),
+        ("polyform", "PolyForm-Noncommercial-1.0.0", LicenceUse.EXCLUDED),
+        ("triple", "GPL-3.0-or-later", LicenceUse.PATTERNS_ONLY),
+    ],
+)
+def test_a_licence_written_as_prose_is_still_recorded(ctx, name, licence, use):
+    """Ivy-Tendril (FSL-1.1) and mellowyak (PolyForm NC) were excluded by hand;
+    their notes spell the licence out rather than as an identifier."""
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    source = _source(session, name)
+    assert (source.licence_name, source.licence_use) == (licence, use)
