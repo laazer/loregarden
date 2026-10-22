@@ -1,0 +1,163 @@
+/**
+ * The reference library's views, labels, filtering and sorting, kept out of
+ * the components so the rules are testable on their own.
+ *
+ * The question the library answers: what is waiting to be surveyed, what have
+ * we already read, and what did each source change in our backlog and memory?
+ * "Queue" is that first clause, so it is the default view whenever it holds
+ * anything.
+ */
+import type { LibraryList, LibraryRow, LibraryState, LibraryTicket } from "../api/referenceLibraryApi";
+
+export type LibraryView = "queue" | "surveyed" | "refused" | "all";
+
+export const LIBRARY_VIEWS: { key: LibraryView; label: string }[] = [
+  { key: "queue", label: "Queue" },
+  { key: "surveyed", label: "Surveyed" },
+  { key: "refused", label: "Refused" },
+  { key: "all", label: "All" },
+];
+
+const VIEW_STATES: Record<Exclude<LibraryView, "all">, LibraryState[]> = {
+  queue: ["awaiting_approval", "reading", "queued", "candidate"],
+  surveyed: ["surveyed"],
+  refused: ["refused"],
+};
+
+export const STATE_LABELS: Record<LibraryState, string> = {
+  awaiting_approval: "Awaiting approval",
+  reading: "Being read",
+  queued: "Queued",
+  candidate: "Not proposed",
+  surveyed: "Surveyed",
+  refused: "Refused",
+};
+
+/** What each state means for the operator, shown beside the badge. */
+export const STATE_HINTS: Record<LibraryState, string> = {
+  awaiting_approval: "Proposed for a survey; nothing is read until you approve it in the inbox.",
+  reading: "A pass is reading it now.",
+  queued: "Approved; its next pass is waiting for a free lane.",
+  candidate: "Listed in the old record but never proposed. An agent proposes it with loregarden_survey_queue.",
+  surveyed: "Read; its findings are on the tickets below.",
+  refused: "Not read, and the reason is recorded.",
+};
+
+/** Queue order: what needs a person first, then what is moving, then the backlog. */
+const STATE_ORDER: Record<LibraryState, number> = {
+  awaiting_approval: 0,
+  reading: 1,
+  queued: 2,
+  candidate: 3,
+  surveyed: 4,
+  refused: 5,
+};
+
+export function viewCounts(list: LibraryList): Record<LibraryView, number> {
+  const sum = (states: LibraryState[]) => states.reduce((n, state) => n + (list.counts[state] ?? 0), 0);
+  return {
+    queue: sum(VIEW_STATES.queue),
+    surveyed: sum(VIEW_STATES.surveyed),
+    refused: sum(VIEW_STATES.refused),
+    all: list.sources.length,
+  };
+}
+
+/** The view to open on: the queue when anything is in it. */
+export function defaultView(list: LibraryList): LibraryView {
+  return viewCounts(list).queue > 0 ? "queue" : "surveyed";
+}
+
+export function parseView(raw: string | null): LibraryView | null {
+  return LIBRARY_VIEWS.some((view) => view.key === raw) ? (raw as LibraryView) : null;
+}
+
+export type LibrarySortKey = "name" | "state" | "passes" | "tickets" | "last_read";
+export interface LibrarySort {
+  key: LibrarySortKey;
+  dir: "ascending" | "descending";
+}
+
+export const DEFAULT_SORT: LibrarySort = { key: "state", dir: "ascending" };
+
+export function filterRows(rows: LibraryRow[], view: LibraryView, search: string): LibraryRow[] {
+  const needle = search.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (view !== "all" && !VIEW_STATES[view].includes(row.state)) return false;
+    if (!needle) return true;
+    return (
+      row.name.toLowerCase().includes(needle) ||
+      row.url.toLowerCase().includes(needle) ||
+      row.licence_name.toLowerCase().includes(needle)
+    );
+  });
+}
+
+function compare(a: LibraryRow, b: LibraryRow, key: LibrarySortKey): number {
+  switch (key) {
+    case "name":
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    case "state":
+      return STATE_ORDER[a.state] - STATE_ORDER[b.state] || a.priority - b.priority;
+    case "passes":
+      return a.passes - b.passes;
+    case "tickets":
+      return a.tickets - b.tickets;
+    case "last_read":
+      return (a.last_read_at ?? "").localeCompare(b.last_read_at ?? "");
+  }
+}
+
+export function sortRows(rows: LibraryRow[], sort: LibrarySort): LibraryRow[] {
+  const sign = sort.dir === "ascending" ? 1 : -1;
+  return [...rows].sort((a, b) => sign * compare(a, b, sort.key) || a.name.localeCompare(b.name));
+}
+
+/** Numeric columns read biggest-first on the first click; names A to Z. */
+export function nextSort(current: LibrarySort, key: LibrarySortKey): LibrarySort {
+  if (current.key === key) return { key, dir: current.dir === "ascending" ? "descending" : "ascending" };
+  const numeric = key === "passes" || key === "tickets" || key === "last_read";
+  return { key, dir: numeric ? "descending" : "ascending" };
+}
+
+const LICENCE_USE_LABELS: Record<string, string> = {
+  full: "Full use",
+  patterns_only: "Patterns only",
+  excluded: "Excluded",
+};
+
+/** What the licence lets a survey do — the comparable part, short enough to scan down a column. */
+export function licenceUse(row: Pick<LibraryRow, "licence_use">): string {
+  return row.licence_use ? LICENCE_USE_LABELS[row.licence_use] ?? row.licence_use : "Not classified";
+}
+
+/** The licence in full, for one source's detail. */
+export function licenceLabel(row: Pick<LibraryRow, "licence_name" | "licence_use">): string {
+  return row.licence_name ? `${row.licence_name} · ${licenceUse(row)}` : licenceUse(row);
+}
+
+const OPEN_TICKET_STATES = new Set(["backlog", "in_progress", "blocked", "parked"]);
+
+/** Tickets a source shaped, split into the ones still open and the ones settled. */
+export function groupTickets(tickets: LibraryTicket[]): { open: LibraryTicket[]; settled: LibraryTicket[] } {
+  const open = tickets.filter((ticket) => OPEN_TICKET_STATES.has(ticket.state));
+  const settled = tickets.filter((ticket) => !OPEN_TICKET_STATES.has(ticket.state));
+  return { open, settled };
+}
+
+export function filterTickets(tickets: LibraryTicket[], search: string): LibraryTicket[] {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return tickets;
+  return tickets.filter(
+    (ticket) => ticket.external_id.toLowerCase().includes(needle) || ticket.title.toLowerCase().includes(needle),
+  );
+}
+
+/** "Oct 13, 2026" — the day is what a person compares; the time is noise here. */
+export function shortDate(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}

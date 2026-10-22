@@ -46,6 +46,7 @@ from loregarden.mcp.run_resolution import (
     attributed_agent_run_id,
     resolve_run_ref,
 )
+from loregarden.mcp.survey_tools import TOOL_DEFINITIONS as SURVEY_TOOL_DEFINITIONS
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
     normalize_update_ticket_args,
@@ -1172,6 +1173,7 @@ TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_PLAN_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(SURVEY_TOOL_DEFINITIONS)
 
 
 def _create_ticket(

@@ -32,6 +32,7 @@ from loregarden.cli import (
     mcp_server,
     mcp_tools,
     sandbox,
+    survey,
 )
 from loregarden.cli.errors import EXIT_ERROR, EXIT_OK, EXIT_USAGE, UsageError
 
@@ -68,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     capacity_commands = capacity_group.add_subparsers(dest="command", required=True)
     capacity.register(capacity_commands)
 
+    survey.register(groups)
     local_main.register(groups)
     instance.register(groups)
 

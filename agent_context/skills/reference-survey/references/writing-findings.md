@@ -101,8 +101,14 @@ database's migrations is refused too. **Never write the ticket with raw
 SQLite**: a hand-written `WHERE ticket_number = 137` once rewrote a ticket in a
 workspace nobody meant to touch, stamped in local time.
 
+## The write path, as one call
+
+`loregarden_survey_write` performs both writes above, adds the criteria through
+the safe path, and does the read-back for you; prefer it from a survey pass. The
+steps above remain the method when writing by hand.
+
 ## After the survey
 
-Add the project to `scratch/ref_projects/ref_gh_links.md` in the main checkout,
-with a note if anything about it is unusual (no licence, a product site rather
-than a repository, a fork of something else).
+Finish the pass (`loregarden_survey_pass action=finish`): outcome, where it
+stopped, and the unread paths worth a later pass. The record replaces
+`scratch/ref_projects/`; do not add to those files.

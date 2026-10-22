@@ -60,6 +60,13 @@ NEEDS_A_MERGEABLE_PULL_REQUEST = "loregarden_merge_pull_request"
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
+#   loregarden_survey_{pass,record,write} -> act on a survey pass, which exists only
+#   after a person admits a source from the inbox and the feeder dispatches it. The
+#   seed has neither; test_reference_survey_tools.py drives all three over MCP
+#   against a dispatched pass.
+NEEDS_A_DISPATCHED_SURVEY_PASS = frozenset(
+    {"loregarden_survey_pass", "loregarden_survey_record", "loregarden_survey_write"}
+)
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -183,6 +190,7 @@ def _args_for(
         # `reference_network_refused` fixture refuses. That is the point: a
         # structured `catalog_unavailable` payload, zero network, no isError.
         "loregarden_search_reference": {"query": "smoke"},
+        "loregarden_survey_queue": {"action": "list", "workspace_slug": ws},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_land_ticket": {"ticket_id": ticket_id},
@@ -474,6 +482,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
         "loregarden_search_reference",
+        "loregarden_survey_queue",
         "loregarden_reserve_docker_capacity",
         "loregarden_renew_docker_lease",
         "loregarden_release_docker_capacity",
@@ -494,6 +503,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         NEEDS_A_WRITTEN_ARTIFACT,
         NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
+        *NEEDS_A_DISPATCHED_SURVEY_PASS,
     }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"

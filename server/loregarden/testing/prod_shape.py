@@ -53,6 +53,7 @@ from loregarden.testing.factories import (
     make_workspace,
 )
 from loregarden.testing.prod_shape_activity import add_activity
+from loregarden.testing.prod_shape_survey import SURVEY_WORKSPACE, add_survey_shape
 from loregarden.testing.prod_shape_tree import TREE_CALIBRATION, TreeSummary, add_tree_shape
 
 
@@ -213,6 +214,8 @@ class ProdShapeSummary(BaseModel):
     ci_attempts: int
     activity_events: int
     tree: TreeSummary
+    #: The reference library's sources (`prod_shape_survey`).
+    survey_sources: int
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -412,6 +415,12 @@ def build_prod_shape(
                 continue
             refs = [(ext, parent) for s, _id_, ext, _st, parent in all_tickets if s == slug]
             memory[slug] = _memory(MemoryGraphStore(path), slug, count, refs, rng)
+    survey_sources = add_survey_shape(
+        session,
+        make_workspace(session, slug=SURVEY_WORKSPACE).id,
+        [(id_, ext) for s, id_, ext, _st, _parent in all_tickets if s == SURVEY_WORKSPACE],
+        prod_shape_id,
+    )
     return ProdShapeSummary(
         tickets=len(all_tickets) + milestones,
         milestones=milestones,
@@ -425,6 +434,7 @@ def build_prod_shape(
         ci_attempts=ci_attempts,
         activity_events=activity_events,
         tree=tree,
+        survey_sources=survey_sources,
     )
 
 

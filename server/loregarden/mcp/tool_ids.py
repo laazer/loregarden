@@ -59,6 +59,10 @@ class McpTool(StrEnum):
     DOCTOR = "loregarden_doctor"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
+    SURVEY_QUEUE = "loregarden_survey_queue"
+    SURVEY_PASS = "loregarden_survey_pass"
+    SURVEY_RECORD = "loregarden_survey_record"
+    SURVEY_WRITE = "loregarden_survey_write"
     RESERVE_DOCKER_CAPACITY = "loregarden_reserve_docker_capacity"
     RENEW_DOCKER_LEASE = "loregarden_renew_docker_lease"
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
@@ -93,6 +97,14 @@ def mcp_tool_values(tools: Iterable[McpTool]) -> list[str]:
 
 
 # --- Grant defaults (what an agent is offered) --------------------------------
+
+#: The reference survey's tools (`mcp.survey_tools`).
+SURVEY_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.SURVEY_QUEUE,
+    McpTool.SURVEY_PASS,
+    McpTool.SURVEY_RECORD,
+    McpTool.SURVEY_WRITE,
+)
 
 #: Booking docker capacity. Folded into `STAGE_DEFAULT_MCP_TOOLS`, which
 #: reverses the first cut of this feature and is worth explaining, because the
@@ -165,6 +177,9 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # Offered beside it, because the pair is a two-step flow: search finds the
     # exact page, fetch reads it. A stage given only the fetcher guesses URLs.
     McpTool.SEARCH_REFERENCE,
+    # A survey pass runs as a stage of its carrier ticket and records everything
+    # through these; any stage reading a reference source may cite it the same way.
+    *SURVEY_MCP_TOOLS,
     # Docker capacity, offered to every stage — see DOCKER_CAPACITY_MCP_TOOLS
     # below for why this reverses the first cut.
     *DOCKER_CAPACITY_MCP_TOOLS,
@@ -262,6 +277,10 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
+        # The survey drains unattended by decision (2026-10-21): its ticket writes
+        # are read back byte-exact, and the one human gate (admitting a source) is
+        # an inbox card the service files itself.
+        *SURVEY_MCP_TOOLS,
     }
 )
 
