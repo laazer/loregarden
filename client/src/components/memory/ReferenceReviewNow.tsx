@@ -5,6 +5,8 @@ import { api } from "../../api/client";
 import type { ReviewNowRequest, ReviewNowResult } from "../../api/referenceLibraryApi";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
+import { IconCloseButton } from "../IconCloseButton";
+import { ModalShell } from "../ui/ModalShell";
 import { Textarea } from "../ui/Textarea";
 import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
 
@@ -97,63 +99,67 @@ export function ReviewForm({
   const [asked, setAsked] = useState(question ?? "");
   const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [initiatives, setInitiatives] = useState<string[]>([]);
-  const fieldId = useId();
-  if (!open) {
-    return (
-      <Button variant="primary" compact aria-expanded={false} onClick={() => setOpen(true)}>
+  const ids = { title: useId(), question: useId() };
+  const needsQuestion = question !== null;
+  function close() {
+    setOpen(false);
+    setWorkspaces([]);
+    setInitiatives([]);
+  }
+  return (
+    <>
+      <Button variant="primary" compact aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {openLabel}
       </Button>
-    );
-  }
-  const needsQuestion = question !== null;
-  return (
-    <form
-      className="rl-review-again"
-      aria-label={`Review ${name} now`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        review.mutate(
-          { question: needsQuestion ? asked.trim() : "", workspace_slugs: workspaces, initiative_ids: initiatives },
-          { onSuccess: () => setOpen(false) },
-        );
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          setOpen(false);
-        }
-      }}
-    >
-      <ReferenceTargetsPicker
-        fixedWorkspaces={served}
-        workspaces={workspaces}
-        onWorkspaces={setWorkspaces}
-        fixedInitiatives={following}
-        initiatives={initiatives}
-        onInitiatives={setInitiatives}
-      />
-      <p className="rl-muted rl-optional-note">
-        It reads for every workspace and initiative ticked{needsQuestion ? "; a question narrows it" : ""}.
-      </p>
-      {needsQuestion ? (
-        <>
-          <label htmlFor={fieldId}>What should this review answer? (optional)</label>
-          <Textarea id={fieldId} rows={2} value={asked} onChange={(event) => setAsked(event.target.value)} />
-        </>
-      ) : null}
-      <div className="rl-form-actions">
-        <Button
-          type="submit"
-          variant="primary"
-          compact
-          disabled={review.isPending}
+      <ModalShell open={open} onDismiss={review.isPending ? undefined : close} labelledBy={ids.title}>
+        <form
+          aria-label={`Review ${name} now`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (review.isPending) return;
+            review.mutate(
+              { question: needsQuestion ? asked.trim() : "", workspace_slugs: workspaces, initiative_ids: initiatives },
+              { onSuccess: close },
+            );
+          }}
         >
-          {review.isPending ? "Starting…" : "Review now"}
-        </Button>
-        <Button variant="plain" compact aria-expanded onClick={() => setOpen(false)}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+          <div className="modal-header">
+            <div>
+              <h2 id={ids.title} className="modal-title">
+                Review {name} now
+              </h2>
+              <p className="modal-subtitle">
+                It reads for every workspace and initiative ticked{needsQuestion ? "; a question narrows it" : ""}.
+              </p>
+            </div>
+            <IconCloseButton disabled={review.isPending} onClick={close} />
+          </div>
+          <div className="modal-body rl-modal-body">
+            <ReferenceTargetsPicker
+              fixedWorkspaces={served}
+              workspaces={workspaces}
+              onWorkspaces={setWorkspaces}
+              fixedInitiatives={following}
+              initiatives={initiatives}
+              onInitiatives={setInitiatives}
+            />
+            {needsQuestion ? (
+              <>
+                <label htmlFor={ids.question}>What should this review answer? (optional)</label>
+                <Textarea id={ids.question} rows={2} value={asked} onChange={(event) => setAsked(event.target.value)} />
+              </>
+            ) : null}
+          </div>
+          <div className="modal-footer">
+            <Button variant="secondary" disabled={review.isPending} onClick={close}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={review.isPending}>
+              {review.isPending ? "Starting…" : "Review now"}
+            </Button>
+          </div>
+        </form>
+      </ModalShell>
+    </>
   );
 }

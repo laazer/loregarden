@@ -25,7 +25,7 @@ import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReviewForm } from "./ReferenceReviewNow";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
-import { ReferenceSourceServes } from "./ReferenceSourceServes";
+import { ReferenceLinkButton } from "./ReferenceLinkModal";
 import { ReferenceSourceUpstream } from "./ReferenceSourceUpstream";
 import { TicketLink } from "../TicketLink";
 
@@ -335,7 +335,7 @@ function Facts({ detail }: { detail: LibraryDetail }) {
             </li>
           ))}
         </ul>
-        <ReferenceSourceServes detail={detail} />
+        <ReferenceLinkButton detail={detail} />
       </dd>
       {detail.queued_reason && detail.queued_reason !== "imported from scratch/ref_projects" ? (
         <>

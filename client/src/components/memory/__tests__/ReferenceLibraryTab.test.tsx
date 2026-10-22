@@ -234,33 +234,50 @@ describe("keyboard", () => {
 });
 
 describe("initiatives following a source", () => {
-  it("links an initiative, says what joined, and shows it as following", async () => {
-    mockApi.linkSourceInitiative.mockResolvedValue({
-      initiative_id: INITIATIVE.id,
-      initiative: "init-survey-1",
-      added: ["lg-a-1", "lg-a-2"],
-      skipped: [{ ticket: "lg-a-3", reason: "init-survey-1 already covers lg-a-3 through lg-a-1, a member of it." }],
-      settled_left_out: 2,
-    });
+  it("links several workspaces and initiatives at once from a modal, and says what each did", async () => {
+    const second = { ...INITIATIVE, id: "init-uuid-2", external_id: "init-survey-2", title: "Second" };
+    mockApi.initiatives.mockResolvedValue([INITIATIVE, second]);
+    mockApi.linkSourceTargets.mockResolvedValue({
+      attached: ["blobert"],
+      scoped_pass: 25,
+      initiatives: [
+        {
+          initiative_id: INITIATIVE.id, initiative: "init-survey-1", added: ["lg-a-1", "lg-a-2"], settled_left_out: 2,
+          skipped: [{ ticket: "lg-a-3", reason: "init-survey-1 already covers lg-a-3 through lg-a-1, a member of it." }],
+        },
+        { initiative_id: second.id, initiative: "init-survey-2", added: [], skipped: [], settled_left_out: 0 },
+      ],
+    });  // prettier-ignore
     renderAt(`/memory/library/${DEEP.source.id}`);
     const section = await screen.findByRole("region", { name: /Initiatives following it/ });
     expect(within(section).getByText(/No initiative follows this source/)).toBeInTheDocument();
-    const link = within(section).getByRole("button", { name: "Link" });
-    expect(link).toBeDisabled();
-    fireEvent.change(await within(section).findByLabelText("Link an initiative"), { target: { value: INITIATIVE.id } });
+    const open = within(section).getByRole("button", { name: "Link workspaces and initiatives…" });
+    expect(open).toHaveAttribute("aria-haspopup", "dialog");
+    fireEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: `Link to ${DEEP.source.name}` });
+    const submit = within(dialog).getByRole("button", { name: "Link" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "blobert" }));
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: /init-survey-1/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /init-survey-2/ }));
     mockApi.referenceSource.mockResolvedValue({
       ...DEEP,
       initiatives: [{ id: INITIATIVE.id, external_id: "init-survey-1", title: INITIATIVE.title, members_added: 2 }],
     });
-    fireEvent.click(link);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Link 3" }));
+    await waitFor(() =>
+      expect(mockApi.linkSourceTargets).toHaveBeenCalledWith(DEEP.source.id, {
+        workspace_slugs: ["blobert"], initiative_ids: [INITIATIVE.id, second.id], question: "", queued_reason: "",
+      }),
+    );  // prettier-ignore
     expect(await within(section).findByRole("status")).toHaveTextContent(
-      "2 open tickets joined init-survey-1; 2 settled tickets stayed out; 1 the initiative already covers.",
+      `${DEEP.source.name} now reads for blobert (pass 25 reads it again for them); ` +
+        "2 open tickets joined init-survey-1 (2 settled tickets stayed out; 1 it already covers); " +
+        "0 open tickets joined init-survey-2.",
     );
-    expect(mockApi.linkSourceInitiative).toHaveBeenCalledTimes(1);
-    expect(mockApi.linkSourceInitiative).toHaveBeenCalledWith(DEEP.source.id, INITIATIVE.id);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(await within(section).findByRole("link", { name: /init-survey-1 Make surveys pay off/ })).toBeInTheDocument();
     expect(within(section).getByText("Why 1 ticket did not join")).toBeInTheDocument();
-    expect(within(section).getByText("Every initiative already follows this source.")).toBeInTheDocument();
   });
 
   it("asks before unlinking, saying what will leave, and reports what did", async () => {
@@ -281,21 +298,25 @@ describe("initiatives following a source", () => {
     );
   });
 
-  it("names a failed link in a toast", async () => {
-    mockApi.linkSourceInitiative.mockRejectedValue(new ApiError(422, "init-x is not an initiative"));
+  it("keeps the modal open and names a failed link", async () => {
+    mockApi.linkSourceTargets.mockRejectedValue(new ApiError(404, "No initiative 'init-x'"));
     renderAt(`/memory/library/${DEEP.source.id}`);
     const section = await screen.findByRole("region", { name: /Initiatives following it/ });
-    fireEvent.change(await within(section).findByLabelText("Link an initiative"), { target: { value: INITIATIVE.id } });
-    fireEvent.click(within(section).getByRole("button", { name: "Link" }));
-    await waitFor(() =>
-      expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Could not link the initiative"),
-    );
+    fireEvent.click(within(section).getByRole("button", { name: "Link workspaces and initiatives…" }));
+    const dialog = await screen.findByRole("dialog", { name: `Link to ${DEEP.source.name}` });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: /init-survey-1/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Link 1" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/Nothing was linked: .*No initiative 'init-x'/);
+    expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Nothing was linked");
   });
 
   it("points to the Initiatives page when there are none", async () => {
     mockApi.initiatives.mockResolvedValue([]);
     renderAt(`/memory/library/${DEEP.source.id}`);
-    expect(await screen.findByRole("link", { name: "Create one on the Initiatives page" })).toHaveAttribute(
+    const section = await screen.findByRole("region", { name: /Initiatives following it/ });
+    fireEvent.click(within(section).getByRole("button", { name: "Link workspaces and initiatives…" }));
+    const dialog = await screen.findByRole("dialog", { name: `Link to ${DEEP.source.name}` });
+    expect(await within(dialog).findByRole("link", { name: "Start one on the Initiatives page" })).toHaveAttribute(
       "href",
       "/initiatives",
     );
@@ -460,6 +481,7 @@ describe("adding a reference", () => {
     const toggle = await screen.findByRole("button", { name: "Add a reference" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
+    expect(await screen.findByRole("dialog", { name: "Add a reference" })).toBeInTheDocument();
     const form = screen.getByRole("form", { name: "Add a reference" });
     const submit = within(form).getByRole("button", { name: "Propose for review" });
     expect(submit).toBeDisabled();
@@ -605,31 +627,6 @@ describe("who a review is for", () => {
       expect(useToastStore.getState().toasts[0]?.message).toMatch(
         /it now reads for blobert too; init-survey-1 now follow it\./,
       ),
-    );
-  });
-
-  it("adds a workspace from the source page, needing a question and a reason", async () => {
-    mockApi.serveSourceInWorkspaces.mockResolvedValue({
-      source: DEEP.source, attached: ["blobert"], scoped_pass: 25, initiatives_linked: [],
-    });  // prettier-ignore
-    renderAt(`/memory/library/${DEEP.source.id}`);
-    fireEvent.click(await screen.findByRole("button", { name: "Add a workspace…" }));
-    const form = screen.getByRole("form", { name: `Add a workspace to ${DEEP.source.name}` });
-    expect(within(form).queryByRole("group", { name: "Feed its tickets into" })).not.toBeInTheDocument();
-    const add = within(form).getByRole("button", { name: "Add" });
-    expect(add).toBeDisabled(); // a workspace is what it needs, not words
-    fireEvent.click(await within(form).findByRole("checkbox", { name: "blobert" }));
-    expect(add).toBeEnabled();
-    fireEvent.change(within(form).getByRole("textbox", { name: /What should it answer for them\?/ }), { target: { value: "How does it gate?" } });
-    fireEvent.change(within(form).getByRole("textbox", { name: /Why there\?/ }), { target: { value: "blobert needs a gate" } });
-    fireEvent.click(add);
-    await waitFor(() =>
-      expect(mockApi.serveSourceInWorkspaces).toHaveBeenCalledWith(DEEP.source.id, {
-        workspace_slugs: ["blobert"], question: "How does it gate?", queued_reason: "blobert needs a gate",
-      }),
-    );  // prettier-ignore
-    await waitFor(() =>
-      expect(useToastStore.getState().toasts[0]?.message).toBe(`Pass 25 reads ${DEEP.source.name} again for blobert.`),
     );
   });
 

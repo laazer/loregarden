@@ -11,7 +11,6 @@ from loregarden.models.domain import Approval, Ticket, WorkItemType
 from loregarden.models.domain.survey_enums import (
     BulkAddOutcome,
     SurveyPassMode,
-    SurveySourceKind,
     SurveySourceStatus,
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
@@ -151,41 +150,66 @@ def test_the_api_adds_one_reference_for_two_workspaces_and_an_initiative(
     )
 
 
-def test_the_source_page_adds_a_workspace_and_a_surveyed_source_rescopes(
+def test_the_source_page_links_workspaces_and_initiatives_together(
     client: TestClient, isolated_db, tmp_path
 ):
     with Session(isolated_db) as session:
         world = build_world(session)
         other = second_workspace(session, world).slug
-        source = _surveyed(session, world, write_tree(tmp_path / "t", {"a.py": "a"}))
-        source_id = source.id
+        third = second_workspace(session, world, "lore-eden").slug
+        for ext in ("init-survey-1", "init-survey-2"):
+            make_ticket(
+                session, workspace_id=None, external_id=ext, title=ext,
+                work_item_type=WorkItemType.INITIATIVE,
+            )  # fmt: skip
+        source_id = _surveyed(session, world, write_tree(tmp_path / "t", {"a.py": "a"})).id
+    url = f"/api/reference-library/{source_id}/links"
     response = client.post(
-        f"/api/reference-library/{source_id}/workspaces",
+        url,
         json={
-            "workspace_slugs": [other],
-            "question": "How does it gate?",
-            "queued_reason": "blobert needs a gate",
+            "workspace_slugs": [other, third],
+            "initiative_ids": ["init-survey-1", "init-survey-2"],
         },
     )
     assert response.status_code == 200, response.text
-    assert (response.json()["attached"], response.json()["scoped_pass"]) == ([other], 2)
-    again = client.post(
-        f"/api/reference-library/{source_id}/workspaces",
-        json={"workspace_slugs": [other], "question": "q", "queued_reason": "r"},
-    )
-    assert again.status_code == 422
-    assert "already serves" in again.json()["detail"]
+    body = response.json()
+    assert (body["attached"], body["scoped_pass"]) == ([other, third], 2)
+    assert [link["initiative"] for link in body["initiatives"]] == [
+        "init-survey-1",
+        "init-survey-2",
+    ]
+    # Initiatives alone are a link too; no pass is queued for them.
+    with Session(isolated_db) as session:
+        make_ticket(
+            session, workspace_id=None, external_id="init-survey-3", title="i3",
+            work_item_type=WorkItemType.INITIATIVE,
+        )  # fmt: skip
+    only = client.post(url, json={"initiative_ids": ["init-survey-3"]}).json()
+    assert (only["attached"], only["scoped_pass"]) == ([], None)
+    assert client.post(url, json={}).status_code == 422
+    assert client.post(url, json={"workspace_slugs": [other]}).status_code == 422  # already serves
     assert (
         client.post(
-            "/api/reference-library/missing/workspaces",
-            json={"workspace_slugs": [other], "question": "q", "queued_reason": "r"},
+            "/api/reference-library/missing/links", json={"initiative_ids": ["x"]}
         ).status_code
         == 404
     )
+
+
+def test_an_unknown_initiative_links_nothing_on_the_source_page(
+    client: TestClient, isolated_db, tmp_path
+):
     with Session(isolated_db) as session:
-        assert (
-            session.get(SurveySource, source_id).kind is SurveySourceKind.REPO
-        )  # kept, not re-guessed
+        world = build_world(session)
+        other = second_workspace(session, world).slug
+        source_id = _surveyed(session, world, write_tree(tmp_path / "t", {"a.py": "a"})).id
+    response = client.post(
+        f"/api/reference-library/{source_id}/links",
+        json={"workspace_slugs": [other], "initiative_ids": ["init-nope-9"]},
+    )
+    assert response.status_code == 404
+    with Session(isolated_db) as session:
+        assert _served(session, source_id) == [world.workspace_slug]
 
 
 def test_no_question_or_reason_is_needed_and_the_card_says_none_was_given(ctx):

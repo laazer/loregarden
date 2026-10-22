@@ -95,10 +95,21 @@ export interface ReviewNowRequest {
   initiative_ids: string[];
 }
 
-export interface ServeRequest {
+export interface LinkTargetsRequest {
   workspace_slugs: string[];
+  initiative_ids: string[];
+  /** What it should answer for the new workspaces; optional. */
   question: string;
   queued_reason: string;
+}
+
+export interface LinkTargetsResult {
+  /** Workspaces this call made the source serve. */
+  attached: string[];
+  /** A scoped pass queued because a surveyed source gained a workspace. */
+  scoped_pass: number | null;
+  /** What each initiative link did. */
+  initiatives: LinkResult[];
 }
 
 export interface BulkAddRequest {
@@ -245,8 +256,8 @@ export const referenceLibraryApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  serveSourceInWorkspaces: (sourceId: string, body: ServeRequest) =>
-    request<AddSourceResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/workspaces`, {
+  linkSourceTargets: (sourceId: string, body: LinkTargetsRequest) =>
+    request<LinkTargetsResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/links`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

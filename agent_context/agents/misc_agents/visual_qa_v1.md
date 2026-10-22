@@ -70,6 +70,8 @@ criteria yourself and grade against them.
 
 Ask whether the layout matches the question the surface answers. Items that each repeat a name and four or more attributes, which the operator compares, are a table even when they render as a list. One record's label/value pairs are a `<dl>`, not a table. A grid of `<div>`s drawn as a table, with no `role=table`, fails, because a screen reader or agent cannot read its columns. The visual-qa script reports the first two as `tabular-list` and `key-value-table`. Read each hit against the design criteria. Do not pass a hit unread, and do not fail one the criteria justify.
 
+Forms and imports open in a modal. A form of two or more fields, or an import flow, laid out inline on a page fails: the page shows records and a button that opens the form in a `ModalShell`. A single search, filter or composer field stays inline.
+
 ## Rules
 
 - **Every surface, every time.** The script enumerates them so "most pages look fine" cannot pass. A route that was never visited counts against the run — a check that silently skips a surface is evidence of something untrue.

@@ -3,7 +3,11 @@ import { useId, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "../../api/client";
-import type { AddSourceResult, BulkAddItem, SourceKind } from "../../api/referenceLibraryApi";
+import type {
+  AddSourceResult,
+  BulkAddItem,
+  SourceKind,
+} from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
 import { splitUrls } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
@@ -11,7 +15,9 @@ import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
+import { ModalShell } from "../ui/ModalShell";
 import { Textarea } from "../ui/Textarea";
+import { IconCloseButton } from "../IconCloseButton";
 import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
 
 /** The server takes this many URLs per bulk add (`MAX_BULK_URLS`). */
@@ -38,7 +44,8 @@ function announce(result: AddSourceResult, workspace: string) {
     pushToast({
       tone: "success",
       title: `Proposed ${source.name}`,
-      message: "Approve its card in the inbox to queue it; nothing in it is read before then.",
+      message:
+        "Approve its card in the inbox to queue it; nothing in it is read before then.",
     });
   } else if (result.scoped_pass) {
     pushToast({
@@ -56,13 +63,16 @@ function announce(result: AddSourceResult, workspace: string) {
 }
 
 function announceBulk(items: BulkAddItem[]) {
-  const count = (outcome: BulkAddItem["outcome"]) => items.filter((item) => item.outcome === outcome).length;
+  const count = (outcome: BulkAddItem["outcome"]) =>
+    items.filter((item) => item.outcome === outcome).length;
   const failed = count("failed");
   const known = count("already");
   const added = items.length - failed - known;
   const notes = [
     known ? `${known} already in the library` : "",
-    failed ? `${failed} could not be added and ${failed === 1 ? "is" : "are"} left in the box, the reason beside each` : "",
+    failed
+      ? `${failed} could not be added and ${failed === 1 ? "is" : "are"} left in the box, the reason beside each`
+      : "",
   ].filter(Boolean);
   pushToast({
     tone: failed ? (added ? "warning" : "error") : "success",
@@ -78,9 +88,15 @@ function BulkResults({ items }: { items: BulkAddItem[] }) {
   return (
     <ul className="rl-bulk-results" aria-label="What each URL did">
       {items.map((item) => (
-        <li key={item.url} className={item.outcome === "failed" ? "rl-bulk-failed" : undefined}>
+        <li
+          key={item.url}
+          className={item.outcome === "failed" ? "rl-bulk-failed" : undefined}
+        >
           {item.source ? (
-            <Link className="rl-bulk-url" to={{ pathname: memoryPath("library", item.source.id), search }}>
+            <Link
+              className="rl-bulk-url"
+              to={{ pathname: memoryPath("library", item.source.id), search }}
+            >
               {item.url}
             </Link>
           ) : (
@@ -126,8 +142,18 @@ export function ReferenceSourceForm({
   const [results, setResults] = useState<BulkAddItem[]>([]);
   const [alsoFor, setAlsoFor] = useState<string[]>([]);
   const [initiativeIds, setInitiativeIds] = useState<string[]>([]);
-  const workspaceSlugs = [workspace, ...alsoFor.filter((slug) => slug !== workspace)];
-  const ids = { url: useId(), kind: useId(), question: useId(), why: useId(), hint: useId() };
+  const workspaceSlugs = [
+    workspace,
+    ...alsoFor.filter((slug) => slug !== workspace),
+  ];
+  const ids = {
+    title: useId(),
+    url: useId(),
+    kind: useId(),
+    question: useId(),
+    why: useId(),
+    hint: useId(),
+  };
   const urls = splitUrls(urlsText);
 
   function refresh() {
@@ -177,7 +203,12 @@ export function ReferenceSourceForm({
       announceBulk(items);
       refresh();
       // What failed stays in the box to fix and resend; what was added leaves it.
-      setUrlsText(items.filter((item) => item.outcome === "failed").map((item) => item.url).join("\n"));
+      setUrlsText(
+        items
+          .filter((item) => item.outcome === "failed")
+          .map((item) => item.url)
+          .join("\n"),
+      );
       if (items.some((item) => item.outcome === "proposed")) setInboxOpen(true);
     },
     onError: failed,
@@ -198,141 +229,182 @@ export function ReferenceSourceForm({
   else if (several) submitLabel = `Propose ${urls.length} for review`;
 
   return (
-    <form
-      className="rl-add"
-      aria-label="Add a reference"
-      onSubmit={submit}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          onCancel();
-        }
-      }}
+    <ModalShell
+      open
+      onDismiss={pending ? undefined : onCancel}
+      labelledBy={ids.title}
+      panelClassName={several ? "modal-panel-wide" : undefined}
     >
-      {initialUrl ? null : (
-        <div className="rl-add-mode" role="group" aria-label="How many">
-          <Button variant="plain" compact className="rl-view" aria-pressed={!several} onClick={() => setSeveral(false)}>
-            One
-          </Button>
-          <Button variant="plain" compact className="rl-view" aria-pressed={several} onClick={() => setSeveral(true)}>
-            Several
-          </Button>
+      <form aria-label="Add a reference" onSubmit={submit}>
+        <div className="modal-header">
+          <div>
+            <h2 id={ids.title} className="modal-title">
+              {initialUrl ? "Propose for review" : "Add a reference"}
+            </h2>
+            <p className="modal-subtitle">
+              {several
+                ? "Each new one gets its own card in the inbox; nothing is read before it is approved."
+                : "A new source waits for your approval in the inbox before anything is read."}
+            </p>
+          </div>
+          <IconCloseButton disabled={pending} onClick={onCancel} />
         </div>
-      )}
-      {several ? (
-        <div className="rl-add-row">
-          <div className="rl-field rl-field--grow">
-            <label htmlFor={ids.url}>URLs</label>
+        <div className="modal-body rl-modal-body">
+          {initialUrl ? null : (
+            <div className="rl-add-mode" role="group" aria-label="How many">
+              <Button
+                variant="plain"
+                compact
+                className="rl-view"
+                aria-pressed={!several}
+                onClick={() => setSeveral(false)}
+              >
+                One
+              </Button>
+              <Button
+                variant="plain"
+                compact
+                className="rl-view"
+                aria-pressed={several}
+                onClick={() => setSeveral(true)}
+              >
+                Several
+              </Button>
+            </div>
+          )}
+          {several ? (
+            <div className="rl-add-row">
+              <div className="rl-field rl-field--grow">
+                <label htmlFor={ids.url}>URLs</label>
+                <Textarea
+                  id={ids.url}
+                  rows={4}
+                  value={urlsText}
+                  onChange={(event) => setUrlsText(event.target.value)}
+                  placeholder={
+                    "https://github.com/owner/one, https://github.com/owner/two\nhttps://docs.example.dev"
+                  }
+                  aria-describedby={ids.hint}
+                  autoFocus
+                />
+                <span
+                  id={ids.hint}
+                  className={tooMany ? "rl-warn" : "rl-muted"}
+                  aria-live="polite"
+                >
+                  {tooMany
+                    ? `${urls.length} URLs; at most ${MAX_BULK_URLS} at a time.`
+                    : `Separate them with commas, tabs or new lines. ${urls.length} URL${urls.length === 1 ? "" : "s"}.`}
+                </span>
+              </div>
+              <div className="rl-field">
+                <label htmlFor={ids.kind}>Kind</label>
+                <Select
+                  id={ids.kind}
+                  value={bulkKind}
+                  onChange={(event) =>
+                    setBulkKind(
+                      event.target.value as SourceKind | typeof DETECT,
+                    )
+                  }
+                >
+                  <option value={DETECT}>Detect from each URL</option>
+                  {KINDS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      All: {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="rl-add-row">
+              <div className="rl-field rl-field--grow">
+                <label htmlFor={ids.url}>URL</label>
+                <Input
+                  id={ids.url}
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  readOnly={Boolean(initialUrl)}
+                  autoFocus={!initialUrl}
+                  required
+                />
+              </div>
+              <div className="rl-field">
+                <label htmlFor={ids.kind}>Kind</label>
+                <Select
+                  id={ids.kind}
+                  value={kind}
+                  onChange={(event) =>
+                    setKind(event.target.value as SourceKind)
+                  }
+                >
+                  {KINDS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          )}
+          <ReferenceTargetsPicker
+            fixedWorkspaces={[workspace]}
+            workspaces={alsoFor}
+            onWorkspaces={setAlsoFor}
+            initiatives={initiativeIds}
+            onInitiatives={setInitiativeIds}
+          />
+          <p className="rl-muted rl-optional-note">
+            That is enough to review {several ? "them" : "it"}: the survey reads
+            for those workspaces and initiatives. Add specifics below if you
+            have them.
+          </p>
+          <div className="rl-field">
+            <label htmlFor={ids.question}>
+              What should the survey answer from {several ? "them" : "it"}?
+              (optional)
+            </label>
             <Textarea
-              id={ids.url}
-              rows={4}
-              value={urlsText}
-              onChange={(event) => setUrlsText(event.target.value)}
-              placeholder={"https://github.com/owner/one, https://github.com/owner/two\nhttps://docs.example.dev"}
-              aria-describedby={ids.hint}
-              autoFocus
-            />
-            <span id={ids.hint} className={tooMany ? "rl-warn" : "rl-muted"} aria-live="polite">
-              {tooMany
-                ? `${urls.length} URLs; at most ${MAX_BULK_URLS} at a time.`
-                : `Separate them with commas, tabs or new lines. ${urls.length} URL${urls.length === 1 ? "" : "s"}.`}
-            </span>
-          </div>
-          <div className="rl-field">
-            <label htmlFor={ids.kind}>Kind</label>
-            <Select
-              id={ids.kind}
-              value={bulkKind}
-              onChange={(event) => setBulkKind(event.target.value as SourceKind | typeof DETECT)}
-            >
-              <option value={DETECT}>Detect from each URL</option>
-              {KINDS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  All: {option.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-      ) : (
-        <div className="rl-add-row">
-          <div className="rl-field rl-field--grow">
-            <label htmlFor={ids.url}>URL</label>
-            <Input
-              id={ids.url}
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://github.com/owner/repo"
-              readOnly={Boolean(initialUrl)}
-              autoFocus={!initialUrl}
-              required
+              id={ids.question}
+              rows={2}
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="How do they retry a failed run without losing its state?"
+              autoFocus={Boolean(initialUrl)}
             />
           </div>
           <div className="rl-field">
-            <label htmlFor={ids.kind}>Kind</label>
-            <Select id={ids.kind} value={kind} onChange={(event) => setKind(event.target.value as SourceKind)}>
-              {KINDS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <label htmlFor={ids.why}>
+              {several ? "Why these?" : "Why this one?"} (optional)
+            </label>
+            <Textarea
+              id={ids.why}
+              rows={2}
+              value={why}
+              onChange={(event) => setWhy(event.target.value)}
+              placeholder="It ships a retry ledger we could compare with ours."
+            />
           </div>
+          {failure ? (
+            <p className="rl-warn" role="alert">
+              Not added: {failure}
+            </p>
+          ) : null}
+          {several && results.length > 0 ? (
+            <BulkResults items={results} />
+          ) : null}
         </div>
-      )}
-      <ReferenceTargetsPicker
-        fixedWorkspaces={[workspace]}
-        workspaces={alsoFor}
-        onWorkspaces={setAlsoFor}
-        initiatives={initiativeIds}
-        onInitiatives={setInitiativeIds}
-      />
-      <p className="rl-muted rl-optional-note">
-        That is enough to review {several ? "them" : "it"}: the survey reads for those workspaces and initiatives.
-        Add specifics below if you have them.
-      </p>
-      <div className="rl-field">
-        <label htmlFor={ids.question}>
-          What should the survey answer from {several ? "them" : "it"}? (optional)
-        </label>
-        <Textarea
-          id={ids.question}
-          rows={2}
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="How do they retry a failed run without losing its state?"
-          autoFocus={Boolean(initialUrl)}
-        />
-      </div>
-      <div className="rl-field">
-        <label htmlFor={ids.why}>{several ? "Why these?" : "Why this one?"} (optional)</label>
-        <Textarea
-          id={ids.why}
-          rows={2}
-          value={why}
-          onChange={(event) => setWhy(event.target.value)}
-          placeholder="It ships a retry ledger we could compare with ours."
-        />
-      </div>
-      {failure ? (
-        <p className="rl-warn" role="alert">
-          Not added: {failure}
-        </p>
-      ) : null}
-      {several && results.length > 0 ? <BulkResults items={results} /> : null}
-      <div className="rl-form-actions">
-        <Button type="submit" variant="primary" compact disabled={!ready || pending}>
-          {submitLabel}
-        </Button>
-        <Button variant="plain" compact onClick={onCancel}>
-          {several && results.length > 0 ? "Done" : "Cancel"}
-        </Button>
-        <span className="rl-muted">
-          {several
-            ? "Each new one gets its own card in the inbox; nothing is read before it is approved."
-            : "A new source waits for your approval in the inbox before anything is read."}
-        </span>
-      </div>
-    </form>
+        <div className="modal-footer">
+          <Button variant="secondary" disabled={pending} onClick={onCancel}>
+            {several && results.length > 0 ? "Done" : "Cancel"}
+          </Button>
+          <Button type="submit" variant="primary" disabled={!ready || pending}>
+            {submitLabel}
+          </Button>
+        </div>
+      </form>
+    </ModalShell>
   );
 }

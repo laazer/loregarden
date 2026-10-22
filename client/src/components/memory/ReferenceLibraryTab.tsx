@@ -169,13 +169,14 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               aria-label="Search sources"
             />
             <Button
-              variant={adding ? "secondary" : "primary"}
+              variant="primary"
               compact
               className="rl-add-toggle"
               aria-expanded={adding}
-              onClick={() => setAdding((open) => !open)}
+              aria-haspopup="dialog"
+              onClick={() => setAdding(true)}
             >
-              {adding ? "Close the form" : "Add a reference"}
+              Add a reference
             </Button>
             <span className="rl-count" aria-live="polite">
               {library.data ? `${rows.length} source${rows.length === 1 ? "" : "s"}` : ""}
