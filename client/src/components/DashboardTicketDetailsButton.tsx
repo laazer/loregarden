@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { TicketDetailsModal, type TicketDetailsSaveDraft } from './TicketDetailsModal';
-import { describeError } from '../state/toastStore';
-import * as apiClient from '../api/client';
+import { TicketDetailsModal } from './TicketDetailsModal';
+import { useTicketDetailsEditor } from '../hooks/useTicketDetailsEditor';
 
 export interface DashboardTicketDetailsButtonProps {
   ticketId: string;
@@ -14,96 +12,17 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
   className = '',
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [saveError, setSaveError] = useState<string | undefined>();
-  const qc = useQueryClient();
-
-  const { data: ticketDetail, isLoading, error } = useQuery({
-    queryKey: ['ticket', ticketId],
-    queryFn: () => apiClient.api.ticket(ticketId),
-    enabled: isModalOpen,
-  });
-
-  const saveDetails = useMutation({
-    meta: { errorTitle: "Save ticket details" },
-    mutationFn: async (draft: TicketDetailsSaveDraft) => {
-      const patch: Parameters<typeof apiClient.api.updateTicket>[1] = {};
-      const current = ticketDetail;
-      if (!current) return;
-
-      if (draft.title !== current.title) {
-        patch.title = draft.title;
-      }
-      if (draft.description !== (current.description ?? '')) {
-        patch.description = draft.description;
-      }
-      const currentCriteria = current.acceptance_criteria ?? [];
-      if (draft.acceptanceCriteria.join('\n') !== currentCriteria.join('\n')) {
-        patch.acceptance_criteria = draft.acceptanceCriteria;
-      }
-      const currentChecks = current.checked_acceptance_criteria ?? [];
-      if (draft.checkedAcceptanceCriteria.join('\n') !== currentChecks.join('\n')) {
-        patch.checked_acceptance_criteria = draft.checkedAcceptanceCriteria;
-      }
-      const currentTags = current.tags ?? [];
-      if (draft.tags.join(',') !== currentTags.join(',')) {
-        patch.tags = draft.tags;
-      }
-      if (draft.state !== current.state) {
-        patch.state = draft.state;
-      }
-      if (draft.priority !== current.priority) {
-        patch.priority = draft.priority;
-      }
-      if (Object.keys(patch).length === 0) return;
-
-      await apiClient.api.updateTicket(ticketId, patch);
-    },
-    onSuccess: () => {
-      setSaveError(undefined);
-      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
-      qc.invalidateQueries({ queryKey: ['ticket-tree'] });
-      qc.invalidateQueries({ queryKey: ['tickets'] });
-    },
-    onError: (err) => {
-      setSaveError(describeError(err, 'Failed to save ticket details'));
-    },
-  });
-
-  // Ticking a criterion from read mode: one field, saved on the click.
-  const saveChecks = useMutation({
-    meta: { errorTitle: "Check off acceptance criterion" },
-    mutationFn: (checked: string[]) =>
-      apiClient.api.updateTicket(ticketId, { checked_acceptance_criteria: checked }),
-    onSuccess: (updated) => {
-      setSaveError(undefined);
-      qc.setQueryData(['ticket', ticketId], updated);
-    },
-    onError: (err) => {
-      setSaveError(describeError(err, 'Failed to save the checked criteria'));
-    },
-  });
+  const details = useTicketDetailsEditor(ticketId, isModalOpen);
+  const isLoading = details.isLoading;
 
   const handleOpenModal = () => {
-    setSaveError(undefined);
+    details.clearSaveError();
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setSaveError(undefined);
-  };
-
-  // Both reject on failure, after onError has put the message in `saveError`,
-  // which TicketDetailsModal renders; the rejection is how it knows to keep
-  // the draft (or revert the checkbox) rather than assume the write landed.
-  const handleSave = async (draft: TicketDetailsSaveDraft) => {
-    setSaveError(undefined);
-    await saveDetails.mutateAsync(draft);
-  };
-
-  const handleSaveChecks = async (checked: string[]) => {
-    setSaveError(undefined);
-    await saveChecks.mutateAsync(checked);
+    details.clearSaveError();
   };
 
   return (
@@ -131,16 +50,16 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
       </button>
 
       <TicketDetailsModal
-        ticket={ticketDetail || null}
+        ticket={details.ticket}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         isLoading={isLoading}
-        error={error ? (error instanceof Error ? error.message : 'Failed to load ticket details') : undefined}
-        isSaving={saveDetails.isPending}
-        saveError={saveError}
-        onSave={handleSave}
-        onSaveChecks={handleSaveChecks}
-        isSavingChecks={saveChecks.isPending}
+        error={details.loadError}
+        isSaving={details.isSaving}
+        saveError={details.saveError}
+        onSave={details.save}
+        onSaveChecks={details.saveChecks}
+        isSavingChecks={details.isSavingChecks}
       />
     </>
   );

@@ -17,7 +17,7 @@ import {
 } from "../lib/queueHistoryApi";
 import { describeError, toastActionFailed } from "../state/toastStore";
 import { Button } from "./ui/Button";
-import { navigateToTicket } from "../lib/useAppNavigation";
+import { peekTicket } from "../state/ticketPeekStore";
 
 const OUTCOME_FILTERS: { key: string; label: string }[] = [
   { key: "", label: "All" },
@@ -141,11 +141,11 @@ export function QueueHistoryRail() {
 
       <div className="queue-history-list">
         {entries.map((entry) => (
-          <button
+          <Button
+            variant="plain"
             key={entry.entry_id}
-            type="button"
             className="queue-history-card"
-            onClick={() => navigateToTicket(entry.ticket_id)}
+            onClick={() => peekTicket(entry.ticket_id)}
           >
             <span className="queue-history-title">{entry.ticket_title}</span>
             <span className={`queue-history-badge is-${entry.outcome}`}>
@@ -162,7 +162,7 @@ export function QueueHistoryRail() {
               <span className="queue-history-reason">{entry.failure_reason}</span>
             ) : null}
             <span className="queue-history-when">{formatWhen(entry)}</span>
-          </button>
+          </Button>
         ))}
       </div>
     </>

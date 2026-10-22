@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../../../api/client";
 import type { InitiativeMilestone } from "../../../api/initiativeApi";
 import { useDebounced } from "../../../hooks/useDebounced";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { describeError } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
@@ -88,7 +88,7 @@ export function TrackTicketSearch({ initiativeId, onChanged }: { initiativeId: s
                 variant="plain"
                 className="plan-link"
                 title={`Open ${t.external_id}`}
-                onClick={() => navigateToTicket(t.id)}
+                onClick={() => peekTicket(t.id)}
               >
                 <span className="plan-mono">{t.external_id}</span> {t.title}
               </Button>

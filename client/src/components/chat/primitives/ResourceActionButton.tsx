@@ -10,6 +10,7 @@ import {
   type ArtifactTab,
 } from "../../../lib/useAppNavigation";
 import { useUiStore } from "../../../state/uiStore";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 import { useResourceNavigation } from "./resourceNavigation";
 
@@ -121,7 +122,7 @@ export function TicketNameLink({
       title={title}
       onClick={(event) => {
         event.stopPropagation();
-        navigateToTicket(ticketId);
+        peekTicket(ticketId);
       }}
     >
       {children}

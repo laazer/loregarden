@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { NodeStatus, PlanNode } from "../../../api/initiativeApi";
 import type { TicketSummary } from "../../../api/types";
 import { ticketStateLabel } from "../../../lib/ticketStates";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 
 /** Children drawn per level before "Show all", as the board caps its columns: a phase can hold eighty tickets. */
@@ -68,7 +68,7 @@ function TreeItem({ ticket, ctx, above }: { ticket: TicketSummary; ctx: TreeCont
           variant="plain"
           className="plan-link"
           title={`Open ${ticket.external_id}`}
-          onClick={() => navigateToTicket(ticket.id)}
+          onClick={() => peekTicket(ticket.id)}
         >
           <span className="plan-mono">{ticket.external_id}</span> {ticket.title}
         </Button>

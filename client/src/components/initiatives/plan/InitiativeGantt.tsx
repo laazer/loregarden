@@ -18,7 +18,7 @@ import {
   type Span,
 } from "../../../lib/ganttLayout";
 import { SCHEDULE_STATUS_COLOR, SCHEDULE_STATUS_LABEL, isoDay } from "../../../lib/scheduleFormat";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 
@@ -395,7 +395,7 @@ function NodeRow({
           className="plan-link plan-gantt-name"
           title={`${node.external_id} ${node.title}`}
           aria-describedby={descId}
-          onClick={() => navigateToTicket(node.id)}
+          onClick={() => peekTicket(node.id)}
         >
           {label}
         </Button>
@@ -414,7 +414,7 @@ function NodeRow({
             color={NODE_STATUS_COLOR[node.status]}
             label={label}
             className={`plan-gantt-bar${critical ? " critical" : ""}`}
-            onOpen={() => navigateToTicket(node.id)}
+            onOpen={() => peekTicket(node.id)}
           />
         ) : null}
       </div>
@@ -475,7 +475,7 @@ function GroupRow({
             className="plan-link plan-gantt-name"
             title={name}
             aria-describedby={descId}
-            onClick={() => navigateToTicket(phase.id)}
+            onClick={() => peekTicket(phase.id)}
           >
             {label}
           </Button>
@@ -503,7 +503,7 @@ function GroupRow({
                 ? `plan-gantt-bar${self && critical.has(self.id) ? " critical" : ""}`
                 : "plan-gantt-bar plan-gantt-summary"
             }
-            onOpen={phase ? () => navigateToTicket(phase.id) : undefined}
+            onOpen={phase ? () => peekTicket(phase.id) : undefined}
           />
         ) : null}
         {target !== null ? (

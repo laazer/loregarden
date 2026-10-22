@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 
 import type { TicketState } from "../../api/types";
-import { ticketPath, type ArtifactTab } from "../../lib/appNavigation";
+import type { ArtifactTab } from "../../lib/appNavigation";
 import { Button } from "../ui/Button";
+import { TicketLink } from "../TicketLink";
 
 const STATE_LABELS: Record<TicketState, string> = {
   backlog: "Backlog",
@@ -43,10 +43,11 @@ interface MiniTicketCardProps {
 export function MiniTicketCard({ ticket, tab, compact = false }: MiniTicketCardProps) {
   const title = ticket.title || ticket.externalId;
   return (
-    <Link
-      to={ticketPath(ticket.id, tab)}
+    <TicketLink
+      ticketId={ticket.id}
+      tab={tab}
       className={compact ? "wsd-card wsd-card--compact" : "wsd-card"}
-      data-state={ticket.state}
+      state={ticket.state}
     >
       <span className="wsd-card-title">{title}</span>
       {ticket.title ? <span className="visually-hidden"> ({ticket.externalId})</span> : null}
@@ -56,7 +57,7 @@ export function MiniTicketCard({ ticket, tab, compact = false }: MiniTicketCardP
           {ticket.where ? <span className="wsd-card-where">{ticket.where}</span> : null}
         </span>
       )}
-    </Link>
+    </TicketLink>
   );
 }
 

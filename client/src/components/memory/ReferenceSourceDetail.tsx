@@ -21,6 +21,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
+import { TicketLink } from "../TicketLink";
 
 /** Lists past this many rows show the first ones and say how many more there are. */
 const PREVIEW = 12;
@@ -68,9 +69,9 @@ function TicketList({ label, tickets }: { label: string; tickets: LibraryTicket[
       <ul className="rl-tickets">
         {shown.map((ticket) => (
           <li key={ticket.external_id}>
-            <Link className="rl-ticket-link" to={ticketPath(ticket.external_id)}>
+            <TicketLink className="rl-ticket-link" ticketId={ticket.external_id}>
               <span className="rl-ticket-id">{ticket.external_id}</span> {ticket.title}
-            </Link>
+            </TicketLink>
             <span className="rl-tags">
               {ticket.state.replace("_", " ")} · {ticket.actions.join(", ")} · pass {ticket.passes.join(", ")}
             </span>

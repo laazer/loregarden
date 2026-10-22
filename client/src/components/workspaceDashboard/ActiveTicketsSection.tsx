@@ -1,11 +1,10 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 
 import type { TicketActivity, TicketSummary } from "../../api/types";
-import { ticketPath } from "../../lib/appNavigation";
 import { Button } from "../ui/Button";
 import { DashboardSection } from "./DashboardSection";
+import { TicketLink } from "../TicketLink";
 
 const ACTIVITY_ORDER: TicketActivity[] = ["running", "awaiting", "queued", "idle"];
 const ACTIVITY_LABELS: Record<TicketActivity, string> = {
@@ -84,9 +83,9 @@ export function ActiveTicketsSection({ query }: ActiveTicketsSectionProps) {
             {rows.map((ticket) => (
               <tr key={ticket.id}>
                 <td data-label="Ticket">
-                  <Link to={ticketPath(ticket.id)} className="wsd-row-link">
+                  <TicketLink ticketId={ticket.id} className="wsd-row-link">
                     <span className="wsd-row-title">{ticket.title}</span>
-                  </Link>
+                  </TicketLink>
                 </td>
                 <td data-label="Type" className="wsd-muted">
                   {ticket.work_item_type}

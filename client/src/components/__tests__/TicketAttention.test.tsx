@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useTicketPeekStore } from "../../state/ticketPeekStore";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import type { TicketDetail } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
 import { formatRelativeAge } from "../../lib/timestamps";
-import { navigateToTicket, navigateToTicketTab } from "../../lib/useAppNavigation";
+import { navigateToTicketTab } from "../../lib/useAppNavigation";
 import { useReaderStore } from "../../state/readerStore";
 import { TicketAttention } from "../TicketAttention";
 
@@ -16,7 +17,6 @@ jest.mock("../../api/client", () => ({
 jest.mock("../../lib/useAppNavigation", () => ({
   ...jest.requireActual("../../lib/useAppNavigation"),
   navigateToTicketTab: jest.fn(),
-  navigateToTicket: jest.fn(),
 }));
 
 /** Far enough in the past that formatRelativeAge is day-stable across a test. */
@@ -170,7 +170,7 @@ describe("waiting on other tickets", () => {
     const strip = await screen.findByRole("region", { name: "Needs attention" });
     expect(strip).toHaveTextContent("Waiting on");
     fireEvent.click(within(strip).getByRole("button", { name: "lg-x-22 · needs you" }));
-    expect(navigateToTicket).toHaveBeenCalledWith("c1");
+    expect(useTicketPeekStore.getState().peek).toEqual({ ticketId: "c1", tab: undefined });
     expect(within(strip).getByRole("button", { name: "lg-x-23" })).toBeInTheDocument();
   });
 

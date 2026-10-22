@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { api } from "../../../api/client";
 import type { InitiativePlan, MilestoneSchedule, NodeStatus } from "../../../api/initiativeApi";
 import { boardQueryKey, childrenByParent } from "../../../lib/initiativeBoard";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import {
   SCHEDULE_STATUS_COLOR,
   formatDay,
@@ -142,7 +142,7 @@ function MilestoneRow({
               variant="plain"
               className="plan-link"
               title={`Open ${row.external_id}`}
-              onClick={() => navigateToTicket(row.id)}
+              onClick={() => peekTicket(row.id)}
             >
               <span className="plan-mono">{row.external_id}</span> {row.title}
             </Button>

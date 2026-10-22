@@ -20,7 +20,7 @@ import type { GraphNode, InferredGroup, MemoryNodeDetail } from "../../api/memor
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 import { NODE_TYPE_LABELS } from "../../lib/knowledgeLayout";
-import { memoryPath, ticketPath } from "../../lib/appNavigation";
+import { memoryPath } from "../../lib/appNavigation";
 import { groupsFor, INFERRED_KIND_LABELS, recordTitle } from "../../lib/memoryInferred";
 import { formatLocalTimestamp } from "../../lib/timestamps";
 import { LearningConfidenceReadout } from "../memory/LearningConfidenceReadout";
@@ -28,6 +28,7 @@ import { describeError, errorStatus, toastActionFailed } from "../../state/toast
 import { IconCloseButton } from "../IconCloseButton";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { TicketLink } from "../TicketLink";
 
 const ORIGIN_LABELS = { agent: "Agent", human: "Human", import: "Import" } as const;
 /** What an `origin_ref` names, per kind (see the server's `MemoryOriginKind`). */
@@ -174,9 +175,9 @@ function Record({
           {record.ticket_id && (
             <>
               From ticket{" "}
-              <Link className="kb-link" to={ticketPath(record.ticket_id)}>
+              <TicketLink className="kb-link" ticketId={record.ticket_id}>
                 {record.ticket_id}
-              </Link>
+              </TicketLink>
             </>
           )}
           {record.ticket_id && record.versions.length > 0 && " · "}

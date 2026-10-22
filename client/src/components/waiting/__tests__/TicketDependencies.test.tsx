@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useTicketPeekStore } from "../../../state/ticketPeekStore";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import type { TicketDetail } from "../../../api/client";
 import type { TicketDependencyRef, TicketSummary } from "../../../api/types";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
 import { TicketDependencies } from "../../TicketDependencies";
 
 const addDependency = jest.fn();
@@ -17,11 +17,6 @@ jest.mock("../../../api/client", () => ({
     tickets: (...args: unknown[]) => tickets(...args),
   },
 }));
-jest.mock("../../../lib/useAppNavigation", () => ({
-  ...jest.requireActual("../../../lib/useAppNavigation"),
-  navigateToTicket: jest.fn(),
-}));
-
 function dep(id: string, overrides: Partial<TicketDependencyRef> = {}): TicketDependencyRef {
   return {
     id,
@@ -71,7 +66,7 @@ it("says of each prerequisite whether it still holds the ticket, and why", () =>
   expect(screen.getByRole("button", { name: /blobert: lg-x-5/ })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: /lg-x-1 Ticket 1/ }));
-  expect(navigateToTicket).toHaveBeenCalledWith("1");
+  expect(useTicketPeekStore.getState().peek).toEqual({ ticketId: "1", tab: undefined });
 });
 
 it("asks before it stops waiting for a ticket", async () => {

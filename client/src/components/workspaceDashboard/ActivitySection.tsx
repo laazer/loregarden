@@ -1,5 +1,4 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 
 import {
   ACTIVITY_KINDS,
@@ -7,13 +6,13 @@ import {
   type ActivityHighlightKind,
   type WorkspaceActivity,
 } from "../../api/workspaceDashboardApi";
-import { ticketPath } from "../../lib/appNavigation";
 import { CATCH_UP_LABELS, CATCH_UP_SPANS, type CatchUpSpan, type CatchUpWindow } from "../../lib/catchUpWindow";
 import { formatLocalTimestamp, formatRelativeAge } from "../../lib/timestamps";
 import { highlightText, KIND_LABELS } from "../../lib/workspaceDashboard";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import { DashboardSection } from "./DashboardSection";
+import { TicketLink } from "../TicketLink";
 
 const FAILURE_KINDS: ReadonlySet<ActivityHighlightKind> = new Set([
   "landing_failed",
@@ -128,9 +127,9 @@ export function ActivitySection({
           <li key={ticket.ticket_id} className="wsd-event">
             <span className="wsd-event-when">{formatRelativeAge(ticket.last_event_at, now)}</span>
             <div className="wsd-event-body">
-              <Link to={ticketPath(ticket.ticket_id)} className="wsd-row-link">
+              <TicketLink ticketId={ticket.ticket_id} className="wsd-row-link">
                 <span className="wsd-row-title">{ticket.title}</span>
-              </Link>
+              </TicketLink>
               <span className="wsd-outcomes">
                 {outcomeParts(ticket.highlights, ticket.state).map((part) => (
                   <span
