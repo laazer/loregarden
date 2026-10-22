@@ -14,29 +14,65 @@ could not be asked" must stay distinguishable to the caller.
 from __future__ import annotations
 
 import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from loregarden.models.domain import CIStatus, PullRequestCheckOutcome
-from loregarden.services.git_subprocess import run_gh
+from loregarden.services.github_pr_listing import (
+    GhPage,
+    GitHubReadError,
+    PullRequestListing,
+    PullRequestStates,
+    list_pull_requests,
+    read_gh,
+)
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 GH_TIMEOUT_SECONDS = 30
 #: Enough of a failing job's log for an agent to find the error, and small
 #: enough to sit in a prompt. The tail is kept, because that is where it fails.
 LOG_TAIL_CHARS = 20_000
-#: `gh pr list` pages; a workspace with more open PRs than this is not one we have.
-PR_LIST_LIMIT = 100
-_LIST_FIELDS = "number,url,headRefName,headRefOid,statusCheckRollup"
+#: The head commit's checks, the `statusCheckRollup` `gh pr list` flattens.
+HEAD_CHECKS_FIELDS = """
+commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+  ... on CheckRun { name status conclusion detailsUrl }
+  ... on StatusContext { context state targetUrl }
+} } } } } }
+"""
+_OPEN_FIELDS = "number url headRefName headRefOid " + HEAD_CHECKS_FIELDS
 #: A GitHub Actions check run's details URL names its run and its job.
 _ACTIONS_JOB_URL = re.compile(r"/actions/runs/\d+/job/(\d+)")
 
 
-class GitHubReadError(RuntimeError):
-    """`gh` could not be asked, or answered with something unreadable."""
+class _GhCheckNodes(BaseModel):
+    nodes: list[GhCheck]
+
+
+class _GhRollup(BaseModel):
+    contexts: _GhCheckNodes
+
+
+class _GhCommit(BaseModel):
+    #: Null when nothing has reported on the commit yet. Required, so a query
+    #: that stops asking for it fails to parse instead of reading as no checks.
+    status_check_rollup: _GhRollup | None = Field(alias="statusCheckRollup")
+
+
+class _GhCommitNode(BaseModel):
+    commit: _GhCommit
+
+
+class GhHeadCommit(BaseModel):
+    """`commits(last: 1)` from `HEAD_CHECKS_FIELDS`: the head commit and its checks."""
+
+    nodes: list[_GhCommitNode]
+
+    def checks(self) -> list[GhCheck]:
+        if not self.nodes or self.nodes[0].commit.status_check_rollup is None:
+            return []
+        return self.nodes[0].commit.status_check_rollup.contexts.nodes
 
 
 class OpenPullRequest(BaseModel):
@@ -46,7 +82,11 @@ class OpenPullRequest(BaseModel):
     url: str
     head: str = Field(alias="headRefName")
     head_sha: str = Field(alias="headRefOid")
-    checks: list[GhCheck] = Field(default_factory=list, alias="statusCheckRollup")
+    commits: GhHeadCommit
+
+    @property
+    def checks(self) -> list[GhCheck]:
+        return self.commits.checks()
 
     @property
     def branch(self) -> str:
@@ -54,7 +94,7 @@ class OpenPullRequest(BaseModel):
         return branch_for_pr_head(self.head)
 
 
-_PULL_REQUESTS = TypeAdapter(list[OpenPullRequest])
+_OPEN_PAGES = TypeAdapter(list[GhPage[OpenPullRequest]])
 
 
 @dataclass(frozen=True)
@@ -65,29 +105,15 @@ class FailureLogs:
     errors: list[str] = field(default_factory=list)
 
 
-def _gh(repo_root: Path, args: list[str]) -> str:
-    try:
-        proc = run_gh(args, cwd=repo_root, timeout=GH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as exc:
-        raise GitHubReadError(f"gh did not answer within {GH_TIMEOUT_SECONDS}s") from exc
-    except OSError as exc:
-        raise GitHubReadError(f"could not run gh: {exc}") from exc
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise GitHubReadError(detail or f"gh {args[0]} exited {proc.returncode}")
-    return proc.stdout or ""
-
-
-def list_open_pull_requests(repo_root: Path) -> list[OpenPullRequest]:
+def list_open_pull_requests(repo_root: Path) -> PullRequestListing[OpenPullRequest]:
     """Every open pull request in the repository at ``repo_root``, with its checks."""
-    stdout = _gh(
+    return list_pull_requests(
         repo_root,
-        ["pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", _LIST_FIELDS],
+        _OPEN_FIELDS,
+        _OPEN_PAGES,
+        states=PullRequestStates.OPEN,
+        timeout_seconds=GH_TIMEOUT_SECONDS,
     )
-    try:
-        return _PULL_REQUESTS.validate_json(stdout or "[]")
-    except ValidationError as exc:
-        raise GitHubReadError(f"unexpected gh pr list output: {exc}") from exc
 
 
 def rollup(checks: list[GhCheck]) -> CIStatus:
@@ -131,7 +157,11 @@ def failure_logs(repo_root: Path, checks: list[GhCheck]) -> FailureLogs:
             errors.append(f"{name}: not a GitHub Actions job, no log to read ({url or 'no URL'})")
             continue
         try:
-            log = _gh(repo_root, ["run", "view", "--job", match.group(1), "--log-failed"])
+            log = read_gh(
+                repo_root,
+                ["run", "view", "--job", match.group(1), "--log-failed"],
+                GH_TIMEOUT_SECONDS,
+            )
         except GitHubReadError as exc:
             errors.append(f"{name}: could not read its log: {exc}")
             continue

@@ -1,10 +1,10 @@
 """A workspace's open pull requests, in the order a person should review them.
 
 The dashboard's answer to "where do PRs stand, and in what order do I review
-them?". One `gh pr list` call returns every open PR with its checks, review
-decision, mergeability and changed files. This module then adds what GitHub
-cannot know: which tickets each PR carries, which other open PRs touch the same
-files, and a review order.
+them?". One paginated GraphQL listing (`github_pr_listing`) returns every open
+PR with its checks, review decision, mergeability and changed files. This
+module then adds what GitHub cannot know: which tickets each PR carries, which
+other open PRs touch the same files, and a review order.
 
 **The order** is a tier (`PullRequestReviewTier`: ready to merge, to review,
 needs work, conflicting, draft), then the fewest overlapping PRs, then the
@@ -22,22 +22,26 @@ answered as the wrong account.
 from __future__ import annotations
 
 import re
-import subprocess
 from datetime import datetime
 from itertools import combinations
-from pathlib import Path
 
 from loregarden.models.domain import (
     CIStatus,
+    PrListingState,
     PullRequestReview,
     PullRequestReviewTier,
     Ticket,
     TicketState,
     Workspace,
 )
-from loregarden.services.ci_checks import GitHubReadError, rollup
+from loregarden.services.ci_checks import (
+    GH_TIMEOUT_SECONDS,
+    HEAD_CHECKS_FIELDS,
+    GhHeadCommit,
+    rollup,
+)
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_subprocess import run_gh
+from loregarden.services.github_pr_listing import GhPage, PullRequestStates, list_pull_requests
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import (
     GhPullRequest,
@@ -45,16 +49,14 @@ from loregarden.services.ticket_pull_request import (
     pull_request_status,
 )
 from loregarden.services.workspace_paths import resolve_workspace_root
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 from sqlmodel import Session, select
 
-GH_TIMEOUT_SECONDS = 30
-#: `gh pr list` pages; past this the response says it was cut short.
-PR_LIST_LIMIT = 100
 _LIST_FIELDS = (
-    "number,url,title,state,isDraft,baseRefName,headRefName,additions,deletions,"
-    "changedFiles,reviewDecision,mergeable,statusCheckRollup,headRefOid,"
-    "mergeStateStatus,body,files,createdAt,updatedAt,author"
+    "number url title state isDraft baseRefName headRefName additions deletions "
+    "changedFiles reviewDecision mergeable headRefOid mergeStateStatus body "
+    "createdAt updatedAt author { login } files(first: 100) { nodes { path } } "
+    + HEAD_CHECKS_FIELDS
 )
 _TIER_RANK = {tier: index for index, tier in enumerate(PullRequestReviewTier)}
 
@@ -63,20 +65,38 @@ class _GhFile(BaseModel):
     path: str
 
 
+class _GhFiles(BaseModel):
+    #: The first 100; `changedFiles` says how many there are.
+    nodes: list[_GhFile]
+
+
 class _GhAuthor(BaseModel):
-    login: str = ""
+    login: str
 
 
 class _GhListedPullRequest(GhPullRequest):
     model_config = ConfigDict(populate_by_name=True)
 
-    files: list[_GhFile] = Field(default_factory=list)
+    files: _GhFiles
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
-    author: _GhAuthor = Field(default_factory=_GhAuthor)
+    #: Null when the account was deleted.
+    author: _GhAuthor | None
+    commits: GhHeadCommit
+
+    @field_validator("review_decision", mode="before")
+    @classmethod
+    def _no_decision(cls, value: str | None) -> str:
+        # GraphQL says null where `gh pr list` said "": no review required.
+        return "" if value is None else value
+
+    @model_validator(mode="after")
+    def _checks_from_head(self) -> _GhListedPullRequest:
+        self.checks = self.commits.checks()
+        return self
 
 
-_LISTED = TypeAdapter(list[_GhListedPullRequest])
+_LISTED_PAGES = TypeAdapter(list[GhPage[_GhListedPullRequest]])
 
 
 class LinkedTicket(BaseModel):
@@ -110,25 +130,10 @@ class WorkspacePullRequests(BaseModel):
     workspace_slug: str
     #: Every open PR, in review order.
     pull_requests: list[WorkspacePullRequest]
-    #: True when the listing hit `PR_LIST_LIMIT`; there may be more open PRs.
-    truncated: bool
-
-
-def _list_open(repo_root: Path) -> list[_GhListedPullRequest]:
-    args = ["pr", "list", "--state", "open", "--limit", str(PR_LIST_LIMIT), "--json", _LIST_FIELDS]
-    try:
-        proc = run_gh(args, cwd=repo_root, timeout=GH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as exc:
-        raise GitHubReadError(f"gh did not answer within {GH_TIMEOUT_SECONDS}s") from exc
-    except OSError as exc:
-        raise GitHubReadError(f"could not run gh: {exc}") from exc
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        raise GitHubReadError(detail or f"gh pr list exited {proc.returncode}")
-    try:
-        return _LISTED.validate_json(proc.stdout or "[]")
-    except ValidationError as exc:
-        raise GitHubReadError(f"unexpected gh pr list output: {exc}") from exc
+    #: GitHub's own `hasNextPage` on the last page read: ``incomplete`` means
+    #: there are open PRs this list does not hold. Never ``unavailable``; a
+    #: listing that could not be read raises `GitHubReadError`.
+    listing_state: PrListingState
 
 
 def tier_for(status: PullRequestStatus, ci: CIStatus) -> PullRequestReviewTier:
@@ -144,7 +149,7 @@ def tier_for(status: PullRequestStatus, ci: CIStatus) -> PullRequestReviewTier:
 
 
 def _overlaps(listed: list[_GhListedPullRequest]) -> dict[int, list[PullRequestOverlap]]:
-    files = {pr.number: {f.path for f in pr.files} for pr in listed}
+    files = {pr.number: {f.path for f in pr.files.nodes} for pr in listed}
     found: dict[int, list[PullRequestOverlap]] = {pr.number: [] for pr in listed}
     for a, b in combinations(files, 2):
         shared = len(files[a] & files[b])
@@ -212,7 +217,14 @@ def _ranked(rows: list[WorkspacePullRequest]) -> list[WorkspacePullRequest]:
 
 def workspace_pull_requests(session: Session, workspace: Workspace) -> WorkspacePullRequests:
     """Every open PR in ``workspace``'s repository, in review order."""
-    listed = _list_open(resolve_workspace_root(workspace))
+    listing = list_pull_requests(
+        resolve_workspace_root(workspace),
+        _LIST_FIELDS,
+        _LISTED_PAGES,
+        states=PullRequestStates.OPEN,
+        timeout_seconds=GH_TIMEOUT_SECONDS,
+    )
+    listed = listing.pull_requests
     index = _TicketIndex(
         list(session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all())
     )
@@ -227,12 +239,12 @@ def workspace_pull_requests(session: Session, workspace: Workspace) -> Workspace
             WorkspacePullRequest(
                 pull_request=status,
                 ci=ci,
-                author=pr.author.login,
+                author=pr.author.login if pr.author else "",
                 created_at=pr.created_at,
                 updated_at=pr.updated_at,
                 tier=tier_for(status, ci),
                 review_rank=0,
-                files_truncated=pr.changed_files > len(pr.files),
+                files_truncated=pr.changed_files > len(pr.files.nodes),
                 tickets=index.linked(pr),
                 overlaps=overlaps[pr.number],
             )
@@ -240,5 +252,5 @@ def workspace_pull_requests(session: Session, workspace: Workspace) -> Workspace
     return WorkspacePullRequests(
         workspace_slug=workspace.slug,
         pull_requests=_ranked(rows),
-        truncated=len(listed) >= PR_LIST_LIMIT,
+        listing_state=listing.state,
     )

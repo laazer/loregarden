@@ -21,7 +21,7 @@ from loregarden.services.branch_triage_service import (
 )
 from sqlmodel import Session, select
 
-RUN_GH = "loregarden.services.branch_triage_service.run_gh"
+RUN_GH = "loregarden.services.github_pr_listing.run_gh"
 #: This repository's scale on 2026-10-21, when the fan-out was found.
 MEASURED_BRANCH_COUNT = 221
 
@@ -142,6 +142,14 @@ def test_a_full_last_page_with_a_next_page_is_not_complete(repo):
     assert listing.state is PrListingState.INCOMPLETE
     assert (listing.listed_count, listing.total_count) == (500, 674)
     assert listing.reason
+
+
+def test_the_listing_asks_for_every_state_not_only_open_prs(repo):
+    """A merged or closed PR is what marks a branch done; an open-only query hides it."""
+    with patch(RUN_GH, return_value=_gh_ok(_pages([], total=0, last_has_next=False))) as run_gh:
+        _fetch_pr_listing(repo)
+    (query,) = [arg for arg in run_gh.call_args.args[0] if arg.startswith("query=")]
+    assert "pullRequests(first:" in query
 
 
 def test_an_empty_repository_is_complete_and_not_unavailable(repo):

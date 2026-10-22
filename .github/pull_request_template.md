@@ -19,8 +19,8 @@
 
 ## Fix coverage
 - **Existing:** <how rows already in the state were found and repaired, or the query showing there are none, with its count>
-- **Re-entry:** <the invariant in server/loregarden/services/invariant_registry.py, in backticks, or `no detector: <reason>`>
-- **Prevention:** <path/to/test_file.py::test_name proving the state cannot be entered>
+- **Re-entry:** <the invariant in server/loregarden/services/invariant_registry.py, in backticks, or `no detector: <reason>` (browser-only state has none)>
+- **Prevention:** <the test proving the state cannot be entered: path/to/test_file.py::test_name, or for jest client/src/.../__tests__/file.test.ts::"its exact literal name">
 - **Learning:** <why the state was reachable, as a rule the next change can use>
 
 For a fix that leaves no state behind (a crash, a label, a typo), instead:

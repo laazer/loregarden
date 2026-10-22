@@ -55,8 +55,10 @@ export function PullRequestsSection({ query, now }: PullRequestsSectionProps) {
       emptyMessage="No open pull requests. A ticket that finishes its workflow opens one here."
     >
       <p className="wsd-headline">{pullRequestHeadline(rows, now)}</p>
-      {query.data?.truncated ? (
-        <p className="wsd-note">Showing the first {rows.length}; GitHub has more open.</p>
+      {query.data?.listing_state === "incomplete" ? (
+        <p className="wsd-note">
+          Showing {rows.length}; GitHub reported more open pull requests than it returned.
+        </p>
       ) : null}
       <div className="wsd-table-wrap">
         <table className="wsd-table">
