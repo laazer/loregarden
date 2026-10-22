@@ -7,10 +7,11 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from loregarden.models.domain import Approval, Ticket, WorkItemType
+from loregarden.models.domain import Approval, ApprovalStatus, Ticket, WorkItemType
 from loregarden.models.domain.survey_enums import (
     BulkAddOutcome,
     SurveyPassMode,
+    SurveySourceKind,
     SurveySourceStatus,
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
@@ -18,10 +19,10 @@ from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.bulk import enqueue_many
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import linked_initiatives
-from loregarden.services.reference_survey.queue import target_workspaces
+from loregarden.services.reference_survey.queue import enqueue_source, target_workspaces
 from loregarden.services.reference_survey.report import pass_brief
 from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
-from loregarden.services.reference_survey.schemas import BulkSourceIn
+from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
 from sqlmodel import Session, select
 from tests.factories import make_ticket
 from tests.survey_support import MIT_TEXT, build_world, running_pass, second_workspace, write_tree
@@ -60,7 +61,7 @@ def test_a_bulk_add_serves_every_workspace_picked_and_links_every_initiative(ctx
         question="q", queued_reason="r", initiative_ids=["init-survey-1"],
     )  # fmt: skip
     items = enqueue_many(session, body)
-    assert [i.outcome for i in items] == [BulkAddOutcome.PROPOSED] * 2
+    assert [i.outcome for i in items] == [BulkAddOutcome.QUEUED] * 2
     for item in items:
         assert _served(session, item.source.id) == [world.workspace_slug, other.slug]
         assert item.initiatives_linked == ["init-survey-1"]
@@ -145,7 +146,7 @@ def test_the_api_adds_one_reference_for_two_workspaces_and_an_initiative(
     assert (
         client.get("/api/reference-library", params={"workspace_slug": "loregarden"}).json()[
             "counts"
-        ]["awaiting_approval"]
+        ]["queued"]
         == 1
     )
 
@@ -212,14 +213,19 @@ def test_an_unknown_initiative_links_nothing_on_the_source_page(
         assert _served(session, source_id) == [world.workspace_slug]
 
 
-def test_no_question_or_reason_is_needed_and_the_card_says_none_was_given(ctx):
+def test_no_question_or_reason_is_needed_and_an_agents_card_says_none_was_given(ctx):
     session, world, _other, _initiative, _ = ctx
     item = enqueue_many(
         session,
         BulkSourceIn(workspace_slugs=[world.workspace_slug], urls=["https://github.com/acme/q"]),
     )[0]
-    assert item.outcome is BulkAddOutcome.PROPOSED
-    card = session.get(Approval, item.source.approval_id)
+    assert item.outcome is BulkAddOutcome.QUEUED
+    # An agent's enqueue (not admitted) still files a card, and it says what was left out.
+    proposed = enqueue_source(
+        session,
+        SourceIn(workspace_slugs=[world.workspace_slug], kind=SurveySourceKind.REPO, url="https://github.com/acme/agent"),
+    ).source  # fmt: skip
+    card = session.get(Approval, proposed.approval_id)
     assert "Question: (none given; it reads for the workspaces it serves)" in card.impact
 
 
@@ -258,3 +264,18 @@ def test_a_review_with_no_question_reads_for_its_workspaces_and_initiatives(ctx)
     assert f"**Question:** {expected}" in carrier.description
     assert "**For initiatives:** init-survey-1 (Make surveys pay off)" in carrier.description
     assert carrier.title.endswith("open read for what it serves")
+
+
+def test_adding_a_source_still_waiting_on_its_card_queues_it_and_closes_the_card(ctx):
+    session, world, _other, _initiative, _ = ctx
+    body = SourceIn(
+        workspace_slugs=[world.workspace_slug], kind=SurveySourceKind.REPO, url="https://github.com/acme/waiting"
+    )  # fmt: skip
+    waiting = enqueue_source(session, body).source  # an agent's proposal
+    card_id = waiting.approval_id
+    added = enqueue_source(session, body, admitted=True)
+    assert added.admitted
+    assert added.source.status is SurveySourceStatus.ACTIVE
+    assert session.get(Approval, card_id).status is ApprovalStatus.APPROVED
+    initial = session.exec(select(SurveyPass).where(SurveyPass.source_id == waiting.id)).all()
+    assert [(p.ordinal, p.mode) for p in initial] == [(1, SurveyPassMode.INITIAL)]

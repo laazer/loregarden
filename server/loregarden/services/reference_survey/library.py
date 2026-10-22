@@ -72,6 +72,13 @@ class LibraryRow(BaseModel):
     commits_since_review: int | None
     upstream_checked_at: datetime | None
     upstream_check_error: str
+    #: What it is, in a line: GitHub's description or the page's opening. None
+    #: until read; describe_error says why a read failed.
+    description: str | None
+    language: str
+    stars: int | None
+    topics: str
+    describe_error: str
 
 
 class LibraryList(BaseModel):
@@ -296,6 +303,11 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
                 commits_since_review=source.commits_since_review,
                 upstream_checked_at=source.upstream_checked_at,
                 upstream_check_error=source.upstream_check_error,
+                description=source.description,
+                language=source.language,
+                stars=source.stars,
+                topics=source.topics,
+                describe_error=source.describe_error,
             )
         )
     return rows

@@ -22,6 +22,7 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceStatus,
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource, SurveySourceWorkspace
+from loregarden.services.orchestration import ApprovalService
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
 from loregarden.services.reference_survey.errors import AlreadyServes, SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.inbox import file_card
@@ -66,6 +67,8 @@ class Enqueued:
     scoped_pass: SurveyPass | None = None
     #: This call filed the source's admission card (a new source, or a candidate).
     proposed: bool = False
+    #: This call admitted the source straight into the queue (a person added it).
+    admitted: bool = False
 
 
 def _workspaces(session: Session, slugs: list[str]) -> list[Workspace]:
@@ -123,13 +126,18 @@ def serve_workspaces(
     return added
 
 
-def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
+def enqueue_source(session: Session, body: SourceIn, *, admitted: bool = False) -> Enqueued:
     """Propose a source for one or more workspaces, or add workspaces to one known.
 
     A URL is surveyed once. Enqueueing a known one attaches the new workspaces
     to it: a pass still waiting reads for them too, and a finished source gets
-    one scoped pass against the new question rather than a second survey. Only a
-    source nobody has admitted yet files an admission card.
+    one scoped pass against the new question rather than a second survey.
+
+    A source nobody has admitted yet files an admission card, unless `admitted`:
+    a person adding it from the reference library is the admission, so it joins
+    the queue at once (and any card still pending for it is approved). Agents
+    enqueue unadmitted; their card is what stops an agent queueing any URL.
+    The licence gate runs before reading either way.
     """
     workspaces = _workspaces(session, body.workspace_slugs)
     url = _canonical_url(body.kind, body.url)
@@ -144,12 +152,17 @@ def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
         session.add(source)
         session.flush()
         attached = _attach(session, source, workspaces, body.question, body.queued_reason)
+        if admitted:
+            return Enqueued(_admit_now(session, source, body), attached, admitted=True)
         return Enqueued(_file_admission(session, source, body), attached, proposed=True)
     if existing.status is SurveySourceStatus.REFUSED:
         raise SurveyError(
             f"{url} was refused ({existing.refused_reason or 'no reason recorded'}); it is not read."
         )
     attached = _attach(session, existing, workspaces, body.question, body.queued_reason)
+    if admitted and existing.status is SurveySourceStatus.PROPOSED:
+        # A candidate, or one still waiting on its card: a person adding it admits it.
+        return Enqueued(_admit_now(session, existing, body), attached, admitted=True)
     if existing.status is SurveySourceStatus.PROPOSED and existing.approval_id is None:
         # An imported candidate nobody has proposed yet: this is its proposal.
         return Enqueued(_file_admission(session, existing, body), attached, proposed=True)
@@ -168,6 +181,24 @@ def enqueue_source(session: Session, body: SourceIn) -> Enqueued:
     session.commit()
     session.refresh(existing)
     return Enqueued(existing, attached, scoped)
+
+
+def _admit_now(session: Session, source: SurveySource, body: SourceIn) -> SurveySource:
+    """Queue the source's first pass now, with no card: the person adding it decided."""
+    source.question = body.question or source.question
+    source.queued_reason = body.queued_reason or source.queued_reason
+    source.priority = body.priority
+    if source.approval_id:
+        card = session.get(Approval, source.approval_id)
+        if card is not None and card.status is ApprovalStatus.PENDING:
+            ApprovalService(session).resolve(card.id, approved=True)
+    source.status = SurveySourceStatus.ACTIVE
+    source.updated_at = utcnow()
+    session.add(source)
+    _new_pass(session, source, SurveyPassMode.INITIAL, source.question, [])
+    session.commit()
+    session.refresh(source)
+    return source
 
 
 def _file_admission(session: Session, source: SurveySource, body: SourceIn) -> SurveySource:

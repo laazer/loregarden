@@ -25,9 +25,10 @@ from loregarden.models.domain.survey_enums import SurveySourceKind
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
+from loregarden.services.reference_survey.describe import describe_page
 from loregarden.services.reference_survey.errors import SurveyNotFound
-from pydantic import BaseModel, ValidationError
-from sqlmodel import Session, col, or_, select
+from pydantic import BaseModel, Field, ValidationError
+from sqlmodel import Session, and_, col, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,10 @@ GITHUB_HOST = "github.com"
 
 class _Repo(BaseModel):
     default_branch: str
+    description: str | None = None
+    language: str | None = None
+    stargazers_count: int = 0
+    topics: list[str] = Field(default_factory=list)
 
 
 class _Committer(BaseModel):
@@ -117,7 +122,15 @@ def _check(source: SurveySource) -> None:
             f"Only GitHub repositories are checked; {parsed.host} is not one."
         )
     repo = f"repos/{parsed.owner}/{parsed.name}"
-    branch = _parse(_Repo, _gh_json(repo)).default_branch
+    about = _parse(_Repo, _gh_json(repo))
+    branch = about.default_branch
+    # The same read says what the repository is; kept so nobody has to visit it.
+    source.description = (about.description or "").strip()
+    source.language = about.language or ""
+    source.stars = about.stargazers_count
+    source.topics = ", ".join(about.topics)
+    source.described_at = utcnow()
+    source.describe_error = ""
     head = _parse(_Commit, _gh_json(f"{repo}/commits/{branch}"))
     source.upstream_branch = branch
     source.upstream_head = head.sha
@@ -142,20 +155,28 @@ def check_upstream_by_id(session: Session, source_id: str) -> SurveySource:
     source = session.get(SurveySource, source_id)
     if source is None:
         raise SurveyNotFound(f"No survey source {source_id!r}")
-    return check_upstream(session, source)
+    source.described_at = None  # "Check now" reads the description again too
+    return refresh_source(session, source)
 
 
 def refresh_stale(session: Session, *, limit: int = BATCH) -> int:
-    """Check the repositories checked longest ago (never first). Returns how many."""
+    """Check the repositories checked longest ago (never first), and describe any
+    source not yet described. Returns how many sources were refreshed."""
     cutoff = utcnow() - STALE_AFTER
     due = session.exec(
         select(SurveySource)
         .where(
-            SurveySource.kind == SurveySourceKind.REPO,
             or_(
-                col(SurveySource.upstream_checked_at).is_(None),
-                col(SurveySource.upstream_checked_at) < cutoff,
-            ),
+                and_(
+                    SurveySource.kind == SurveySourceKind.REPO,
+                    or_(
+                        col(SurveySource.upstream_checked_at).is_(None),
+                        col(SurveySource.upstream_checked_at) < cutoff,
+                    ),
+                ),
+                # Read before descriptions were kept, or never read: describe it once.
+                col(SurveySource.described_at).is_(None),
+            )
         )
         .order_by(
             col(SurveySource.upstream_checked_at).is_not(None),
@@ -164,5 +185,15 @@ def refresh_stale(session: Session, *, limit: int = BATCH) -> int:
         .limit(limit)
     ).all()
     for source in due:
-        check_upstream(session, source)
+        refresh_source(session, source)
     return len(due)
+
+
+def refresh_source(session: Session, source: SurveySource) -> SurveySource:
+    """Upstream for a repository, then a description for whatever GitHub did not
+    describe (another host, a site, or a GitHub read that failed)."""
+    if source.kind is SurveySourceKind.REPO:
+        check_upstream(session, source)
+    if source.described_at is None:
+        describe_page(session, source)
+    return source

@@ -737,7 +737,7 @@
 .rl-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .rl-modal-body > label {
@@ -748,13 +748,13 @@
 .rl-add-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 16px;
 }
 
 .rl-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   color: var(--txm);
 }
@@ -793,13 +793,13 @@
 .rl-targets {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 24px;
+  gap: 16px 40px;
 }
 
 .rl-target-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -820,7 +820,7 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 12.5px;
   color: var(--tx);
 }
@@ -835,4 +835,41 @@
   width: auto;
   flex: none;
   margin: 0;
+}
+
+/* What a source is, under its name: in the table one line, in the detail in full. */
+.rl-description {
+  display: block;
+  max-width: 52ch;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--txm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rl-about {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx);
+}
+
+.rl-about p {
+  margin: 0;
+}
+
+.rl-about--pending,
+.rl-about-facts {
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.rl-refusal {
+  margin: 0;
+  font-size: 13px;
+  color: var(--aml);
 }

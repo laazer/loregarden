@@ -36,14 +36,14 @@ export const STATE_LABELS: Record<LibraryState, string> = {
   awaiting_approval: "Awaiting approval",
   reading: "Being read",
   queued: "Queued",
-  candidate: "Not proposed",
+  candidate: "Not queued",
   surveyed: "Surveyed",
   refused: "Refused",
 };
 
 /** What a source in motion is waiting on, shown under its name. */
 const IN_MOTION: Record<"awaiting_approval" | "reading" | "queued", string> = {
-  awaiting_approval: "Proposed for a survey; nothing is read until you approve it in the inbox.",
+  awaiting_approval: "Proposed by an agent; nothing is read until it is queued.",
   reading: "A pass is reading it now.",
   queued: "Approved; its next pass waits in the review queue.",
 };
@@ -226,7 +226,7 @@ export function sourceSummary(detail: LibraryDetail): string {
     return detail.refused_reason ? "Not surveyed; the reason is below." : "Not surveyed, and the record gives no reason.";
   }
   if (source.state === "candidate") {
-    return "Listed in the old record but never proposed. An agent proposes it with loregarden_survey_queue.";
+    return "Listed in the old record but never queued.";
   }
   return IN_MOTION[source.state];
 }
@@ -281,3 +281,10 @@ export function linkTargetsSummary(name: string, result: LinkTargetsResult): str
   return `${parts.join("; ")}.`;
 }
 
+
+/** "Rust · ★ 2.3k · agents, verification": what GitHub says about it, at a glance. */
+export function sourceFacts(row: Pick<LibraryRow, "language" | "stars" | "topics">): string {
+  const stars =
+    row.stars === null ? "" : `★ ${row.stars >= 1000 ? `${(row.stars / 1000).toFixed(1).replace(/\.0$/, "")}k` : row.stars}`;
+  return [row.language, stars, row.topics].filter(Boolean).join(" · ");
+}

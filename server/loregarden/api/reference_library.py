@@ -82,7 +82,8 @@ def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSo
 
 def _added(session: Session, body: SourceIn) -> AddSourceResult:
     initiatives = resolve_initiatives(session, body.initiative_ids)
-    added = enqueue_source(session, body)
+    # A person adding it here is its admission: no inbox card (see enqueue_source).
+    added = enqueue_source(session, body, admitted=True)
     linked = follow(session, added.source.id, initiatives, actor="operator")
     return AddSourceResult(
         source=library_row(session, added.source),
@@ -136,7 +137,7 @@ def link_targets(
                 workspace_slugs=body.workspace_slugs, kind=source.kind, url=source.url,
                 name=source.name, question=body.question, queued_reason=body.queued_reason,
             )  # fmt: skip
-            added = enqueue_source(session, request)
+            added = enqueue_source(session, request, admitted=True)
             attached = added.attached
             scoped = added.scoped_pass.ordinal if added.scoped_pass else None
         linked = follow(session, source.id, initiatives, actor="operator")

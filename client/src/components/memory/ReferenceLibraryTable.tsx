@@ -93,6 +93,11 @@ export function ReferenceLibraryTable({
                   {row.name}
                 </Link>
                 <span className="rl-url">{row.kind === "site" ? "site · " : ""}{row.url.replace(/^https?:\/\//, "")}</span>
+                {row.description ? (
+                  <span className="rl-description" title={row.description}>
+                    {row.description}
+                  </span>
+                ) : null}
                 {row.workspaces.length > 1 ? (
                   <span className="rl-also">
                     also for {row.workspaces.filter((slug) => slug !== workspace).join(", ")}

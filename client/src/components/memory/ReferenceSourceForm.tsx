@@ -11,7 +11,6 @@ import type {
 import { memoryPath } from "../../lib/appNavigation";
 import { splitUrls } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
-import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
@@ -31,6 +30,7 @@ const KINDS: { value: SourceKind; label: string }[] = [
 ];
 
 const OUTCOME_TEXT: Record<BulkAddItem["outcome"], string> = {
+  queued: "added to the review queue",
   proposed: "proposed — waiting for approval in the inbox",
   attached: "already in the library; now serves this workspace too",
   rescoped: "already surveyed; a new pass reads it for this workspace",
@@ -38,48 +38,34 @@ const OUTCOME_TEXT: Record<BulkAddItem["outcome"], string> = {
   failed: "not added",
 };
 
+const LICENCE_FIRST = "Its licence is checked before anything in it is read.";
+
 function announce(result: AddSourceResult, workspace: string) {
   const { source } = result;
-  if (source.state === "awaiting_approval") {
-    pushToast({
-      tone: "success",
-      title: `Proposed ${source.name}`,
-      message:
-        "Approve its card in the inbox to queue it; nothing in it is read before then.",
-    });
-  } else if (result.scoped_pass) {
+  if (result.scoped_pass) {
     pushToast({
       tone: "success",
       title: `${source.name} now serves ${workspace}`,
-      message: `It was already surveyed, so pass ${result.scoped_pass} reads it again against your question.`,
+      message: `It was already surveyed, so pass ${result.scoped_pass} reads it again for this workspace.`,
     });
   } else {
-    pushToast({
-      tone: "success",
-      title: `${source.name} now serves ${workspace}`,
-      message: "Its waiting pass reads for this workspace too.",
-    });
+    pushToast({ tone: "success", title: `Added ${source.name} to the review queue`, message: LICENCE_FIRST });
   }
 }
 
 function announceBulk(items: BulkAddItem[]) {
-  const count = (outcome: BulkAddItem["outcome"]) =>
-    items.filter((item) => item.outcome === outcome).length;
+  const count = (outcome: BulkAddItem["outcome"]) => items.filter((item) => item.outcome === outcome).length;
   const failed = count("failed");
   const known = count("already");
   const added = items.length - failed - known;
   const notes = [
     known ? `${known} already in the library` : "",
-    failed
-      ? `${failed} could not be added and ${failed === 1 ? "is" : "are"} left in the box, the reason beside each`
-      : "",
+    failed ? `${failed} could not be added and ${failed === 1 ? "is" : "are"} left in the box, the reason beside each` : "",
   ].filter(Boolean);
   pushToast({
     tone: failed ? (added ? "warning" : "error") : "success",
-    title: `Added ${added} of ${items.length} reference${items.length === 1 ? "" : "s"}`,
-    message: notes.length
-      ? `${notes.join("; ")}.`
-      : "New ones wait for approval in the inbox before anything in them is read.",
+    title: `Added ${added} of ${items.length} to the review queue`,
+    message: notes.length ? `${notes.join("; ")}.` : "Each licence is checked before anything in it is read.",
   });
 }
 
@@ -111,9 +97,10 @@ function BulkResults({ items }: { items: BulkAddItem[] }) {
 }
 
 /**
- * Propose repositories or sites for the survey, for this workspace: one, or
+ * Add repositories or sites to the review queue, for this workspace: one, or
  * several pasted together (separated by commas, tabs or new lines) sharing one
- * question and reason. A new one waits for its admission card in the inbox; one
+ * question and reason. A person adding one is its admission, so it is queued at
+ * once with no inbox card; one
  * already known gains the workspace instead of being surveyed twice.
  */
 export function ReferenceSourceForm({
@@ -130,7 +117,6 @@ export function ReferenceSourceForm({
   onCancel: () => void;
 }) {
   const queryClient = useQueryClient();
-  const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const [several, setSeveral] = useState(false);
   const [url, setUrl] = useState(initialUrl);
   const [urlsText, setUrlsText] = useState("");
@@ -181,7 +167,6 @@ export function ReferenceSourceForm({
       setFailure("");
       announce(result, workspace);
       refresh();
-      if (result.source.state === "awaiting_approval") setInboxOpen(true);
       onDone(result);
     },
     onError: failed,
@@ -209,7 +194,6 @@ export function ReferenceSourceForm({
           .map((item) => item.url)
           .join("\n"),
       );
-      if (items.some((item) => item.outcome === "proposed")) setInboxOpen(true);
     },
     onError: failed,
   });
@@ -224,9 +208,9 @@ export function ReferenceSourceForm({
     else add.mutate();
   }
 
-  let submitLabel = "Propose for review";
+  let submitLabel = "Add to queue";
   if (pending) submitLabel = "Adding…";
-  else if (several && urls.length > 0) submitLabel = `Propose ${urls.length} for review`;
+  else if (several && urls.length > 0) submitLabel = `Add ${urls.length} to queue`;
 
   return (
     <ModalShell
@@ -239,12 +223,12 @@ export function ReferenceSourceForm({
         <div className="modal-header">
           <div>
             <h2 id={ids.title} className="modal-title">
-              {initialUrl ? "Propose for review" : "Add a reference"}
+              {initialUrl ? "Add to the review queue" : "Add a reference"}
             </h2>
             <p className="modal-subtitle">
               {several
-                ? "Each new one gets its own card in the inbox; nothing is read before it is approved."
-                : "A new source waits for your approval in the inbox before anything is read."}
+                ? "Each joins the review queue now; each licence is checked before anything in it is read."
+                : "It joins the review queue now; its licence is checked before anything in it is read."}
             </p>
           </div>
           <IconCloseButton disabled={pending} onClick={onCancel} />

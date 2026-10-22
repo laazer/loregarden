@@ -47,7 +47,7 @@ def test_a_urls_kind_is_told_from_its_host(url, kind):
     assert infer_kind(url) is kind
 
 
-def test_each_url_is_its_own_source_card_and_report(ctx):
+def test_each_url_joins_the_queue_on_its_own_and_is_reported(ctx):
     session, world = ctx
     urls = [
         "https://github.com/acme/one",
@@ -57,8 +57,8 @@ def test_each_url_is_its_own_source_card_and_report(ctx):
     ]
     items = enqueue_many(session, _bulk(world, urls))
     assert [(i.url, i.outcome, i.kind) for i in items] == [
-        ("https://github.com/acme/one", BulkAddOutcome.PROPOSED, SurveySourceKind.REPO),
-        ("https://docs.example.dev/retries", BulkAddOutcome.PROPOSED, SurveySourceKind.SITE),
+        ("https://github.com/acme/one", BulkAddOutcome.QUEUED, SurveySourceKind.REPO),
+        ("https://docs.example.dev/retries", BulkAddOutcome.QUEUED, SurveySourceKind.SITE),
         ("not a url", BulkAddOutcome.FAILED, SurveySourceKind.SITE),
     ]
     assert "https URL" in items[2].detail
@@ -68,10 +68,13 @@ def test_each_url_is_its_own_source_card_and_report(ctx):
         "https://github.com/acme/one",
         "https://docs.example.dev/retries",
     }
+    # A person added them: no admission card, and each has its first pass queued.
     cards = session.exec(
         select(Approval).where(Approval.title.startswith("Admit reference source"))
     ).all()  # type: ignore[union-attr]
-    assert len(cards) == 2
+    assert cards == []
+    assert all(s.status is SurveySourceStatus.ACTIVE for s in sources)
+    assert [i.source.state for i in items[:2]] == ["queued", "queued"]
 
 
 def test_a_failure_in_the_middle_leaves_the_rest_added(ctx):
@@ -89,9 +92,9 @@ def test_a_failure_in_the_middle_leaves_the_rest_added(ctx):
     ]
     items = enqueue_many(session, _bulk(world, urls))
     assert [i.outcome for i in items] == [
-        BulkAddOutcome.PROPOSED,
+        BulkAddOutcome.QUEUED,
         BulkAddOutcome.FAILED,
-        BulkAddOutcome.PROPOSED,
+        BulkAddOutcome.QUEUED,
     ]
     assert "was refused (GPL)" in items[1].detail
 
@@ -138,5 +141,5 @@ def test_the_api_answers_200_with_a_row_per_url(client: TestClient, isolated_db)
             "question": "q", "queued_reason": "r"}  # fmt: skip
     response = client.post("/api/reference-library/sources/bulk", json=body)
     assert response.status_code == 200, response.text
-    assert [row["outcome"] for row in response.json()] == ["proposed", "failed"]
-    assert response.json()[0]["source"]["state"] == "awaiting_approval"
+    assert [row["outcome"] for row in response.json()] == ["queued", "failed"]
+    assert response.json()[0]["source"]["state"] == "queued"

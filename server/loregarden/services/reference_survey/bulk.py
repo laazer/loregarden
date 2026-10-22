@@ -1,7 +1,8 @@
 """Proposing several references at once.
 
-Each URL is enqueued on its own, exactly as one added alone: a new one files its
-own admission card, a known one gains the workspaces. One URL failing (a bad
+Each URL is enqueued on its own, exactly as one added alone: a new one joins the
+review queue at once (a person adding it is its admission), a known one gains
+the workspaces. One URL failing (a bad
 URL, a refused source) does not stop the rest; it is reported with its reason
 and leaves nothing behind. A URL already in the library for these workspaces is
 reported as known, not as a failure.
@@ -59,7 +60,7 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
             queued_reason=body.queued_reason, priority=body.priority,
         )  # fmt: skip
         try:
-            added = enqueue_source(session, one)
+            added = enqueue_source(session, one, admitted=True)
         except AlreadyServes as exc:
             session.rollback()
             known = session.get(SurveySource, exc.source_id)
@@ -85,6 +86,8 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
         row = library_row(session, added.source)
         if added.scoped_pass is not None:
             outcome = BulkAddOutcome.RESCOPED
+        elif added.admitted:
+            outcome = BulkAddOutcome.QUEUED
         elif added.proposed:
             outcome = BulkAddOutcome.PROPOSED
         else:

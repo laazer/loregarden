@@ -33,6 +33,14 @@ export interface LibraryRow {
   upstream_checked_at: string | null;
   /** Why the last check could not answer; "" when it did. */
   upstream_check_error: string;
+  /** What it is, in a line (GitHub's description or the page's opening); null until read. */
+  description: string | null;
+  language: string;
+  stars: number | null;
+  /** Comma-separated GitHub topics. */
+  topics: string;
+  /** Why the last read of the description failed; "" when it did not. */
+  describe_error: string;
 }
 
 export interface LibraryList {
@@ -90,6 +98,8 @@ export interface AddSourceResult {
 export interface ReviewNowRequest {
   /** What a new pass on a surveyed source answers; "" keeps the source's own. */
   question: string;
+  /** Why a refused source should be read after all; required to reopen one. */
+  reason?: string;
   /** Workspaces the pass should read for as well. */
   workspace_slugs: string[];
   initiative_ids: string[];
@@ -124,7 +134,7 @@ export interface BulkAddRequest {
 
 export interface BulkAddItem {
   url: string;
-  outcome: "proposed" | "attached" | "rescoped" | "already" | "failed";
+  outcome: "queued" | "proposed" | "attached" | "rescoped" | "already" | "failed";
   kind: SourceKind;
   source: LibraryRow | null;
   /** Why it failed; "" otherwise. */
