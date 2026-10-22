@@ -494,14 +494,20 @@ def _discard_attempts(
         worktree = session.get(Worktree, attempt.worktree_id) if attempt.worktree_id else None
         removal_failed = False
         if worktree:
-            removal_failed = not service.cleanup_worktree(worktree)
-            if removal_failed:
+            # Either cause leaves the checkout just as owned, so the guard is
+            # on `is not None` and never on which member it is: an out-of-base
+            # path is no safer to force-delete a branch out from under than a
+            # permission error. The member names the cause in the warning.
+            refusal = service.remove_checkout(worktree)
+            removal_failed = refusal is not None
+            if refusal is not None:
                 logger.warning(
-                    "Fan-out attempt %s: worktree %s at %s failed to remove; "
+                    "Fan-out attempt %s: worktree %s at %s failed to remove (%s); "
                     "keeping branch %s instead of force-deleting its only ref",
                     attempt.id,
                     worktree.id,
                     worktree.worktree_path,
+                    refusal.value,
                     attempt.branch,
                 )
         if attempt.branch and not removal_failed:

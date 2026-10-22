@@ -146,6 +146,36 @@ body {
   cursor: not-allowed;
 }
 
+/* Shared with every surface that offers a copy control — the toast's, the run
+   log's, the ticket modal's. These rules lived in TicketDetailsModal.css, so
+   they reached a component only when that modal happened to have been loaded:
+   the same button rendered unstyled anywhere else. */
+.copy-value-btn {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--txl);
+  cursor: pointer;
+}
+
+.copy-value-btn:hover:not(:disabled),
+.copy-value-btn:focus-visible {
+  background: var(--bg3);
+  border-color: var(--bd);
+  color: var(--tx);
+}
+
+.copy-value-btn.is-copied {
+  color: var(--grn);
+}
+
 button {
   font-family: inherit;
 }
