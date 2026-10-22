@@ -82,6 +82,13 @@ ENDPOINTS = {
         "/api/tickets",
         {"workspace": "loregarden", "blocked_on": "tickets"},
     ),
+    # The reference library: every source serving loregarden, and its deepest
+    # source (24 passes, 71 linked tickets, 41 unresolved legacy references).
+    "reference-library-loregarden.json": (
+        "/api/reference-library",
+        {"workspace_slug": "loregarden"},
+    ),
+    "reference-library-deep-source.json": ("/api/reference-library/{survey_deep}", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
@@ -144,7 +151,12 @@ def test_fixture_matches_the_api(api, isolated_db, name):
                 mock.patch.object(initiative_suggestions, "clock", return_value=pinned)
             )
         response = api.get(
-            path.format(plan_ticket=plan_ticket, worked_ticket=worked_ticket, ci_ticket=ci_ticket),
+            path.format(
+                plan_ticket=plan_ticket,
+                worked_ticket=worked_ticket,
+                ci_ticket=ci_ticket,
+                survey_deep=prod_shape_id("survey-source", 0),
+            ),
             # "Since" is relative to the build, as the scenario's events are.
             params={
                 key: value.format(since=(utcnow() - ACTIVITY_WINDOW).isoformat())

@@ -1,0 +1,1508 @@
+{
+ "coverage": {
+  "mapped_commit": "",
+  "partial": 0,
+  "read": 0,
+  "skipped": 0,
+  "tree_files": 0,
+  "unopened": 0
+ },
+ "findings": [],
+ "learnings": {
+  "availability": "found",
+  "items": [
+   {
+    "discredited": false,
+    "excerpt": "**Static gate session when vault payload.** Promotion sentinel skeleton budget; ledger cache toast percentile \u2014 migration hub token jest sync (lg-m17-286).",
+    "id": "62f07a8a-1db9-5f73-9140-4fa2b18ce609",
+    "ticket": "lg-m17-286",
+    "title": "Learning \u2014 lg-m17-286",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Token rollup ladder when static pin.** Version markdown thrash graph; finding skeleton focus export \u2014 relation proposal restore digest session (lg-m10-279).",
+    "id": "c4dd6af2-ebd4-52b2-9329-88c40ed8f7ae",
+    "ticket": "lg-m10-279",
+    "title": "Learning \u2014 lg-m10-279",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Capacity lane pin when migration backup.** Ledger transaction restore snapshot; report boot confidence token \u2014 factory sentinel keyboard validator branch (lg-m43-258).",
+    "id": "02fc1419-ea73-5cb6-96d7-5c28ded3e641",
+    "ticket": "lg-m43-258",
+    "title": "Learning \u2014 lg-m43-258",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Journal clock ranker when stale visual.** Flake scenario label merge; rollup schema curation snapshot \u2014 import report cache template floor (lg-m36-251).",
+    "id": "4aa5286e-fc38-59b6-b61a-e174566f24e0",
+    "ticket": "lg-m36-251",
+    "title": "Learning \u2014 lg-m36-251",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Curation tree focus when shard child.** Label frontmatter escape event; backup security ladder session \u2014 lefthook idempotent factory branch briefing (lg-m22-237).",
+    "id": "f5c02397-c15a-5d5e-84d1-1b8a02470db5",
+    "ticket": "lg-m22-237",
+    "title": "Learning \u2014 lg-m22-237",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Timeout dialog version when event zombie.** Promotion toast drain session; import graph retry sqlite \u2014 curation oauth migration percentile frontmatter (lg-m8-223).",
+    "id": "68504e59-6881-5d42-b4bc-8f31f0e95f42",
+    "ticket": "lg-m8-223",
+    "title": "Learning \u2014 lg-m8-223",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Payload wal vault when fresh clock.** Scenario proposal token websocket; initiative journal oxlint fixture \u2014 parent child cache schema thrash (lg-m48-209).",
+    "id": "c034af92-4062-5e9d-9b90-ae3adfcf50e4",
+    "ticket": "lg-m48-209",
+    "title": "Learning \u2014 lg-m48-209",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Pin coercion stall when lefthook queue.** Rollup commit reroute stage; prompt lease integration ruff \u2014 hook flake pragma contract clock (lg-m41-202).",
+    "id": "007322aa-23c9-5263-87e2-bfe81b7de1c0",
+    "ticket": "lg-m41-202",
+    "title": "Learning \u2014 lg-m41-202",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Monitor baseline outcome when budget integration.** Template version push visual; vault verdict alias dependency \u2014 capacity payload skeleton idempotent briefing (lg-m2-55).",
+    "id": "1aad10fc-5892-5780-a1f3-01d933a57851",
+    "ticket": "lg-m2-55",
+    "title": "Learning \u2014 lg-m2-55",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Frontmatter issue slot when reconcile commit.** Sync proposal session cursor; report graph jest import \u2014 export daemon briefing payload skeleton (lg-m20-181).",
+    "id": "5b149234-faed-54fa-8dc9-8a0693b279a2",
+    "ticket": "lg-m20-181",
+    "title": "Learning \u2014 lg-m20-181",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Factory cache session when issue ladder.** Migration keychain sample telemetry; sync handoff validator lane \u2014 frontmatter sqlite timeout stale briefing (lg-m13-174).",
+    "id": "d20eea1a-d442-5553-9730-097884cffdca",
+    "ticket": "lg-m13-174",
+    "title": "Learning \u2014 lg-m13-174",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Event icloud ladder when migration github.** Relation hook journal issue; finding static sandbox initiative \u2014 version skeleton stale import stall (lg-m6-167).",
+    "id": "7cae9a51-e735-5618-83d3-4c661d8785f4",
+    "ticket": "lg-m6-167",
+    "title": "Learning \u2014 lg-m6-167",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Capacity review clock when cursor telemetry.** Confidence flake briefing xdist; schema daemon recorder pragma \u2014 journal frontmatter finding markdown restore (lg-m46-153).",
+    "id": "5beb34b5-56ff-52de-b5ae-997215ceca05",
+    "ticket": "lg-m46-153",
+    "title": "Learning \u2014 lg-m46-153",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Branch finding boot when initiative commit.** Briefing oauth promotion export; graph worktree toast lane \u2014 enum payload fresh timeout squash (lg-m39-146).",
+    "id": "61b7fe98-7b46-525d-829d-19d788cc1ba5",
+    "ticket": "lg-m39-146",
+    "title": "Learning \u2014 lg-m39-146",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Stall sweep lefthook when report telemetry.** Recorder stage handoff dialog; child ledger push percentile \u2014 gate validator oauth proposal pragma (lg-m32-139).",
+    "id": "3339676a-2f08-541e-aaae-7dbfd1b564b9",
+    "ticket": "lg-m32-139",
+    "title": "Learning \u2014 lg-m32-139",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Digest event budget when escalation commit.** Security recovery atomic slot; validator sync merge version \u2014 enum toast ranker verdict worktree (lg-m11-118).",
+    "id": "0f8ae608-131e-53f1-ac74-de928f5ce632",
+    "ticket": "lg-m11-118",
+    "title": "Learning \u2014 lg-m11-118",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Event pin template when verdict ladder.** Sweep discredit stage schema; lefthook cache sentinel skill \u2014 lane commit ruff probe alias (lg-m4-111).",
+    "id": "612daf6d-a1b6-5028-bbc7-1271c82ac3dd",
+    "ticket": "lg-m4-111",
+    "title": "Learning \u2014 lg-m4-111",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Prompt review alias when vault spinner.** Tree validator template contract; report skill sqlite pylint \u2014 security skeleton label integration keyboard (lg-m44-97).",
+    "id": "fe158bbd-db26-5826-acf7-bafe3fffe97f",
+    "ticket": "lg-m44-97",
+    "title": "Learning \u2014 lg-m44-97",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Journal focus event when pragma telemetry.** Lefthook shard factory proposal; static pylint orphan daemon \u2014 dependency child spinner migration probe (lg-m30-83).",
+    "id": "a54500da-e393-54c1-a291-37d0183544bf",
+    "ticket": "lg-m30-83",
+    "title": "Learning \u2014 lg-m30-83",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Boot baseline spinner when asset pragma.** Pylint worktree telemetry markdown; coercion schema xdist sqlite \u2014 scenario issue sentinel sample session (lg-m16-69).",
+    "id": "04e567bd-6d14-5376-afd1-fd6a687e36cd",
+    "ticket": "lg-m16-69",
+    "title": "Learning \u2014 lg-m16-69",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Recall factory ladder when floor rework.** Issue squash role drain; promotion monitor outcome hook \u2014 cursor ranker fresh child curation (lg-m9-62).",
+    "id": "2566967e-20cb-5d59-95ff-715673576f95",
+    "ticket": "lg-m9-62",
+    "title": "Learning \u2014 lg-m9-62",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   },
+   {
+    "discredited": false,
+    "excerpt": "**Docker sentinel spinner when pin thrash.** Relation github boot initiative; issue static promotion markdown \u2014 skill queue role jest xdist (lg-m2-55).",
+    "id": "408d8df5-f056-5004-8b5f-cc3406feceb0",
+    "ticket": "lg-m2-55",
+    "title": "Learning \u2014 lg-m2-55",
+    "updated_at": "2026-09-28T00:00:00Z",
+    "workspace": "loregarden"
+   }
+  ],
+  "reason": ""
+ },
+ "licence_constraint": "",
+ "notes": "",
+ "notes_truncated": false,
+ "open_unknowns": [],
+ "passes": [
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T10:00:00",
+   "label": "PASS 1",
+   "mode": "initial",
+   "ordinal": 1,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T11:00:00",
+   "label": "PASS 2",
+   "mode": "continuation",
+   "ordinal": 2,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T12:00:00",
+   "label": "PASS 3",
+   "mode": "continuation",
+   "ordinal": 3,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T13:00:00",
+   "label": "PASS 4",
+   "mode": "continuation",
+   "ordinal": 4,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T14:00:00",
+   "label": "PASS 5",
+   "mode": "continuation",
+   "ordinal": 5,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T15:00:00",
+   "label": "PASS 6",
+   "mode": "continuation",
+   "ordinal": 6,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T16:00:00",
+   "label": "PASS 7",
+   "mode": "continuation",
+   "ordinal": 7,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T17:00:00",
+   "label": "PASS 8",
+   "mode": "continuation",
+   "ordinal": 8,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T18:00:00",
+   "label": "PASS 9",
+   "mode": "continuation",
+   "ordinal": 9,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T19:00:00",
+   "label": "PASS 10",
+   "mode": "continuation",
+   "ordinal": 10,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T20:00:00",
+   "label": "PASS 11",
+   "mode": "continuation",
+   "ordinal": 11,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T21:00:00",
+   "label": "PASS 12",
+   "mode": "continuation",
+   "ordinal": 12,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T22:00:00",
+   "label": "PASS 13",
+   "mode": "continuation",
+   "ordinal": 13,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-12T23:00:00",
+   "label": "PASS 14",
+   "mode": "continuation",
+   "ordinal": 14,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T00:00:00",
+   "label": "PASS 15",
+   "mode": "continuation",
+   "ordinal": 15,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T01:00:00",
+   "label": "PASS 16",
+   "mode": "continuation",
+   "ordinal": 16,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T02:00:00",
+   "label": "PASS 17",
+   "mode": "continuation",
+   "ordinal": 17,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T03:00:00",
+   "label": "PASS 18",
+   "mode": "continuation",
+   "ordinal": 18,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T04:00:00",
+   "label": "PASS 19",
+   "mode": "continuation",
+   "ordinal": 19,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T05:00:00",
+   "label": "PASS 20",
+   "mode": "continuation",
+   "ordinal": 20,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T06:00:00",
+   "label": "PASS 21",
+   "mode": "continuation",
+   "ordinal": 21,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T07:00:00",
+   "label": "PASS 22",
+   "mode": "continuation",
+   "ordinal": 22,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T08:00:00",
+   "label": "PASS 23",
+   "mode": "continuation",
+   "ordinal": 23,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  },
+  {
+   "carrier": null,
+   "files_examined": 0,
+   "files_read": 0,
+   "finished_at": "2026-10-13T09:00:00",
+   "label": "PASS 24",
+   "mode": "continuation",
+   "ordinal": 24,
+   "outcome": null,
+   "outcome_note": "Imported from the legacy survey queue; the outcome was recorded as prose.",
+   "question": "(not recorded in the legacy entry)",
+   "refused_reason": "",
+   "status": "finished",
+   "stopped_at": ""
+  }
+ ],
+ "pinned_commit": "",
+ "queued_reason": "imported from scratch/ref_projects",
+ "refused_reason": "",
+ "source": {
+  "approval_id": null,
+  "id": "5cf7bf47-a957-5fab-8eb4-92dba4a0e55f",
+  "kind": "repo",
+  "last_read_at": "2026-10-13T09:00:00",
+  "licence_name": "MIT",
+  "licence_use": "full",
+  "name": "openharness",
+  "open_unknowns": 0,
+  "passes": 24,
+  "priority": 100,
+  "question": "(not recorded in the legacy files)",
+  "state": "surveyed",
+  "tickets": 71,
+  "unresolved_refs": 41,
+  "url": "https://github.com/acme-labs/openharness",
+  "workspaces": [
+   "loregarden"
+  ]
+ },
+ "tickets": [
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m2-55",
+   "passes": [
+    1
+   ],
+   "state": "done",
+   "title": "Cache the run log's live tail",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m8-223",
+   "passes": [
+    1
+   ],
+   "state": "done",
+   "title": "Show worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m14-391",
+   "passes": [
+    1
+   ],
+   "state": "backlog",
+   "title": "Add gate outcomes on stage transitions",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m9-62",
+   "passes": [
+    2
+   ],
+   "state": "backlog",
+   "title": "Stop worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m15-230",
+   "passes": [
+    2
+   ],
+   "state": "backlog",
+   "title": "Route the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m21-398",
+   "passes": [
+    2
+   ],
+   "state": "backlog",
+   "title": "Surface the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m16-69",
+   "passes": [
+    3
+   ],
+   "state": "backlog",
+   "title": "Make docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m22-237",
+   "passes": [
+    3
+   ],
+   "state": "backlog",
+   "title": "Fix initiative progress rollup",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m28-405",
+   "passes": [
+    3
+   ],
+   "state": "done",
+   "title": "Surface stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m23-76",
+   "passes": [
+    4
+   ],
+   "state": "backlog",
+   "title": "Show memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m29-244",
+   "passes": [
+    4
+   ],
+   "state": "done",
+   "title": "Stop gate outcomes on stage transitions",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m35-412",
+   "passes": [
+    4
+   ],
+   "state": "backlog",
+   "title": "Fix memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m30-83",
+   "passes": [
+    5
+   ],
+   "state": "backlog",
+   "title": "Retry worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m36-251",
+   "passes": [
+    5
+   ],
+   "state": "backlog",
+   "title": "Fix the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m42-419",
+   "passes": [
+    5
+   ],
+   "state": "backlog",
+   "title": "Stop the rework ledger's loop cap",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m37-90",
+   "passes": [
+    6
+   ],
+   "state": "done",
+   "title": "Retry docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m43-258",
+   "passes": [
+    6
+   ],
+   "state": "backlog",
+   "title": "Make memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m49-426",
+   "passes": [
+    6
+   ],
+   "state": "done",
+   "title": "Stop the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m44-97",
+   "passes": [
+    7
+   ],
+   "state": "backlog",
+   "title": "Route stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m50-265",
+   "passes": [
+    7
+   ],
+   "state": "backlog",
+   "title": "Stop the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m2-433",
+   "passes": [
+    7
+   ],
+   "state": "done",
+   "title": "Add the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m51-104",
+   "passes": [
+    8
+   ],
+   "state": "backlog",
+   "title": "Cache initiative progress rollup",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m3-272",
+   "passes": [
+    8
+   ],
+   "state": "backlog",
+   "title": "Retry stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m9-440",
+   "passes": [
+    8
+   ],
+   "state": "done",
+   "title": "Split worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m4-111",
+   "passes": [
+    9
+   ],
+   "state": "backlog",
+   "title": "Route branch cleanup after a squash merge",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m10-279",
+   "passes": [
+    9
+   ],
+   "state": "backlog",
+   "title": "Show the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m16-447",
+   "passes": [
+    9
+   ],
+   "state": "done",
+   "title": "Fix docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m11-118",
+   "passes": [
+    10
+   ],
+   "state": "backlog",
+   "title": "Surface gate outcomes on stage transitions",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m17-286",
+   "passes": [
+    10
+   ],
+   "state": "backlog",
+   "title": "Retry gate outcomes on stage transitions",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m23-454",
+   "passes": [
+    10
+   ],
+   "state": "backlog",
+   "title": "Cache the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m18-125",
+   "passes": [
+    11
+   ],
+   "state": "backlog",
+   "title": "Route memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m24-293",
+   "passes": [
+    11
+   ],
+   "state": "backlog",
+   "title": "Retry stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m30-461",
+   "passes": [
+    11
+   ],
+   "state": "backlog",
+   "title": "Retry memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m25-132",
+   "passes": [
+    12
+   ],
+   "state": "backlog",
+   "title": "Add the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m31-300",
+   "passes": [
+    12
+   ],
+   "state": "in_progress",
+   "title": "Route memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m37-468",
+   "passes": [
+    12
+   ],
+   "state": "backlog",
+   "title": "Make docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m32-139",
+   "passes": [
+    13
+   ],
+   "state": "done",
+   "title": "Show the approval inbox for parked stages",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m38-307",
+   "passes": [
+    13
+   ],
+   "state": "backlog",
+   "title": "Split GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m44-475",
+   "passes": [
+    13
+   ],
+   "state": "done",
+   "title": "Stop GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m39-146",
+   "passes": [
+    14
+   ],
+   "state": "backlog",
+   "title": "Split memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m45-314",
+   "passes": [
+    14
+   ],
+   "state": "done",
+   "title": "Stop the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m51-482",
+   "passes": [
+    14
+   ],
+   "state": "backlog",
+   "title": "Fix docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m46-153",
+   "passes": [
+    15
+   ],
+   "state": "backlog",
+   "title": "Split stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m52-321",
+   "passes": [
+    15
+   ],
+   "state": "backlog",
+   "title": "Surface the run log's live tail",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m4-489",
+   "passes": [
+    15
+   ],
+   "state": "backlog",
+   "title": "Cache the rework ledger's loop cap",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m53-160",
+   "passes": [
+    16
+   ],
+   "state": "backlog",
+   "title": "Split docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m5-328",
+   "passes": [
+    16
+   ],
+   "state": "backlog",
+   "title": "Stop the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m11-496",
+   "passes": [
+    16
+   ],
+   "state": "done",
+   "title": "Add docker capacity leases",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m6-167",
+   "passes": [
+    17
+   ],
+   "state": "backlog",
+   "title": "Fix memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m12-335",
+   "passes": [
+    17
+   ],
+   "state": "backlog",
+   "title": "Split gate outcomes on stage transitions",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m18-503",
+   "passes": [
+    17
+   ],
+   "state": "done",
+   "title": "Retry GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m13-174",
+   "passes": [
+    18
+   ],
+   "state": "backlog",
+   "title": "Show stage timeout budgets",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m19-342",
+   "passes": [
+    18
+   ],
+   "state": "done",
+   "title": "Retry worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m25-510",
+   "passes": [
+    18
+   ],
+   "state": "done",
+   "title": "Fix the rework ledger's loop cap",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m20-181",
+   "passes": [
+    19
+   ],
+   "state": "backlog",
+   "title": "Route initiative progress rollup",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m26-349",
+   "passes": [
+    19
+   ],
+   "state": "backlog",
+   "title": "Split branch cleanup after a squash merge",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m32-517",
+   "passes": [
+    19
+   ],
+   "state": "backlog",
+   "title": "Show memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m27-188",
+   "passes": [
+    20
+   ],
+   "state": "backlog",
+   "title": "Split initiative progress rollup",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m33-356",
+   "passes": [
+    20
+   ],
+   "state": "backlog",
+   "title": "Make memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m39-524",
+   "passes": [
+    20
+   ],
+   "state": "backlog",
+   "title": "Retry the rework ledger's loop cap",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m34-195",
+   "passes": [
+    21
+   ],
+   "state": "backlog",
+   "title": "Cache memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m40-363",
+   "passes": [
+    21
+   ],
+   "state": "backlog",
+   "title": "Retry the queue board's stalled lane",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m46-531",
+   "passes": [
+    21
+   ],
+   "state": "done",
+   "title": "Show branch cleanup after a squash merge",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m41-202",
+   "passes": [
+    22
+   ],
+   "state": "backlog",
+   "title": "Stop memory recall ranking",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m47-370",
+   "passes": [
+    22
+   ],
+   "state": "backlog",
+   "title": "Retry GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m53-538",
+   "passes": [
+    22
+   ],
+   "state": "done",
+   "title": "Retry GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m48-209",
+   "passes": [
+    23
+   ],
+   "state": "in_progress",
+   "title": "Retry branch cleanup after a squash merge",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m54-377",
+   "passes": [
+    23
+   ],
+   "state": "backlog",
+   "title": "Add the rework ledger's loop cap",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m6-545",
+   "passes": [
+    23
+   ],
+   "state": "backlog",
+   "title": "Split GitHub issue two-way sync",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m1-216",
+   "passes": [
+    24
+   ],
+   "state": "backlog",
+   "title": "Split worktree isolation for chat turns",
+   "workspace": "loregarden"
+  },
+  {
+   "actions": [
+    "appended"
+   ],
+   "external_id": "lg-m7-384",
+   "passes": [
+    24
+   ],
+   "state": "done",
+   "title": "Make GitHub issue two-way sync",
+   "workspace": "loregarden"
+  }
+ ],
+ "unresolved_refs": [
+  "100",
+  "268",
+  "107",
+  "275",
+  "114",
+  "282",
+  "121",
+  "289",
+  "128",
+  "296",
+  "135",
+  "303",
+  "142",
+  "310",
+  "149",
+  "317",
+  "156",
+  "324",
+  "163",
+  "331",
+  "170",
+  "338",
+  "177",
+  "345",
+  "184",
+  "352",
+  "191",
+  "359",
+  "198",
+  "366",
+  "205",
+  "373",
+  "212",
+  "380",
+  "219",
+  "226",
+  "233",
+  "240",
+  "247",
+  "254",
+  "261"
+ ],
+ "workspaces": [
+  {
+   "question": "",
+   "slug": "loregarden",
+   "why": ""
+  }
+ ]
+}

@@ -29,6 +29,8 @@ __all__ = [
     "SurveyQueueAction",
     "SurveyPassAction",
     "SurveyRecordAction",
+    "LibraryState",
+    "LearningsAvailability",
 ]
 
 
@@ -207,3 +209,28 @@ class SurveyRecordAction(StrEnum):
     UNKNOWN_OPEN = "unknown_open"
     UNKNOWN_UPDATE = "unknown_update"
     UNKNOWNS = "unknowns"
+
+
+class LibraryState(StrEnum):
+    """Where a source stands, in the words the reference library shows.
+
+    Finer than `SurveySourceStatus`: "proposed" splits into waiting on a person
+    and an imported candidate nobody has proposed, and "active" into queued and
+    being read now, because those lead the operator to different actions.
+    """
+
+    CANDIDATE = "candidate"
+    AWAITING_APPROVAL = "awaiting_approval"
+    QUEUED = "queued"
+    READING = "reading"
+    SURVEYED = "surveyed"
+    REFUSED = "refused"
+
+
+class LearningsAvailability(StrEnum):
+    """Whether a source's linked learnings could be read. "None found" and
+    "could not look" must not render the same."""
+
+    FOUND = "found"
+    EMPTY = "empty"
+    UNAVAILABLE = "unavailable"

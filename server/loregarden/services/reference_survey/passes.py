@@ -254,7 +254,8 @@ def record_reads(session: Session, pass_id: str, reads: list[ReadIn]) -> list[Su
     return stored
 
 
-def _pass_counts(session: Session, pass_id: str) -> tuple[int, int]:
+def pass_counts(session: Session, pass_id: str) -> tuple[int, int]:
+    """(files read, files under the paths the pass recorded)."""
     rows = session.exec(
         select(SurveyPassRead.files_read, SurveyCoverage.file_count)
         .join(SurveyCoverage, col(SurveyCoverage.id) == SurveyPassRead.coverage_id)
@@ -280,7 +281,7 @@ def finish_pass(session: Session, body: PassFinishIn) -> SurveyPass:
             f"({', '.join(u.id for u in still_open)}). Resolve them with observed evidence, or "
             "finish as partial or unresolved."
         )
-    read, examined = _pass_counts(session, survey_pass.id)
+    read, examined = pass_counts(session, survey_pass.id)
     if examined == 0:
         raise SurveyError("Record what the pass read (record_reads) before finishing it")
     mapped = {row.path: row for row in coverage_rows(session, source.id)}
@@ -364,6 +365,6 @@ def coverage_report(session: Session, source_id: str) -> dict:
 
 
 def pass_counts_line(session: Session, survey_pass: SurveyPass) -> str:
-    read, examined = _pass_counts(session, survey_pass.id)
+    read, examined = pass_counts(session, survey_pass.id)
     slice_paths = json.loads(survey_pass.slice_json)
     return f"read {read} of {examined} files in the paths it recorded; slice was {len(slice_paths)} path(s)"

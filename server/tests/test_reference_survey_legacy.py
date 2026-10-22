@@ -63,6 +63,10 @@ LINKS = """# Ref Projects and Brainstorming
 - https://github.com/nextlevelbuilder/ui-ux-pro-max-skill (MIT — SURVEYED 2026-10-16, pass P. A UI/UX knowledge base.)
 - https://github.com/mikjee/warpdrv (AGPL-3.0, resolved at source — NOT SURVEYED 2026-10-16, pass Q, declined.)
 - (blobert) https://github.com/VAST-AI-Research/TripoSplat
+- https://github.com/acme/oneliner (the survey drill itself, as a skill)
+- https://github.com/acme/written (Apache-2.0, Python; the find is a REVERSAL: v1 reconciled ADD/UPDATE/DELETE, v3 is ADD-only with a dedupe on read, and the migration note says why: updates destroyed provenance faster than they fixed errors.)
+- https://github.com/autonomous-ai/openharness (MIT, TypeScript, 16,869 files, @0ad6af54. The same product as ours at ten times the size: a value then AGGREGATES DIFFERENTLY IN TWO PLACES, excluded from total() because it would double count, and EXCLUDED ITEMS STAY REACHABLE SOMEWHERE.)
+- https://github.com/acme/lean (MIT — SURVEYED 2026-10-17, pass Q. Long prose follows here for a while so that the word appears only well past the opening clause of the note, as the real notes do: three candidates excluded for failing.)
 """
 
 BRIEF = "# UX brief\n\n## Addendum 1\n\nRead the instruments first.\n"
@@ -209,3 +213,21 @@ def test_a_dry_run_writes_nothing(ctx):
     assert report.passes_created > 0
     assert session.exec(select(SurveySource)).all() == []
     assert session.exec(select(SurveyLegacySection)).all() == []
+
+
+def test_a_word_in_the_survey_prose_does_not_refuse_a_surveyed_source(ctx):
+    """Five surveyed sources were imported as refused: their notes say "excluded"
+    about findings. Only the note's opening clause states the outcome."""
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    harness = _source(session, "openharness")
+    assert (harness.status, harness.refused_reason) == (SurveySourceStatus.DONE, "")
+    assert _source(session, "lean").status is SurveySourceStatus.DONE
+    assert _source(session, "warpdrv").status is SurveySourceStatus.REFUSED
+
+
+def test_a_written_finding_marks_a_source_surveyed_and_a_one_liner_does_not(ctx):
+    session, directory = ctx
+    import_legacy(session, directory, workspace_slug="loregarden")
+    assert _source(session, "written").status is SurveySourceStatus.DONE
+    assert _source(session, "oneliner").status is SurveySourceStatus.PROPOSED

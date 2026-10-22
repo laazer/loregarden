@@ -72,6 +72,11 @@ _LINK_RE = re.compile(
 )
 _LICENCE_TOKEN_RE = re.compile(r"^(?P<id>[A-Za-z][A-Za-z0-9.+-]*(?:-\d[\w.]*)?)\b")
 _DATE_RE = re.compile(r"(?P<d>20\d\d-\d\d-\d\d)")
+#: How much of a link note states its outcome before the prose begins.
+_NOTE_LEAD_CHARS = 160
+#: A note this long is a finding someone wrote, so the source was read.
+_WRITTEN_FINDING_CHARS = 120
+_REFUSED_LEAD_RE = re.compile(r"\bNOT SURVEYED\b|\bEXCLUDED\b")
 
 
 @dataclass
@@ -204,13 +209,19 @@ def import_links(
         note = match.group("note") or ""
         source.notes = note or source.notes
         _apply_recorded_licence(source, _licence_name(note))
-        upper = note.upper()
-        if "NOT SURVEYED" in upper or "EXCLUDED" in upper:
+        # The outcome is stated in the note's opening clause ("MIT — SURVEYED…",
+        # "AGPL-3.0 … — NOT SURVEYED…"); the rest is survey prose, where words
+        # like "excluded" describe findings, not the source.
+        upper = note[:_NOTE_LEAD_CHARS].upper()
+        label = _PASS_HEADING_RE.search(note)
+        if _REFUSED_LEAD_RE.search(upper):
             source.status = SurveySourceStatus.REFUSED
             source.refused_reason = note[:2000]
-        elif "SURVEYED" in upper:
+        elif "SURVEYED" in upper or label or len(note) >= _WRITTEN_FINDING_CHARS:
+            # Inferred, not stated: a note naming a pass, or long enough to be a
+            # written finding, records a survey. A bare or one-line link is a
+            # candidate nobody has read.
             source.status = SurveySourceStatus.DONE
-        label = _PASS_HEADING_RE.search(note)
         if label:
             by_label.setdefault(label.group("label").upper(), []).append(source)
         session.add(source)
@@ -406,11 +417,9 @@ def import_queue(
             )
             commit = _COMMIT_RE.search(section.body[:600])
             source.pinned_commit = source.pinned_commit or (commit.group("sha") if commit else "")
-            source.status = (
-                SurveySourceStatus.DONE
-                if source.status is not SurveySourceStatus.REFUSED
-                else source.status
-            )
+            # A source with its own section was surveyed, whatever a link note says.
+            source.status = SurveySourceStatus.DONE
+            source.refused_reason = ""
             for ordinal, text in _pass_segments(section.body):
                 _pass(session, source, ordinal, f"PASS {ordinal}", text, section, report)
             _store_unread(session, source, _unread_items(section.body), report)
