@@ -22,6 +22,18 @@ const mockApi = api as jest.Mocked<typeof api>;
 const LIBRARY = libraryFixture as unknown as LibraryList;
 const DEEP = deepSource as unknown as LibraryDetail;
 
+const INITIATIVE = {
+  id: "init-uuid-1",
+  external_id: "init-survey-1",
+  title: "Make surveys pay off",
+  description: "",
+  state: "in_progress",
+  priority: 2,
+  milestones: [],
+  progress: { resolved: 0, total: 0 },
+  workspaces: ["loregarden"],
+} as Awaited<ReturnType<typeof api.initiatives>>[number];
+
 function Path() {
   return <span data-testid="path">{useLocation().pathname}</span>;
 }
@@ -60,6 +72,7 @@ beforeEach(() => {
   ]);
   mockApi.referenceLibrary.mockResolvedValue(LIBRARY);
   mockApi.referenceSource.mockResolvedValue(DEEP);
+  mockApi.initiatives.mockResolvedValue([INITIATIVE]);
 });
 
 describe("the reference library at production volume", () => {
@@ -204,5 +217,74 @@ describe("keyboard", () => {
     renderAt(`/memory/library/${DEEP.source.id}`);
     fireEvent.click(await screen.findByRole("button", { name: "← Back to sources" }));
     expect(screen.getByTestId("path")).toHaveTextContent(/^\/memory\/library$/);
+  });
+});
+
+describe("initiatives following a source", () => {
+  it("links an initiative, says what joined, and shows it as following", async () => {
+    mockApi.linkSourceInitiative.mockResolvedValue({
+      initiative_id: INITIATIVE.id,
+      initiative: "init-survey-1",
+      added: ["lg-a-1", "lg-a-2"],
+      skipped: [{ ticket: "lg-a-3", reason: "init-survey-1 already covers lg-a-3 through lg-a-1, a member of it." }],
+      settled_left_out: 2,
+    });
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    const section = await screen.findByRole("region", { name: /Initiatives following it/ });
+    expect(within(section).getByText(/No initiative follows this source/)).toBeInTheDocument();
+    const link = within(section).getByRole("button", { name: "Link" });
+    expect(link).toBeDisabled();
+    fireEvent.change(await within(section).findByLabelText("Link an initiative"), { target: { value: INITIATIVE.id } });
+    mockApi.referenceSource.mockResolvedValue({
+      ...DEEP,
+      initiatives: [{ id: INITIATIVE.id, external_id: "init-survey-1", title: INITIATIVE.title, members_added: 2 }],
+    });
+    fireEvent.click(link);
+    expect(await within(section).findByRole("status")).toHaveTextContent(
+      "2 open tickets joined init-survey-1; 2 settled tickets stayed out; 1 the initiative already covers.",
+    );
+    expect(mockApi.linkSourceInitiative).toHaveBeenCalledTimes(1);
+    expect(mockApi.linkSourceInitiative).toHaveBeenCalledWith(DEEP.source.id, INITIATIVE.id);
+    expect(await within(section).findByRole("link", { name: /init-survey-1 Make surveys pay off/ })).toBeInTheDocument();
+    expect(within(section).getByText("Why 1 ticket did not join")).toBeInTheDocument();
+    expect(within(section).getByText("Every initiative already follows this source.")).toBeInTheDocument();
+  });
+
+  it("asks before unlinking, saying what will leave, and reports what did", async () => {
+    mockApi.referenceSource.mockResolvedValue({
+      ...DEEP,
+      initiatives: [{ id: INITIATIVE.id, external_id: "init-survey-1", title: INITIATIVE.title, members_added: 69 }],
+    });
+    mockApi.unlinkSourceInitiative.mockResolvedValue({ initiative: "init-survey-1", removed: ["lg-a-1"], kept: ["lg-a-2"] });
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    const section = await screen.findByRole("region", { name: /Initiatives following it/ });
+    fireEvent.click(await within(section).findByRole("button", { name: "Unlink init-survey-1" }));
+    const confirm = within(section).getByRole("group", { name: "Unlink init-survey-1?" });
+    expect(confirm).toHaveTextContent("The 69 tickets this link added leave init-survey-1");
+    expect(mockApi.unlinkSourceInitiative).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Unlink" }));
+    expect(await within(section).findByRole("status")).toHaveTextContent(
+      "Unlinked init-survey-1: 1 ticket left it; 1 stayed, held by another source.",
+    );
+  });
+
+  it("names a failed link in a toast", async () => {
+    mockApi.linkSourceInitiative.mockRejectedValue(new ApiError(422, "init-x is not an initiative"));
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    const section = await screen.findByRole("region", { name: /Initiatives following it/ });
+    fireEvent.change(await within(section).findByLabelText("Link an initiative"), { target: { value: INITIATIVE.id } });
+    fireEvent.click(within(section).getByRole("button", { name: "Link" }));
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.map((t) => t.title)).toContain("Could not link the initiative"),
+    );
+  });
+
+  it("points to the Initiatives page when there are none", async () => {
+    mockApi.initiatives.mockResolvedValue([]);
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    expect(await screen.findByRole("link", { name: "Create one on the Initiatives page" })).toHaveAttribute(
+      "href",
+      "/initiatives",
+    );
   });
 });

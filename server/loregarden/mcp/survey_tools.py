@@ -46,6 +46,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, queue, record, report
+from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
     FindingIn,
@@ -108,7 +109,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "workspaces instead of a second survey (a person admits a new source "
             "from the inbox before anything reads it); list shows waiting and running passes; "
             "request_pass queues a continuation (pick up the unread list) or a scoped re-read "
-            "against one new question on an admitted source; status returns a source's whole "
+            "against one new question on an admitted source; link_initiative makes an "
+            "initiative follow the source (its open tickets join it, now and as passes add "
+            "more) and unlink_initiative undoes that; status returns a source's whole "
             "record (passes, tickets touched, findings, unknowns, coverage); coverage returns "
             "the directory map with what every pass read, each count with its denominator."
         ),
@@ -137,6 +140,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "request_pass: map paths to read; empty lets the feeder slice the map."
                 ),
                 "limit": integer_prop("list: max rows (default 50)."),
+                "initiative_id": string_prop(
+                    "link_initiative/unlink_initiative: the initiative, by UUID or external id."
+                ),
             },
             required=["action"],
         ),
@@ -343,12 +349,23 @@ def _request_pass(session: Session, args: dict[str, Any]) -> dict:
     return {"ok": True, "pass_id": survey_pass.id, "ordinal": survey_pass.ordinal}
 
 
+def _link(session: Session, args: dict[str, Any]) -> dict:
+    result = link_initiative(session, args["source_id"], args["initiative_id"], actor="agent")
+    return result.model_dump()
+
+
+def _unlink(session: Session, args: dict[str, Any]) -> dict:
+    return unlink_initiative(session, args["source_id"], args["initiative_id"]).model_dump()
+
+
 _QUEUE: dict[SurveyQueueAction, Handler] = {
     SurveyQueueAction.ENQUEUE: _enqueue,
     SurveyQueueAction.LIST: _list,
     SurveyQueueAction.REQUEST_PASS: _request_pass,
     SurveyQueueAction.STATUS: lambda s, a: report.source_status(s, a["source_id"]),
     SurveyQueueAction.COVERAGE: lambda s, a: passes.coverage_report(s, a["source_id"]),
+    SurveyQueueAction.LINK_INITIATIVE: _link,
+    SurveyQueueAction.UNLINK_INITIATIVE: _unlink,
 }
 
 

@@ -20,6 +20,7 @@ import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
 
 /** Lists past this many rows show the first ones and say how many more there are. */
 const PREVIEW = 12;
@@ -275,6 +276,7 @@ function Body({ detail }: { detail: LibraryDetail }) {
       <NextStep detail={detail} />
       <Facts detail={detail} />
       <Tickets detail={detail} />
+      <ReferenceSourceInitiatives detail={detail} />
       <Learnings detail={detail} />
       <Passes passes={detail.passes} />
       {detail.open_unknowns.length > 0 ? (

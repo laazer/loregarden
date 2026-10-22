@@ -190,6 +190,8 @@ class SurveyQueueAction(StrEnum):
     REQUEST_PASS = "request_pass"
     STATUS = "status"
     COVERAGE = "coverage"
+    LINK_INITIATIVE = "link_initiative"
+    UNLINK_INITIATIVE = "unlink_initiative"
 
 
 class SurveyPassAction(StrEnum):

@@ -42,6 +42,13 @@ _TABLES: tuple[tuple[str, str], ...] = (
         "REFERENCES survey_sources (id), FOREIGN KEY(workspace_id) REFERENCES workspaces (id) )",
     ),
     (
+        "survey_source_initiatives",
+        "CREATE TABLE survey_source_initiatives ( source_id VARCHAR NOT NULL, initiative_id "
+        "VARCHAR NOT NULL, linked_at DATETIME NOT NULL, linked_by VARCHAR NOT NULL, PRIMARY KEY "
+        "(source_id, initiative_id), FOREIGN KEY(source_id) REFERENCES survey_sources (id), "
+        "FOREIGN KEY(initiative_id) REFERENCES tickets (id) )",
+    ),
+    (
         "survey_passes",
         "CREATE TABLE survey_passes ( id VARCHAR NOT NULL, source_id VARCHAR NOT NULL, ordinal "
         "INTEGER NOT NULL, label VARCHAR NOT NULL, mode VARCHAR(12) NOT NULL, status "
@@ -126,6 +133,14 @@ _TABLES: tuple[tuple[str, str], ...] = (
         "FOREIGN KEY(unknown_id) REFERENCES survey_unknowns (id), FOREIGN KEY(evidence_id) "
         "REFERENCES survey_evidence (id) )",
     ),
+    (
+        "survey_initiative_members",
+        "CREATE TABLE survey_initiative_members ( source_id VARCHAR NOT NULL, initiative_id "
+        "VARCHAR NOT NULL, ticket_id VARCHAR NOT NULL, added_at DATETIME NOT NULL, PRIMARY KEY "
+        "(source_id, initiative_id, ticket_id), FOREIGN KEY(source_id) REFERENCES "
+        "survey_sources (id), FOREIGN KEY(initiative_id) REFERENCES tickets (id), FOREIGN "
+        "KEY(ticket_id) REFERENCES tickets (id) )",
+    ),
 )
 
 _INDEXES: tuple[tuple[str, str], ...] = (
@@ -136,6 +151,11 @@ _INDEXES: tuple[tuple[str, str], ...] = (
     (
         "ix_survey_sources_workspace_id",
         "CREATE INDEX ix_survey_sources_workspace_id ON survey_sources (workspace_id)",
+    ),
+    (
+        "ix_survey_source_initiatives_initiative_id",
+        "CREATE INDEX ix_survey_source_initiatives_initiative_id ON survey_source_initiatives "
+        "(initiative_id)",
     ),
     (
         "ix_survey_passes_carrier_ticket_id",
@@ -193,6 +213,11 @@ _INDEXES: tuple[tuple[str, str], ...] = (
     (
         "ix_survey_unknowns_status",
         "CREATE INDEX ix_survey_unknowns_status ON survey_unknowns (status)",
+    ),
+    (
+        "ix_survey_initiative_members_ticket_id",
+        "CREATE INDEX ix_survey_initiative_members_ticket_id ON survey_initiative_members "
+        "(ticket_id)",
     ),
 )
 

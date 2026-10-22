@@ -70,8 +70,32 @@ export interface LibraryLearning {
   updated_at: string;
 }
 
+export interface LinkedInitiative {
+  id: string;
+  external_id: string;
+  title: string;
+  /** Memberships this link added (open tickets only). */
+  members_added: number;
+}
+
+export interface LinkResult {
+  initiative_id: string;
+  initiative: string;
+  added: string[];
+  skipped: { ticket: string; reason: string }[];
+  settled_left_out: number;
+}
+
+export interface UnlinkResult {
+  initiative: string;
+  removed: string[];
+  kept: string[];
+}
+
 export interface LibraryDetail {
   source: LibraryRow;
+  /** Initiatives following this source: its open tickets are their members. */
+  initiatives: LinkedInitiative[];
   licence_constraint: string;
   pinned_commit: string;
   refused_reason: string;
@@ -106,4 +130,14 @@ export const referenceLibraryApi = {
     ),
   referenceSource: (sourceId: string) =>
     request<LibraryDetail>(`/api/reference-library/${encodeURIComponent(sourceId)}`),
+  linkSourceInitiative: (sourceId: string, initiativeId: string) =>
+    request<LinkResult>(`/api/reference-library/${encodeURIComponent(sourceId)}/initiatives`, {
+      method: "POST",
+      body: JSON.stringify({ initiative_id: initiativeId }),
+    }),
+  unlinkSourceInitiative: (sourceId: string, initiativeId: string) =>
+    request<UnlinkResult>(
+      `/api/reference-library/${encodeURIComponent(sourceId)}/initiatives/${encodeURIComponent(initiativeId)}`,
+      { method: "DELETE" },
+    ),
 };

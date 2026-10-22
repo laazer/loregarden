@@ -53,6 +53,7 @@ from loregarden.services.reference_survey.errors import (
     TicketWriteMismatch,
 )
 from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.initiatives import follow_new_tickets
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
 from loregarden.services.reference_survey.schemas import NewTicketIn, TicketWriteIn
@@ -461,6 +462,10 @@ def write_findings_to_ticket(session: Session, body: TicketWriteIn) -> TicketWri
             )
         )
     session.commit()
+    for joined in follow_new_tickets(session, source.id, [ticket.id]):
+        if joined.added:
+            notes.append(f"joined linked initiative {joined.initiative}")
+        notes.extend(f"did not join {joined.initiative}: {skip.reason}" for skip in joined.skipped)
     if aimed_at is not None:
         notes.append(
             f"aimed at {aimed_at.external_id}; landed on {ticket.external_id} ({action.value})"

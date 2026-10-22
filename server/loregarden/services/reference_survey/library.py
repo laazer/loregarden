@@ -37,6 +37,7 @@ from loregarden.models.domain.survey_tables import (
 )
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.reference_survey.errors import SurveyNotFound
+from loregarden.services.reference_survey.initiatives import LinkedInitiative, linked_initiatives
 from loregarden.services.reference_survey.passes import coverage_report, pass_counts
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
@@ -146,6 +147,8 @@ class LibraryCoverage(BaseModel):
 
 class LibraryDetail(BaseModel):
     source: LibraryRow
+    #: Initiatives following this source; its open tickets are their members.
+    initiatives: list[LinkedInitiative]
     licence_constraint: str
     pinned_commit: str
     refused_reason: str
@@ -470,6 +473,7 @@ def library_detail(session: Session, source_id: str) -> LibraryDetail:
     )
     return LibraryDetail(
         source=_rows(session, [source])[0],
+        initiatives=linked_initiatives(session, source.id),
         licence_constraint=source.licence_constraint,
         pinned_commit=source.pinned_commit,
         refused_reason=source.refused_reason,

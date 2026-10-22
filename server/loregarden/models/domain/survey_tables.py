@@ -52,11 +52,13 @@ __all__ = [
     "SurveyEvidence",
     "SurveyFinding",
     "SurveyFindingEvidence",
+    "SurveyInitiativeMember",
     "SurveyLegacySection",
     "SurveyPass",
     "SurveyPassRead",
     "SurveyPassTicket",
     "SurveySource",
+    "SurveySourceInitiative",
     "SurveySourceWorkspace",
     "SurveyUnknown",
     "SurveyUnknownEvidence",
@@ -128,6 +130,30 @@ class SurveySourceWorkspace(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", primary_key=True)
     question: str = ""
     queued_reason: str = ""
+    added_at: datetime = Field(default_factory=utcnow)
+
+
+class SurveySourceInitiative(SQLModel, table=True):
+    """An initiative that follows a source: the source's open tickets join it,
+    now and as later passes touch more (`services.reference_survey.initiatives`)."""
+
+    __tablename__ = "survey_source_initiatives"
+
+    source_id: str = Field(foreign_key="survey_sources.id", primary_key=True)
+    initiative_id: str = Field(foreign_key="tickets.id", primary_key=True, index=True)
+    linked_at: datetime = Field(default_factory=utcnow)
+    linked_by: str = ""
+
+
+class SurveyInitiativeMember(SQLModel, table=True):
+    """A membership a source's link added. Unlinking removes the membership only
+    when no other linked source added it too and no person did."""
+
+    __tablename__ = "survey_initiative_members"
+
+    source_id: str = Field(foreign_key="survey_sources.id", primary_key=True)
+    initiative_id: str = Field(foreign_key="tickets.id", primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", primary_key=True, index=True)
     added_at: datetime = Field(default_factory=utcnow)
 
 
