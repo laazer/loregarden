@@ -28,6 +28,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import (
     SurveyCoverage,
+    SurveyDiscovery,
     SurveyFinding,
     SurveyPass,
     SurveyPassTicket,
@@ -36,12 +37,14 @@ from loregarden.models.domain.survey_tables import (
     SurveyUnknown,
 )
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.reference_survey.discovery import DiscoveryView, recent_discoveries
 from loregarden.services.reference_survey.errors import SurveyNotFound
 from loregarden.services.reference_survey.initiatives import LinkedInitiative, linked_initiatives
 from loregarden.services.reference_survey.passes import coverage_report, pass_counts
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
 from loregarden.services.reference_survey.schedule import QueueSchedule, queue_schedule
+from loregarden.services.reference_survey.topics import TOPICS
 from pydantic import BaseModel
 from sqlmodel import Session, col, func, select
 
@@ -79,6 +82,8 @@ class LibraryRow(BaseModel):
     stars: int | None
     topics: str
     describe_error: str
+    #: The topic of the discovery run that found it, when an agent did.
+    discovered_by: str | None
 
 
 class LibraryList(BaseModel):
@@ -87,6 +92,8 @@ class LibraryList(BaseModel):
     sources: list[LibraryRow]
     #: What the feeder dispatches next and what holds it, across all workspaces.
     schedule: QueueSchedule
+    #: Recent discovery runs serving this workspace, newest first.
+    discoveries: list[DiscoveryView]
 
 
 class LibraryWorkspace(BaseModel):
@@ -260,6 +267,13 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
         ).all()
     }
     tickets, unresolved = _ticket_counts(session, ids)
+    discovery_ids = {s.discovery_id for s in sources if s.discovery_id}
+    discovered = {
+        d.id: TOPICS[d.topic].label
+        for d in session.exec(
+            select(SurveyDiscovery).where(col(SurveyDiscovery.id).in_(discovery_ids))
+        ).all()
+    }
     unknowns = Counter(
         session.exec(
             select(SurveyUnknown.source_id).where(
@@ -308,6 +322,7 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
                 stars=source.stars,
                 topics=source.topics,
                 describe_error=source.describe_error,
+                discovered_by=discovered.get(source.discovery_id) if source.discovery_id else None,
             )
         )
     return rows
@@ -337,6 +352,7 @@ def library_list(session: Session, workspace_slug: str) -> LibraryList:
         counts={state: counts[state] for state in LibraryState},
         sources=rows,
         schedule=queue_schedule(session),
+        discoveries=recent_discoveries(session, workspace_slug),
     )
 
 

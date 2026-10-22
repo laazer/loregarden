@@ -26,6 +26,7 @@ import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReviewForm } from "./ReferenceReviewNow";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
+import { KeepOrDrop } from "./ReferenceKeepDrop";
 import { ReferenceLinkButton } from "./ReferenceLinkModal";
 import { ReferenceSourceUpstream } from "./ReferenceSourceUpstream";
 import { TicketLink } from "../TicketLink";
@@ -41,14 +42,16 @@ function AddToQueue({ detail, workspace, note }: { detail: LibraryDetail; worksp
     return (
       <div className="rl-next">
         <p>{note}</p>
-        <Button variant="primary" compact aria-expanded={false} aria-haspopup="dialog" onClick={() => setOpen(true)}>
-          Add to the review queue…
-        </Button>
+        <KeepOrDrop source={detail.source} />
         {detail.source.state === "awaiting_approval" ? (
-          <Button variant="secondary" compact onClick={() => setInboxOpen(true)}>
+          <Button variant="plain" compact className="rl-more" onClick={() => setInboxOpen(true)}>
             Review in inbox
           </Button>
-        ) : null}
+        ) : (
+          <Button variant="plain" compact className="rl-more" aria-expanded={false} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+            Keep, with workspaces or a question…
+          </Button>
+        )}
       </div>
     );
   }
@@ -101,7 +104,11 @@ function NextStep({
       <AddToQueue
         detail={detail}
         workspace={workspace}
-        note="An agent proposed it; nothing in it is read until it is queued. Queue it here, or decide in the inbox."
+        note={
+          detail.source.discovered_by
+            ? `Found for ${detail.source.discovered_by}; nothing in it is read until you keep it.`
+            : "An agent proposed it; nothing in it is read until you keep it."
+        }
       />
     );
   }

@@ -71,7 +71,7 @@ class Enqueued:
     admitted: bool = False
 
 
-def _workspaces(session: Session, slugs: list[str]) -> list[Workspace]:
+def resolve_workspaces(session: Session, slugs: list[str]) -> list[Workspace]:
     found = []
     for slug in dict.fromkeys(slugs):
         workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
@@ -121,7 +121,7 @@ def serve_workspaces(
     """Make an admitted source answer these workspaces too, queueing nothing: the
     caller is about to run a pass, which reads for every workspace it serves.
     Unknown slugs are refused before anything is written."""
-    added = _attach(session, source, _workspaces(session, slugs), question, why)
+    added = _attach(session, source, resolve_workspaces(session, slugs), question, why)
     session.commit()
     return added
 
@@ -139,7 +139,7 @@ def enqueue_source(session: Session, body: SourceIn, *, admitted: bool = False) 
     enqueue unadmitted; their card is what stops an agent queueing any URL.
     The licence gate runs before reading either way.
     """
-    workspaces = _workspaces(session, body.workspace_slugs)
+    workspaces = resolve_workspaces(session, body.workspace_slugs)
     url = _canonical_url(body.kind, body.url)
     existing = session.exec(select(SurveySource).where(SurveySource.url == url)).first()
     if existing is None:
@@ -391,3 +391,50 @@ def queue_listing(
         if workspace_id is None or s.id in serving
     )
     return rows
+
+
+def _home_slug(session: Session, source: SurveySource) -> str:
+    home = session.get(Workspace, source.workspace_id)
+    if home is None:
+        raise SurveyNotFound(f"Source {source.id} names a missing workspace")
+    return home.slug
+
+
+def keep_source(session: Session, source_id: str) -> SurveySource:
+    """A person keeps a proposal (an agent's, or a listed candidate): it is queued
+    now, and its card, if one is pending, is approved."""
+    source = session.get(SurveySource, source_id)
+    if source is None:
+        raise SurveyNotFound(f"No survey source {source_id!r}")
+    if source.status is not SurveySourceStatus.PROPOSED:
+        raise SurveyError(f"{source.name} is {source.status.value}, not waiting to be kept.")
+    body = SourceIn(
+        workspace_slugs=[_home_slug(session, source)],
+        kind=source.kind,
+        url=source.url,
+        question=source.question,
+        queued_reason=source.queued_reason,
+        priority=source.priority,
+    )
+    return _admit_now(session, source, body)
+
+
+def drop_source(session: Session, source_id: str, reason: str) -> SurveySource:
+    """A person drops a proposal: refused, with their reason, and its card (if one is
+    pending) rejected, so it does not wait in the inbox for a decision already made."""
+    source = session.get(SurveySource, source_id)
+    if source is None:
+        raise SurveyNotFound(f"No survey source {source_id!r}")
+    if source.status is not SurveySourceStatus.PROPOSED:
+        raise SurveyError(f"{source.name} is {source.status.value}, not waiting to be kept.")
+    if source.approval_id:
+        card = session.get(Approval, source.approval_id)
+        if card is not None and card.status is ApprovalStatus.PENDING:
+            ApprovalService(session).resolve(card.id, approved=False)
+    source.status = SurveySourceStatus.REFUSED
+    source.refused_reason = f"A person dropped it: {reason.strip() or 'not worth reading'}."
+    source.updated_at = utcnow()
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+    return source

@@ -255,3 +255,13 @@ class LearningsAvailability(StrEnum):
     FOUND = "found"
     EMPTY = "empty"
     UNAVAILABLE = "unavailable"
+
+
+class SurveyTopic(StrEnum):
+    """What people commonly survey for; the catalog is `reference_survey.topics`."""
+
+    MEMORY_LAYER = "memory_layer"
+    UI_UX = "ui_ux"
+    SIMILAR_TOOLS = "similar_tools"
+    AGENT_ORCHESTRATION = "agent_orchestration"
+    TESTING_VERIFICATION = "testing_verification"

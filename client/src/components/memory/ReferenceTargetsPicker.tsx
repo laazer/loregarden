@@ -50,6 +50,7 @@ export function ReferenceTargetsPicker({
     <div className="rl-targets">
       <fieldset className="rl-target-group">
         <legend>Read it for</legend>
+        <div className="rl-target-options rl-target-options--row">
         {workspaceList.isPending ? (
           <span className="rl-muted">Loading workspaces…</span>
         ) : workspaceList.isError ? (
@@ -74,6 +75,7 @@ export function ReferenceTargetsPicker({
             );
           })
         )}
+        </div>
       </fieldset>
       {showInitiatives ? (
         <fieldset className="rl-target-group">
@@ -102,8 +104,11 @@ export function ReferenceTargetsPicker({
                       onInitiatives(toggle(initiatives, initiative.id, event.target.checked))
                     }
                   />
-                  <span className="rl-ticket-id">{initiative.external_id}</span> {initiative.title}
-                  {fixed ? <span className="rl-muted"> (already following)</span> : null}
+                  <span className="rl-option-text">
+                    {initiative.title}{" "}
+                    <span className="rl-option-id">{initiative.external_id}</span>
+                    {fixed ? <span className="rl-muted"> · already following</span> : null}
+                  </span>
                 </label>
               );
             })

@@ -41,6 +41,49 @@ export interface LibraryRow {
   topics: string;
   /** Why the last read of the description failed; "" when it did not. */
   describe_error: string;
+  /** The topic of the discovery run that found it, when an agent did. */
+  discovered_by: string | null;
+}
+
+export type SurveyTopic =
+  | "memory_layer"
+  | "ui_ux"
+  | "similar_tools"
+  | "agent_orchestration"
+  | "testing_verification";
+
+export interface TopicView {
+  id: SurveyTopic;
+  label: string;
+  /** Fills "What should the survey answer?". */
+  question: string;
+  /** Fills "Why this one?". */
+  why: string;
+  /** What a discovery run searches for. */
+  search: string;
+}
+
+export interface DiscoveryRequest {
+  topic: SurveyTopic;
+  workspace_slugs: string[];
+  initiative_ids: string[];
+  focus: string;
+  wanted: number;
+}
+
+export interface DiscoveryView {
+  id: string;
+  topic: SurveyTopic;
+  label: string;
+  focus: string;
+  wanted: number;
+  workspaces: string[];
+  /** The run's ticket and its state; the run is over when the ticket is settled. */
+  carrier: string | null;
+  carrier_state: string | null;
+  /** Sources it has proposed so far. */
+  found: number;
+  created_at: string;
 }
 
 export interface LibraryList {
@@ -49,6 +92,8 @@ export interface LibraryList {
   sources: LibraryRow[];
   /** What the survey reviews next and what holds it, across all workspaces. */
   schedule: QueueSchedule;
+  /** Recent discovery runs serving this workspace, newest first. */
+  discoveries: DiscoveryView[];
 }
 
 export interface QueueSchedule {
@@ -259,6 +304,16 @@ export const referenceLibraryApi = {
     }),
   addReferenceSource: (body: AddSourceRequest) =>
     request<AddSourceResult>("/api/reference-library/sources", { method: "POST", body: JSON.stringify(body) }),
+  referenceTopics: () => request<TopicView[]>("/api/reference-library/topics"),
+  startDiscovery: (body: DiscoveryRequest) =>
+    request<DiscoveryView>("/api/reference-library/discover", { method: "POST", body: JSON.stringify(body) }),
+  keepSource: (sourceId: string) =>
+    request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/keep`, { method: "POST", body: "{}" }),
+  dropSource: (sourceId: string, reason: string) =>
+    request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/drop`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
   addReferenceSources: (body: BulkAddRequest) =>
     request<BulkAddItem[]>("/api/reference-library/sources/bulk", { method: "POST", body: JSON.stringify(body) }),
   reviewSourceNow: (sourceId: string, body: ReviewNowRequest) =>

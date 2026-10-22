@@ -116,7 +116,7 @@ export function ReviewForm({
       <Button variant="primary" compact aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {openLabel}
       </Button>
-      <ModalShell open={open} onDismiss={review.isPending ? undefined : close} labelledBy={ids.title}>
+      <ModalShell open={open} onDismiss={review.isPending ? undefined : close} labelledBy={ids.title} panelClassName="modal-panel-wide">
         <form
           aria-label={`Review ${name} now`}
           onSubmit={(event) => {
