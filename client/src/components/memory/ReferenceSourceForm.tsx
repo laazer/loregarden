@@ -7,6 +7,7 @@ import type {
   AddSourceResult,
   BulkAddItem,
   SourceKind,
+  TopicView,
 } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
 import { splitUrls } from "../../lib/referenceLibrary";
@@ -18,6 +19,7 @@ import { ModalShell } from "../ui/ModalShell";
 import { Textarea } from "../ui/Textarea";
 import { IconCloseButton } from "../IconCloseButton";
 import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
+import { TopicChips } from "./ReferenceTopics";
 
 /** The server takes this many URLs per bulk add (`MAX_BULK_URLS`). */
 const MAX_BULK_URLS = 50;
@@ -124,6 +126,19 @@ export function ReferenceSourceForm({
   const [bulkKind, setBulkKind] = useState<SourceKind | typeof DETECT>(DETECT);
   const [question, setQuestion] = useState("");
   const [why, setWhy] = useState("");
+  const [topic, setTopic] = useState<TopicView | null>(null);
+
+  // A chip fills the question and reason; un-picking it clears only what it filled.
+  function pickTopic(next: TopicView | null) {
+    if (next) {
+      setQuestion(next.question);
+      setWhy(next.why);
+    } else if (topic) {
+      if (question === topic.question) setQuestion("");
+      if (why === topic.why) setWhy("");
+    }
+    setTopic(next);
+  }
   const [failure, setFailure] = useState("");
   const [results, setResults] = useState<BulkAddItem[]>([]);
   const [alsoFor, setAlsoFor] = useState<string[]>([]);
@@ -217,7 +232,7 @@ export function ReferenceSourceForm({
       open
       onDismiss={pending ? undefined : onCancel}
       labelledBy={ids.title}
-      panelClassName={several ? "modal-panel-wide" : undefined}
+      panelClassName="modal-panel-wide"
     >
       <form aria-label="Add a reference" onSubmit={submit}>
         <div className="modal-header">
@@ -342,9 +357,10 @@ export function ReferenceSourceForm({
           />
           <p className="rl-muted rl-optional-note">
             That is enough to review {several ? "them" : "it"}: the survey reads
-            for those workspaces and initiatives. Add specifics below if you
-            have them.
+            for those workspaces and initiatives. Pick a topic, or add specifics
+            below, to narrow it.
           </p>
+          <TopicChips selected={topic?.id ?? null} onPick={pickTopic} label="What to look for" />
           <div className="rl-field">
             <label htmlFor={ids.question}>
               What should the survey answer from {several ? "them" : "it"}?

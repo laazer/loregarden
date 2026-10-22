@@ -46,6 +46,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, queue, record, report
+from loregarden.services.reference_survey.discovery import enqueue_found
 from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
 from loregarden.services.reference_survey.library import library_row
 from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
@@ -148,6 +149,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "request_pass: map paths to read; empty lets the feeder slice the map."
                 ),
                 "limit": integer_prop("list: max rows (default 50)."),
+                "discovery_id": string_prop(
+                    "enqueue: the discovery run this find belongs to (from its brief); the find "
+                    "then serves the run's workspaces and initiatives."
+                ),
                 "initiative_id": string_prop(
                     "link_initiative/unlink_initiative: the initiative, by UUID or external id."
                 ),
@@ -328,7 +333,12 @@ Handler = Callable[[Session, dict[str, Any]], Any]
 
 
 def _enqueue(session: Session, args: dict[str, Any]) -> dict:
-    enqueued = queue.enqueue_source(session, _model(SourceIn, args))
+    body = _model(SourceIn, args)
+    enqueued = (
+        enqueue_found(session, body, args["discovery_id"])
+        if args.get("discovery_id")
+        else queue.enqueue_source(session, body)
+    )
     return {
         "ok": True,
         "source_id": enqueued.source.id,

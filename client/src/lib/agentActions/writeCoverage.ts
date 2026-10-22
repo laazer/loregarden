@@ -51,6 +51,13 @@ export const API_WRITE_COVERAGE = {
   addReferenceSources: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   reviewSourceNow: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   linkSourceTargets: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // Keeping or dropping a proposal decides the admission card an agent's find waits on.
+  keepSource: { kind: "human_only", reason: GATE },
+  dropSource: { kind: "human_only", reason: GATE },
+  startDiscovery: {
+    kind: "not_agent_driven",
+    reason: "starts an agent to search and enqueue; an agent searches and enqueues with loregarden_survey_queue itself",
+  },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
   // The bulk form of the same write: an agent creates the tickets directly,

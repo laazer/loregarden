@@ -11,6 +11,7 @@ import {
   type LibrarySortKey,
 } from "../../lib/referenceLibrary";
 import { Button } from "../ui/Button";
+import { KeepOrDrop } from "./ReferenceKeepDrop";
 
 interface Column {
   key: string;
@@ -93,6 +94,7 @@ export function ReferenceLibraryTable({
                   {row.name}
                 </Link>
                 <span className="rl-url">{row.kind === "site" ? "site · " : ""}{row.url.replace(/^https?:\/\//, "")}</span>
+                {row.discovered_by ? <span className="rl-found-for">found for {row.discovered_by}</span> : null}
                 {row.description ? (
                   <span className="rl-description" title={row.description}>
                     {row.description}
@@ -106,6 +108,7 @@ export function ReferenceLibraryTable({
               </td>
               <td className="rl-col-state">
                 <span className={`rl-state-badge rl-state-badge--${row.state}`}>{STATE_LABELS[row.state]}</span>
+                {row.state === "awaiting_approval" ? <KeepOrDrop source={row} /> : null}
               </td>
               <td className="rl-col-licence" title={row.licence_name || undefined}>
                 {licenceUse(row)}

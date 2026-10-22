@@ -23,6 +23,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
+import { ReferenceDiscoverButton } from "./ReferenceDiscover";
 import { ReferenceQueueStatus } from "./ReferenceQueueStatus";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceDetail } from "./ReferenceSourceDetail";
@@ -178,6 +179,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
             >
               Add a reference
             </Button>
+            <ReferenceDiscoverButton workspace={slug} />
             <span className="rl-count" aria-live="polite">
               {library.data ? `${rows.length} source${rows.length === 1 ? "" : "s"}` : ""}
               {library.isFetching && library.data ? " · refreshing" : ""}
@@ -193,7 +195,11 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               }}
             />
           ) : null}
-          {library.data ? <ReferenceQueueStatus schedule={library.data.schedule} search={location.search} /> : null}
+          {library.data ? <ReferenceQueueStatus
+              schedule={library.data.schedule}
+              discoveries={library.data.discoveries}
+              search={location.search}
+            /> : null}
           {list}
         </section>
         {selectedId ? (

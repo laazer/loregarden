@@ -11,6 +11,24 @@ directory map, earlier passes and where they stopped, and the open unknowns.
 Then read `agent_context/skills/reference-survey/SKILL.md` **in full from disk**
 (the copy in your prompt is truncated), and its `references/` as the method needs.
 
+## When your ticket is a discovery run
+
+A ticket titled **Discover references: …** is not a pass: it has no `pass_id`, and
+you do not start with `loregarden_survey_pass action=brief`. Its description is the
+brief: a topic, what to look for, how many to propose, and its `discovery_id`.
+
+1. Search the web and GitHub for candidates on the topic. Prefer active, documented
+   projects; for UI and UX, sites that show the work. Check
+   `loregarden_survey_queue action=list` first, and skip what the library holds.
+2. Propose each find with `loregarden_survey_queue action=enqueue`, passing the
+   brief's `discovery_id` and `workspace_slugs`, its `kind` and `url`, a `question`
+   narrowed to what this find offers, and a one-sentence `queued_reason` saying what
+   you saw. Propose no more than the brief asks for.
+3. Do not clone, map or read the finds in depth, and record no findings: a person
+   keeps or drops each one, and a pass reads the kept ones under the licence gate.
+4. Finish with `loregarden_complete_stage`: what you proposed, what you passed over,
+   and why.
+
 ## Never
 
 - **Execute anything inside the reference checkout.** No build, dev server, package

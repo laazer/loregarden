@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 
 import { ApiError } from "../../../api/http";
 import { api } from "../../../api/client";
-import type { LibraryDetail, LibraryList, LibraryRow, QueueSchedule } from "../../../api/referenceLibraryApi";
+import type { LibraryDetail, LibraryList, LibraryRow, QueueSchedule, TopicView } from "../../../api/referenceLibraryApi";
 import { findUsabilityProblems } from "../../../lib/usabilityCheck";
 import { MemoryPage } from "../../../pages/MemoryPage";
 import { useToastStore } from "../../../state/toastStore";
@@ -54,6 +54,22 @@ function renderAt(path: string) {
   );
 }
 
+const TOPICS: TopicView[] = [
+  {
+    id: "memory_layer", label: "Improved memory layer", search: "agent memory layers",
+    question: "How do they capture, store, retrieve, rank and retire what agents learn?",
+    why: "It works on agent memory, which ours could do better.",
+  },
+  {
+    id: "ui_ux", label: "UI/UX improvements and inspiration", search: "dense data UIs",
+    question: "What layouts would make our operator surfaces clearer?", why: "Its interface handles dense data well.",
+  },
+  {
+    id: "similar_tools", label: "Similar tools", search: "same purpose",
+    question: "What do tools with the same purpose do differently?", why: "It solves the same problem we do.",
+  },
+];  // prettier-ignore
+
 const NOTHING_MORE = { question: "", workspace_slugs: [], initiative_ids: [] };
 
 function row(overrides: Partial<LibraryRow>): LibraryRow {
@@ -63,7 +79,7 @@ function row(overrides: Partial<LibraryRow>): LibraryRow {
 function listOf(rows: LibraryRow[]): LibraryList {
   const counts = { candidate: 0, awaiting_approval: 0, queued: 0, reading: 0, surveyed: 0, refused: 0 };
   rows.forEach((r) => (counts[r.state] += 1));
-  return { workspace_slug: "loregarden", counts, sources: rows, schedule: LIBRARY.schedule };
+  return { workspace_slug: "loregarden", counts, sources: rows, schedule: LIBRARY.schedule, discoveries: [] };
 }
 
 beforeEach(() => {
@@ -80,6 +96,7 @@ beforeEach(() => {
   mockApi.referenceLibrary.mockResolvedValue(LIBRARY);
   mockApi.referenceSource.mockResolvedValue(DEEP);
   mockApi.initiatives.mockResolvedValue([INITIATIVE]);
+  mockApi.referenceTopics.mockResolvedValue(TOPICS);
 });
 
 describe("the reference library at production volume", () => {
@@ -193,11 +210,9 @@ describe("the five states", () => {
     mockApi.referenceLibrary.mockResolvedValue(listOf([awaiting]));
     mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: awaiting, tickets: [], unresolved_refs: [], passes: [] });
     renderAt("/memory/library/a1");
-    // An agent's proposal: queue it here, or decide in the inbox.
-    expect(await screen.findByRole("button", { name: "Add to the review queue…" })).toHaveAttribute(
-      "aria-haspopup",
-      "dialog",
-    );
+    // An agent's proposal: keep or drop it here, or decide in the inbox.
+    const decide = await screen.findByRole("group", { name: "Keep or drop pending-repo" });
+    expect(within(decide).getByRole("button", { name: "Keep" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Review in inbox" }));
     expect(useUiStore.getState().inboxOpen).toBe(true);
   });
@@ -577,7 +592,7 @@ describe("adding a reference", () => {
     mockApi.referenceLibrary.mockResolvedValue(listOf([candidate]));
     mockApi.referenceSource.mockResolvedValue({ ...DEEP, source: candidate, passes: [], tickets: [], unresolved_refs: [], record: "" });
     renderAt("/memory/library/c1");
-    fireEvent.click(await screen.findByRole("button", { name: "Add to the review queue…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Keep, with workspaces or a question…" }));
     const form = screen.getByRole("form", { name: "Add a reference" });
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveAttribute("readonly");
     expect(within(form).getByRole("textbox", { name: "URL" })).toHaveValue("https://github.com/openwork/agent-mux");
@@ -743,5 +758,81 @@ describe("what a source is, and a refused one read again", () => {
     );
     // Refused again by the licence gate: said plainly, not as a silent no-op.
     await waitFor(() => expect(useToastStore.getState().toasts[0]?.title).toBe("gpl-kit was not reviewed"));
+  });
+});
+
+describe("quick-add topics and finding sources", () => {
+  it("fills what to look for from a topic, and clears only what it filled", async () => {
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    const topics = await within(form).findByRole("group", { name: "What to look for" });
+    const memory = within(topics).getByRole("button", { name: "Improved memory layer" });
+    fireEvent.click(memory);
+    expect(memory).toHaveAttribute("aria-pressed", "true");
+    const question = within(form).getByRole("textbox", { name: /What should the survey answer from it\?/ });
+    expect(question).toHaveValue(TOPICS[0].question);
+    expect(within(form).getByRole("textbox", { name: /Why this one\?/ })).toHaveValue(TOPICS[0].why);
+    fireEvent.change(question, { target: { value: "My own question" } });
+    fireEvent.click(memory);
+    expect(question).toHaveValue("My own question");
+    expect(within(form).getByRole("textbox", { name: /Why this one\?/ })).toHaveValue("");
+  });
+
+  it("starts a search for a topic, narrowed and sized, for more workspaces", async () => {
+    mockApi.startDiscovery.mockResolvedValue({
+      id: "d1", topic: "memory_layer", label: "Improved memory layer", focus: "graph-backed", wanted: 10,
+      workspaces: ["loregarden", "blobert"], carrier: "lg-find-1", carrier_state: "in_progress", found: 0,
+      created_at: "2026-10-23T00:00:00",
+    });  // prettier-ignore
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Find sources…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Find sources" });
+    const submit = within(dialog).getByRole("button", { name: "Find sources" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Improved memory layer" }));
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Narrow it (optional)" }), { target: { value: "graph-backed" } });
+    fireEvent.change(within(dialog).getByLabelText("How many"), { target: { value: "10" } });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "blobert" }));
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(mockApi.startDiscovery).toHaveBeenCalledWith({
+        topic: "memory_layer", workspace_slugs: ["loregarden", "blobert"], initiative_ids: [], focus: "graph-backed", wanted: 10,
+      }),
+    );  // prettier-ignore
+    await waitFor(() => expect(useToastStore.getState().toasts[0]?.title).toBe("Searching for Improved memory layer references"));
+  });
+
+  it("says why a search did not start, and keeps the dialog", async () => {
+    mockApi.startDiscovery.mockRejectedValue(new ApiError(409, "No open ticket in loregarden is tagged `reference-survey-carrier`"));
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Find sources…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Find sources" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Similar tools" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Find sources" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/Did not start: .*reference-survey-carrier/);
+  });
+
+  it("shows a running search in the queue bar and lets each find be kept or dropped from the list", async () => {
+    const find = row({ id: "f1", name: "mem0", state: "awaiting_approval", approval_id: "card-f1", discovered_by: "Improved memory layer" });
+    mockApi.referenceLibrary.mockResolvedValue({
+      ...listOf([find]),
+      discoveries: [{
+        id: "d1", topic: "memory_layer", label: "Improved memory layer", focus: "", wanted: 5, workspaces: ["loregarden"],
+        carrier: "lg-find-1", carrier_state: "in_progress", found: 1, created_at: "2026-10-23T00:00:00",
+      }],
+    });  // prettier-ignore
+    mockApi.keepSource.mockResolvedValue({ ...find, state: "queued" });
+    mockApi.dropSource.mockResolvedValue({ ...find, state: "refused" });
+    renderAt("/memory/library?view=queue");
+    const status = await screen.findByRole("status", { name: "Review queue" });
+    expect(status).toHaveTextContent("Finding Improved memory layer: 1 of up to 5 found so far by lg-find-1. Keep or drop each in Queue.");
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("found for Improved memory layer")).toBeInTheDocument();
+    const decide = within(table).getByRole("group", { name: "Keep or drop mem0" });
+    fireEvent.click(within(decide).getByRole("button", { name: "Keep" }));
+    await waitFor(() => expect(mockApi.keepSource).toHaveBeenCalledWith("f1"));
+    fireEvent.click(within(decide).getByRole("button", { name: "Drop" }));
+    await waitFor(() => expect(mockApi.dropSource).toHaveBeenCalledWith("f1", ""));
   });
 });

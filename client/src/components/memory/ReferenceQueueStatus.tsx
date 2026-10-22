@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
 
-import type { QueueSchedule } from "../../api/referenceLibraryApi";
+import type { DiscoveryView, QueueSchedule } from "../../api/referenceLibraryApi";
+
+/** A run is over once its ticket is settled. */
+const SETTLED = new Set(["done", "wont_do"]);
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
 import { nextCheckText } from "../../lib/referenceLibrary";
 import { ReviewNowButton } from "./ReferenceReviewNow";
@@ -10,11 +13,33 @@ import { ReviewNowButton } from "./ReferenceReviewNow";
  * what is being read now, the next source in line, and either when the next
  * check will start it or what is holding it.
  */
-export function ReferenceQueueStatus({ schedule, search }: { schedule: QueueSchedule; search: string }) {
+export function ReferenceQueueStatus({
+  schedule,
+  discoveries,
+  search,
+}: {
+  schedule: QueueSchedule;
+  discoveries: DiscoveryView[];
+  search: string;
+}) {
   const { next, running } = schedule;
   const queued = Object.keys(schedule.positions).length;
+  const searching = discoveries.filter((run) => !SETTLED.has(run.carrier_state ?? ""));
   return (
     <div className="rl-queue-status" role="status" aria-label="Review queue">
+      {searching.map((run) => (
+        <p key={run.id}>
+          <span className="rl-queue-label">Finding</span> {run.label}
+          {run.focus ? ` (${run.focus})` : ""}: {run.found} of up to {run.wanted} found so far
+          {run.carrier ? (
+            <>
+              {" "}
+              by <Link to={ticketPath(run.carrier)}>{run.carrier}</Link>
+            </>
+          ) : null}
+          . Keep or drop each in Queue.
+        </p>
+      ))}
       {running.map((pass) => (
         <p key={`${pass.source_id}-${pass.ordinal}`}>
           <span className="rl-queue-label">Reading now</span>{" "}

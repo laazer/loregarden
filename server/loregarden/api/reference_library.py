@@ -13,6 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_survey.bulk import BulkAddItem, enqueue_many
+from loregarden.services.reference_survey.discovery import (
+    DiscoveryIn,
+    DiscoveryView,
+    start_discovery,
+)
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import (
     LinkResult,
@@ -30,9 +35,15 @@ from loregarden.services.reference_survey.library import (
     library_list,
     library_row,
 )
-from loregarden.services.reference_survey.queue import enqueue_source, promote_resolved_sources
+from loregarden.services.reference_survey.queue import (
+    drop_source,
+    enqueue_source,
+    keep_source,
+    promote_resolved_sources,
+)
 from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
+from loregarden.services.reference_survey.topics import TopicView, topic_list
 from loregarden.services.reference_survey.upstream import check_upstream_by_id
 from loregarden.services.ticket_ids import TicketNotFound
 from pydantic import BaseModel, Field
@@ -159,6 +170,52 @@ def add_sources(body: BulkSourceIn, session: Session = Depends(get_session)) -> 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SurveyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/topics", response_model=list[TopicView])
+def topics() -> list[TopicView]:
+    """What people commonly survey for: each fills the add form, or starts a discovery."""
+    return topic_list()
+
+
+@router.post("/discover", response_model=DiscoveryView)
+def discover(body: DiscoveryIn, session: Session = Depends(get_session)) -> DiscoveryView:
+    """Have an agent search for references on a topic. What it finds waits in the
+    queue for a person to keep or drop; refused when no run can start (no carrier
+    parent, or a sandbox)."""
+    try:
+        return start_discovery(session, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class DropRequest(BaseModel):
+    #: Why it is not worth reading; optional.
+    reason: str = ""
+
+
+@router.post("/{source_id}/keep", response_model=LibraryRow)
+def keep(source_id: str, session: Session = Depends(get_session)) -> LibraryRow:
+    """Keep a proposal: it joins the review queue, and its pending card is approved."""
+    try:
+        return library_row(session, keep_source(session, source_id))
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{source_id}/drop", response_model=LibraryRow)
+def drop(source_id: str, body: DropRequest, session: Session = Depends(get_session)) -> LibraryRow:
+    """Drop a proposal: refused with the reason, and its pending card rejected."""
+    try:
+        return library_row(session, drop_source(session, source_id, body.reason))
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{source_id}/review-now", response_model=ReviewNowResult)

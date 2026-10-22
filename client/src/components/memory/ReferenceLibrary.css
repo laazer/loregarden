@@ -792,8 +792,8 @@
 /* Who a review is for: workspaces to read for, initiatives to feed. */
 .rl-targets {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px 40px;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .rl-target-group {
@@ -819,9 +819,9 @@
 .rl-targets .rl-check-option {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--tx);
 }
 
@@ -834,7 +834,7 @@
 .rl-check-option input {
   width: auto;
   flex: none;
-  margin: 0;
+  margin: 3px 0 0;
 }
 
 /* What a source is, under its name: in the table one line, in the detail in full. */
@@ -872,4 +872,64 @@
   margin: 0;
   font-size: 13px;
   color: var(--aml);
+}
+
+.rl-target-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A handful of short workspace names read best across one line. */
+.rl-target-options--row {
+  flex-flow: row wrap;
+  gap: 8px 22px;
+}
+
+.rl-option-text {
+  line-height: 1.45;
+}
+
+.rl-option-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+/* Quick-add topics: one chip per topic, pressed when chosen. */
+.rl-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rl-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.rl-chip--on {
+  border-color: color-mix(in srgb, var(--ac) 60%, transparent);
+  background: color-mix(in srgb, var(--ac) 16%, transparent);
+  color: var(--ac2);
+}
+
+.rl-keep-drop {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.rl-col-state .rl-keep-drop {
+  display: flex;
+}
+
+.rl-found-for {
+  display: block;
+  font-size: 11.5px;
+  color: var(--vil);
 }

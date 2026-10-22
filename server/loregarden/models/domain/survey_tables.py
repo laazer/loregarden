@@ -42,6 +42,7 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceKind,
     SurveySourceStatus,
     SurveyTicketAction,
+    SurveyTopic,
     SurveyUnknownStatus,
 )
 from sqlalchemy import UniqueConstraint
@@ -133,6 +134,8 @@ class SurveySource(SQLModel, table=True):
     described_at: datetime | None = None
     #: Why the last read of the description failed; "" when it did not.
     describe_error: str = ""
+    #: The discovery run that found it, when an agent searched for it on a topic.
+    discovery_id: str | None = Field(default=None, foreign_key="survey_discoveries.id")
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -347,6 +350,31 @@ class SurveyUnknownEvidence(SQLModel, table=True):
     unknown_id: str = Field(foreign_key="survey_unknowns.id", primary_key=True)
     evidence_id: str = Field(foreign_key="survey_evidence.id", primary_key=True)
     stance: SurveyEvidenceStance = Field(sa_column=str_enum_column(SurveyEvidenceStance))
+
+
+class SurveyDiscovery(SQLModel, table=True):
+    """An agent searching for references on a topic, for some workspaces.
+
+    What it finds is enqueued like any agent proposal (`discovery_id` on each
+    source), waiting for a person to keep or drop it. Its progress is its carrier
+    ticket's state.
+    """
+
+    __tablename__ = "survey_discoveries"
+
+    id: str = Field(default_factory=_id, primary_key=True)
+    #: Home workspace: where the carrier ticket lives.
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    topic: SurveyTopic = Field(sa_column=str_enum_column(SurveyTopic))
+    #: Anything more specific the person asked for; "" when the topic is enough.
+    focus: str = ""
+    #: How many candidates to propose at most.
+    wanted: int = 5
+    #: Workspaces and initiatives each candidate is enqueued for, as JSON lists.
+    workspaces_json: str = "[]"
+    initiatives_json: str = "[]"
+    carrier_ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class SurveyLegacySection(SQLModel, table=True):

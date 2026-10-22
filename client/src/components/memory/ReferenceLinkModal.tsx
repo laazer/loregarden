@@ -73,7 +73,7 @@ export function ReferenceLinkButton({
       <Button variant="secondary" compact aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         Link workspaces and initiatives…
       </Button>
-      <ModalShell open={open} onDismiss={link.isPending ? undefined : close} labelledBy={ids.title}>
+      <ModalShell open={open} onDismiss={link.isPending ? undefined : close} labelledBy={ids.title} panelClassName="modal-panel-wide">
         <form
           aria-label={`Link to ${source.name}`}
           onSubmit={(event) => {
