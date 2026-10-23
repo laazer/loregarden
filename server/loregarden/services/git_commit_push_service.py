@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
+from loregarden.services.branch_names import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root

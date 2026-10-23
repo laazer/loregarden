@@ -1,6 +1,7 @@
 """Tests for branch triage snapshot and diff review."""
 
 import subprocess
+from enum import Enum
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -181,7 +182,9 @@ def test_branch_triage_matches_the_batched_scan_when_for_each_ref_is_unavailable
     assert per_branch == batched
 
 
-def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
+def test_delete_unmerged_branch_requires_force(
+    triage_workspace, triage_repo, triage_session: Session
+):
     subprocess.run(
         ["git", "checkout", "-b", "feature/unmerged"],
         cwd=triage_repo,
@@ -199,14 +202,18 @@ def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
     subprocess.run(["git", "checkout", "main"], cwd=triage_repo, check=True, capture_output=True)
 
     with pytest.raises(ValueError, match="not fully merged"):
-        delete_branch(triage_workspace, "feature/unmerged", force=False)
+        delete_branch(triage_session, triage_workspace, "feature/unmerged", force=False)
 
-    delete_branch(triage_workspace, "feature/unmerged", force=True)
+    # The session is the first argument now (lg-external-harness-1026 (AC14/AC18)): the receipt gate resolves a
+    # worktree's owner from the database, so every removal path needs one.
+    delete_branch(triage_session, triage_workspace, "feature/unmerged", force=True)
     branch_names = _list_branches(resolve_workspace_root(triage_workspace))
     assert "feature/unmerged" not in branch_names
 
 
-def test_delete_branch_is_idempotent_when_already_gone(triage_workspace, triage_repo):
+def test_delete_branch_is_idempotent_when_already_gone(
+    triage_workspace, triage_repo, triage_session: Session
+):
     subprocess.run(
         ["git", "branch", "feature/gone"],
         cwd=triage_repo,
@@ -220,7 +227,12 @@ def test_delete_branch_is_idempotent_when_already_gone(triage_workspace, triage_
         capture_output=True,
     )
 
-    assert delete_branch(triage_workspace, "feature/gone", force=True) is False
+    # `.deleted`, not the bare bool (lg-external-harness-1026 (AC14/AC18)): the answer carries the typed
+    # outcome the three operator surfaces branch on. False still means "it was
+    # already gone".
+    assert (
+        delete_branch(triage_session, triage_workspace, "feature/gone", force=True).deleted is False
+    )
 
 
 def test_delete_branch_api_already_gone(client: TestClient, triage_workspace):
@@ -235,7 +247,9 @@ def test_delete_branch_api_already_gone(client: TestClient, triage_workspace):
     assert body["already_gone"] is True
 
 
-def test_delete_branch_blocked_by_worktree(triage_workspace, triage_repo, tmp_path):
+def test_delete_branch_blocked_by_worktree(
+    triage_workspace, triage_repo, triage_session: Session, tmp_path
+):
     subprocess.run(
         ["git", "branch", "feature/worktree"],
         cwd=triage_repo,
@@ -252,19 +266,28 @@ def test_delete_branch_blocked_by_worktree(triage_workspace, triage_repo, tmp_pa
     subprocess.run(["git", "checkout", "main"], cwd=triage_repo, check=True, capture_output=True)
 
     with pytest.raises(ValueError, match="worktree"):
-        delete_branch(triage_workspace, "feature/worktree", force=True)
+        delete_branch(triage_session, triage_workspace, "feature/worktree", force=True)
 
-    assert (
-        delete_branch(
-            triage_workspace,
-            "feature/worktree",
-            force=True,
-            remove_worktrees=True,
-        )
-        is True
+    # BEHAVIOUR THE SPEC NO LONGER WANTS (lg-external-harness-1026 (AC14/AC18)). This worktree was cut
+    # by raw git and has no `worktrees` row, so there is no owner to resolve a
+    # receipt for and no record of whether the work it holds finished. AC14's
+    # last sentence makes that a REFUSAL that is reported, not performed —
+    # which is the branch-triage half of the bug this ticket closes — so the
+    # branch survives with it. The blocked-without-remove_worktrees half above
+    # is unchanged.
+    report = delete_branch(
+        triage_session,
+        triage_workspace,
+        "feature/worktree",
+        force=True,
+        remove_worktrees=True,
     )
+    assert report.outcome.value == "refused"
+    assert report.deleted is False
+    assert report.reason and report.detail
+    assert wt_path.is_dir()
     branch_names = _list_branches(resolve_workspace_root(triage_workspace))
-    assert "feature/worktree" not in branch_names
+    assert "feature/worktree" in branch_names
 
 
 def test_remove_branch_worktree_leaves_branch_intact(
@@ -286,14 +309,22 @@ def test_remove_branch_worktree_leaves_branch_intact(
     assert len(branch["worktrees"]) == 1
     assert branch["worktrees"][0]["is_primary"] is False
 
-    remove_branch_worktree(triage_workspace, "feature/wt-cleanup", str(wt_path))
+    # BEHAVIOUR THE SPEC NO LONGER WANTS (lg-external-harness-1026 (AC14/AC18)): a path git has
+    # registered and the database has not is refused and reported. What this
+    # test is named for still holds — the branch is left alone either way.
+    report = remove_branch_worktree(
+        triage_session, triage_workspace, "feature/wt-cleanup", str(wt_path)
+    )
 
+    assert report.outcome.value == "refused"
     branch_names = _list_branches(resolve_workspace_root(triage_workspace))
     assert "feature/wt-cleanup" in branch_names
-    assert not wt_path.exists()
+    assert wt_path.is_dir()
 
 
-def test_remove_branch_worktree_rejects_unknown_path(triage_workspace, triage_repo):
+def test_remove_branch_worktree_rejects_unknown_path(
+    triage_workspace, triage_repo, triage_session: Session
+):
     subprocess.run(
         ["git", "branch", "feature/no-worktree"],
         cwd=triage_repo,
@@ -301,12 +332,16 @@ def test_remove_branch_worktree_rejects_unknown_path(triage_workspace, triage_re
         capture_output=True,
     )
     with pytest.raises(ValueError, match="No worktree"):
-        remove_branch_worktree(triage_workspace, "feature/no-worktree", "/tmp/not-a-worktree")
+        remove_branch_worktree(
+            triage_session, triage_workspace, "feature/no-worktree", "/tmp/not-a-worktree"
+        )
 
 
-def test_remove_branch_worktree_rejects_primary_checkout(triage_workspace, triage_repo):
+def test_remove_branch_worktree_rejects_primary_checkout(
+    triage_workspace, triage_repo, triage_session: Session
+):
     with pytest.raises(ValueError, match="primary repository checkout"):
-        remove_branch_worktree(triage_workspace, "main", str(triage_repo.resolve()))
+        remove_branch_worktree(triage_session, triage_workspace, "main", str(triage_repo.resolve()))
 
 
 def test_remove_worktree_api(client: TestClient, triage_repo, db_session: Session, tmp_path):
@@ -334,14 +369,25 @@ def test_remove_worktree_api(client: TestClient, triage_repo, db_session: Sessio
         params={"branch": "feature/wt-api"},
         json={"path": str(wt_path)},
     )
+    # BEHAVIOUR THE SPEC NO LONGER WANTS (lg-external-harness-1026 (AC14/AC18)): this worktree has no
+    # `worktrees` row, so the gate refuses it — a 200 carrying `refused`, not a
+    # 4xx, because the gate worked and nothing was lost. The two pre-existing
+    # keys keep their meaning beside the new ones.
     assert res.status_code == 200
-    assert res.json() == {"branch": "feature/wt-api", "removed_path": str(wt_path)}
-    assert not wt_path.exists()
+    body = res.json()
+    assert body["branch"] == "feature/wt-api"
+    assert body["removed_path"] == str(wt_path)
+    assert body["outcome"] == "refused"
+    assert body["reason"] and body["detail"]
+    assert body["parked_path"] == ""
+    assert wt_path.is_dir()
 
+    # A path that is not a registered worktree at all is still a 400: that is
+    # a bad request, not a gate decision.
     bad = client.post(
         f"/api/workspaces/{ws.slug}/branch-triage/worktrees/remove",
         params={"branch": "feature/wt-api"},
-        json={"path": str(wt_path)},
+        json={"path": str(wt_path / "nowhere")},
     )
     assert bad.status_code == 400
 
@@ -994,3 +1040,156 @@ def test_branch_activity_endpoint_honours_limit(
     body = res.json()
     assert [c["message"] for c in body["commits"]] == ["commit 2", "commit 1"]
     assert all(c["short_sha"] and c["author"] for c in body["commits"])
+
+
+# ===========================================================================
+# lg-external-harness-1026 / AC22 — the outcome is a typed field, not the
+# absence of an exception.
+# ===========================================================================
+
+
+def _gate_fixture(session, slug: str, root: Path):
+    """A workspace with one ticket worktree the receipt gate will refuse.
+
+    Committed, clean, ahead of its base — every observation of shape says
+    "delete me" — and nothing on record says the work finished.
+
+    Returns plain strings rather than ORM rows: the caller's session closes
+    before the request runs, and a detached instance raises on attribute
+    access rather than failing the assertion you wrote.
+    """
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
+    from loregarden.services.ticket_worktree import resolve_execution_root
+    from tests.worktree_helpers import git as wgit
+    from tests.worktree_helpers import make_repo
+
+    repo = make_repo(root / f"gate-{slug}", name=f"repo-{slug}")
+    ws = Workspace(slug=slug, name=slug, repo_path=str(repo))
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
+    ticket = Ticket(
+        external_id=f"{slug}-1",
+        workspace_id=ws.id,
+        title="Add the thing",
+        branch=f"loregarden/{slug}-1",
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    run = AgentRun(
+        run_code=f"run-{slug}",
+        ticket_id=ticket.id,
+        workspace_id=ws.id,
+        agent_id="backend_implementer",
+        status=RunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    path = resolve_execution_root(session, run, ticket, ws)
+    (path / "work.txt").write_text("real work\n")
+    wgit(path, "add", "-A")
+    wgit(path, "commit", "-q", "-m", "work")
+    return ws.slug, ticket.branch, repo, path
+
+
+def test_the_delete_endpoint_carries_an_explicit_refused_outcome(client, isolated_db, tmp_path):
+    """A 200 whose body says nothing is what let `BranchCleanupModal` count a
+    refusal as a deletion. The outcome is the field the client branches on."""
+    with Session(isolated_db) as session:
+        slug, branch, _repo, path = _gate_fixture(session, "gateone", tmp_path)
+
+    response = client.post(
+        f"/api/workspaces/{slug}/branch-triage/delete",
+        params={"branch": branch},
+        json={"force": True, "remove_worktrees": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "refused"
+    assert body["reason"], "a refusal with no reason cannot be grouped or explained"
+    assert body["reason"] == body["reason"].lower().replace(" ", "_"), (
+        "the reason is a stable key the client groups on, not a rendered sentence"
+    )
+    assert body["detail"]
+    assert body["parked_path"] == ""
+    # The pre-existing keys keep their meaning (AC22) — which is a claim about
+    # their VALUES on this answer, not just their presence. A refusal leaves
+    # the branch exactly where it was, so "it was not there" is false about it;
+    # reporting the branch this gate just declined to touch as already gone
+    # would be the same kind of record-false-about-its-own-subject this ticket
+    # exists to delete, re-created in the body that reports the refusal.
+    assert set(body) >= {"deleted", "already_gone", "removed_worktrees"}
+    assert body["already_gone"] is False
+    assert body["removed_worktrees"] is False
+    assert path.is_dir()
+
+
+def test_the_worktree_remove_endpoint_carries_the_same_three_value_outcome(
+    client, isolated_db, tmp_path
+):
+    with Session(isolated_db) as session:
+        slug, branch, _repo, path = _gate_fixture(session, "gatetwo", tmp_path)
+
+    response = client.post(
+        f"/api/workspaces/{slug}/branch-triage/worktrees/remove",
+        params={"branch": branch},
+        json={"path": str(path)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "refused"
+    assert body["reason"] and body["detail"]
+    assert body["parked_path"] == ""
+    assert set(body) >= {"branch", "removed_path"}
+    assert path.is_dir()
+
+
+def test_the_outcome_vocabulary_is_an_enum_and_not_three_string_literals():
+    """The py-organization gate's rule, and the reason behind it: a literal
+    compared in the API layer has nothing behind it when someone types
+    `"refuse"` instead of `"refused"`."""
+    from loregarden.models.domain import enums
+
+    candidates = [
+        member
+        for member in vars(enums).values()
+        if isinstance(member, type)
+        and issubclass(member, Enum)
+        and {m.value for m in member} == {"deleted", "refused", "parked"}
+    ]
+    assert candidates, (
+        "no enum in models/domain/enums.py carries deleted | refused | parked — "
+        "the API would be comparing bare string literals"
+    )
+
+    api_source = (
+        Path(__file__).resolve().parents[1] / "loregarden" / "api" / "branch_triage.py"
+    ).read_text(encoding="utf-8")
+    for literal in ('"refused"', '"parked"', '"deleted"'):
+        assert literal not in api_source, f"{literal} is compared as a bare string in the API layer"
+
+
+def test_a_delete_the_gate_allows_still_reports_deleted(client, isolated_db, tmp_path):
+    """The happy path keeps working, and keeps saying so in the new field."""
+    from tests.worktree_helpers import grant_receipt
+
+    with Session(isolated_db) as session:
+        slug, branch, repo, path = _gate_fixture(session, "gatethree", tmp_path)
+        ticket = session.exec(select(Ticket).where(Ticket.branch == branch)).one()
+        grant_receipt(session, ticket, repo)
+
+    response = client.post(
+        f"/api/workspaces/{slug}/branch-triage/delete",
+        params={"branch": branch},
+        json={"force": True, "remove_worktrees": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "deleted"
+    assert body["parked_path"] == ""
+    assert not path.exists()

@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, OrchestrationRun, Ticket, TicketState, Workspace
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.branch_takes_target import record_twin
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import SquashTwin, read_branch_tips, squash_twin
 from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES, LIVE_RUN_STATUSES
 from loregarden.services.publish_ref import INTEGRATION_PREFIX

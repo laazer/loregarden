@@ -22,6 +22,22 @@ from loregarden.services.git_subprocess import (
     run_git,
     scrubbed_git_env,
 )
+from sqlmodel import Session
+
+
+@pytest.fixture(name="session")
+def session_fixture(isolated_db):
+    """A live Session, because `ensure_ticket_branch` now requires one.
+
+    lg-external-harness-1452: the checkout self-repair asks the receipt gate
+    instead of git, and the gate reads the `worktrees` table. `session` is a
+    required keyword-only parameter with no default — `object_session(ticket)`
+    was measured dead here, because these tests build bare detached `Ticket`
+    objects and it would return `None` at every call site, silently skipping
+    the gate.
+    """
+    with Session(isolated_db) as session:
+        yield session
 
 
 def _init_repo(path: Path) -> None:
@@ -136,7 +152,7 @@ def test_run_git_writes_to_the_repo_at_cwd(tmp_path, monkeypatch):
     assert _subject(intruder) == "init"
 
 
-def test_service_layer_branch_checkout_survives_leaked_git_dir(tmp_path, monkeypatch):
+def test_service_layer_branch_checkout_survives_leaked_git_dir(tmp_path, monkeypatch, session):
     """End-to-end: a real service call routed through the helper stays scoped."""
     target, intruder = _two_repos(tmp_path)
     monkeypatch.setenv("GIT_DIR", str(intruder / ".git"))
@@ -147,7 +163,7 @@ def test_service_layer_branch_checkout_survives_leaked_git_dir(tmp_path, monkeyp
         title="x",
         workspace_id="w",
     )
-    branch = ensure_ticket_branch(target, ticket)
+    branch = ensure_ticket_branch(target, ticket, session=session)
     assert branch == "loregarden/99-scoped"
 
     def _current_branch(repo: Path) -> str:

@@ -21,24 +21,22 @@ from pathlib import Path
 
 from loregarden.models.domain import (
     PullRequestLookup,
+    RemovalOutcome,
     Ticket,
     Workspace,
-    Worktree,
-    WorktreeState,
-    utcnow,
 )
 from loregarden.services.branch_triage_service import (
     delete_branch,
     remove_branch_worktree,
     worktree_paths_for_branch,
 )
-from loregarden.services.git_subprocess import run_gh, run_git
+from loregarden.services.git_subprocess import run_gh
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import PullRequestStatus, ticket_pull_request
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +81,7 @@ def merge_and_clean_up(
         steps.append(MergeStep(step="branch", ok=False, detail=f"{branch} is a base; kept"))
         return MergeAndCleanUp(number=pr.number, merge_commit=merge_commit, steps=steps)
     steps.extend(_remove_worktrees(session, workspace, repo_root, branch))
-    steps.append(_delete_local_branch(workspace, branch))
+    steps.append(_delete_local_branch(session, workspace, branch))
     steps.append(_delete_remote_branch(repo_root, pr.head))
     for step in steps:
         if not step.ok:
@@ -136,18 +134,22 @@ def _merge(repo_root: Path, pr: PullRequestStatus) -> str:
     return (payload.get("mergeCommit") or {}).get("oid", "")
 
 
-def _is_dirty(path: str) -> bool:
-    status = run_git(
-        ["status", "--porcelain"], cwd=path, check=False, capture_output=True, text=True
-    )
-    if status.returncode != 0:
-        raise ValueError((status.stderr or "git status failed").strip())
-    return bool(status.stdout.strip())
-
-
 def _remove_worktrees(
     session: Session, workspace: Workspace, repo_root: Path, branch: str
 ) -> list[MergeStep]:
+    """Remove each of the branch's checkouts through the receipt gate.
+
+    The dirtiness probe that used to live here is gone
+    (lg-external-harness-1026 AC14): it asked `git status --porcelain` without
+    asking about untracked files, so a tree holding only those — the majority
+    of what an agent produces before its first commit — read as clean and was
+    removed. One probe, inside the gate, which also asks the questions this one
+    never did: is there a receipt, does anything still claim the tree.
+
+    The row update is the gate's too. Stamping it here as well made this a
+    second writer of the same fact, and the two disagreed exactly when the
+    removal failed.
+    """
     steps: list[MergeStep] = []
     primary = str(repo_root.resolve())
     for path in worktree_paths_for_branch(repo_root, branch):
@@ -162,41 +164,28 @@ def _remove_worktrees(
             )
             continue
         try:
-            if _is_dirty(path):
-                steps.append(
-                    MergeStep(step=step, ok=False, detail="kept: it has uncommitted changes")
-                )
-                continue
-            remove_branch_worktree(workspace, branch, path)
+            removal = remove_branch_worktree(session, workspace, branch, path)
         except ValueError as exc:
             steps.append(MergeStep(step=step, ok=False, detail=str(exc)))
             continue
-        _retire_worktree_rows(session, path)
+        if removal.outcome is not RemovalOutcome.DELETED:
+            steps.append(MergeStep(step=step, ok=False, detail=removal.detail))
+            continue
         steps.append(MergeStep(step=step, ok=True, detail="removed"))
     return steps
 
 
-def _retire_worktree_rows(session: Session, path: str) -> None:
-    rows = session.exec(
-        select(Worktree).where(
-            Worktree.worktree_path == path, Worktree.state == WorktreeState.ACTIVE
-        )
-    ).all()
-    for row in rows:
-        row.state = WorktreeState.CLEANUP
-        row.cleaned_at = utcnow()
-        session.add(row)
-    if rows:
-        session.commit()
-
-
-def _delete_local_branch(workspace: Workspace, branch: str) -> MergeStep:
+def _delete_local_branch(session: Session, workspace: Workspace, branch: str) -> MergeStep:
     # -D, not -d: a squash merge leaves the branch's own commits off the base.
     try:
-        deleted = delete_branch(workspace, branch, force=True)
+        report = delete_branch(session, workspace, branch, force=True)
     except ValueError as exc:
         return MergeStep(step="local branch", ok=False, detail=str(exc))
-    return MergeStep(step="local branch", ok=True, detail="deleted" if deleted else "already gone")
+    return MergeStep(
+        step="local branch",
+        ok=True,
+        detail="deleted" if report.deleted else "already gone",
+    )
 
 
 def _delete_remote_branch(repo_root: Path, branch: str) -> MergeStep:

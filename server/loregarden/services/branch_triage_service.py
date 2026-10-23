@@ -13,7 +13,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
-from loregarden.models.domain import PrListingState, Ticket, Workspace
+from loregarden.models.domain import (
+    PrListingState,
+    RemovalOutcome,
+    Ticket,
+    Workspace,
+    Worktree,
+)
 from loregarden.services.artifact_service import (
     _resolve_upstream_ref,
     branch_diff_manifest,
@@ -21,9 +27,15 @@ from loregarden.services.artifact_service import (
     git_base_ref,
 )
 from loregarden.services.branch_landed import landed_branches
-from loregarden.services.checkout_guard import checkout_removal_refusal
+from loregarden.services.branch_names import resolve_ticket_branch, validate_branch_name
+from loregarden.services.checkout_release import (
+    WorktreeRemoval,
+    checkout_refusal,
+    no_receipt,
+    release_checkout,
+    retire_checkout,
+)
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
-from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.github_pr_listing import (
     GhPage,
@@ -795,31 +807,61 @@ def _format_worktree_block_message(branch: str, worktree_paths: list[str]) -> st
     )
 
 
-def _refuse_unsafe_removal(worktree_path: str) -> None:
-    """Raise when removing the checkout would lose work (`checkout_guard`)."""
-    refusal = checkout_removal_refusal(Path(worktree_path))
-    if refusal:
-        raise ValueError(f"Kept {worktree_path}: {refusal}")
+@dataclass(frozen=True)
+class BranchDeletion:
+    """What happened to a branch, and to the checkouts that were on it.
 
-
-def _remove_git_worktree(repo_root: Path, worktree_path: str) -> None:
-    """Remove a checkout `_refuse_unsafe_removal` has cleared.
-
-    Without `--force`: git then refuses a tree that changed since the check
-    (or a locked one) on its own, a second guard rather than an override. A
-    directory already gone is pruned, since `worktree remove` cannot find it.
+    `deleted` keeps its old meaning — False is "it was already gone" — and
+    `outcome` is what the client branches on. A removal the receipt gate
+    refused refuses the whole delete: leaving the checkout and taking the
+    branch would drop the only ref keeping its commits reachable, which is the
+    same mistake as force-deleting a fan-out loser's branch.
     """
-    if not Path(worktree_path).exists():
-        proc = _git(repo_root, "worktree", "prune")
-    else:
-        proc = _git(repo_root, "worktree", "remove", worktree_path)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "worktree remove failed").strip()
-        raise ValueError(detail)
+
+    outcome: RemovalOutcome
+    deleted: bool
+    removed_worktrees: bool = False
+    reason: str = ""
+    detail: str = ""
+    parked_path: str = ""
+
+    def as_payload(self, branch: str) -> dict[str, object]:
+        """The delete endpoint's body, with the three pre-existing keys intact.
+
+        `deleted` is still the branch name and `already_gone` still means "it
+        was not there"; `outcome` is the new field the client branches on. Here
+        rather than in the route for the reason `WorktreeRemoval.as_payload`
+        gives.
+
+        `already_gone` is read against the outcome and not from `deleted`
+        alone, because a refusal also leaves `deleted` False — and answering
+        "it was already gone" for a branch the gate just refused to touch, and
+        which is therefore still right there, is a payload that is false about
+        its own subject. That is the failure this ticket exists to remove, so
+        it may not be reintroduced in the body that reports it.
+        """
+        gone = self.outcome is RemovalOutcome.DELETED and not self.deleted
+        return {
+            "deleted": branch,
+            "already_gone": gone,
+            "removed_worktrees": self.removed_worktrees,
+            "outcome": self.outcome.value,
+            "reason": self.reason,
+            "detail": self.detail,
+            "parked_path": self.parked_path,
+        }
 
 
-def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None:
-    """Remove a single worktree linked to a branch, leaving the branch itself intact."""
+def remove_branch_worktree(
+    session: Session, workspace: Workspace, branch: str, path: str
+) -> WorktreeRemoval:
+    """Remove a single worktree linked to a branch, leaving the branch intact.
+
+    Through the gate (lg-external-harness-1026 AC14). It used to force the
+    removal with git's own plumbing on whatever path it was handed, which is a
+    destructive act reached from an observation of shape: git says a checkout
+    is registered there, so it must be safe to delete.
+    """
     validate_branch_name(branch)
     repo_root = resolve_workspace_root(workspace)
     if not _is_git_repo(repo_root):
@@ -833,31 +875,109 @@ def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None
     if path == main_repo_path:
         raise ValueError("Cannot remove the primary repository checkout")
 
-    _refuse_unsafe_removal(path)
-    _remove_git_worktree(repo_root, path)
+    return release_checkout(session, repo_root, path)
+
+
+def _as_deletion(removal: WorktreeRemoval) -> BranchDeletion:
+    """One checkout's refusal, as the whole delete's answer, passed through unchanged."""
+    return BranchDeletion(
+        outcome=removal.outcome,
+        deleted=False,
+        reason=removal.reason,
+        detail=removal.detail,
+        parked_path=removal.parked_path,
+    )
+
+
+def _release_checkouts_on(
+    session: Session, repo_root: Path, worktree_paths: list[str]
+) -> BranchDeletion | None:
+    """Release every checkout on the branch, or the first refusal that stopped it.
+
+    `None` means every checkout is gone and the caller may take the branch.
+    Anything else is the gate's own answer, passed through unchanged — the
+    whole delete refuses, because taking the branch while a checkout stays
+    drops the only ref keeping its commits reachable.
+
+    Two passes. A delete that stops halfway has already destroyed checkouts for
+    a branch it then keeps, so every refusal that can be read without touching
+    a tree is read for all of them first; only then is anything removed. The
+    receipt itself is resolved inside the gate, at the removal, where it is
+    re-verified in git.
+    """
+    cleared: list[tuple[str, Worktree]] = []
+    for path in worktree_paths:
+        row, refusal = checkout_refusal(session, path)
+        if refusal is not None:
+            return _as_deletion(refusal)
+        if row is None:  # unreachable: a missing row is a refusal above
+            return _as_deletion(no_receipt(path))
+        cleared.append((path, row))
+    for path, row in cleared:
+        removal = retire_checkout(session, repo_root, row, path)
+        if removal.outcome is not RemovalOutcome.DELETED:
+            return _as_deletion(removal)
+    return None
+
+
+def _branch_delete_failure(
+    repo_root: Path,
+    branch: str,
+    proc: subprocess.CompletedProcess[str],
+    worktree_paths: list[str],
+) -> BranchDeletion:
+    """What a non-zero `git branch -d` meant, as an answer or a raise.
+
+    Only one exit is not a failure: git saying the branch is not there, which
+    is the already-gone answer. Everything else keeps git's own words rather
+    than a sentence of ours written over them.
+    """
+    detail = (proc.stderr or proc.stdout or "delete failed").strip()
+    if "not found" in detail.lower():
+        return BranchDeletion(outcome=RemovalOutcome.DELETED, deleted=False)
+    if "used by worktree" in detail.lower():
+        match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
+        if match_paths:
+            raise ValueError(_format_worktree_block_message(branch, match_paths))
+    raise ValueError(detail)
 
 
 def delete_branch(
+    session: Session,
     workspace: Workspace,
     branch: str,
     *,
     force: bool = False,
     remove_worktrees: bool = False,
-) -> bool:
-    """Delete a local branch. Returns True if the branch was removed, False if already gone."""
+) -> BranchDeletion:
+    """Delete a local branch, and the checkouts on it when asked.
+
+    Refuses the whole operation when the receipt gate refuses any of those
+    checkouts: the branch is the last thing keeping its commits reachable, so
+    dropping it while the checkout stays is how a refusal buys nothing.
+    """
     validate_branch_name(branch)
     repo_root = resolve_workspace_root(workspace)
     if not _is_git_repo(repo_root):
         raise ValueError("Workspace is not a git repository")
 
     if not _branch_exists(repo_root, branch):
-        return False
+        return BranchDeletion(outcome=RemovalOutcome.DELETED, deleted=False)
 
     worktree_paths = worktree_paths_for_branch(repo_root, branch)
     _refuse_branch_delete(repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees)
-    for path in worktree_paths:
-        _remove_git_worktree(repo_root, path)
-    return _git_delete_branch(repo_root, branch, worktree_paths, force=force)
+    refused = _release_checkouts_on(session, repo_root, worktree_paths)
+    if refused is not None:
+        return refused
+
+    proc = _git(repo_root, "branch", "-D" if force else "-d", branch)
+    if proc.returncode != 0:
+        return _branch_delete_failure(repo_root, branch, proc, worktree_paths)
+    return BranchDeletion(
+        outcome=RemovalOutcome.DELETED,
+        deleted=True,
+        removed_worktrees=bool(worktree_paths and remove_worktrees),
+    )
 
 
 _CHECKED_OUT = "Cannot delete the currently checked-out branch. Checkout another branch first."
@@ -880,21 +1000,3 @@ def _refuse_branch_delete(
         raise ValueError("Cannot delete the base branch")
     if worktree_paths and not remove_worktrees:
         raise ValueError(_format_worktree_block_message(branch, worktree_paths))
-    for path in worktree_paths:
-        _refuse_unsafe_removal(path)
-
-
-def _git_delete_branch(
-    repo_root: Path, branch: str, worktree_paths: list[str], *, force: bool
-) -> bool:
-    proc = _git(repo_root, "branch", "-D" if force else "-d", branch)
-    if proc.returncode == 0:
-        return True
-    detail = (proc.stderr or proc.stdout or "delete failed").strip()
-    if "not found" in detail.lower():
-        return False
-    if "used by worktree" in detail.lower():
-        match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
-        if match_paths:
-            raise ValueError(_format_worktree_block_message(branch, match_paths))
-    raise ValueError(detail)

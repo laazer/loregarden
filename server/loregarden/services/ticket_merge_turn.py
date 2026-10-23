@@ -11,7 +11,7 @@ own branch. A new tip (a person's merge, a push) starts a fresh budget.
 from __future__ import annotations
 
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.integration_merge_budget import merge_turn_refusal
 from loregarden.services.workspace_paths import resolve_workspace_root

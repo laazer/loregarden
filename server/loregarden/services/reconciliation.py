@@ -47,6 +47,7 @@ from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
+    ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     EXHAUSTED_GATES_BLOCK,
@@ -192,6 +193,12 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # a later one; last overall, so every settler and landing above has run.
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
+    # An active row whose recorded checkout is gone: the control plane goes on
+    # believing a checkout is there, and `resolve_execution_root` reuses the
+    # row (lg-external-harness-1452). The self-repair that destroyed the
+    # directory and left the row is closed; an operator removing a checkout by
+    # hand is the way in that stays, so this settles it on the timer.
+    _invariant(ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT),
 )
 
 

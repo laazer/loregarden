@@ -31,7 +31,7 @@ from enum import Enum
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, TicketState, Workspace
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import target_branch_name

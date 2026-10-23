@@ -48,15 +48,26 @@ def head_branch(path: Path | str) -> str:
     return git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 
 
-def make_ticket(session, workspace, external_id: str = "LG-1", title: str = "Add the thing"):
-    """A ticket on its own branch, which is all these tests need one for."""
+def make_ticket(
+    session,
+    workspace,
+    external_id: str = "LG-1",
+    title: str = "Add the thing",
+    branch: str = "",
+):
+    """A ticket on its own branch, which is all these tests need one for.
+
+    `branch` is explicit for the callers that read the branch name back — the
+    removal and receipt tests cut a real ref with it — because the default
+    spelling folds the title in and those tests want the id alone.
+    """
     from loregarden.models.domain import Ticket
 
     ticket = Ticket(
         external_id=external_id,
         workspace_id=workspace.id,
         title=title,
-        branch=f"loregarden/{external_id.lower()}-{title.lower().replace(' ', '-')}",
+        branch=branch or f"loregarden/{external_id.lower()}-{title.lower().replace(' ', '-')}",
     )
     session.add(ticket)
     session.commit()
@@ -64,15 +75,36 @@ def make_ticket(session, workspace, external_id: str = "LG-1", title: str = "Add
     return ticket
 
 
-def make_run(session, workspace, ticket, code: str):
-    """A running implementer run on `ticket`, which is what a worktree hangs off."""
+def make_ticket_on_id_branch(session, workspace, external_id: str = "LG-1"):
+    """A ticket whose branch is its id alone: `loregarden/lg-1`.
+
+    The spelling the removal and receipt suites share. One definition rather
+    than one per module, because a receipt is matched on the branch NAME
+    (AC2), so two suites disagreeing about how a test ticket spells its branch
+    is two suites testing slightly different things.
+    """
+    return make_ticket(
+        session,
+        workspace,
+        external_id=external_id,
+        branch=f"loregarden/{external_id.lower()}",
+    )
+
+
+def make_run(session, workspace, ticket, code: str, agent_id: str = "backend_implementer"):
+    """A running implementer run on `ticket`, which is what a worktree hangs off.
+
+    `ticket` may be None: a Home chat thread's run carries no ticket, and the
+    receipt suites need one of those to reach the chat owner arm. One
+    definition rather than a near-copy per module — the DRY gate counts them.
+    """
     from loregarden.models.domain import AgentRun, RunStatus
 
     run = AgentRun(
         run_code=code,
-        ticket_id=ticket.id,
+        ticket_id=ticket.id if ticket else None,
         workspace_id=workspace.id,
-        agent_id="backend_implementer",
+        agent_id=agent_id,
         status=RunStatus.RUNNING,
     )
     session.add(run)
@@ -322,3 +354,50 @@ def cut_ticket_worktree(session, workspace, ticket, repo):
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "stage one")
     return root
+
+
+# ---------------------------------------------------------------------------
+# Receipts (lg-external-harness-1026)
+#
+# The receipt gate makes "the work this checkout held actually finished" a
+# premise of removing it, and the receipt is the landing record we already
+# write: `tickets.landed_sha` / `landed_branch`, re-verified in git. So every
+# test that wants a worktree *removed* now has to give the tree one, and these
+# are the two ways of doing it honestly — by actually merging the branch into
+# its target, never by writing a sha into the column and hoping.
+# ---------------------------------------------------------------------------
+
+
+def land_branch_onto(repo: Path, branch: str, target: str = "main") -> str:
+    """Merge `branch` into `target` for real. Returns the commit on `target`.
+
+    A real merge rather than a hand-written sha, because that is exactly what
+    the gate re-verifies: the returned commit must contain the branch tip and
+    must itself be reachable from `refs/heads/<target>`. A fixture that fakes
+    this proves nothing about the premise it is standing in for.
+    """
+    held = git(repo, "branch", "--show-current").stdout.strip()
+    if held == target:
+        git(repo, "merge", "-q", "--no-ff", "-m", f"Land {branch} on {target}", branch)
+        return git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = repo.parent / f"tmp-land-{target.replace('/', '-')}"
+    git(repo, "worktree", "add", "-q", str(tree), target)
+    git(tree, "merge", "-q", "--no-ff", "-m", f"Land {branch} on {target}", branch)
+    sha = git(tree, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "worktree", "remove", "--force", str(tree))
+    return sha
+
+
+def grant_receipt(session, ticket, repo: Path, *, branch: str = "", target: str = "main") -> str:
+    """Land the ticket's branch and record the landing, as `land_ticket` would.
+
+    The one call a test makes when its subject is "the checkout goes", not "the
+    receipt gate". Returns the recorded `landed_sha`.
+    """
+    sha = land_branch_onto(repo, branch or ticket.branch, target)
+    ticket.landed_sha = sha
+    ticket.landed_branch = target
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return sha

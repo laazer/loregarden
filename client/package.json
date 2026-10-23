@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "test": "node --expose-gc ./node_modules/.bin/jest",
     "test:watch": "node --expose-gc ./node_modules/.bin/jest --watch",
-    "visual-qa": "node scripts/visual-qa.mjs"
+    "visual-qa": "node scripts/visual-qa.mjs",
+    "measure-toast-clamp": "node scripts/measure-toast-clamp.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

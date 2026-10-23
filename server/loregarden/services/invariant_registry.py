@@ -27,6 +27,10 @@ from loregarden.services.dependency_release import releasable_tickets, release_t
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.orphaned_worktree_rows import (
+    rows_without_their_checkout,
+    settle_rows_without_their_checkout,
+)
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
@@ -381,6 +385,56 @@ LANDED_WORK_IS_COMMITTED = Invariant(
     ),
 )
 
+
+def _rows_without_their_checkout(session: Session) -> list[Violation]:
+    """`entered_at` is None: nothing stamps the moment a checkout left.
+
+    `created_at` is when the row was cut, which is not when the directory went
+    — and a `DEFECT`-style "entered after the guard landed" reading off it
+    would call every pre-existing row a re-entry. The policy here is
+    `EXPECTED` anyway, so the state is repaired rather than dated.
+
+    The finding names the path, because that is what a person goes and looks
+    at — and the row and its ticket too, because a row recording no path at
+    all is also a violation, and "go and look at ''" is not something anyone
+    can act on.
+    """
+    return [
+        Violation(
+            subject_id=row.id,
+            ticket_id=row.ticket_id,
+            entered_at=None,
+            detail=f"worktree row {row.id} (ticket {row.ticket_id}) is active and records a "
+            f"checkout at '{row.worktree_path}', which is not there",
+        )
+        for row in rows_without_their_checkout(session)
+    ]
+
+
+def _settle_rows_without_their_checkout(session: Session, violations: Sequence[Violation]) -> int:
+    # Re-detect rather than trust the list: settling a row is a write, and the
+    # reading that justified it must be this pass's.
+    wanted = {v.subject_id for v in violations}
+    return settle_rows_without_their_checkout(
+        session, [row for row in rows_without_their_checkout(session) if row.id in wanted]
+    )
+
+
+ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT = Invariant(
+    name="active_worktree_rows_have_their_checkout",
+    ticket="lg-external-harness-1452",
+    statement="no active worktrees row records a checkout that is not on disk",
+    detect=_rows_without_their_checkout,
+    repair=_settle_rows_without_their_checkout,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 10, 23),
+    expected_because=(
+        "an operator removes a checkout by hand, outside the control plane — `git worktree "
+        "remove` in a terminal leaves the row with nothing to speak for, and no writer can "
+        "guard against it"
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EXHAUSTED_GATES_BLOCK,
@@ -392,4 +446,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     HELD_TICKETS_RESUME,
     LANDED_WORK_IS_COMMITTED,
+    ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
 )

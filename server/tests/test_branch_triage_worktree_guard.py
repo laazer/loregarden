@@ -2,9 +2,20 @@
 
 It used to run `git worktree remove --force` with no check, so uncommitted and
 untracked work went with the directory, and the client always asked for that.
-Every removal now passes `checkout_guard.checkout_removal_refusal` first, a
-delete checks every worktree before removing any, and the base branch is
-refused before anything is touched.
+Every removal now passes the receipt gate (`retire_worktree`), and the gate's
+answer carries `checkout_guard.checkout_removal_refusal` as its second premise.
+
+That second premise is what this module is about, and it is the half the
+receipt cannot speak for. A receipt says the branch's work landed; it says
+nothing about an `.env`, a database or a key git was told to ignore, which
+`git status` never lists and which is exactly what somebody keeps in a
+worktree and nowhere else. So each test here grants the receipt first — the
+tree is cleared to go — and then asserts it is kept anyway, and that the
+refusal reaches the caller as an outcome rather than as the absence of an
+error.
+
+The receipt gate's own premises, and the chokepoint that routes every call
+site through it, are `test_worktree_gate_chokepoint.py`.
 
 Real repositories in `tmp_path`: the guard shells out to git, and a mocked git
 would only prove the mock.
@@ -12,21 +23,24 @@ would only prove the mock.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
-from loregarden.models.domain import Workspace, Worktree, WorktreeState
+from loregarden.models.domain import RemovalOutcome, Workspace, Worktree, WorktreeState
 from loregarden.services.branch_triage_service import delete_branch, remove_branch_worktree
 from loregarden.services.checkout_guard import checkout_removal_refusal
-from loregarden.services.git_subprocess import run_git
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.directory_release import DirectoryOutsideBase
+from loregarden.services.ticket_worktree import resolve_execution_root
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session
 from tests.factories import make_agent_run, make_workspace
-
-
-def _git(cwd: Path, *args: str) -> str:
-    return run_git(list(args), cwd=str(cwd), check=True, capture_output=True, text=True).stdout
+from tests.worktree_helpers import (
+    git,
+    grant_receipt,
+    make_repo,
+    make_run,
+    make_ticket_on_id_branch,
+)
 
 
 def _write(path: Path, text: str = "x") -> Path:
@@ -35,36 +49,48 @@ def _write(path: Path, text: str = "x") -> Path:
     return path
 
 
+@pytest.fixture(name="session")
+def session_fixture(isolated_db):
+    with Session(isolated_db) as session:
+        yield session
+
+
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path) -> Path:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@example.com")
-    _git(repo, "config", "user.name", "t")
+    repo = make_repo(tmp_path)
     _write(repo / ".gitignore", "node_modules/\n.env\n")
     _write(repo / "app.py")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-q", "-m", "init")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "ignores")
     return repo.resolve()
 
 
 @pytest.fixture(name="workspace")
-def workspace_fixture(isolated_db, repo) -> Workspace:
-    with Session(isolated_db) as session:
-        return make_workspace(session, slug="guarded", repo_path=str(repo))
+def workspace_fixture(session, repo) -> Workspace:
+    return make_workspace(session, slug="guarded", repo_path=str(repo))
 
 
-def _add_worktree(repo: Path, branch: str) -> Path:
-    path = repo.parent / f"wt-{branch}"
-    _git(repo, "worktree", "add", "-q", "-b", branch, str(path))
-    return path.resolve()
+def _cleared_tree(session, workspace, repo: Path, external_id: str = "LG-1"):
+    """A tracked checkout the receipt gate has already cleared for removal.
+
+    Everything the gate asks about is true: an ACTIVE row with an owner, a
+    commit on the branch, and the landing on record. What is left to refuse it
+    is `checkout_guard` alone, which is this module's subject.
+    """
+    ticket = make_ticket_on_id_branch(session, workspace, external_id=external_id)
+    run = make_run(session, workspace, ticket, code=f"run-{external_id}")
+    path = resolve_execution_root(session, run, ticket, workspace)
+    _write(path / "work.txt", "real work\n")
+    git(path, "add", "-A")
+    git(path, "commit", "-q", "-m", "work")
+    grant_receipt(session, ticket, repo)
+    return ticket, path
 
 
 def _worktree_paths(repo: Path) -> set[str]:
     return {
         line.removeprefix("worktree ")
-        for line in _git(repo, "worktree", "list", "--porcelain").splitlines()
+        for line in git(repo, "worktree", "list", "--porcelain").stdout.splitlines()
         if line.startswith("worktree ")
     }
 
@@ -72,110 +98,107 @@ def _worktree_paths(repo: Path) -> set[str]:
 # --- remove one worktree -----------------------------------------------------------
 
 
-def test_a_worktree_with_untracked_work_is_kept(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
-    _write(tree / "notes.md", "draft")
+@pytest.mark.parametrize(
+    ("name", "content", "matches"),
+    [
+        ("notes.md", "draft", "uncommitted or untracked"),
+        ("app.py", "changed", "uncommitted"),
+        (".env", "TOKEN=secret", ".env"),
+    ],
+    ids=["untracked", "modified-tracked", "ignored-env"],
+)
+def test_a_worktree_holding_work_of_its_own_is_kept(
+    session, workspace, repo, name, content, matches
+) -> None:
+    ticket, tree = _cleared_tree(session, workspace, repo)
+    _write(tree / name, content)
 
-    with pytest.raises(ValueError, match="uncommitted or untracked"):
-        remove_branch_worktree(workspace, "feature", str(tree))
+    report = remove_branch_worktree(session, workspace, ticket.branch, str(tree))
 
-    assert (tree / "notes.md").read_text() == "draft"
-
-
-def test_a_worktree_with_a_modified_tracked_file_is_kept(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
-    _write(tree / "app.py", "changed")
-
-    with pytest.raises(ValueError, match="uncommitted"):
-        remove_branch_worktree(workspace, "feature", str(tree))
-
-    assert (tree / "app.py").read_text() == "changed"
-
-
-def test_a_worktree_holding_an_ignored_env_file_is_kept(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
-    _write(tree / ".env", "TOKEN=secret")
-
-    with pytest.raises(ValueError, match=r"\.env"):
-        remove_branch_worktree(workspace, "feature", str(tree))
-
-    assert (tree / ".env").exists()
+    assert report.outcome is RemovalOutcome.REFUSED
+    assert matches in report.detail
+    # A refusal is an answer, not a raise: the gate worked and nothing was lost.
+    assert (tree / name).read_text() == content
 
 
-def test_a_clean_worktree_goes_and_its_branch_stays(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
+def test_a_clean_worktree_goes_and_its_branch_stays(session, workspace, repo) -> None:
+    ticket, tree = _cleared_tree(session, workspace, repo)
+    # Ignored, and a package manager puts it back: not a reason to keep a tree.
     _write(tree / "node_modules" / "pkg" / "index.js")
 
-    remove_branch_worktree(workspace, "feature", str(tree))
+    report = remove_branch_worktree(session, workspace, ticket.branch, str(tree))
 
+    assert report.outcome is RemovalOutcome.DELETED
     assert not tree.exists()
     assert str(tree) not in _worktree_paths(repo)
-    assert "feature" in _git(repo, "branch", "--list", "feature")
-
-
-def test_a_worktree_whose_directory_is_already_gone_is_pruned(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
-    # Simulate a directory deleted by hand; git still lists the worktree.
-    for root, dirs, files in os.walk(tree, topdown=False):
-        for name in files:
-            Path(root, name).unlink()
-        for name in dirs:
-            Path(root, name).rmdir()
-    tree.rmdir()
-
-    remove_branch_worktree(workspace, "feature", str(tree))
-
-    assert str(tree) not in _worktree_paths(repo)
+    assert ticket.branch in git(repo, "branch", "--list", ticket.branch).stdout
 
 
 # --- delete a branch with its worktrees ------------------------------------------------
 
 
-def test_delete_checks_every_worktree_before_removing_any(workspace, repo) -> None:
-    clean = _add_worktree(repo, "feature")
-    dirty = repo.parent / "wt-feature-2"
-    _git(repo, "worktree", "add", "-q", "--force", str(dirty), "feature")
+def test_delete_checks_every_worktree_before_removing_any(session, workspace, repo) -> None:
+    ticket, clean = _cleared_tree(session, workspace, repo)
+    dirty = repo.parent / "wt-second"
+    git(repo, "worktree", "add", "-q", "--force", str(dirty), ticket.branch)
+    run = make_run(session, workspace, ticket, code="run-second")
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            ticket_id=ticket.id,
+            branch=ticket.branch,
+            worktree_path=str(dirty),
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.commit()
     _write(dirty / "wip.py")
 
-    with pytest.raises(ValueError, match="uncommitted or untracked"):
-        delete_branch(workspace, "feature", force=True, remove_worktrees=True)
+    report = delete_branch(session, workspace, ticket.branch, force=True, remove_worktrees=True)
 
+    assert report.outcome is RemovalOutcome.REFUSED
     assert clean.exists(), "a refusal must come before the first removal"
     assert (dirty / "wip.py").exists()
-    assert "feature" in _git(repo, "branch", "--list", "feature")
+    assert ticket.branch in git(repo, "branch", "--list", ticket.branch).stdout
 
 
-def test_the_base_branch_is_refused_before_its_worktrees_are_touched(workspace, repo) -> None:
-    _git(repo, "checkout", "-q", "-b", "dev")
+def test_the_base_branch_is_refused_before_its_worktrees_are_touched(
+    session, workspace, repo
+) -> None:
+    git(repo, "checkout", "-q", "-b", "dev")
     base_tree = repo.parent / "wt-main"
-    _git(repo, "worktree", "add", "-q", str(base_tree), "main")
+    git(repo, "worktree", "add", "-q", str(base_tree), "main")
 
     with pytest.raises(ValueError, match="base branch"):
-        delete_branch(workspace, "main", force=True, remove_worktrees=True)
+        delete_branch(session, workspace, "main", force=True, remove_worktrees=True)
 
     assert base_tree.exists()
 
 
-def test_delete_with_clean_worktrees_removes_them_and_the_branch(workspace, repo) -> None:
-    tree = _add_worktree(repo, "feature")
+def test_delete_with_a_cleared_worktree_removes_it_and_the_branch(session, workspace, repo) -> None:
+    ticket, tree = _cleared_tree(session, workspace, repo)
 
-    assert delete_branch(workspace, "feature", force=True, remove_worktrees=True) is True
+    report = delete_branch(session, workspace, ticket.branch, force=True, remove_worktrees=True)
 
+    assert report.outcome is RemovalOutcome.DELETED
+    assert report.deleted is True
     assert not tree.exists()
-    assert _git(repo, "branch", "--list", "feature").strip() == ""
+    assert git(repo, "branch", "--list", ticket.branch).stdout.strip() == ""
 
 
 # --- the shared guard ----------------------------------------------------------------
 
 
 def test_the_guard_refuses_a_commit_only_head_reaches(repo) -> None:
-    tree = _add_worktree(repo, "feature")
-    _git(tree, "checkout", "-q", "--detach")
+    tree = repo.parent / "wt-detached"
+    git(repo, "worktree", "add", "-q", "-b", "feature", str(tree))
+    git(tree, "checkout", "-q", "--detach")
     _write(tree / "more.py")
-    _git(tree, "add", ".")
-    _git(tree, "commit", "-q", "-m", "detached work")
+    git(tree, "add", ".")
+    git(tree, "commit", "-q", "-m", "detached work")
 
-    refusal = checkout_removal_refusal(tree)
+    refusal = checkout_removal_refusal(tree.resolve())
 
     assert refusal is not None and "branch or tag" in refusal
 
@@ -204,6 +227,12 @@ def test_cleanup_refuses_a_sibling_whose_name_only_starts_like_the_base(isolated
         session.commit()
         service = WorktreeService(session, repo_path=str(repo))
 
-        assert service.cleanup_worktree(row) is False
+        # The refusal is a raise now, not a return: `retire_worktree` is the
+        # one place that catches it, so a release reported as done cannot have
+        # left the directory behind (lg-external-harness-1026).
+        with pytest.raises(DirectoryOutsideBase) as raised:
+            service.remove_checkout(row)
+        assert raised.value.refusal is CleanupRefusal.OUTSIDE_BASE
+        assert raised.value.uncleaned_path == str(sibling)
 
     assert (sibling / "keep.txt").exists()

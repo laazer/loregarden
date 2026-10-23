@@ -19,7 +19,7 @@ Isolation is the whole design. Each attempt gets its own worktree cut from the
 ticket's branch and its own branch to commit on, because the orchestrator
 commits whole trees and two attempts sharing one would sweep each other's work.
 Settling — promote one or decline them all — always ends with every losing
-worktree removed and its branch deleted; leaking those is how the queue used to
+checkout released and its branch deleted; leaking those is how the queue used to
 lose slots.
 
 `stage_fanout_groups` owns the rows. This owns the git and the dispatch.
@@ -50,8 +50,8 @@ from loregarden.models.domain import (
     Worktree,
 )
 from loregarden.services import stage_fanout_groups as groups
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.dependency_hold import refuse_held_dispatch
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_commit_push_service import commit_all_dirty_in
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
@@ -60,6 +60,7 @@ from loregarden.services.stage_retry_budget import charge_fanout_dispatch
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_lifecycle import retire_worktree
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 
@@ -478,8 +479,10 @@ def _discard_attempts(
 ) -> list[str]:
     """Remove every losing attempt's worktree and branch. Returns their ids.
 
-    Forced: a losing attempt's commits are exactly what nobody chose, and a
-    branch left behind turns up in Branch Triage as work someone abandoned.
+    A losing attempt's commits are usually exactly what nobody chose, and a
+    branch left behind turns up in Branch Triage as work someone abandoned —
+    but "usually" is not a premise, so each removal goes through the receipt
+    gate and a refusal keeps BOTH the checkout and the branch.
     """
     workspace = session.get(Workspace, group.workspace_id)
     if not workspace:
@@ -492,19 +495,33 @@ def _discard_attempts(
         if attempt.id == keep_attempt_id:
             continue
         worktree = session.get(Worktree, attempt.worktree_id) if attempt.worktree_id else None
-        removal_failed = False
+        refused = False
         if worktree:
-            removal_failed = not service.cleanup_worktree(worktree)
-            if removal_failed:
+            # Through the one receipt gate (lg-external-harness-1026 AC14). This
+            # loop used to call the removal seam directly and then run `git
+            # branch -D` on the attempt's branch, with the docstring's word
+            # "forced" doing the arguing: a losing attempt that went somewhere
+            # the keeper never did had its checkout removed and its only
+            # remaining ref deleted, which is the defect this ticket closes at
+            # its most expensive. The gate's own premise for an attempt is
+            # whether the promoted keeper already contains this tip.
+            outcome = retire_worktree(session, service, worktree)
+            refused = outcome.refusal is not None
+            if refused:
                 logger.warning(
-                    "Fan-out attempt %s: worktree %s at %s failed to remove; "
+                    "Fan-out attempt %s: worktree %s at %s was not removed (%s); "
                     "keeping branch %s instead of force-deleting its only ref",
                     attempt.id,
                     worktree.id,
                     worktree.worktree_path,
+                    outcome.detail,
                     attempt.branch,
                 )
-        if attempt.branch and not removal_failed:
+        # Guarded on "the gate refused", whichever kind of refusal it was: a
+        # premise that chose to keep the tree and a removal that failed leave
+        # the checkout equally owned, and deleting the branch would take away
+        # the only ref keeping the commits the refusal just protected.
+        if attempt.branch and not refused:
             deleted = run_git(
                 ["branch", "-D", attempt.branch],
                 cwd=repo_root,

@@ -40,7 +40,7 @@ from loregarden.services.stage_fanout_service import (
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
-from tests.worktree_helpers import git, make_repo
+from tests.worktree_helpers import git, land_branch_onto, make_repo
 
 STAGES = [
     WorkflowStageDef(
@@ -128,6 +128,15 @@ def _fake_execute(*, fail_indexes=()):
         index = int(worktree.branch.rsplit("-", 1)[-1]) - 1
         seen.append(root)
         (Path(root) / "answer.txt").write_text(f"{worktree.branch} says hello\n")
+        # COMMITTED, as a real attempt's run is (lg-external-harness-1026
+        # implement, AC18). Leaving the file uncommitted made every attempt's
+        # tree hold work that exists in exactly one place, and the receipt gate
+        # AC14 routes this site through refuses to delete one of those — which
+        # is the gate working, not a regression. An attempt whose work is only
+        # in its working tree is covered on purpose by
+        # `test_worktree_gate_chokepoint.py`, where the refusal is the subject.
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", f"{worktree.branch} attempt")
         failing = index in fail_indexes
         return self.orchestration.complete_run(
             run,
@@ -221,13 +230,18 @@ def test_discarding_twice_is_harmless(session, ticket, repo):
     assert len(again) == 2
 
 
-def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, repo, caplog):
+@pytest.mark.parametrize(
+    "refusal_name", ["OUTSIDE_BASE", "REMOVE_RAISED"], ids=["outside_base", "remove_raised"]
+)
+def test_a_losing_branch_survives_a_failed_worktree_removal(
+    session, ticket, repo, caplog, refusal_name
+):
     """A losing attempt whose worktree removal fails must keep its branch: the
     checkout's commits are reachable from nothing else, so force-deleting the
     branch (`branch -D`) would strand them.
 
     The oracle is the *absence of the `branch -D` call*, not the surviving
-    branch. A failed `cleanup_worktree` leaves the checkout registered with git,
+    branch. A refused `remove_checkout` leaves the checkout registered with git,
     and git refuses to delete a branch checked out in a registered worktree — so
     "the branch is still there" is satisfied by git's own refusal and passes
     with the guard removed. Only the uninvoked `branch -D` distinguishes the
@@ -235,12 +249,20 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
 
     A sibling attempt whose removal succeeds must still be discarded normally —
     the loop must not stop at the first failure.
+
+    AC21 — run for BOTH `CleanupRefusal` members. `_discard_attempts` reads
+    `refusal is not None`, not which member it is: an out-of-base path leaves
+    the checkout just as owned as a permission error does, so the guard
+    lg-external-harness-1166 added must hold for either cause. Parametrized
+    rather than asserted once, because a branch per member here would be the
+    place the never-retryable cause quietly regained the force-delete.
     """
     import logging
 
     from loregarden.services import stage_fanout_service
+    from loregarden.services.directory_release import DirectoryReleaseFailed
     from loregarden.services.git_subprocess import run_git as real_run_git
-    from loregarden.services.worktree_service import WorktreeService
+    from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 
     group, _ = _launch(session, ticket, count=2)
     failing_attempt_id = group["attempts"][0]["id"]
@@ -254,11 +276,31 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
     failing_worktree_id = group["attempts"][0]["worktree_id"]
     failing_worktree_path = session.get(Worktree, failing_worktree_id).worktree_path
 
-    real_cleanup = WorktreeService.cleanup_worktree
+    # The sibling's work is taken into `main` (lg-external-harness-1026
+    # AC15/AC18): the gate removes a checkout whose commits something else
+    # already reaches, and refuses one whose commits are reachable from nowhere
+    # else. Without this the sibling is refused too and the uninvoked
+    # `branch -D` below would prove nothing about the guard.
+    land_branch_onto(repo, ok_branch, "main")
+
+    refusal = getattr(CleanupRefusal, refusal_name)
+    real_cleanup = WorktreeService.remove_checkout
 
     def flaky_cleanup(self, worktree):
+        # Raised, never returned and never `False`: lg-external-harness-1026
+        # made the seam a command, so any value it answers reads as "the
+        # checkout is gone" and a stub returning one would read as settled.
         if worktree.branch == failing_branch:
-            return False
+            raise DirectoryReleaseFailed(
+                "the removal failed",
+                refusal=refusal,
+                uncleaned_path=worktree.worktree_path,
+                parked_path=(
+                    f"{worktree.worktree_path}.parked"
+                    if refusal is CleanupRefusal.REMOVE_RAISED
+                    else ""
+                ),
+            )
         return real_cleanup(self, worktree)
 
     git_calls: list[list[str]] = []
@@ -269,7 +311,7 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
 
     with caplog.at_level(logging.WARNING):
         with (
-            patch.object(WorktreeService, "cleanup_worktree", flaky_cleanup),
+            patch.object(WorktreeService, "remove_checkout", flaky_cleanup),
             patch.object(stage_fanout_service, "run_git", spying_run_git),
         ):
             settled = decline_fanout(session, group["id"])
@@ -315,10 +357,29 @@ def test_a_losing_branch_survives_a_failed_worktree_removal(session, ticket, rep
     assert set(settled["discarded_attempts"]) == {failing_attempt_id, ok_attempt_id}
 
 
+def _keeper_takes(session, keeper_attempt, *loser_branches: str) -> None:
+    """Make `keeper_branch` reach every loser's tip, keeping its own content.
+
+    The condition lg-external-harness-1026 AC15 names for a losing attempt's
+    checkout to be removable: the promoted keeper already contains its tip, so
+    nothing the loser committed is lost with the directory. `-s ours` is the
+    whole point — the keeper's answer wins, and the loser's commits stop being
+    reachable from nowhere else. A loser the keeper does NOT reach is refused
+    and keeps its branch, which is covered in
+    `test_worktree_gate_chokepoint.py`.
+    """
+    # In the keeper's OWN checkout: its branch is checked out there, and git
+    # refuses a second worktree on a branch one already holds.
+    tree = Path(session.get(Worktree, keeper_attempt["worktree_id"]).worktree_path)
+    for loser in loser_branches:
+        git(tree, "merge", "-q", "--no-ff", "-s", "ours", "-m", f"keeper takes {loser}", loser)
+
+
 def test_promoting_lands_the_winner_and_removes_every_loser(session, ticket, workspace, repo):
     group, _ = _launch(session, ticket, count=3)
     winner = group["attempts"][1]
     loser_branches = [a["branch"] for a in group["attempts"] if a["id"] != winner["id"]]
+    _keeper_takes(session, winner, *loser_branches)
 
     settled = promote_attempt(session, group["id"], winner["id"])
 
@@ -337,7 +398,7 @@ def test_promoting_lands_the_winner_and_removes_every_loser(session, ticket, wor
     assert ticket.workflow_stage_status == StageStatus.DONE
 
 
-def test_declining_restores_the_stage_and_leaves_nothing_behind(session, ticket, workspace, repo):
+def test_declining_restores_the_stage_and_keeps_what_nobody_chose(session, ticket, workspace, repo):
     before_stage = ticket.workflow_stage_key
     before_agent = ticket.next_agent
     group, _ = _launch(session, ticket, count=2)
@@ -350,9 +411,16 @@ def test_declining_restores_the_stage_and_leaves_nothing_behind(session, ticket,
     assert ticket.workflow_stage_key == before_stage
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert ticket.next_agent == before_agent
+    # BEHAVIOUR THE SPEC NO LONGER WANTS (lg-external-harness-1026 AC14/AC15).
+    # A declined group promoted nobody, so nothing has chosen any attempt's
+    # work: the receipt gate refuses every removal and the branches stay, which
+    # is the whole point of routing this site — `_discard_attempts` used to
+    # remove the checkout and then force-delete the only ref keeping those
+    # commits reachable. What this test is still named for holds: the stage is
+    # restored and the ticket's own tree took nothing.
     branches = git(repo, "branch", "--list").stdout
-    assert "attempt-" not in branches
-    assert not _live_worktrees_for(session, group["id"], keep=None)
+    assert "attempt-" in branches, "the gate's refusal must keep the losers' only refs"
+    assert _live_worktrees_for(session, group["id"], keep=None)
     # The ticket's own tree never took any of it.
     assert not (resolve_ticket_root(session, ticket, workspace) / "answer.txt").exists()
 
@@ -402,6 +470,11 @@ def test_a_group_with_a_failed_attempt_is_still_settleable(session, ticket, work
     still worth having, and the group still has to be closable."""
     group, _ = _launch(session, ticket, count=3, fail_indexes=(0,))
     survivor = next(a for a in group["attempts"] if a["status"] == "succeeded")
+    _keeper_takes(
+        session,
+        survivor,
+        *[a["branch"] for a in group["attempts"] if a["id"] != survivor["id"]],
+    )
 
     settled = promote_attempt(session, group["id"], survivor["id"])
 

@@ -35,7 +35,7 @@ import logging
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
-from loregarden.services.git_branch import validate_branch_name
+from loregarden.services.branch_names import validate_branch_name
 from loregarden.services.git_merge_noco import (
     BranchTips,
     describe_signing,

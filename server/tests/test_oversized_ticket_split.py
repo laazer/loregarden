@@ -17,7 +17,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.oversized_ticket_split import (
     MAX_ACCEPTANCE_CRITERIA,

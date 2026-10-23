@@ -72,6 +72,42 @@ export interface BranchTriageEntry {
   pr: BranchTriagePrStatus | null;
 }
 
+/**
+ * What the receipt gate did, as a field rather than as the absence of an error.
+ *
+ * A removal can come back 200 and have deleted nothing: `refused` means a
+ * premise did not hold and the checkout is untouched, `parked` means every
+ * premise held, the rename succeeded and the delete did not — so the checkout
+ * exists under `parked_path` and is still owned. The client branches on this;
+ * it never reads "the request did not throw" as a deletion.
+ */
+export type BranchRemovalOutcome = "deleted" | "refused" | "parked";
+
+export interface BranchRemovalVerdict {
+  outcome: BranchRemovalOutcome;
+  /**
+   * The gate's enum-backed reason key (`no_receipt`, `cleanup_failed`, …), or
+   * `""` on a deletion. Group and branch on this, never on `detail`: a
+   * grouping keyed on prose breaks the first time anyone edits a message.
+   */
+  reason: string;
+  /** The gate's own sentence, which says what was not deleted. */
+  detail: string;
+  /** Where the checkout is sitting on a `parked` outcome; `""` otherwise. */
+  parked_path: string;
+}
+
+export interface BranchDeleteResult extends BranchRemovalVerdict {
+  deleted: string;
+  already_gone?: boolean;
+  removed_worktrees?: boolean;
+}
+
+export interface BranchWorktreeRemovalResult extends BranchRemovalVerdict {
+  branch: string;
+  removed_path: string;
+}
+
 /** A branch as the snapshot sends it: local git only, so it paints without GitHub. */
 export type BranchTriageLocalEntry = Omit<BranchTriageEntry, "pr">;
 
@@ -291,7 +327,7 @@ export async function deleteBranchTriage(
   branch: string,
   force = false,
   removeWorktrees = false,
-): Promise<{ deleted: string; already_gone?: boolean; removed_worktrees?: boolean }> {
+): Promise<BranchDeleteResult> {
   const q = new URLSearchParams({ branch });
   return branchTriageRequest(
     `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/delete?${q}`,
@@ -306,7 +342,7 @@ export async function removeBranchWorktree(
   slug: string,
   branch: string,
   path: string,
-): Promise<{ branch: string; removed_path: string }> {
+): Promise<BranchWorktreeRemovalResult> {
   const q = new URLSearchParams({ branch });
   return branchTriageRequest(
     `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/worktrees/remove?${q}`,

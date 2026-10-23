@@ -1,6 +1,9 @@
+import { useRestoreFocusOnSettle } from "../hooks/useRestoreFocusOnSettle";
 import { IconCloseButton } from "./IconCloseButton";
 
-import type { BranchTriageEntry } from "../lib/branchTriageApi";
+import type { BranchRemovalOutcome, BranchTriageEntry } from "../lib/branchTriageApi";
+import { removalNotice } from "../lib/branchRemovalNotices";
+import { BranchNoticeRow, BranchRefusalBlock } from "./BranchRemovalNotices";
 import { Button } from "./ui/Button";
 import { ModalShell } from "./ui/ModalShell";
 
@@ -8,7 +11,17 @@ interface BranchDeleteConfirmModalProps {
   open: boolean;
   branch: BranchTriageEntry | null;
   isDeleting: boolean;
+  /** A transport or unknown failure — red, as before. */
   error?: string | null;
+  /**
+   * What the receipt gate answered, when it has answered.
+   *
+   * A refusal used to arrive here as `error`, which told the operator it had
+   * gone wrong. It had not: the gate worked and nothing was lost, so the two
+   * are separate props and are styled apart.
+   */
+  outcome?: BranchRemovalOutcome;
+  refusal?: { reason: string; detail: string; parked_path: string } | null;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -18,9 +31,15 @@ export function BranchDeleteConfirmModal({
   branch,
   isDeleting,
   error,
+  outcome,
+  refusal,
   onClose,
   onConfirm,
 }: BranchDeleteConfirmModalProps) {
+  // The confirm is disabled for the duration of the delete, which blurs it;
+  // focus returns to it when the gate answers, refusal or parked alike.
+  const rememberActivated = useRestoreFocusOnSettle(isDeleting);
+
   if (!open || !branch) {
     // Closed but mounted: the shell plays its exit with the last content it drew.
     return <ModalShell open={false} onDismiss={undefined} labelledBy="branch-delete-confirm-title">{null}</ModalShell>;
@@ -28,6 +47,9 @@ export function BranchDeleteConfirmModal({
 
   const worktreePaths = branch.worktrees.map((item) => item.path).filter(Boolean);
   const removeWorktrees = worktreePaths.length > 0;
+  const notice = refusal
+    ? removalNotice(branch.name, { outcome: outcome ?? "refused", ...refusal }, branch.linked_tickets[0] ?? null)
+    : null;
 
   return (
     <ModalShell open onDismiss={isDeleting ? undefined : onClose} labelledBy="branch-delete-confirm-title" panelClassName="branch-delete-confirm-modal">
@@ -84,11 +106,21 @@ export function BranchDeleteConfirmModal({
           </div>
         ) : null}
 
-        {error ? (
-          <div className="branch-triage-delete-error" style={{ marginTop: 12 }}>
+        {error || (notice && outcome === "parked") ? (
+          <div className="branch-triage-delete-error branch-cleanup-failures" style={{ marginTop: 12 }}>
             {error}
+            {notice && outcome === "parked" ? (
+              <ul>
+                <BranchNoticeRow notice={notice} />
+              </ul>
+            ) : null}
           </div>
         ) : null}
+
+        <BranchRefusalBlock
+          notices={notice && outcome === "refused" ? [notice] : []}
+          pluralNoun="branch(es)"
+        />
       </div>
 
       <div className="modal-footer">
@@ -99,7 +131,10 @@ export function BranchDeleteConfirmModal({
           variant="primary"
           className="branch-delete-confirm-submit"
           disabled={isDeleting}
-          onClick={onConfirm}
+          onClick={(event) => {
+            rememberActivated(event.currentTarget);
+            onConfirm();
+          }}
         >
           {isDeleting
             ? "Deleting…"

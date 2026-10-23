@@ -173,6 +173,110 @@ describe("terminalCommands", () => {
       expect(toasts().some((toast) => toast.id === inFlight!.id)).toBe(false);
     });
 
+    it("S11/UX1 — two overlapping copies keep the in-flight toast until the LAST one settles", async () => {
+      // The defect this ticket was filed for, through the real surface. Both
+      // calls push a byte-identical in-flight toast, so lg-external-harness-
+      // 1203's dedupe refreshes one toast in place — and before the claim
+      // split, both callers were handed the SAME string, so the first
+      // `finally` took the indicator away while the second was still awaiting
+      // the server's merge.
+      //
+      // The in-flight toast is found by TONE, never by `duration === 0`: an
+      // error toast is sticky by default since 1203, so a duration-based filter
+      // would match the failure toast as well.
+      const first = deferred<ReturnType<typeof handoffResponse>>();
+      const second = deferred<ReturnType<typeof handoffResponse>>();
+      mockBuildTerminalHandoffCommand
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+
+      const ticket = baseTicket();
+      const stage = baseStage({ key: "spec", name: "Specification" });
+      const copyingFirst = copyStageTerminalHandoffCommand(ticket, stage);
+      const copyingSecond = copyStageTerminalHandoffCommand(ticket, stage);
+
+      const inFlight = toasts().filter((toast) => toast.tone === "info");
+      expect(inFlight).toHaveLength(1);
+
+      first.settle(handoffResponse());
+      await copyingFirst;
+
+      // UX1: the second caller is still awaiting the server, and the in-flight
+      // toast is the only thing on screen answering "is it still working?".
+      const stillUp = toasts().filter((toast) => toast.tone === "info");
+      expect(stillUp).toHaveLength(1);
+      expect(stillUp[0].id).toBe(inFlight[0].id);
+
+      second.settle(handoffResponse());
+      await copyingSecond;
+
+      expect(toasts().filter((toast) => toast.tone === "info")).toHaveLength(0);
+    });
+
+    it("test-break — the SECOND copy settling first does not take the first's indicator", async () => {
+      // S11/UX1 in the other settle order, which the designed pair cannot see.
+      // A dedupe branch that resets the claim set keeps only the LAST claim, so
+      // the second caller's `finally` empties it and the indicator goes while
+      // the first caller is still awaiting the server's merge — this ticket's
+      // defect, with the two callers swapped.
+      const first = deferred<ReturnType<typeof handoffResponse>>();
+      const second = deferred<ReturnType<typeof handoffResponse>>();
+      mockBuildTerminalHandoffCommand
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+
+      const ticket = baseTicket();
+      const stage = baseStage({ key: "spec", name: "Specification" });
+      const copyingFirst = copyStageTerminalHandoffCommand(ticket, stage);
+      const copyingSecond = copyStageTerminalHandoffCommand(ticket, stage);
+      const inFlightId = toasts().find((toast) => toast.tone === "info")!.id;
+
+      second.settle(handoffResponse());
+      await copyingSecond;
+
+      const stillUp = toasts().filter((toast) => toast.tone === "info");
+      expect(stillUp).toHaveLength(1);
+      expect(stillUp[0].id).toBe(inFlightId);
+
+      first.settle(handoffResponse());
+      await copyingFirst;
+
+      expect(toasts().filter((toast) => toast.tone === "info")).toHaveLength(0);
+    });
+
+    it("test-break — one caller's failure does not retract the other's indicator", async () => {
+      // The `finally` runs on the refusal branch too (S10), so a failing caller
+      // releases its claim while its twin is still in flight. UX1 is about the
+      // span, not about the happy path: the operator who still has a command
+      // being prepared must keep the only thing on screen that says so, even
+      // once the other attempt has reported its own failure.
+      const failing = deferred<ReturnType<typeof handoffResponse>>();
+      const succeeding = deferred<ReturnType<typeof handoffResponse>>();
+      mockBuildTerminalHandoffCommand
+        .mockReturnValueOnce(failing.promise)
+        .mockReturnValueOnce(succeeding.promise);
+
+      const ticket = baseTicket();
+      const stage = baseStage({ key: "spec", name: "Specification" });
+      const copyingFailing = copyStageTerminalHandoffCommand(ticket, stage);
+      const copyingSucceeding = copyStageTerminalHandoffCommand(ticket, stage);
+      const inFlightId = toasts().find((toast) => toast.tone === "info")!.id;
+
+      failing.reject(new Error("lg-917: the worktree at /tmp/w could not take integration/x"));
+      expect(await copyingFailing).toBe(false);
+
+      expect(toasts().filter((toast) => toast.tone === "error")).toHaveLength(1);
+      const stillUp = toasts().filter((toast) => toast.tone === "info");
+      expect(stillUp).toHaveLength(1);
+      expect(stillUp[0].id).toBe(inFlightId);
+
+      succeeding.settle(handoffResponse());
+      expect(await copyingSucceeding).toBe(true);
+
+      expect(toasts().filter((toast) => toast.tone === "info")).toHaveLength(0);
+      expect(toasts().map((toast) => toast.tone).sort()).toEqual(["error", "success"]);
+    });
+
     it("reports the tree the copied command will run in", async () => {
       // AC16. The operator's question is "can I paste this and trust the tree
       // it will run in?" — so the success toast names the tree and the branch
@@ -234,13 +338,17 @@ describe("terminalCommands", () => {
       expect(outcomes[0].tone).toBe("error");
       expect(outcomes[0].title).toContain("Copy terminal command");
       expect(outcomes[0].message).toContain("could not take integration/x");
-      expect(toasts().some((toast) => toast.duration === 0)).toBe(false);
+      // The in-flight toast is identified by its TONE, not by `duration === 0`.
+      // lg-external-harness-1203 makes an error toast sticky by default, so
+      // `duration === 0` is now also the signature of the failure toast this
+      // test wants to keep — the old assertion would reject the fix.
+      expect(toasts().filter((toast) => toast.tone === "info")).toHaveLength(0);
     });
 
     // lg-milestone-that-917, test-break: the sticky toast is the one piece of
     // state that can outlive the call. AC15 puts its dismissal in a `finally`,
     // and the tests above only prove that on the two paths that reach the
-    // server's answer — a `dismissToast` placed at the end of the success
+    // server's answer — a `releaseToast` placed at the end of the success
     // branch, or in the `catch` of the API call alone, passes all of them and
     // leaves a toast on screen forever on the path where the request succeeded
     // and the clipboard refused.
@@ -256,7 +364,9 @@ describe("terminalCommands", () => {
 
       await copyStageTerminalHandoffCommand(baseTicket(), baseStage());
 
-      expect(toasts().filter((toast) => toast.duration === 0)).toHaveLength(0);
+      // Tone, not duration: see the note above. The sticky error toast this
+      // path now raises is the one the operator needs, and it is the one the
+      // `duration === 0` spelling of this assertion used to reject.
       expect(toasts().filter((toast) => toast.tone === "info")).toHaveLength(0);
     });
 
@@ -309,6 +419,95 @@ describe("terminalCommands", () => {
       const outcomes = toasts().filter((toast) => toast.tone !== "info");
       expect(outcomes).toHaveLength(1);
       expect(outcomes[0].tone).toBe("error");
+    });
+
+    it("S7.4 — reports a refusal that came back as false rather than as a throw", async () => {
+      // The sibling the test above was written for and could not express. A
+      // real browser that declines the write returns `false` from
+      // `execCommand`; only jsdom's absence of it throws. Returning `false`
+      // used to be indistinguishable from a copy, so the operator was told a
+      // command was on their clipboard when nothing was.
+      mockBuildTerminalHandoffCommand.mockResolvedValueOnce(handoffResponse());
+      writeText.mockRejectedValueOnce(new Error("Document is not focused"));
+      Object.defineProperty(document, "execCommand", {
+        value: () => false,
+        configurable: true,
+      });
+
+      const copied = await copyStageTerminalHandoffCommand(baseTicket(), baseStage());
+
+      expect(copied).toBe(false);
+      const outcomes = toasts().filter((toast) => toast.tone !== "info");
+      expect(outcomes).toHaveLength(1);
+      expect(outcomes[0].tone).toBe("error");
+    });
+
+    it("test-break — a session's worth of copies leaves nothing holding the stack", async () => {
+      // The one production function that uses BOTH routes: its in-flight toast
+      // is claimed, its success and warning toasts are fire-and-forget. A
+      // repeated copy of the same stage produces a byte-identical success
+      // toast, so the fire-and-forget route takes the dedupe branch every time
+      // after the first — the growth path this ticket bounds, reached through
+      // the real caller rather than through the store.
+      //
+      // Twelve rounds, three outcomes each, so the failure and warning arms
+      // dedupe too: the `finally` releases on the refusal branch as well, and a
+      // claim leaked there is invisible to a happy-path loop.
+      for (let round = 0; round < 12; round += 1) {
+        if (round % 3 === 0) {
+          mockBuildTerminalHandoffCommand.mockResolvedValueOnce(handoffResponse());
+        } else if (round % 3 === 1) {
+          mockBuildTerminalHandoffCommand.mockResolvedValueOnce(
+            handoffResponse({ tree_warning: "Worktree left behind" }),
+          );
+        } else {
+          mockBuildTerminalHandoffCommand.mockRejectedValueOnce(new Error("no slots"));
+        }
+
+        await copyStageTerminalHandoffCommand(baseTicket(), baseStage());
+
+        // Checked every round, not only at the end: a leak that the next round
+        // dedupes onto is one the final state cannot distinguish from a bound.
+        expect(toasts().flatMap((toast) => toast.claims)).toEqual([]);
+        expect(toasts().some((toast) => toast.tone === "info")).toBe(false);
+      }
+
+      expect(toasts().length).toBeLessThanOrEqual(4);
+    });
+
+    it("test-break — overlapping copies hold exactly one claim each, and no more", async () => {
+      // The claimed route's own bound. Four concurrent callers dedupe onto one
+      // in-flight toast, so the set is as long as the number of callers still
+      // awaiting the server — never longer, and empty once they settle. An
+      // implementation that appended on the fire-and-forget route too would be
+      // counted here as well, because each caller's success toast lands while
+      // the others are still open.
+      const pending = [0, 1, 2, 3].map(() => deferred<ReturnType<typeof handoffResponse>>());
+      for (const one of pending) mockBuildTerminalHandoffCommand.mockReturnValueOnce(one.promise);
+
+      const ticket = baseTicket();
+      const stage = baseStage({ key: "spec", name: "Specification" });
+      const copying = pending.map(() => copyStageTerminalHandoffCommand(ticket, stage));
+
+      const inFlight = toasts().filter((toast) => toast.tone === "info");
+      expect(inFlight).toHaveLength(1);
+      expect(inFlight[0].claims).toHaveLength(4);
+
+      for (const [at, one] of pending.entries()) {
+        one.settle(handoffResponse());
+        await copying[at];
+
+        const still = toasts().filter((toast) => toast.tone === "info");
+        if (at < pending.length - 1) {
+          expect(still).toHaveLength(1);
+          expect(still[0].id).toBe(inFlight[0].id);
+          expect(still[0].claims).toHaveLength(pending.length - 1 - at);
+        } else {
+          expect(still).toHaveLength(0);
+        }
+      }
+
+      expect(toasts().flatMap((toast) => toast.claims)).toEqual([]);
     });
   });
 });
