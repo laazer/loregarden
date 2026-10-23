@@ -1,0 +1,292 @@
+/* One card in the chat workbench (WorkbenchCard). */
+.chat-wb-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg1);
+}
+
+.chat-wb-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.chat-wb-card-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tx);
+  cursor: pointer;
+}
+
+.chat-wb-card-toggle h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chat-wb-card-chevron {
+  color: var(--txl);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.chat-wb-card-toggle[aria-expanded="false"] .chat-wb-card-chevron {
+  transform: rotate(-90deg);
+}
+
+.chat-wb-card-meta {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+/* The header action sits at the far right whether or not there is a meta. */
+.chat-wb-card-head > .chat-side-card-link:last-child {
+  margin-left: auto;
+}
+
+.chat-wb-card-meta + .chat-side-card-link:last-child {
+  margin-left: 8px;
+}
+
+.chat-wb-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  min-width: 0;
+}
+
+.chat-wb-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-wb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--tx);
+}
+
+.chat-wb-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-wb-row-link {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tx);
+  font-size: 12.5px;
+  text-align: left;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-wb-row-link:hover,
+.chat-wb-row-link:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.chat-wb-glyph {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--txl);
+}
+
+.chat-wb-sub {
+  color: var(--txl);
+}
+
+.chat-wb-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bg2);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+.chat-wb-tag--warn {
+  background: var(--rdl);
+  color: var(--red);
+}
+
+.chat-wb-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.chat-wb-warn {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--aml);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--amb);
+}
+
+.chat-wb-status {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg2);
+}
+
+.chat-wb-status--running {
+  background: var(--bll);
+  color: var(--blue);
+}
+
+.chat-wb-status--blocked {
+  background: var(--aml);
+  color: var(--amb);
+}
+
+/* The title gets its own line; the id and state tags wrap beneath it. */
+.chat-wb-ticket {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.chat-wb-ticket > .chat-wb-row-link {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+
+.chat-wb-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-wb-group h4 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.chat-wb-count {
+  color: var(--txm);
+}
+
+.chat-wb-criteria {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-wb-criterion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--tx);
+}
+
+.chat-wb-criterion--proposed {
+  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd));
+}
+
+.chat-wb-criterion--met .chat-wb-criterion-text {
+  color: var(--txm);
+}
+
+.chat-wb-criterion-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-wb-add {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-wb-add > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-wb-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--txl);
+}
+
+.chat-wb-dot--live {
+  background: var(--blue);
+}
+
+.chat-wb-dot--succeeded {
+  background: var(--grn);
+}
+
+.chat-wb-dot--failed {
+  background: var(--red);
+}
+
+.chat-wb-modes {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 4px;
+  padding: 0;
+  border: none;
+}
+
+.chat-wb-modes legend {
+  margin-bottom: 6px;
+}
+
+.chat-wb-modes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

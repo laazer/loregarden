@@ -176,6 +176,7 @@ def _args_for(
     optional_stage_key: str,
     gate_stage_key: str,
     initiative_id: str,
+    chat_session_id: str = "",
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -303,6 +304,11 @@ def _args_for(
         # status only reads the link table; every other action shells out to gh.
         "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
         "loregarden_get_initiative_plan": {"initiative_id": initiative_id},
+        # Files a proposal only; the operator accepting it is what reaches the ticket.
+        "loregarden_propose_feature_criteria": {
+            "chat_session_id": chat_session_id,
+            "criteria": ["Smoke criterion"],
+        },
         # No items, a mode only: files a pending proposal and writes no target.
         "loregarden_propose_initiative_schedule": {
             "initiative_id": initiative_id,
@@ -377,6 +383,15 @@ def _memory_node_id(client, title: str) -> str:
     return node_id
 
 
+def _feature_loop_chat(client: TestClient) -> str:
+    """A chat thread running a feature loop, for the criteria proposal tool."""
+    chats = "/api/workspaces/loregarden/baxter-chat/sessions"
+    chat_session_id = client.post(chats, json={}).json()["id"]
+    looped = client.post(f"{chats}/{chat_session_id}/feature", json={"title": "Smoke feature"})
+    assert looped.status_code == 200, looped.text
+    return chat_session_id
+
+
 def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     """Call each tool once with well-formed args; none may return a JSON-RPC error.
 
@@ -435,6 +450,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     assert initiative.status_code in (200, 201), initiative.text
     initiative_id = initiative.json()["id"]
 
+    chat_session_id = _feature_loop_chat(client)
+
     ordered = [
         "loregarden_get_ticket",
         "loregarden_link_dependency",
@@ -461,6 +478,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_doctor",
         "loregarden_get_initiative_plan",
         "loregarden_propose_initiative_schedule",
+        "loregarden_propose_feature_criteria",
         "loregarden_set_initiative_autopilot",
         "loregarden_start_initiative_work",
         "loregarden_mark_needs_person",
@@ -525,6 +543,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             optional_stage_key,
             gate_stage_key,
             initiative_id,
+            chat_session_id,
         )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")
