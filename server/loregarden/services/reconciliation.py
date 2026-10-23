@@ -42,6 +42,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from loregarden.services.chat_feature_loop import advance_feature_loops
 from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
@@ -131,6 +132,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # still there is never retried (928).
     _invariant(LANDING_BLOCKS_CLEAR),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
+    # After the parents settle, so a feature ticket finished this pass is read
+    # as done: its chat loop marks the round met and starts the queued one.
+    SweepStep("advance_feature_loops", advance_feature_loops),
     # Periodic by the same rule as the steps above: it consults liveness
     # predicates — a pid, the run behind the lease, and docker itself — rather
     # than assuming everything in flight is an orphan. It also never frees a

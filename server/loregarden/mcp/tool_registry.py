@@ -32,6 +32,7 @@ from loregarden.mcp.external_harness_tools import (
     begin_external_stage_tool,
     finish_external_stage_tool,
 )
+from loregarden.mcp.feature_loop_tools import HANDLERS as FEATURE_LOOP_HANDLERS
 from loregarden.mcp.fix_coverage_tools import HANDLERS as FIX_COVERAGE_HANDLERS
 from loregarden.mcp.github_issue_tool import sync_github_issues
 from loregarden.mcp.initiative_membership_tools import HANDLERS as INITIATIVE_MEMBERSHIP_HANDLERS
@@ -78,6 +79,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **LOCAL_INSTANCE_HANDLERS,
     **INITIATIVE_PLAN_HANDLERS,
     **INITIATIVE_MEMBERSHIP_HANDLERS,
+    **FEATURE_LOOP_HANDLERS,
     **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
     **DOCUMENT_HANDLERS,

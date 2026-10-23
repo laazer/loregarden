@@ -9,6 +9,8 @@ import { TicketGithubIssue } from './TicketGithubIssue';
 import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
+import { useDialogDismiss } from '../hooks/useDialogDismiss';
+import { TicketModalApprovals } from './TicketModalApprovals';
 import { AddToTabMenu } from './AddToTabMenu';
 import { MarkdownContent } from './chat/MarkdownContent';
 import { CopyValueButton } from './CopyValueButton';
@@ -155,22 +157,22 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 
   const editing = mode === 'edit' && draft !== null && ticket !== null;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      // Escape backs out one level: out of the editor first, then out of the modal.
-      if (editing) {
-        if (isSaving) return;
-        setMode('view');
-        setDraft(null);
-        return;
-      }
-      onClose?.();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, editing, isSaving]);
+  // Escape backs out one level: out of the editor first, then out of the modal.
+  // Through the dismiss stack, so a Reject or Ignore dialog opened from an
+  // approval card above this one takes the press instead of closing both.
+  useDialogDismiss(
+    isOpen
+      ? () => {
+          if (editing) {
+            if (isSaving) return;
+            setMode('view');
+            setDraft(null);
+            return;
+          }
+          onClose?.();
+        }
+      : null,
+  );
 
   if (!isOpen) {
     return null;
@@ -352,6 +354,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                   <span className="ticket-modal-priority">Priority: {priorityLabel(ticket.priority)}</span>
                 </div>
               </div>
+
+              <TicketModalApprovals ticket={ticket} criteria={criteria} />
 
               <div className="state-card">
                 <div className="state-label">Description</div>
