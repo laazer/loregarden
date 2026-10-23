@@ -128,31 +128,61 @@ def resolve_global_host(session: Session, initiative_id: str | None) -> Workspac
 
 
 @dataclass(frozen=True)
+class FocusedInitiative:
+    """One initiative a thread works on, with its plan rendered now."""
+
+    ticket: Ticket
+    plan: str
+
+
+@dataclass(frozen=True)
 class GlobalChatContext:
-    """What a global turn sees beyond its host workspace."""
+    """What a cross-workspace turn sees beyond its host workspace."""
 
     #: The host's slug: the checkout the turn runs in, named so the agent knows
     #: which repository its file tools are reading.
     host_slug: str
     #: workspace id -> slug, so cross-workspace rows can be labelled.
     workspace_slugs: dict[str, str]
-    #: The initiative the thread is focused on, with its plan rendered now.
-    initiative: Ticket | None = None
-    plan: str = ""
+    #: The workspaces the turn answers about, or None for every workspace.
+    workspace_ids: frozenset[str] | None = None
+    #: The initiatives the thread is focused on, the archive's own first.
+    initiatives: tuple[FocusedInitiative, ...] = ()
+
+
+def _plan_digest(session: Session, initiative_id: str, budget: int) -> str:
+    digest = plan_digest(plan_view(session, initiative_id))
+    if len(digest) > budget:
+        digest = digest[:budget] + "\n…[truncated — call loregarden_get_initiative_plan]"
+    return digest
 
 
 def load_global_context(
-    session: Session, chat_session: BaxterChatSession, host: Workspace
+    session: Session,
+    host: Workspace,
+    *,
+    workspace_ids: frozenset[str] | None,
+    initiative_ids: tuple[str, ...],
 ) -> GlobalChatContext:
+    """The cross-workspace context for a turn, from its resolved focus.
+
+    Several initiatives share one plan budget, so focusing on five cannot make
+    a prompt five times the size one focus was sized for.
+    """
     slugs = {workspace.id: workspace.slug for workspace in session.exec(select(Workspace)).all()}
-    if chat_session.initiative_id is None:
-        return GlobalChatContext(host_slug=host.slug, workspace_slugs=slugs)
-    initiative = load_initiative(session, chat_session.initiative_id)
-    digest = plan_digest(plan_view(session, initiative.id))
-    if len(digest) > MAX_PLAN_CHARS:
-        digest = digest[:MAX_PLAN_CHARS] + "\n…[truncated — call loregarden_get_initiative_plan]"
+    budget = MAX_PLAN_CHARS // max(1, len(initiative_ids))
+    initiatives = tuple(
+        FocusedInitiative(
+            ticket=load_initiative(session, initiative_id),
+            plan=_plan_digest(session, initiative_id, budget),
+        )
+        for initiative_id in initiative_ids
+    )
     return GlobalChatContext(
-        host_slug=host.slug, workspace_slugs=slugs, initiative=initiative, plan=digest
+        host_slug=host.slug,
+        workspace_slugs=slugs,
+        workspace_ids=workspace_ids,
+        initiatives=initiatives,
     )
 
 
