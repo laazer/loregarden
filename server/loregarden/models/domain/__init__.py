@@ -9,6 +9,7 @@ from loregarden.models.domain.block_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.chat_enums import *  # noqa: F401,F403
 from loregarden.models.domain.chat_tables import *  # noqa: F401,F403
 from loregarden.models.domain.checkout_enums import *  # noqa: F401,F403
+from loregarden.models.domain.disk_tables import *  # noqa: F401,F403
 from loregarden.models.domain.docker_tables import *  # noqa: F401,F403
 from loregarden.models.domain.enums import *  # noqa: F401,F403
 from loregarden.models.domain.enums_capacity import *  # noqa: F401,F403

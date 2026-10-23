@@ -142,7 +142,7 @@ function formatWhen(entry: LaneAttentionEntry): string {
 }
 
 /**
- * `headerSlot` carries the queue-kind toggle. Passed in rather than imported so
+ * `headerSlot` carries the link to Machine capacity. Passed in rather than imported so
  * this component keeps knowing nothing about the docker pool — it draws lanes,
  * and which board is on screen is the dashboard's decision.
  */

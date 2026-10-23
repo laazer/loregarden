@@ -31,6 +31,7 @@ from loregarden.api import (
     initiatives,
     instance_templates,
     local_instances,
+    machine_disk,
     mcp,
     mcp_servers,
     memory,
@@ -312,6 +313,7 @@ app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(docker_capacity.router, prefix="/api")
+app.include_router(machine_disk.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")

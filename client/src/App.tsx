@@ -20,6 +20,7 @@ import { InitiativePlanRoute } from "./pages/InitiativePlanPage";
 import { WorkItemsPage } from "./pages/WorkItemsPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
 import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
+import { MachinePage } from "./pages/MachinePage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
@@ -120,6 +121,7 @@ export function AppShell() {
             <Route path="/studio/:studioSection/*" element={<StudioPage />} />
             <Route path="/editor/*" element={<EditorPage />} />
             <Route path="/queue/*" element={<QueuePage />} />
+            <Route path="/machine/*" element={<MachinePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory/*" element={<MemoryPage />} />
             <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />

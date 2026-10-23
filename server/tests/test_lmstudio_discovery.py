@@ -25,29 +25,50 @@ from loregarden.services.lmstudio_discovery import (
     list_lmstudio_chat_models,
     lmstudio_model_options,
     normalize_lmstudio_base_url,
-    reset_model_cache,
 )
 
 LM = "http://lm.test/v1"
 
 
-@pytest.fixture(autouse=True)
-def _no_memoized_catalog():
-    """The catalog is process-wide; one test's answer must not serve the next."""
-    reset_model_cache()
-    yield
-    join_probes(timeout=5.0)
-    reset_model_cache()
+#: How long a test's cold call waits for its mocked probe. The module's own
+#: 0.25s join is a real UX budget; on a loaded pre-push box a mocked probe
+#: missed it and the test read the cold empty answer as the result
+#: (test_list_lmstudio_chat_model_ids_skips_embeddings, 2026-10-23, after 22
+#: minutes queued for capacity). `test_discovery_cache` already joins patiently.
+PATIENT_JOIN = 5.0
 
 
-def _impatient_cache() -> ProbeCache[LmStudioChatModel]:
+def _cache(join_timeout_seconds: float) -> ProbeCache[LmStudioChatModel]:
     return ProbeCache(
         label="lmstudio",
         probe_budget_seconds=PROBE_BUDGET_SECONDS,
         success_ttl_seconds=CACHE_TTL_SECONDS,
         failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
-        join_timeout_seconds=0.02,
+        join_timeout_seconds=join_timeout_seconds,
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog(monkeypatch):
+    """The catalog is process-wide; one test's answer must not serve the next.
+
+    Each test gets its own cache that waits for its probe, so an answer is the
+    probe's, never the cold default because the machine was slow. A test about
+    impatience swaps in `_impatient_cache()` itself.
+
+    `monkeypatch`, not `unittest.mock.patch`: those tests swap with
+    `monkeypatch.setattr`, and one undo stack is the only way the two swaps
+    unwind in order. With `patch`, this fixture restored the real cache first
+    and monkeypatch then restored *this* one, which leaked a 5s join into
+    test_runtime_effort.
+    """
+    monkeypatch.setattr("loregarden.services.lmstudio_discovery._CACHE", _cache(PATIENT_JOIN))
+    yield
+    join_probes(timeout=5.0)
+
+
+def _impatient_cache() -> ProbeCache[LmStudioChatModel]:
+    return _cache(0.02)
 
 
 def test_is_chat_lmstudio_model_filters_embeddings():

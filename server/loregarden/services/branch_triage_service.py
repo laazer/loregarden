@@ -21,6 +21,7 @@ from loregarden.services.artifact_service import (
     git_base_ref,
 )
 from loregarden.services.branch_landed import landed_branches
+from loregarden.services.checkout_guard import checkout_removal_refusal
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
@@ -794,8 +795,24 @@ def _format_worktree_block_message(branch: str, worktree_paths: list[str]) -> st
     )
 
 
+def _refuse_unsafe_removal(worktree_path: str) -> None:
+    """Raise when removing the checkout would lose work (`checkout_guard`)."""
+    refusal = checkout_removal_refusal(Path(worktree_path))
+    if refusal:
+        raise ValueError(f"Kept {worktree_path}: {refusal}")
+
+
 def _remove_git_worktree(repo_root: Path, worktree_path: str) -> None:
-    proc = _git(repo_root, "worktree", "remove", "--force", worktree_path)
+    """Remove a checkout `_refuse_unsafe_removal` has cleared.
+
+    Without `--force`: git then refuses a tree that changed since the check
+    (or a locked one) on its own, a second guard rather than an override. A
+    directory already gone is pruned, since `worktree remove` cannot find it.
+    """
+    if not Path(worktree_path).exists():
+        proc = _git(repo_root, "worktree", "prune")
+    else:
+        proc = _git(repo_root, "worktree", "remove", worktree_path)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "worktree remove failed").strip()
         raise ValueError(detail)
@@ -816,6 +833,7 @@ def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None
     if path == main_repo_path:
         raise ValueError("Cannot remove the primary repository checkout")
 
+    _refuse_unsafe_removal(path)
     _remove_git_worktree(repo_root, path)
 
 
@@ -835,39 +853,48 @@ def delete_branch(
     if not _branch_exists(repo_root, branch):
         return False
 
-    current = _current_branch(repo_root)
-    main_repo_path = str(repo_root.resolve())
     worktree_paths = worktree_paths_for_branch(repo_root, branch)
+    _refuse_branch_delete(repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees)
+    for path in worktree_paths:
+        _remove_git_worktree(repo_root, path)
+    return _git_delete_branch(repo_root, branch, worktree_paths, force=force)
 
-    if branch == current and main_repo_path in worktree_paths:
-        raise ValueError(
-            "Cannot delete the currently checked-out branch. Checkout another branch first."
-        )
 
-    if worktree_paths and not remove_worktrees:
-        raise ValueError(_format_worktree_block_message(branch, worktree_paths))
+_CHECKED_OUT = "Cannot delete the currently checked-out branch. Checkout another branch first."
 
-    if worktree_paths and remove_worktrees:
-        for path in worktree_paths:
-            if path == main_repo_path and branch == current:
-                raise ValueError(
-                    "Cannot delete the currently checked-out branch. Checkout another branch first."
-                )
-            _remove_git_worktree(repo_root, path)
 
+def _refuse_branch_delete(
+    repo_root: Path, branch: str, worktree_paths: list[str], *, remove_worktrees: bool
+) -> None:
+    """Every reason `delete_branch` would stop, raised before the first removal.
+
+    A delete that stops halfway has already destroyed checkouts for a branch
+    it then keeps, so nothing is removed until every worktree has passed.
+    """
+    main_repo_path = str(repo_root.resolve())
+    if main_repo_path in worktree_paths:
+        # The primary checkout has this branch out, which makes it the current one.
+        raise ValueError(_CHECKED_OUT)
     base = git_base_ref(repo_root)
     if base and branch == base:
         raise ValueError("Cannot delete the base branch")
+    if worktree_paths and not remove_worktrees:
+        raise ValueError(_format_worktree_block_message(branch, worktree_paths))
+    for path in worktree_paths:
+        _refuse_unsafe_removal(path)
 
-    args = ["branch", "-D" if force else "-d", branch]
-    proc = _git(repo_root, *args)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "delete failed").strip()
-        if "not found" in detail.lower():
-            return False
-        if "used by worktree" in detail.lower():
-            match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
-            if match_paths:
-                raise ValueError(_format_worktree_block_message(branch, match_paths))
-        raise ValueError(detail)
-    return True
+
+def _git_delete_branch(
+    repo_root: Path, branch: str, worktree_paths: list[str], *, force: bool
+) -> bool:
+    proc = _git(repo_root, "branch", "-D" if force else "-d", branch)
+    if proc.returncode == 0:
+        return True
+    detail = (proc.stderr or proc.stdout or "delete failed").strip()
+    if "not found" in detail.lower():
+        return False
+    if "used by worktree" in detail.lower():
+        match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
+        if match_paths:
+            raise ValueError(_format_worktree_block_message(branch, match_paths))
+    raise ValueError(detail)

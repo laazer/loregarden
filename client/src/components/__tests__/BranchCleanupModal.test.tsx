@@ -145,3 +145,31 @@ test("says so plainly when there is nothing it can clean up", () => {
   expect(screen.getByText(/Nothing to clean up/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeDisabled();
 });
+
+test("a worktree the server keeps says why, from the server's own response", async () => {
+  // Through the real request wrapper: the 400 body is what the API sends when
+  // `checkout_guard` refuses, and its `detail` must reach the dialog intact.
+  const actual = jest.requireActual<typeof import("../../lib/branchTriageApi")>("../../lib/branchTriageApi");
+  mockDelete.mockImplementation(actual.deleteBranchTriage);
+  const refusal = "Kept /wt/b: It has uncommitted or untracked changes that exist nowhere else.";
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = jest.fn().mockResolvedValue({
+    ok: false,
+    status: 400,
+    statusText: "Bad Request",
+    text: async () => JSON.stringify({ detail: refusal }),
+  }) as unknown as typeof fetch;
+
+  const { onClose } = renderModal([
+    entry({
+      name: "feature/b",
+      ahead: 0,
+      worktrees: [{ path: "/wt/b", label: "b", dirty: false, is_primary: false }],
+    }),
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+
+  expect(await screen.findByText((_, el) => el?.tagName === "LI" && el.textContent?.includes(refusal) === true)).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  globalThis.fetch = realFetch;
+});

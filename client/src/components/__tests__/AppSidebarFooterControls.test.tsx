@@ -345,6 +345,7 @@ test("each control is one tab stop, and the rows gain none", async () => {
     "Editor",
     "Studios",
     "Parallel Execution",
+    "Machine",
     "MCP Gateway",
     "Workspaces",
     "Memory",

@@ -82,6 +82,7 @@ class UiPage(StrEnum):
     STUDIO = "studio"
     EDITOR = "editor"
     QUEUE = "queue"
+    MACHINE = "machine"
     BRANCH_TRIAGE = "branch-triage"
     MCP = "mcp"
     MEMORY = "memory"
@@ -432,7 +433,7 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "from the line. Its process is not stopped — a holder keeps running "
             "unaccounted, and a live waiter queues again at the back.",
             CapacityReleaseArgs,
-            offered="on the Queue page's Machine view, for a lease it lists (navigate.page queue)",
+            offered="on the Machine page, for a lease it lists (navigate.page machine)",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,

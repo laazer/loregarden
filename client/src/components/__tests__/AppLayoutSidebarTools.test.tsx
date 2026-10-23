@@ -86,6 +86,7 @@ const TOOL_LABELS = [
   "Editor",
   "Studios",
   "Parallel Execution",
+  "Machine",
   "MCP Gateway",
   "Workspaces",
   "Memory",

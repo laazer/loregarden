@@ -57,6 +57,7 @@ class McpTool(StrEnum):
     CREATE_MEMORY_RELATION = "loregarden_create_memory_relation"
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
+    DISK_USAGE = "loregarden_disk_usage"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
     SURVEY_QUEUE = "loregarden_survey_queue"
@@ -242,6 +243,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
+        # Names and sizes from the disk scan; `rescan` walks metadata only.
+        McpTool.DISK_USAGE,
         McpTool.DOCKER_CAPACITY_STATUS,
         McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,

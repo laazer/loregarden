@@ -19,6 +19,7 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.devdocs_tool import search_reference_tool
+from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
     docker_capacity_status_tool,
     force_release_docker_lease_tool,
@@ -67,6 +68,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.CHECK_ORGANIZATION.value: check_organization,
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
     McpTool.DOCTOR.value: doctor,
+    McpTool.DISK_USAGE.value: disk_usage_tool,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
     McpTool.FETCH_REFERENCE.value: fetch_reference_tool,
