@@ -38,7 +38,6 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowStageDef,
-    Workspace,
 )
 from loregarden.services.artifact_service import (
     record_blocking_issue,
@@ -104,6 +103,7 @@ from loregarden.services.stage_transient_retry import (
     transient_failure_reason,
 )
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.usage_limit_wait import record_usage_limit_wait, resume_note
 from loregarden.services.usage_limits import (
     UsageLimit,
@@ -444,7 +444,7 @@ def complete_run_tail(
         payload={"status": status.value},
     )
     if advance_workflow:
-        workspace = orch.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(orch.session, ticket)
         if workspace:
             refresh_execution_artifacts(
                 orch.session,
@@ -818,7 +818,7 @@ def _rearmed_for_transient_retry(
     if not reason:
         return False
 
-    workspace = orch.session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(orch.session, ticket)
     if workspace is None:
         # No workspace, no profile, no budget to read. Fall through to the
         # ordinary failure branches rather than retrying against a guess.

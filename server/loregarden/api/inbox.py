@@ -25,6 +25,7 @@ from loregarden.services.prepared_action import (
     run_prepared_action,
 )
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import ValidationError
 from sqlmodel import Session
 
@@ -147,7 +148,7 @@ def _runnable_human_action(
     ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
     if not ticket:
         raise HTTPException(400, "Approval is not attached to a ticket")
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise HTTPException(400, "Ticket has no workspace")
     return approval, action, ticket, workspace

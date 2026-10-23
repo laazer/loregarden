@@ -54,6 +54,7 @@ from loregarden.services.publish_tree import published_branch
 from loregarden.services.root_integration_sync import take_integration_branch
 from loregarden.services.target_branch import TargetBranchError, integration_branch_for
 from loregarden.services.ticket_ids import resolve as resolve_external_id
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
@@ -468,7 +469,7 @@ class CIService:
         result = self.latest_result(ticket.id)
         if result is None:
             return AutoFixOutcome(None, AutoFixRefusal.NOT_FAILING, "no CI result for this ticket")
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if workspace is None:
             return AutoFixOutcome(
                 None, AutoFixRefusal.DISPATCH_FAILED, "the ticket has no workspace"

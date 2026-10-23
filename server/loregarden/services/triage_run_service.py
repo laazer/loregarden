@@ -46,6 +46,7 @@ from loregarden.services.run_capacity import host_capacity_for_run
 from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.run_service import fail_stale_handoff_runs
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -129,7 +130,7 @@ class TriageTurnExecutor:
         self.session = session
 
     def execute(self, run: AgentRun, ticket: Ticket) -> None:
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
             self._finish(
                 run, ticket, status=RunStatus.FAILED, reply="", stderr="Ticket workspace not found"

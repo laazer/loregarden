@@ -10,17 +10,18 @@ own branch. A new tip (a person's merge, a push) starts a fresh budget.
 
 from __future__ import annotations
 
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import Ticket
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.integration_merge_budget import merge_turn_refusal
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
 
 def ticket_merge_turn_refusal(session: Session, ticket: Ticket) -> str:
     """Why no merge turn may run on this ticket's branch now; "" when one may."""
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return "the ticket has no workspace"
     branch = resolve_ticket_branch(ticket)

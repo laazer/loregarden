@@ -69,6 +69,7 @@ import type {
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
+  StudioAgentUpdateBody,
   StudioAgentVersion,
   StudioMcpToolGuide,
   StudioExitActionRequirementCatalog,
@@ -660,7 +661,7 @@ export const api = {
   studioAgent: (slug: string) => request<StudioAgent>(`/api/studio/agents/${slug}`),
   createStudioAgent: (body: Partial<StudioAgent> & { slug: string; name: string }) =>
     request<StudioAgent>("/api/studio/agents", { method: "POST", body: JSON.stringify(body) }),
-  updateStudioAgent: (slug: string, body: Partial<StudioAgent>) =>
+  updateStudioAgent: (slug: string, body: StudioAgentUpdateBody) =>
     request<StudioAgent>(`/api/studio/agents/${slug}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteStudioAgent: (slug: string) =>
     request<{ ok: boolean }>(`/api/studio/agents/${slug}`, { method: "DELETE" }),

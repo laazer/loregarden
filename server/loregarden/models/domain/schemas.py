@@ -981,6 +981,19 @@ class StudioAgentCreate(SQLModel):
 
 
 class StudioAgentUpdate(SQLModel):
+    # Rejects unknown fields rather than ignoring them. Pydantic's default of
+    # dropping extras is what let this PATCH answer 200 to a `slug` change it
+    # had silently discarded, and to any other key nobody declared (`role_bdy`
+    # is the realistic shape). `slug` is declared *as well as* forbidding
+    # extras, on purpose: forbidding alone would 422 every save the Studio
+    # editor makes, and declaring alone would leave the next typo silent.
+    model_config = ConfigDict(extra="forbid")
+
+    #: Accepted so an echoed id is a no-op, never written to the agent row. The
+    #: slug is a by-string key with no foreign key and no single owner, so a
+    #: rename either rewrites run history or orphans it; `update_agent` raises
+    #: `AgentSlugImmutable` for a value that differs after `slugify`.
+    slug: str | None = None
     name: str | None = None
     description: str | None = None
     role_body: str | None = None

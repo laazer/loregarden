@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, Response
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     StudioAgentCreate,
@@ -13,12 +14,13 @@ from loregarden.models.domain import (
     StudioWorkflowUpdate,
 )
 from loregarden.services.exit_actions import requirement_catalog
+from loregarden.services.studio_agent_references import AgentDeleteRefused
 from loregarden.services.studio_drift import (
     StageRemovalNeedsConfirmation,
     detect_all_drift,
     detect_drift,
 )
-from loregarden.services.studio_service import StudioService
+from loregarden.services.studio_service import AgentSlugImmutable, StudioService
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -94,17 +96,38 @@ def update_studio_agent(
 ) -> dict:
     try:
         return StudioService(session).update_agent(slug, body).model_dump()
+    except AgentSlugImmutable as exc:
+        # Before the generic ValueError arm below, which answers 404 — "agent
+        # not found" is the wrong report for an agent that was found and whose
+        # rename was refused. 422, and a sentence rather than pydantic's
+        # extra_forbidden list: `http.ts` lifts `detail` into the operator's
+        # toast only when it is a str.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.delete("/agents/{slug}")
-def delete_studio_agent(slug: str, session: Session = Depends(get_session)) -> dict:
+def delete_studio_agent(slug: str, session: Session = Depends(get_session)) -> Response:
     try:
         StudioService(session).delete_agent(slug)
+    except AgentDeleteRefused as exc:
+        # A JSONResponse rather than an HTTPException, which serialises its body
+        # as exactly {"detail": ...}: the operator's toast needs the sentence
+        # and the panel notice needs the structured references, and one
+        # HTTPException carries only one of the two. 409 on the
+        # StageRemovalNeedsConfirmation precedent — the request is well-formed
+        # and the caller may proceed once told the cost.
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": str(exc),
+                "references": exc.references.model_dump(mode="json"),
+            },
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"ok": True}
+    return JSONResponse(content={"ok": True})
 
 
 @router.get("/skills")

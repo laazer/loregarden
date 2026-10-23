@@ -58,6 +58,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.stage_retry_budget import charge_fanout_dispatch
 from loregarden.services.target_branch import resolve_target_branch
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -138,7 +139,7 @@ def launch_fanout(
     if not 2 <= attempt_count <= MAX_ATTEMPTS:
         raise FanoutError(f"attempt_count must be between 2 and {MAX_ATTEMPTS}")
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise FanoutError("Workspace not found")
 

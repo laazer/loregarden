@@ -44,6 +44,7 @@ from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import publish_and_settle
 from loregarden.services.workflow_state import parse_stage_map
 
@@ -221,10 +222,11 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
 
     For a ticket that finished before landing ran at the terminal stage (717
     was the first), or one closed by hand. Idempotent: an already-landed
-    branch records its tip and merges nothing. A root publishes its work.
+    branch merges nothing and records the first commit on the target that
+    contained it. A root publishes its work.
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"Ticket {ticket.external_id} has no workspace to land in")
     parked = parked_on_failed_landing(session, ticket)
@@ -265,7 +267,7 @@ def _merge_pull_request(session: Session, svc, arguments: dict[str, Any]) -> str
     stands at the call. A failed cleanup step is in the result, not an error.
     """
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"Ticket {ticket.external_id} has no workspace")
     head_sha = arguments.get("head_sha") or ""
@@ -357,7 +359,7 @@ def _supersede_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
         raise ValueError("A reason is required — it is what the closed ticket will say.")
 
     original = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    workspace = session.get(Workspace, original.workspace_id)
+    workspace = workspace_for_ticket(session, original)
     if workspace is None:
         raise ValueError("Ticket workspace not found.")
 

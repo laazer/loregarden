@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_branch import validate_branch_name
 from loregarden.services.git_merge_noco import (
     BranchTips,
@@ -49,7 +50,6 @@ from loregarden.services.integration_conflict_card import (
     report_integration_conflict,
 )
 from loregarden.services.integration_merge_agent import merge_base_by_agent
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.work_landed import landing_commit
 from sqlmodel import Session
@@ -140,7 +140,7 @@ def integration_branch_for(root: Ticket) -> str:
 
 def target_branch_name(session: Session, ticket: Ticket, workspace: Workspace) -> str:
     """The branch ``ticket``'s work lands on, without touching the repository."""
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     root = subtree_root(session, ticket)
     if root.id == ticket.id:
         return base
@@ -286,7 +286,7 @@ def resolve_target_branch(
     a person. ``merge_conflicts=False`` skips the turn, for a caller that can
     run on the stale branch rather than wait (a chat turn).
     """
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     target = target_branch_name(session, ticket, workspace)
     if target != base:
         root = subtree_root(session, ticket)

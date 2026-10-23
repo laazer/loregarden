@@ -66,6 +66,7 @@ from loregarden.services.studio_routing import (
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
@@ -152,7 +153,7 @@ class OrchestrationCallbackService:
             # (an API or MCP override) still wins over the workspace default.
             from loregarden.services.orchestration_profile import resolve_orchestration_profile
 
-            workspace = self.session.get(Workspace, ticket.workspace_id)
+            workspace = workspace_for_ticket(self.session, ticket)
             if not workspace:
                 raise ValueError("Workspace not found")
             profile = resolve_orchestration_profile(workspace)

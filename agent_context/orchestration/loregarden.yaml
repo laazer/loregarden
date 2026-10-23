@@ -109,6 +109,31 @@ git:
   # settings; until it is, the merge step fails and says so on a card.
   tree_open_pr: true
   tree_auto_merge: true
+  # Arming the guard lg-milestone-that-1238 built for exactly this shape and
+  # which had never executed once: `land_verify_commands` defaults to [] (the
+  # documented off state) and no orchestration profile had ever set it, so
+  # `grep -rn land_verify agent_context/orchestration/` matched nothing. That is
+  # the measured cause of all three recurrences of "a ticket is done, its tests
+  # landed, its implementation is missing" (lg-milestone-that-1419). The suite
+  # runs against the CANDIDATE merge commit, in a throwaway detached worktree,
+  # between `commit-tree` and `update-ref` — so a red tree never moves a ref.
+  #
+  # The command's FORM is the constraint, and all three parts of it are measured:
+  #
+  # - `run_verify_command` uses `shlex.split` and `subprocess.run` with NO
+  #   shell, so `cd server && …` and `bash -c …` cannot execute at all.
+  # - `_verify_candidate` runs with cwd at the ROOT of a fresh
+  #   `worktree add --detach` tree, which has no `server/.venv`. `--directory
+  #   server` is what makes uv resolve the project there.
+  # - `_holding` already takes the capacity lease for the whole command list, so
+  #   wrapping this in `capacity-run.sh` would double-book the ledger.
+  #
+  # `land_verify_capacity_footprint` keeps its `heavy` default, and
+  # LAND_VERIFY_TIMEOUT_SECONDS (1800) is above the measured 901s suite — a
+  # timeout is UNAVAILABLE, and UNAVAILABLE refuses the land. `default.yaml`
+  # keeps its empty list, so no other workspace changes behaviour.
+  land_verify_commands:
+    - uv run --directory server pytest -q -n auto
   # A branch per acting turn, pushed, is a branch per conversation accumulating
   # forever. The sweep removes one only once its content is in the base branch —
   # the bar at which the ref was keeping nothing reachable — and leaves anything

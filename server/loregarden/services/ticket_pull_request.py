@@ -25,10 +25,10 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.git_subprocess import run_gh
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.target_branch import (
     TargetBranchError,
@@ -240,7 +240,7 @@ def _ships_with(session: Session, ticket: Ticket, workspace: Workspace) -> str:
     except TargetBranchError:
         logger.warning("No landing target for %s", ticket.external_id, exc_info=True)
         return ""
-    return "" if target == resolve_orchestration_profile(workspace).git.base_branch else target
+    return "" if target == base_branch(workspace) else target
 
 
 def ticket_pull_request(

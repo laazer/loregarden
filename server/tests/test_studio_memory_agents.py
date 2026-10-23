@@ -6,7 +6,7 @@ from loregarden.mcp.tool_ids import (
     mcp_tool_values,
 )
 from loregarden.models.domain import StudioAgent
-from loregarden.services.studio_service import studio_agent_config
+from loregarden.services.studio_agent_prompt import studio_agent_config
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 

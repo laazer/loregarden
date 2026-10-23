@@ -57,7 +57,11 @@ from loregarden.services.git_automation import (
     generated_body,
     publish_branch,
 )
-from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
+from loregarden.services.git_automation_config import (
+    base_branch,
+    enabled_steps,
+    resolve_git_automation,
+)
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
@@ -98,6 +102,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     repo_root = resolve_workspace_root(workspace)
     if subtree_root(session, ticket).id != ticket.id or not (repo_root / ".git").exists():
         return PublishOutcome(ok=True, branch="", skipped=True)
+    base = base_branch(workspace)
     integration = integration_branch_for(ticket)
     folded = fold_root_branch(repo_root, ticket, integration)
     if folded is not None and not folded.ok:
@@ -106,7 +111,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
             branch=integration,
             detail=f"the root's branch could not be folded into {integration}: {folded.detail}",
         )
-        _emit(session, ticket, resolve_git_automation(workspace, ticket).base_branch, failed)
+        _emit(session, ticket, base, failed)
         return failed
     branch, tip = published_branch(repo_root, ticket)
     if not tip:
@@ -115,12 +120,12 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
 
     config = resolve_git_automation(workspace, ticket)
-    base_sha = rev(repo_root, f"refs/heads/{config.base_branch}")
+    base_sha = rev(repo_root, f"refs/heads/{base}")
     try:
         already_there = work_is_on(repo_root, tip, base_sha)
     except RuntimeError as exc:
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
-        _emit(session, ticket, config.base_branch, failed)
+        _emit(session, ticket, base, failed)
         return failed
     if already_there:
         # A ticket that committed nothing, or work that reached the base by
@@ -134,7 +139,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     )
     if prepared.failure:
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=prepared.failure)
-        _emit(session, ticket, config.base_branch, failed)
+        _emit(session, ticket, base, failed)
         return failed
     result = publish_branch(repo_root, prepared.subject, chain)
     if result.ok and result.pr_url:
@@ -154,7 +159,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         session.add(ticket)
         session.commit()
         logger.info("Published %s at %s for %s", branch, tip[:12], ticket.external_id)
-    _emit(session, ticket, config.base_branch, outcome)
+    _emit(session, ticket, base, outcome)
     return outcome
 
 
@@ -214,7 +219,7 @@ def _settle_ux_card(session: Session, root: Ticket, section: TreeUxSection, pr_u
         close_missing_ux_answers(session, root)
 
 
-def _emit(session: Session, ticket: Ticket, base_branch: str, outcome: PublishOutcome) -> None:
+def _emit(session: Session, ticket: Ticket, base: str, outcome: PublishOutcome) -> None:
     event_bus.publish(
         session,
         EventType.TICKET_LANDED,
@@ -223,7 +228,7 @@ def _emit(session: Session, ticket: Ticket, base_branch: str, outcome: PublishOu
         payload={
             "ok": outcome.ok,
             "branch": outcome.branch,
-            "target": base_branch,
+            "target": base,
             "landed_sha": outcome.tip if outcome.ok else "",
             "pr_url": outcome.pr_url,
             "published": True,

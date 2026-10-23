@@ -14,10 +14,11 @@ from loregarden.core.workflow_loader import (
     PLAYTEST_SCENES_PLACEHOLDER,
     expand_gate_checklist,
 )
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import Ticket
 from loregarden.services.artifact_service import git_base_ref
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -46,7 +47,7 @@ def resolve_playtest_scenes(session: Session, ticket: Ticket) -> list[str] | Non
     base ref was unavailable, and the caller must keep the play-the-scenes step
     in generic form rather than dropping it.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return None
     repo_root = resolve_workspace_root(workspace)

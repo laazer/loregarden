@@ -47,15 +47,16 @@ from loregarden.services.cli_agent_runner import (
 )
 from loregarden.services.decomposition_service import DecompositionService, GenerateFn
 from loregarden.services.finalize_hierarchy import finalize_hierarchy
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_review import ensure_review_child
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.proposal_validator import ProposalValidationError
 from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import parse_stage_map
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -216,7 +217,7 @@ def _work_started(session: Session, ticket: Ticket) -> str:
     """
     if all(status == StageStatus.PENDING for status in _stage_statuses(session, ticket)):
         return ""
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return f"Workspace not found for ticket {ticket.external_id}."
     branch = resolve_ticket_branch(ticket)
@@ -236,7 +237,7 @@ def _own_commit_count(session: Session, ticket: Ticket, workspace: Workspace, br
     """
     repo_root = resolve_workspace_root(workspace)
     target = target_branch_name(session, ticket, workspace)
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     tips = read_branch_tips(repo_root, branch, target, base)
     if tips.error:
         raise ValueError(tips.error)
@@ -283,7 +284,7 @@ def _split(
 
 def _persist(session: Session, ticket: Ticket, children: list[HierarchyWorkItem]) -> list[str]:
     """Create the children under ``ticket``, chained so they run in proposal order."""
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"Workspace not found for ticket {ticket.external_id}")
     # Refs derive from the parent so a model-chosen slug cannot collide with a
@@ -303,7 +304,7 @@ def _invoke_split_model(session: Session, ticket: Ticket, prompt: str) -> str:
     stub = stub_response(TICKET_SPLIT_CLI_PROFILE)
     if stub is not None:
         return stub
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"Workspace not found for ticket {ticket.external_id}")
     return run_cli_agent_turn(

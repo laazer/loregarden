@@ -81,7 +81,7 @@ from loregarden.models.domain import (
     Workspace,
     Worktree,
 )
-from loregarden.services import queue_admission
+from loregarden.services import queue_admission, stage_retry_budget
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -103,6 +103,7 @@ from loregarden.services.stage_retry_budget import (
     record_reroute_exempt_dispatch,
     record_stage_dispatch,
     record_stage_retry_block,
+    resolve_stage_retry_budget,
     stage_retry_block_message,
 )
 from loregarden.services.workflow_state import initial_stages_json, set_stage_status
@@ -1654,3 +1655,146 @@ def test_a_park_refunds_one_dispatch_and_not_the_whole_counter(db_session: Sessi
             impact="Switch the worktree back and release this stage.",
         )
     assert count_stage_dispatches(db_session, ticket.id, "review") == 3
+
+
+# -- the dispatch-path read falls back instead of raising ----------------------
+#
+# lg-milestone-that-1215 R5. This read is the first profile read on every
+# standalone dispatch — `start_stage_execution` -> `start_run` ->
+# `evaluate_standalone_stage_dispatch` -> here — and it was unguarded, so a
+# `default.yaml` that will not parse refused the dispatch before any work began.
+#
+# That is not a judgement about the budget: nothing about an unreadable profile
+# says this stage has been retried too often. It also made the defect
+# lg-milestone-that-1215 closes unreachable on a real file — measured on this
+# branch, a corrupt profile raised here, at stage_retry_budget.py:662, and no run
+# was ever stamped — so the readable 400 the terminal-handoff route owes the
+# operator could only be reached with a mocked resolver.
+#
+# So this read falls back to the built-in budgets and says so once, in the log.
+# It deliberately does not reach the operator: the request it sits on already
+# ends in a visible 400 naming the same file, and `pushToast` dedupes by text
+# rather than by cause, so a second refusal would be a second toast for one
+# click. Two WARNINGs on one corrupt-profile request — this one and the branch
+# fallback — is the correct outcome.
+
+
+def _unreadable_profile(tmp_path: Path, content: str = "slug: default\nname: [unclosed\n"):
+    """A real `default.yaml` that will not parse, and the absolute path to it.
+
+    Written to disk and reached through `settings.repo_root` rather than by
+    patching a resolver, for the same reason `_profile_with_retry_budget` does
+    it: patching one import site pins *where* the profile is resolved instead of
+    *that* an unreadable one is survived. The workspaces these tests build have
+    unique slugs, so resolution falls through to `default.yaml`.
+    """
+    root = tmp_path / "agent_context" / "orchestration"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "default.yaml"
+    path.write_text(content, encoding="utf-8")
+    return mock.patch.object(settings, "repo_root", tmp_path), path.resolve()
+
+
+def _budget_warnings(caplog) -> list:
+    return [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING" and record.name == stage_retry_budget.__name__
+    ]
+
+
+def test_an_unreadable_profile_falls_back_to_the_built_in_budgets(
+    db_session: Session, tmp_path: Path, caplog
+):
+    """AC6. The default config, nothing raised, and one record that says why.
+
+    Field equality against `RetryBudgetConfig()` rather than an identity or a
+    truthiness check: a fallback that returned a *disabled* budget would satisfy
+    "did not raise" while quietly switching the runaway backstop off for every
+    workspace sharing the broken file — and measured on the live database
+    (2026-10-17), three of six workspaces share this one `default.yaml`.
+    """
+    ticket = _build_ticket(db_session)
+    repo_root, profile_path = _unreadable_profile(tmp_path)
+
+    with repo_root, caplog.at_level("WARNING"):
+        budget = resolve_stage_retry_budget(db_session, ticket)
+
+    assert budget.model_dump() == RetryBudgetConfig().model_dump(), (
+        f"the fallback is not the built-in default budget: {budget.model_dump()}"
+    )
+
+    records = _budget_warnings(caplog)
+    assert len(records) == 1, (
+        f"expected exactly one WARNING from the budget read, got "
+        f"{[r.getMessage() for r in records]}"
+    )
+    message = records[0].getMessage()
+    assert ticket.external_id in message, (
+        f"the record does not say which ticket's dispatch ran on the defaults: {message}"
+    )
+    assert str(profile_path) in message, (
+        f"the record does not name the file that will not parse, which is the only "
+        f"thing in it an operator can act on: {message}"
+    )
+    assert "built-in default budgets" in message, (
+        f"the record does not say the budgets are a stand-in, only that a read failed "
+        f"— which reads exactly like a configured answer: {message}"
+    )
+    assert "could not be read as an orchestration profile" in message, (
+        f"the caught exception's own text was dropped: {message}"
+    )
+
+
+def test_a_readable_profile_is_still_honoured_and_logs_nothing(
+    db_session: Session, tmp_path: Path, caplog
+):
+    """AC6's inverse, which nothing above measures.
+
+    A fallback written unconditionally — or a WARNING logged on every read —
+    passes the test above and silently replaces every workspace's configured
+    budget with the default. Then the record that exists to say "these are not
+    your numbers" is on the path where the numbers *were* read, and it means
+    nothing anywhere.
+    """
+    ticket = _build_ticket(db_session)
+    configured = _profile_with_retry_budget(
+        tmp_path, "  enabled: true\n  max_attempts_per_stage: 2\n"
+    )
+
+    with configured, caplog.at_level("WARNING"):
+        budget = resolve_stage_retry_budget(db_session, ticket)
+
+    assert budget.enabled is True
+    assert budget.max_attempts_per_stage == 2, (
+        f"the workspace's configured budget was replaced by the default: {budget.model_dump()}"
+    )
+    assert _budget_warnings(caplog) == [], (
+        "a dispatch whose profile read perfectly well claimed it ran on the built-in "
+        f"defaults: {[record.getMessage() for record in _budget_warnings(caplog)]}"
+    )
+
+
+def test_an_unreadable_profile_does_not_refuse_the_dispatch(
+    db_session: Session, tmp_path: Path, caplog
+):
+    """R5's reachability claim, measured through the dispatch rather than the read.
+
+    This is the fact the terminal-handoff route's whole settle path depends on:
+    with the read guarded, a corrupt profile no longer refuses at dispatch, so a
+    run IS stamped and the failure lands at the handoff where the defect lives.
+    A fallback that returned the right config but left
+    `evaluate_standalone_stage_dispatch` raising for some other reason would pass
+    both tests above and leave lg-milestone-that-1215's AC7 unreachable.
+    """
+    ticket = _build_ticket(db_session)
+    repo_root, _ = _unreadable_profile(tmp_path)
+    service = RunService(db_session)
+
+    with repo_root, caplog.at_level("WARNING"):
+        run = service.start_stage_execution(ticket, stage_key="review")
+
+    assert run is not None, "the dispatch was refused on a profile that says nothing about it"
+    assert count_stage_dispatches(db_session, ticket.id, "review") == 1, (
+        "the dispatch was not charged, so the breaker cannot see it at all"
+    )

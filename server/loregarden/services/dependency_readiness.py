@@ -31,9 +31,9 @@ from enum import Enum
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, TicketState, Workspace
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.work_landed import landing_commit
@@ -114,7 +114,7 @@ def unmet_prerequisites_for_start(
     rows = session.exec(select(Ticket).where(Ticket.id.in_(prerequisite_ids))).all()
 
     repo_root = resolve_workspace_root(workspace)
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     target = target_branch_name(session, ticket, workspace)
 
     unmet: list[UnmetPrerequisite] = []

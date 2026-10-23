@@ -19,6 +19,7 @@ from loregarden.models.domain import BaxterChatScope, BaxterChatSession, Ticket,
 from loregarden.services.initiative_plan_service import plan_view
 from loregarden.services.initiative_planner_service import MAX_PLAN_CHARS, plan_digest
 from loregarden.services.initiative_service import load_initiative, milestones_under
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, select
@@ -75,9 +76,7 @@ def _checked_out(workspace: Workspace | None) -> bool:
 def _initiative_host(session: Session, initiative_id: str) -> Workspace | None:
     """The first of the initiative's workspaces checked out here, so the turn can read its code."""
     for milestone in milestones_under(session, initiative_id):
-        workspace = (
-            session.get(Workspace, milestone.workspace_id) if milestone.workspace_id else None
-        )
+        workspace = workspace_for_ticket(session, milestone)
         if workspace is not None and workspace.archived_at is None and _checked_out(workspace):
             return workspace
     return None
