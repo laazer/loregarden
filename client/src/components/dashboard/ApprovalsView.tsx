@@ -1,27 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
-import type { ApprovalResolutionAction } from "../../api/chatTypes";
-import { api, type Approval, type TicketDetail } from "../../api/client";
+import { type Approval, type TicketDetail } from "../../api/client";
 import {
   checklistCoversCriteria,
   hasHumanCriteria,
-  impactWithoutCriteria,
 } from "../../utils/approvalCriteria";
 import { describeError } from "../../state/toastStore";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { navigateToTicketTab } from "../../lib/useAppNavigation";
-import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { Button } from "../ui/Button";
 import { ApprovalHistoryList } from "./ApprovalHistoryList";
-
-function kindLabel(approval: Approval): string {
-  if (approval.kind === "workflow_gate") return "Stage sign-off";
-  if (approval.kind === "rework_pause") return "Rework paused";
-  if (approval.kind === "cli_permission") return "Agent permission";
-  if (approval.kind === "stage_park") return "Environment override";
-  return "Agent question";
-}
+import { useResolveApproval, useTicketApprovals } from "../../hooks/useTicketApprovals";
+import { ApprovalRow } from "./ApprovalRow";
 
 /**
  * The human side of a ticket: what has to be true before sign-off, and the
@@ -29,33 +18,8 @@ function kindLabel(approval: Approval): string {
  * testing checklist is readable instead of clamped into the inbox rail.
  */
 export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
-  const qc = useQueryClient();
-  const ticketId = ticket?.id;
-
-  const approvals = useQuery({
-    queryKey: ["approvals", ticketId],
-    queryFn: () => api.approvals(ticketId),
-    refetchInterval: 5000,
-    enabled: !!ticketId,
-  });
-
-  const resolveApproval = useMutation({
-    meta: { errorTitle: "Resolve approval" },
-    mutationFn: ({
-      id,
-      action,
-      payload,
-    }: {
-      id: string;
-      action: ApprovalResolutionAction;
-      payload?: ApprovalResolvePayload;
-    }) => api.resolveApproval(id, { action, ...payload }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["approvals"] });
-      qc.invalidateQueries({ queryKey: ["approval-history"] });
-      qc.invalidateQueries({ queryKey: ["ticket"] });
-    },
-  });
+  const approvals = useTicketApprovals(ticket?.id);
+  const resolveApproval = useResolveApproval();
 
   if (!ticket) {
     return <div className="approvals-view-empty">No ticket selected</div>;
@@ -181,46 +145,6 @@ function NothingWaiting({ ticket }: { ticket: TicketDetail }) {
       >
         Open the Timeline
       </Button>
-    </div>
-  );
-}
-
-/**
- * The scope hint matters here: the approvals list covers the ticket's whole
- * subtree, so a card can belong to a child ticket rather than the open one.
- */
-function ApprovalRow({
-  approval,
-  ticketId,
-  criteria,
-  isSubmitting,
-  onResolve,
-}: {
-  approval: Approval;
-  ticketId: string;
-  /** Listed above the cards — what the brief and the checklist need not restate. */
-  criteria: string[];
-  isSubmitting: boolean;
-  onResolve: (action: ApprovalResolutionAction, payload?: ApprovalResolvePayload) => void;
-}) {
-  const deduped = criteria.length > 0;
-  return (
-    <div>
-      {approval.ticket_id && approval.ticket_id !== ticketId && approval.ticket_external_id && (
-        <div className="approvals-view-scope-hint">
-          {kindLabel(approval)} · {approval.ticket_external_id}
-        </div>
-      )}
-      <ApprovalCard
-        approval={approval}
-        impactText={deduped ? impactWithoutCriteria(approval.impact) : undefined}
-        clampBrief
-        isSubmitting={isSubmitting}
-        onApprove={(payload) => onResolve("approve", payload)}
-        onRecheck={(payload) => onResolve("recheck", payload)}
-        onReject={(payload) => onResolve("reject", payload)}
-        onIgnore={(reason) => onResolve("ignore", { response: reason })}
-      />
     </div>
   );
 }
