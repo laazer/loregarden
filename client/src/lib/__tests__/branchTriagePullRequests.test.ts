@@ -11,6 +11,7 @@ function local(name: string): BranchTriageLocalEntry {
     is_current: false,
     is_base: false,
     squash_merged: false,
+    commits_only_here: 0,
     ahead: 1,
     behind: 0,
     dirty: false,

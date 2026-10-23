@@ -14,10 +14,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import Workspace, Worktree, WorktreeState
-from loregarden.services.branch_triage_service import delete_branch, remove_branch_worktree
+from loregarden.services.branch_triage_service import (
+    branch_triage_snapshot,
+    delete_branch,
+    remove_branch_worktree,
+)
 from loregarden.services.checkout_guard import checkout_removal_refusal
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.worktree_service import WorktreeService
@@ -207,3 +212,111 @@ def test_cleanup_refuses_a_sibling_whose_name_only_starts_like_the_base(isolated
         assert service.cleanup_worktree(row) is False
 
     assert (sibling / "keep.txt").exists()
+
+
+# --- deleting a branch never drops commits that exist nowhere else ------------------------
+
+
+def _commit_on(repo: Path, branch: str, name: str) -> str:
+    exists = _git(repo, "branch", "--list", branch).strip() != ""
+    _git(repo, "checkout", "-q", *([branch] if exists else ["-b", branch]))
+    _write(repo / name, name)
+    _git(repo, "add", name)
+    _git(repo, "commit", "-q", "-m", name)
+    sha = _git(repo, "rev-parse", "HEAD").strip()
+    _git(repo, "checkout", "-q", "main")
+    return sha
+
+
+def _branch_exists(repo: Path, branch: str) -> bool:
+    return _git(repo, "branch", "--list", branch).strip() != ""
+
+
+def test_commits_only_this_branch_has_are_refused_and_counted(workspace, repo) -> None:
+    _commit_on(repo, "feature", "a.py")
+    _commit_on(repo, "feature", "b.py")
+
+    with pytest.raises(ValueError, match="2 commits that no other branch, tag or remote has"):
+        delete_branch(workspace, "feature")
+
+    assert _branch_exists(repo, "feature")
+
+
+def test_refusing_lost_commits_comes_before_removing_a_worktree(workspace, repo) -> None:
+    tree = _add_worktree(repo, "feature")
+    _write(tree / "work.py")
+    _git(tree, "add", "work.py")
+    _git(tree, "commit", "-q", "-m", "work")
+
+    with pytest.raises(ValueError, match="1 commit that no other"):
+        delete_branch(workspace, "feature", remove_worktrees=True)
+
+    assert tree.exists()
+
+
+def test_discarding_takes_the_explicit_force(workspace, repo) -> None:
+    _commit_on(repo, "feature", "a.py")
+
+    assert delete_branch(workspace, "feature", force=True) is True
+
+    assert not _branch_exists(repo, "feature")
+
+
+def test_a_pushed_branch_goes_without_force(workspace, repo) -> None:
+    sha = _commit_on(repo, "feature", "a.py")
+    # What `git push` leaves behind: a remote-tracking ref at the same commit.
+    _git(repo, "update-ref", "refs/remotes/origin/feature", sha)
+
+    assert delete_branch(workspace, "feature") is True
+
+
+def test_a_branch_whose_commits_another_branch_has_goes_without_force(workspace, repo) -> None:
+    sha = _commit_on(repo, "feature", "a.py")
+    _git(repo, "branch", "keeper", sha)
+
+    assert delete_branch(workspace, "feature") is True
+    assert _branch_exists(repo, "keeper")
+
+
+def test_a_squash_merged_branch_goes_without_force(workspace, repo) -> None:
+    _commit_on(repo, "feature", "a.py")
+    _git(repo, "merge", "-q", "--squash", "feature")
+    _git(repo, "commit", "-q", "-m", "squash feature")
+
+    assert delete_branch(workspace, "feature") is True
+
+
+def test_the_snapshot_says_how_many_commits_a_delete_would_lose(
+    isolated_db, workspace, repo
+) -> None:
+    _commit_on(repo, "unpushed", "a.py")
+    _commit_on(repo, "unpushed", "b.py")
+    pushed = _commit_on(repo, "pushed", "c.py")
+    _git(repo, "update-ref", "refs/remotes/origin/pushed", pushed)
+    _commit_on(repo, "squashed", "d.py")
+    _git(repo, "merge", "-q", "--squash", "squashed")
+    _git(repo, "commit", "-q", "-m", "squash")
+
+    with Session(isolated_db) as session:
+        snapshot = branch_triage_snapshot(session, workspace)
+
+    counts = {b["name"]: b["commits_only_here"] for b in snapshot["branches"]}
+    assert counts["unpushed"] == 2
+    assert counts["pushed"] == 0
+    assert counts["squashed"] == 0
+    assert counts["main"] == 0
+
+
+def test_a_count_git_cannot_give_keeps_the_branch(workspace, repo) -> None:
+    """Unknown is not zero: a failed count refuses, like every other guard here."""
+    _commit_on(repo, "feature", "a.py")
+
+    with (
+        mock.patch(
+            "loregarden.services.branch_triage_service.commits_only_here", return_value=None
+        ),
+        pytest.raises(ValueError, match="Could not tell"),
+    ):
+        delete_branch(workspace, "feature")
+
+    assert _branch_exists(repo, "feature")

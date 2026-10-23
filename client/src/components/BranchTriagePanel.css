@@ -228,6 +228,17 @@ a.branch-triage-badge:hover {
   margin-top: 12px;
 }
 
+.branch-delete-confirm-discard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--amb) 45%, var(--bd));
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 .branch-delete-confirm-path-list {
   margin: 0;
   padding: 0;

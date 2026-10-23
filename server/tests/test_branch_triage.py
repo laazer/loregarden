@@ -198,7 +198,7 @@ def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
     )
     subprocess.run(["git", "checkout", "main"], cwd=triage_repo, check=True, capture_output=True)
 
-    with pytest.raises(ValueError, match="not fully merged"):
+    with pytest.raises(ValueError, match="1 commit that no other branch, tag or remote has"):
         delete_branch(triage_workspace, "feature/unmerged", force=False)
 
     delete_branch(triage_workspace, "feature/unmerged", force=True)
