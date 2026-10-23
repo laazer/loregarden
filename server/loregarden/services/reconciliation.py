@@ -141,8 +141,8 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.
     SweepStep("scan_workflow_monitor", monitor_sweep),
-    # Before the block settler, so a ticket an exhausted gate parked is blocked
-    # and then given its kind in the same pass (lg-milestone-that-1432).
+    # Blocks, and settles, the tickets an exhausted gate parked before its
+    # writer blocked them (lg-milestone-that-1432).
     _invariant(EXHAUSTED_GATES_BLOCK),
     # After the settlers, because they are what writes most of the harness
     # blocks this classifies: a lease expiry settled two steps up gets its

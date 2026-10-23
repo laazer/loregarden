@@ -113,6 +113,7 @@ def test_blocking_it_blocks_ticket_and_stage_with_the_pointer(db_session: Sessio
     assert parked.state == TicketState.BLOCKED
     assert _stage_status(db_session, parked) == StageStatus.BLOCKED
     assert parked.blocking_issues == PARKED_POINTER.format(stage=STAGE)
+    assert parked.block_kind is not None, "the block is settled, not left for a later sweep"
     assert parked_by_gate(db_session) == [], "a blocked ticket is no longer parked"
 
 

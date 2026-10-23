@@ -7,9 +7,8 @@ stage with nothing scheduled: 36 orchestration runs ended that way, and two
 tickets were still parked when it was fixed, the older for two months
 (lg-milestone-that-1216 was the case that surfaced it). The writer now blocks
 through `OrchestrationCallbackService.block_ticket`; this finds the rows it left
-behind and blocks them the same way, so the operator sees the block and a
-requeue runs the stage again. The block's kind is recorded by the
-`every_block_is_settled` invariant on the same pass.
+behind and blocks them the same way, settled with a kind and no repair turn,
+so the operator sees the block and a requeue runs the stage again.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.services.block_settlement import settle_block
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_state_service import InvalidTicketTransition, choose
 from loregarden.services.workflow_service import resolve_ticket_stages
@@ -116,6 +116,18 @@ def block_parked(session: Session, parked: list[ParkedTicket]) -> int:
         ticket.blocking_issues = PARKED_POINTER.format(stage=stage)
         ticket.next_status = "Blocked"
         session.add(ticket)
+        settle_block(
+            session,
+            ticket,
+            stage_key=stage,
+            message=ticket.blocking_issues,
+            instance=instance,
+            stages=stages,
+            repairable=False,
+            no_repair_reason=(
+                "the gate's automatic fixes were spent before this ticket was parked"
+            ),
+        )
         moved += 1
     session.commit()
     return moved

@@ -318,6 +318,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/gate_recovery.py:_block_after_gate_failure": (
         "delegates: orchestration_callbacks.block_ticket"
     ),
+    "services/gate_parked_sweep.py:block_parked": "settles",
     "services/orchestration_callbacks.py:pause_for_rework_decision": (
         "delegates: orchestration_callbacks.block_ticket"
     ),
