@@ -663,8 +663,9 @@ class WorktreeService:
         try:
             worktree_path = Path(worktree.worktree_path)
 
-            # Verify path is within worktree base directory
-            if not str(worktree_path).startswith(str(self.worktree_base)):
+            # Verify path is within worktree base directory. Resolved and compared
+            # by path parts: a string prefix let a sibling like `.worktrees-x` pass.
+            if not worktree_path.resolve().is_relative_to(self.worktree_base.resolve()):
                 logger.error(f"Worktree path outside base: {worktree_path}")
                 return False
 
