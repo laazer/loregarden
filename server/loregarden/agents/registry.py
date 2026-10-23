@@ -206,7 +206,8 @@ AGENTS: dict[str, dict] = {
 
 
 def get_agent(agent_id: str) -> dict | None:
-    from loregarden.services.studio_service import load_role_body, load_studio_agent_config
+    from loregarden.services.studio_agent_config import load_role_body
+    from loregarden.services.studio_agent_prompt import load_studio_agent_config
 
     # The DB (studio_agents) is the source of truth. seed_builtin_agents seeds every
     # registry built-in on startup, so in production this always resolves here.

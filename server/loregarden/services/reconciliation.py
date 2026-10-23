@@ -49,8 +49,10 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
+    EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
     HELD_TICKETS_RESUME,
+    LAND_VERIFICATION_RAN,
     LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
@@ -120,6 +122,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_orphaned_agent_runs", settle_orphaned_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
+    # Before `reconcile_lanes`, and that order is the whole point. The lane
+    # sweep *repairs* a ghost lane already — quietly, as backlog — so running
+    # this after it would mean the detector never saw one and a DEFECT re-entry
+    # was never reported. Detection has to get there first (775).
+    _invariant(EVERY_BUSY_LANE_HAS_AN_OCCUPANT),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     # Periodic by the same rule: it selects only tickets with no agent run and
     # no orchestration behind them. It sits after the settlers so a stage they
@@ -192,6 +199,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # a later one; last overall, so every settler and landing above has run.
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
+    # Two hand repairs failed to prevent the next instance of "a ticket is done,
+    # its tests landed, its implementation is missing" (lg-milestone-that-1419).
+    # Report-only and bounded by its own `since`: it reads R3's land-verification
+    # receipt, never a suite — the tick is 30s and the suite is 901s.
+    _invariant(LAND_VERIFICATION_RAN),
 )
 
 

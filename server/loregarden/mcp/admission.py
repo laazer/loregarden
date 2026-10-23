@@ -26,11 +26,11 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     Ticket,
-    Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.queue_admission import QueueAdmissionService, Reservation
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 
 
 def queued_response(reservation: Reservation, **extra: Any) -> str:
@@ -139,7 +139,7 @@ def start_orchestration_admitted(
             # would idle capacity for work that is already done or running.
             return Reservation(admitted=True, message="Replayed by idempotency key"), existing
 
-    ws = session.get(Workspace, ticket.workspace_id)
+    ws = workspace_for_ticket(session, ticket)
     if not ws:
         raise ValueError("Workspace not found")
     profile = resolve_orchestration_profile(ws)

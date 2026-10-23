@@ -21,22 +21,30 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
     describe_signing,
+    first_containing,
     is_ancestor,
     merge_preview,
     merge_without_checkout,
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.land_verification import (
+    LandVerifier,
+    VerifyOutcome,
+    land_verifier,
+    record_land_verification,
+)
 from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
     target_branch_name,
@@ -77,76 +85,166 @@ class LandResult:
         return bool(self.conflicted_files)
 
 
+@dataclass
+class _Landing:
+    """What this call did, as the one receipt writer needs to see it.
+
+    Filled in as `land_ticket` goes, read once on the way out. It exists because
+    the receipt has to be written from a single place (lg-milestone-that-1419)
+    and `land_ticket` has several exits that are landings and several that are
+    not.
+    """
+
+    branch: str
+    target: str
+    #: Set by `_record`: a landing was stamped on the ticket this pass. An
+    #: idempotent re-land does not stamp one, and must not add a second row.
+    recorded_sha: str = ""
+    #: The verifier, once one exists. `None` on every exit that never reached
+    #: `merge_without_checkout` — no repository, no branch, uncommitted work, a
+    #: base target, a refresh failure.
+    verifier: LandVerifier | None = None
+
+    @property
+    def verdict(self) -> tuple[str, VerifyOutcome] | None:
+        return self.verifier.verdict if self.verifier is not None else None
+
+    @property
+    def is_a_landing(self) -> bool:
+        """Whether a receipt is owed: a verdict was produced, or a landing was
+        recorded without one (the target already held the branch)."""
+        return self.verdict is not None or bool(self.recorded_sha)
+
+
+@contextmanager
+def _recording_the_verification(
+    session: Session, ticket: Ticket, branch: str, target: str
+) -> Iterator[_Landing]:
+    """The receipt's ONE call site, around the whole of `land_ticket`.
+
+    A context manager rather than a line per exit: `land_ticket` returns from
+    seven places and only some of them are landings, and a writer per exit is
+    how a path ends up recording a `landed_sha` with no receipt — which makes
+    `invariant_registry.land_verification_ran` fire on a landing that was fine.
+    The census in `test_land_verification_receipt.py` is what holds this to one
+    writer; see the lg-milestone-that-1418 learning.
+
+    Nothing is written when the body raises: an exception is not a landing, and
+    a receipt claiming one would be worse than the traceback.
+    """
+    landing = _Landing(branch=branch, target=target)
+    yield landing
+    if not landing.is_a_landing:
+        return
+    verdict = landing.verdict
+    candidate, outcome = verdict if verdict is not None else ("", None)
+    record_land_verification(
+        session,
+        ticket,
+        branch=landing.branch,
+        target=landing.target,
+        candidate_sha=candidate or landing.recorded_sha,
+        outcome=outcome,
+    )
+
+
 def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandResult:
     """Merge the ticket's branch into its target and record where it landed.
 
-    Idempotent: a branch already contained in the target records its tip and
-    merges nothing. A conflict is returned, never raised — the caller decides
-    between the resolver and a block — and every other failure carries git's
-    text so the ticket can be blocked with it.
+    Idempotent: a branch the target already contains merges nothing, and
+    records the first commit on the target that contained it. A conflict is
+    returned, never raised — the caller decides between the resolver and a
+    block — and every other failure carries git's text so the ticket can be
+    blocked with it.
+
+    A land whose verification refuses is one of those failures: the merge
+    commit is written and the target's ref never moves, so nothing here records
+    anything and `landing` blocks the terminal stage with the verification's own
+    words (lg-milestone-that-1238).
     """
     repo_root = resolve_workspace_root(workspace)
     branch = resolve_ticket_branch(ticket)
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     target = target_branch_name(session, ticket, workspace)
+    # The receipt's one writer, around the whole function. Indented rather than
+    # written per exit for the reason `_recording_the_verification` gives.
+    with _recording_the_verification(session, ticket, branch, target) as landing:
+        if not (repo_root / ".git").exists():
+            # A run never starts in a workspace whose root is not a repository
+            # (the executor refuses the dispatch), so a workflow finishing here
+            # has no work in git to land. Skipped, and the event says so.
+            return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
+        if not rev(repo_root, f"refs/heads/{branch}"):
+            return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
+        # Before either leg (local merge or the base's publish chain): both carry
+        # commits only, so work left in the tree would be left behind (1237).
+        left_behind = _uncommitted(session, ticket, workspace)
+        if left_behind is not None:
+            return LandResult(ok=False, branch=branch, target=target, detail=left_behind)
+        if target == base:
+            return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
 
-    if not (repo_root / ".git").exists():
-        # A run never starts in a workspace whose root is not a repository
-        # (the executor refuses the dispatch), so a workflow finishing here
-        # has no work in git to land. Skipped, and the event says so.
-        return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
-    if not rev(repo_root, f"refs/heads/{branch}"):
-        return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
-    # Before either leg (local merge or the base's publish chain): both carry
-    # commits only, so work left in the tree would be left behind (1237).
-    left_behind = _uncommitted(session, ticket, workspace)
-    if left_behind is not None:
-        return LandResult(ok=False, branch=branch, target=target, detail=left_behind)
-    if target == base:
-        return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
+        ensure_integration_branch(repo_root, target, base)
 
-    ensure_integration_branch(repo_root, target, base)
+        held = _held_without_shared_history(session, ticket, repo_root, landing)
+        if held is not None:
+            return held
 
-    held = _held_without_shared_history(session, ticket, repo_root, branch, target)
-    if held is not None:
-        return held
+        failed = _refresh_branch(repo_root, branch, target)
+        if failed is not None:
+            return failed
 
-    failed = _refresh_branch(repo_root, branch, target)
-    if failed is not None:
-        return failed
-
-    subject = f"Land {ticket.external_id or ticket.id[:8]}: {ticket.title}".strip()
-    outcome = merge_without_checkout(repo_root, target=target, source=branch, subject=subject)
-    if not outcome.ok:
-        return LandResult(
-            ok=False,
-            branch=branch,
-            target=target,
-            detail=outcome.detail,
-            conflicted_files=outcome.conflicted_files,
+        subject = f"Land {ticket.external_id or ticket.id[:8]}: {ticket.title}".strip()
+        # The whole of the guard's wiring. Every line of its logic is in
+        # `land_verification`; `merge_tips` calls it between the `commit-tree` and
+        # the `update-ref`, so a refusal means this function never reaches
+        # `_record` and `landed_sha` has nothing to be stamped from.
+        verification = land_verifier(session, ticket, workspace)
+        # The verdict rides back on the verifier, so the receipt's one writer
+        # outside this block can read it however this function exits.
+        landing.verifier = verification
+        outcome = merge_without_checkout(
+            repo_root, target=target, source=branch, subject=subject, verify=verification
         )
+        if not outcome.ok:
+            return LandResult(
+                ok=False,
+                branch=branch,
+                target=target,
+                detail=outcome.detail,
+                conflicted_files=outcome.conflicted_files,
+            )
 
-    if not (
-        outcome.already_contained and _landing_on_record(repo_root, ticket, target, outcome.sha)
-    ):
-        _record(session, ticket, outcome.sha, target)
-    if outcome.already_contained:
+        if outcome.already_contained:
+            landed = _already_landed_at(repo_root, ticket, target, outcome.sha)
+            if (ticket.landed_sha, ticket.landed_branch) != (landed, target):
+                _record(session, ticket, landed, target, landing)
+            return LandResult(
+                ok=True,
+                branch=branch,
+                target=target,
+                landed_sha=landed,
+                skipped=LandSkip.ALREADY_LANDED,
+            )
+        _record(session, ticket, outcome.sha, target, landing)
+        logger.info(
+            "Landed %s (%s) on %s as %s (%s)",
+            ticket.external_id,
+            branch,
+            target,
+            outcome.sha[:12],
+            describe_signing(outcome.signed),
+        )
         return LandResult(
             ok=True,
             branch=branch,
             target=target,
             landed_sha=outcome.sha,
-            skipped=LandSkip.ALREADY_LANDED,
+            # A workspace that configured no commands lands as it always did, and
+            # the result says nobody checked it rather than letting that read as a
+            # pass (AC20).
+            detail=verification.note if verification else "",
         )
-    logger.info(
-        "Landed %s (%s) on %s as %s (%s)",
-        ticket.external_id,
-        branch,
-        target,
-        outcome.sha[:12],
-        describe_signing(outcome.signed),
-    )
-    return LandResult(ok=True, branch=branch, target=target, landed_sha=outcome.sha)
 
 
 def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace) -> bool:
@@ -161,7 +259,7 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     if not (repo_root / ".git").exists():
         return False
     target = target_branch_name(session, ticket, workspace)
-    if target == resolve_orchestration_profile(workspace).git.base_branch:
+    if target == base_branch(workspace):
         return False
     source_sha = rev(repo_root, f"refs/heads/{resolve_ticket_branch(ticket)}")
     target_sha = rev(repo_root, f"refs/heads/{target}")
@@ -172,6 +270,28 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
         # would re-block the ticket on every pass.
         return False
     return merge_preview(repo_root, target_sha, source_sha).ok
+
+
+def _already_landed_at(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> str:
+    """Which commit an already-contained branch landed at (928).
+
+    `landed_sha` is the *first* commit on `landed_branch` that contains the
+    ticket's work, and that is a property of the git graph rather than of
+    which code path observed it. So the answer is read from git, not from the
+    tip `merge_tips` hands back for a branch it merged nothing for — that tip
+    is the branch's own, and recording it is how 782 ended up naming two
+    commits for one landing.
+
+    A landing already on record is kept as it is (#578): re-reading it would
+    be a second answer to a question already answered, and the guard is what
+    stops a re-landing moving the sha. Otherwise git is asked, and its "could
+    not say" falls back to the branch tip — the only thing left — having
+    logged at warning inside `first_containing`, so a blind record never
+    reads like a fast-forward landing.
+    """
+    if _landing_on_record(repo_root, ticket, target, branch_sha):
+        return ticket.landed_sha
+    return first_containing(repo_root, branch_sha, f"refs/heads/{target}") or branch_sha
 
 
 def _uncommitted(session: Session, ticket: Ticket, workspace: Workspace) -> str | None:
@@ -203,7 +323,7 @@ def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha:
 
 
 def _held_without_shared_history(
-    session: Session, ticket: Ticket, repo_root: Path, branch: str, target: str
+    session: Session, ticket: Ticket, repo_root: Path, landing: _Landing
 ) -> LandResult | None:
     """An already-landed result when the target holds the branch by a squash.
 
@@ -213,7 +333,14 @@ def _held_without_shared_history(
     into a branch that already held all of it, and could conflict on work that
     was already there. `None` lets the ancestry path (and its merge-commit
     record, 928) run as before.
+
+    No verification runs here: `merge_without_checkout` is never reached, so
+    there is no candidate merge for a suite to have been run against. A landing
+    recorded on this path therefore gets a `disabled`/`already_contained`
+    receipt from the one writer, which is the honest answer — nobody verified it
+    (lg-milestone-that-1419).
     """
+    branch, target = landing.branch, landing.target
     branch_sha = rev(repo_root, f"refs/heads/{branch}")
     try:
         holder = landing_commit(repo_root, branch_sha, rev(repo_root, f"refs/heads/{target}"))
@@ -227,7 +354,7 @@ def _held_without_shared_history(
     if not holder or holder == branch_sha:
         return None
     if not (ticket.landed_branch == target and ticket.landed_sha == holder):
-        _record(session, ticket, holder, target)
+        _record(session, ticket, holder, target, landing)
     return LandResult(
         ok=True,
         branch=branch,
@@ -256,6 +383,13 @@ def _refresh_branch(repo_root: Path, branch: str, target: str) -> LandResult | N
         # contains must not take a merge commit here: that would leave it
         # un-landed again and the landing no longer idempotent.
         return None
+    # Read BEFORE the merge, and passed down. A "before" recomputed after
+    # `update-ref` has moved the ref IS the after, and `read-tree -m -u <after>
+    # <after>` is a legal merge between identical trees: it refuses nothing,
+    # writes nothing, and leaves every worktree exactly as stale as doing
+    # nothing at all. The repair would then examine nothing and return ""
+    # (lg-milestone-that-1419).
+    before = rev(repo_root, f"refs/heads/{branch}")
     refresh = merge_without_checkout(
         repo_root,
         target=branch,
@@ -272,21 +406,36 @@ def _refresh_branch(repo_root: Path, branch: str, target: str) -> LandResult | N
         )
     if refresh.already_contained:
         return None
-    stale = _align_worktrees(repo_root, branch)
+    stale = _align_worktrees(repo_root, branch, before=before, after=refresh.sha)
     if stale:
         return LandResult(ok=False, branch=branch, target=target, detail=stale)
     return None
 
 
-def _align_worktrees(repo_root: Path, branch: str) -> str:
+def _align_worktrees(repo_root: Path, branch: str, *, before: str, after: str) -> str:
     """Bring every worktree holding `branch` into line with the ref just moved.
 
     `update-ref` moves a ref that is checked out in a worktree without refusing
     or warning, which leaves that worktree staged-dirty in reverse — the files
     the refresh brought in read as staged deletions, and the orchestrator
-    commits the whole working tree when a stage finishes. `read-tree -m -u`
-    applies the move, keeps unrelated local work, and refuses rather than
-    overwriting an untracked file at an incoming path.
+    commits the whole working tree when a stage finishes.
+
+    **Two trees, not one** (lg-milestone-that-1419). `read-tree -m -u HEAD` is a
+    ONE-tree read-tree, and git's documented meaning for that is "reset the
+    index to this tree": a staged addition is in neither the index's tree nor
+    the one named, so it was dropped from the index *and* the working tree at
+    rc=0 — no refusal, nothing on the `LandResult`, nothing blocked. That is
+    `lg-milestone-that-920`'s data loss, and it was still happening.
+
+    `read-tree -m -u <before> <after>` is the two-tree form: it applies the move
+    from the tree the worktree is actually at to the tree the ref now holds,
+    keeps local work that is out of its way, and REFUSES rather than writing
+    over a local edit or an untracked file at an incoming path. A refusal is
+    returned as git's own words — `error: Entry '<path>' not uptodate. Cannot
+    merge.` — and refuses the landing with it, which is the same answer the
+    untracked-collision leg already gave. The alternative (skip the worktree and
+    land anyway) leaves a stale tree for the orchestrator's sweep to commit,
+    which is the same loss by another route.
 
     Returns git's own words when it could not be done, "" when it was. git is
     asked which worktrees hold the branch rather than the `Worktree` table,
@@ -304,7 +453,7 @@ def _align_worktrees(repo_root: Path, branch: str) -> str:
             # it is not this step's to do, so it is left to `worktree prune`.
             continue
         try:
-            done = _git(Path(path), "read-tree", "-m", "-u", "HEAD")
+            done = _git(Path(path), "read-tree", "-m", "-u", before, after)
         except OSError as exc:
             return _stale(branch, path, str(exc))
         if done.returncode != 0:
@@ -351,8 +500,17 @@ def _words(done) -> str:
     return (done.stderr or done.stdout or "git failed with no output").strip()
 
 
-def _record(session: Session, ticket: Ticket, sha: str, target: str) -> None:
+def _record(session: Session, ticket: Ticket, sha: str, target: str, landing: _Landing) -> None:
+    """Stamp the landing on the ticket, and tell the receipt's writer it happened.
+
+    The only writer of `landed_sha` on this path, and so the gate the receipt
+    hangs off: every caller of this function is a recorded landing the
+    `land_verification_ran` detector will read, and one that reached no receipt
+    would make that detector fire on a landing that was fine. The census in
+    `test_land_verification_receipt.py` enumerates these callers.
+    """
     ticket.landed_sha = sha
     ticket.landed_branch = target
+    landing.recorded_sha = sha
     session.add(ticket)
     session.commit()

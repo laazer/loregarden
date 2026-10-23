@@ -37,6 +37,7 @@ from loregarden.services.queue_repair import (
     repair_exhausted,
     resolve_repair_route,
 )
+from loregarden.services.queue_slot_claims import claim_is_fresh
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.slot_pool import fit_slot_pool
 from loregarden.services.studio_routing import ticket_stage_agent
@@ -62,12 +63,6 @@ LIVE_ORCHESTRATION_STATUSES = (
     OrchestrationRunStatus.QUEUED,
     OrchestrationRunStatus.RUNNING,
 )
-
-#: How long a slot claimed by a reservation may name nothing before a sweep
-#: treats it as residue. Long enough to cover reserve-to-bind, which is a few
-#: statements on the same thread; short enough that a caller which dies between
-#: them costs one lane for one minute rather than until restart.
-RESERVATION_GRACE = timedelta(seconds=60)
 
 #: Statuses that mean "still waiting to start". Lives here rather than in
 #: queue_lanes because the queue's own reads need it too, and one of the two
@@ -221,6 +216,49 @@ def release_slot(session: Session, slot: AgentSlot) -> None:
     slot.released_at = datetime.now(timezone.utc)
     session.add(slot)
     session.commit()
+
+
+def last_lane_entry(session: Session, slot_number: int) -> QueuedRun | None:
+    """The last entry promoted in this lane, or None if the lane never ran one.
+
+    A slot names no ticket, so this is how anything said about a slot gets
+    attributed: the entry whose release most likely stopped short.
+    """
+    return session.exec(
+        select(QueuedRun)
+        .where(QueuedRun.slot_number == slot_number)
+        .where(col(QueuedRun.promoted_at).is_not(None))
+        .order_by(col(QueuedRun.promoted_at).desc())
+    ).first()
+
+
+def record_ghost_reclaim(session: Session, slot: AgentSlot) -> None:
+    """Say, where a person reads, that a lane held by nothing was given back.
+
+    The slot names no ticket, so the decision is filed against the last entry
+    that ran in that lane, and against nothing when the lane never ran
+    anything. Module-level rather than a method because the
+    `every_busy_lane_has_an_occupant` invariant's repair is this and the
+    release, and must not reach for the whole `reconcile_slots` sweep to get it.
+    """
+    last = last_lane_entry(session, slot.slot_number)
+    ticket = session.get(Ticket, last.ticket_id) if last else None
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.RECLAIMED_GHOST_LANE,
+        stage_key="",
+        reason=(
+            f"Reclaimed lane {slot.slot_number}: it read busy with no occupant, "
+            "so nothing could ever release it."
+        ),
+        evidence={
+            "slot_number": slot.slot_number,
+            "assigned_at": slot.assigned_at.isoformat() if slot.assigned_at else None,
+            "last_entry_id": last.id if last else None,
+            "last_orchestration_run_id": last.orchestration_run_id if last else None,
+        },
+    )
 
 
 def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentSlot | None:
@@ -512,7 +550,7 @@ class ParallelQueueService:
             if freed:
                 self.session.commit()
             for slot in ghosts:
-                self._record_ghost_reclaim(slot)
+                record_ghost_reclaim(self.session, slot)
         except Exception:  # noqa: BLE001 - best-effort sweep; a board status read must not die with it
             # Best-effort: a sweep that cannot run must not take the board's
             # status read down with it.
@@ -521,37 +559,6 @@ class ParallelQueueService:
             return []
 
         return freed
-
-    def _record_ghost_reclaim(self, slot: AgentSlot) -> None:
-        """Say, where a person reads, that a lane held by nothing was given back.
-
-        The slot names no ticket, so the decision is filed against the last
-        entry that ran in that lane — the one whose release most likely stopped
-        short — and against nothing when the lane never ran anything.
-        """
-        last = self.session.exec(
-            select(QueuedRun)
-            .where(QueuedRun.slot_number == slot.slot_number)
-            .where(col(QueuedRun.promoted_at).is_not(None))
-            .order_by(col(QueuedRun.promoted_at).desc())
-        ).first()
-        ticket = self.session.get(Ticket, last.ticket_id) if last else None
-        record_orchestrator_decision(
-            self.session,
-            ticket,
-            decision=OrchestratorDecision.RECLAIMED_GHOST_LANE,
-            stage_key="",
-            reason=(
-                f"Reclaimed lane {slot.slot_number}: it read busy with no occupant, "
-                "so nothing could ever release it."
-            ),
-            evidence={
-                "slot_number": slot.slot_number,
-                "assigned_at": slot.assigned_at.isoformat() if slot.assigned_at else None,
-                "last_entry_id": last.id if last else None,
-                "last_orchestration_run_id": last.orchestration_run_id if last else None,
-            },
-        )
 
     def _occupant_is_live(self, slot: AgentSlot) -> bool:
         """Whether whatever holds this slot still has work in flight.
@@ -586,7 +593,7 @@ class ParallelQueueService:
         if slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES
-        return self._within_reservation_grace(slot)
+        return claim_is_fresh(slot, now=datetime.now(timezone.utc))
 
     def _hold_stage_entry_for_repair(self, run_id: str) -> bool:
         """Hold a lane whose single-stage entry blocked on a repairable block.
@@ -657,15 +664,6 @@ class ParallelQueueService:
     def _held_for_repair(self, slot: AgentSlot) -> bool:
         """Whether a lane entry is holding this slot through a provisional block."""
         return self._repair_hold(slot) is not None
-
-    def _within_reservation_grace(self, slot: AgentSlot) -> bool:
-        """Whether a slot naming nothing was claimed too recently to reclaim."""
-        assigned_at = slot.assigned_at
-        if assigned_at is None:
-            return False
-        if assigned_at.tzinfo is None:
-            assigned_at = assigned_at.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) - assigned_at < RESERVATION_GRACE
 
     def get_active_runs(self) -> list[dict]:
         """

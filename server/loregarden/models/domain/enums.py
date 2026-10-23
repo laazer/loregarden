@@ -455,6 +455,13 @@ class ArtifactKind(StrEnum):
     #: in the bad state are repaired, which invariant catches re-entry, which test
     #: proves prevention, and the learning (`services.fix_coverage`).
     FIX_COVERAGE = "fix_coverage"
+    #: One landing's verification receipt: whether a suite ran against the tree
+    #: this ticket landed, and what it said (`services.land_verification`). A
+    #: kind of its own rather than a title convention, because the Outputs tab's
+    #: Kind filter is built from the live rows' kinds — so the answer to "was
+    #: this landing verified?" is selectable without a new control
+    #: (lg-milestone-that-1419).
+    LAND_VERIFICATION = "land_verification"
 
 
 class StageBudgetArtifactKind(StrEnum):

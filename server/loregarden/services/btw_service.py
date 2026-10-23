@@ -25,7 +25,7 @@ import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from loregarden.models.domain import AgentRun, BtwStatus, Ticket, TriageMessage, Workspace
+from loregarden.models.domain import AgentRun, BtwStatus, Ticket, TriageMessage
 from loregarden.models.domain.chat_primitives import BtwPart
 from loregarden.models.domain.tables import BtwExchange
 from loregarden.services.artifact_service import load_run_log
@@ -33,6 +33,7 @@ from loregarden.services.chat_primitives import parts_to_jsonable
 from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
 from loregarden.services.run_concurrency import IN_FLIGHT_STATUSES
 from loregarden.services.run_steering import queue_message, steer_refusal
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -213,7 +214,7 @@ def answer_text(session: Session, exchange: BtwExchange, ticket: Ticket) -> str:
     if stub is not None:
         return stub
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise ValueError("Ticket workspace not found")
 

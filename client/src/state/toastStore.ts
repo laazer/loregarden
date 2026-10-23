@@ -122,6 +122,28 @@ export function errorStatus(error: unknown): number | null {
   return error instanceof ApiError ? error.status : null;
 }
 
+/** The characters that already end a sentence, so nothing is appended after one. */
+const SENTENCE_TERMINATORS = new Set([".", "!", "?", "\u2026", ":", ";"]);
+
+/**
+ * `text`, made safe to place before another sentence.
+ *
+ * A third sibling of `describeError`: concatenating a message we do not control
+ * with a sentence we do is a contract, and the server's side of it is one line
+ * with no terminator. Without this, `… at line 4, column 12 Fix that file.`
+ * renders as two sentences run together, and the defect hides from tests
+ * whenever the *fallback* happens to end in a period.
+ *
+ * Only the last character decides, and only trailing whitespace is removed:
+ * leading indentation and internal newlines are the structure of a multi-line
+ * parse failure, which is rendered `pre-wrap`.
+ */
+export function endSentence(text: string): string {
+  const trimmed = text.replace(/\s+$/u, "");
+  if (!trimmed) return "";
+  return SENTENCE_TERMINATORS.has(trimmed[trimmed.length - 1]) ? trimmed : `${trimmed}.`;
+}
+
 /**
  * Report an action that did not complete.
  *

@@ -79,8 +79,62 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--txm);
-  /* Server detail can be a stack-sized string; keep the toast a toast. */
-  max-height: 5.8em;
+  /* Correct for prose, which keeps wrapping at its own spaces. A path is kept
+     readable by .toast__path-part below, not by a rule here: `break-word`
+     survives only as the last resort for a separator-less token with nowhere
+     to land a break, such as a base64 detail= blob. */
+  word-break: normal;
+  overflow-wrap: break-word;
+  /* Expanded, nothing is hidden — a ~322-character composed message scrolls
+     inside the toast rather than covering the app. */
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Collapsed. Four lines is the bound `max-height: 5.8em` was already
+   measuring (5.8 / 1.45 = 4.02), restated in the unit it was always in, and
+   line-clamp renders a real ellipsis so the cut is visible. Server detail can
+   still be a stack-sized string; past the bound, text is still removed from
+   view — the ellipsis now says so and the two controls recover it. */
+.toast__message--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  /* So the base 50vh does not compete with the line bound. */
+  max-height: none;
   overflow: hidden;
-  overflow-wrap: anywhere;
+}
+
+/* A single "/"-separated segment of a path token.
+   `white-space: nowrap` is the one declaration that suppresses the hyphen
+   soft-wrap opportunity inside a worktree directory name, which is what was
+   cutting the path mid-identifier; no other property does it, which is why the
+   segment needs an element of its own. The remaining four are the last resort
+   `break-word` could not give: a segment wider than the ~292px line box shrinks
+   to the line box and renders its own ellipsis, rather than being clipped
+   silently off the right edge. */
+.toast__path-part {
+  white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.toast__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* The copy outcome, announced beside the controls. Rendered only while the
+   feedback is live, so a resting toast carries exactly one status node — its
+   own. Sized to sit on the same line as the two inline toggles. */
+.toast__feedback {
+  align-self: center;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--txm);
 }

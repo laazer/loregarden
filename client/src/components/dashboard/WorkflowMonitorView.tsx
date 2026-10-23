@@ -14,7 +14,7 @@ import {
   type TicketFindings,
 } from "../../lib/monitorFindings";
 import { formatRelativeAge } from "../../lib/timestamps";
-import { describeError } from "../../state/toastStore";
+import { describeError, endSentence } from "../../state/toastStore";
 import "./WorkflowMonitorView.css";
 import { TicketLink } from "../TicketLink";
 
@@ -218,7 +218,7 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
       <Centred>
         <div className="wm-error-title">Could not load monitor findings</div>
         <div className="wm-muted wm-narrow">
-          {describeError(findings.error, "The monitor endpoint did not answer.")} Nothing is known about the
+          {endSentence(describeError(findings.error, "The monitor endpoint did not answer."))} Nothing is known about the
           pipeline&rsquo;s health until this succeeds — this is not the same as having nothing to report.
         </div>
         <button type="button" className="tab-btn" onClick={() => findings.refetch()} disabled={findings.isFetching}>

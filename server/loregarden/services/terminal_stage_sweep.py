@@ -40,7 +40,6 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
-    Workspace,
 )
 from loregarden.services.land_ticket import landing_would_succeed
 from loregarden.services.landing import parked_on_failed_landing
@@ -49,6 +48,7 @@ from loregarden.services.orchestration import (
     OrchestrationService,
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, col, select
@@ -213,7 +213,7 @@ def tickets_whose_landing_cleared(
 
     cleared: list[Ticket] = []
     for ticket in session.exec(query).all():
-        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(session, ticket)
         if (
             workspace is not None
             and parked_on_failed_landing(session, ticket)

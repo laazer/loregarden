@@ -5,3 +5,6 @@
 // here lets jest.config.cjs map this one module to a mock, so the ~120 modules that reach
 // the API base transitively stay loadable under Jest.
 export const VITE_API_BASE: string | undefined = import.meta.env.VITE_API_BASE;
+
+/** True in a dev build. The dev-only toast harness in ToastHost reads it from here. */
+export const IS_DEV: boolean = import.meta.env.DEV;

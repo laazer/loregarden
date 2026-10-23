@@ -246,6 +246,31 @@ def armed_for_run(session: Session, ticket_id: str, stage_key: str, run_id: str)
     return False
 
 
+def latest_run_for_stage(session: Session, ticket: Ticket, stage_key: str) -> AgentRun | None:
+    """The most recent run of this stage, when the stage is the one the ticket is
+    sitting on and is still PENDING.
+
+    The shared first half of every "should this pass re-run the stage?" question.
+    Both callers — this module's `stage_rearmed_for_latest_run` and
+    `builtin_orchestrator._terminal_stage_owes_a_landing` — need the same three
+    steps before they can differ: the stage must be the ticket's current one, it
+    must still be PENDING (the state a re-arm leaves and the next dispatch
+    replaces with RUNNING), and the verdict belongs to its latest run. `None`
+    means "not a question this stage is asking", which every caller reads as
+    "do not re-dispatch".
+    """
+    if stage_key != ticket.workflow_stage_key:
+        return None
+    if ticket.workflow_stage_status is not StageStatus.PENDING:
+        return None
+    return session.exec(
+        select(AgentRun)
+        .where(AgentRun.ticket_id == ticket.id)
+        .where(AgentRun.stage_key == stage_key)
+        .order_by(AgentRun.created_at.desc())
+    ).first()
+
+
 def stage_rearmed_for_latest_run(session: Session, ticket: Ticket, stage_key: str) -> bool:
     """Whether this stage is sitting re-armed after its most recent run.
 
@@ -259,16 +284,7 @@ def stage_rearmed_for_latest_run(session: Session, ticket: Ticket, stage_key: st
     stage PENDING too, and re-dispatching there would restart work a human
     stopped.
     """
-    if stage_key != ticket.workflow_stage_key:
-        return False
-    if ticket.workflow_stage_status is not StageStatus.PENDING:
-        return False
-    latest = session.exec(
-        select(AgentRun)
-        .where(AgentRun.ticket_id == ticket.id)
-        .where(AgentRun.stage_key == stage_key)
-        .order_by(AgentRun.created_at.desc())
-    ).first()
+    latest = latest_run_for_stage(session, ticket, stage_key)
     if latest is None:
         return False
     return armed_for_run(session, ticket.id, stage_key, latest.id)

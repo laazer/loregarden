@@ -13,11 +13,36 @@ integration branch up to the base branch before a ticket is cut from it
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from loregarden.services.git_subprocess import run_git
+
+logger = logging.getLogger(__name__)
+
+
+class VerifyVerdict(Protocol):
+    """What a `merge_tips` verifier answers about a candidate merge commit.
+
+    A structural type rather than an import of the verifier's own class: this
+    module is git plumbing and a leaf, and the land verification that supplies
+    the real verdict reaches the capacity ledger and the gate conventions.
+    """
+
+    @property
+    def ok(self) -> bool: ...
+
+    @property
+    def detail(self) -> str:
+        """Why it was refused, in the words the operator will be blocked with."""
+        ...
+
+
+#: Called with the candidate merge commit between `commit-tree` and `update-ref`.
+Verify = Callable[[str], VerifyVerdict]
 
 
 @dataclass(frozen=True)
@@ -97,6 +122,46 @@ def is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
     if not ancestor or not descendant:
         return False
     return _git(repo_root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+def first_containing(repo_root: Path, commit: str, ref: str) -> str:
+    """The first commit on ``ref`` that contains ``commit``, or "" when git cannot say.
+
+    The git question behind what `landed_sha` means (928): the oldest commit
+    reachable from ``ref`` that has ``commit`` as an ancestor. That is the
+    merge commit when a merge brought the work in, and ``commit`` itself when
+    ``ref`` fast-forwarded to it or ``ref`` *is* it.
+
+    `rev-list --ancestry-path commit..ref` lists exactly the commits on a path
+    from ``commit`` to ``ref``, oldest last. An empty list means one of three
+    things, and they are not the same answer: ``commit`` is the tip of ``ref``,
+    ``ref`` reached it with no descendant on the path, or ``ref`` does not
+    contain it at all. The first two are answers; the third is a failure, and
+    returning ``commit`` for it would record a landing at the branch tip — the
+    defect this function exists to stop — with nothing saying so. So every
+    route to "" logs at warning, and ``commit`` is never a fallback.
+    """
+    if not commit:
+        # An empty left side makes `..ref` a valid range meaning `HEAD..ref`,
+        # so git would answer plausibly for a commit nobody named.
+        logger.warning("cannot say which commit on %s first contained an unnamed commit", ref)
+        return ""
+    listed = _git(repo_root, "rev-list", "--ancestry-path", f"{commit}..{ref}")
+    if listed.returncode != 0:
+        logger.warning(
+            "git rev-list could not say which commit on %s first contained %s: %s",
+            ref,
+            commit,
+            (listed.stderr or listed.stdout or "git rev-list failed").strip(),
+        )
+        return ""
+    lines = listed.stdout.split()
+    if lines:
+        return lines[-1]
+    if not is_ancestor(repo_root, commit, ref):
+        logger.warning("%s does not contain %s, so no commit on it first contained it", ref, commit)
+        return ""
+    return rev(repo_root, commit)
 
 
 def merge_base(repo_root: Path, one: str, other: str) -> str:
@@ -349,7 +414,12 @@ def _tree_of(repo_root: Path, commit: str) -> str:
 
 
 def merge_without_checkout(
-    repo_root: Path, *, target: str, source: str, subject: str
+    repo_root: Path,
+    *,
+    target: str,
+    source: str,
+    subject: str,
+    verify: Verify | None = None,
 ) -> MergeOutcome:
     """Merge ``source`` into ``target`` (both local branch names) and move ``target``."""
     return merge_tips(
@@ -358,11 +428,18 @@ def merge_without_checkout(
         target=target,
         source=source,
         subject=subject,
+        verify=verify,
     )
 
 
 def merge_tips(
-    repo_root: Path, tips: BranchTips, *, target: str, source: str, subject: str
+    repo_root: Path,
+    tips: BranchTips,
+    *,
+    target: str,
+    source: str,
+    subject: str,
+    verify: Verify | None = None,
 ) -> MergeOutcome:
     """`merge_without_checkout` from tips the caller has just read.
 
@@ -370,6 +447,21 @@ def merge_tips(
     all, so the merge does not ask git for them again. The final `update-ref`
     compares against ``tips``' target, so a target that moved after the reading
     is reported rather than overwritten.
+
+    ``verify`` is called with the candidate merge commit, between the
+    `commit-tree` that writes it and the compare-and-swap `update-ref` that
+    publishes it, and a non-ok verdict refuses the merge. That gap is the whole
+    point of the keyword: "do not publish a tree that fails" then holds by
+    construction rather than by ordering discipline somewhere further out —
+    the ref never moves, so no published branch ever holds the refused tree and
+    nothing downstream has a window to stamp it. The candidate exists as a git
+    object, so a verifier can cut a worktree at it.
+
+    It is not consulted where there is nothing to publish: a source the target
+    already contains writes no commit, and a conflict never reaches one.
+    Omitted, this behaves exactly as it did before the keyword existed, which is
+    what keeps `advance_tips`, `squash_onto` and `publish_tree` out of it
+    (lg-milestone-that-1238 AC5).
     """
     source_sha = tips.of(source)
     target_sha = tips.of(target)
@@ -400,6 +492,13 @@ def merge_tips(
         detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
         return MergeOutcome(ok=False, detail=detail)
     merge_sha = committed.stdout.strip()
+
+    if verify is not None:
+        verdict = verify(merge_sha)
+        if not verdict.ok:
+            # The candidate stays an unreferenced object for git to garbage
+            # collect. Nothing points at it, so there is nothing to undo.
+            return MergeOutcome(ok=False, detail=verdict.detail)
 
     moved = _git(repo_root, "update-ref", f"refs/heads/{target}", merge_sha, target_sha)
     if moved.returncode != 0:

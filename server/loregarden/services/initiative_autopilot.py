@@ -63,7 +63,6 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     WorkItemType,
-    Workspace,
     comparable_utc,
     utcnow,
 )
@@ -87,6 +86,7 @@ from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from loregarden.services.queue_repair import prepare_rerun
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_tags import load_tags, serialize_tags
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -256,7 +256,7 @@ def _dispatch(
             detail="sandbox server: no agent runs are started here",
         )
         return False
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         _record(
             session,

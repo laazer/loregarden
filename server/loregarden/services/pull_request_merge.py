@@ -32,8 +32,8 @@ from loregarden.services.branch_triage_service import (
     remove_branch_worktree,
     worktree_paths_for_branch,
 )
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_subprocess import run_gh, run_git
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import PullRequestStatus, ticket_pull_request
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -74,7 +74,7 @@ def merge_and_clean_up(
     merge_commit = _merge(repo_root, pr)
     logger.info("Merged PR #%s for %s as %s", pr.number, ticket.external_id, merge_commit[:12])
 
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     steps: list[MergeStep] = []
     # The PR's head is the remote name; a tree's is ``publish/<branch>``, and
     # what is checked out and held locally is the branch it publishes.

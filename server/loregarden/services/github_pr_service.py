@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_subprocess import run_gh, run_git
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import subtree_root, target_branch_name
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -47,7 +48,7 @@ def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) 
     its own PR #555).
     """
     target = target_branch_name(session, ticket, workspace)
-    if target == resolve_orchestration_profile(workspace).git.base_branch:
+    if target == base_branch(workspace):
         return
     root = subtree_root(session, ticket)
     raise ValueError(
@@ -57,7 +58,7 @@ def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) 
 
 
 def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise ValueError("Workspace not found")
 

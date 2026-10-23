@@ -91,3 +91,46 @@ def restart_interruption_message(subject: str, follow_up: str) -> str:
 def is_restart_interruption(*texts: str) -> bool:
     """Whether any of these strings reports a run this server restart killed."""
     return any(RESTART_INTERRUPTION_MARKER in (text or "").lower() for text in texts)
+
+
+#: The opening of the sweep sentence written when an orchestration's lease
+#: expires. A prefix rather than the whole message because the rest names the
+#: run and how much of its ticket subtree the predicate examined;
+#: `block_classification` matches on this part so the block keeps classifying
+#: as HARNESS whatever the count renders as.
+ORCHESTRATION_LEASE_EXPIRED_PREFIX = "Orchestration lease expired"
+
+
+def expired_lease_message(run_code: str, subtree_orchestrations: int) -> str:
+    """What the lease sweep says when it reaps a run, naming what it examined.
+
+    The predicate behind this sentence no longer asks only about agent runs
+    under ``run_code``: it walks the run's ticket subtree and asks about every
+    orchestration beneath it too (``run_concurrency.subtree_orchestration_ids``).
+    So the message has to answer the operator's actual question — was this
+    run's driver dead, or was it waiting on work one level down? — which it
+    can only do by naming the breadth of the walk.
+
+    A *count*, never a list: a parent ticket's subtree holds 18 orchestration
+    runs on average and 209 at the largest (measured 2026-10-20), and this text
+    is rendered as a block banner whose teaser is 140 characters. Zero and one
+    are worded rather than templated, because a dead leaf parent and an
+    unrendered placeholder must not read the same.
+    """
+    if subtree_orchestrations < 0:
+        raise ValueError(f"subtree_orchestrations cannot be negative, got {subtree_orchestrations}")
+    if subtree_orchestrations == 0:
+        examined = f"no in-flight agent run under {run_code} and no nested orchestration beneath it"
+    elif subtree_orchestrations == 1:
+        examined = (
+            f"no in-flight agent run under {run_code} or the 1 orchestration in its ticket subtree"
+        )
+    else:
+        examined = (
+            f"no in-flight agent run under {run_code} or the {subtree_orchestrations} "
+            "orchestrations in its ticket subtree"
+        )
+    return (
+        f"{ORCHESTRATION_LEASE_EXPIRED_PREFIX}: {examined}, and nothing has renewed it. "
+        "Its driver is gone; the lane has been released."
+    )

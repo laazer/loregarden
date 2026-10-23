@@ -44,6 +44,7 @@ Rules for this module:
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
@@ -337,3 +338,90 @@ def test_a_long_message_with_an_unclosed_bracket_keeps_most_of_itself(
         assert len(result) > under_test.limit // 2, (
             f"{label}: the cut kept {len(result)} of {under_test.limit} characters"
         )
+
+
+# --- lg-milestone-that-1421 -------------------------------------------------
+
+
+class _UndecodableCommand(NamedTuple):
+    """A configured verification command whose output is not valid UTF-8."""
+
+    command: str
+    cwd: Path
+    #: The bytes the command writes, so the assertion can name what was lost.
+    written: bytes
+
+
+@pytest.fixture(name="undecodable_verification")
+def undecodable_verification_fixture(tmp_path: Path) -> _UndecodableCommand:
+    """A command that writes one invalid byte between two readable words.
+
+    In a fixture, not the test body: `xfail` absorbs failures in the call phase
+    only, so a script this interpreter could not write would look exactly like a
+    healthy open defect. The payload is written as raw bytes through
+    `stdout.buffer`, because anything routed through `print` is encoded by the
+    child's own codec and never reaches the pipe undecodable.
+    """
+    written = bytes([0x6F, 0x6B, 0x20, 0xFF, 0xFE, 0x20, 0x62, 0x61, 0x64, 0x0A])
+    script = tmp_path / "undecodable.py"
+    script.write_text(
+        "import sys\n"
+        f"sys.stdout.buffer.write(bytes({list(written)!r}))\n"
+        "sys.stdout.buffer.flush()\n"
+        "sys.exit(1)\n",
+        encoding="utf-8",
+    )
+    command = shlex.join([sys.executable, str(script)])
+    probe = subprocess.run(  # noqa: S603 - the fixture's own sanity check
+        [sys.executable, str(script)], capture_output=True, check=False
+    )
+    assert probe.returncode == 1, probe
+    assert written in probe.stdout, (
+        f"the fixture's script did not emit the undecodable bytes: {probe.stdout!r}"
+    )
+    return _UndecodableCommand(command=command, cwd=tmp_path, written=written)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=UnicodeDecodeError,
+    reason=(
+        "lg-milestone-that-1421 — open: `run_verify_command` passes `text=True` to "
+        "`subprocess.run`, which decodes both pipes as UTF-8 with errors='strict', so a "
+        "command whose output carries a byte that is not valid UTF-8 raises "
+        "UnicodeDecodeError inside `subprocess.run`. The handler catches OSError and "
+        "TimeoutExpired; UnicodeDecodeError is a ValueError, so it propagates out of the "
+        "verify callback, through `merge_tips` and `land_ticket`, and takes the landing down "
+        "with no verdict and no block message — a fourth exit beside the three the module's "
+        "docstring designs for. Filed by lg-milestone-that-1419's test-break stage, which "
+        "arms `land_verify_commands` on loregarden for the first time and so moves this path "
+        "from never-executed to executed on every landing of a 9,430-test suite."
+    ),
+)
+def test_a_verification_whose_output_is_not_utf8_is_classified_and_not_a_crash(
+    undecodable_verification: _UndecodableCommand,
+) -> None:
+    """The correct behaviour: the exit status decides the verdict, and the
+    readable text survives.
+
+    Not a blanket UNAVAILABLE. "The tests failed" and "the tests never ran"
+    route to different people — the module's own docstring says so — and the
+    command here ran and failed, so FAILED with its exit code is the honest
+    answer. The output is what the land-verification receipt carries, so a
+    mangled byte must cost one character and not the whole body.
+    """
+    from loregarden.models.domain import DockerFootprint, GateOutcome
+    from loregarden.services.land_verification import run_verify_command
+
+    under_test = undecodable_verification
+
+    outcome = run_verify_command(under_test.command, under_test.cwd, footprint=DockerFootprint.NONE)
+
+    assert outcome.outcome is GateOutcome.FAILED, (
+        f"the command exited 1, so this is a failing suite: {outcome.outcome}"
+    )
+    assert not outcome.ok
+    assert outcome.exit_code == 1
+    assert "ok" in outcome.output and "bad" in outcome.output, (
+        f"the readable text either side of the bad byte was dropped: {outcome.output!r}"
+    )
