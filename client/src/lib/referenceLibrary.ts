@@ -1,3 +1,4 @@
+import { ApiError } from "../api/http";
 /**
  * The reference library's views, labels, filtering and sorting, kept out of
  * the components so the rules are testable on their own.
@@ -287,4 +288,14 @@ export function sourceFacts(row: Pick<LibraryRow, "language" | "stars" | "topics
   const stars =
     row.stars === null ? "" : `★ ${row.stars >= 1000 ? `${(row.stars / 1000).toFixed(1).replace(/\.0$/, "")}k` : row.stars}`;
   return [row.language, stars, row.topics].filter(Boolean).join(" · ");
+}
+
+/**
+ * The source a refused add names: adding one already in the library and refused
+ * answers 409 with its id, so the form can open it. Null for any other failure.
+ */
+export function refusedSourceId(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const detail = error.detail as { source_id?: unknown } | undefined;
+  return typeof detail?.source_id === "string" ? detail.source_id : null;
 }

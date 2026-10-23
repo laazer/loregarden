@@ -10,7 +10,7 @@ import type {
   TopicView,
 } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
-import { splitUrls } from "../../lib/referenceLibrary";
+import { refusedSourceId, splitUrls } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -140,6 +140,9 @@ export function ReferenceSourceForm({
     setTopic(next);
   }
   const [failure, setFailure] = useState("");
+  // The refused source a failed add named, so the warning can open it.
+  const [refusedId, setRefusedId] = useState<string | null>(null);
+  const { search } = useLocation();
   const [results, setResults] = useState<BulkAddItem[]>([]);
   const [alsoFor, setAlsoFor] = useState<string[]>([]);
   const [initiativeIds, setInitiativeIds] = useState<string[]>([]);
@@ -165,6 +168,7 @@ export function ReferenceSourceForm({
   function failed(error: unknown) {
     const message = describeError(error, "the request failed");
     setFailure(message);
+    setRefusedId(refusedSourceId(error));
     pushToast({ tone: "error", title: "The reference was not added", message });
   }
 
@@ -390,6 +394,14 @@ export function ReferenceSourceForm({
           {failure ? (
             <p className="rl-warn" role="alert">
               Not added: {failure}
+              {refusedId ? (
+                <>
+                  {" "}
+                  <Link to={{ pathname: memoryPath("library", refusedId), search }} onClick={onCancel}>
+                    Open it in the library
+                  </Link>
+                </>
+              ) : null}
             </p>
           ) : null}
           {several && results.length > 0 ? (

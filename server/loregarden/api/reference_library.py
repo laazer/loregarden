@@ -18,7 +18,7 @@ from loregarden.services.reference_survey.discovery import (
     DiscoveryView,
     start_discovery,
 )
-from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.errors import AlreadyRefused, SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import (
     LinkResult,
     UnlinkResult,
@@ -87,6 +87,11 @@ def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSo
         return _added(session, body)
     except SurveyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AlreadyRefused as exc:
+        # Structured, so the form can link the source it names.
+        raise HTTPException(
+            status_code=409, detail={"message": str(exc), "source_id": exc.source_id}
+        ) from exc
     except SurveyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

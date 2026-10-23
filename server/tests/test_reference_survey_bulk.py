@@ -12,6 +12,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_survey.bulk import enqueue_many, infer_kind
+from loregarden.services.reference_survey.errors import BRIEF_REASON_CHARS, brief_reason
 from loregarden.services.reference_survey.schemas import MAX_BULK_URLS, BulkSourceIn
 from pydantic import ValidationError
 from sqlmodel import Session, select
@@ -96,7 +97,9 @@ def test_a_failure_in_the_middle_leaves_the_rest_added(ctx):
         BulkAddOutcome.FAILED,
         BulkAddOutcome.QUEUED,
     ]
-    assert "was refused (GPL)" in items[1].detail
+    assert "refused: GPL." in items[1].detail
+    # It names a known source, so the row links to the page with the full reason.
+    assert items[1].source is not None and items[1].source.id == refused.id
 
 
 def test_a_known_source_gains_the_workspace_instead(ctx):
@@ -143,3 +146,53 @@ def test_the_api_answers_200_with_a_row_per_url(client: TestClient, isolated_db)
     assert response.status_code == 200, response.text
     assert [row["outcome"] for row in response.json()] == ["queued", "failed"]
     assert response.json()[0]["source"]["state"] == "queued"
+
+
+#: The shape of a legacy-imported refusal: a whole survey-ledger note.
+LEDGER_NOTE = (
+    "Triple-licensed GPL-3.0-or-later / LGPL-3.0-or-later with SPDX headers throughout — NOT "
+    "SURVEYED 2026-10-16, pass Q, and this row is the EIGHTH instance of 'a zero describes the "
+    "detector'. My triage reported EMPTY-CHECKOUT for a repository of 809 files. " * 3
+)
+
+
+@pytest.mark.parametrize(
+    ("reason", "brief"),
+    [
+        (
+            LEDGER_NOTE,
+            "Triple-licensed GPL-3.0-or-later / LGPL-3.0-or-later with SPDX headers throughout",
+        ),
+        ("Licence gate: GPL-3.0 excludes it.", "Licence gate: GPL-3.0 excludes it."),
+        ("PolyForm Noncommercial; not usable here", "PolyForm Noncommercial"),
+        ("", "no reason recorded"),
+        ("  spread\n  over lines  ", "spread over lines"),
+    ],
+)
+def test_a_refusal_quotes_the_first_clause_of_its_reason(reason, brief):
+    assert brief_reason(reason) == brief
+
+
+def test_a_reason_with_no_clause_break_is_still_bounded():
+    assert len(brief_reason("x" * 1000)) == BRIEF_REASON_CHARS
+
+
+def test_adding_a_refused_source_answers_409_naming_it(client: TestClient, isolated_db):
+    with Session(isolated_db) as session:
+        world = build_world(session)
+        refused = SurveySource(
+            workspace_id=world.workspace_id, kind=SurveySourceKind.REPO,
+            url="https://github.com/acme/refused", name="refused",
+            status=SurveySourceStatus.REFUSED, refused_reason=LEDGER_NOTE,
+        )  # fmt: skip
+        session.add(refused)
+        session.commit()
+        refused_id = refused.id
+    body = {"workspace_slugs": ["loregarden"], "kind": "repo", "url": "https://github.com/acme/refused",
+            "question": "", "queued_reason": ""}  # fmt: skip
+    response = client.post("/api/reference-library/sources", json=body)
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["source_id"] == refused_id
+    assert "refused: Triple-licensed GPL-3.0-or-later" in detail["message"]
+    assert "EIGHTH" not in detail["message"]

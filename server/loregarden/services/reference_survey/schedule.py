@@ -21,7 +21,7 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
 from loregarden.services.reference_survey import feeder
-from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound, brief_reason
 from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
 from loregarden.services.reference_survey.queue import open_passes, request_pass, serve_workspaces
 from loregarden.services.reference_survey.schemas import PassRequestIn
@@ -187,7 +187,7 @@ def _refuse_unrunnable(session: Session, source: SurveySource, reason: str) -> N
     """Refuse, before anything is written, a source no review can start on now."""
     if source.status is SurveySourceStatus.REFUSED and not reason.strip():
         raise SurveyError(
-            f"{source.name} was refused ({source.refused_reason or 'no reason recorded'}). "
+            f"{source.name} was refused ({brief_reason(source.refused_reason)}). "
             "Say why it should be read after all to review it again."
         )
     if source.status is SurveySourceStatus.PROPOSED:
