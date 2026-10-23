@@ -82,6 +82,7 @@ class McpTool(StrEnum):
     MARK_NEEDS_PERSON = "loregarden_mark_needs_person"
     ADD_INITIATIVE_MEMBER = "loregarden_add_initiative_member"
     REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
+    PROPOSE_FEATURE_CRITERIA = "loregarden_propose_feature_criteria"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -265,6 +266,8 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.APPEND_CHECKPOINT,
         # Files a *pending* proposal only; a person accepting it is the write.
         McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+        # Same: chat feature-loop criteria are drafts until the operator accepts them.
+        McpTool.PROPOSE_FEATURE_CRITERIA,
         # A tag that keeps the autopilot away from a ticket; it starts nothing.
         McpTool.MARK_NEEDS_PERSON,
         McpTool.APPEND_LEARNING,

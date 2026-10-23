@@ -1,13 +1,13 @@
+/* A column of separate cards beside the thread, not a panel: the page shows through between them. */
 .chat-side-card {
   flex: none;
   width: 320px;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 16px 16px 18px;
-  border-left: 1px solid var(--bd);
-  background: var(--bg1);
+  gap: 10px;
+  padding: 12px 14px 16px 4px;
+  background: var(--bg0);
   overflow: auto;
 }
 
@@ -19,29 +19,16 @@
   gap: 8px;
 }
 
+.chat-side-card-head {
+  padding: 2px 2px 0 4px;
+}
+
 .chat-side-card-head h2 {
   margin: 0;
   font-family: var(--dp);
   font-size: 15px;
   font-weight: 650;
   color: var(--tx);
-}
-
-.chat-side-card-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.chat-side-card-section h3 {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--txl);
 }
 
 .chat-side-card-icon-btn {

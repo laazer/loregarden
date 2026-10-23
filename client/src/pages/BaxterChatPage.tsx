@@ -28,6 +28,7 @@ import {
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatWorkbench } from "../hooks/useChatWorkbench";
+import { useChatWorkbenchState } from "../hooks/useChatWorkbenchActions";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatScope } from "../hooks/useChatScope";
 import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
@@ -524,6 +525,8 @@ export function BaxterChatPage() {
     [inGallery, chat.snapshot?.messages],
   );
 
+  const workbench = useChatWorkbenchState({ scope, chat, initiatives });
+
   const {
     open: workbenchOpen,
     overlays: workbenchOverlays,
@@ -702,6 +705,7 @@ export function BaxterChatPage() {
           onJumpTo={jumpToMessage}
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
+          workbench={workbench}
         />
       ) : null}
       <ChatHistorySidebar

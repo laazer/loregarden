@@ -1206,6 +1206,8 @@ class BaxterChatSession(SQLModel, table=True):
     # The initiative a global thread is focused on, or None for an unfocused one.
     # Always None on a workspace-scoped thread.
     initiative_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    # The ticket this thread's feature loop builds, or None when it runs none.
+    feature_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     # Derived from the first operator message unless the operator renames it.
     title: str = ""
     runtime_json: str = "{}"
