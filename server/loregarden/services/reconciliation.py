@@ -48,6 +48,7 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
+    EXHAUSTED_GATES_BLOCK,
     HELD_TICKETS_RESUME,
     LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
@@ -140,6 +141,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.
     SweepStep("scan_workflow_monitor", monitor_sweep),
+    # Before the block settler, so a ticket an exhausted gate parked is blocked
+    # and then given its kind in the same pass (lg-milestone-that-1432).
+    _invariant(EXHAUSTED_GATES_BLOCK),
     # After the settlers, because they are what writes most of the harness
     # blocks this classifies: a lease expiry settled two steps up gets its
     # kind here, in the same pass, without the settler having to know (749).
