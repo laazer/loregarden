@@ -34,7 +34,7 @@ export function TicketModalApprovals({ ticket, criteria }: { ticket: TicketDetai
   if (pending.length === 0) return null;
 
   return (
-    <section className="state-card ticket-modal-approvals" aria-label="Pending approvals">
+    <section className="state-card" aria-label="Pending approvals">
       <div className="state-label">Needs you ({pending.length})</div>
       {resolveApproval.isError && (
         <div className="approvals-view-error" role="alert">
