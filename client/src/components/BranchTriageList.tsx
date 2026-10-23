@@ -101,8 +101,15 @@ export function BranchTriageList({
 
   const remove = useMutation({
     meta: { errorTitle: "Delete branch" },
-    mutationFn: ({ branch, removeWorktrees }: { branch: string; removeWorktrees: boolean }) =>
-      deleteBranchTriage(workspaceSlug, branch, true, removeWorktrees),
+    mutationFn: ({
+      branch,
+      removeWorktrees,
+      discardCommits,
+    }: {
+      branch: string;
+      removeWorktrees: boolean;
+      discardCommits: boolean;
+    }) => deleteBranchTriage(workspaceSlug, branch, discardCommits, removeWorktrees),
     onSuccess: (result, { branch, removeWorktrees }) => {
       setBranchPendingDelete(null);
       refreshBranches(branch);
@@ -164,11 +171,12 @@ export function BranchTriageList({
         onClose={() => {
           if (!remove.isPending) setBranchPendingDelete(null);
         }}
-        onConfirm={() => {
+        onConfirm={(discardCommits) => {
           if (!branchPendingDelete) return;
           remove.mutate({
             branch: branchPendingDelete.name,
             removeWorktrees: branchNeedsWorktreeRemoval(branchPendingDelete),
+            discardCommits,
           });
         }}
       />

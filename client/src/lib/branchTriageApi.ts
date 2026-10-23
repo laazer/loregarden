@@ -59,6 +59,12 @@ export interface BranchTriageEntry {
   is_base: boolean;
   /** Landed on the base branch as a squash, so `ahead` reads 0 despite the commits. */
   squash_merged: boolean;
+  /**
+   * Commits no other branch, tag or remote has, on a branch whose work is not
+   * in the base: what deleting it would lose. Null when git could not say,
+   * which counts as "some".
+   */
+  commits_only_here: number | null;
   ahead: number;
   behind: number;
   dirty: boolean;
@@ -286,10 +292,15 @@ export async function checkoutBranchTriage(slug: string, branch: string) {
   });
 }
 
+/**
+ * `discardCommits` is the server's `force`: delete even though commits exist
+ * only on this branch. Only a person's explicit choice in the delete dialog
+ * sets it; the bulk cleanup never does.
+ */
 export async function deleteBranchTriage(
   slug: string,
   branch: string,
-  force = false,
+  discardCommits = false,
   removeWorktrees = false,
 ): Promise<{ deleted: string; already_gone?: boolean; removed_worktrees?: boolean }> {
   const q = new URLSearchParams({ branch });
@@ -297,7 +308,7 @@ export async function deleteBranchTriage(
     `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/delete?${q}`,
     {
       method: "POST",
-      body: JSON.stringify({ force, remove_worktrees: removeWorktrees }),
+      body: JSON.stringify({ force: discardCommits, remove_worktrees: removeWorktrees }),
     },
   );
 }

@@ -48,6 +48,8 @@ class BranchCheckoutRequest(BaseModel):
 
 
 class BranchDeleteRequest(BaseModel):
+    #: Discard commits that exist only on this branch. Without it a branch whose
+    #: commits no other ref has (and whose work is not in the base) is refused.
     force: bool = False
     remove_worktrees: bool = False
 

@@ -20,7 +20,7 @@ from loregarden.services.artifact_service import (
     capture_branch_file_diff,
     git_base_ref,
 )
-from loregarden.services.branch_landed import landed_branches
+from loregarden.services.branch_landed import branch_work_has_landed, landed_branches
 from loregarden.services.checkout_guard import checkout_removal_refusal
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
@@ -553,6 +553,15 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         repo_root, base, [name for name in branch_names if branch_refs[name].ahead > 0]
     )
 
+    # What deleting each branch would lose. Asked only where something could be:
+    # a branch at its base, or squash-merged into it, loses nothing.
+    only_here = dict(
+        _map_parallel(
+            lambda name: (name, commits_only_here(repo_root, name)),
+            [n for n in branch_names if branch_refs[n].ahead > 0 and n not in squash_merged],
+        )
+    )
+
     branches: list[dict[str, Any]] = []
     issue_count = 0
 
@@ -603,6 +612,8 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "is_current": is_current,
                 "is_base": name == base,
                 "squash_merged": name in squash_merged,
+                # None: git could not say, which the dialogs treat as "would lose some".
+                "commits_only_here": only_here.get(name, 0),
                 "ahead": ahead,
                 "behind": behind,
                 "dirty": dirty,
@@ -844,7 +855,15 @@ def delete_branch(
     force: bool = False,
     remove_worktrees: bool = False,
 ) -> bool:
-    """Delete a local branch. Returns True if the branch was removed, False if already gone."""
+    """Delete a local branch. Returns True if the branch was removed, False if already gone.
+
+    `force` means one thing: discard commits that exist only on this branch.
+    Without it the branch goes only when its commits survive it, on another
+    branch, a tag or a remote, or squash-merged into the base, and the refusal
+    says how many would be lost. Git's own `-d` asks a different question
+    (merged into HEAD?), which refused every squash-merged branch and so taught
+    every caller to pass `force`, discarding unpushed work along with it.
+    """
     validate_branch_name(branch)
     repo_root = resolve_workspace_root(workspace)
     if not _is_git_repo(repo_root):
@@ -854,17 +873,76 @@ def delete_branch(
         return False
 
     worktree_paths = worktree_paths_for_branch(repo_root, branch)
-    _refuse_branch_delete(repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees)
+    _refuse_branch_delete(
+        repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees, force=force
+    )
     for path in worktree_paths:
         _remove_git_worktree(repo_root, path)
-    return _git_delete_branch(repo_root, branch, worktree_paths, force=force)
+    return _git_delete_branch(repo_root, branch, worktree_paths)
+
+
+def commits_only_here(repo_root: Path, branch: str) -> int | None:
+    """How many of `branch`'s commits no other branch, tag or remote ref reaches.
+
+    Zero means deleting the ref loses no commit. None means git could not say,
+    which callers treat as "would lose some". Squash-merged work is not counted
+    out here: its commits really are unreachable, and `branch_work_has_landed`
+    is the separate question of whether their content survives in the base.
+    """
+    proc = _git(
+        repo_root,
+        "rev-list",
+        "--count",
+        f"refs/heads/{branch}",
+        "--not",
+        # The pattern for `--branches` is the short name: git documents that it
+        # must not start with refs/heads/, and one that does excludes nothing.
+        # A refname cannot hold `*?[`, so the glob matches this branch alone.
+        f"--exclude={branch}",
+        "--branches",
+        "--tags",
+        "--remotes",
+    )
+    count = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not count.isdigit():
+        logger.warning(
+            "Could not count commits only on %s in %s: %s",
+            branch,
+            repo_root,
+            (proc.stderr or "").strip(),
+        )
+        return None
+    return int(count)
+
+
+def _refuse_lost_commits(repo_root: Path, branch: str, base: str | None) -> None:
+    only_here = commits_only_here(repo_root, branch)
+    if only_here == 0:
+        return
+    if base and branch_work_has_landed(repo_root, base, branch):
+        return
+    if only_here is None:
+        raise ValueError(
+            f"Could not tell whether {branch} holds commits that exist nowhere else, so it was kept."
+        )
+    plural = "commit" if only_here == 1 else "commits"
+    raise ValueError(
+        f"{branch} has {only_here} {plural} that no other branch, tag or remote has, and its "
+        f"changes are not in {base or 'the base branch'}. Push it first, or delete it choosing "
+        "to discard those commits."
+    )
 
 
 _CHECKED_OUT = "Cannot delete the currently checked-out branch. Checkout another branch first."
 
 
 def _refuse_branch_delete(
-    repo_root: Path, branch: str, worktree_paths: list[str], *, remove_worktrees: bool
+    repo_root: Path,
+    branch: str,
+    worktree_paths: list[str],
+    *,
+    remove_worktrees: bool,
+    force: bool,
 ) -> None:
     """Every reason `delete_branch` would stop, raised before the first removal.
 
@@ -878,16 +956,18 @@ def _refuse_branch_delete(
     base = git_base_ref(repo_root)
     if base and branch == base:
         raise ValueError("Cannot delete the base branch")
+    if not force:
+        _refuse_lost_commits(repo_root, branch, base)
     if worktree_paths and not remove_worktrees:
         raise ValueError(_format_worktree_block_message(branch, worktree_paths))
     for path in worktree_paths:
         _refuse_unsafe_removal(path)
 
 
-def _git_delete_branch(
-    repo_root: Path, branch: str, worktree_paths: list[str], *, force: bool
-) -> bool:
-    proc = _git(repo_root, "branch", "-D" if force else "-d", branch)
+def _git_delete_branch(repo_root: Path, branch: str, worktree_paths: list[str]) -> bool:
+    # `-D` because `_refuse_lost_commits` (or the caller's `force`) has already
+    # decided: git's `-d` would re-ask "merged into HEAD?", the wrong question.
+    proc = _git(repo_root, "branch", "-D", branch)
     if proc.returncode == 0:
         return True
     detail = (proc.stderr or proc.stdout or "delete failed").strip()
