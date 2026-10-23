@@ -351,3 +351,16 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Where the Machine view went: a plain link in the board header. */
+.queue-machine-link {
+  font-size: 12px;
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.queue-machine-link:hover,
+.queue-machine-link:focus-visible {
+  color: var(--tx);
+  text-decoration: underline;
+}

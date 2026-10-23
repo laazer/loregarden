@@ -187,6 +187,22 @@ def _keep_reason(worktree: Worktree) -> KeepReason | None:
     return None
 
 
+def checkout_loss(path: Path) -> KeepReason | None:
+    """What removing the checkout at `path` would destroy, or None when nothing.
+
+    The two premises of `_keep_reason` that are about the *tree*, for a caller
+    that holds a path rather than a `Worktree` row (disk cleanup, which sees
+    every repository's worktrees, tracked or not). `NOTHING_COMMITTED` is left
+    out on purpose: it is a ticket's question ("did the agent produce
+    anything?"), and an empty clean checkout loses nothing when it goes.
+    """
+    if _is_dirty(path):
+        return KeepReason.UNCOMMITTED
+    if _has_stranded_commits(path):
+        return KeepReason.STRANDED_HEAD
+    return None
+
+
 def _reason_detail(reason: KeepReason, worktree: Worktree) -> str:
     """What this refusal is about, for one tree, in the words it is reported in.
 

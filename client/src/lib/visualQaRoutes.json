@@ -19,6 +19,8 @@
   { "name": "studio-tickets", "path": "/studio/tickets" },
   { "name": "studio-gates", "path": "/studio/gates" },
   { "name": "queue", "path": "/queue" },
+  { "name": "machine", "path": "/machine" },
+  { "name": "machine-disk", "path": "/machine/disk" },
   { "name": "branch-triage", "path": "/branch-triage" },
   { "name": "editor", "path": "/editor" }
 ]

@@ -19,6 +19,7 @@ from loregarden.mcp.admission import (
 from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
+from loregarden.mcp.disk_usage_tool import TOOL_DEFINITION as DISK_USAGE_TOOL_DEFINITION
 from loregarden.mcp.docker_capacity_tool import (
     TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
 )
@@ -1160,6 +1161,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(DISK_USAGE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(GITHUB_ISSUE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)

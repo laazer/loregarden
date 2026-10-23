@@ -10,6 +10,7 @@ export type AppPage =
   | "studio"
   | "editor"
   | "queue"
+  | "machine"
   | "branch-triage"
   | "mcp"
   | "memory"
@@ -72,6 +73,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   studio: "/studio/agents",
   editor: "/editor",
   queue: "/queue",
+  machine: "/machine",
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
   memory: "/memory",
@@ -333,6 +335,23 @@ export function memoryPathForLegacyKnowledge(pathname: string): string {
   return memoryPath("map", match?.[1] ? decodeSegment(match[1]) : undefined);
 }
 
+/**
+ * The Machine page's tabs: what the machine's CPU and memory are rationed to,
+ * and what its disk holds. Capacity is the page's own root.
+ */
+export const MACHINE_TABS = ["capacity", "disk"] as const;
+export type MachineTab = (typeof MACHINE_TABS)[number];
+
+const MACHINE_DISK_PATH_RE = /^\/machine\/disk(?:\/|$)/;
+
+export function machinePath(tab: MachineTab): string {
+  return tab === "disk" ? "/machine/disk" : "/machine";
+}
+
+export function machineTabFromPath(pathname: string): MachineTab {
+  return MACHINE_DISK_PATH_RE.test(pathname) ? "disk" : "capacity";
+}
+
 export const WORKSPACES_TABS = ["workspaces", "instances"] as const;
 export type WorkspacesTab = (typeof WORKSPACES_TABS)[number];
 
@@ -376,6 +395,7 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
   if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
+  if (pathname === "/machine" || pathname.startsWith("/machine/")) return "machine";
   if (pathname === "/branch-triage" || pathname.startsWith("/branch-triage/")) {
     return "branch-triage";
   }
