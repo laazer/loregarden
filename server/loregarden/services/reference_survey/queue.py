@@ -24,7 +24,12 @@ from loregarden.models.domain.survey_enums import (
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource, SurveySourceWorkspace
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
-from loregarden.services.reference_survey.errors import AlreadyServes, SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.errors import (
+    AlreadyRefused,
+    AlreadyServes,
+    SurveyError,
+    SurveyNotFound,
+)
 from loregarden.services.reference_survey.inbox import file_card
 from loregarden.services.reference_survey.schemas import PassRequestIn, SourceIn
 from sqlalchemy import func
@@ -156,9 +161,7 @@ def enqueue_source(session: Session, body: SourceIn, *, admitted: bool = False) 
             return Enqueued(_admit_now(session, source, body), attached, admitted=True)
         return Enqueued(_file_admission(session, source, body), attached, proposed=True)
     if existing.status is SurveySourceStatus.REFUSED:
-        raise SurveyError(
-            f"{url} was refused ({existing.refused_reason or 'no reason recorded'}); it is not read."
-        )
+        raise AlreadyRefused(url, existing.refused_reason, existing.id)
     attached = _attach(session, existing, workspaces, body.question, body.queued_reason)
     if admitted and existing.status is SurveySourceStatus.PROPOSED:
         # A candidate, or one still waiting on its card: a person adding it admits it.

@@ -13,7 +13,12 @@ from __future__ import annotations
 from loregarden.models.domain.survey_enums import BulkAddOutcome, SurveySourceKind
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
-from loregarden.services.reference_survey.errors import AlreadyServes, SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.errors import (
+    AlreadyRefused,
+    AlreadyServes,
+    SurveyError,
+    SurveyNotFound,
+)
 from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
 from loregarden.services.reference_survey.library import LibraryRow, library_row
 from loregarden.services.reference_survey.queue import enqueue_source
@@ -70,6 +75,18 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
                     url=url, outcome=BulkAddOutcome.ALREADY, kind=known.kind if known else kind,
                     source=library_row(session, known) if known else None, detail="",
                     initiatives_linked=[link.initiative for link in linked],
+                )
+            )  # fmt: skip
+            continue
+        except AlreadyRefused as exc:
+            # Failed, but it names a source: its row links to the page that holds
+            # the full reason and can review it again.
+            session.rollback()
+            refused = session.get(SurveySource, exc.source_id)
+            items.append(
+                BulkAddItem(
+                    url=url, outcome=BulkAddOutcome.FAILED, kind=refused.kind if refused else kind,
+                    source=library_row(session, refused) if refused else None, detail=str(exc),
                 )
             )  # fmt: skip
             continue

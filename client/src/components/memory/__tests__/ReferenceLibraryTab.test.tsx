@@ -533,6 +533,23 @@ describe("adding a reference", () => {
     expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
   });
 
+  it("names a source already refused briefly and links to it", async () => {
+    const message =
+      "https://github.com/acme/refused is already in the library, refused: GPL-3.0. Open it to read the full reason, or to review it again.";
+    mockApi.addReferenceSource.mockRejectedValue(new ApiError(409, message, { message, source_id: "src_refused" }));
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    fill(form);
+    fireEvent.click(within(form).getByRole("button", { name: "Add to queue" }));
+    const alert = await within(form).findByRole("alert");
+    expect(alert).toHaveTextContent(/Not added: .*refused: GPL-3\.0\./);
+    const open = within(alert).getByRole("link", { name: "Open it in the library" });
+    expect(open).toHaveAttribute("href", expect.stringContaining("/memory/library/src_refused"));
+    fireEvent.click(open);
+    expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
+  });
+
   it("adds several pasted URLs at once and keeps only the failed ones to fix", async () => {
     const proposed = row({ id: "n1", name: "one", state: "awaiting_approval", approval_id: "card-1" });
     mockApi.addReferenceSources.mockResolvedValue([
