@@ -11,6 +11,8 @@ from loregarden.core.workflow_loader import get_template_stages, sync_workflow_t
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     RunStatus,
     StageStatus,
     Ticket,
@@ -21,7 +23,9 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+from loregarden.services.requeue import requeue_stage
 from loregarden.services.workflow_state import stages_up_to_done_json
 from sqlmodel import Session, select
 
@@ -253,12 +257,19 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
     assert len(runs) == 3
-    # Exhausted: rerouted for rework and paused with a short human-facing pointer.
-    assert ticket.state != TicketState.BLOCKED
+    # Exhausted: no automatic pass remains, so the ticket is blocked for a person
+    # with a short pointer, and the orchestration says so rather than SUCCEEDED
+    # (lg-milestone-that-1216 sat at a pending stage nothing would run).
+    assert ticket.state == TicketState.BLOCKED
     assert ticket.workflow_stage_key == "test-break"
-    assert ticket.workflow_stage_status == StageStatus.PENDING
+    assert ticket.workflow_stage_status == StageStatus.BLOCKED
+    assert ticket.block_kind is not None
     assert "Timeline tab" in ticket.blocking_issues
     assert len(ticket.blocking_issues) < 200
+    [orch_run] = db_session.exec(
+        select(OrchestrationRun).where(OrchestrationRun.ticket_id == ticket.id)
+    ).all()
+    assert orch_run.status == OrchestrationRunStatus.BLOCKED
 
 
 def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_runs(
@@ -296,13 +307,19 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     ).all()
     assert len(runs_after_first_call) == 3  # initial + 2 inline retries, budget exhausted
 
-    # Simulate the ticket getting re-triggered by a fresh orchestration run
-    # (e.g. the operator clicking Agents Assemble again) — a brand-new
-    # BuiltinOrchestrator with no in-memory state from the first call.
-    ticket.blocking_issues = ""
-    ticket.workflow_stage_status = StageStatus.PENDING
-    db_session.add(ticket)
-    db_session.commit()
+    # The operator requeues the blocked stage, then a fresh orchestration run
+    # starts — a brand-new BuiltinOrchestrator with no in-memory state from the
+    # first call. The requeue resets the dispatch budget, not the gate-fix one.
+    assert ticket.state == TicketState.BLOCKED
+    requeue_stage(
+        db_session,
+        OrchestrationService(db_session),
+        ticket,
+        stage_key="test-break",
+        reason="the environment was repaired",
+        actor="test",
+        state=TicketState.IN_PROGRESS,
+    )
 
     BuiltinOrchestrator(db_session).execute(ticket, profile, max_stages=10)
 
@@ -314,8 +331,9 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     # call — then straight to blocked. No *additional* inline auto-fix retries
     # were spent, since the persisted budget was already used up.
     assert len(runs_after_second_call) == len(runs_after_first_call) + 1
+    assert ticket.state == TicketState.BLOCKED
     assert ticket.workflow_stage_key == "test-break"
-    assert ticket.workflow_stage_status == StageStatus.PENDING
+    assert ticket.workflow_stage_status == StageStatus.BLOCKED
     assert "Timeline tab" in ticket.blocking_issues
 
 
