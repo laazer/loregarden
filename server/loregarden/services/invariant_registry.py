@@ -24,6 +24,7 @@ from loregarden.models.domain import (
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
+from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
@@ -62,6 +63,27 @@ def _unsettled_blocks(session: Session) -> list[Violation]:
 
 def _settle_blocks(session: Session, violations: Sequence[Violation]) -> int:
     return settle_unclassified_blocks(session, _tickets(session, violations))
+
+
+def _gate_parked(session: Session) -> list[Violation]:
+    """`entered_at` is when the parking orchestration finished."""
+    return [
+        Violation(
+            subject_id=item.ticket.id,
+            ticket_id=item.ticket.id,
+            entered_at=item.run.finished_at,
+            detail=f"{item.ticket.external_id} parked at '{item.ticket.workflow_stage_key}' "
+            f"by an exhausted gate ({item.run.run_code})",
+        )
+        for item in parked_by_gate(session)
+    ]
+
+
+def _block_gate_parked(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    return block_parked(
+        session, [item for item in parked_by_gate(session) if item.ticket.id in wanted]
+    )
 
 
 def _cleared_landings(session: Session) -> list[Violation]:
@@ -155,6 +177,23 @@ EVERY_BLOCK_IS_SETTLED = Invariant(
     prevented_by=(
         "server/tests/test_block_settlement.py"
         "::test_every_writer_claiming_to_settle_actually_calls_the_helper"
+    ),
+)
+
+EXHAUSTED_GATES_BLOCK = Invariant(
+    name="exhausted_gates_block_their_ticket",
+    ticket="lg-milestone-that-1432",
+    statement=(
+        "no ticket waits at a pending stage behind an orchestration an exhausted gate "
+        "ended SUCCEEDED"
+    ),
+    detect=_gate_parked,
+    repair=_block_gate_parked,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 23),
+    prevented_by=(
+        "server/tests/test_transition_gate_reroute.py"
+        "::test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts"
     ),
 )
 
@@ -344,6 +383,7 @@ LANDED_WORK_IS_COMMITTED = Invariant(
 
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
+    EXHAUSTED_GATES_BLOCK,
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,

@@ -18,6 +18,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.services.baxter_chat_focus import ChatFocusError, set_focus
 from loregarden.services.baxter_chat_run_service import (
     BaxterChatConflictError,
     cancel_baxter_chat_turn,
@@ -46,6 +47,13 @@ from loregarden.services.chat_attachments import (
     resolve_attachments,
     save_attachment,
 )
+from loregarden.services.chat_feature_loop import (
+    FeatureLoopError,
+    add_criterion,
+    advance_feature_loop,
+    decide_criteria,
+    start_feature_loop,
+)
 from loregarden.services.initiative_service import load_initiative
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -66,6 +74,32 @@ class BaxterChatForkRequest(BaseModel):
     #: Cut the copied history off after this message. "" forks the whole thread,
     #: which is what the `/fork` command and the history rail still ask for.
     through_message_id: str = ""
+
+
+class BaxterChatFocusUpdate(BaseModel):
+    #: Ticked workspaces by slug. The thread's own workspace may be listed or not;
+    #: it stays in scope either way.
+    workspace_slugs: list[str] = Field(default_factory=list)
+    initiative_ids: list[str] = Field(default_factory=list)
+
+
+class FeatureLoopStart(BaseModel):
+    #: Build an existing ticket (id or external id); the fields below are then ignored.
+    existing_ticket: str = ""
+    title: str = ""
+    #: Where a new ticket lives; "" is the chat's host workspace.
+    workspace_slug: str = ""
+    #: A milestone or initiative to file the new feature under; "" makes it a milestone.
+    parent_ticket_id: str = ""
+
+
+class FeatureCriteriaDecision(BaseModel):
+    ids: list[str] = Field(min_length=1)
+    accept: bool
+
+
+class FeatureCriterionCreate(BaseModel):
+    text: str = Field(min_length=1)
 
 
 class BaxterChatMessageCreate(BaseModel):
@@ -230,6 +264,109 @@ def patch_baxter_chat_runtime(
         return set_chat_runtime(session, chat_session, body)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.put("/sessions/{session_id}/focus")
+@global_router.put("/sessions/{session_id}/focus")
+def put_baxter_chat_focus(
+    session_id: str,
+    body: BaxterChatFocusUpdate,
+    owner: ChatOwner = _OWNED,
+    session: Session = _DB,
+) -> dict:
+    """Replace the workspaces and initiatives this thread works across.
+
+    Takes effect from the next turn. An unknown or archived name is a 400 and
+    nothing is written.
+    """
+    chat_session = _chat_session(session, owner, session_id)
+    try:
+        set_focus(
+            session,
+            chat_session,
+            workspace_slugs=body.workspace_slugs,
+            initiative_ids=body.initiative_ids,
+        )
+    except ChatFocusError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session.refresh(chat_session)
+    return chat_session_snapshot(session, chat_session)
+
+
+def _advance(session: Session, chat_session: BaxterChatSession) -> None:
+    """Start the next round now rather than on the next reconcile pass.
+
+    A round that fails to start is a 409 the composer's toast reports. The
+    criteria are already marked in the round, so the Feature card shows the
+    stalled round too; nothing is lost by refusing here.
+    """
+    try:
+        advance_feature_loop(session, chat_session)
+    except FeatureLoopError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/feature")
+@global_router.post("/sessions/{session_id}/feature")
+def start_baxter_chat_feature_loop(
+    session_id: str,
+    body: FeatureLoopStart,
+    owner: ChatOwner = _OWNED,
+    session: Session = _DB,
+) -> dict:
+    chat_session = _chat_session(session, owner, session_id)
+    try:
+        start_feature_loop(
+            session,
+            chat_session,
+            title=body.title,
+            workspace_slug=body.workspace_slug,
+            parent_ticket_id=body.parent_ticket_id,
+            existing_ticket=body.existing_ticket,
+        )
+    except FeatureLoopError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session.refresh(chat_session)
+    return chat_session_snapshot(session, chat_session)
+
+
+@router.post("/sessions/{session_id}/feature/criteria")
+@global_router.post("/sessions/{session_id}/feature/criteria")
+def add_baxter_chat_feature_criterion(
+    session_id: str,
+    body: FeatureCriterionCreate,
+    owner: ChatOwner = _OWNED,
+    session: Session = _DB,
+) -> dict:
+    """An operator-written criterion: accepted as typed, so it queues at once."""
+    chat_session = _chat_session(session, owner, session_id)
+    try:
+        add_criterion(session, chat_session, body.text)
+    except FeatureLoopError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _advance(session, chat_session)
+    session.refresh(chat_session)
+    return chat_session_snapshot(session, chat_session)
+
+
+@router.post("/sessions/{session_id}/feature/decisions")
+@global_router.post("/sessions/{session_id}/feature/decisions")
+def decide_baxter_chat_feature_criteria(
+    session_id: str,
+    body: FeatureCriteriaDecision,
+    owner: ChatOwner = _OWNED,
+    session: Session = _DB,
+) -> dict:
+    """Accept or drop Baxter's proposals; an accept may start the next round."""
+    chat_session = _chat_session(session, owner, session_id)
+    try:
+        decide_criteria(session, chat_session, body.ids, accept=body.accept)
+    except FeatureLoopError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if body.accept:
+        _advance(session, chat_session)
+    session.refresh(chat_session)
+    return chat_session_snapshot(session, chat_session)
 
 
 @router.post("/sessions/{session_id}/attachments", status_code=201)

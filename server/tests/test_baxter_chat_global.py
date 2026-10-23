@@ -263,3 +263,117 @@ def test_migration_adds_scope_to_existing_threads():
         ).one()
 
     assert tuple(row) == ("workspace", None)
+
+
+# --- focus: several workspaces and initiatives per thread ---------------------
+
+
+def _focus(client: TestClient, base: str, session_id: str, **body) -> dict:
+    res = client.put(f"{base}/{session_id}/focus", json=body)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_a_global_thread_focused_on_workspaces_answers_about_only_those(
+    client: TestClient,
+    db_session: Session,
+    other_workspace: Workspace,
+    captured_turn: dict[str, object],
+):
+    make_ticket(
+        db_session,
+        workspace_id=_workspace(db_session, "loregarden").id,
+        external_id="lg-out-of-scope",
+        state=TicketState.BLOCKED,
+    )
+    make_ticket(
+        db_session,
+        workspace_id=other_workspace.id,
+        external_id="other-in",
+        state=TicketState.BLOCKED,
+    )
+    session_id = _create(client)["id"]
+
+    snapshot = _focus(client, GLOBAL, session_id, workspace_slugs=["other"])
+    client.post(f"{GLOBAL}/{session_id}/messages", json={"content": "Where are we?"})
+
+    assert snapshot["focus"]["all_workspaces"] is False
+    assert [w["slug"] for w in snapshot["focus"]["workspaces"]] == ["other"]
+    prompt = str(captured_turn["prompt"])
+    assert "Scope: the workspaces other" in prompt
+    assert "other-in" in prompt
+    assert "lg-out-of-scope" not in prompt
+
+
+def test_a_workspace_thread_widened_by_its_focus_sees_both_and_the_initiatives(
+    client: TestClient,
+    db_session: Session,
+    initiative: Ticket,
+    other_workspace: Workspace,
+    captured_turn: dict[str, object],
+):
+    second = make_ticket(
+        db_session,
+        workspace_id=None,
+        external_id="init-2",
+        title="Second push",
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    other = make_ticket(
+        db_session,
+        workspace_id=other_workspace.id,
+        external_id="other-7",
+        state=TicketState.BLOCKED,
+    )
+    # Ahead of the seeded in-progress tickets, which otherwise fill the snapshot.
+    other.priority = 0
+    db_session.add(other)
+    db_session.commit()
+    base = "/api/workspaces/loregarden/baxter-chat/sessions"
+    session_id = client.post(base, json={}).json()["id"]
+
+    snapshot = _focus(
+        client,
+        base,
+        session_id,
+        workspace_slugs=["other", "loregarden"],
+        initiative_ids=[initiative.id, second.id],
+    )
+    client.post(f"{base}/{session_id}/messages", json={"content": "Where are we?"})
+
+    workspaces = {w["slug"]: w["fixed"] for w in snapshot["focus"]["workspaces"]}
+    assert workspaces == {"loregarden": True, "other": False}
+    assert [i["external_id"] for i in snapshot["focus"]["initiatives"]] == ["init-1", "init-2"]
+    prompt = str(captured_turn["prompt"])
+    assert "other-7" in prompt
+    assert "## Focused initiative: Cross-repo launch" in prompt
+    assert "## Focused initiative: Second push" in prompt
+    assert set(mcp_tool_values(INITIATIVE_PLANNER_MCP_TOOLS)) <= set(captured_turn["tools"])
+
+
+def test_an_unknown_focus_is_refused_and_writes_nothing(client: TestClient, initiative: Ticket):
+    session_id = _create(client)["id"]
+    _focus(client, GLOBAL, session_id, initiative_ids=[initiative.id])
+
+    res = client.put(
+        f"{GLOBAL}/{session_id}/focus",
+        json={"workspace_slugs": ["no-such-place"], "initiative_ids": []},
+    )
+
+    assert res.status_code == 400
+    assert "no-such-place" in res.json()["detail"]
+    kept = client.get(f"{GLOBAL}/{session_id}").json()["focus"]["initiatives"]
+    assert [i["id"] for i in kept] == [initiative.id]
+
+
+def test_a_fork_keeps_the_focus_and_a_focused_thread_deletes(
+    client: TestClient, other_workspace: Workspace
+):
+    session_id = _create(client)["id"]
+    _focus(client, GLOBAL, session_id, workspace_slugs=["other"])
+
+    forked = client.post(f"{GLOBAL}/{session_id}/fork", json={}).json()
+    deleted = client.delete(f"{GLOBAL}/{session_id}")
+
+    assert [w["slug"] for w in forked["focus"]["workspaces"]] == ["other"]
+    assert deleted.status_code == 200, deleted.text

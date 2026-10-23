@@ -12,6 +12,17 @@ import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 import { BaxterChatPage } from "../BaxterChatPage";
 
+/** A thread on one workspace with no focus beyond it, no loop and no branch. */
+const NO_WORKBENCH = {
+  focus: {
+    all_workspaces: false,
+    workspaces: [{ id: "ws-1", slug: "loregarden", fixed: true }],
+    initiatives: [],
+  },
+  feature: null,
+  chat_branch: null,
+};
+
 jest.mock("../../api/client", () => {
   const actual = jest.requireActual("../../api/client");
   return {
@@ -84,6 +95,7 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: title || "New chat",
       messages: [],
       pending_approvals: [],
@@ -299,6 +311,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Yesterday's triage",
       messages: [
         { id: "m1", role: "user", content: "Where did we stop?", created_at: "2026-07-29T09:00:00Z" },
@@ -466,6 +479,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Queue history",
       messages: [
         {
@@ -623,6 +637,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Hello",
       messages: [
         { id: "m1", role: "user", content: "Hello", created_at: "2026-07-30T09:00:00Z" },
@@ -650,6 +665,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "In flight",
       messages: [
         { id: "m1", role: "user", content: "Still working?", created_at: "2026-07-30T09:00:00Z" },
@@ -681,6 +697,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Stop me",
       messages: [
         { id: "m1", role: "user", content: "Go forever", created_at: "2026-07-30T09:00:00Z" },

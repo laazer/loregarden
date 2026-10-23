@@ -29,6 +29,7 @@ from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
 )
+from loregarden.mcp.feature_loop_tools import TOOL_DEFINITIONS as FEATURE_LOOP_TOOL_DEFINITIONS
 from loregarden.mcp.fix_coverage_tools import FIX_COVERAGE_TOOL_DEFINITIONS
 from loregarden.mcp.github_issue_tool import TOOL_DEFINITION as GITHUB_ISSUE_TOOL_DEFINITION
 from loregarden.mcp.initiative_membership_tools import (
@@ -1174,6 +1175,7 @@ TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_PLAN_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(FEATURE_LOOP_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(SURVEY_TOOL_DEFINITIONS)
 

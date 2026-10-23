@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -59,6 +59,16 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.baxter_chat_branch import chat_branch_view
+from loregarden.services.baxter_chat_focus import (
+    copy_focus,
+    delete_focus,
+    focus_view,
+    load_focus,
+    scope_initiative_ids,
+    scope_workspace_ids,
+    spans_workspaces,
+)
 from loregarden.services.baxter_chat_scope import (
     ChatOwner,
     GlobalChatContext,
@@ -75,6 +85,12 @@ from loregarden.services.chat_attachments import (
     load_attachments_json,
     render_attachments_for_prompt,
     session_attachments_dir,
+)
+from loregarden.services.chat_feature_loop import (
+    delete_feature_loop,
+    feature_loop_view,
+    feature_prompt_lines,
+    with_feature_loop_tools,
 )
 from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import (
@@ -183,23 +199,23 @@ def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
     return value[: limit - 1].rstrip() + "…"
 
 
-def _pending_approvals(session: Session, workspace_id: str | None) -> list[Approval]:
-    """The newest pending approvals in one workspace, or in all of them when ``None``."""
+def _pending_approvals(session: Session, workspace_ids: Collection[str] | None) -> list[Approval]:
+    """The newest pending approvals in the given workspaces, or in all of them when ``None``."""
     query = select(Approval).where(Approval.status == ApprovalStatus.PENDING)
-    if workspace_id is not None:
-        query = query.where(Approval.workspace_id == workspace_id)
+    if workspace_ids is not None:
+        query = query.where(col(Approval.workspace_id).in_(list(workspace_ids)))
     return list(
         session.exec(query.order_by(col(Approval.created_at).desc()).limit(MAX_SNAPSHOT_ROWS)).all()
     )
 
 
-def _active_tickets(session: Session, workspace_id: str | None) -> list[Ticket]:
-    """In-progress and blocked tickets in one workspace, or in all of them when ``None``."""
+def _active_tickets(session: Session, workspace_ids: Collection[str] | None) -> list[Ticket]:
+    """In-progress and blocked tickets in the given workspaces, or in all of them when ``None``."""
     query = select(Ticket).where(
         col(Ticket.state).in_([TicketState.IN_PROGRESS, TicketState.BLOCKED])
     )
-    if workspace_id is not None:
-        query = query.where(Ticket.workspace_id == workspace_id)
+    if workspace_ids is not None:
+        query = query.where(col(Ticket.workspace_id).in_(list(workspace_ids)))
     return list(
         session.exec(
             query.order_by(Ticket.priority.asc(), Ticket.updated_at.desc()).limit(MAX_SNAPSHOT_ROWS)
@@ -415,6 +431,7 @@ def fork_chat_session(
             )
         )
 
+    copy_focus(session, source.id, row.id)
     copy_session_attachments(source.id, row.id)
     session.commit()
     session.refresh(row)
@@ -469,6 +486,9 @@ def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> No
         select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
     ).all():
         session.delete(message)
+    delete_focus(session, chat_session.id)
+    delete_feature_loop(session, chat_session.id)
+    session.flush()
     session.delete(chat_session)
     session.commit()
     delete_session_attachments(chat_session.id)
@@ -614,6 +634,9 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "chat_mode": resolve_chat_mode(str(caps.get("adapter", "claude"))).as_dict(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
+        "focus": focus_view(session, chat_session),
+        "feature": feature_loop_view(session, chat_session),
+        "chat_branch": chat_branch_view(session, chat_session),
         "created_at": chat_session.created_at.isoformat(),
         "updated_at": chat_session.updated_at.isoformat(),
     }
@@ -695,8 +718,16 @@ def _reference_section(references: ResolvedReferences | None) -> list[str]:
 def _scope_lines(workspace: Workspace, context: GlobalChatContext | None) -> list[str]:
     if context is None:
         return [f"Workspace: {workspace.slug}"]
+    if context.workspace_ids is None:
+        reach = "Scope: every workspace (global chat)."
+    else:
+        names = sorted(context.workspace_slugs.get(i, i) for i in context.workspace_ids)
+        reach = (
+            f"Scope: the workspaces {', '.join(names)}, chosen by the operator for this chat. "
+            "Answer about these, not every workspace."
+        )
     return [
-        "Scope: every workspace (global chat). This turn runs in the "
+        f"{reach} This turn runs in the "
         f"`{context.host_slug}` checkout, which is only where file tools read; it does "
         "not limit what you answer about.",
         "Tickets here come from different workspaces. Pass each ticket's own "
@@ -714,22 +745,28 @@ def _workspace_label(workspace_id: str | None, context: GlobalChatContext | None
 
 
 def _initiative_section(context: GlobalChatContext | None) -> list[str]:
-    if context is None or context.initiative is None:
+    if context is None:
         return []
-    initiative = context.initiative
-    return [
-        "",
-        "## Focused initiative",
-        "The operator opened this chat to work on this initiative. Its milestones can "
-        "live in any workspace.",
-        f"id: `{initiative.id}`",
-        f"external id: {initiative.external_id}",
-        f"title: {initiative.title}",
-        _clip(initiative.description) or "(no description)",
-        "",
-        "### Current plan (computed now; re-read with loregarden_get_initiative_plan after acting)",
-        context.plan,
-    ]
+    lines: list[str] = []
+    for focused in context.initiatives:
+        initiative = focused.ticket
+        lines.extend(
+            [
+                "",
+                f"## Focused initiative: {initiative.title}",
+                "The operator opened this chat to work on this initiative. Its milestones "
+                "can live in any workspace.",
+                f"id: `{initiative.id}`",
+                f"external id: {initiative.external_id}",
+                f"title: {initiative.title}",
+                _clip(initiative.description) or "(no description)",
+                "",
+                "### Current plan (computed now; re-read with "
+                "loregarden_get_initiative_plan after acting)",
+                focused.plan,
+            ]
+        )
+    return lines
 
 
 def build_baxter_chat_prompt(
@@ -745,6 +782,7 @@ def build_baxter_chat_prompt(
     approval_bridge: bool = False,
     skill_name: str = "",
     global_context: GlobalChatContext | None = None,
+    extra_sections: Sequence[str] = (),
 ) -> str:
     """Assemble one Home chat turn's system prompt.
 
@@ -756,6 +794,9 @@ def build_baxter_chat_prompt(
     ``global_context`` makes this a global thread's prompt: the snapshot spans
     every workspace, rows are labelled with theirs, and a focused initiative's
     plan is included.
+
+    ``extra_sections`` are rendered after the snapshot, e.g. a feature loop's
+    criteria (``chat_feature_loop.feature_prompt_lines``).
     """
     sections = [
         "# Baxter — Home chat",
@@ -807,6 +848,7 @@ def build_baxter_chat_prompt(
         sections.append("Active tickets: none")
 
     sections.extend(_initiative_section(global_context))
+    sections.extend(extra_sections)
 
     sections.extend(_reference_section(references))
 
@@ -863,12 +905,22 @@ def _scope_turn(
 ) -> tuple[dict, GlobalChatContext | None]:
     """The agent and cross-workspace context for this thread's scope.
 
-    A workspace thread gets both back unchanged. A global one gets the planner's
-    tools added and the context its prompt needs.
+    A workspace thread with nothing ticked gets both back unchanged. A global
+    one, or a workspace thread widened by its focus, gets the planner's tools
+    added and the context its prompt needs.
     """
-    if chat_session is None or chat_session.scope != BaxterChatScope.GLOBAL:
+    if chat_session is None:
         return agent, None
-    return global_chat_agent(agent), load_global_context(session, chat_session, workspace)
+    focus = load_focus(session, chat_session)
+    if not spans_workspaces(chat_session, focus):
+        return agent, None
+    context = load_global_context(
+        session,
+        workspace,
+        workspace_ids=scope_workspace_ids(chat_session, focus),
+        initiative_ids=scope_initiative_ids(chat_session, focus),
+    )
+    return global_chat_agent(agent), context
 
 
 def invoke_baxter_chat_model(
@@ -930,15 +982,20 @@ def invoke_baxter_chat_model(
     if has_image(list(attachments)) and selected != CliAdapter.CLAUDE:
         raise ValueError(image_adapter_refusal(selected))
     agent, global_context = _scope_turn(session, workspace, chat_session, agent)
-    # A global thread's snapshot spans every workspace; its host is only where it runs.
-    snapshot_workspace_id = None if global_context is not None else workspace.id
+    # A cross-workspace thread's snapshot spans its focus (None: every workspace);
+    # its host is only where it runs.
+    snapshot_workspace_ids = (
+        global_context.workspace_ids if global_context is not None else {workspace.id}
+    )
+    agent = with_feature_loop_tools(session, chat_session, agent)
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
         history=list(history or []),
         latest_user_message=message + render_attachments_for_prompt(session_id, list(attachments)),
-        approvals=_pending_approvals(session, snapshot_workspace_id),
-        tickets=_active_tickets(session, snapshot_workspace_id),
+        approvals=_pending_approvals(session, snapshot_workspace_ids),
+        tickets=_active_tickets(session, snapshot_workspace_ids),
         global_context=global_context,
+        extra_sections=feature_prompt_lines(session, chat_session),
         agent=agent,
         references=resolve_references(session, message),
         interactive=interactive,

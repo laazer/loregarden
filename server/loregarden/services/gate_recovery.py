@@ -25,11 +25,11 @@ from loregarden.agents.registry import DEBUGGER_AGENT_ID
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
+    BlockOrigin,
     GateFaultAttribution,
     GateFixTier,
     GateOutcome,
     OrchestrationRun,
-    OrchestrationRunStatus,
     Ticket,
     WorkflowInstance,
     WorkflowStageDef,
@@ -42,6 +42,7 @@ from loregarden.services.autofix_commit import (
     commit_fixer_changes,
     take_fixer_footprint,
 )
+from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.gate_attribution import (
     GatePartition,
@@ -208,7 +209,7 @@ class GateRecovery:
                     # possibly fix it, then re-runs a stage that already passed.
                     # Straight to a human.
                     self._block_after_gate_failure(
-                        ticket, instance, stages, orch_run, from_stage, clean_gate_detail(result)
+                        ticket, orch_run, from_stage, clean_gate_detail(result)
                     )
                     return GateDecision.BLOCKED
                 detail = clean_gate_detail(result)
@@ -284,15 +285,13 @@ class GateRecovery:
         if gate_could_not_examine(detail):
             self._block_after_gate_failure(
                 ticket,
-                instance,
-                stages,
                 orch_run,
                 from_stage,
                 detail,
                 blocking_summary=(
-                    f"The transition gate at '{from_stage}' could not run, so nothing was "
-                    "checked — this is not a finding in the ticket's code. Repair the "
-                    "environment it reported (see the Timeline tab), then requeue the stage."
+                    f"Gate at '{from_stage}' could not run, so nothing was checked; not a "
+                    "finding in this ticket's code. Fix the environment it reported (Timeline "
+                    "tab), then requeue."
                 ),
             )
             return GateDecision.BLOCKED
@@ -342,7 +341,7 @@ class GateRecovery:
             return GateDecision.REROUTED
 
         # Out of automatic options — reroute for rework and pause for a human.
-        self._block_after_gate_failure(ticket, instance, stages, orch_run, from_stage, detail)
+        self._block_after_gate_failure(ticket, orch_run, from_stage, detail)
         return GateDecision.BLOCKED
 
     def _ticket_changed_paths(self, ticket: Ticket) -> list[str]:
@@ -582,17 +581,24 @@ class GateRecovery:
     def _block_after_gate_failure(
         self,
         ticket: Ticket,
-        instance: WorkflowInstance,
-        stages: list[WorkflowStageDef],
         orch_run: OrchestrationRun,
         from_stage: str,
         detail: str,
         blocking_summary: str = "",
     ) -> None:
-        """Automatic fixes are exhausted. Reroute back to the stage (self-redo)
-        and pause for a human — the pre-existing gate-failure behaviour. The raw
-        gate output goes to the Timeline tab; blocking_issues, rendered directly in
-        the workflow pane, stays a short pointer rather than a wall of text.
+        """Automatic fixes are exhausted: block the ticket for a person.
+
+        The raw gate output goes to the Timeline tab; blocking_issues, rendered
+        directly in the workflow pane, stays a short pointer rather than a wall
+        of text.
+
+        This used to reroute the stage back to itself and end the orchestration
+        SUCCEEDED, which suits a failure another automatic pass will clear
+        (`_reroute_for_agent_fix` is that path). Here no pass remains, so the
+        reroute left a ticket in progress that nothing would run, behind a run
+        reporting success: lg-milestone-that-1216 sat at triage like that after
+        eight failed gate runs (2026-10-23). Blocking says what happened, and a
+        requeue starts the stage again.
 
         `blocking_summary` overrides that pointer for a caller whose failure is
         not the one this text describes. The gate that could not run is the case
@@ -611,26 +617,16 @@ class GateRecovery:
                 "command": "",
             },
         )
-        apply_stage_route(
+        self.callbacks.block_ticket(
+            orch_run,
             ticket,
-            instance,
-            stages,
-            self.orch._resolve_transitions(ticket),
-            from_key=from_stage,
-            outcome="reject",
-            next_stage_key=from_stage,
-            blocking_issues=(
+            origin=BlockOrigin.CONTROL_PLANE,
+            repair=RepairPolicy.withheld(
+                "the gate's automatic fixes, and any agent passes it allows, are spent"
+            ),
+            stage_key=from_stage,
+            message=(
                 blocking_summary
                 or f"Transition gate failed at '{from_stage}' — see the Timeline tab for details."
             ),
-            orch_run=orch_run,
-        )
-        self.session.add(ticket)
-        self.session.add(instance)
-        self.session.commit()
-        self.callbacks.complete_orchestration(
-            orch_run,
-            ticket,
-            status=OrchestrationRunStatus.SUCCEEDED,
-            message=f"Transition gate failed at '{from_stage}'; rerouted for rework",
         )

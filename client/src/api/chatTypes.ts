@@ -4,6 +4,7 @@
 // they were the block of `types.ts` that grew whenever a chat surface gained a
 // field. Re-exported from `types.ts`, so importers are unaffected.
 
+import type { ChatBranch, ChatFocus, FeatureLoop } from "./chatWorkbenchTypes";
 import type { ChatPart } from "../components/chat/primitives/types";
 import type { TicketState, WorkspaceRuntimeSettings } from "./types";
 
@@ -171,6 +172,12 @@ export interface BaxterChatSnapshot {
   chat_mode?: ChatMode;
   run_status: TriageRunStatus;
   active_turn_id: string | null;
+  /** The workspaces and initiatives the thread works across. */
+  focus: ChatFocus;
+  /** The thread's feature loop, or null when it runs none. */
+  feature: FeatureLoop | null;
+  /** The branch the thread's acting turns write to, or null before one has acted. */
+  chat_branch: ChatBranch | null;
   created_at: string;
   updated_at: string;
 }

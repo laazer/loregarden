@@ -8,6 +8,22 @@ import { Input } from "../ui/Input";
 
 const SETTLED = new Set(["done", "wont_do"]);
 
+export interface TargetPickerLabels {
+  workspaces: string;
+  initiatives: string;
+  /** Beside a workspace that is fixed on. */
+  fixedWorkspace: string;
+  /** Beside an initiative that is fixed on. */
+  fixedInitiative: string;
+}
+
+const REVIEW_LABELS: TargetPickerLabels = {
+  workspaces: "Read it for",
+  initiatives: "Feed its tickets into",
+  fixedWorkspace: "already",
+  fixedInitiative: "already following",
+};
+
 function toggle(list: string[], value: string, on: boolean): string[] {
   return on ? [...list, value] : list.filter((item) => item !== value);
 }
@@ -26,6 +42,7 @@ export function ReferenceTargetsPicker({
   initiatives,
   onInitiatives,
   showInitiatives = true,
+  labels = REVIEW_LABELS,
 }: {
   /** Already served (or the workspace being added from): shown checked, not editable. */
   fixedWorkspaces: string[];
@@ -36,6 +53,8 @@ export function ReferenceTargetsPicker({
   initiatives: string[];
   onInitiatives: (next: string[]) => void;
   showInitiatives?: boolean;
+  /** The words around the two lists; a review's by default. */
+  labels?: TargetPickerLabels;
 }) {
   const workspaceList = useQuery({ queryKey: ["workspaces"], queryFn: () => api.workspaces() });
   const initiativeList = useQuery({
@@ -49,7 +68,7 @@ export function ReferenceTargetsPicker({
   return (
     <div className="rl-targets">
       <fieldset className="rl-target-group">
-        <legend>Read it for</legend>
+        <legend>{labels.workspaces}</legend>
         <div className="rl-target-options rl-target-options--row">
         {workspaceList.isPending ? (
           <span className="rl-muted">Loading workspaces…</span>
@@ -70,7 +89,7 @@ export function ReferenceTargetsPicker({
                   onChange={(event) => onWorkspaces(toggle(workspaces, workspace.slug, event.target.checked))}
                 />
                 {workspace.slug}
-                {fixed ? <span className="rl-muted"> (already)</span> : null}
+                {fixed ? <span className="rl-muted"> ({labels.fixedWorkspace})</span> : null}
               </label>
             );
           })
@@ -79,7 +98,7 @@ export function ReferenceTargetsPicker({
       </fieldset>
       {showInitiatives ? (
         <fieldset className="rl-target-group">
-          <legend>Feed its tickets into</legend>
+          <legend>{labels.initiatives}</legend>
           {initiativeList.isPending ? (
             <span className="rl-muted">Loading initiatives…</span>
           ) : initiativeList.isError ? (
@@ -107,7 +126,7 @@ export function ReferenceTargetsPicker({
                   <span className="rl-option-text">
                     {initiative.title}{" "}
                     <span className="rl-option-id">{initiative.external_id}</span>
-                    {fixed ? <span className="rl-muted"> · already following</span> : null}
+                    {fixed ? <span className="rl-muted"> · {labels.fixedInitiative}</span> : null}
                   </span>
                 </label>
               );
