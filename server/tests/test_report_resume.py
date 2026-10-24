@@ -91,7 +91,10 @@ def test_the_resume_keeps_every_flag_and_swaps_only_the_prompt(cursor_invocation
         "--resume",
         SESSION,
     ]
-    assert "report now" in resumed.argv
+    # The prompt rides on stdin on both turns, so `--resume <id>` is the only
+    # argv difference and the follow-up text appears nowhere in it.
+    assert resumed.stdin_prompt == "report now"
+    assert not any("report now" in arg for arg in resumed.argv)
     assert not any("the stage prompt" in arg for arg in resumed.argv)
     assert len(resumed.argv) == len(original) + 2
     assert resumed.resume_session_id == SESSION
@@ -125,7 +128,7 @@ def test_a_report_from_the_resumed_turn_settles_the_run(cursor_invocation, run, 
     assert kwargs["run_code"] == f"run_abc123{RESUME_STEM_SUFFIX}"
     assert kwargs["run_id"] == run.id
     assert kwargs["invocation"].argv[kwargs["invocation"].argv.index("--resume") + 1] == SESSION
-    assert FOLLOW_UP in kwargs["invocation"].argv
+    assert kwargs["invocation"].stdin_prompt == FOLLOW_UP
 
 
 def test_no_report_again_blocks_as_before_and_says_a_resume_was_tried(

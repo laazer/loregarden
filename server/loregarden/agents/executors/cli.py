@@ -523,7 +523,11 @@ class CliAgentExecutor:
         )
         cleanup_path: Path | None = None
         if invocation.use_prompt_file:
-            prompt_file.write_text(prompt, encoding="utf-8")
+            # `stdin_prompt` when the adapter reads this file as the turn's whole
+            # message (cursor), which carries its own user-prompt preamble; the
+            # rendered stage prompt when the file is a system prompt beside a
+            # positional message (claude, opencode).
+            prompt_file.write_text(invocation.stdin_prompt or prompt, encoding="utf-8")
             cleanup_path = prompt_dir
         else:
             prompt_dir.rmdir()
