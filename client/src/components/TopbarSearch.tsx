@@ -1,41 +1,23 @@
 /**
- * The topbar's one search box: ⌘K from any page, then type to jump to a page
- * or open a ticket.
+ * The topbar's one search box: ⌘K from any page, then type to jump to a page,
+ * a tab, a ticket, an initiative, a chat thread or a branch.
  *
  * It answers "where is the thing I'm thinking of?" without knowing which page
- * holds it. Pages match by name from the rail's own catalog, so they appear on
- * the first keystroke; tickets match by id or title through the server's
- * search, across every workspace, once there are two characters to go on.
- * Initiatives, chats, branches and tabs join in the next change.
+ * holds it. What each source searches, and what it costs, is
+ * `useTopbarSearchResults`; this component draws the results, grouped, and
+ * owns the keyboard.
  *
  * It is an ARIA combobox: the field owns focus, ↑/↓ move the active option
- * (announced through `aria-activedescendant`), Enter opens it, and Escape
- * clears the text, then leaves the field.
+ * across every group (announced through `aria-activedescendant`), Enter opens
+ * it, and Escape clears the text, then leaves the field.
  */
 
-import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
 
-import { api } from "../api/client";
-import type { TicketSummary } from "../api/types";
-import { ticketPath } from "../lib/appNavigation";
-import { ticketStateChip } from "../lib/ticketStates";
-import { describeError } from "../state/toastStore";
-import { matchPages } from "../lib/topbarSearch";
-import type { SidebarPageDef } from "./appSidebarPages";
+import { useTopbarSearchResults, type SearchResult } from "../hooks/useTopbarSearchResults";
+import type { SearchGroup } from "../lib/topbarSearch";
 import { Input } from "./ui/Input";
 import { StatusChip } from "./ui/StatusChip";
-
-/** Below this, a ticket search would match half the board. */
-const TICKET_SEARCH_MIN_CHARS = 2;
-const TICKET_RESULT_LIMIT = 8;
-/** Long enough to skip the keystrokes of a word being typed, short enough to feel live. */
-const TICKET_SEARCH_DEBOUNCE_MS = 200;
-
-type Option =
-  | { kind: "page"; key: string; page: SidebarPageDef }
-  | { kind: "ticket"; key: string; ticket: TicketSummary };
 
 /**
  * ⌘K belongs to the editor and the terminal while they have focus: Monaco binds
@@ -45,50 +27,31 @@ function keyIsForAnEditor(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(".monaco-editor, .xterm") !== null;
 }
 
-function useDebounced(value: string, delayMs: number): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettled(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [value, delayMs]);
-  return settled;
-}
-
 export function TopbarSearch() {
-  const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(0);
 
-  const ticketQuery = useDebounced(query.trim(), TICKET_SEARCH_DEBOUNCE_MS);
-  const searchTickets = ticketQuery.length >= TICKET_SEARCH_MIN_CHARS;
-  const tickets = useQuery({
-    queryKey: ["topbar-search", "tickets", ticketQuery],
-    queryFn: () => api.tickets({ search: ticketQuery, limit: TICKET_RESULT_LIMIT }),
-    enabled: searchTickets,
-    staleTime: 15_000,
-    // The failure is drawn in the results, where the operator is looking.
-    meta: { suppressErrorToast: true },
-  });
+  const open = focused && query.trim() !== "";
+  const { results, pending, errors, complete } = useTopbarSearchResults(query, open);
 
-  const pages = useMemo(() => matchPages(query), [query]);
-  const ticketRows = useMemo(
-    () => (searchTickets ? (tickets.data ?? []) : []),
-    [searchTickets, tickets.data],
-  );
-  const options: Option[] = useMemo(
-    () => [
-      ...pages.map((page): Option => ({ kind: "page", key: `page-${page.key}`, page })),
-      ...ticketRows.map((ticket): Option => ({ kind: "ticket", key: `ticket-${ticket.id}`, ticket })),
-    ],
-    [pages, ticketRows],
-  );
+  // Groups in the order results arrive, which is the order they are drawn;
+  // `active` indexes the flat list, so ↑/↓ cross from one group to the next.
+  const groups = useMemo(() => {
+    const byGroup = new Map<SearchGroup, { result: SearchResult; index: number }[]>();
+    results.forEach((result, index) => {
+      const rows = byGroup.get(result.group) ?? [];
+      rows.push({ result, index });
+      byGroup.set(result.group, rows);
+    });
+    return [...byGroup.entries()];
+  }, [results]);
 
   // A new result set starts at its first option rather than an index that may
   // no longer exist.
-  useEffect(() => setActive(0), [query, tickets.data]);
+  useEffect(() => setActive(0), [query, results.length]);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -102,27 +65,24 @@ export function TopbarSearch() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const open = focused && query.trim() !== "";
-  const typing = query.trim() !== ticketQuery;
-  const ticketsPending = (searchTickets && tickets.isFetching) || (typing && query.trim().length >= TICKET_SEARCH_MIN_CHARS);
-  const activeOption = options[active];
+  const activeResult = results[active];
 
-  const choose = (option: Option) => {
-    navigate(option.kind === "page" ? option.page.path : ticketPath(option.ticket.id));
+  const choose = (result: SearchResult) => {
+    result.go();
     setQuery("");
     inputRef.current?.blur();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (!options.length) return;
+      if (!results.length) return;
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      setActive((current) => (current + step + options.length) % options.length);
+      setActive((current) => (current + step + results.length) % results.length);
     } else if (event.key === "Enter") {
-      if (!activeOption) return;
+      if (!activeResult) return;
       event.preventDefault();
-      choose(activeOption);
+      choose(activeResult);
     } else if (event.key === "Escape") {
       event.preventDefault();
       if (query) setQuery("");
@@ -130,11 +90,11 @@ export function TopbarSearch() {
     }
   };
 
-  const optionId = (option: Option) => `${listId}-${option.key}`;
-  const renderOption = (option: Option, index: number) => (
-    <li
-      key={option.key}
-      id={optionId(option)}
+  const optionId = (result: SearchResult) => `${listId}-${result.key}`;
+  const renderOption = ({ result, index }: { result: SearchResult; index: number }) => (
+    <div
+      key={result.key}
+      id={optionId(result)}
       role="option"
       aria-selected={index === active}
       className={`topbar-search-option${index === active ? " is-active" : ""}`}
@@ -145,45 +105,41 @@ export function TopbarSearch() {
       onMouseDown={(event) => event.preventDefault()}
       onMouseEnter={() => setActive(index)}
       onFocus={() => setActive(index)}
-      onClick={() => choose(option)}
+      onClick={() => choose(result)}
     >
-      {option.kind === "page" ? (
-        <>
-          <span className="topbar-search-option-icon">{option.page.icon}</span>
-          <span className="topbar-search-option-title">{option.page.label}</span>
-          <span className="topbar-search-option-meta">Page</span>
-        </>
-      ) : (
-        <>
-          <span className="topbar-search-option-id">{option.ticket.external_id}</span>
-          <span className="topbar-search-option-title">{option.ticket.title}</span>
-          <StatusChip {...ticketStateChip(option.ticket.state)} />
-        </>
-      )}
-    </li>
+      {result.icon ? <span className="topbar-search-option-icon">{result.icon}</span> : null}
+      {result.code ? <span className="topbar-search-option-id">{result.code}</span> : null}
+      <span className="topbar-search-option-title">{result.title}</span>
+      {result.chip ? <StatusChip {...result.chip} /> : null}
+      {result.meta ? <span className="topbar-search-option-meta">{result.meta}</span> : null}
+    </div>
   );
 
-  let ticketNote: string | null = null;
-  if (query.trim().length < TICKET_SEARCH_MIN_CHARS) ticketNote = "Type another letter to search tickets";
-  else if (ticketsPending) ticketNote = "Searching tickets…";
-  else if (tickets.isError) ticketNote = `Couldn't search tickets: ${describeError(tickets.error, "request failed")}`;
-  else if (!ticketRows.length) ticketNote = pages.length ? "No tickets match" : null;
+  const nothing = complete && !pending && !results.length && !errors.length;
 
   return (
     <div className="topbar-search">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden
+      >
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
       <Input
         ref={inputRef}
         role="combobox"
-        aria-label="Search pages and tickets"
+        aria-label="Search pages, tickets and more"
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        aria-activedescendant={open && activeOption ? optionId(activeOption) : undefined}
-        placeholder="Search pages and tickets"
+        aria-activedescendant={open && activeResult ? optionId(activeResult) : undefined}
+        placeholder="Search pages, tickets, initiatives, chats…"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         onFocus={() => setFocused(true)}
@@ -193,24 +149,46 @@ export function TopbarSearch() {
       <kbd aria-hidden="true">⌘K</kbd>
       {open ? (
         <div className="topbar-search-popover">
-          <ul id={listId} role="listbox" aria-label="Search results" className="topbar-search-list">
-            {options.map(renderOption)}
-          </ul>
-          {!options.length && !ticketsPending && !tickets.isError && query.trim().length >= TICKET_SEARCH_MIN_CHARS ? (
+          <div
+            id={listId}
+            role="listbox"
+            aria-label="Search results"
+            className="topbar-search-list"
+          >
+            {groups.map(([group, rows]) => (
+              <div key={group} role="group" aria-label={group}>
+                <div className="topbar-search-group-label" aria-hidden="true">
+                  {group}
+                </div>
+                {rows.map(renderOption)}
+              </div>
+            ))}
+          </div>
+          {nothing ? (
             <p className="topbar-search-note" role="status">
-              Nothing matches “{query.trim()}”. Search looks at page names and ticket ids and titles.
-            </p>
-          ) : ticketNote ? (
-            <p
-              className={`topbar-search-note${tickets.isError && !ticketsPending ? " is-error" : ""}`}
-              role="status"
-            >
-              {ticketNote}
+              Nothing matches “{query.trim()}”. Search looks at page and tab names, ticket and
+              initiative ids and titles, chat threads in this chat scope, and this workspace's
+              branches.
             </p>
           ) : null}
+          {!complete && query.trim().length < 2 ? (
+            <p className="topbar-search-note" role="status">
+              Type another letter to search tickets and branches
+            </p>
+          ) : null}
+          {pending ? (
+            <p className="topbar-search-note" role="status">
+              {pending}
+            </p>
+          ) : null}
+          {errors.map((error) => (
+            <p key={error} className="topbar-search-note is-error" role="status">
+              {error}
+            </p>
+          ))}
         </div>
       ) : (
-        <ul id={listId} role="listbox" aria-label="Search results" hidden />
+        <div id={listId} role="listbox" aria-label="Search results" hidden />
       )}
     </div>
   );
