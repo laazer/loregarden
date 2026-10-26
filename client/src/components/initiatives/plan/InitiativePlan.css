@@ -275,7 +275,7 @@
 
 .plan-table caption {
   text-align: left;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   color: var(--txm);
   padding: 0 0 6px;

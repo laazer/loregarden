@@ -70,10 +70,11 @@
 
 .prp-title {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   line-height: 1.35;
   overflow-wrap: anywhere;
+  font-weight: 600;
 }
 
 .prp-title a {
@@ -152,7 +153,7 @@
 
 .prp-section-title {
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;

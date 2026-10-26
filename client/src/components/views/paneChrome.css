@@ -97,7 +97,7 @@
 }
 
 .pane-empty-eyebrow {
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -128,7 +128,7 @@
 }
 
 .primitive-picker-legend {
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -195,7 +195,7 @@
 }
 
 .primitive-option-category {
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -241,7 +241,7 @@
 }
 
 .canvas-empty-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);

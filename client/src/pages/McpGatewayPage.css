@@ -77,10 +77,11 @@
 }
 
 .mcp-metric-value {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-title);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .mcp-metric--accent .mcp-metric-value {
@@ -100,7 +101,7 @@
 }
 
 .mcp-section-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-weight: 600;
   font-size: var(--fs-body);
   letter-spacing: 0.02em;
@@ -292,7 +293,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: an initials mark on the switchboard, drawn like the wordmark */
   font-weight: 700;
   font-size: var(--fs-micro);
   color: var(--txm);
@@ -378,9 +379,9 @@
 }
 
 .mcp-gateway-hub-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--tx);
 }
 
@@ -388,6 +389,8 @@
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--txl);
+  /* A CLI flag reads as one token; at 11px it broke at the hyphen. */
+  white-space: nowrap;
 }
 
 /* ── routing rules ───────────────────────────────────────────────────── */
@@ -606,7 +609,7 @@
   border-radius: 5px;
   background: var(--bg4);
   color: var(--txm);
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: an initials mark, drawn like the wordmark */
   font-size: var(--fs-micro);
   font-weight: 700;
   display: flex;

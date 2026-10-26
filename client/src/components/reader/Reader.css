@@ -27,7 +27,7 @@
 
 .reader-title {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-title);
   font-weight: 600;
   line-height: 1.3;
@@ -223,7 +223,7 @@
 
 .sc-heading {
   margin: 0 0 6px;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-weight: 600;
   color: var(--tx);
 }

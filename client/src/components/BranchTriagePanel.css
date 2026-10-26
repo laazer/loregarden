@@ -197,7 +197,7 @@ a.branch-triage-badge:hover {
 .branch-triage-summary h2 {
   margin: 0;
   font-size: var(--fs-lead);
-  font-family: var(--mono);
+  font-family: var(--ui);
 }
 
 .branch-triage-summary-title h2 {
@@ -404,8 +404,9 @@ a.branch-triage-badge:hover {
 .branch-triage-stat-value {
   font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
   line-height: 1.1;
-  font-family: var(--mono);
+  font-family: var(--ui);
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .branch-triage-stat-value.is-dirty {

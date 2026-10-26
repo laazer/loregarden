@@ -28,7 +28,7 @@
 
 .review-header h3 {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
@@ -298,7 +298,7 @@
 
 .modal-content h4 {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);

@@ -31,7 +31,7 @@
 
 .queue-panel-title {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
@@ -88,12 +88,13 @@
 }
 
 .queue-stat-value {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
-  font-weight: 700;
+  font-weight: 600;
   color: var(--tx);
   letter-spacing: -0.01em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .queue-stat-bar {
@@ -129,7 +130,7 @@
 }
 
 .queue-section-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
@@ -429,7 +430,7 @@
 }
 
 .queue-slot-name {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
@@ -784,7 +785,7 @@
   background: var(--bg2);
   border: 1px solid var(--bd);
   text-align: center;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
   color: var(--txm);
 }

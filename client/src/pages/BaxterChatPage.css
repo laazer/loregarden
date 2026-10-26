@@ -45,7 +45,7 @@
 }
 
 .baxter-chat-name {
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: Baxter's name */
   font-weight: 600;
   font-size: var(--fs-lead);
 }
@@ -177,7 +177,7 @@
 
 .baxter-chat-kicker {
   margin: 0 0 6px;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-small);
   color: var(--txl);
   letter-spacing: 0.02em;
@@ -185,7 +185,7 @@
 
 .baxter-chat-greeting {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: Baxter's greeting on the chat page */
   font-size: 34px; /* type-ok: the chat greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -436,18 +436,18 @@
 
 .baxter-history-head h2 {
   margin: 2px 0 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-title);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
 }
 
 .baxter-history-eyebrow {
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ac);
@@ -650,9 +650,9 @@
 }
 
 .baxter-history-entry-row strong {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .baxter-history-entry-row time {

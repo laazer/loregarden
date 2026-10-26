@@ -328,9 +328,10 @@
 
 .rl-detail-head h2 {
   margin: 4px 0 6px;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   color: var(--tx);
+  font-weight: 600;
 }
 
 .rl-detail-head h2:focus-visible {

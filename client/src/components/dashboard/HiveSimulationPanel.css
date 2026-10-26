@@ -17,7 +17,7 @@
 }
 
 .hive-panel__title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-weight: 600;
   font-size: var(--fs-small);
   letter-spacing: 0.03em;
@@ -83,8 +83,9 @@
 .hive-panel__skin-label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
+  font-weight: 600;
 }
 
 .hive-panel__skin-select {
@@ -108,10 +109,11 @@
   border-radius: 6px;
   padding: 4px 10px;
   font-size: var(--fs-micro);
-  font-family: var(--dp);
+  font-family: var(--ui);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   cursor: pointer;
+  font-weight: 600;
 }
 
 .hive-panel__replay:hover:not(:disabled) {
@@ -298,10 +300,11 @@
 }
 
 .hive-panel__idle-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
   color: var(--txm);
   margin-bottom: 5px;
+  font-weight: 600;
 }
 
 .hive-panel__idle-copy {
@@ -612,7 +615,7 @@
 .hive-css__nameplate {
   position: relative;
   z-index: 2;
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: a character nameplate inside the Hive simulation */
   font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -907,7 +910,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: an agent's initials inside the Hive simulation */
   font-size: var(--fs-micro);
   font-weight: 700;
   color: #04140f;

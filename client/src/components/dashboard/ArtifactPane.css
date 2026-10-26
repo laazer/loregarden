@@ -98,9 +98,10 @@
 }
 
 .ap-state-title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-body);
   color: var(--txm);
+  font-weight: 600;
 }
 
 .ap-state-body {

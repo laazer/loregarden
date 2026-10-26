@@ -79,7 +79,7 @@ function EmptyArtifacts({
 }) {
   return (
     <div style={{ height: "100%", minHeight: 340, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--txl)", gap: 12, padding: 24 }}>
-      <div style={{ fontFamily: "var(--dp)", fontSize: "var(--fs-body)", color: "var(--txm)" }}>{label}</div>
+      <div style={{ fontFamily: "var(--ui)", fontWeight: 600, fontSize: "var(--fs-body)", color: "var(--txm)" }}>{label}</div>
       {children ? (
         <div style={{ fontSize: "var(--fs-small)", textAlign: "center", maxWidth: 320, lineHeight: 1.55 }}>{children}</div>
       ) : (
