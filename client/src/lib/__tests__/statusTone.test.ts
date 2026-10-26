@@ -57,9 +57,10 @@ describe("status tones", () => {
     expect(ticketStateChip("done").tone).toBe("done");
   });
 
-  it("keeps an open ticket quiet: in progress is not running", () => {
-    // Most in-progress tickets are idle between stages; activity says when one runs.
-    expect(ticketStateChip("in_progress").tone).toBe("idle");
+  it("keeps started work apart from backlog", () => {
+    // Tree and work-items dots carry no word, so the hue alone must separate them.
+    expect(ticketStateChip("in_progress").tone).toBe("run");
+    expect(ticketStateChip("backlog").tone).toBe("idle");
   });
 
   it("reads an unknown status as idle and still says what it is", () => {

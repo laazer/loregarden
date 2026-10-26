@@ -12,9 +12,9 @@ function toneColors<K extends string>(tones: Record<K, StatusTone>): Record<K, s
 
 const TICKET_STATE_TONES: Record<TicketState, StatusTone> = {
   backlog: "idle",
-  // Open, not executing: most of the in-progress pile is idle between stages,
-  // and activity says when something runs. Blue is kept for that.
-  in_progress: "idle",
+  // Blue, so a tree or work-items dot (colour only, no word) still tells
+  // started work from backlog. Activity says whether anything is executing.
+  in_progress: "run",
   blocked: "bad",
   // Violet, not red: parked work is owed, not stuck, and colouring it like
   // blocked would undo the distinction (lg-workflow-integrity-449).
