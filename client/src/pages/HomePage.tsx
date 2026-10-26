@@ -16,6 +16,7 @@ import {
 import { StudioChatComposer } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
+import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
 import { chatPath, stashHomeBaxterFiles, stashHomeBaxterPrompt } from "../lib/homeBaxter";
 import {
   runStatusChip,
@@ -98,13 +99,7 @@ export function HomePage() {
     queryFn: () => api.runs(),
     refetchInterval: 15_000,
   });
-  const statusQ = useQuery({
-    queryKey: ["home-status-summary", workspaceParam],
-    queryFn: () => api.ticketStatusSummary(workspaceParam),
-    // Faster than the lists: this is the card people watch to see whether
-    // anything is actually moving.
-    refetchInterval: 10_000,
-  });
+  const statusQ = useTicketStatusSummary();
 
   const pending = pendingApprovals(approvalsQ.data);
   const tickets = ticketsQ.data ?? [];

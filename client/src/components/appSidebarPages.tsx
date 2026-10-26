@@ -1,11 +1,11 @@
 /**
  * The application's own pages, with the icons the fixed rail drew.
  *
- * This catalog *is* the sidebar's Tools section — the section is derived from
+ * This catalog *is* the sidebar's page groups — they are derived from
  * it and stored nowhere. That is the point: a permanent section held as rows
  * can be emptied by one bad write, and the user is then left with no navigation
  * and no control that brings it back. Keys are typed against `AppPage` and
- * every path comes from `pathForPage`, so Tools cannot drift from the routes
+ * every path comes from `pathForPage`, so the pages cannot drift from the routes
  * the app actually has.
  */
 
@@ -13,8 +13,23 @@ import type { ReactNode } from "react";
 
 import { pathForPage, type AppPage } from "../lib/appNavigation";
 
+/**
+ * The rail's three groups, in render order: the pages you work in, the pages
+ * you build with, and the pages about the machine itself. Thirteen icons in one
+ * column gave no clue which was which (Queue, Machine and Instances looked
+ * alike); a heading per group does.
+ */
+export const SIDEBAR_GROUPS = [
+  { key: "work", label: "Work" },
+  { key: "build", label: "Build" },
+  { key: "system", label: "System" },
+] as const;
+
+export type SidebarGroup = (typeof SIDEBAR_GROUPS)[number]["key"];
+
 export interface SidebarPageDef {
   key: AppPage;
+  group: SidebarGroup;
   label: string;
   path: string;
   icon: ReactNode;
@@ -35,10 +50,11 @@ function ownsOnly(key: AppPage): (page: AppPage) => boolean {
   return (page) => page === key;
 }
 
-/** Declaration order is render order: the order the fixed rail drew. */
+/** Declaration order is render order within a group, and groups are contiguous. */
 export const SIDEBAR_PAGES: SidebarPageDef[] = [
   {
     key: "home",
+    group: "work",
     label: "Home",
     path: pathForPage("home"),
     ownsPage: ownsOnly("home"),
@@ -51,6 +67,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "chat",
+    group: "work",
     label: "Chat",
     path: pathForPage("chat"),
     ownsPage: ownsOnly("chat"),
@@ -62,6 +79,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "dashboard",
+    group: "work",
     label: "Console",
     path: pathForPage("dashboard"),
     ownsPage: ownsOnly("dashboard"),
@@ -74,6 +92,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "work-items",
+    group: "work",
     label: "Work items",
     path: pathForPage("work-items"),
     ownsPage: ownsOnly("work-items"),
@@ -86,6 +105,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "initiatives",
+    group: "work",
     label: "Initiatives",
     path: pathForPage("initiatives"),
     ownsPage: ownsOnly("initiatives"),
@@ -98,6 +118,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "editor",
+    group: "build",
     label: "Editor",
     path: pathForPage("editor"),
     ownsPage: ownsOnly("editor"),
@@ -110,6 +131,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "studio",
+    group: "build",
     label: "Studios",
     path: pathForPage("studio"),
     ownsPage: ownsOnly("studio"),
@@ -121,20 +143,24 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
-    key: "queue",
-    label: "Parallel Execution",
-    path: pathForPage("queue"),
-    ownsPage: ownsOnly("queue"),
+    key: "branch-triage",
+    group: "build",
+    label: "Branch Triage",
+    path: pathForPage("branch-triage"),
+    ownsPage: ownsOnly("branch-triage"),
     icon: (
       <svg {...STROKE} aria-hidden>
-        <rect x="3" y="4" width="5" height="16" rx="1.5" />
-        <rect x="10" y="4" width="5" height="16" rx="1.5" />
-        <rect x="17" y="4" width="4" height="16" rx="1.5" />
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M6 9v6" />
+        <circle cx="18" cy="6" r="3" />
+        <path d="M18 9a9 9 0 0 1-9 9" />
       </svg>
     ),
   },
   {
     key: "machine",
+    group: "system",
     label: "Machine",
     path: pathForPage("machine"),
     ownsPage: ownsOnly("machine"),
@@ -147,7 +173,22 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "queue",
+    group: "system",
+    label: "Queue",
+    path: pathForPage("queue"),
+    ownsPage: ownsOnly("queue"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <rect x="3" y="4" width="5" height="16" rx="1.5" />
+        <rect x="10" y="4" width="5" height="16" rx="1.5" />
+        <rect x="17" y="4" width="4" height="16" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
     key: "mcp",
+    group: "system",
     label: "MCP Gateway",
     path: pathForPage("mcp"),
     ownsPage: ownsOnly("mcp"),
@@ -162,6 +203,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "workspaces",
+    group: "system",
     label: "Workspaces",
     path: pathForPage("workspaces"),
     ownsPage: ownsOnly("workspaces"),
@@ -175,6 +217,7 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
   },
   {
     key: "memory",
+    group: "system",
     label: "Memory",
     path: pathForPage("memory"),
     ownsPage: ownsOnly("memory"),
@@ -182,21 +225,6 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
       <svg {...STROKE} aria-hidden>
         <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1z" />
         <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />
-      </svg>
-    ),
-  },
-  {
-    key: "branch-triage",
-    label: "Branch Triage",
-    path: pathForPage("branch-triage"),
-    ownsPage: ownsOnly("branch-triage"),
-    icon: (
-      <svg {...STROKE} aria-hidden>
-        <circle cx="6" cy="6" r="3" />
-        <circle cx="6" cy="18" r="3" />
-        <path d="M6 9v6" />
-        <circle cx="18" cy="6" r="3" />
-        <path d="M18 9a9 9 0 0 1-9 9" />
       </svg>
     ),
   },

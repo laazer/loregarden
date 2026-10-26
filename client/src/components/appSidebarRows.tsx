@@ -9,14 +9,15 @@
  * pin, rename, duplicate and delete buttons; leaving all of them in the tab
  * sequence costs six stops per entry where the rail this replaces cost one. The
  * controls are therefore a roving group: the row's link is the tab stop, and
- * Left/Right move focus along the row from there. A Tools row has no controls
+ * Left/Right move focus along the row from there. A page row has no controls
  * to rove between and is one stop on its own.
  */
 
-import type { DragEvent, KeyboardEvent, ReactNode } from "react";
+import { useId, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
 import { viewPath } from "../lib/appNavigation";
+import type { RailCount } from "../lib/railCounts";
 import type { ViewKind, ViewSummary } from "../lib/viewsApi";
 import type { SidebarPageDef } from "./appSidebarPages";
 import { blurOnClick } from "./appSidebarBlur";
@@ -132,30 +133,56 @@ function MoveControls({
 }
 
 /**
- * A built-in page in the Tools section.
+ * A built-in page, in its group.
  *
- * It carries no controls at all, and that is the whole ticket: Tools is derived
+ * It carries no controls at all, and that is the whole ticket: the pages are derived
  * from the page catalog rather than stored, so there is nothing to remove, and
  * nothing to reorder — the rank a move control would edit does not exist for
  * these rows. A row with no controls is also, incidentally, exactly one tab
  * stop without needing the roving group.
  */
-export function ToolRow({ page, active }: { page: SidebarPageDef; active: boolean }) {
+export function ToolRow({
+  page,
+  active,
+  count,
+}: {
+  page: SidebarPageDef;
+  active: boolean;
+  /** The page's live count, when it has one worth drawing. */
+  count?: RailCount;
+}) {
+  const countId = useId();
   return (
     <li className="app-sidebar-row">
       {/* `NavLink` owns `aria-current`, matching on the route the way the fixed
           rail did; the active treatment also covers the pages that own more
-          than their own path. */}
+          than their own path. The count is the link's description, not part
+          of its name: the link is still "Work items", and a screen reader
+          adds "21 need you" after it. */}
       <NavLink
         to={page.path}
         end={page.path === "/"}
         className={`app-sidebar-link${active ? " app-sidebar-link--active" : ""}`}
+        aria-describedby={count ? countId : undefined}
         onClick={blurOnClick}
       >
         {active ? <span className="app-sidebar-bar" aria-hidden /> : null}
         <span className="app-sidebar-icon">{page.icon}</span>
         <span className="app-sidebar-name app-sidebar-reveal">{page.label}</span>
+        {count ? (
+          <span
+            className={`app-sidebar-page-count app-sidebar-reveal app-sidebar-page-count--${count.tone}`}
+            aria-hidden
+          >
+            {count.text}
+          </span>
+        ) : null}
       </NavLink>
+      {count ? (
+        <span id={countId} hidden>
+          {count.label}
+        </span>
+      ) : null}
     </li>
   );
 }
