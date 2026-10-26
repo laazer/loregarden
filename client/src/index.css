@@ -2588,8 +2588,11 @@ label:is(
      second row rather than pushing Send off the edge or squeezing the
      suggestions to nothing. */
   flex-wrap: wrap;
-  row-gap: 8px;
-  padding: 9px 14px 9px 16px;
+  row-gap: 4px;
+  /* 36px at rest: one row of what is used every turn. Everything else is in
+     the sheet the composer opens (see `.app-action-bar-sheet`). */
+  min-height: 36px;
+  padding: 3px 12px 3px 14px;
   border-top: 1px solid var(--bd2);
   background: linear-gradient(180deg, var(--bg1), #070a10);
   font-size: var(--fs-micro);
@@ -2630,7 +2633,7 @@ label:is(
 .app-action-bar-input {
   flex: 1;
   min-width: 0;
-  height: 30px;
+  height: 28px;
   border: none;
   outline: none;
   background: transparent;
@@ -2857,8 +2860,8 @@ label:is(
 
 .app-action-bar-send {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6132,8 +6135,8 @@ label:is(
   gap: 7px;
   border: 1px solid var(--bd);
   background: var(--bg2);
-  border-radius: 10px;
-  padding: 7px 11px;
+  border-radius: 9px;
+  padding: 4px 10px;
   font-family: var(--ui);
   font-size: var(--fs-micro);
   font-weight: 600;
@@ -6163,6 +6166,61 @@ label:is(
 
 .app-action-bar-chevron.is-open {
   transform: rotate(180deg);
+}
+
+/* The composer, Send and the sheet: one focus group in the DOM (its handlers
+   are what open and close the sheet), but no box of its own, so each child is
+   an item of the bar's row and the sheet can take a full-width row. */
+.app-action-bar-compose {
+  display: contents;
+}
+
+.app-action-bar-kbd {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  padding: 1px 5px;
+  border: 1px solid var(--bd2);
+  border-radius: 5px;
+  color: var(--txl);
+}
+
+.app-action-bar-compose:focus-within .app-action-bar-kbd {
+  display: none;
+}
+
+/*
+ * A full-width row above the bar's own, in flow: while you compose, the bar
+ * grows and what is above it moves up. It does not float over the page,
+ * because what sits directly above the bar is Baxter's thread (focusing the
+ * composer opens it), and an overlay covered its newest reply, the one being
+ * answered.
+ */
+.app-action-bar-sheet {
+  order: -1;
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 4px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.app-action-bar-sheet[hidden] {
+  display: none;
+}
+
+.app-action-bar-sheet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-action-bar-sheet-hint {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--txl);
 }
 
 /* `/note` post-its float above the bar rather than widening it: the bar is one

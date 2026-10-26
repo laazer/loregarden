@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -33,6 +33,12 @@ const mockApi = apiClient.api as unknown as { runtimeOptions: jest.Mock; ticket:
 function renderBar(ui: ReactElement = <AppActionBar />) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
+/** The sheet opens when the composer takes focus, as it does for a person. */
+function openSheet() {
+  const composer = screen.getByRole("textbox");
+  act(() => composer.focus());
 }
 
 function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
@@ -161,6 +167,7 @@ it("carries the auto-approve choice into the turn it was set for", () => {
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Auto-approve" }));
   fireEvent.change(screen.getByPlaceholderText("Message about this ticket…"), {
     target: { value: "run the tests" },
@@ -180,6 +187,7 @@ it("sends a quick opener while collapsed", () => {
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(
     screen.getByRole("button", { name: "What is blocking this ticket?" }),
   );
@@ -197,6 +205,7 @@ it("offers shipping the work when the conversation sits on its own branch", () =
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Commit, push, and open a PR" }));
 
   expect(bound.send).toHaveBeenCalledWith("Commit, push, and open a PR", {
@@ -224,6 +233,7 @@ it("keeps the quick prompts once the thread is open", () => {
   useUiStore.setState({ copilotOpen: true });
 
   renderBar();
+  openSheet();
 
   expect(
     screen.getByRole("button", { name: "What is blocking this ticket?" }),
@@ -241,6 +251,7 @@ it("answers the reply on screen rather than repeating the openers", () => {
   useUiStore.setState({ copilotOpen: true });
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Yes, go ahead" }));
 
   expect(bound.send).toHaveBeenCalledWith("Yes, go ahead", { autoApprove: false, skill: "" });
@@ -390,6 +401,7 @@ describe("the run-logs toggle", () => {
     );
 
     renderBar();
+    openSheet();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Run logs" })).toBeEnabled(),
     );
@@ -440,6 +452,7 @@ describe("the run-logs toggle", () => {
     );
 
     renderBar();
+    openSheet();
 
     await waitFor(() => expect(mockApi.ticket).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Run logs" })).toBeDisabled();
@@ -568,6 +581,7 @@ describe("the chat options", () => {
     );
 
     renderBar();
+    openSheet();
 
     expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeInTheDocument();
   });
@@ -631,6 +645,7 @@ describe("the chat options", () => {
     useUiStore.setState({ copilotHistoryOpen: true });
 
     renderBar();
+    openSheet();
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
 
     expect(bound.startNewChat).toHaveBeenCalled();
@@ -651,6 +666,7 @@ describe("the chat options", () => {
     );
 
     renderBar();
+    openSheet();
     fireEvent.click(screen.getByRole("button", { name: "History" }));
 
     expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
@@ -669,6 +685,7 @@ describe("the chat options", () => {
     useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
 
     renderBar();
+    openSheet();
     fireEvent.click(screen.getByRole("button", { name: "History" }));
 
     expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
@@ -865,6 +882,7 @@ describe("the agent switch", () => {
     expect(screen.getByRole("radio", { name: "Planner" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "Baxter" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("button", { name: "Expand Planner" })).toBeInTheDocument();
+    openSheet();
     const [opener] = TRY_ASKING[INITIATIVE_PLANNING];
     fireEvent.click(screen.getByRole("button", { name: opener }));
     expect(bound.send).toHaveBeenCalledWith(opener, expect.objectContaining({ autoApprove: false }));
@@ -877,6 +895,7 @@ describe("the agent switch", () => {
     const select = jest.fn();
     mockResolver.mockReturnValue(bindPlanner({ agents: agents({ select }) }));
     renderBar();
+    openSheet();
 
     fireEvent.click(screen.getByRole("radio", { name: "Baxter" }));
     expect(select).toHaveBeenLastCalledWith("baxter");
@@ -897,6 +916,7 @@ describe("the agent switch", () => {
       }),
     );
     renderBar();
+    openSheet();
 
     expect(screen.getByRole("radio", { name: "Baxter" })).toBeDisabled();
     fireEvent.keyDown(screen.getByRole("radio", { name: "Planner" }), { key: "ArrowRight" });
@@ -911,7 +931,12 @@ describe("the agent switch", () => {
 
     const input = screen.getByPlaceholderText(/Attach a milestone/);
     expect(input).toBeDisabled();
-    expect(screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] })).toBeDisabled();
+    // A disabled composer takes no focus, so its sheet of one-click replies
+    // never opens: no dead buttons. The switch to another agent stays in the row.
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Baxter" })).toBeEnabled();
   });
 });
 
