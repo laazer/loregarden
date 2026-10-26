@@ -8,6 +8,7 @@ import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { CopyValueButton } from "../components/CopyValueButton";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
+import { TicketGithubSyncButton } from "../components/TicketGithubSyncButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactPaneBody } from "../components/dashboard/ArtifactPaneBody";
@@ -755,6 +756,7 @@ export function Dashboard() {
               </CopyValueButton>
             )}
             <div style={{ flex: 1 }} />
+            {selectedId && <TicketGithubSyncButton ticketId={selectedId} />}
             {selectedId && <DashboardTicketDetailsButton ticketId={selectedId} />}
             <PaneHideButton
               pane="workflow"

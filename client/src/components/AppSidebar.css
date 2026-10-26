@@ -738,3 +738,7 @@
 .app-sidebar-page-count--you {
   color: var(--vil);
 }
+
+.app-sidebar-page-count--warn {
+  color: var(--aml);
+}

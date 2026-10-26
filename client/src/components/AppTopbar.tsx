@@ -4,16 +4,11 @@ import { useChatScope } from "../hooks/useChatScope";
 import { GLOBAL_CHAT_SCOPE, initiativeChatScope } from "../lib/chatScope";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
-import { TopbarPageSlot } from "./TopbarPageSlot";
+import { TopbarCrumbs, TopbarPageSlot } from "./TopbarPageSlot";
+import { TopbarSearch } from "./TopbarSearch";
 import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
-
-const PAGE_SUBTITLES: Partial<Record<string, string>> = {
-  dashboard: "Agent SDLC · Console",
-  "work-items": "Agent SDLC · Work items",
-  chat: "Agent SDLC · Chat",
-  home: "Agent SDLC · Home",
-};
 
 /** Beside History: the chat's other panel, toggled from the same place. */
 function ChatWorkbenchToggle() {
@@ -88,6 +83,12 @@ function ChatScopePicker() {
   );
 }
 
+/**
+ * The one header every page gets: the wordmark, where you are, one search box,
+ * then the page's own controls and the Inbox. 44px, one row, the same on every
+ * page; GitHub sync moved to Settings and to each ticket's header, Instances
+ * and Usage to the Machine page.
+ */
 export function AppTopbar() {
   const appPage = useAppPage();
   const search = useUiStore((s) => s.search);
@@ -97,28 +98,22 @@ export function AppTopbar() {
   const toggleBaxterHistory = useUiStore((s) => s.toggleBaxterHistory);
   const isConsole = appPage === "dashboard";
   const isChat = appPage === "chat";
-  const subtitle = PAGE_SUBTITLES[appPage] ?? "Agent SDLC · Console";
 
   return (
     <header className="topbar app-topbar">
-      <div className="ide-topbar-brand">
-        <div className="brand-title">loregarden</div>
-        <div className="brand-sub">{subtitle}</div>
-      </div>
+      <span className="brand-title topbar-wordmark">loregarden</span>
+      <TopbarCrumbs />
+      <TopbarSearch />
+      {/* The Console's tree filter: a page control, so it narrows the tree in
+          place rather than searching the app the way the box beside it does. */}
       {isConsole ? (
-        <label className="topbar-search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tickets, agents, runs…"
-            aria-label="Search tickets"
-          />
-          <kbd>⌘K</kbd>
-        </label>
+        <Input
+          className="topbar-filter"
+          aria-label="Filter tickets"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter tickets…"
+        />
       ) : null}
       <TopbarPageSlot />
       <div className="topbar-spacer" />

@@ -19,7 +19,7 @@ function QueueScreen() {
 
   return (
     <div className="screen-view">
-      <PageTopbar title="Queue Dashboard">
+      <PageTopbar title="Queue">
         <QueueTopbarControls />
       </PageTopbar>
 

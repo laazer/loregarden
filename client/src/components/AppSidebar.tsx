@@ -245,12 +245,15 @@ export function AppSidebar({
   workspaceSlug,
   onOpenSettings,
   ticketSummary,
+  usageNearLimit = false,
 }: {
   /** A concrete slug — never `"all"`, which 404s against every view route. */
   workspaceSlug: string;
   onOpenSettings: () => void;
   /** Board counts for the rail's "need you" number; undefined until they land. */
   ticketSummary?: TicketStatusSummary;
+  /** Provider usage is close to a limit; flagged on Machine, where Usage lives. */
+  usageNearLimit?: boolean;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -281,8 +284,9 @@ export function AppSidebar({
         runningCount: runningTickets(queue.activeRuns).length,
         stats: queue.stats,
         queueLive: !queue.loading && queue.error === null,
+        usageNearLimit,
       }),
-    [ticketSummary, queue.activeRuns, queue.stats, queue.loading, queue.error],
+    [ticketSummary, queue.activeRuns, queue.stats, queue.loading, queue.error, usageNearLimit],
   );
 
   const groupHeadingId = useId();

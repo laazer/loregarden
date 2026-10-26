@@ -21,15 +21,17 @@ import {
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
 import { describeError } from "../state/toastStore";
+import { GithubSyncPanel } from "./GithubSyncPanel";
 import { Button } from "./ui/Button";
 import { ModalShell } from "./ui/ModalShell";
 import { Select } from "./ui/Select";
 
-type SettingsTab = "runtime" | "memory";
+type SettingsTab = "runtime" | "memory" | "github";
 
 const TABS: { key: SettingsTab; label: string }[] = [
   { key: "runtime", label: "Agent runtime" },
   { key: "memory", label: "Memory" },
+  { key: "github", label: "GitHub" },
 ];
 
 const TAB_HEADINGS: Record<SettingsTab, { eyebrow: string; title: string; subtitle: string }> = {
@@ -43,6 +45,12 @@ const TAB_HEADINGS: Record<SettingsTab, { eyebrow: string; title: string; subtit
     title: "iCloud & Obsidian setup",
     subtitle:
       "Synced markdown notes and optional SQLite graph storage, organized per workspace under your vault.",
+  },
+  github: {
+    eyebrow: "GitHub",
+    title: "Sync GitHub issues",
+    subtitle:
+      "Brings every linked ticket and its issue up to date: title, description and open/closed state move in whichever direction changed. One ticket syncs from its own header.",
   },
 };
 
@@ -228,6 +236,8 @@ export function SettingsModal({
             </Button>
           </div>
         </>
+      ) : tab === "github" ? (
+        <GithubSyncPanel onClose={close} />
       ) : (
         <>
           <div className="modal-body">

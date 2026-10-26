@@ -17,6 +17,7 @@ import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 import { ViewAgentActions } from "./ViewAgentActions";
 import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
+import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -32,6 +33,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
   const ticketSummary = useTicketStatusSummary();
+  const usage = useUsageSnapshot();
   const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", workspace],
     params: { workspace },
@@ -126,6 +128,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           workspaceSlug={sidebarWorkspaceSlug}
           onOpenSettings={openSettings}
           ticketSummary={ticketSummary.data}
+          usageNearLimit={Boolean(usage.query.data?.near_limit)}
         />
         <TopbarPageSlotProvider>
           <div className="app-main">

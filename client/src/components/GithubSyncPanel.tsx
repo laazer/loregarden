@@ -17,17 +17,10 @@ import { useTicketRefStore } from "../state/ticketRefStore";
 import { describeError, pushToast } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import { GithubBackgroundSync } from "./GithubBackgroundSync";
-import { IconCloseButton } from "./IconCloseButton";
 import { ParentTicketSelector } from "./ParentTicketSelector";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
-import { ModalShell } from "./ui/ModalShell";
-
-interface GithubSyncModalProps {
-  open: boolean;
-  onClose: () => void;
-}
 
 function outcome(result: GithubLinkSyncResult): { text: string; failed: boolean } {
   if (result.error) return { text: `Failed: ${result.error}`, failed: true };
@@ -138,18 +131,15 @@ function openTicketSkipReason(ticket: TicketDetail | null, slugs: string[]): str
   return null;
 }
 
-/** Sync every linked ticket in a workspace with its GitHub issue, and
- * optionally import the repository's unlinked open issues under a parent. */
-export function GithubSyncModal({ open, onClose }: GithubSyncModalProps) {
-  if (!open) {
-    // Closed but mounted: the shell plays its exit with the last content it drew.
-    return <ModalShell open={false} onDismiss={undefined} labelledBy="github-sync-title">{null}</ModalShell>;
-  }
-  // Mounted per opening, so each opening starts from the ticket now on screen.
-  return <GithubSyncDialog onClose={onClose} />;
-}
-
-function GithubSyncDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Sync every linked ticket in a workspace with its GitHub issue, and optionally
+ * import the repository's unlinked open issues under a parent.
+ *
+ * The GitHub tab of Settings: it draws the dialog's body and footer, and the
+ * Settings modal owns the shell, the heading and the tab bar. It mounts each
+ * time the tab opens, so each opening starts from the ticket now on screen.
+ */
+export function GithubSyncPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const activeWorkspace = useUiStore((s) => s.workspace);
   const workspaceFieldId = useId();
@@ -199,21 +189,7 @@ function GithubSyncDialog({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <ModalShell open onDismiss={onClose} labelledBy="github-sync-title">
-      <div className="modal-header">
-        <div>
-          <div className="state-label">GitHub</div>
-          <h2 id="github-sync-title" className="modal-title">
-            Sync GitHub issues
-          </h2>
-          <p className="modal-subtitle">
-            Brings every linked ticket and its issue up to date: title, description and open/closed state
-            move in whichever direction changed.
-          </p>
-        </div>
-        <IconCloseButton onClick={onClose} />
-      </div>
-
+    <>
       <div className="modal-body" style={{ display: "grid", gap: 12 }}>
         {workspaces.isPending ? (
           <p className="modal-hint">Loading workspaces…</p>
@@ -318,6 +294,6 @@ function GithubSyncDialog({ onClose }: { onClose: () => void }) {
           {sync.isPending ? "Syncing…" : parentId ? "Sync and import" : "Sync now"}
         </Button>
       </div>
-    </ModalShell>
+    </>
   );
 }
