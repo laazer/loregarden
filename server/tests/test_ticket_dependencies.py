@@ -5,7 +5,10 @@ test_auto_mode_subtree.py and test_studio_workflow_assignment.py.
 
 import pytest
 from loregarden.mcp.ticket_edit_tools import ticket_state_payload
-from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from loregarden.models.domain import Ticket, TicketDependency, TicketState, WorkItemType, Workspace
+from loregarden.services.hierarchy_service import reparent_ticket
+from loregarden.services.invariant_registry import NO_TICKET_DEPENDS_ON_AN_ANCESTOR
+from loregarden.services.invariants import run_invariant
 from loregarden.services.subtree_auto_run import order_children_for_subtree
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
@@ -90,6 +93,106 @@ def test_add_dependency_is_idempotent_and_rejects_self(db_session: Session):
     assert first.id == again.id
     with pytest.raises(ValueError):
         svc.add_dependency("t1", "t1")
+
+
+def test_add_dependency_rejects_a_parent(db_session: Session):
+    """The 1431 shape: a child waits on its parent, which is done only when
+    the child is, so the edge deadlocks both. Cycle detection walks dependency
+    edges only and cannot see the hierarchy wait."""
+    _rows(db_session, "parent", "child")
+    child = db_session.get(Ticket, "child")
+    assert child is not None
+    child.parent_ticket_id = "parent"
+    db_session.add(child)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="ancestor"):
+        TicketDependencyService(db_session).add_dependency("child", "parent")
+    assert TicketDependencyService(db_session).prerequisites("child") == []
+
+
+def test_add_dependency_rejects_an_ancestor(db_session: Session):
+    _rows(db_session, "grand", "parent", "child")
+    parent = db_session.get(Ticket, "parent")
+    child = db_session.get(Ticket, "child")
+    assert parent is not None and child is not None
+    parent.parent_ticket_id = "grand"
+    child.parent_ticket_id = "parent"
+    db_session.add_all([parent, child])
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="ancestor"):
+        TicketDependencyService(db_session).add_dependency("child", "grand")
+
+
+def test_add_dependency_still_allows_a_sibling(db_session: Session):
+    _rows(db_session, "parent", "a", "b")
+    a = db_session.get(Ticket, "a")
+    b = db_session.get(Ticket, "b")
+    assert a is not None and b is not None
+    a.parent_ticket_id = "parent"
+    b.parent_ticket_id = "parent"
+    db_session.add_all([a, b])
+    db_session.commit()
+
+    TicketDependencyService(db_session).add_dependency("a", "b")
+    assert TicketDependencyService(db_session).prerequisites("a") == ["b"]
+
+
+def test_reparent_under_a_prerequisite_is_refused(db_session: Session):
+    """The other writer of the conjunction: move a ticket under one it already
+    waits on. ``reparent_ticket`` and the workspace-move parent rewrite both
+    call ``refuse_reparent_onto_a_prerequisite`` before writing parent_ticket_id."""
+    _rows(db_session, "parent", "child")
+    parent = db_session.get(Ticket, "parent")
+    child = db_session.get(Ticket, "child")
+    assert parent is not None and child is not None
+    parent.work_item_type = WorkItemType.BUG
+    child.work_item_type = WorkItemType.TASK
+    db_session.add_all([parent, child])
+    db_session.commit()
+    TicketDependencyService(db_session).add_dependency("child", "parent")
+
+    with pytest.raises(ValueError, match="already depends"):
+        reparent_ticket(db_session, child, "parent")
+    assert child.parent_ticket_id is None
+
+
+def test_reparent_refuses_when_a_descendant_depends_on_the_new_parent(db_session: Session):
+    _rows(db_session, "target", "mid", "leaf")
+    target = db_session.get(Ticket, "target")
+    mid = db_session.get(Ticket, "mid")
+    leaf = db_session.get(Ticket, "leaf")
+    assert target is not None and mid is not None and leaf is not None
+    target.work_item_type = WorkItemType.FEATURE
+    mid.work_item_type = WorkItemType.CAPABILITY
+    leaf.work_item_type = WorkItemType.TASK
+    leaf.parent_ticket_id = "mid"
+    db_session.add_all([target, mid, leaf])
+    db_session.commit()
+    TicketDependencyService(db_session).add_dependency("leaf", "target")
+
+    with pytest.raises(ValueError, match="already depends"):
+        reparent_ticket(db_session, mid, "target")
+    assert mid.parent_ticket_id is None
+
+
+def test_an_existing_parent_edge_is_dropped(db_session: Session):
+    """Backlog the guard never saw: insert the 1431 row by hand, the invariant
+    deletes it, and a second pass finds nothing."""
+    _rows(db_session, "parent", "child")
+    child = db_session.get(Ticket, "child")
+    assert child is not None
+    child.parent_ticket_id = "parent"
+    db_session.add(child)
+    db_session.add(TicketDependency(ticket_id="child", depends_on_ticket_id="parent"))
+    db_session.commit()
+
+    check = run_invariant(db_session, NO_TICKET_DEPENDS_ON_AN_ANCESTOR)
+
+    assert (check.found, check.repaired) == (1, 1)
+    assert TicketDependencyService(db_session).prerequisites("child") == []
+    assert list(NO_TICKET_DEPENDS_ON_AN_ANCESTOR.detect(db_session)) == []
 
 
 def test_add_dependency_rejects_a_cycle(db_session: Session):

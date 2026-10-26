@@ -1103,7 +1103,8 @@ class TicketDependency(SQLModel, table=True):
     """A directed "waits for" edge between two tickets: ``ticket_id`` depends on
     ``depends_on_ticket_id`` and should run after it is complete. Ordering is
     best-effort (it steers subtree run order; it does not hard-block a standalone
-    run). Edges are kept acyclic by TicketDependencyService.add_dependency.
+    run). Edges are kept acyclic, and cannot wait on an ancestor, by
+    TicketDependencyService.add_dependency.
     """
 
     __tablename__ = "ticket_dependencies"

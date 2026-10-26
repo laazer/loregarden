@@ -829,7 +829,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "Link one ticket to wait for another: ticket_id depends on (runs after) "
             "depends_on. Best-effort ordering within a parent's subtree — it does not "
-            "hard-block a standalone run. Idempotent; rejects self-links and cycles. "
+            "hard-block a standalone run. Idempotent; rejects self-links, ancestor "
+            "links (a parent is done only when its children are), and cycles. "
             "Both ids accept a UUID or external id."
         ),
         "inputSchema": _tool_schema(
@@ -925,7 +926,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "description": (
                         "Tickets this one waits for, as UUIDs or external ids. Name them "
                         "here, not only in the description: nothing dispatches a ticket "
-                        "until these are done and landed."
+                        "until these are done and landed. Cannot be this ticket's parent "
+                        "or any ancestor — a parent is done only when its children are."
                     ),
                     "items": {"type": "string"},
                 },
