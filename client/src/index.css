@@ -441,7 +441,7 @@ textarea::placeholder {
   color: var(--txl);
 }
 
-/* The results: pages first (they match on the first keystroke), then tickets. */
+/* The results, grouped: pages and tabs first (they match on the first keystroke), then the rest. */
 .topbar-search-popover {
   position: absolute;
   top: calc(100% + 6px);
@@ -458,9 +458,18 @@ textarea::placeholder {
 }
 
 .topbar-search-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.topbar-search-group-label {
+  padding: 6px 8px 2px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
 }
 
 .topbar-search-option {
