@@ -33,6 +33,7 @@ from loregarden.services.terminal_stage_sweep import (
     finish_cleared_landings,
     tickets_whose_landing_cleared,
 )
+from loregarden.services.ticket_dependencies import ancestor_waits, drop_ancestor_waits
 from loregarden.services.tree_publish_scheduler import (
     close_held_cards,
     published_cards_held,
@@ -362,6 +363,41 @@ CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS = Invariant(
     ),
 )
 
+
+def _ancestor_waits(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=item.edge.id,
+            ticket_id=item.dependent.id,
+            entered_at=item.edge.created_at,
+            detail=(f"{item.dependent.external_id} waits on ancestor {item.ancestor.external_id}"),
+        )
+        for item in ancestor_waits(session)
+    ]
+
+
+def _drop_ancestor_waits(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    return drop_ancestor_waits(
+        session, [item for item in ancestor_waits(session) if item.edge.id in wanted]
+    )
+
+
+NO_TICKET_DEPENDS_ON_AN_ANCESTOR = Invariant(
+    name="no_ticket_depends_on_an_ancestor",
+    ticket="lg-milestone-that-1604",
+    statement=(
+        "no ticket waits on its parent or any further ancestor; a parent is done only "
+        "when its children are, so that edge deadlocks both"
+    ),
+    detect=_ancestor_waits,
+    repair=_drop_ancestor_waits,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 26),
+    prevented_by=("server/tests/test_ticket_dependencies.py::test_add_dependency_rejects_a_parent"),
+)
+
+
 LANDED_WORK_IS_COMMITTED = Invariant(
     name="landed_work_is_committed",
     ticket="lg-milestone-that-1314",
@@ -391,5 +427,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     HELD_TICKETS_RESUME,
+    NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
 )

@@ -54,6 +54,7 @@ from loregarden.services.invariant_registry import (
     LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
+    NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
 )
@@ -192,6 +193,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # a later one; last overall, so every settler and landing above has run.
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
+    # After holds resume: dropping a parent-edge must not unpark a ticket whose
+    # only remaining wait was the illegal one (release requires an edge).
+    _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),
 )
 
 
