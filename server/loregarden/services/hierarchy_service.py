@@ -11,6 +11,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prerequisite
 from loregarden.services.ticket_ids import respell_external_id
 from sqlmodel import Session, col, select
 
@@ -203,6 +204,7 @@ def reparent_ticket(session: Session, ticket: Ticket, parent_ticket_id: str | No
         if ticket.is_integration_review and parent.work_item_type == WorkItemType.INITIATIVE:
             # It depends on its siblings so that it runs last; away from them it reviews nothing.
             raise ValueError("An integration review stays with the work it reviews")
+        refuse_reparent_onto_a_prerequisite(session, ticket.id, parent.id)
         ticket.parent_ticket_id = parent.id
 
     ticket.revision += 1
