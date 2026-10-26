@@ -80,7 +80,8 @@ export function AppTopbarActions() {
     refetchInterval: 5000,
   });
 
-  const notificationCount = useNotificationStore((s) => s.notifications.length);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const notificationCount = notifications.length;
 
   const visiblePaneCount = Object.values(paneVisibility).filter(Boolean).length;
   const hiddenPaneCount = useMemo(
@@ -90,7 +91,19 @@ export function AppTopbarActions() {
   const usageNearLimit = Boolean(usage.data?.near_limit);
   const approvalCount = approvals.data?.length ?? 0;
   const inboxCount = approvalCount + notificationCount;
-  const inboxNeedsAttention = approvalCount > 0 || notificationCount > 0;
+  const failedCount = notifications.filter((n) => n.tone === "error").length;
+  // One meaning per hue: red only when something failed, violet when an
+  // approval is waiting on a person, a neutral count for everything else. A
+  // badge that was always red (or green at zero) taught people to ignore it.
+  const inboxTone = failedCount > 0 ? "bad" : approvalCount > 0 ? "you" : "neutral";
+  const inboxNeedsAttention = inboxTone !== "neutral";
+  const inboxLabel = [
+    "Open approvals and notifications inbox",
+    failedCount > 0 ? `${failedCount} failed` : null,
+    approvalCount > 0 ? `${approvalCount} waiting on you` : null,
+  ]
+    .filter(Boolean)
+    .join(" — ");
 
   const isIde = appPage === "dashboard";
   const panesLabel =
@@ -176,32 +189,16 @@ export function AppTopbarActions() {
           </div>
           <Button
             variant="secondary"
-            className={`topbar-action-btn topbar-action-btn--strong topbar-action-btn--phone-icon${inboxNeedsAttention && !inboxOpen ? " approvals-btn-pending" : ""}`}
+            className={`topbar-action-btn topbar-action-btn--strong topbar-action-btn--phone-icon${inboxNeedsAttention && !inboxOpen ? ` approvals-btn-pending approvals-btn-pending--${inboxTone}` : ""}`}
             onClick={() => setInboxOpen(true)}
-            aria-label="Open approvals and notifications inbox"
+            aria-label={inboxLabel}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" strokeWidth="1.9" aria-hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
               <path d="M22 12h-6l-2 3h-4l-2-3H2" />
               <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
             </svg>
             <span className="topbar-action-label">Inbox</span>
-            <span
-              className="approvals-badge"
-              style={{
-                minWidth: 19,
-                height: 19,
-                padding: "0 5px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: inboxCount === 0 ? "var(--grn)" : approvalCount > 0 ? "var(--red)" : "var(--aml)",
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-                borderRadius: 10,
-                fontFamily: "var(--mono)",
-              }}
-            >
+            <span className={`approvals-badge approvals-badge--${inboxTone}`} data-tone={inboxTone}>
               {inboxCount}
             </span>
           </Button>

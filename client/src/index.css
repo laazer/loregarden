@@ -14,9 +14,12 @@
   --bd2: #35455c;
   /* What a raised surface casts onto what is under it. */
   --shadow: #000000;
+  /* Text. All three clear WCAG AA (4.5:1) on --bg0 through --bg3, the
+     surfaces text sits on; src/lib/__tests__/themeContrast.test.ts holds them
+     there. --txl was #6b6a5c (2.6–3.5:1), which failed on every surface. */
   --tx: #f0efe8;
-  --txm: #a5a394;
-  --txl: #6b6a5c;
+  --txm: #b3b1a3;
+  --txl: #949285;
   --ac: #6fae8f;
   --ac2: #8fc9ab;
   --onac: #0c1611;
@@ -3948,11 +3951,40 @@ label:is(
 }
 
 .approvals-btn-pending {
+  --inbox-pulse: var(--vio);
   animation: approvals-pulse 1.4s infinite;
+}
+
+.approvals-btn-pending--bad {
+  --inbox-pulse: var(--red);
 }
 
 .approvals-btn-pending .approvals-badge {
   animation: pulse 1.4s infinite;
+}
+
+.approvals-badge {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font: 600 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg3);
+  color: var(--txm);
+}
+
+.approvals-badge--you {
+  background: color-mix(in srgb, var(--vio) 25%, var(--bg0));
+  color: var(--vil);
+}
+
+.approvals-badge--bad {
+  background: var(--red);
+  color: var(--bg0);
 }
 
 .usage-btn-warning {
@@ -4133,8 +4165,8 @@ label:is(
     box-shadow: none;
   }
   50% {
-    border-color: rgba(240, 96, 63, 0.75);
-    box-shadow: 0 0 0 2px rgba(240, 96, 63, 0.22);
+    border-color: color-mix(in srgb, var(--inbox-pulse) 75%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--inbox-pulse) 22%, transparent);
   }
 }
 
