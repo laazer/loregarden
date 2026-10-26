@@ -40,7 +40,7 @@
   padding: 5px 10px;
   border: 1px solid var(--bd);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -63,7 +63,7 @@
 
 .rl-count {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   font-variant-numeric: tabular-nums;
 }
@@ -100,7 +100,7 @@
   max-width: 600px;
   padding: 28px 0;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
@@ -113,7 +113,7 @@
 .rl-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .rl-table th {
@@ -124,7 +124,7 @@
   border-bottom: 1px solid var(--bd2);
   text-align: left;
   font-weight: 500;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -202,7 +202,7 @@
 .rl-url {
   display: block;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow-wrap: anywhere;
 }
@@ -211,7 +211,7 @@
    the words carry the meaning, the colour only points at it. */
 .rl-change {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -236,13 +236,13 @@
 }
 
 .rl-check {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
 }
 
 .rl-check-error {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .rl-table .rl-col-upstream,
@@ -257,7 +257,7 @@
 .rl-also {
   display: block;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--blue);
 }
 
@@ -269,7 +269,7 @@
 
 .rl-unresolved {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -278,7 +278,7 @@
   display: inline-block;
   padding: 1px 7px;
   border-radius: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   white-space: nowrap;
   color: var(--tx);
@@ -329,7 +329,7 @@
 .rl-detail-head h2 {
   margin: 4px 0 6px;
   font-family: var(--dp);
-  font-size: 17px;
+  font-size: var(--fs-lead);
   color: var(--tx);
 }
 
@@ -339,7 +339,7 @@
 }
 
 .rl-back {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -349,7 +349,7 @@
   align-items: center;
   gap: 6px 8px;
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .rl-external {
@@ -362,7 +362,7 @@
   flex-direction: column;
   gap: 18px;
   padding: 14px 18px 32px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
   line-height: 1.5;
 }
@@ -397,7 +397,7 @@
 
 .rl-facts dt {
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .rl-facts dd {
@@ -410,7 +410,7 @@
   align-items: center;
   gap: 6px;
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
@@ -424,7 +424,7 @@
   align-items: center;
   gap: 6px;
   margin: 0 0 4px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   color: var(--txm);
 }
@@ -468,14 +468,14 @@
 
 .rl-ticket-id {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .rl-tags,
 .rl-pass-outcome {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -487,7 +487,7 @@
 
 .rl-more {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ac2);
 }
 
@@ -525,7 +525,7 @@
 
 .rl-unlink {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -561,7 +561,7 @@
 
 .rl-link-form label {
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .rl-result {
@@ -672,7 +672,7 @@
 
 /* The record: what the survey said about this source, as it was written. */
 .rl-record {
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.55;
   color: var(--tx);
 }
@@ -680,13 +680,13 @@
 .rl-pass-record {
   display: block;
   margin-top: 4px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
 .rl-summary {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 
@@ -710,7 +710,7 @@
   border: 1px solid var(--bd2);
   border-radius: 8px;
   background: var(--bg2);
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 
@@ -741,7 +741,7 @@
 }
 
 .rl-modal-body > label {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -755,7 +755,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -776,7 +776,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -804,14 +804,14 @@
   margin: 0;
   padding: 0;
   border: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
 .rl-target-group legend {
   margin-bottom: 4px;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -821,13 +821,13 @@
   flex-direction: row;
   align-items: flex-start;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 
 .rl-optional-note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* The shared input style is full-width; a checkbox sits beside its label. */
@@ -842,7 +842,7 @@
   display: block;
   max-width: 52ch;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -853,7 +853,7 @@
   flex-direction: column;
   gap: 4px;
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--tx);
 }
@@ -864,13 +864,13 @@
 
 .rl-about--pending,
 .rl-about-facts {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
 .rl-refusal {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--aml);
 }
 
@@ -892,7 +892,7 @@
 
 .rl-option-id {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   white-space: nowrap;
 }
@@ -908,7 +908,7 @@
   padding: 6px 12px;
   border: 1px solid var(--bd2);
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -930,6 +930,6 @@
 
 .rl-found-for {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--vil);
 }

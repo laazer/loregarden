@@ -297,7 +297,7 @@ export function ApprovalCard({
       >
       <div ref={bodyRef} style={{ padding: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
-        <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
+        <div style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", marginBottom: 8 }}>
           {/* Gate titles name the stage, not the ticket, so a batch of tickets
               parked at one gate read as the same card repeated. */}
           {approval.ticket_external_id && <span>{approval.ticket_external_id} · </span>}
@@ -322,7 +322,7 @@ export function ApprovalCard({
         {isExitActionGate ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
             {humanRequired.map((action) => (
-              <div key={action.action_key} style={{ fontSize: 12.5, color: "var(--txm)" }}>
+              <div key={action.action_key} style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>
                 <div style={{ fontWeight: 600, color: "var(--tx)", marginBottom: 2 }}>
                   {action.action_label}
                 </div>
@@ -347,7 +347,7 @@ export function ApprovalCard({
 
         {!!checklist.length && (
           <div className="approval-checklist">
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ac2)" }}>
+            <div style={{ fontSize: "var(--fs-micro)", fontWeight: 700, color: "var(--ac2)" }}>
               Testing checklist (notes only, not required to approve)
             </div>
             {checklist.map((item, idx) => (
@@ -357,7 +357,7 @@ export function ApprovalCard({
                   display: "flex",
                   gap: 8,
                   alignItems: "flex-start",
-                  fontSize: 12,
+                  fontSize: "var(--fs-small)",
                   color: checkedItems[idx] ? "var(--txl)" : "var(--txm)",
                   cursor: "pointer",
                 }}
@@ -411,7 +411,7 @@ export function ApprovalCard({
                 display: "flex",
                 gap: 8,
                 alignItems: "flex-start",
-                fontSize: 12,
+                fontSize: "var(--fs-small)",
                 color: "var(--txm)",
                 cursor: "pointer",
               }}
@@ -425,7 +425,7 @@ export function ApprovalCard({
               />
               <span>
                 <span style={{ fontWeight: 600 }}>Approve, then send back through the workflow</span>
-                <div style={{ fontSize: 11, color: "var(--txl)", marginTop: 2 }}>
+                <div style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", marginTop: 2 }}>
                   Sign off on the verification, but route the ticket to an earlier stage so
                   prototype fixes get rebuilt with proper code and tests.
                 </div>
@@ -444,7 +444,7 @@ export function ApprovalCard({
                     border: "1px solid var(--bd)",
                     background: "var(--bg2)",
                     color: "var(--tx)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-small)",
                   }}
                 >
                   <option value="">Route back to stage…</option>
@@ -468,7 +468,7 @@ export function ApprovalCard({
                     border: "1px solid var(--bd)",
                     background: "var(--bg2)",
                     color: "var(--tx)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-small)",
                     resize: "vertical",
                   }}
                 />
@@ -490,11 +490,11 @@ export function ApprovalCard({
                 }}
               >
                 {q.header && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ac2)", marginBottom: 6 }}>
+                  <div style={{ fontSize: "var(--fs-micro)", fontWeight: 700, color: "var(--ac2)", marginBottom: 6 }}>
                     {q.header}
                   </div>
                 )}
-                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>{q.question}</div>
+                <div style={{ fontSize: "var(--fs-small)", fontWeight: 600, marginBottom: 10 }}>{q.question}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {q.options.map((option) => {
                     const selected = q.multiSelect
@@ -533,9 +533,9 @@ export function ApprovalCard({
                           style={{ marginTop: 3 }}
                         />
                         <span>
-                          <div style={{ fontSize: 12, fontWeight: 600 }}>{option.label}</div>
+                          <div style={{ fontSize: "var(--fs-small)", fontWeight: 600 }}>{option.label}</div>
                           {option.description && (
-                            <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 3 }}>{option.description}</div>
+                            <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)", marginTop: 3 }}>{option.description}</div>
                           )}
                         </span>
                       </label>
@@ -562,14 +562,14 @@ export function ApprovalCard({
                     border: "1px solid var(--bd)",
                     background: "var(--bg2)",
                     color: "var(--tx)",
-                    fontSize: 12,
+                    fontSize: "var(--fs-small)",
                   }}
                 />
               </div>
             ))}
-            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "var(--txm)" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "var(--fs-micro)", color: "var(--txm)" }}>
               Optional freeform reply (instead of structured answers)
-              <textarea
+              <Textarea
                 value={freeformResponse}
                 onChange={(e) => setFreeformResponse(e.target.value)}
                 rows={3}
@@ -580,7 +580,7 @@ export function ApprovalCard({
                   border: "1px solid var(--bd)",
                   background: "var(--bg2)",
                   color: "var(--tx)",
-                  fontSize: 12,
+                  fontSize: "var(--fs-small)",
                   resize: "vertical",
                 }}
               />

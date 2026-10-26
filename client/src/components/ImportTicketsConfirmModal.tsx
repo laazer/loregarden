@@ -217,7 +217,7 @@ export function ImportTicketsConfirmModal({
       <div className="modal-body">
         <div className="modal-field">
           <div className="modal-field-label">Summary</div>
-          <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+          <div style={{ fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
             {hasTickets ? (
               <>
                 <strong style={{ color: "var(--tx)" }}>{fileTickets.length}</strong> work item
@@ -245,7 +245,7 @@ export function ImportTicketsConfirmModal({
               <Select
                 id={bulkMilestoneFieldId}
                 className="btn-secondary filter-select"
-                style={{ flex: 1, fontSize: 12 }}
+                style={{ flex: 1, fontSize: "var(--fs-small)" }}
                 value={bulkMilestoneId}
                 disabled={isImporting}
                 onChange={(event) => setBulkMilestoneId(event.target.value)}
@@ -279,7 +279,7 @@ export function ImportTicketsConfirmModal({
         {parseErrors.length > 0 && (
           <div className="modal-field">
             <div className="modal-field-label">Parse errors</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--rdl)" }}>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--rdl)" }}>
               {parseErrors.map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -290,7 +290,7 @@ export function ImportTicketsConfirmModal({
         {draftIssues.length > 0 && (
           <div className="modal-field">
             <div className="modal-field-label">Import blockers</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--amb)" }}>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--amb)" }}>
               {draftIssues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
@@ -301,7 +301,7 @@ export function ImportTicketsConfirmModal({
         {preview.warnings.length > 0 && draftIssues.length === 0 && (
           <div className="modal-field">
             <div className="modal-field-label">Notes</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--txm)" }}>
               {preview.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}

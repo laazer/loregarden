@@ -48,7 +48,7 @@
   padding: 5px 14px;
   border-radius: 7px;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   text-decoration: none;
 }
@@ -68,7 +68,7 @@
 }
 
 .memory-workspace-name {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -76,11 +76,11 @@
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-checked {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -104,12 +104,12 @@
 
 .memory-panel-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-lead);
 }
 
 .memory-section-title {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--txm);
@@ -117,7 +117,7 @@
 
 .memory-muted {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
   line-height: 1.5;
 }
@@ -125,7 +125,7 @@
 .memory-empty,
 .memory-error {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.55;
 }
 
@@ -153,7 +153,7 @@
   border: 0;
   padding: 4px 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   cursor: pointer;
 }
@@ -191,7 +191,7 @@
 }
 
 .memory-holes-count {
-  font-size: 32px;
+  font-size: 32px; /* type-ok: hero count, read at a glance; above the scale on purpose */
   font-weight: 600;
 }
 
@@ -200,13 +200,13 @@
 }
 
 .memory-holes-of {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
 .memory-seam {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
@@ -227,7 +227,7 @@
   grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-outcome dd,
@@ -265,7 +265,7 @@
   display: flex;
   gap: 14px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-filters label {
@@ -317,11 +317,11 @@
 }
 
 .memory-node-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-node-meta {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -341,12 +341,12 @@
 
 .memory-detail-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .memory-detail-body {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -373,7 +373,7 @@
   flex-direction: column;
   gap: 4px;
   margin-top: 10px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-field textarea {
@@ -390,7 +390,7 @@
 
 .memory-confidence p {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-detail-placeholder {
@@ -401,7 +401,7 @@
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-superseded,
@@ -409,7 +409,7 @@
   margin: 0;
   padding: 6px 10px;
   border-left: 3px solid var(--ywl, #d29922);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
@@ -422,7 +422,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-lineage {
@@ -512,7 +512,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .memory-choice label {
@@ -535,7 +535,7 @@
 }
 
 .memory-share dt {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -551,16 +551,16 @@
 }
 
 .memory-share-value {
-  font-size: 20px;
+  font-size: var(--fs-title);
   font-weight: 600;
 }
 
 .memory-share-up {
   color: var(--rdl, #ff6a54);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .memory-share-down {
   color: var(--gnl, #3fb950);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }

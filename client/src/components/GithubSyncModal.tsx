@@ -47,7 +47,7 @@ function ResultRows({ rows }: { rows: GithubLinkSyncResult[] }) {
       {rows.map((row) => {
         const { text, failed } = outcome(row);
         return (
-          <li key={row.ticket_id} style={{ fontSize: 13 }}>
+          <li key={row.ticket_id} style={{ fontSize: "var(--fs-body)" }}>
             <a href={row.issue_url} target="_blank" rel="noreferrer">
               #{row.issue_number}
             </a>{" "}

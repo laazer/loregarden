@@ -79,7 +79,7 @@ function BranchDeleteConfirmBody({
       </div>
 
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           {losesCommits ? (
             <>
               {onlyHere === null ? (
@@ -121,7 +121,7 @@ function BranchDeleteConfirmBody({
             <div className="modal-section-title">
               {worktreePaths.length === 1 ? "Linked worktree" : "Linked worktrees"}
             </div>
-            <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: "var(--txm)" }}>
+            <p style={{ margin: "0 0 8px", fontSize: "var(--fs-small)", lineHeight: 1.5, color: "var(--txm)" }}>
               This branch is checked out in {worktreePaths.length} worktree
               {worktreePaths.length === 1 ? "" : "s"}. They will be removed before the branch is
               deleted, unless one holds work that exists nowhere else.

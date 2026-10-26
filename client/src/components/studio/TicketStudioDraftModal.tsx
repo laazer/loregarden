@@ -115,7 +115,7 @@ export function TicketStudioDraftModal({
             id="studio-draft-modal-title"
             aria-labelledby={kindLabelId}
             className="btn-secondary filter-select modal-title"
-            style={{ width: "100%", fontSize: 16, fontWeight: 600, marginTop: 4 }}
+            style={{ width: "100%", fontSize: "var(--fs-lead)", fontWeight: 600, marginTop: 4 }}
             value={draft.title}
             readOnly={readOnly}
             placeholder="Ticket title"
@@ -227,7 +227,7 @@ export function TicketStudioDraftModal({
           <Textarea
             id="studio-draft-description"
             className="btn-secondary"
-            style={{ width: "100%", minHeight: 120, boxSizing: "border-box", fontSize: 12.5 }}
+            style={{ width: "100%", minHeight: 120, boxSizing: "border-box", fontSize: "var(--fs-small)" }}
             value={draft.description}
             readOnly={readOnly}
             placeholder="Problem, approach, constraints…"
@@ -245,7 +245,7 @@ export function TicketStudioDraftModal({
           <Textarea
             id="studio-draft-ac"
             className="btn-secondary"
-            style={{ width: "100%", minHeight: 120, boxSizing: "border-box", fontSize: 12 }}
+            style={{ width: "100%", minHeight: 120, boxSizing: "border-box", fontSize: "var(--fs-small)" }}
             value={acceptanceText}
             readOnly={readOnly}
             placeholder="- User can …&#10;- API returns …"
@@ -253,7 +253,7 @@ export function TicketStudioDraftModal({
           />
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--txm)" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-small)", color: "var(--txm)" }}>
           <Input
             type="checkbox"
             checked={draft.selected}

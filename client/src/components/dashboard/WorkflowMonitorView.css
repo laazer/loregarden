@@ -18,7 +18,7 @@
 }
 
 .wm-muted {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--txl);
 }
@@ -30,7 +30,7 @@
 .wm-error-title,
 .wm-empty-title {
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
@@ -59,7 +59,7 @@
   background: transparent;
   color: var(--txm);
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 5px 10px;
   border-radius: 7px;
   cursor: pointer;
@@ -77,7 +77,7 @@
 
 .wm-scope-count {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   margin-left: 4px;
 }
@@ -91,14 +91,14 @@
 .wm-section-title {
   margin: 0;
   font-family: var(--dp);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .wm-section-hint {
   margin: -4px 0 0;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -151,12 +151,12 @@
 
 .wm-ticket-id {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .wm-ticket-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -170,7 +170,7 @@
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -189,12 +189,12 @@
 .wm-line-count {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .wm-root code {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg2);
@@ -207,14 +207,14 @@
   gap: 12px;
   margin-top: 10px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .wm-pill {
   flex-shrink: 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--bd2);
@@ -260,7 +260,7 @@
   position: absolute;
   margin-left: -12px;
   color: var(--txl);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 20px;
 }
 
@@ -284,21 +284,21 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: baseline;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .wm-recurring-count {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   align-self: center;
 }
 
 .wm-meaning {
   grid-column: 1 / -1;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--txl);
 }
@@ -306,7 +306,7 @@
 .wm-recurring-tickets {
   gap: 6px;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .wm-recurring-tickets a {
@@ -319,7 +319,7 @@
 
 .wm-footnote {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -332,7 +332,7 @@
 
 .wm-waiting {
   margin: 10px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--txl);
 }

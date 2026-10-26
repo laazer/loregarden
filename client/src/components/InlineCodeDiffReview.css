@@ -27,7 +27,7 @@
   flex-wrap: wrap;
   gap: 8px 10px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   line-height: 1.45;
 }
@@ -55,12 +55,12 @@
   padding: 28px 20px;
   text-align: center;
   color: var(--txl);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
 .inline-code-diff-hint {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   line-height: 1.45;
   max-width: 520px;
@@ -136,18 +136,18 @@
 
 .inline-code-diff-lazy-hint {
   padding: 8px 14px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   border-bottom: 1px solid var(--bd);
 }
 
 .diff-file-loading {
   padding: 16px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .diff-file-truncated-pill {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--txl);
@@ -168,7 +168,7 @@
   padding: 6px 12px;
   border-bottom: 1px solid var(--bd);
   background: var(--bg2);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -194,7 +194,7 @@
   grid-column: 1 / -1;
   padding: 4px 12px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
   background: rgba(96, 165, 250, 0.08);
   border-bottom: 1px solid var(--bd);
@@ -234,7 +234,7 @@
 }
 
 .inline-code-diff-count {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-family: var(--mono);
 }
@@ -246,7 +246,7 @@
   border: 1px solid rgba(240, 96, 63, 0.35);
   background: rgba(240, 96, 63, 0.1);
   color: var(--rdl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .inline-code-diff-success {
@@ -256,7 +256,7 @@
   border: 1px solid rgba(72, 187, 120, 0.35);
   background: rgba(72, 187, 120, 0.1);
   color: var(--grl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .inline-code-diff-submit {
@@ -279,7 +279,7 @@
   background: var(--bg0);
   color: var(--tx);
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 8px 10px;
 }
 
@@ -308,7 +308,7 @@
   gap: 8px;
   padding: 2px 10px 2px 0;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.55;
 }
 
@@ -356,7 +356,7 @@
   width: 24px;
   height: 24px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1;
 }
 
@@ -366,7 +366,7 @@
 }
 
 .inline-code-diff-comment-badge {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
   padding-top: 2px;
 }
@@ -391,13 +391,13 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   margin-bottom: 4px;
 }
 
 .inline-code-diff-comment-body {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
   white-space: pre-wrap;
 }

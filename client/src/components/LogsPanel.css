@@ -9,7 +9,7 @@
 
 .log-feed {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 12px 16px 40px;
   line-height: 1.75;
 }
@@ -17,7 +17,7 @@
 .log-feed-empty {
   color: var(--txm);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .log-line {
@@ -35,7 +35,7 @@
 .log-line__tag {
   flex: none;
   width: 44px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   text-align: center;
   padding: 1px 0;
@@ -141,7 +141,7 @@
    prose in chat and approvals, and the log feed sets its own type. */
 .log-line__md {
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.65;
   color: var(--txm);
   /* The row sets `pre-wrap` so plain output keeps its line breaks. Rendered
@@ -159,7 +159,7 @@
 }
 
 .log-line__md :is(h1, h2, h3, h4, h5, h6) {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--tx);
   margin: 0.95em 0 0.4em;
@@ -185,7 +185,7 @@
 
 .log-line__md code {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   background: var(--bg3);
   padding: 1px 4px;
   border-radius: 3px;

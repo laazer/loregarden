@@ -52,7 +52,7 @@ export function ImportQuickCreate({
         <Input
           aria-label={placeholder}
           className="btn-secondary filter-select"
-          style={{ flex: 1, fontSize: 12 }}
+          style={{ flex: 1, fontSize: "var(--fs-small)" }}
           value={title}
           disabled={disabled}
           placeholder={placeholder}

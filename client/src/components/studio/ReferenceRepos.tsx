@@ -110,7 +110,7 @@ export function ReferenceRepoPicker({
           {(repos.data ?? []).map((repo) => (
             <label
               key={repo.id}
-              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}
+              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-small)" }}
             >
               <input
                 type="checkbox"
@@ -224,7 +224,7 @@ export function ReferenceReposSection({
     >
       <div
         style={{
-          fontSize: 11,
+          fontSize: "var(--fs-micro)",
           fontWeight: 600,
           color: "var(--txm)",
           marginBottom: 8,
@@ -237,7 +237,7 @@ export function ReferenceReposSection({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {repos.map((repo) => (
-          <div key={repo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          <div key={repo.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--fs-small)" }}>
             <span style={{ flex: 1, minWidth: 0 }}>{repo.slug}</span>
             {!repo.cloned && <span className="ticket-draft-meta">clone missing</span>}
             {!isReadOnly && (

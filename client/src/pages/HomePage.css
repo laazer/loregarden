@@ -18,7 +18,7 @@
 .home-kicker {
   margin: 0 0 6px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
   letter-spacing: 0.02em;
 }
@@ -26,7 +26,7 @@
 .home-greeting {
   margin: 0;
   font-family: var(--dp);
-  font-size: 34px;
+  font-size: 34px; /* type-ok: the Home greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
@@ -34,7 +34,7 @@
 
 .home-summary {
   margin: 8px 0 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--txm);
   max-width: 52ch;
 }
@@ -48,7 +48,7 @@
   background: var(--bg2);
   color: var(--tx);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .home-console-link:hover {
@@ -106,7 +106,7 @@
   border-radius: 999px;
   background: var(--bg1);
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -153,7 +153,7 @@
 .home-card-head h2 {
   margin: 0;
   font-family: var(--dp);
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-weight: 600;
 }
 
@@ -166,7 +166,7 @@
 
 .home-card-count {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ac2);
   background: rgba(111, 174, 143, 0.1);
   border: 1px solid rgba(111, 174, 143, 0.22);
@@ -195,7 +195,7 @@
   border-radius: 8px;
   background: var(--bg2);
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 7px 10px;
   cursor: pointer;
 }
@@ -231,7 +231,7 @@
 }
 
 .home-row-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -241,7 +241,7 @@
 .home-row-meta {
   flex: none;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -262,7 +262,7 @@
 
 .home-row-activity {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 /* Full-width strip: two groups of four, so the labels actually fit. */
@@ -285,7 +285,7 @@
 .home-status-label {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -313,7 +313,7 @@
 }
 
 .home-stat dt {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   white-space: nowrap;
 }
@@ -321,7 +321,7 @@
 .home-stat dd {
   margin: 0;
   font-family: var(--mono);
-  font-size: 26px;
+  font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
   line-height: 1.1;
   color: var(--tx);
 }
@@ -334,7 +334,7 @@
 
 .home-empty {
   margin: 12px 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txl);
 }
 
@@ -360,7 +360,7 @@
 .home-activity-head h2 {
   margin: 0;
   font-family: var(--dp);
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-weight: 600;
 }
 
@@ -390,7 +390,7 @@
   align-items: start;
   width: 100%;
   padding: 10px 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   background: none;
   border: none;
   font: inherit;
@@ -413,7 +413,7 @@ button.home-activity-row:hover {
 
 .home-run-status {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -449,7 +449,7 @@ button.home-activity-row:hover {
   align-items: baseline;
   gap: 8px;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   overflow: hidden;
 }
@@ -464,7 +464,7 @@ button.home-activity-row:hover {
 .home-activity-ticket-id {
   flex: none;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 400;
   color: var(--ac2);
 }
@@ -485,13 +485,13 @@ button.home-activity-row:hover {
 .home-activity-stage {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .home-activity-cmd {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

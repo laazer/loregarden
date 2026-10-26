@@ -219,7 +219,7 @@ export function AddWorkspaceModal({
           <div className="modal-field-label">Name</div>
           <Input
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={draft.name}
             disabled={isSaving}
             aria-label="Name"
@@ -233,7 +233,7 @@ export function AddWorkspaceModal({
           <div className="modal-field-label">Slug</div>
           <Input
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
             value={draft.slug}
             disabled={isSaving}
             aria-label="Slug"
@@ -254,7 +254,7 @@ export function AddWorkspaceModal({
           <div className="modal-field-label">Repo path</div>
           <Input
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
             value={draft.repo_path}
             disabled={isSaving}
             aria-label="Repo path"
@@ -311,7 +311,7 @@ export function AddWorkspaceModal({
           <div className="modal-field-label">Workflow template</div>
           <Select
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={draft.workflow_template_slug}
             disabled={isSaving || templates.length === 0}
             aria-label="Workflow template"
@@ -333,7 +333,7 @@ export function AddWorkspaceModal({
           <div className="modal-field-label">Orchestration profile (optional)</div>
           <Input
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+            style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
             value={draft.orchestration_profile_slug}
             disabled={isSaving}
             aria-label="Orchestration profile"

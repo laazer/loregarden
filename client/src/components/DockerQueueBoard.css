@@ -3,7 +3,7 @@
    docker adds is styled here. */
 
 .docker-board-summary {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -31,7 +31,7 @@
 
 .docker-slot-expiry {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -42,7 +42,7 @@
 
 .docker-slot-progress-step {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -66,7 +66,7 @@
 
 .docker-slot-error {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--rdl);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -82,7 +82,7 @@
 /* Why the head is not running — the question the line is really asking. */
 .docker-queue-head-reason {
   margin-top: 3px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--aml);
 }
 
@@ -97,7 +97,7 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   margin: 10px 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -117,7 +117,7 @@
   gap: 2px 8px;
   margin-top: 2px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   min-width: 0;
 }
@@ -142,7 +142,7 @@
 }
 
 .docker-lease-link {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ac2);
 }
 
@@ -156,7 +156,7 @@
 }
 
 .docker-waiting-age {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -174,7 +174,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 

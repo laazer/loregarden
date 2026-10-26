@@ -141,7 +141,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-icloud-root`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.icloud_root}
           disabled={disabled}
           placeholder={defaultIcloud ?? "~/Library/Mobile Documents/com~apple~CloudDocs"}
@@ -204,7 +204,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-obsidian-vault`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.obsidian_vault_dir}
           disabled={disabled}
           placeholder={
@@ -256,7 +256,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-memory-subdir`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.obsidian_memory_subdir}
           disabled={disabled}
           onChange={(e) => patch({ obsidian_memory_subdir: e.target.value })}
@@ -270,7 +270,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-learnings-subdir`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.obsidian_learnings_subdir}
           disabled={disabled}
           onChange={(e) => patch({ obsidian_learnings_subdir: e.target.value })}
@@ -284,7 +284,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-blogposts-subdir`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.obsidian_blogposts_subdir}
           disabled={disabled}
           onChange={(e) => patch({ obsidian_blogposts_subdir: e.target.value })}
@@ -298,7 +298,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-checkpoints-subdir`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.obsidian_checkpoints_subdir}
           disabled={disabled}
           onChange={(e) => patch({ obsidian_checkpoints_subdir: e.target.value })}
@@ -312,7 +312,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-memory-sqlite-url`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.memory_sqlite_url}
           disabled={disabled}
           placeholder="sqlite:///…/Loregarden/memory.db"
@@ -341,7 +341,7 @@ export function MemorySettingsFields({
         <Input
           id={`${fieldId}-database-url`}
           className="btn-secondary filter-select"
-          style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+          style={{ width: "100%", fontSize: "var(--fs-small)", fontFamily: "var(--mono)" }}
           value={draft.database_url}
           disabled={disabled}
           placeholder="sqlite:///data/loregarden.db"
@@ -353,7 +353,7 @@ export function MemorySettingsFields({
       </div>
 
       {status && (
-        <div className="modal-hint" style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 11 }}>
+        <div className="modal-hint" style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: "var(--fs-micro)" }}>
           {status.obsidian_memory_dir && <div>Memory dir: {status.obsidian_memory_dir}</div>}
           {status.obsidian_learnings_dir && <div>Learnings dir: {status.obsidian_learnings_dir}</div>}
           {status.obsidian_blogposts_dir && <div>Blog posts dir: {status.obsidian_blogposts_dir}</div>}

@@ -165,7 +165,7 @@ export function ImportTicketPreviewCard({
           <Input
             id={`${fieldId}-title`}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={ticket.title}
             disabled={disabled}
             placeholder="Work item title"
@@ -195,7 +195,7 @@ export function ImportTicketPreviewCard({
             <Select
               id={`${fieldId}-milestone`}
               className="btn-secondary filter-select"
-              style={{ flex: 1, fontSize: 12 }}
+              style={{ flex: 1, fontSize: "var(--fs-small)" }}
               value={milestoneValue}
               disabled={disabled}
               onChange={(event) => handleMilestoneChange(event.target.value)}
@@ -229,7 +229,7 @@ export function ImportTicketPreviewCard({
               <Select
                 id={`${fieldId}-parent`}
                 className="btn-secondary filter-select"
-                style={{ flex: 1, fontSize: 12 }}
+                style={{ flex: 1, fontSize: "var(--fs-small)" }}
                 value={parentValue}
                 disabled={disabled}
                 onChange={(event) => handleParentChange(event.target.value)}
@@ -336,7 +336,7 @@ function CapabilityQuickCreate({
           <Select
             id={featureFieldId}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={featureKey}
             disabled={disabled}
             onChange={(event) => setFeatureKey(event.target.value)}
@@ -387,7 +387,7 @@ function FeatureQuickCreate({
           <Select
             id={milestoneFieldId}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={milestoneKey}
             disabled={disabled}
             onChange={(event) => setMilestoneKey(event.target.value)}

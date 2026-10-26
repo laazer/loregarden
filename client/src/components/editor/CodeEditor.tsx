@@ -57,7 +57,7 @@ export function CodeEditor({
             readOnly,
             minimap: { enabled: false },
             fontFamily: "JetBrains Mono, ui-monospace, monospace",
-            fontSize: 13,
+            fontSize: 13, // type-ok: Monaco takes a pixel number, not CSS; matches --fs-body
             lineNumbers: "on",
             scrollBeyondLastLine: false,
             automaticLayout: true,

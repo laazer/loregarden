@@ -168,7 +168,7 @@ export function WorkspaceRuntimeFields({
   const fieldId = useId();
   const adapter = runtime.cli_adapter || "default";
   const gap = compact ? 8 : 12;
-  const selectStyle = { width: "100%", fontSize: 12 };
+  const selectStyle = { width: "100%", fontSize: "var(--fs-small)" };
 
   const handleProviderChange = (nextAdapter: string) => {
     onChange({

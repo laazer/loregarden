@@ -84,7 +84,7 @@ export function RejectApprovalModal({
               border: "1px solid var(--bd)",
               background: "var(--bg2)",
               color: "var(--tx)",
-              fontSize: 12,
+              fontSize: "var(--fs-small)",
               resize: "vertical",
               boxSizing: "border-box",
             }}
@@ -100,7 +100,7 @@ export function RejectApprovalModal({
             <Select
               aria-labelledby={`${fieldId}-route`}
               className="btn-secondary"
-              style={{ width: "100%", fontSize: 12 }}
+              style={{ width: "100%", fontSize: "var(--fs-small)" }}
               value={routeStageKey}
               disabled={isSubmitting}
               onChange={(e) => setRouteStageKey(e.target.value)}

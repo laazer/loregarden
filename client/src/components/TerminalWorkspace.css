@@ -73,7 +73,7 @@
   border: 0;
   background: transparent;
   color: inherit;
-  font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 500 var(--fs-micro)/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   cursor: pointer;
 }
 
@@ -106,7 +106,7 @@
   border: 1px solid #34414d;
   border-radius: 8px;
   color: #9cabb8;
-  font-size: 9px;
+  font-size: var(--fs-micro);
 }
 
 .terminal-tab-close,
@@ -152,7 +152,7 @@
   margin-right: 5px;
   overflow: hidden;
   color: #82909e;
-  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: var(--fs-micro)/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

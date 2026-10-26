@@ -15,7 +15,7 @@
 }
 
 .topbar-dropdown-chevron {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   line-height: 1;
 }
@@ -50,7 +50,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: left;
   cursor: pointer;
 }
@@ -66,7 +66,7 @@
 
 .topbar-dropdown-section-title {
   padding: 6px 10px 4px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -91,7 +91,7 @@
 }
 
 .topbar-dropdown-pane-label {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 

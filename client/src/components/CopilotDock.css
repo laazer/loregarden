@@ -206,7 +206,7 @@
 }
 
 .copilot-dock-rail-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   font-weight: 600;
@@ -223,7 +223,7 @@
   border: 1px solid var(--bd);
   border-radius: 12px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.35;
   color: var(--tx);
   text-align: left;
@@ -248,7 +248,7 @@
 .copilot-dock-rail-note {
   margin: 0;
   padding: 0 2px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   color: var(--txl);
 }
@@ -288,12 +288,12 @@
 
 .copilot-dock-history-row time {
   flex: none;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .copilot-dock-history-preview {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   /* Two lines of the last turn: enough to recognise the conversation, not
      enough to turn the rail into a transcript. */

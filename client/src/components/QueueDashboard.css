@@ -78,7 +78,7 @@
 
 .queue-rail-heading {
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   margin-bottom: 14px;
@@ -98,7 +98,7 @@
 }
 
 .queue-rail-tile-label {
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--txl);
@@ -108,14 +108,14 @@
 
 .queue-rail-tile-value {
   font-family: var(--dp);
-  font-size: 20px;
+  font-size: var(--fs-title);
   font-weight: 700;
   color: var(--tx);
 }
 
 .queue-rail-empty {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
@@ -156,7 +156,7 @@
 }
 
 .queue-op-type {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -164,7 +164,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -186,7 +186,7 @@
 .queue-op-affects {
   grid-column: 1 / -1;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -236,7 +236,7 @@
 }
 
 .queue-history-title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -245,7 +245,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid currentcolor;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--txm);
@@ -268,13 +268,13 @@
 .queue-history-when {
   grid-column: 1 / -1;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .queue-history-reason {
   grid-column: 1 / -1;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   display: -webkit-box;
@@ -303,7 +303,7 @@
 .queue-rail-baxter-copy {
   min-width: 0;
   font-family: var(--dp);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.35;
   color: var(--txm);
 }
@@ -338,7 +338,7 @@
 }
 
 .queue-lane-count-label {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -354,7 +354,7 @@
 
 /* Where the Machine view went: a plain link in the board header. */
 .queue-machine-link {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   text-decoration: none;
 }

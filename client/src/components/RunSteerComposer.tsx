@@ -165,10 +165,10 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           {messages.map((message) => (
             <li
               key={message.id}
-              style={{ fontSize: 12, color: "var(--txl)", padding: "3px 0", lineHeight: 1.5 }}
+              style={{ fontSize: "var(--fs-small)", color: "var(--txl)", padding: "3px 0", lineHeight: 1.5 }}
             >
               <span style={{ color: "var(--tx)" }}>{message.content}</span>{" "}
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)" }}>
                 {message.delivered_at ? "· delivered" : "· queued"}
               </span>
             </li>
@@ -191,7 +191,7 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           <Input
             aria-label="Message to this run"
             className="btn-secondary filter-select"
-            style={{ flex: 1, fontSize: 12.5 }}
+            style={{ flex: 1, fontSize: "var(--fs-small)" }}
             placeholder="e.g. use the existing helper in services/"
             value={draft}
             disabled={send.isPending || stopRequested}

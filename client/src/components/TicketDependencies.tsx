@@ -165,7 +165,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
 
       {dependents.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 11, color: "var(--txm)" }}>
+          <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)" }}>
             Blocking {dependents.length} ticket{dependents.length === 1 ? "" : "s"}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>

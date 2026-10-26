@@ -19,7 +19,7 @@
 
 .ap-tab-badge {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
   color: var(--txl);
 }
@@ -64,7 +64,7 @@
   padding: 7px 10px;
   border-radius: 6px;
   text-align: left;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -75,7 +75,7 @@
 }
 
 .ap-more-item-hint {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -99,13 +99,13 @@
 
 .ap-state-title {
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
 .ap-state-body {
   max-width: 360px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--txl);
 }
@@ -161,20 +161,20 @@
 }
 
 .tl-callout-title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--tx);
 }
 
 .tl-callout-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .tl-callout-sub {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--txm);
 }
@@ -184,7 +184,7 @@
   max-height: 180px;
   overflow: auto;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.55;
   white-space: pre-wrap;
   color: var(--tx);
@@ -198,7 +198,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
@@ -216,7 +216,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
@@ -232,7 +232,7 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -267,7 +267,7 @@
   padding: 4px 6px;
   border-radius: 6px;
   text-align: left;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -279,7 +279,7 @@
 .tl-children-id {
   flex: none;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -292,7 +292,7 @@
 
 .tl-children-stage {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -393,7 +393,7 @@
 
 .tl-stage {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   white-space: nowrap;
   min-width: 0;
@@ -402,13 +402,13 @@
 }
 
 .tl-meta {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   white-space: nowrap;
 }
 
 .tl-tag {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   line-height: 1;
   padding: 3px 6px;
   border-radius: 4px;
@@ -437,7 +437,7 @@
    each piece stays whole. */
 .tl-when {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -454,7 +454,7 @@
 .tl-chevron {
   flex: none;
   width: var(--tl-chevron-width);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -479,7 +479,7 @@
   gap: 10px;
   padding: 3px calc(var(--tl-head-pad-right) + var(--tl-chevron-width) + var(--tl-head-gap)) 3px 0;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .tl-agent {
@@ -512,7 +512,7 @@
 }
 
 .tl-link {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
   padding: 0 2px;
 }
@@ -530,7 +530,7 @@
   border-radius: 6px;
   background: color-mix(in srgb, var(--red) 6%, var(--bg1));
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.5;
   white-space: pre-wrap;
   color: var(--rdl);
@@ -569,7 +569,7 @@
 .tl-output-title {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -581,14 +581,14 @@
 }
 
 .tl-none {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   padding: 2px 0;
 }
 
 .tl-fanout {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
@@ -608,7 +608,7 @@
   white-space: nowrap;
   vertical-align: middle;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -623,7 +623,7 @@
 .out-verdict {
   flex: none;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   padding: 2px 6px;
   border-radius: 4px;
   white-space: nowrap;
@@ -670,20 +670,20 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   cursor: pointer;
 }
 
 .out-count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
 }
 
 .out-note {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--aml);
 }
 
@@ -691,7 +691,7 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .out-table th {
@@ -711,7 +711,7 @@
   align-items: center;
   gap: 4px;
   padding: 6px 8px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -746,7 +746,7 @@
 .out-col-time {
   width: 104px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
 }
@@ -758,7 +758,7 @@
 .out-col-stage {
   width: 13ch;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -766,7 +766,7 @@
   width: 68px;
   text-align: right;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
 }

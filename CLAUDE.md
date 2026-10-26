@@ -524,6 +524,15 @@ the gate rejects:
 Waive with `motion-ok:` plus a reason. Motion in JS (`requestAnimationFrame`, a library) is not
 covered by the CSS rule and must check the preference itself.
 
+The `ts-type` gate (`ts_type_check.cjs`, loregarden only) does the same for font sizes. The scale
+is six tokens on `:root`, named for what the text is: `--fs-micro` 11 (badges, mono metadata),
+`--fs-small` 12 (secondary text, dense tables), `--fs-body` 13, `--fs-lead` 15 (card and section
+titles), `--fs-title` 19 (page titles), `--fs-display` 24. Nothing goes below micro. On changed
+lines it rejects a `font-size` or `font` shorthand with an absolute length (px, rem, pt) in a
+stylesheet, and a numeric or px `fontSize` in code, naming the nearest token. Relative sizes (em,
+%) and computed ones pass. Waive with `type-ok:` plus a reason: a hero number above the scale, or
+a library option that takes pixels (Monaco, xterm, a Pixi `TextStyle`).
+
 ## Knowing when a ticket is done
 
 A ticket is done when its **acceptance criteria** are met, not when reviewers stop finding

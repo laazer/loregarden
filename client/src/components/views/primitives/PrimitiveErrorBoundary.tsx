@@ -50,7 +50,7 @@ export class PrimitiveErrorBoundary extends Component<Props, State> {
         this.props.fallback ?? (
           <p
             data-primitive-crashed="true"
-            style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: 12.5 }}
+            style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: "var(--fs-small)" }}
           >
             This pane stopped working. Other panes in this view are unaffected.
           </p>

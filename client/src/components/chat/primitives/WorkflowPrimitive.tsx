@@ -140,7 +140,7 @@ function buildGraph(stages: StudioWorkflowStage[]): { nodes: Node[]; edges: Edge
       },
       labelStyle: {
         fill: entersGate || exitsGate ? "var(--red)" : "var(--txm)",
-        fontSize: 10,
+        fontSize: "var(--fs-micro)",
         fontWeight: 650,
       },
       labelBgStyle: {

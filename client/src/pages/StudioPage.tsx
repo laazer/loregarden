@@ -642,7 +642,7 @@ export function StudioPage() {
                     Duplicate to custom
                   </button>
                   {selectedAgent.role_file && (
-                    <span style={{ fontSize: 11, color: "var(--txl)", fontFamily: "var(--mono)" }}>
+                    <span style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedAgent.role_file}
                     </span>
                   )}
@@ -1013,7 +1013,7 @@ export function StudioPage() {
                     Duplicate to custom
                   </button>
                   {selectedWorkflow.source_path && (
-                    <span style={{ fontSize: 11, color: "var(--txl)", fontFamily: "var(--mono)" }}>
+                    <span style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedWorkflow.source_path}
                     </span>
                   )}

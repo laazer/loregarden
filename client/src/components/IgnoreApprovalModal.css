@@ -5,7 +5,7 @@
   border: 1px solid color-mix(in srgb, var(--aml) 40%, transparent);
   background: color-mix(in srgb, var(--aml) 10%, transparent);
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .ignore-approval-presets {
@@ -26,7 +26,7 @@
   border: 1px solid var(--bd);
   background: var(--bg2);
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   resize: vertical;
   box-sizing: border-box;
 }

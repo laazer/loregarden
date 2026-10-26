@@ -38,6 +38,7 @@ import type {
   StudioWorkflowStage,
 } from "../../api/client";
 import { StageRouteHints } from "../StageRouteHints";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { SkillSelect } from "./SkillSelect";
@@ -179,7 +180,7 @@ export function StudioStagesCard({
                   <div key={`${stage.key}-${index}`} className={`studio-stage-card ${typeClass}`}>
                     <div className="studio-stage-header">
                       <span className="studio-stage-num">{index + 1}</span>
-                      <span style={{ fontFamily: "var(--dp)", fontSize: 13, fontWeight: 600, color: "var(--tx)" }}>
+                      <span style={{ fontFamily: "var(--dp)", fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--tx)" }}>
                         {stage.name || `Stage ${index + 1}`}
                       </span>
                       <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>
@@ -418,7 +419,7 @@ export function StudioStagesCard({
                                 skills={skills}
                                 onChange={(skillName: string) => updateRoute(index, routeIndex, { skill_name: skillName })}
                               />
-                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-micro)" }}>
                                 <input
                                   type="checkbox"
                                   checked={route.default}
@@ -544,7 +545,7 @@ export function StudioStagesCard({
                             + Add agent
                           </button>
                         )}
-                        <div style={{ marginTop: 8, fontSize: 11, color: "var(--txl)" }}>
+                        <div style={{ marginTop: 8, fontSize: "var(--fs-micro)", color: "var(--txl)" }}>
                           All agents above run concurrently against the same ticket state; the stage only
                           advances once every one of them finishes.
                         </div>
@@ -570,7 +571,7 @@ export function StudioStagesCard({
                             ))}
                           </Select>
                           {stage.stage_type === "agent" && !stage.agent_id && (
-                            <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
+                            <div style={{ marginTop: 4, fontSize: "var(--fs-micro)", color: "var(--txl)" }}>
                               No agent runtime — exit actions are still evaluated against the
                               responsible active runtime when one is assigned; absence of a runtime
                               is not itself a human decision.
@@ -630,7 +631,7 @@ export function StudioStagesCard({
                       </div>
                     )}
 
-                    <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10, fontSize: "var(--fs-small)", color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
                         type="checkbox"
                         checked={Boolean(stage.exit_actions_enabled)}
@@ -647,7 +648,7 @@ export function StudioStagesCard({
                     </label>
                     {stage.exit_actions_enabled && (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-                        <div style={{ fontSize: 11, color: "var(--txl)" }}>
+                        <div style={{ fontSize: "var(--fs-micro)", color: "var(--txl)" }}>
                           Available and permitted actions run with the responsible agent; only unmet
                           requirements pause for an operator. Evaluated at run time.
                         </div>
@@ -671,10 +672,9 @@ export function StudioStagesCard({
                           />
                         ))}
                         {!isWorkflowReadOnly && (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ width: "fit-content", fontSize: 12 }}
+                          <Button
+                            variant="secondary"
+                            style={{ width: "fit-content", fontSize: "var(--fs-small)" }}
                             onClick={() => {
                               const actions = [...(stage.exit_actions ?? [])];
                               const n = actions.length + 1;
@@ -690,12 +690,12 @@ export function StudioStagesCard({
                             }}
                           >
                             Add exit action
-                          </button>
+                          </Button>
                         )}
                       </div>
                     )}
 
-                    <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8, fontSize: "var(--fs-small)", color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
                       <input
                         type="checkbox"
                         checked={Boolean(stage.terminal)}
@@ -802,7 +802,7 @@ function ExitActionEditorRow({
             Action label
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12 }}>{action.label}</div>
+            <div style={{ fontSize: "var(--fs-small)" }}>{action.label}</div>
           ) : (
             <input
               id={`exit-action-label-${index}`}
@@ -817,7 +817,7 @@ function ExitActionEditorRow({
             Requirement
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12, color: "var(--txm)" }}>
+            <div style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>
               {requirementLabel(kind)}
             </div>
           ) : (
@@ -843,7 +843,7 @@ function ExitActionEditorRow({
             Capability
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12 }}>{action.requirement.capability_id}</div>
+            <div style={{ fontSize: "var(--fs-small)" }}>{action.requirement.capability_id}</div>
           ) : (
             <Select
               id={`exit-action-cap-${index}`}
@@ -871,7 +871,7 @@ function ExitActionEditorRow({
             Credential
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12 }}>{action.requirement.credential_key}</div>
+            <div style={{ fontSize: "var(--fs-small)" }}>{action.requirement.credential_key}</div>
           ) : (
             <Select
               id={`exit-action-cred-${index}`}
@@ -899,7 +899,7 @@ function ExitActionEditorRow({
             Authority
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12 }}>{action.requirement.authority_scope}</div>
+            <div style={{ fontSize: "var(--fs-small)" }}>{action.requirement.authority_scope}</div>
           ) : (
             <Select
               id={`exit-action-auth-${index}`}
@@ -927,7 +927,7 @@ function ExitActionEditorRow({
             Decision prompt
           </label>
           {readOnly ? (
-            <div style={{ fontSize: 12 }}>{action.requirement.decision_prompt}</div>
+            <div style={{ fontSize: "var(--fs-small)" }}>{action.requirement.decision_prompt}</div>
           ) : (
             <input
               id={`exit-action-prompt-${index}`}
@@ -945,15 +945,14 @@ function ExitActionEditorRow({
       )}
 
       {!readOnly && (
-        <button
-          type="button"
-          className="btn-secondary"
-          style={{ width: "fit-content", fontSize: 11 }}
+        <Button
+          variant="secondary"
+          style={{ width: "fit-content", fontSize: "var(--fs-micro)" }}
           aria-label={`Remove exit action ${index + 1}`}
           onClick={onRemove}
         >
           Remove
-        </button>
+        </Button>
       )}
     </div>
   );
