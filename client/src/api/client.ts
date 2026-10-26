@@ -221,8 +221,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  runs: (ticketId?: string) => {
-    const q = ticketId ? `?ticket_id=${ticketId}` : "";
+  /** The most recent runs, newest first; `limit` defaults to the server's 50 (max 200). */
+  runs: (ticketId?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (ticketId) params.set("ticket_id", ticketId);
+    if (limit !== undefined) params.set("limit", String(limit));
+    const query = params.toString();
+    const q = query ? `?${query}` : "";
     return request<
       {
         id: string;
@@ -240,6 +245,10 @@ export const api = {
         workspace_id?: string;
         stdout?: string;
         stderr?: string;
+        /** ISO UTC; a run that never started still has `created_at`. */
+        created_at?: string | null;
+        started_at?: string | null;
+        finished_at?: string | null;
       }[]
     >(`/api/runs${q}`);
   },

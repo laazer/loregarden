@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { api, type TicketSummary } from "../../api/client";
+import { api, type Approval, type TicketSummary } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
 import { HomePage } from "../HomePage";
 
@@ -83,56 +83,164 @@ describe("HomePage", () => {
     mockedApi.runs.mockResolvedValue([]);
   });
 
-  describe("board status card", () => {
-    it("separates what is running from what is merely in progress", async () => {
+  function approval(overrides: Partial<Approval> = {}): Approval {
+    return {
+      id: "a1",
+      title: "Resolve Playtest exit actions",
+      level: "ask",
+      workspace_slug: "loregarden",
+      stage_key: "impl",
+      stage_name: "Implement",
+      impact: "",
+      ticket_id: "t1",
+      ticket_external_id: "blob-core-1",
+      kind: "human_action",
+      status: "pending",
+      run_id: "r1",
+      tool_name: "",
+      tool_input_json: "{}",
+      cli_adapter: "claude",
+      ...overrides,
+    };
+  }
+
+  const TODAY = new Date().toISOString();
+
+  describe("the header", () => {
+    it("carries four small numbers, not the board's eight tiles", async () => {
       mockedApi.ticketStatusSummary.mockResolvedValue({
         ...EMPTY_STATUS,
-        backlog: 12,
-        in_progress: 20,
-        blocked: 3,
-        done: 40,
+        backlog: 1386,
+        in_progress: 66,
         running: 2,
-        awaiting: 1,
-        queued: 5,
-        idle: 17,
       });
+      mockedApi.approvals.mockResolvedValue([approval(), approval({ id: "a2" })]);
+      mockedApi.tickets.mockResolvedValue([ticketFixture({ id: "t9", state: "parked" })]);
+      mockedApi.runs.mockResolvedValue([
+        {
+          id: "r-f",
+          run_code: "R",
+          status: "failed",
+          command: "",
+          agent_id: "test_designer",
+          stage_key: "test-design",
+          ticket_id: "t5",
+          ticket_title: "Harness",
+          finished_at: TODAY,
+        },
+      ]);
 
       renderHome();
 
-      const card = await screen.findByRole("article", { name: /Board status/i });
-      const stat = (key: string) =>
-        card.querySelector(`[data-activity="${key}"], [data-state="${key}"]`) as HTMLElement;
+      const glance = screen.getByLabelText("At a glance");
+      const kpi = (label: string) =>
+        within(glance).getByText(label).parentElement?.querySelector("dd") as HTMLElement;
+      // Two approvals and one parked ticket need you; one run failed today.
+      await waitFor(() => expect(kpi("need you")).toHaveTextContent("3"));
+      await waitFor(() => expect(kpi("failed today")).toHaveTextContent("1"));
+      await waitFor(() => expect(kpi("running")).toHaveTextContent("2"));
+      expect(within(kpi("in progress")).getByRole("link", { name: "66" })).toHaveAttribute(
+        "href",
+        "/work-items",
+      );
+      // The backlog is no longer a number on Home.
+      expect(screen.queryByText("1386")).not.toBeInTheDocument();
+    });
+  });
 
-      // The whole point: 20 in progress, but only 2 with an agent on them.
-      await waitFor(() => expect(within(stat("running")).getByText("2")).toBeInTheDocument());
-      expect(within(stat("idle")).getByText("17")).toBeInTheDocument();
-      expect(within(stat("in_progress")).getByText("20")).toBeInTheDocument();
-      expect(within(stat("queued")).getByText("5")).toBeInTheDocument();
-      expect(within(stat("blocked")).getByText("3")).toBeInTheDocument();
-      expect(within(card).getByText("35 open")).toBeInTheDocument();
+  describe("needs you", () => {
+    it("groups identical approvals into one row with a count", async () => {
+      mockedApi.approvals.mockResolvedValue(
+        Array.from({ length: 14 }, (_, n) => approval({ id: `a${n}` })),
+      );
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      const row = await within(section).findByRole("button", {
+        name: /Resolve Playtest exit actions/,
+      });
+      expect(row).toHaveTextContent("×14");
+      expect(within(section).getAllByRole("button", { name: /Resolve Playtest/ })).toHaveLength(1);
+      expect(within(section).getByText("14 approvals")).toBeInTheDocument();
     });
 
-    it("leads the summary line with the running count", async () => {
-      mockedApi.ticketStatusSummary.mockResolvedValue({
-        ...EMPTY_STATUS,
-        in_progress: 9,
-        running: 1,
-      });
-      mockedApi.tickets.mockResolvedValue([ticketFixture()]);
+    it("lists a run that failed today and a ticket waiting on a person, and not one blocked on tickets", async () => {
+      mockedApi.runs.mockResolvedValue([
+        {
+          id: "r1",
+          run_code: "R1",
+          status: "failed",
+          command: "",
+          agent_id: "test_designer",
+          stage_key: "test-design",
+          ticket_id: "t5",
+          ticket_title: "directory_release reports the truth",
+          finished_at: TODAY,
+        },
+        {
+          id: "r2",
+          run_code: "R2",
+          status: "failed",
+          command: "",
+          agent_id: "test_designer",
+          stage_key: "test-design",
+          ticket_id: "t5",
+          ticket_title: "directory_release reports the truth",
+          finished_at: TODAY,
+        },
+      ]);
+      mockedApi.tickets.mockResolvedValue([
+        ticketFixture({
+          id: "t6",
+          title: "Prompt assembly drops content",
+          state: "blocked",
+          blocked_on: "person",
+        }),
+        ticketFixture({
+          id: "t7",
+          title: "Skills into the database",
+          state: "blocked",
+          blocked_on: "tickets",
+        }),
+      ]);
 
       renderHome();
 
-      await waitFor(() => {
-        expect(screen.getByText(/1 running/)).toBeInTheDocument();
-      });
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      const failed = await within(section).findByRole("button", { name: /directory_release/ });
+      expect(failed).toHaveTextContent("Failed");
+      expect(failed).toHaveTextContent("×2");
+      expect(within(section).getByRole("button", { name: /Prompt assembly/ })).toHaveTextContent(
+        "Person",
+      );
+      expect(within(section).queryByText("Skills into the database")).not.toBeInTheDocument();
     });
 
-    it("says so rather than showing zeroes when the count cannot be fetched", async () => {
-      mockedApi.ticketStatusSummary.mockRejectedValue(new Error("boom"));
+    it("says what would be here when nothing needs you", async () => {
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(await within(section).findByText(/Nothing needs you/)).toBeInTheDocument();
+    });
+
+    it("says which source failed rather than showing an empty list", async () => {
+      mockedApi.approvals.mockRejectedValue(new Error("inbox down"));
 
       renderHome();
 
-      expect(await screen.findByText("Status unavailable")).toBeInTheDocument();
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(await within(section).findByText(/Couldn't load approvals/)).toBeInTheDocument();
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("running now", () => {
+    it("says how many lanes are free when nothing is running", async () => {
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Running now" });
+      expect(within(section).getByText(/Nothing running; 3 lanes free/)).toBeInTheDocument();
     });
   });
 
@@ -156,88 +264,17 @@ describe("HomePage", () => {
       renderHome();
 
       const activity = await screen.findByRole("region", { name: /Recent activity/i });
-      expect(await within(activity).findByText("Ship the home page")).toBeInTheDocument();
-      expect(within(activity).getByText("lor-home-12")).toBeInTheDocument();
-      expect(within(activity).getByText("Succeeded")).toBeInTheDocument();
+      const row = await within(activity).findByRole("button", { name: /Ship the home page/ });
+      expect(row).toHaveTextContent("backend_implementer");
+      expect(row).toHaveTextContent("Succeeded");
     });
   });
 
-  it("badges an in-progress ticket with whether it is actually running", async () => {
-    mockedApi.tickets.mockResolvedValue([
-      ticketFixture({ id: "t-run", title: "Live one", activity: "running" }),
-      ticketFixture({ id: "t-idle", title: "Parked one", activity: "idle" }),
-    ]);
-
-    renderHome();
-
-    const live = (await screen.findByText("Live one")).closest("button");
-    const parked = screen.getByText("Parked one").closest("button");
-    expect(within(live as HTMLElement).getByText("Running")).toBeInTheDocument();
-    expect(within(parked as HTMLElement).getByText("Idle")).toBeInTheDocument();
-    // Both are "In Progress" — the state alone could not tell them apart.
-    expect(within(live as HTMLElement).getByText("In Progress")).toBeInTheDocument();
-    expect(within(parked as HTMLElement).getByText("In Progress")).toBeInTheDocument();
-  });
-
-  it("renders Baxter-First hero and live cards", async () => {
-    mockedApi.approvals.mockResolvedValue([
-      {
-        id: "a1",
-        title: "Approve tool",
-        level: "ask",
-        workspace_slug: "loregarden",
-        stage_key: "impl",
-        stage_name: "Implement",
-        impact: "",
-        ticket_id: "t1",
-        ticket_external_id: "t-1",
-        kind: "cli_permission",
-        status: "pending",
-        run_id: "r1",
-        tool_name: "Bash",
-        tool_input_json: "{}",
-        cli_adapter: "claude",
-      },
-    ]);
-    mockedApi.tickets.mockResolvedValue([
-      {
-        id: "t2",
-        external_id: "feat-1",
-        title: "Ship Home",
-        state: "in_progress",
-        priority: 2,
-        workspace_slug: "loregarden",
-        workflow_stage_key: "impl",
-        workflow_stage_status: "running",
-        workflow_stage_name: "Implement",
-        run_code: "",
-        work_item_type: "feature",
-        parent_ticket_id: null,
-        milestone: "",
-        branch: "",
-        child_count: 0,
-      },
-    ]);
-    mockedApi.runs.mockResolvedValue([
-      {
-        id: "run-1",
-        run_code: "R1",
-        status: "succeeded",
-        command: "pytest",
-        agent_id: "backend_implementer",
-        stage_key: "impl",
-      },
-    ]);
-
+  it("keeps the hero composer and the way to the Console", () => {
     renderHome();
 
     expect(screen.getByLabelText("Ask Baxter")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("What should we ship today?")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("Approve tool")).toBeInTheDocument();
-      expect(screen.getByText("Ship Home")).toBeInTheDocument();
-      expect(screen.getByText("backend_implementer")).toBeInTheDocument();
-    });
     expect(screen.getByRole("link", { name: "Open Console" })).toHaveAttribute("href", "/console");
   });
 
