@@ -195,11 +195,6 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
   return (
     <div className="plan-page">
       <PageTopbar
-        leading={
-          <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
-            ← All initiatives
-          </Button>
-        }
         title={
           <span className="plan-topbar-title" title={data?.title}>
             {data ? data.title : "Initiative"}

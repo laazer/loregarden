@@ -94,7 +94,7 @@ export function EditorPage() {
 
   return (
     <div className="screen-view">
-      <PageTopbar title="File Editor">
+      <PageTopbar title="Editor">
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
           <Select

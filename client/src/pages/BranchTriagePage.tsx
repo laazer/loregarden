@@ -122,7 +122,7 @@ export function BranchTriagePage() {
 
   return (
     <div className="screen-view">
-      <PageTopbar title="Branch cleanup">
+      <PageTopbar title="Branch Triage">
         {triage.data ? (
           <span className="topbar-page-note">
             {triage.data.issue_count} branch(es) need attention

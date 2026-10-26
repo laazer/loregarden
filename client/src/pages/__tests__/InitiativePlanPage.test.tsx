@@ -13,7 +13,11 @@ import type {
   PlannerSnapshot,
 } from "../../api/initiativeApi";
 import type { TicketState, TicketSummary } from "../../api/types";
-import { TopbarPageSlot, TopbarPageSlotProvider } from "../../components/TopbarPageSlot";
+import {
+  TopbarCrumbs,
+  TopbarPageSlot,
+  TopbarPageSlotProvider,
+} from "../../components/TopbarPageSlot";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
@@ -196,6 +200,7 @@ function renderPage() {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/initiatives/init1"]}>
         <TopbarPageSlotProvider>
+          <TopbarCrumbs />
           <TopbarPageSlot />
           <Routes>
             <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage initiativeId="init1" />} />
@@ -264,9 +269,13 @@ test("the schedule is one table in phase order, and the page passes the usabilit
 });
 
 test("the way back to all initiatives comes before the initiative's title", async () => {
+  // The breadcrumb is the way back now: "Initiatives › <title>", the first step
+  // a link to the list.
   renderPage();
   const title = await screen.findByRole("heading", { level: 1, name: "TinkerCG: build and launch" });
-  const back = screen.getByRole("button", { name: "← All initiatives" });
+  const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+  const back = within(crumbs).getByRole("link", { name: "Initiatives" });
+  expect(back).toHaveAttribute("href", "/initiatives");
   expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

@@ -18,8 +18,11 @@ export interface RailCount {
   text: string;
   /** What a screen reader hears as the link's description, e.g. `21 need you`. */
   label: string;
-  /** `you` when the count is people being waited on; drawn in the violet of that tone. */
-  tone: "you" | "plain";
+  /**
+   * `you` when the count is people being waited on (violet), `warn` for a limit
+   * coming up (amber), `plain` for everything else.
+   */
+  tone: "you" | "warn" | "plain";
 }
 
 export interface RailCountSources {
@@ -34,6 +37,8 @@ export interface RailCountSources {
    * would state a fact nobody measured.
    */
   queueLive: boolean;
+  /** Claude or Cursor usage is close to a limit. */
+  usageNearLimit: boolean;
 }
 
 export function railCounts({
@@ -41,6 +46,7 @@ export function railCounts({
   runningCount,
   stats,
   queueLive,
+  usageNearLimit,
 }: RailCountSources): Partial<Record<AppPage, RailCount>> {
   const counts: Partial<Record<AppPage, RailCount>> = {};
 
@@ -70,6 +76,12 @@ export function railCounts({
       label: `${busy} of ${stats.max_concurrent} lanes busy`,
       tone: "plain",
     };
+  }
+
+  // Usage left the topbar for the Machine page; its warning comes with it, so a
+  // limit coming up is still visible from every page.
+  if (usageNearLimit) {
+    counts.machine = { text: "!", label: "usage limits are getting close", tone: "warn" };
   }
 
   return counts;

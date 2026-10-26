@@ -23,6 +23,7 @@ const quiet = {
   runningCount: 0,
   stats: DEFAULT_PARALLEL_STATS,
   queueLive: false,
+  usageNearLimit: false,
 };
 
 test("tickets waiting on a person are one violet count on Work items", () => {
@@ -58,4 +59,13 @@ test("the lane fraction comes only from a live queue snapshot", () => {
 
 test("an idle machine still shows its lanes, since 0/3 answers the question", () => {
   expect(railCounts({ ...quiet, queueLive: true }).queue?.text).toBe("0/3");
+});
+
+test("usage near a limit flags Machine in amber, where Usage now lives", () => {
+  expect(railCounts({ ...quiet, usageNearLimit: true }).machine).toEqual({
+    text: "!",
+    label: "usage limits are getting close",
+    tone: "warn",
+  });
+  expect(railCounts(quiet).machine).toBeUndefined();
 });

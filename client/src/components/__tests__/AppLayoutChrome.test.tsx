@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
@@ -109,7 +109,9 @@ it("keeps the utility dock on chat too, for the tools that are not the chat", ()
   wrap(<div>chat body</div>, "/chat");
   expect(screen.getByText("loregarden")).toBeInTheDocument();
   expect(screen.getByTestId("topbar-actions")).toBeInTheDocument();
-  expect(screen.getByText("Agent SDLC · Chat")).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("heading", { name: "Chat" }),
+  ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /History/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /New chat/i })).toBeInTheDocument();
   expect(screen.getByTestId("copilot-dock")).toBeInTheDocument();

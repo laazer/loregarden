@@ -11,7 +11,7 @@ import {
 import { useTicketRefStore } from '../../state/ticketRefStore';
 import { useToastStore } from '../../state/toastStore';
 import { useUiStore } from '../../state/uiStore';
-import { GithubSyncModal } from '../GithubSyncModal';
+import { GithubSyncPanel } from '../GithubSyncPanel';
 
 jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock'));
 jest.mock('../../api/githubIssueApi', () => ({
@@ -65,7 +65,7 @@ function renderModal(path = '/chat') {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
-        <GithubSyncModal open onClose={() => undefined} />
+        <GithubSyncPanel onClose={() => undefined} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
