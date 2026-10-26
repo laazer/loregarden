@@ -485,7 +485,6 @@ a.wsd-id:focus-visible {
 
 .wsd-card-state {
   flex: none;
-  color: var(--txm);
 }
 
 .wsd-card-where {
@@ -571,21 +570,18 @@ a.wsd-id:focus-visible {
 }
 
 .wsd-tag--ready_to_merge,
-.wsd-tag--activity-running,
 .wsd-tag--instance-ready {
   color: var(--grl);
   background: color-mix(in srgb, var(--grn) 18%, transparent);
 }
 
 .wsd-tag--to_review,
-.wsd-tag--activity-queued,
 .wsd-tag--instance-starting {
   color: var(--bll);
   background: color-mix(in srgb, var(--blue) 18%, transparent);
 }
 
 .wsd-tag--needs_work,
-.wsd-tag--activity-awaiting,
 .wsd-tag--block-agent,
 .wsd-tag--block-parked,
 .wsd-tag--instance-stalled {

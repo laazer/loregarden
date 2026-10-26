@@ -6,7 +6,8 @@ import { navigateToInitiative } from "../../lib/useAppNavigation";
 import { peekTicket } from "../../state/ticketPeekStore";
 import { Button } from "../ui/Button";
 import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
-import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
+import { TICKET_STATE_COLORS, ticketStateChip } from "../../lib/ticketStates";
+import { StatusChip } from "../ui/StatusChip";
 import { progressFillStyle } from "../../lib/progressFill";
 import { Select } from "../ui/Select";
 
@@ -25,11 +26,7 @@ interface InitiativeCardProps {
 }
 
 function StatePill({ state }: { state: InitiativeView["state"] }) {
-  return (
-    <span className="initiative-state" style={{ color: TICKET_STATE_COLORS[state] }}>
-      {TICKET_STATE_LABELS[state]}
-    </span>
-  );
+  return <StatusChip {...ticketStateChip(state)} />;
 }
 
 /** Where a row lives; a member also names the milestone it stays under. */
@@ -123,7 +120,7 @@ function MilestoneRow({
         <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
       </Button>
       <span className="initiative-ws-pill">{placeLabel(milestone)}</span>
-      <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
+      <StatusChip {...ticketStateChip(milestone.state)} />
       {milestone.member ? (
         <span className="initiative-muted" title="Tracked without moving it: remove it from Plan & board">
           Tracked

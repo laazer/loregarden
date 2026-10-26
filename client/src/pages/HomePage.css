@@ -238,6 +238,7 @@
   white-space: nowrap;
 }
 
+/* The approval row's ticket id. */
 .home-row-meta {
   flex: none;
   font-family: var(--mono);
@@ -245,24 +246,11 @@
   color: var(--txl);
 }
 
-.home-row-meta--blocked {
-  color: var(--rdl);
-}
-
-.home-row-meta--in_progress {
-  color: var(--bll);
-}
-
 .home-row-tags {
   flex: none;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.home-row-activity {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
+  align-items: center;
+  gap: 6px;
 }
 
 /* Full-width strip: two groups of four, so the labels actually fit. */
@@ -413,29 +401,8 @@ button.home-activity-row:hover {
 }
 
 .home-run-status {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--txl);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding-top: 2px;
-}
-
-.home-run-status--running,
-.home-run-status--queued,
-.home-run-status--awaiting_permission {
-  color: var(--aml);
-}
-
-.home-run-status--succeeded,
-.home-run-status--completed,
-.home-run-status--done {
-  color: var(--grl);
-}
-
-.home-run-status--failed,
-.home-run-status--error {
-  color: var(--rdl);
+  flex: none;
+  align-self: flex-start;
 }
 
 .home-activity-main {

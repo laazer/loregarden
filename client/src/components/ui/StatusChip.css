@@ -1,0 +1,83 @@
+/*
+ * StatusChip (StatusChip.tsx). Text takes each hue's light step (--bll, --rdl,
+ * --aml, --vil) so it clears 4.5:1 on its own tint over every surface; the
+ * glyph and the tint take the base hue. lib/__tests__/statusTone.test.ts holds that.
+ */
+
+.status-chip {
+  --chip-hue: var(--txl);
+  --chip-text: var(--txl);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  border-radius: 4px;
+  font: 500 var(--fs-micro) / 1.5 var(--ui);
+  white-space: nowrap;
+  color: var(--chip-text);
+  background: color-mix(in srgb, var(--chip-hue) 14%, transparent);
+}
+
+.status-chip-glyph {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--chip-hue);
+}
+
+.status-chip--run {
+  --chip-hue: var(--blue);
+  --chip-text: var(--bll);
+}
+
+.status-chip--bad {
+  --chip-hue: var(--red);
+  --chip-text: var(--rdl);
+}
+
+.status-chip--bad .status-chip-glyph {
+  border-radius: 1px;
+}
+
+.status-chip--wait {
+  --chip-hue: var(--amb);
+  --chip-text: var(--aml);
+}
+
+.status-chip--you {
+  --chip-hue: var(--vio);
+  --chip-text: var(--vil);
+  background: color-mix(in srgb, var(--chip-hue) 16%, transparent);
+}
+
+.status-chip--you .status-chip-glyph {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+/* Done goes quiet: finished work should not compete with live work. */
+.status-chip--done {
+  --chip-text: var(--txm);
+  background: var(--bg3);
+}
+
+.status-chip--done .status-chip-glyph {
+  width: 7px;
+  height: 4px;
+  border-radius: 0;
+  background: none;
+  border: solid var(--txm);
+  border-width: 0 0 1.5px 1.5px;
+  transform: translate(0, -1px) rotate(-45deg);
+}
+
+.status-chip--idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--bd2);
+}
+
+.status-chip--idle .status-chip-glyph {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--txl);
+}

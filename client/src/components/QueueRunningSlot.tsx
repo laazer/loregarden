@@ -16,11 +16,10 @@ import { LIVE_RUN_STATUSES } from '../lib/runningTickets';
 import {
   repairRouteLabel,
   runStatusLabel,
-  ticketActivityColor,
-  ticketActivityLabel,
-  ticketStateColor,
-  ticketStateLabel,
+  ticketActivityChip,
+  ticketStateChip,
 } from '../lib/ticketStates';
+import { StatusChip } from './ui/StatusChip';
 import './ParallelQueueVisualization.css';
 
 /**
@@ -90,18 +89,10 @@ export function TicketStateChips({
   return (
     <div className="queue-chip-row">
       {state ? (
-        <span className="queue-chip" style={{ color: ticketStateColor(state) }}>
-          {ticketStateLabel(state)}
-        </span>
+        <StatusChip {...ticketStateChip(state)} />
       ) : null}
       {activity ? (
-        <span
-          className="queue-chip"
-          data-activity={activity}
-          style={{ color: ticketActivityColor(activity) }}
-        >
-          {ticketActivityLabel(activity)}
-        </span>
+        <StatusChip {...ticketActivityChip(activity)} />
       ) : null}
     </div>
   );
