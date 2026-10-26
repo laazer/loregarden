@@ -180,7 +180,7 @@ export function StudioStagesCard({
                   <div key={`${stage.key}-${index}`} className={`studio-stage-card ${typeClass}`}>
                     <div className="studio-stage-header">
                       <span className="studio-stage-num">{index + 1}</span>
-                      <span style={{ fontFamily: "var(--dp)", fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--tx)" }}>
+                      <span style={{ fontFamily: "var(--ui)", fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--tx)" }}>
                         {stage.name || `Stage ${index + 1}`}
                       </span>
                       <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>

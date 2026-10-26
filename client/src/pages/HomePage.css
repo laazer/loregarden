@@ -17,7 +17,7 @@
 
 .home-kicker {
   margin: 0 0 6px;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-small);
   color: var(--txl);
   letter-spacing: 0.02em;
@@ -25,7 +25,7 @@
 
 .home-greeting {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--dp); /* type-ok: the Home greeting */
   font-size: 34px; /* type-ok: the Home greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -152,7 +152,7 @@
 
 .home-card-head h2 {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
 }
@@ -284,7 +284,7 @@
 
 .home-status-label {
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -320,10 +320,11 @@
 
 .home-stat dd {
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
   line-height: 1.1;
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The point of the card: work with an agent on it reads as live. */
@@ -359,7 +360,7 @@
 
 .home-activity-head h2 {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
 }

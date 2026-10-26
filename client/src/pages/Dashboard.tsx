@@ -767,7 +767,7 @@ export function Dashboard() {
               <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
                 <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
                   <PrioBars priority={sel.priority} size="md" />
-                  <h1 style={{ margin: 0, fontFamily: "var(--dp)", fontSize: "var(--fs-title)", fontWeight: 600 }}>
+                  <h1 style={{ margin: 0, fontFamily: "var(--ui)", fontSize: "var(--fs-title)", fontWeight: 600 }}>
                     {sel.title}
                   </h1>
                 </div>

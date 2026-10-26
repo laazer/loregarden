@@ -162,7 +162,7 @@ export function EditPrimitive({
               readOnly: false,
               originalEditable: false,
               minimap: { enabled: false },
-              fontSize: 12,
+              fontSize: 12, // type-ok: Monaco takes a pixel number, not CSS; matches --fs-small
               wordWrap: "on",
               scrollBeyondLastLine: false,
               automaticLayout: true,
@@ -179,7 +179,7 @@ export function EditPrimitive({
             onChange={(value) => setDraft(value ?? "")}
             options={{
               minimap: { enabled: false },
-              fontSize: 12,
+              fontSize: 12, // type-ok: Monaco takes a pixel number, not CSS; matches --fs-small
               wordWrap: "on",
               scrollBeyondLastLine: false,
             }}

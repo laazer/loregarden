@@ -15,11 +15,16 @@
  *      `[data-theme…]`), where the tokens are defined. Relative sizes (em, %,
  *      smaller, inherit) and sizes computed from a variable are left alone.
  *   2. A `fontSize` property in code given a number or an absolute length.
+ *   3. The display face (`var(--dp)`, Fredoka) in a `font-family`/`font`
+ *      declaration or a `fontFamily` in code. It is for the wordmark, Baxter's
+ *      name and the greetings; titles are var(--ui) at 600, and a rounded face on
+ *      a 90-character technical title reads as playful and wraps badly.
  *
  * A case that is genuinely right says so on the line, with a reason:
  *
  *     font-size: 34px; /* type-ok: the Home greeting, the one display size above the scale *\/
  *     fontSize: 9, // type-ok: Pixi TextStyle on the Hive canvas; CSS tokens cannot reach it
+ *     font-family: var(--dp); /* type-ok: the loregarden wordmark *\/
  */
 
 const fs = require("fs");
@@ -55,6 +60,11 @@ const PX_PER = { px: 1, rem: 16, pt: 4 / 3 };
 const ABSOLUTE_LENGTH = /(?<![\w.-])(\d*\.?\d+)(px|rem|pt)(?![\w-])/i;
 // In the `font` shorthand the size is the first length; a line height follows a slash.
 const FONT_SHORTHAND_SIZE = /^(?:\s*(?:italic|oblique|normal|small-caps|bold|bolder|lighter|\d{3})\s+)*\s*(\d*\.?\d+)(px|rem|pt)\b/i;
+
+const DISPLAY_FACE = /var\(--dp\)/;
+const DISPLAY_FACE_MESSAGE =
+  "uses the display face var(--dp) — Fredoka is for the wordmark, Baxter's name and the " +
+  "greetings; set titles in var(--ui) at font-weight 600";
 
 const errors = [];
 
@@ -102,13 +112,16 @@ function cssErrors(filePath, content, added, waivers) {
   const found = [];
   root.walkDecls((decl) => {
     if (inThemeBlock(decl)) return;
+    const start = decl.source.start.line;
+    const end = decl.source.end ? decl.source.end.line : start;
+    const counts = () => spanTouched(added, start, end) && !waivers.waived(start, end);
+    if ((decl.prop === "font-family" || decl.prop === "font") && DISPLAY_FACE.test(decl.value) && counts()) {
+      found.push(`${filePath}:${start}: '${decl.prop}' ${DISPLAY_FACE_MESSAGE}`);
+    }
     let match = null;
     if (decl.prop === "font-size") match = ABSOLUTE_LENGTH.exec(decl.value);
     else if (decl.prop === "font") match = FONT_SHORTHAND_SIZE.exec(decl.value);
-    if (!match) return;
-    const start = decl.source.start.line;
-    const end = decl.source.end ? decl.source.end.line : start;
-    if (!spanTouched(added, start, end) || waivers.waived(start, end)) return;
+    if (!match || !counts()) return;
     found.push(message(filePath, start, `'${decl.prop}'`, match[1], match[2]));
   });
   return found;
@@ -121,7 +134,16 @@ function cssErrors(filePath, content, added, waivers) {
 function codeErrors(filePath, ast, added, waivers) {
   const found = [];
   walk(ast, (node) => {
-    if (node.type !== "Property" || propertyKey(node) !== "fontSize") return;
+    if (node.type !== "Property") return;
+    const start = node.loc.start.line;
+    const end = node.loc.end.line;
+    const counts = () => spanTouched(added, start, end) && !waivers.waived(start, end);
+    const key = propertyKey(node);
+    if ((key === "fontFamily" || key === "font") && DISPLAY_FACE.test(literalText(node.value) ?? "") && counts()) {
+      found.push(`${filePath}:${start}: ${key} ${DISPLAY_FACE_MESSAGE}`);
+      return;
+    }
+    if (key !== "fontSize") return;
     let amount = null;
     let unit = "px";
     if (node.value.type === "Literal" && typeof node.value.value === "number") {
@@ -130,10 +152,7 @@ function codeErrors(filePath, ast, added, waivers) {
       const match = ABSOLUTE_LENGTH.exec(literalText(node.value) ?? "");
       if (match) [, amount, unit] = match;
     }
-    if (amount === null) return;
-    const start = node.loc.start.line;
-    const end = node.loc.end.line;
-    if (!spanTouched(added, start, end) || waivers.waived(start, end)) return;
+    if (amount === null || !counts()) return;
     found.push(message(filePath, start, "fontSize", amount, unit));
   });
   return found;

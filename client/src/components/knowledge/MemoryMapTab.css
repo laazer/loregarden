@@ -492,8 +492,9 @@
 
 .mm-figures dd {
   margin: 2px 0 0;
-  font: 600 var(--fs-title) var(--dp);
+  font: 600 var(--fs-title) var(--ui);
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .mm-list {

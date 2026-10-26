@@ -530,8 +530,11 @@ is six tokens on `:root`, named for what the text is: `--fs-micro` 11 (badges, m
 titles), `--fs-title` 19 (page titles), `--fs-display` 24. Nothing goes below micro. On changed
 lines it rejects a `font-size` or `font` shorthand with an absolute length (px, rem, pt) in a
 stylesheet, and a numeric or px `fontSize` in code, naming the nearest token. Relative sizes (em,
-%) and computed ones pass. Waive with `type-ok:` plus a reason: a hero number above the scale, or
-a library option that takes pixels (Monaco, xterm, a Pixi `TextStyle`).
+%) and computed ones pass. It also rejects the display face, `var(--dp)` (Fredoka), outside the
+wordmark, Baxter's name, the greetings and one-letter marks: titles are `var(--ui)` at 600, and
+`--mono` is for data (ids, paths, code, times, counts), never headings or labels. Waive with
+`type-ok:` plus a reason: a hero number above the scale, a library option that takes pixels
+(Monaco, xterm, a Pixi `TextStyle`), or one of those display-face uses.
 
 ## Knowing when a ticket is done
 

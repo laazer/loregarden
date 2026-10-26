@@ -31,10 +31,12 @@
 }
 
 .docker-headline-value {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-display);
   color: var(--tx);
   line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .docker-headline-label {

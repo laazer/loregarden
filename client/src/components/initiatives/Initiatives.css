@@ -245,7 +245,7 @@
 
 .initiative-section-title {
   margin: 0 0 4px;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
@@ -285,7 +285,7 @@
 
 .initiative-ws-title {
   margin: 0 0 8px;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);

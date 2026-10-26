@@ -160,6 +160,48 @@ def test_a_computed_font_size_is_left_alone(repo: Path):
 
 
 # --------------------------------------------------------------------------- #
+# 3. the display face
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "decl",
+    [
+        "font-family: var(--dp)",
+        'font-family: var(--dp), "Sora", sans-serif',
+        "font: 600 var(--fs-lead) var(--dp)",
+    ],
+)
+def test_the_display_face_on_a_title_is_reported(repo: Path, decl: str):
+    _write(repo, "a.css", f".title {{ {decl}; }}\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "display face var(--dp)" in result.stderr
+
+
+def test_the_display_face_in_a_style_object_is_reported(repo: Path):
+    _write(repo, "A.tsx", 'export const A = () => <h1 style={{ fontFamily: "var(--dp)" }} />;\n')
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "fontFamily uses the display face" in result.stderr
+
+
+def test_the_body_face_passes(repo: Path):
+    _write(repo, "a.css", ".title { font-family: var(--ui); font-weight: 600; }\n")
+    _write(repo, "A.tsx", 'export const A = () => <h1 style={{ fontFamily: "var(--ui)" }} />;\n')
+    result = _run(repo)
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_wordmark_keeps_the_display_face_with_a_waiver(repo: Path):
+    _write(
+        repo, "a.css", ".brand { font-family: var(--dp); /* type-ok: the loregarden wordmark */ }\n"
+    )
+    result = _run(repo)
+    assert result.returncode == 0, result.stderr
+
+
+# --------------------------------------------------------------------------- #
 # scoping, waivers, no scale, unreadable input
 # --------------------------------------------------------------------------- #
 

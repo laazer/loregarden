@@ -122,7 +122,7 @@ export function RunLedgerPanel({
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-      <div style={{ fontFamily: "var(--dp)", fontSize: "var(--fs-body)", color: "var(--txm)" }}>
+      <div style={{ fontFamily: "var(--ui)", fontWeight: 600, fontSize: "var(--fs-body)", color: "var(--txm)" }}>
         {data.total_runs} run{data.total_runs === 1 ? "" : "s"} · {duration(data.total_seconds)}
         {data.reworked_stages.length > 0 && (
           <> · reworked: {data.reworked_stages.join(", ")}</>

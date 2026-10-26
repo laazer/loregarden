@@ -25,9 +25,9 @@
 
 .chat-side-card-head h2 {
   margin: 0;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-size: var(--fs-lead);
-  font-weight: 650;
+  font-weight: 600;
   color: var(--tx);
 }
 
