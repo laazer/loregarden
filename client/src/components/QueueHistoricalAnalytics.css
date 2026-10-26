@@ -33,7 +33,7 @@
 .analytics-header h3 {
   margin: 0;
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
@@ -51,7 +51,7 @@
   color: var(--txm);
   cursor: pointer;
   font-family: var(--ui);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   transition: border-color var(--t-med);
 }
@@ -73,14 +73,14 @@
   border: 1px solid var(--red);
   border-radius: 11px;
   color: var(--rdl);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .analytics-loading {
   padding: 32px;
   text-align: center;
   color: var(--txl);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .analytics-empty {
@@ -91,11 +91,11 @@
 .analytics-empty p {
   margin: 8px 0;
   color: var(--txl);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .empty-hint {
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .analytics-grid {
@@ -127,14 +127,14 @@
 
 .ticket-type {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 
 .success-badge {
   padding: 2px 8px;
   border-radius: 9px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 
@@ -168,7 +168,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .metric-label {
@@ -221,7 +221,7 @@
 }
 
 .insight {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   padding: 4px 6px;
   border-radius: 6px;
   background: var(--bg3);
@@ -256,7 +256,7 @@
 
 .summary-label {
   display: block;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.07em;
   color: var(--txl);
   font-weight: 600;
@@ -267,7 +267,7 @@
 .summary-value {
   display: block;
   font-family: var(--dp);
-  font-size: 20px;
+  font-size: var(--fs-title);
   font-weight: 700;
   color: var(--ac2);
 }

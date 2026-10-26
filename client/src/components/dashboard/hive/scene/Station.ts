@@ -7,7 +7,7 @@ import { tileToWorld } from "./pathfinding";
 
 const LABEL_STYLE = new TextStyle({
   fontFamily: "monospace",
-  fontSize: 9,
+  fontSize: 9, // type-ok: Pixi TextStyle on the Hive canvas, in world pixels; CSS tokens cannot reach it
   fill: 0xe8eef5,
   align: "center",
 });

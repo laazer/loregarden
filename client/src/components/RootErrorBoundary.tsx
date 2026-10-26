@@ -48,7 +48,7 @@ export class RootErrorBoundary extends Component<Props, State> {
           maxWidth: 640,
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 18 }}>The app failed to start</h1>
+        <h1 style={{ margin: 0, fontSize: "var(--fs-title)" }}>The app failed to start</h1>
         <p style={{ margin: 0, opacity: 0.8 }}>{this.state.error.message}</p>
         <button type="button" onClick={() => window.location.reload()}>
           Reload

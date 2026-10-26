@@ -142,7 +142,7 @@ export function DashboardWorkspacesPane({
             </div>
             <Select
               className="btn-secondary"
-              style={{ width: "100%", fontSize: 12 }}
+              style={{ width: "100%", fontSize: "var(--fs-small)" }}
               aria-label="Workspace workflow template"
               value={workspaces.find((w) => w.slug === selected)?.workflow_template_slug ?? ""}
               onChange={(e) => setTemplate.mutate({ slug: selected, template: e.target.value })}

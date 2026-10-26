@@ -51,6 +51,7 @@ GATES = [
     pytest.param(
         ["node", str(_SCRIPTS / "ts_motion_check.cjs")], "client/src/m.css", id="ts-motion"
     ),
+    pytest.param(["node", str(_SCRIPTS / "ts_type_check.cjs")], "client/src/m.css", id="ts-type"),
     pytest.param(
         ["node", str(_SCRIPTS / "ts_no_silent_failures_check.cjs")],
         "client/src/m.ts",

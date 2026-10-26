@@ -43,7 +43,7 @@
 
 .toast__glyph {
   flex: 0 0 auto;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.35;
 }
 
@@ -69,14 +69,14 @@
 }
 
 .toast__title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   line-height: 1.35;
 }
 
 .toast__message {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   color: var(--txm);
   /* Server detail can be a stack-sized string; keep the toast a toast. */

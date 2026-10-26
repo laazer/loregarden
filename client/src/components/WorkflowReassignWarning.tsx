@@ -59,7 +59,7 @@ export function WorkflowReassignWarning({
           <div className="modal-field-label">
             {lost.length === 1 ? "Stage that will be reset" : "Stages that will be reset"}
           </div>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--fs-small)" }}>
             {lost.map((stage) => (
               <li key={stage} className="mono">
                 {stage}

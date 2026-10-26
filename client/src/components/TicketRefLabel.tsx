@@ -5,7 +5,7 @@ import type { TicketDependencyRef } from "../api/client";
 export function TicketRefLabel({ ticket }: { ticket: TicketDependencyRef }) {
   return (
     <span
-      style={{ fontSize: 13, color: "var(--tx)" }}
+      style={{ fontSize: "var(--fs-body)", color: "var(--tx)" }}
       title={`${ticket.external_id} — ${ticket.state}`}
     >
       <span className="count-pill">{ticket.external_id}</span> {ticket.title}

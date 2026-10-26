@@ -32,7 +32,7 @@
 .queue-panel-title {
   margin: 0;
   font-family: var(--dp);
-  font-size: 17px;
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -42,7 +42,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--aml);
 }
@@ -79,7 +79,7 @@
 }
 
 .queue-stat-label {
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -89,7 +89,7 @@
 
 .queue-stat-value {
   font-family: var(--dp);
-  font-size: 26px;
+  font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
   font-weight: 700;
   color: var(--tx);
   letter-spacing: -0.01em;
@@ -115,7 +115,7 @@
 
 .queue-stat-sub {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -130,14 +130,14 @@
 
 .queue-section-title {
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .queue-section-hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -157,7 +157,7 @@
   gap: 6px;
   width: 100%;
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);
   background: transparent;
@@ -187,7 +187,7 @@
 }
 
 .queue-lane-queue-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -218,7 +218,7 @@
   border-radius: 6px;
   background: var(--bg2);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -227,7 +227,7 @@
   min-width: 22px;
   height: 22px;
   padding-inline: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .queue-lane-item-copy {
@@ -238,7 +238,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -247,7 +247,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -255,7 +255,7 @@
   width: 100%;
   margin-bottom: 6px;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   background: var(--bg3);
   border: 1px solid var(--bd2);
@@ -309,7 +309,7 @@
   background: transparent;
   color: var(--tx);
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -329,7 +329,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -342,7 +342,7 @@
 
 .queue-dispatch-item-state {
   grid-area: state;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txm);
@@ -350,7 +350,7 @@
 
 .queue-dispatch-empty {
   padding: 16px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txl);
   text-align: center;
 }
@@ -361,7 +361,7 @@
   border-radius: 9px;
   background: var(--bg3);
   color: var(--rdl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* ---- execution slots ---- */
@@ -419,7 +419,7 @@
   min-width: 24px;
   height: 22px;
   padding-inline: 5px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .queue-slot--busy .queue-slot-dot {
@@ -430,14 +430,14 @@
 
 .queue-slot-name {
   font-family: var(--dp);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .queue-slot-badge {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -476,7 +476,7 @@
 
 .queue-chip {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 1.4;
   padding: 1px 6px;
   border: 1px solid var(--bd);
@@ -528,7 +528,7 @@
 }
 
 .queue-slot-title {
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   overflow: hidden;
@@ -547,7 +547,7 @@
 }
 
 .queue-hierarchy-node {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txl);
   overflow: hidden;
@@ -556,7 +556,7 @@
 }
 
 .queue-hierarchy-node.is-leaf {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   white-space: normal;
@@ -568,12 +568,12 @@
 
 .queue-hierarchy-code {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .queue-hierarchy-node.is-leaf .queue-hierarchy-code {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--tx);
 }
 
@@ -586,13 +586,13 @@
 }
 
 .queue-lane-item-copy .queue-hierarchy-node.is-leaf {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .queue-slot-sub,
 .queue-slot-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -618,7 +618,7 @@
 .queue-slot-tree,
 .queue-lane-item-timing {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -712,7 +712,7 @@
   border-radius: 8px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -722,7 +722,7 @@
 }
 
 .queue-waiting-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   overflow: hidden;
@@ -732,7 +732,7 @@
 
 .queue-waiting-sub {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -745,7 +745,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -760,7 +760,7 @@
   background: var(--bg2);
   border: 1px solid var(--red);
   border-radius: 11px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--rdl);
 }
 
@@ -785,7 +785,7 @@
   border: 1px solid var(--bd);
   text-align: center;
   font-family: var(--dp);
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
@@ -826,7 +826,7 @@
 }
 
 .queue-lane-attention-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--amb);
@@ -852,7 +852,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid currentcolor;
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--amb);
@@ -866,7 +866,7 @@
   min-width: 22px;
   height: 22px;
   padding-inline: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .queue-lane-attention-copy {
@@ -877,7 +877,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -886,7 +886,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -895,12 +895,12 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .queue-lane-attention-more {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }

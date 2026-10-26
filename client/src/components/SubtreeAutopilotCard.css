@@ -34,27 +34,27 @@
 }
 
 .subtree-autopilot-select {
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 0 6px;
 }
 
 .subtree-autopilot-muted {
   margin: 0;
   color: var(--txl);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .subtree-autopilot-hint {
   margin: 0;
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .subtree-autopilot-alert {
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   background: color-mix(in srgb, var(--red) 14%, var(--bg1));
   border: 1px solid color-mix(in srgb, var(--red) 45%, var(--bd));
@@ -62,7 +62,7 @@
 
 .subtree-autopilot-subtitle {
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);
 }
@@ -73,7 +73,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   min-width: 0;
   /* Ticket ids are long unbroken tokens; break them rather than run past the card. */
   overflow-wrap: anywhere;
@@ -95,7 +95,7 @@
 
 .subtree-autopilot-mono {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .subtree-autopilot-skeleton {
@@ -108,7 +108,7 @@
 .subtree-autopilot-log summary {
   cursor: pointer;
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .subtree-autopilot-log .subtree-autopilot-list {

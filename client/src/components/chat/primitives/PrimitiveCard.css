@@ -52,7 +52,7 @@
   border-radius: 8px;
   background: var(--bg3);
   border: 1px solid var(--bd2);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .lg-primitive-card-dot {
@@ -72,7 +72,7 @@
 .lg-primitive-card-title {
   margin: 0;
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--tx);
@@ -80,7 +80,7 @@
 
 .lg-primitive-card-sub {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   line-height: 1.4;
 }
@@ -90,7 +90,7 @@
   flex-wrap: wrap;
   gap: 6px 10px;
   margin-top: 6px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -111,7 +111,7 @@
   color: var(--txm);
   border-radius: 8px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -138,7 +138,7 @@
   background: var(--bg3);
   color: var(--tx);
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
 }
@@ -154,7 +154,7 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--blue) 12%, var(--bg3));
   color: color-mix(in srgb, var(--blue) 78%, var(--tx));
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 650;
   cursor: pointer;
   transition:
@@ -184,7 +184,7 @@
   min-height: 24px;
   padding: 3px;
   border-radius: 7px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-resource-btn--compact .lg-primitive-resource-btn-label {
@@ -232,13 +232,13 @@
 
 .lg-primitive-card-error {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--red);
 }
 
 .lg-primitive-card-loading {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -405,7 +405,7 @@
   gap: 6px;
   margin: 0;
   padding: 1px 2px 5px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--txl);
@@ -416,7 +416,7 @@
 .lg-primitive-kanban-col-more {
   margin: 0;
   padding: 6px 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-align: center;
 }
@@ -456,7 +456,7 @@
   align-self: flex-start;
   padding: 1px 4px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -476,7 +476,7 @@
   border-radius: 999px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0;
   color: var(--txm);
 }
@@ -494,7 +494,7 @@
   background: var(--bg3);
   color: var(--txm);
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -506,7 +506,7 @@
 
 .lg-primitive-terminal {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   background: #0d1117;
   color: #c9d1d9;
   border-radius: 10px;
@@ -522,7 +522,7 @@
   background: #161b22;
   border-bottom: 1px solid #30363d;
   color: #8b949e;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-terminal-body {
@@ -543,7 +543,7 @@
 }
 
 .lg-primitive-thinking {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
   font-style: italic;
   line-height: 1.5;
@@ -565,7 +565,7 @@
   border-radius: 8px;
   background: var(--bg0);
   border: 1px solid var(--bd);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-calendar-cell--muted {
@@ -622,7 +622,7 @@
 .lg-primitive-calendar-more {
   display: block;
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -670,7 +670,7 @@
 .lg-primitive-calendar-week-weekday {
   margin: 0;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -680,7 +680,7 @@
 .lg-primitive-calendar-week-date {
   margin: 2px 0 0;
   font-family: var(--dp);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 650;
   color: var(--tx);
 }
@@ -701,7 +701,7 @@
   border-radius: 999px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -751,7 +751,7 @@
   justify-content: space-between;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -773,7 +773,7 @@
   flex: 1;
   min-width: 0;
   margin: 5px 0 0;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   line-height: 1.35;
   color: var(--tx);
@@ -790,7 +790,7 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txl);
 }
@@ -803,7 +803,7 @@
   margin: 0;
   padding: 12px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--txl) 70%, transparent);
@@ -834,7 +834,7 @@
 .lg-primitive-calendar-day-weekday {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -844,7 +844,7 @@
 .lg-primitive-calendar-day-date {
   margin: 2px 0 0;
   font-family: var(--dp);
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--tx);
@@ -853,7 +853,7 @@
 .lg-primitive-calendar-day-count {
   margin: 0;
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -861,7 +861,7 @@
   margin: 0;
   padding: 28px 8px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--txm);
 }
@@ -909,7 +909,7 @@
   gap: 2px;
   padding-top: 1px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txm);
 }
@@ -942,7 +942,7 @@
   border: 1px solid var(--bd2);
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -952,7 +952,7 @@
 .lg-primitive-calendar-agenda-title {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 650;
   color: var(--tx);
   line-height: 1.35;
@@ -961,7 +961,7 @@
 
 .lg-primitive-calendar-agenda-desc {
   margin: 5px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   color: var(--txm);
 }
@@ -969,7 +969,7 @@
 .lg-primitive-calendar-agenda-meta {
   margin: 6px 0 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1038,7 +1038,7 @@
 .lg-primitive-workflow-node-head strong {
   min-width: 0;
   font-family: var(--dp);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 680;
   line-height: 1.3;
   color: var(--tx);
@@ -1052,7 +1052,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg3) 82%, transparent);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1071,7 +1071,7 @@
   gap: 8px;
   padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -1084,7 +1084,7 @@
 
 .lg-primitive-workflow-node-owner small {
   flex: none;
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1106,7 +1106,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--amb) 7%, var(--bg0));
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-workflow-agent-index {
@@ -1133,7 +1133,7 @@
 
 .lg-primitive-workflow-node-empty {
   padding: 4px;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1149,7 +1149,7 @@
   border-radius: 5px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1346,7 +1346,7 @@
   border: 1px solid;
   border-radius: 6px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -1356,7 +1356,7 @@
   min-width: 0;
   margin: 0;
   font-family: var(--ui);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   line-height: 1.35;
   color: var(--tx);
@@ -1368,7 +1368,7 @@
 .lg-primitive-ticket-external-id {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
 }
 
@@ -1394,7 +1394,7 @@
 }
 
 .lg-primitive-ticket-v6--compact .lg-primitive-ticket-v6-title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .lg-primitive-ticket-v6-meta {
@@ -1403,7 +1403,7 @@
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-ticket-state {
@@ -1426,7 +1426,7 @@
 
 .lg-primitive-ticket-slug {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1473,7 +1473,7 @@
 .lg-primitive-ticket-segs-label {
   flex: none;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1483,7 +1483,7 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -1528,7 +1528,7 @@
 /* Which tickets this one waits on; the detail pane links them. */
 .lg-primitive-ticket-tile-waiting {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow-wrap: anywhere;
 }
@@ -1573,7 +1573,7 @@
 .lg-primitive-gate-status-label {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1582,7 +1582,7 @@
 
 .lg-primitive-gate-status-copy {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.4;
   color: var(--tx);
 }
@@ -1590,7 +1590,7 @@
 .lg-primitive-gate-status-meta {
   margin: 6px 0 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1603,7 +1603,7 @@
 .lg-primitive-gate-section-title {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1625,7 +1625,7 @@
   border: 1px solid var(--bd);
   border-radius: 8px;
   background: var(--bg0);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   color: var(--txm);
 }
@@ -1665,7 +1665,7 @@
   margin-top: 3px;
   overflow: hidden;
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1673,7 +1673,7 @@
 .lg-primitive-workspace-label {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1700,7 +1700,7 @@
   align-items: flex-start;
   gap: 9px;
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.4;
 }
 
@@ -1748,7 +1748,7 @@
 .lg-primitive-commit-copy strong {
   overflow: hidden;
   color: var(--tx);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1756,13 +1756,13 @@
 .lg-primitive-commit-copy span,
 .lg-primitive-commit-list time {
   color: var(--txl);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-commit-detail > p {
   margin: 0 0 10px;
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -1772,7 +1772,7 @@
   gap: 10px;
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-commit-stats .is-add {
@@ -1799,7 +1799,7 @@
   display: flex;
   gap: 8px;
   color: var(--tx);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -1814,7 +1814,7 @@
   border-radius: 6px;
   color: var(--ac2);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-qa-item textarea {
@@ -1827,7 +1827,7 @@
   background: var(--bg0);
   color: var(--tx);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .lg-primitive-qa-item textarea:focus {
@@ -1839,7 +1839,7 @@
   padding: 8px 10px;
   border-left: 2px solid var(--bd2);
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.45;
 }
 
@@ -1861,7 +1861,7 @@
 .lg-primitive-giphy figcaption {
   padding: 8px 10px;
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 @media (max-width: 560px) {
@@ -1884,7 +1884,7 @@
 .lg-btw-attribution {
   text-transform: none;
   letter-spacing: normal;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.5;
   color: var(--txm);
 }
@@ -1933,6 +1933,6 @@
 .tree-member-note {
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }

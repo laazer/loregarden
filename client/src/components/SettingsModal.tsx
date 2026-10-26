@@ -184,7 +184,7 @@ export function SettingsModal({
                 <Select
                   id={workspaceFieldId}
                   className="btn-secondary filter-select"
-                  style={{ width: "100%", fontSize: 12 }}
+                  style={{ width: "100%", fontSize: "var(--fs-small)" }}
                   value={workspaceSlug}
                   disabled={busy}
                   onChange={(e) => onWorkspaceChange(e.target.value)}

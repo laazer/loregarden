@@ -18,7 +18,7 @@ export function StageRouteHints({ stage, transitions, stages }: StageRouteHintsP
           key={`${stage.key}-${hint.when}-${hint.targetKey}`}
           style={{
             fontFamily: "var(--mono)",
-            fontSize: 10.5,
+            fontSize: "var(--fs-micro)",
             color: hint.upstream || hint.when === "reject" ? "var(--orl, #c77d2d)" : "var(--txm)",
           }}
         >

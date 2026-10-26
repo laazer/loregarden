@@ -26,7 +26,7 @@
 .chat-side-card-head h2 {
   margin: 0;
   font-family: var(--dp);
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-weight: 650;
   color: var(--tx);
 }
@@ -53,7 +53,7 @@
   background: none;
   padding: 0;
   color: var(--ac2);
-  font-size: 12px;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 
@@ -92,13 +92,13 @@
 
 .chat-side-history-kind {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   color: var(--txl);
 }
 
 .chat-side-history-label {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -106,7 +106,7 @@
 
 .chat-side-card-empty {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--txm);
 }

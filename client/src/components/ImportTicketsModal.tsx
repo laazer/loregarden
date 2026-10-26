@@ -178,7 +178,7 @@ export function ImportTicketsModal({
               Smart import
             </Button>
           </div>
-          <p id={descriptionId} style={{ fontSize: 12, color: "var(--txm)", margin: "6px 0 0 0" }}>
+          <p id={descriptionId} style={{ fontSize: "var(--fs-small)", color: "var(--txm)", margin: "6px 0 0 0" }}>
             Smart import includes Studio-style metadata; Regular import uses standard fields only.
           </p>
         </div>
@@ -206,7 +206,7 @@ export function ImportTicketsModal({
             </div>
             <ul
               className="import-selected-list"
-              style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}
+              style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--txm)" }}
             >
               {selected.map((file) => (
                 <li key={file.path}>{file.repo_path}</li>

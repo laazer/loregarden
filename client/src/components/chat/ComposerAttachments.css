@@ -54,7 +54,7 @@
   border-radius: 9px;
   background: var(--bg2);
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .lg-attachment-link {
@@ -91,7 +91,7 @@
 .lg-attachment-size {
   flex: none;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 

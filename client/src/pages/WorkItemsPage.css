@@ -24,7 +24,7 @@
   padding: 5px 10px;
   border: 1px solid var(--bd);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -63,7 +63,7 @@
 }
 
 .wi-clear {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -79,7 +79,7 @@
 
 .wi-count {
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
 }
@@ -99,7 +99,7 @@
   max-width: 560px;
   padding: 28px 0;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .wi-state p {
@@ -114,7 +114,7 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .wi-table th {
@@ -125,7 +125,7 @@
   border-bottom: 1px solid var(--bd2);
   text-align: left;
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -176,7 +176,7 @@
 .wi-col-id {
   width: 180px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -186,7 +186,7 @@
 
 .wi-col-stage {
   width: 160px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .wi-run {
@@ -224,7 +224,7 @@
 .wi-col-workspace {
   width: 110px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 

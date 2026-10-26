@@ -25,7 +25,7 @@
 
 .ticket-filter-trigger-title {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -48,7 +48,7 @@
 
 .ticket-filter-trigger-chevron {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   line-height: 1;
 }
@@ -76,7 +76,7 @@
   border-radius: 7px;
   background: transparent;
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -93,7 +93,7 @@
 .ticket-filter-check {
   width: 12px;
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
   line-height: 1;
 }
@@ -106,7 +106,7 @@
 .ticket-filter-count {
   flex: none;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 

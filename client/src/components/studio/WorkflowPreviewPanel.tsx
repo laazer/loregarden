@@ -54,7 +54,7 @@ export function WorkflowPreviewPanel({
               </div>
               <div className="studio-pipeline-content">
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--tx)" }}>
+                  <span style={{ fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--tx)" }}>
                     {stage.name || `Stage ${index + 1}`}
                   </span>
                   <span className={`studio-stage-type-badge ${typeClass}`}>{stageTypeLabel(stage.stage_type)}</span>
@@ -62,7 +62,7 @@ export function WorkflowPreviewPanel({
                 {stage.stage_type === "parallel" ? (
                   <div className="studio-pipeline-parallel-agents">
                     {stage.parallel_agents.length === 0 ? (
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", color: "var(--txl)" }}>
                         No agents added yet
                       </span>
                     ) : (
@@ -75,7 +75,7 @@ export function WorkflowPreviewPanel({
                     )}
                   </div>
                 ) : (
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)" }}>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", color: "var(--txm)" }}>
                     {agentLabel(stage.agent_id)}
                     <span style={{ color: "var(--txl)" }}> · {stage.skill_name || "—"}</span>
                   </div>
@@ -87,7 +87,7 @@ export function WorkflowPreviewPanel({
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 5,
-                      fontSize: 10,
+                      fontSize: "var(--fs-micro)",
                       fontWeight: 600,
                       color: "var(--ac2)",
                       background: "rgba(120,160,255,.1)",

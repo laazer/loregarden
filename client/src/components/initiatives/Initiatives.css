@@ -47,13 +47,13 @@
 
 .initiative-title {
   margin: 2px 0 0;
-  font-size: 15px;
+  font-size: var(--fs-lead);
   color: var(--tx);
 }
 
 .initiative-desc {
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* Briefs run to pages of headings and tables. On a card they get a glance's
@@ -66,25 +66,25 @@
 }
 
 .initiative-state {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .initiative-mono {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .initiative-muted {
   color: var(--txl);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .initiative-hint {
   margin: 0;
   color: var(--txl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-progress {
@@ -115,7 +115,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 4px 6px;
   border-radius: 6px;
   background: var(--bg2);
@@ -142,7 +142,7 @@
 }
 
 .initiative-ws-pill {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   padding: 1px 6px;
   border-radius: 8px;
   border: 1px solid var(--bd2);
@@ -152,7 +152,7 @@
 
 .initiative-milestone-state {
   color: var(--txl);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
 }
 
@@ -164,11 +164,11 @@
 .initiative-attach select {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-small-btn {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   padding: 2px 8px;
 }
 
@@ -187,7 +187,7 @@
 
 .initiative-input {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-skeleton {
@@ -200,7 +200,7 @@
 .initiative-intro {
   margin: 0;
   max-width: 70ch;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.6;
   color: var(--txm);
 }
@@ -224,7 +224,7 @@
   gap: 4px;
   max-height: 160px;
   overflow: auto;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -246,7 +246,7 @@
 .initiative-section-title {
   margin: 0 0 4px;
   font-family: var(--dp);
-  font-size: 15px;
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -261,7 +261,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   cursor: pointer;
 }
@@ -286,7 +286,7 @@
 .initiative-ws-title {
   margin: 0 0 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);
 }
@@ -319,7 +319,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   cursor: pointer;
   min-width: 0;
@@ -404,7 +404,7 @@
 
 .initiative-suggest-move {
   max-width: 220px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-suggest-alert {
@@ -413,7 +413,7 @@
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .initiative-suggest-alert p {
@@ -442,7 +442,7 @@
   margin: 0;
   padding-left: 18px;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 /* Narrow panes: the title gets its own line; the facts wrap beneath it. */

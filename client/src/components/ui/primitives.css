@@ -46,13 +46,13 @@
   background: var(--bg1);
   color: var(--tx);
   box-shadow: 0 12px 40px color-mix(in srgb, var(--shadow) 45%, transparent);
-  font-size: 13px;
+  font-size: var(--fs-body);
   overflow-y: auto;
 }
 
 :where(.ui-select-group) {
   padding: 10px 12px 6px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -99,6 +99,6 @@
     select
   ) {
   padding: 9px 12px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.45;
 }

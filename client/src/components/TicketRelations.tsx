@@ -84,7 +84,7 @@ export function TicketRelations({ ticket }: TicketRelationsProps) {
           type="text"
           aria-label="Relate to ticket (id or external id)"
           className="btn-secondary filter-select"
-          style={{ flex: 1, fontSize: 13 }}
+          style={{ flex: 1, fontSize: "var(--fs-body)" }}
           value={value}
           placeholder="Relate to ticket (id or external id)…"
           onChange={(e) => {

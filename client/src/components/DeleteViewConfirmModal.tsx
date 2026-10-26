@@ -42,7 +42,7 @@ export function DeleteViewConfirmModal({
       </div>
 
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           This deletes the view, its layout and its tab. It cannot be undone.
         </p>
       </div>

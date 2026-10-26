@@ -47,14 +47,14 @@
 .baxter-chat-name {
   font-family: var(--dp);
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-lead);
 }
 
 .baxter-chat-context {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   padding: 3px 9px;
   border: 1px solid var(--bd2);
@@ -65,7 +65,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   padding: 5px 11px;
   border: 1px solid var(--bd);
@@ -178,7 +178,7 @@
 .baxter-chat-kicker {
   margin: 0 0 6px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
   letter-spacing: 0.02em;
 }
@@ -186,7 +186,7 @@
 .baxter-chat-greeting {
   margin: 0;
   font-family: var(--dp);
-  font-size: 34px;
+  font-size: 34px; /* type-ok: the chat greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
@@ -194,7 +194,7 @@
 
 .baxter-chat-summary {
   margin: 8px 0 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--txm);
   max-width: 52ch;
 }
@@ -205,7 +205,7 @@
   align-items: center;
   gap: 8px 12px;
   margin: 10px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txl);
   max-width: 64ch;
 }
@@ -269,7 +269,7 @@
 }
 
 .baxter-chat-card-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--rdl);
 }
@@ -278,7 +278,7 @@
   border: none;
   background: none;
   color: var(--ac2);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   cursor: pointer;
   padding: 0;
 }
@@ -314,7 +314,7 @@
 }
 
 .baxter-chat-card-row-title {
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   color: var(--tx);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,7 +323,7 @@
 
 .baxter-chat-card-row-meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -333,7 +333,7 @@
   border-radius: 8px;
   background: var(--bg2);
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 6px 10px;
   cursor: pointer;
 }
@@ -385,7 +385,7 @@
   max-width: var(--baxter-reading, 880px);
   margin: 8px auto 0;
   text-align: center;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -437,7 +437,7 @@
 .baxter-history-head h2 {
   margin: 2px 0 0;
   font-family: var(--dp);
-  font-size: 21px;
+  font-size: var(--fs-title);
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--tx);
@@ -446,7 +446,7 @@
 .baxter-history-eyebrow {
   margin: 0;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -499,7 +499,7 @@
 .baxter-history-entry-meta {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
 }
 
@@ -551,7 +551,7 @@
   border: 1px solid color-mix(in srgb, var(--rdl) 45%, var(--bd2));
   border-radius: 9px;
   background: var(--bg1);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -565,7 +565,7 @@
   padding: 4px 10px;
   border: 1px solid var(--bd2);
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -630,7 +630,7 @@
   background: color-mix(in srgb, var(--ac) 14%, var(--bg3));
   color: var(--ac2);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 750;
   letter-spacing: 0.06em;
 }
@@ -651,21 +651,21 @@
 
 .baxter-history-entry-row strong {
   font-family: var(--dp);
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 650;
 }
 
 .baxter-history-entry-row time {
   flex: none;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-transform: uppercase;
 }
 
 .baxter-history-entry-summary {
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.45;
 }
 
@@ -682,7 +682,7 @@
   background: var(--bg0);
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
 }
 
@@ -701,7 +701,7 @@
   padding: 14px 20px 18px;
   border-top: 1px solid var(--bd);
   color: var(--txl);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   line-height: 1.5;
 }
 
@@ -734,7 +734,7 @@
   }
 
   .baxter-chat-greeting {
-    font-size: 28px;
+    font-size: 28px; /* type-ok: phone-width step-down of the greeting above the scale */
   }
 
   .baxter-history-panel {
@@ -757,7 +757,7 @@
   border-radius: 11px;
   background: color-mix(in srgb, var(--dg, #e2555f) 10%, var(--bg1));
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.45;
 }
 
@@ -804,7 +804,7 @@
   min-height: 36px;
   max-height: 200px;
   padding: 7px 4px;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .baxter-chat-dock .overflow-menu {

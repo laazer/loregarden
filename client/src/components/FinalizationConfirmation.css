@@ -15,7 +15,7 @@
 
 .finalization-error-message {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
@@ -37,18 +37,18 @@
 }
 
 .finalization-total-count {
-  font-size: 24px;
+  font-size: var(--fs-display);
   font-weight: 700;
 }
 
 .finalization-total-label {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
 .finalization-breakdown-summary {
   margin: 8px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 

@@ -34,7 +34,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const { parse, requireClientModule } = require("./gate_client_modules.cjs");
+const { requireClientModule } = require("./gate_client_modules.cjs");
+const { parseFile, walk, attributeName, literalText, propertyKey } = require("./gate_jsx.cjs");
 
 const {
   untrackedPaths,
@@ -201,50 +202,6 @@ function cssErrors(filePath, content, lines, added, waivers) {
 // --------------------------------------------------------------------------- //
 // TS / TSX
 // --------------------------------------------------------------------------- //
-
-function parseFile(content) {
-  try {
-    return parse(content, { jsx: true, loc: true, range: false, comment: false });
-  } catch {
-    // silent-ok: tsc and oxlint both report syntax errors, and far better
-    return null;
-  }
-}
-
-function walk(node, visit) {
-  if (!node || typeof node.type !== "string") return;
-  visit(node);
-  for (const key of Object.keys(node)) {
-    if (key === "parent" || key === "loc") continue;
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const child of value) walk(child, visit);
-    } else if (value && typeof value.type === "string") {
-      walk(value, visit);
-    }
-  }
-}
-
-function attributeName(attr) {
-  return attr.type === "JSXAttribute" && attr.name && attr.name.type === "JSXIdentifier"
-    ? attr.name.name
-    : "";
-}
-
-/** The literal text of a string or template literal; null for anything computed. */
-function literalText(node) {
-  if (!node) return null;
-  if (node.type === "Literal" && typeof node.value === "string") return node.value;
-  if (node.type === "TemplateLiteral") return node.quasis.map((q) => q.value.cooked).join(" ");
-  if (node.type === "JSXExpressionContainer") return literalText(node.expression);
-  return null;
-}
-
-function propertyKey(prop) {
-  if (prop.key.type === "Identifier") return prop.key.name;
-  if (prop.key.type === "Literal") return String(prop.key.value);
-  return "";
-}
 
 /** 1. A raw element where a themed primitive exists. */
 function primitiveErrors(filePath, ast, added, waivers) {

@@ -261,7 +261,7 @@ function TreeRow({
                   <>
                     <span style={{ color: "var(--bd2)" }}>·</span>
                     <span
-                      style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}
+                      style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", color: "var(--txl)" }}
                     >
                       {node.workspace_slug}
                     </span>

@@ -140,7 +140,7 @@ export function AgentsAssembleModal({
             <Input
               aria-labelledby={`${fieldId}-branch`}
               className="btn-secondary"
-              style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
+              style={{ width: "100%", fontSize: "var(--fs-small)", boxSizing: "border-box" }}
               value={branch}
               disabled={busy}
               onChange={(e) => setBranch(e.target.value)}
@@ -177,7 +177,7 @@ export function AgentsAssembleModal({
           <Select
             aria-labelledby={`${fieldId}-stop-at`}
             className="btn-secondary"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={stopAtStageKey}
             disabled={busy}
             onChange={(e) => setStopAtStageKey(e.target.value)}
@@ -209,7 +209,7 @@ export function AgentsAssembleModal({
             type="number"
             min={30}
             className="btn-secondary"
-            style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+            style={{ width: 140, fontSize: "var(--fs-small)", boxSizing: "border-box" }}
             value={timeoutSeconds}
             disabled={busy}
             onChange={(e) => setTimeoutSeconds(e.target.value)}
@@ -225,7 +225,7 @@ export function AgentsAssembleModal({
             display: "flex",
             alignItems: "center",
             gap: 8,
-            fontSize: 13,
+            fontSize: "var(--fs-body)",
             color: "var(--txm)",
             cursor: "pointer",
           }}
@@ -243,7 +243,7 @@ export function AgentsAssembleModal({
             display: "flex",
             alignItems: "center",
             gap: 8,
-            fontSize: 13,
+            fontSize: "var(--fs-body)",
             color: "var(--txm)",
             cursor: "pointer",
             marginTop: 8,
@@ -262,7 +262,7 @@ export function AgentsAssembleModal({
             display: "flex",
             alignItems: "center",
             gap: 8,
-            fontSize: 13,
+            fontSize: "var(--fs-body)",
             color: "var(--txm)",
             cursor: "pointer",
             marginTop: 8,

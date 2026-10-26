@@ -78,7 +78,7 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
           <div
             style={{
               fontFamily: "var(--mono)",
-              fontSize: 10,
+              fontSize: "var(--fs-micro)",
               color: "var(--txl)",
               wordBreak: "break-all",
               marginBottom: 10,
@@ -122,7 +122,7 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
               style={{
                 margin: "6px 0 0",
                 fontFamily: "var(--mono)",
-                fontSize: 11,
+                fontSize: "var(--fs-micro)",
                 lineHeight: 1.55,
                 whiteSpace: "pre-wrap",
                 color: "var(--rdl)",

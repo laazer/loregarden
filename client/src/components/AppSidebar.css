@@ -190,7 +190,7 @@
 
 /* Collapsed, the border above is the whole section header. */
 .app-sidebar-section-title {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -315,7 +315,7 @@
 .app-sidebar-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,7 +323,7 @@
 
 .app-sidebar-kind {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -421,7 +421,7 @@
   background: var(--bg0);
   color: var(--tx);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .app-sidebar-spacer {
@@ -502,7 +502,7 @@
   border-radius: 7px;
   background: transparent;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -599,14 +599,14 @@
 
 .app-sidebar-count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 /* Empty and error lines: words, not a control, so no row hover. */
 .app-sidebar-note {
   padding: 6px 6px 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   color: var(--txl);
 }

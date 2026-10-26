@@ -492,7 +492,7 @@ export function TicketStudioPanel({
 
       {importedTickets && importedTickets.length > 0 && (
         <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--bd)" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--txm)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          <div style={{ fontSize: "var(--fs-micro)", fontWeight: 600, color: "var(--txm)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Imported Tickets
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -505,7 +505,7 @@ export function TicketStudioPanel({
                 <div style={{ fontWeight: 500, marginBottom: 2 }}>
                   {ticket.title}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--txm)", display: "flex", gap: 8 }}>
+                <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)", display: "flex", gap: 8 }}>
                   <span className={`ticket-draft-type ${ticket.work_item_type}`}>
                     {workItemTypeLabel(ticket.work_item_type)}
                   </span>
@@ -812,7 +812,7 @@ export function TicketStudioPanel({
                 {hasOpenQuestions && isReadOnly && (
                   <div className="ticket-studio-clarify-card">
                     <div className="studio-card-title">Clarifying questions</div>
-                    <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--txm)" }}>
+                    <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--txm)" }}>
                       {selectedSession.clarifying_questions.map((q, index) => (
                         <li key={q}>
                           <div>{q}</div>
@@ -979,10 +979,10 @@ export function TicketStudioPanel({
             overflowY: "auto",
             boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.4)",
           }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: 16, fontWeight: 600, color: "var(--tx)" }}>
+            <h3 style={{ margin: "0 0 8px 0", fontSize: "var(--fs-lead)", fontWeight: 600, color: "var(--tx)" }}>
               Finalize imported tickets?
             </h3>
-            <p style={{ margin: "0 0 16px 0", fontSize: 13.5, color: "var(--txm)" }}>
+            <p style={{ margin: "0 0 16px 0", fontSize: "var(--fs-body)", color: "var(--txm)" }}>
               This will create {selectedCount || importedTickets.length} work item{(selectedCount || importedTickets.length) === 1 ? "" : "s"} in your workspace. This action cannot be undone.
             </p>
             {importedTickets && importedTickets.length > 0 && (
@@ -991,7 +991,7 @@ export function TicketStudioPanel({
                 borderRadius: 4,
                 padding: 12,
                 marginBottom: 16,
-                fontSize: 12,
+                fontSize: "var(--fs-small)",
                 color: "var(--tx)",
               }}>
                 <div style={{ fontWeight: 500, marginBottom: 6 }}>

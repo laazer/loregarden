@@ -37,7 +37,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 5px 8px 6px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -60,7 +60,7 @@
   background: transparent;
   color: var(--tx);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -71,21 +71,21 @@
 
 .lg-composer-menu-name {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ac2);
   white-space: nowrap;
 }
 
 .lg-composer-menu-alias {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   white-space: nowrap;
 }
 
 .lg-composer-menu-summary {
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -93,7 +93,7 @@
 
 .lg-composer-menu-path {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   /* The tail of a path identifies it; the head repeats across every hit. */
   direction: rtl;
   text-align: left;
@@ -105,7 +105,7 @@
   background: var(--bg1);
   border: 1px solid var(--bd2);
   color: var(--txm);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -141,7 +141,7 @@
   background: transparent;
   padding: 0;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.35;
   color: inherit;
   text-align: left;
@@ -158,7 +158,7 @@
   background: rgb(255 255 255 / 45%);
   color: inherit;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   padding: 5px 6px;
 }
 
@@ -176,7 +176,7 @@
   background: rgb(255 255 255 / 35%);
   color: #2b2712;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -195,7 +195,7 @@
   margin-left: auto;
   border-color: transparent;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1;
 }
 
@@ -208,13 +208,13 @@
   border: 1px dashed var(--bd2);
   border-radius: 999px;
   background: var(--bg2);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .lg-composer-queued-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ac2);
@@ -242,7 +242,7 @@
   border: 1px solid var(--bd2);
   border-radius: 10px;
   background: var(--bg2);
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   max-width: min(520px, 100%);
 }

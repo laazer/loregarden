@@ -44,7 +44,7 @@ export function DeleteTicketConfirmModal({
           </div>
 
           <div className="modal-body">
-            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+            <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
               This permanently deletes the ticket along with its run history, artifacts, and
               approvals. This action cannot be undone.
             </p>

@@ -8,7 +8,7 @@
 .gate-preset-picker > details > summary {
   cursor: pointer;
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .gate-preset-picker > details[open] > summary {
@@ -25,7 +25,7 @@
 
 .gate-preset-toolchain legend {
   padding: 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -34,7 +34,7 @@
   align-items: flex-start;
   gap: 8px;
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .gate-preset-row input {
@@ -46,7 +46,7 @@
   margin-top: 2px;
   color: var(--txm);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   overflow-wrap: anywhere;
 }
 
@@ -55,7 +55,7 @@
   max-height: 160px;
   overflow: auto;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   white-space: pre-wrap;
 }
 
@@ -63,7 +63,7 @@
 .gate-preset-running-as {
   display: block;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -82,7 +82,7 @@
 
 .gate-running-title {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--txl);
 }
@@ -99,6 +99,6 @@
 .gate-running-list code {
   color: var(--txm);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   overflow-wrap: anywhere;
 }

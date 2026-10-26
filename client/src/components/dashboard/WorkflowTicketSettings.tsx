@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 
 import type { TicketDetail, WorkflowTemplateSummary, WorkspaceWorkflow } from "../../api/client";
 import { STATE_COLORS, STATE_LABELS } from "../UpdateStateModal";
+import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 
 interface WorkflowTicketSettingsProps {
@@ -44,7 +45,7 @@ export function WorkflowTicketSettings({
           <Select
             aria-labelledby={`${fieldId}-template`}
             className="btn-secondary"
-            style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
+            style={{ width: "100%", maxWidth: 360, fontSize: "var(--fs-small)" }}
             value={ticket.workflow_template_slug || ""}
             disabled={workflowBusy || templatePending}
             onChange={(e) => {
@@ -62,7 +63,7 @@ export function WorkflowTicketSettings({
           {ticket.workflow_template_slug &&
             workspaceWorkflow?.template_slug &&
             ticket.workflow_template_slug !== workspaceWorkflow.template_slug && (
-              <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
+              <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)", marginTop: 6 }}>
                 Workspace default: {workspaceWorkflow.template_name}
               </div>
             )}
@@ -76,7 +77,7 @@ export function WorkflowTicketSettings({
             {STATE_LABELS[ticket.state]}
           </div>
           {ticket.state_locked && (
-            <span className="count-pill" style={{ marginTop: 8, fontSize: 10 }}>
+            <span className="count-pill" style={{ marginTop: 8, fontSize: "var(--fs-micro)" }}>
               locked
             </span>
           )}
@@ -86,11 +87,11 @@ export function WorkflowTicketSettings({
           <div style={{ fontWeight: 600 }}>
             {ticket.workflow_stage_name || ticket.workflow_stage_key || "—"}
           </div>
-          <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 4 }}>
+          <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)", marginTop: 4 }}>
             {ticket.workflow_stage_status.replace("_", " ")}
           </div>
           {ticket.current_stage_agent?.trim() && (
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 6 }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", color: "var(--txm)", marginTop: 6 }}>
               next agent · {ticket.current_stage_agent}
             </div>
           )}
@@ -103,7 +104,7 @@ export function WorkflowTicketSettings({
         <Select
           aria-labelledby={`${fieldId}-posture`}
           className="btn-secondary"
-          style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
+          style={{ width: "100%", maxWidth: 360, fontSize: "var(--fs-small)" }}
           value={ticket.compatibility_posture || ""}
           disabled={postureSaving}
           onChange={(e) => {
@@ -118,7 +119,7 @@ export function WorkflowTicketSettings({
         </Select>
         {/* An inherited value is meaningless without its origin — always show which
             milestone/feature/workspace the agent will actually be told. */}
-        <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
+        <div style={{ fontSize: "var(--fs-micro)", color: "var(--txm)", marginTop: 6 }}>
           Agents are told: <strong>{ticket.resolved_compatibility_posture || "—"}</strong>
           {ticket.compatibility_posture_source ? ` · ${ticket.compatibility_posture_source}` : ""}
         </div>
@@ -169,9 +170,9 @@ function TicketBranchField({
         Branch
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 360 }}>
-        <input
+        <Input
           className="btn-secondary"
-          style={{ flex: 1, minWidth: 0, fontSize: 12, boxSizing: "border-box" }}
+          style={{ flex: 1, minWidth: 0, fontSize: "var(--fs-small)", boxSizing: "border-box" }}
           aria-label="Branch"
           aria-busy={saving}
           readOnly={saving}
