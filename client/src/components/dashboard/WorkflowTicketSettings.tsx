@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
 
 import type { TicketDetail, WorkflowTemplateSummary, WorkspaceWorkflow } from "../../api/client";
-import { STATE_COLORS, STATE_LABELS } from "../UpdateStateModal";
 import { Input } from "../ui/Input";
+import { StatusChip } from "../ui/StatusChip";
+import { ticketStateChip } from "../../lib/ticketStates";
 import { Select } from "../ui/Select";
 
 interface WorkflowTicketSettingsProps {
@@ -73,8 +74,8 @@ export function WorkflowTicketSettings({
       <div className="dual-state">
         <div className="state-card">
           <div className="state-label">Ticket state · WHAT</div>
-          <div style={{ fontWeight: 600, color: STATE_COLORS[ticket.state] }}>
-            {STATE_LABELS[ticket.state]}
+          <div>
+            <StatusChip {...ticketStateChip(ticket.state)} />
           </div>
           {ticket.state_locked && (
             <span className="count-pill" style={{ marginTop: 8, fontSize: "var(--fs-micro)" }}>

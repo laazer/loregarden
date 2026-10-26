@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import type { TicketActivity, TicketSummary } from "../../api/types";
 import { Button } from "../ui/Button";
+import { StatusChip } from "../ui/StatusChip";
+import { ticketActivityChip } from "../../lib/ticketStates";
 import { DashboardSection } from "./DashboardSection";
 import { TicketLink } from "../TicketLink";
 
@@ -94,9 +96,10 @@ export function ActiveTicketsSection({ query }: ActiveTicketsSectionProps) {
                   {ticket.workflow_stage_name || "—"}
                 </td>
                 <td data-label="Activity">
-                  <span className={`wsd-tag wsd-tag--activity-${activityOf(ticket)}`}>
-                    {ACTIVITY_LABELS[activityOf(ticket)]}
-                  </span>
+                  <StatusChip
+                    tone={ticketActivityChip(activityOf(ticket)).tone}
+                    label={ACTIVITY_LABELS[activityOf(ticket)]}
+                  />
                 </td>
               </tr>
             ))}

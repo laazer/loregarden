@@ -1500,10 +1500,6 @@
   font-weight: 500;
 }
 
-.lg-primitive-ticket-stage-status {
-  color: var(--txl);
-}
-
 .lg-primitive-ticket-tile {
   position: relative;
   padding: 10px 11px;

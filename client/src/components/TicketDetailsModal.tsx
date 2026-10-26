@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import * as apiClient from '../api/client';
 import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
-import { TICKET_STATE_COLORS } from '../lib/ticketStates';
+import { ticketStateChip } from '../lib/ticketStates';
 import { IconCloseButton } from './IconCloseButton';
 import { TicketDependencies } from './TicketDependencies';
 import { TicketGithubIssue } from './TicketGithubIssue';
@@ -18,6 +18,7 @@ import { TicketCriteriaEditor, TicketCriteriaView } from './TicketCriteriaCheckl
 import { criteriaDrafts, draftChecked, draftCriteria, type CriterionDraft } from '../lib/criterionDrafts';
 import './TicketDetailsModal.css';
 import { Button } from "./ui/Button";
+import { StatusChip } from "./ui/StatusChip";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
 
@@ -349,9 +350,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               <div className="state-card">
                 <div className="state-label">Status</div>
                 <div className="ticket-modal-status-row">
-                  <span className="ticket-modal-state" style={{ color: TICKET_STATE_COLORS[ticket.state] ?? 'var(--tx)' }}>
-                    {STATE_LABELS[ticket.state] ?? asDisplayString(ticket.state)}
-                  </span>
+                  <StatusChip {...ticketStateChip(ticket.state)} />
                   <span className="ticket-modal-priority">Priority: {priorityLabel(ticket.priority)}</span>
                 </div>
               </div>

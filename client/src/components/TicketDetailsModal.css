@@ -53,10 +53,6 @@
   font-size: var(--fs-body);
 }
 
-.ticket-modal-state {
-  font-weight: 600;
-}
-
 .ticket-modal-priority {
   color: var(--txm);
 }

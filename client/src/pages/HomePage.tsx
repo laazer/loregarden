@@ -18,12 +18,13 @@ import { ticketPath } from "../lib/appNavigation";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { chatPath, stashHomeBaxterFiles, stashHomeBaxterPrompt } from "../lib/homeBaxter";
 import {
-  runStatusLabel,
+  runStatusChip,
+  ticketActivityChip,
   ticketActivityColor,
-  ticketActivityLabel,
-  ticketStateLabel,
+  ticketStateChip,
 } from "../lib/ticketStates";
 import { Button } from "../components/ui/Button";
+import { StatusChip } from "../components/ui/StatusChip";
 import { peekTicket } from "../state/ticketPeekStore";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
@@ -240,15 +241,8 @@ export function HomePage() {
             >
               <span className="home-row-title">{t.title}</span>
               <span className="home-row-tags">
-                <span className={`home-row-meta home-row-meta--${t.state}`}>
-                  {ticketStateLabel(t.state)}
-                </span>
-                <span
-                  className="home-row-activity"
-                  style={{ color: ticketActivityColor(t.activity) }}
-                >
-                  {ticketActivityLabel(t.activity)}
-                </span>
+                <StatusChip {...ticketStateChip(t.state)} />
+                <StatusChip {...ticketActivityChip(t.activity)} />
               </span>
             </Button>
           ))}
@@ -267,9 +261,7 @@ export function HomePage() {
                 const ticketId = run.ticket_id;
                 const content = (
                   <>
-                    <span className={`home-run-status home-run-status--${run.status}`}>
-                      {runStatusLabel(run.status)}
-                    </span>
+                    <StatusChip {...runStatusChip(run.status)} className="home-run-status" />
                     <span className="home-activity-main">
                       <span className="home-activity-ticket">
                         {run.ticket_external_id && run.ticket_title ? (

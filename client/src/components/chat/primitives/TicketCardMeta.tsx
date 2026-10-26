@@ -4,10 +4,11 @@ import type { BlockedOn, StageStatus, TicketState, WorkflowStageView } from "../
 import {
   priorityStyle,
   stageStatusColor,
-  stageStatusLabel,
+  stageStatusChip,
   ticketStateColor,
 } from "../../../lib/ticketStates";
 import { blockedOnStateLabel } from "../../../utils/blockKinds";
+import { StatusChip } from "../../ui/StatusChip";
 
 export type ProgressSegment = {
   color: string;
@@ -198,9 +199,7 @@ export function TicketCardBody({
           <span className="lg-primitive-ticket-stage-name" style={{ color: stageColor }}>
             {stageName}
           </span>
-          <span className="lg-primitive-ticket-stage-status">
-            {stageStatusLabel(stageStatus)}
-          </span>
+          <StatusChip {...stageStatusChip(stageStatus)} />
         </div>
       ) : null}
     </div>

@@ -13,7 +13,8 @@
  */
 
 import { runningChildFromLabels } from "../../../lib/queueRunFormat";
-import { runStatusLabel } from "../../../lib/ticketStates";
+import { runStatusChip } from "../../../lib/ticketStates";
+import { StatusChip } from "../../ui/StatusChip";
 import { LaneTicketMenu, RunningSlotBody } from "../../QueueRunningSlot";
 import { PlanTicketLink } from "./PlanTicketLink";
 import type { InitiativeNowState } from "./useInitiativeNow";
@@ -38,9 +39,7 @@ export function InitiativeNow({ now }: { now: InitiativeNowState }) {
                 <div className="queue-slot-head">
                   <span className="queue-slot-dot" aria-hidden />
                   <span className="queue-slot-name">Slot {slotNumber}</span>
-                  <span className="queue-slot-badge" data-run-status={run.status}>
-                    {runStatusLabel(run.status)}
-                  </span>
+                  <StatusChip {...runStatusChip(run.status)} className="queue-slot-status" />
                   <LaneTicketMenu
                     label={label}
                     ticketId={run.ticket_id}

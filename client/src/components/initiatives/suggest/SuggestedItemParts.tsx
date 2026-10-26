@@ -1,5 +1,6 @@
 import type { SuggestedItem } from "../../../api/client";
-import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../../lib/ticketStates";
+import { TICKET_STATE_COLORS, ticketStateChip } from "../../../lib/ticketStates";
+import { StatusChip } from "../../ui/StatusChip";
 import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 
@@ -13,7 +14,7 @@ export function SuggestedItemText({ item }: { item: SuggestedItem }) {
       <span className="initiative-muted">
         {item.from_milestone ? `leaves ${item.from_milestone}` : ""}
       </span>
-      <span className="initiative-milestone-state">{TICKET_STATE_LABELS[item.state]}</span>
+      <StatusChip {...ticketStateChip(item.state)} />
       <span className="initiative-muted initiative-suggest-cost">{item.cost} open</span>
     </>
   );

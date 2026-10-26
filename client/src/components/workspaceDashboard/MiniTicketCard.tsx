@@ -3,16 +3,9 @@ import { useState, type ReactNode } from "react";
 import type { TicketState } from "../../api/types";
 import type { ArtifactTab } from "../../lib/appNavigation";
 import { Button } from "../ui/Button";
+import { StatusChip } from "../ui/StatusChip";
+import { ticketStateChip } from "../../lib/ticketStates";
 import { TicketLink } from "../TicketLink";
-
-const STATE_LABELS: Record<TicketState, string> = {
-  backlog: "Backlog",
-  in_progress: "In progress",
-  blocked: "Blocked",
-  parked: "Parked",
-  done: "Done",
-  wont_do: "Won't do",
-};
 
 export interface MiniTicket {
   id: string;
@@ -53,7 +46,7 @@ export function MiniTicketCard({ ticket, tab, compact = false }: MiniTicketCardP
       {ticket.title ? <span className="visually-hidden"> ({ticket.externalId})</span> : null}
       {compact ? null : (
         <span className="wsd-card-foot">
-          {ticket.tag ?? (ticket.state ? <span className="wsd-card-state">{STATE_LABELS[ticket.state]}</span> : null)}
+          {ticket.tag ?? (ticket.state ? <StatusChip {...ticketStateChip(ticket.state)} className="wsd-card-state" /> : null)}
           {ticket.where ? <span className="wsd-card-where">{ticket.where}</span> : null}
         </span>
       )}

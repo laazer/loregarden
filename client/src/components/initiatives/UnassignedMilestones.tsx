@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import type { InitiativeMilestone } from "../../api/client";
 import { peekTicket } from "../../state/ticketPeekStore";
 import { Button } from "../ui/Button";
-import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
+import { TICKET_STATE_COLORS, ticketStateChip } from "../../lib/ticketStates";
+import { StatusChip } from "../ui/StatusChip";
 
 const RESOLVED = new Set(["done", "wont_do"]);
 
@@ -90,7 +91,7 @@ export function UnassignedMilestones({ milestones, selected, onToggle, onGroup, 
                         aria-hidden
                       />
                       <span className="initiative-pick-title">{milestone.title}</span>
-                      <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
+                      <StatusChip {...ticketStateChip(milestone.state)} />
                     </label>
                     <Button
                       variant="plain"
