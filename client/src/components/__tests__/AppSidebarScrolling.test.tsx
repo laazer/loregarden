@@ -182,19 +182,21 @@ beforeEach(() => {
 
 // AC1 — each section scrolls on its own.
 
-test("each of the four sections is its own scroll container", async () => {
+test("each section is its own scroll container", async () => {
   await renderLoadedSidebar();
 
   const lists = [
-    sectionList("Tools"),
+    sectionList("Work"),
+    sectionList("Build"),
+    sectionList("System"),
     sectionList("Pinned Tabs"),
     sectionList("Tabs"),
     sectionList("Running"),
   ];
-  // Three distinct elements, each the list of one section. One shared container
-  // around all three would let a long Tabs list carry the others out of view,
+  // Distinct elements, each the list of one section. One shared container
+  // around them would let a long Tabs list carry the others out of view,
   // which is the failure the ticket names.
-  expect(new Set(lists).size).toBe(4);
+  expect(new Set(lists).size).toBe(6);
   for (const list of lists) {
     expect(list.tagName).toBe("UL");
     expect(list.className).toContain("app-sidebar-list");
@@ -255,16 +257,32 @@ test("a rail full of tabs still draws its footer", async () => {
 test("a section takes the height its own list needs, and gives it back under pressure", () => {
   const section = declaredFor(".app-sidebar-section");
 
-  // `0 1 auto`: no growth, so a short list reserves nothing it is not using;
-  // shrink 1 from an `auto` basis, so when the three together do not fit each
-  // gives up space in proportion to what it was taking — the longest list gives
-  // up the most rather than starving the others.
+  // `0 1 auto`: no growth, so a short list reserves nothing it is not using,
+  // and an `auto` basis, so a section is as tall as its list until the rail is
+  // crowded. Which sections give way first is the next test.
   expect(section.flex).toBe("0 1 auto");
-  expect(section["min-height"]).toBe("0");
   // A fixed height or a max-height would reserve space a short list is not
   // using, and cap a long one below the room actually available.
   expect(section.height).toBeUndefined();
   expect(section["max-height"]).toBeUndefined();
+});
+
+test("the tab sections give way before the pages, and never vanish", () => {
+  // The pages are the app's whole navigation; a tab list is the user's own and
+  // scrolls. So the groups keep their height inside one shared scroll window,
+  // and the tab sections shrink a thousand times faster, down to a floor that
+  // keeps each heading (and, with rows, the top of the first) on screen. Left
+  // to shrink in proportion, a 900px window clipped Initiatives and Memory into
+  // scroll windows of their own; with no floor, a 720px one squeezed Running
+  // to nothing.
+  const pages = declaredFor(".app-sidebar-pages");
+  expect(pages.flex).toBe("0 1 auto");
+  expect(pages["overflow-y"]).toBe("auto");
+  expect(declaredFor(".app-sidebar-section--group").flex).toBe("none");
+
+  const tabs = declaredFor(".app-sidebar-panel > .app-sidebar-section");
+  expect(tabs["flex-shrink"]).toBe("1000");
+  expect(tabs["min-height"]).toBe("26px");
 });
 
 // AC4 — the scroll affordance is visible on the collapsed rail, without hover.
@@ -355,7 +373,7 @@ test("a scrolling list adds no tab stop and traps no focus", async () => {
 
   // A scroll container with focusable children is not itself focusable, and
   // nothing here makes one focusable by hand.
-  for (const heading of ["Tools", "Pinned Tabs", "Tabs", "Running"]) {
+  for (const heading of ["Work", "Build", "System", "Pinned Tabs", "Tabs", "Running"]) {
     expect(sectionList(heading)).not.toHaveAttribute("tabindex");
   }
 

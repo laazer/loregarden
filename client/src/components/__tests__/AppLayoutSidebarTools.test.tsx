@@ -16,7 +16,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "../AppLayout";
@@ -54,6 +54,18 @@ jest.mock("../../api/client", () => ({
     approvals: jest.fn(async () => []),
     usage: jest.fn(async () => null),
     ticket: jest.fn(async () => null),
+    ticketStatusSummary: jest.fn(async () => ({
+      backlog: 0,
+      in_progress: 0,
+      blocked: 0,
+      parked: 0,
+      done: 0,
+      wont_do: 0,
+      running: 0,
+      awaiting: 0,
+      queued: 0,
+      idle: 0,
+    })),
   },
 }));
 
@@ -76,7 +88,7 @@ const mockFetchViews = fetchViews as jest.MockedFunction<typeof fetchViews>;
 const mockSetPinned = setEntryPinned as jest.MockedFunction<typeof setEntryPinned>;
 const mockReorder = reorderSidebarEntries as jest.MockedFunction<typeof reorderSidebarEntries>;
 
-/** The built-in pages, in the order the fixed rail drew them. */
+/** The built-in pages, in rail order: Work, then Build, then System. */
 const TOOL_LABELS = [
   "Home",
   "Chat",
@@ -85,13 +97,23 @@ const TOOL_LABELS = [
   "Initiatives",
   "Editor",
   "Studios",
-  "Parallel Execution",
+  "Branch Triage",
   "Machine",
+  "Queue",
   "MCP Gateway",
   "Workspaces",
   "Memory",
-  "Branch Triage",
 ];
+
+/** Each built-in page's name, in the order the rail draws them across its groups. */
+function toolNames(): string[] {
+  return ["Work", "Build", "System"].flatMap((name) =>
+    Array.from(
+      screen.getByRole("list", { name }).querySelectorAll("li .app-sidebar-name"),
+      (el) => el.textContent ?? "",
+    ),
+  );
+}
 
 function renderApp() {
   render(
@@ -139,11 +161,8 @@ test("a default-state app draws every built-in page with an empty store", async 
   // The first workspace, not `"all"` — which 404s against every view route.
   await waitFor(() => expect(mockFetchEntries).toHaveBeenCalledWith("loregarden"));
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
-  for (const label of TOOL_LABELS) {
-    expect(within(tools).getByRole("link", { name: label })).toBeInTheDocument();
-  }
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  await screen.findByRole("list", { name: "Work" });
+  expect(toolNames()).toEqual(TOOL_LABELS);
 });
 
 // AC5 — Tools is derived from the static page catalog rather than from
@@ -152,7 +171,7 @@ test("a default-state app draws every built-in page with an empty store", async 
 test("nothing is written to set the sidebar up", async () => {
   renderApp();
 
-  await screen.findByRole("list", { name: "Tools" });
+  await screen.findByRole("list", { name: "Work" });
   await waitFor(() => expect(mockFetchEntries).toHaveBeenCalled());
   // The whole point of deriving Tools: an empty workspace is a finished
   // workspace. A seed would show up here as a write nobody asked for.
@@ -170,8 +189,6 @@ test("the pages are still all there when the entries request fails outright", as
   mockFetchEntries.mockRejectedValue(new ApiError(500, "sidebar unavailable"));
   renderApp();
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
-  for (const label of TOOL_LABELS) {
-    expect(within(tools).getByRole("link", { name: label })).toBeInTheDocument();
-  }
+  await screen.findByRole("list", { name: "Work" });
+  expect(toolNames()).toEqual(TOOL_LABELS);
 });

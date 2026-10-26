@@ -16,6 +16,7 @@ import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 import { ViewAgentActions } from "./ViewAgentActions";
 import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
+import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -30,6 +31,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
+  const ticketSummary = useTicketStatusSummary();
   const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", workspace],
     params: { workspace },
@@ -120,7 +122,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
       <div className="app-frame">
         <div className="app-ambient" aria-hidden />
-        <AppSidebar workspaceSlug={sidebarWorkspaceSlug} onOpenSettings={openSettings} />
+        <AppSidebar
+          workspaceSlug={sidebarWorkspaceSlug}
+          onOpenSettings={openSettings}
+          ticketSummary={ticketSummary.data}
+        />
         <TopbarPageSlotProvider>
           <div className="app-main">
             <AppTopbar />

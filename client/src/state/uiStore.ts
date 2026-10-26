@@ -97,6 +97,12 @@ interface UiState {
    */
   utilityDockEdge: UtilityDockEdge;
   /**
+   * Whether the left rail stays open at its labelled width (the default) or
+   * folds to icons that widen on hover and focus. Persisted: it is a standing
+   * preference about the window, not about any one page.
+   */
+  railDocked: boolean;
+  /**
    * Whether the dock is also showing a shell.
    *
    * Off by default and remembered. Opening the first time spawns a real login
@@ -207,6 +213,7 @@ interface UiState {
   setCopilotHeight: (height: number) => void;
   setCopilotWidth: (width: number) => void;
   setUtilityDockEdge: (edge: UtilityDockEdge) => void;
+  setRailDocked: (docked: boolean) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
@@ -233,6 +240,7 @@ type PersistedUiState = Pick<
   | "copilotHeight"
   | "copilotWidth"
   | "utilityDockEdge"
+  | "railDocked"
   | "terminalOpen"
 >;
 
@@ -265,6 +273,7 @@ export const useUiStore = create<UiState>()(
       copilotHeight: DEFAULT_COPILOT_HEIGHT,
       copilotWidth: DEFAULT_COPILOT_WIDTH,
       utilityDockEdge: "bottom",
+      railDocked: true,
       terminalOpen: false,
       dockPanelsVisible: false,
       screenDockEdge: null,
@@ -380,6 +389,7 @@ export const useUiStore = create<UiState>()(
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
       setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
+      setRailDocked: (railDocked) => set({ railDocked }),
       setUtilityDockEdge: (utilityDockEdge) =>
         set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge), screenDockEdge: null }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
@@ -489,6 +499,7 @@ export const useUiStore = create<UiState>()(
         copilotHeight: s.copilotHeight,
         copilotWidth: s.copilotWidth,
         utilityDockEdge: s.utilityDockEdge,
+        railDocked: s.railDocked,
         terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,

@@ -2,7 +2,7 @@
  * Where each primitive's data already lives in the app's own pages.
  *
  * Every container primitive is a second view of something the app was already
- * showing somewhere: the Queue Lane pane draws what the Parallel Execution page
+ * showing somewhere: the Queue Lane pane draws what the Queue page
  * draws, the Kanban pane what the Dashboard board draws. Until now the only way
  * to get one into a view was to open a tab, add a pane, and type the identifier
  * in — from the page that was already displaying exactly that thing.
@@ -70,7 +70,7 @@ export const PRIMITIVE_HOMES: Record<HomedPrimitiveId, PrimitiveHome | null> = {
   // is where its button lives. A pane is the first place these are reachable
   // without covering the thing they are blocking.
   approvals: { path: "/", surface: "Inbox" },
-  queue_lane: { path: "/queue", surface: "Parallel Execution" },
+  queue_lane: { path: "/queue", surface: "Queue" },
 
   chat_ticket: { path: "/", surface: "Ticket details" },
   chat_ticket_workflow: { path: "/", surface: "Ticket details" },
