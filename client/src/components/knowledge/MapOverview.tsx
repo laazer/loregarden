@@ -7,11 +7,50 @@
  * Contradictions come first because they are the ones a person should act on.
  */
 
+import { useState } from "react";
+
 import type { GraphNode, GraphRelation, InferredGroup } from "../../api/memoryApi";
 import { INFERRED_KIND_LABELS, inferredEdges, recordTitle } from "../../lib/memoryInferred";
 import { graphShape } from "../../lib/memoryMapLayout";
+import { Button } from "../ui/Button";
 
 const LIST_LIMIT = 5;
+/** A group opens on this many members; the rest wait behind "Show all". */
+const GROUP_PREVIEW = 12;
+
+/**
+ * One group's members. A group is opened to pick a record from it, and the
+ * largest on the live graph holds 63: the first dozen answer most visits, and
+ * "Show all" is one click for the rest.
+ */
+function GroupMembers({
+  ids,
+  byId,
+  onSelect,
+}: {
+  ids: string[];
+  byId: Map<string, GraphNode>;
+  onSelect: (id: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? ids : ids.slice(0, GROUP_PREVIEW);
+  return (
+    <>
+      <ul>
+        {shown.map((id) => (
+          <li key={id}>
+            <RecordButton node={byId.get(id)} onSelect={onSelect} />
+          </li>
+        ))}
+      </ul>
+      {ids.length > GROUP_PREVIEW ? (
+        <Button variant="plain" className="mm-group-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Show fewer" : `Show all ${ids.length}`}
+        </Button>
+      ) : null}
+    </>
+  );
+}
 
 function RecordButton({
   node,
@@ -97,13 +136,7 @@ export function MapOverview({
                       {INFERRED_KIND_LABELS[group.kind].toLowerCase()} · {group.node_ids.length}
                     </span>
                   </summary>
-                  <ul>
-                    {group.node_ids.map((id) => (
-                      <li key={id}>
-                        <RecordButton node={byId.get(id)} onSelect={onSelect} />
-                      </li>
-                    ))}
-                  </ul>
+                  <GroupMembers ids={group.node_ids} byId={byId} onSelect={onSelect} />
                 </details>
               </li>
             ))}

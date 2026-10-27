@@ -261,6 +261,14 @@
   background: var(--rdl, #ff6a54);
 }
 
+/* Beside the title, taking the room the header has left. */
+.memory-learnings-filter {
+  flex: 1 1 200px;
+  max-width: 320px;
+  height: 28px;
+  font-size: var(--fs-small);
+}
+
 .memory-filters {
   display: flex;
   gap: 14px;
