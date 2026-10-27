@@ -117,6 +117,11 @@ export function waitsOnPerson(ticket: TicketSummary): boolean {
   return ticket.state === "parked" || ticket.blocked_on === "person";
 }
 
+/** What an approval asks, in the words its card uses: its title, else its tool, else its kind. */
+export function approvalLabel(approval: Approval): string {
+  return approval.title || approval.tool_name || APPROVAL_WORDS[approval.kind] || approval.kind;
+}
+
 export function needsYouRows(
   approvals: readonly Approval[],
   failures: readonly RecentRun[],
@@ -124,8 +129,7 @@ export function needsYouRows(
 ): NeedsYouRow[] {
   const groups = new Map<string, Approval[]>();
   for (const approval of approvals) {
-    const key =
-      approval.title || approval.tool_name || APPROVAL_WORDS[approval.kind] || approval.kind;
+    const key = approvalLabel(approval);
     groups.set(key, [...(groups.get(key) ?? []), approval]);
   }
   const approvalRows: NeedsYouRow[] = [...groups.entries()]

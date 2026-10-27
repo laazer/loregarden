@@ -8,7 +8,9 @@
  * 5.7 MB and 14 s, because every flat row carries its full stage list.
  */
 
+import type { Approval } from "../api/chatTypes";
 import type { BlockedOn, StageStatus, TicketState, TicketTreeNode, WorkItemType } from "../api/types";
+import { approvalLabel } from "./homeNeedsYou";
 import { blockedOnStateLabel } from "../utils/blockKinds";
 
 export interface WorkItemParent {
@@ -50,10 +52,12 @@ export function isOpen(node: TicketTreeNode): boolean {
  * answer (`awaiting`, which is what fills the inbox), and a block only a person
  * can clear (`blocked_on === "person"`, the board's "Needs you" column).
  */
-export function needsMeReason(node: TicketTreeNode): string | null {
+export function needsMeReason(node: TicketTreeNode, approval?: Approval): string | null {
   if (!isOpen(node)) return null;
   if (node.workflow_stage_status === "awaiting") {
-    return "Your approval or answer";
+    // The pending approval says what is being asked; fifteen rows of "your
+    // approval or answer" said nothing a row's position did not.
+    return approval ? approvalLabel(approval) : "Your approval or answer";
   }
   if (node.blocked_on === "person") return "Blocked until you act";
   return null;
