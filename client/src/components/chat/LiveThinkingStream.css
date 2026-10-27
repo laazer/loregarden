@@ -7,6 +7,17 @@
   overflow: hidden;
 }
 
+/* Folded, it is a line in the turn rather than a card: the card's border and
+   wash belong to the trace, and appear with it. */
+.lg-thinking-stream[data-collapsed="true"] {
+  border-color: transparent;
+  background: transparent;
+}
+
+.lg-thinking-stream[data-collapsed="true"] .lg-thinking-stream-head {
+  padding-inline: 2px;
+}
+
 .lg-thinking-stream-head {
   display: flex;
   align-items: center;
