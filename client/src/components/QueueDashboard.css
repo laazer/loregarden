@@ -84,17 +84,16 @@
   margin-bottom: 14px;
 }
 
+/* Label and number pairs inside the rail's card. The card is the one bordered
+   level; a box per number put a second inside it. */
 .queue-rail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 11px;
+  gap: 16px 18px;
 }
 
 .queue-rail-tile {
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 13px;
-  padding: 13px 14px;
+  padding: 0;
 }
 
 .queue-rail-tile-label {
