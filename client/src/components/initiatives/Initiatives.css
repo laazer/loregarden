@@ -137,17 +137,20 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
+/* Rows in the card, split by rules: the card is the one bordered level, and a
+   filled box per milestone put a second inside it. */
 .initiative-milestone {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: var(--fs-small);
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--bg2);
+  padding: 5px 2px;
+}
+
+.initiative-milestone + .initiative-milestone {
+  border-top: 1px solid var(--bd);
 }
 
 .initiative-milestone-link {
