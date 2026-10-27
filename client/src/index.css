@@ -2260,40 +2260,6 @@ label:is(
   position: relative;
 }
 
-.workflow-stage-rail {
-  position: relative;
-  width: 14px;
-  flex: none;
-  display: flex;
-  justify-content: center;
-}
-
-.workflow-stage-line {
-  position: absolute;
-  top: 3px;
-  bottom: -6px;
-  width: 2px;
-}
-
-.workflow-stage-dot {
-  position: relative;
-  z-index: 1;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--bd2);
-  background: var(--bg0);
-  box-shadow: 0 0 0 3px var(--bg0);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-}
-
-.workflow-stage-dot.running {
-  box-shadow: 0 0 0 3px var(--bg0), 0 0 0 6px rgba(75, 155, 255, 0.18);
-}
-
 .workflow-stage-body {
   flex: 1;
   min-width: 0;
@@ -2389,18 +2355,6 @@ label:is(
   border: 1px solid var(--bd);
   border-radius: 9px;
   padding: 8px 10px;
-}
-
-@keyframes workflow-ring {
-  0% {
-    box-shadow: 0 0 0 3px var(--bg0), 0 0 0 0 rgba(75, 155, 255, 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 3px var(--bg0), 0 0 0 5px rgba(75, 155, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 3px var(--bg0), 0 0 0 0 rgba(75, 155, 255, 0);
-  }
 }
 
 /* Message + composer chrome: components/chat/ChatLook.css (Baxter-first).
@@ -6277,8 +6231,3 @@ label:is(
   font-size: var(--fs-small);
 }
 
-/* `.workflow-stage-dot.running` has always been defined; the dot for the stage
-   the run is actually on had no cue of its own. */
-.workflow-stage-dot.current {
-  box-shadow: 0 0 0 3px rgba(111, 174, 143, 0.22);
-}

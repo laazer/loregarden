@@ -1,0 +1,104 @@
+/* A vine: the mark for "this happens in order". See `lib/vine.ts`. */
+
+.vine-node {
+  position: relative;
+  width: 14px;
+  flex: none;
+  align-self: stretch;
+}
+
+/* From this node's centre down to the next one's: the node spans its row, so
+   a row's height starting 7px down ends 7px into the next row, at its node.
+   An svg sizes from its viewBox, not from top and bottom, so the height is
+   set, not implied. */
+.vine-stem {
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: 14px;
+  height: 100%;
+  overflow: visible;
+}
+
+.vine-stem path {
+  fill: none;
+  stroke: var(--bd2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.vine-stem.is-grown path {
+  stroke: color-mix(in srgb, var(--grn) 70%, transparent);
+}
+
+.vine-mark {
+  position: relative;
+  z-index: 1;
+  display: block;
+  overflow: visible;
+}
+
+.vine-node--left .vine-mark {
+  transform: scaleX(-1);
+}
+
+.vine-leaf {
+  fill: var(--grn);
+}
+
+.vine-leaf-rib {
+  fill: none;
+  stroke: var(--onac);
+  stroke-width: 1;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.vine-bud {
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* Still to come: an outline, the ground showing through. */
+.vine-bud--bud-closed {
+  fill: var(--bg0);
+  stroke: var(--bd2);
+}
+
+.vine-bud--bud-open {
+  fill: var(--blue);
+  stroke: var(--blue);
+}
+
+.vine-bud--bud-held {
+  fill: var(--amb);
+  stroke: var(--amb);
+}
+
+.vine-bud--bud-blocked {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.vine-pruned {
+  fill: none;
+  stroke: var(--txl);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* The running bud glows, slowly; the global reduced-motion rule holds it still. */
+.vine-node[data-mark="bud-open"] .vine-mark {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--blue) 60%, transparent));
+  animation: vine-bud-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes vine-bud-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}

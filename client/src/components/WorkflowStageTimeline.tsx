@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 
-import type { StageStatus, WorkflowStageView } from "../api/types";
+import type { WorkflowStageView } from "../api/types";
 import { stageStatusMeta } from "../lib/stageDisplay";
+import { vineMark } from "../lib/vine";
+import { VineNode } from "./vine/VineNode";
 
 function AgentRobotIcon() {
   return (
@@ -30,10 +32,6 @@ function stageAgentMeta(stage: WorkflowStageView): { agent: string | null; skill
   return { agent: null, skill: null };
 }
 
-function connectorColor(status: StageStatus): string {
-  return status === "done" ? "var(--grn)" : "var(--bd)";
-}
-
 export function WorkflowStageTimeline({
   stages,
   currentStageKey,
@@ -55,28 +53,7 @@ export function WorkflowStageTimeline({
 
         return (
           <div key={stage.key} className="workflow-stage">
-            <div className="workflow-stage-rail">
-              {!isLast ? (
-                <div
-                  className="workflow-stage-line"
-                  style={{ background: connectorColor(stage.status) }}
-                />
-              ) : null}
-              <div
-                className={`workflow-stage-dot ${stage.status}${isCurrent ? " current" : ""}`}
-                style={{
-                  borderColor: meta.dot,
-                  background: meta.dotFill,
-                  animation: meta.dotAnimation,
-                }}
-              >
-                {stage.status === "done" ? (
-                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--onac)" strokeWidth="4" aria-hidden>
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                ) : null}
-              </div>
-            </div>
+            <VineNode index={index} mark={vineMark(stage.status, isCurrent)} last={isLast} />
 
             <div className="workflow-stage-body">
               <div className="workflow-stage-header">
