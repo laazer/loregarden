@@ -238,7 +238,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                   disabled={!data.milestones.length || planner.isBusy}
                   title={
                     data.milestones.length
-                      ? "Ask the planner to propose a schedule"
+                      ? "Ask Baxter to propose a schedule"
                       : "Attach a milestone to this initiative first"
                   }
                   onClick={draftSchedule}

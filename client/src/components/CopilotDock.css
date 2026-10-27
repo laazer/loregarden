@@ -147,8 +147,8 @@
 }
 
 .copilot-dock-chat {
-  /* Turns on the left, openers on the right. */
-  flex-direction: row;
+  /* The head, then the turns beside their rail. */
+  flex-direction: column;
   gap: 0;
   /* So the rail's edge follows the pane's rounded corner. */
   overflow: hidden;
@@ -156,6 +156,100 @@
     radial-gradient(640px 280px at 50% -30%, rgba(111, 174, 143, 0.08), transparent 55%),
     transparent;
   border-radius: 12px;
+}
+
+/* Turns on the left, openers or the archive on the right. */
+.copilot-dock-chat-row {
+  flex: 1 1 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* One line: who answers, what they are looking at, and the thread's controls.
+   The context line gives way first, so the controls never wrap off the head. */
+.copilot-dock-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.copilot-dock-title {
+  flex: none;
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.copilot-dock-context {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.copilot-dock-head-spacer {
+  flex: 1 1 0;
+}
+
+.copilot-dock-head-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--txm);
+}
+
+.copilot-dock-head-btn:hover,
+.copilot-dock-head-btn.is-on {
+  color: var(--tx);
+  background: var(--bg3);
+}
+
+/* Baxter's mode: one pill split into segments, the bound mode lit. */
+.copilot-dock-modes {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.copilot-dock-mode {
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.copilot-dock-mode:hover:not(:disabled) {
+  color: var(--tx);
+}
+
+.copilot-dock-mode.is-on {
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac2) 14%, transparent);
+}
+
+.copilot-dock-mode:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .copilot-dock-chat-main {

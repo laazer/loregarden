@@ -49,7 +49,7 @@ export function useInitiativePlanner(initiativeId: string) {
   }, [busyOnServer, initiativeId, qc]);
 
   const send = useMutation({
-    meta: { errorTitle: "Message the planner" },
+    meta: { errorTitle: "Message Baxter" },
     mutationFn: ({ content, mode }: { content: string; mode: "chat" | "draft" }) =>
       api.sendPlannerMessage(initiativeId, content, mode),
     onMutate: async ({ content, mode }) => {
@@ -81,7 +81,7 @@ export function useInitiativePlanner(initiativeId: string) {
   });
 
   const stop = useMutation({
-    meta: { errorTitle: "Stop the planner" },
+    meta: { errorTitle: "Stop Baxter" },
     mutationFn: () => api.stopPlannerTurn(initiativeId),
     onSuccess: (snapshot) => qc.setQueryData(key, snapshot),
     onSettled: () => {
@@ -125,7 +125,7 @@ export function useInitiativePlanner(initiativeId: string) {
     session,
     messages: session.messages,
     isBusy,
-    loadError: chat.isError ? describeError(chat.error, "Could not load the planner conversation") : null,
+    loadError: chat.isError ? describeError(chat.error, "Could not load Baxter's plan conversation") : null,
     /** Failures toast through `meta.errorTitle`. */
     draft: () => send.mutate({ content: "", mode: "draft" }),
     runtime: chat.data?.runtime ?? DEFAULT_RUNTIME,

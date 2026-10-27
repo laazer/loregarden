@@ -631,66 +631,6 @@ describe("the chat options", () => {
 
     expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeDisabled();
   });
-
-  it("starts a fresh thread and shows it", () => {
-    const bound = archive();
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: bound,
-      }),
-    );
-    useUiStore.setState({ copilotHistoryOpen: true });
-
-    renderBar();
-    openSheet();
-    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-
-    expect(bound.startNewChat).toHaveBeenCalled();
-    // Started behind a collapsed dock, the new thread is invisible; and the
-    // archive rail would sit over it.
-    expect(useUiStore.getState().copilotOpen).toBe(true);
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
-  });
-
-  it("opens the archive in the dock rather than behind it", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: archive(),
-      }),
-    );
-
-    renderBar();
-    openSheet();
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
-
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
-    expect(useUiStore.getState().copilotOpen).toBe(true);
-  });
-
-  it("closes the archive again without collapsing the thread", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: archive(),
-      }),
-    );
-    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
-
-    renderBar();
-    openSheet();
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
-
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
-    expect(useUiStore.getState().copilotOpen).toBe(true);
-  });
 });
 
 describe("the shell switch", () => {
@@ -842,12 +782,12 @@ describe("suggestions on a screen that composes for its own thread", () => {
   });
 });
 
-describe("the agent switch", () => {
+describe("Baxter's modes, seen from the bar", () => {
   function agents(overrides: Partial<ChatAgents> = {}): ChatAgents {
     return {
       options: [
-        { id: "planner", label: "Planner", description: "Dates and pace" },
-        { id: "baxter", label: "Baxter", description: "The tickets underneath" },
+        { id: "planner", label: "Plan", description: "Dates and pace" },
+        { id: "baxter", label: "Triage", description: "The tickets underneath" },
       ],
       active: "planner",
       select: jest.fn(),
@@ -858,30 +798,30 @@ describe("the agent switch", () => {
   function bindPlanner(overrides: Partial<ReturnType<typeof useActiveChatSession>> = {}) {
     return bind({
       session: session({ kind: "initiative-planner", id: "init1" }),
-      label: "Initiative planner",
+      label: "init-tinkercg-build-1",
       ticketId: null,
       agents: agents(),
-      assistantLabel: "Planner",
+      assistantLabel: "Baxter",
       promptKind: INITIATIVE_PLANNING,
       ...overrides,
     });
   }
 
-  it("is absent where only one agent answers", () => {
-    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+  it("leaves the mode switch to the dock's head", () => {
+    // The bar is one line on every page; the mode belongs with the thread it
+    // switches, which the dock head carries.
+    mockResolver.mockReturnValue(bindPlanner());
     renderBar();
 
-    expect(screen.queryByRole("radiogroup", { name: "Agent" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   });
 
-  it("composes for the bound agent, with its openers, and names it", () => {
+  it("composes for the bound mode, with its openers, and names Baxter", () => {
     const bound = session({ kind: "initiative-planner", id: "init1" });
     mockResolver.mockReturnValue(bindPlanner({ session: bound }));
     renderBar();
 
-    expect(screen.getByRole("radio", { name: "Planner" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("radio", { name: "Baxter" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("button", { name: "Expand Planner" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Baxter" })).toBeInTheDocument();
     openSheet();
     const [opener] = TRY_ASKING[INITIATIVE_PLANNING];
     fireEvent.click(screen.getByRole("button", { name: opener }));
@@ -889,38 +829,6 @@ describe("the agent switch", () => {
     expect(
       screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
     ).not.toBeInTheDocument();
-  });
-
-  it("switches on a click, and by arrow keys as a radio group does", () => {
-    const select = jest.fn();
-    mockResolver.mockReturnValue(bindPlanner({ agents: agents({ select }) }));
-    renderBar();
-    openSheet();
-
-    fireEvent.click(screen.getByRole("radio", { name: "Baxter" }));
-    expect(select).toHaveBeenLastCalledWith("baxter");
-
-    const planner = screen.getByRole("radio", { name: "Planner" });
-    expect(planner).toHaveAttribute("tabindex", "0");
-    expect(screen.getByRole("radio", { name: "Baxter" })).toHaveAttribute("tabindex", "-1");
-    fireEvent.keyDown(planner, { key: "ArrowLeft" });
-    expect(select).toHaveBeenLastCalledWith("baxter");
-  });
-
-  it("holds the switch while a turn runs, so the reply lands where it was asked", () => {
-    const select = jest.fn();
-    mockResolver.mockReturnValue(
-      bindPlanner({
-        session: session({ kind: "initiative-planner", id: "init1", isBusy: true }),
-        agents: agents({ select }),
-      }),
-    );
-    renderBar();
-    openSheet();
-
-    expect(screen.getByRole("radio", { name: "Baxter" })).toBeDisabled();
-    fireEvent.keyDown(screen.getByRole("radio", { name: "Planner" }), { key: "ArrowRight" });
-    expect(select).not.toHaveBeenCalled();
   });
 
   it("says why the agent cannot take a message rather than offering a dead composer", () => {
@@ -932,11 +840,12 @@ describe("the agent switch", () => {
     const input = screen.getByPlaceholderText(/Attach a milestone/);
     expect(input).toBeDisabled();
     // A disabled composer takes no focus, so its sheet of one-click replies
-    // never opens: no dead buttons. The switch to another agent stays in the row.
+    // never opens: no dead buttons. Baxter still opens, so the dock head's mode
+    // switch stays reachable.
     expect(
       screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Baxter" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Expand Baxter" })).toBeEnabled();
   });
 });
 
