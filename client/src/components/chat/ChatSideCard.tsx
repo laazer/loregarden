@@ -5,6 +5,7 @@ import type {
   FeatureLoopStartRequest,
 } from "../../api/chatWorkbenchTypes";
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
+import { LivingMap } from "../livingMap/LivingMap";
 import { Button } from "../ui/Button";
 import { ChatPromptRow } from "./ChatPromptRow";
 import { primitiveKindLabel, type PrimitiveHistoryEntry } from "./primitiveHistory";
@@ -40,9 +41,10 @@ export interface ChatWorkbenchState {
  *
  * Scope says what the chat is about and where it runs; Feature holds the
  * feature loop's criteria and what waits on the operator; Changes & runs is
- * the branch and the loop's agent runs; Suggestions is what to ask next; and
- * Cards indexes what the thread has produced, which was otherwise only
- * findable by scrolling back.
+ * the branch and the loop's agent runs; Map is the conversation's living map
+ * (what waits on you, what is open, what was settled); Suggestions is what to
+ * ask next; and Cards indexes what the thread has produced, which was
+ * otherwise only findable by scrolling back.
  *
  * The prompts live here only while the workbench is open; the page draws them
  * under the composer when it is closed.
@@ -57,6 +59,7 @@ export function ChatSideCard({
   onOpenGallery,
   onCollapse,
   workbench,
+  sessionId,
 }: {
   /** A narrow window: the workbench covers the thread, so Escape and the scrim close it. */
   overlay: boolean;
@@ -69,6 +72,8 @@ export function ChatSideCard({
   onOpenGallery: () => void;
   onCollapse: () => void;
   workbench: ChatWorkbenchState;
+  /** The open chat, whose living map the Map card draws; "" before it has one. */
+  sessionId: string;
 }) {
   useDialogDismiss(overlay ? onCollapse : null);
   // Picking a card or a prompt closes the overlay, or what it leads to lands behind it.
@@ -131,6 +136,16 @@ export function ChatSideCard({
           runs={workbench.feature?.runs ?? []}
           hasLoop={workbench.feature !== null}
         />
+
+        <WorkbenchCard title="Map">
+          {sessionId ? (
+            <LivingMap scope="chat" scopeRef={sessionId} />
+          ) : (
+            <p className="chat-side-card-empty">
+              Start the conversation, and its plans, questions and topics are mapped here as they happen.
+            </p>
+          )}
+        </WorkbenchCard>
 
         {prompts.length ? (
           <WorkbenchCard title="Suggestions">

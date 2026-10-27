@@ -9,6 +9,7 @@ import "./ArtifactPane.css";
 const TAB_LABELS: Record<ArtifactTab, string> = {
   diff: "Diff",
   timeline: "Timeline",
+  map: "Map",
   outputs: "Outputs",
   pr: "PR",
   approvals: "Approvals",
@@ -24,7 +25,7 @@ const MORE_HINTS: Partial<Record<ArtifactTab, string>> = {
 /**
  * The artifact pane's tab strip.
  *
- * Five tabs, each answering one question about the selected ticket; the two
+ * Six tabs, each answering one question about the selected ticket; the two
  * views that are not about reading it (Hive, and the cross-ticket Monitor)
  * sit behind "More" so they stop competing with the ones that are. The More
  * menu lives outside the scrolling strip: an overflow container would clip it.
