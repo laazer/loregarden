@@ -372,3 +372,23 @@ it("shows a learning's relations, its successor and what changed", async () => {
   const lineage = await screen.findByRole("list", { name: /lineage/i });
   expect(within(lineage).getAllByRole("listitem")).toHaveLength(2);
 });
+
+it("narrows the learnings by title or text, and says so when nothing matches", async () => {
+  mockApi.memoryNodes.mockResolvedValue({
+    workspace_slug: "lg",
+    include_discredited: false,
+    nodes: [NODE, { ...NODE, id: "n2", title: "Pin the base branch", body: "Merge-base drift." }],
+  });
+  renderPage("/memory/records");
+  const field = await screen.findByRole("searchbox", { name: "Filter learnings by title or text" });
+
+  // Body text counts, not only the title.
+  fireEvent.change(field, { target: { value: "drift" } });
+  expect(screen.getByRole("button", { name: /pin the base branch/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /use delete journal/i })).not.toBeInTheDocument();
+
+  fireEvent.change(field, { target: { value: "zzz" } });
+  expect(screen.getByText(/mentions “zzz”/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear the filter" }));
+  expect(await screen.findByRole("button", { name: /use delete journal/i })).toBeInTheDocument();
+});
