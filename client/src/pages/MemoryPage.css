@@ -464,10 +464,10 @@
   outline-offset: 2px;
 }
 
+/* Rows in the panel, split by rules: the panel is the one bordered level, and
+   a box per proposal put thirty-nine more inside it. */
 .memory-proposal {
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  padding: 6px 10px;
+  padding: 7px 2px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -495,6 +495,14 @@
 
 .memory-proposal-group > details > p {
   margin: 2px 0 8px;
+}
+
+.memory-proposal-group .memory-proposals {
+  gap: 0;
+}
+
+.memory-proposal + .memory-proposal {
+  border-top: 1px solid var(--bd);
 }
 
 
@@ -528,10 +536,9 @@
   gap: 10px;
 }
 
+/* Label and number pairs inside the panel, not a box per number. */
 .memory-share {
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  padding: 8px 10px;
+  padding: 2px 0;
 }
 
 .memory-share dt {
@@ -546,8 +553,10 @@
   align-items: baseline;
 }
 
+/* A share to watch keeps its warning as a red rule beside the number. */
 .memory-share--watch {
-  border-color: var(--rdl, #ff6a54);
+  padding-left: 10px;
+  border-left: 2px solid var(--rdl);
 }
 
 .memory-share-value {
