@@ -156,3 +156,57 @@ describe("rendered lists (cards, not <ul>)", () => {
     expect(found).toHaveLength(1);
   });
 });
+
+describe("nested-boxes", () => {
+  // jsdom lays nothing out and reads no stylesheet. Give every element a
+  // drawable size, and style the boxes inline, as a browser would compute them.
+  const BOX = "border-top-left-radius: 8px; border-top: 1px solid red; border-right: 1px solid red; border-bottom: 1px solid red; border-left: 1px solid red;";
+  const FILL = "border-top-left-radius: 8px; background-color: rgb(30, 40, 50);";
+
+  function nested(html: string) {
+    const root = document.createElement("div");
+    root.innerHTML = html;
+    document.body.appendChild(root);
+    try {
+      return findUsabilityProblems(root).filter((p) => p.kind === "nested-boxes");
+    } finally {
+      root.remove();
+    }
+  }
+
+  beforeEach(() => {
+    jest.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 400, height: 80 } as DOMRect);
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("flags a box inside a box inside a box, naming the inner ones", () => {
+    const html = `<section style="${BOX}"><div class="lane" style="${BOX}">${repeat(3, () => `<div class="stopped" style="${FILL}">blocked</div>`)}</div></section>`;
+    const found = nested(html);
+    expect(found).toHaveLength(1);
+    expect(found[0].detail).toContain("3 boxes");
+    expect(found[0].detail).toContain(".stopped ×3");
+  });
+
+  it("passes one card inside a panel: the region and the things in it", () => {
+    expect(nested(`<section style="${BOX}">${repeat(4, () => `<div class="card" style="${BOX}">x</div>`)}</section>`)).toEqual([]);
+  });
+
+  it("passes rows split by rules inside a card", () => {
+    const row = `<div class="row" style="border-top: 1px solid red;">x</div>`;
+    expect(nested(`<section style="${BOX}"><div style="${BOX}">${repeat(3, () => row)}</div></section>`)).toEqual([]);
+  });
+
+  it("does not count controls or square blocks as boxes", () => {
+    const control = `<button style="${BOX}">go</button><input style="${BOX}" />`;
+    const square = `<div style="border-top: 1px solid red; border-right: 1px solid red; border-bottom: 1px solid red; border-left: 1px solid red;">sq</div>`;
+    expect(nested(`<section style="${BOX}"><div style="${BOX}">${control}${square}</div></section>`)).toEqual([]);
+  });
+
+  it("stands aside where nothing is laid out, rather than calling everything flat", () => {
+    jest.restoreAllMocks();
+    const html = `<section style="${BOX}"><div style="${BOX}"><div style="${BOX}">x</div></div></section>`;
+    expect(nested(html)).toEqual([]);
+  });
+});

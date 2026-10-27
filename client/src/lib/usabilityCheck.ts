@@ -28,7 +28,8 @@ export type UsabilityProblemKind =
   | "edgeless-graph"
   | "unfiltered-long-list"
   | "tabular-list"
-  | "key-value-table";
+  | "key-value-table"
+  | "nested-boxes";
 
 export interface UsabilityProblem {
   kind: UsabilityProblemKind;
@@ -56,6 +57,12 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   const TABULAR_ITEMS = 8;
   /** Two-cell rows this many deep, with no column header, are one record's fields. */
   const KEY_VALUE_ROWS = 3;
+  /**
+   * A box inside this many other boxes is too deep. One card in a panel is a
+   * region holding things you act on; a box inside that card is the third
+   * level, where everything is a card and nothing is the hierarchy.
+   */
+  const NESTED_BOX_DEPTH = 2;
 
   const problems: UsabilityProblem[] = [];
 
@@ -191,6 +198,56 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
       problems.push({
         kind: "key-value-table",
         detail: `a ${rows.length}-row table of label/value pairs — one record's fields belong in a <dl>`,
+      });
+    }
+  }
+
+  // Boxes inside boxes inside boxes. A box is a block that draws its own edge:
+  // rounded, with a border on three sides or a fill of its own. Controls draw
+  // edges too but are not regions, so they are left out, as are blocks too small
+  // to be one. It needs computed styles and layout, which only a browser has;
+  // under jsdom nothing is laid out, so there is nothing to measure and the
+  // check stands aside rather than call every element flat.
+  const body = root instanceof Document ? root.body : root instanceof Element ? root.ownerDocument.body : null;
+  const view = body?.ownerDocument.defaultView;
+  if (body && view && body.getBoundingClientRect().width > 0) {
+    const CLEAR = /^(transparent|rgba\([^)]*,\s*0\))$/;
+    const NOT_A_REGION = "button, input, select, textarea, a, img, code, pre, kbd, label, svg, svg *";
+    const isBox = (el: Element): boolean => {
+      if (el.matches(NOT_A_REGION)) return false;
+      const style = view.getComputedStyle(el);
+      if (style.display === "inline" || style.display === "contents" || style.visibility === "hidden") return false;
+      // Written as "not at least 4" so an unset radius (NaN) is square, not a box.
+      if (!(parseFloat(style.borderTopLeftRadius) >= 4)) return false;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 24) return false;
+      const edges = (["Top", "Right", "Bottom", "Left"] as const).filter(
+        (side) =>
+          parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) >= 1 &&
+          style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== "none" &&
+          !CLEAR.test(style.getPropertyValue(`border-${side.toLowerCase()}-color`)),
+      ).length;
+      return edges >= 3 || (style.backgroundColor !== "" && !CLEAR.test(style.backgroundColor));
+    };
+    const boxes = new Set(Array.from(root.querySelectorAll("*")).filter(isBox));
+    const deep = new Map<string, number>();
+    for (const box of boxes) {
+      let depth = 0;
+      for (let up = box.parentElement; up; up = up.parentElement) if (boxes.has(up)) depth++;
+      if (depth < NESTED_BOX_DEPTH) continue;
+      const name = (box.getAttribute("class") ?? "").trim().split(/\s+/)[0] || box.tagName.toLowerCase();
+      deep.set(name, (deep.get(name) ?? 0) + 1);
+    }
+    if (deep.size > 0) {
+      const total = Array.from(deep.values()).reduce((sum, n) => sum + n, 0);
+      const names = Array.from(deep.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, n]) => `.${name} ×${n}`)
+        .join(", ");
+      problems.push({
+        kind: "nested-boxes",
+        detail: `${total} ${total === 1 ? "box sits" : "boxes sit"} inside two or more others (${names}) — keep one bordered level per region; make the inner ones rows`,
       });
     }
   }
