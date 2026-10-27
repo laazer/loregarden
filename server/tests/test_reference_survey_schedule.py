@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import Approval, Ticket
 from loregarden.models.domain.survey_enums import (
+    SurveyCardKind,
     SurveyPassMode,
     SurveyPassStatus,
     SurveySourceKind,
@@ -20,7 +21,7 @@ from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.errors import SurveyError
-from loregarden.services.reference_survey.inbox import file_card
+from loregarden.services.reference_survey.inbox import SurveyCardKey, file_card
 from loregarden.services.reference_survey.queue import enqueue_source
 from loregarden.services.reference_survey.schedule import (
     FIRST_IN_LINE,
@@ -174,7 +175,12 @@ def test_review_now_refuses_a_source_not_admitted(ctx, status, approval, message
     source = _source(session, world, "gated", status=status, queued=False)
     if approval:
         card = file_card(
-            session, workspace_id=world.workspace_id, title="Admit", impact="i", level="medium"
+            session,
+            workspace_id=world.workspace_id,
+            key=SurveyCardKey(kind=SurveyCardKind.ADMISSION, source_id=source.id),
+            title="Admit",
+            impact="i",
+            level="medium",
         )
         source.approval_id = card.id
         session.add(source)

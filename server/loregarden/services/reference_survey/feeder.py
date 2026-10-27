@@ -34,6 +34,7 @@ from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
     LicenceBasis,
     LicenceUse,
+    SurveyCardKind,
     SurveyPassMode,
     SurveyPassStatus,
     SurveySourceKind,
@@ -48,7 +49,12 @@ from loregarden.services.reference_repo_service import (
     parse_repo_url,
 )
 from loregarden.services.reference_survey.coverage import map_tree
-from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.inbox import (
+    CLEARED_BY_DISPATCH,
+    SurveyCardKey,
+    close_cleared,
+    report_exception,
+)
 from loregarden.services.reference_survey.initiatives import (
     InitiativeContext,
     initiative_context,
@@ -134,14 +140,43 @@ def _settle_abandoned(session: Session) -> int:
             report_exception(
                 session,
                 workspace_id=source.workspace_id,
+                key=SurveyCardKey(
+                    kind=SurveyCardKind.PASS_ABANDONED,
+                    source_id=source.id,
+                    occurrence_id=survey_pass.id,
+                ),
                 title=f"Survey pass abandoned: {source.name} pass {survey_pass.ordinal}",
-                detail=(
-                    f"Carrier {carrier.external_id} closed without finishing the pass, so nothing records "
-                    "where it stopped or what it left unread. Request a continuation pass to resume."
+                detail=_card_detail(
+                    failed=(
+                        f"Carrier {carrier.external_id} closed ({carrier.state.value}) before pass "
+                        f"{survey_pass.ordinal} finished, so nothing records where it stopped or "
+                        "what it left unread."
+                    ),
+                    did=f"Marked the pass abandoned. {_what_runs_next(session, source, survey_pass)}",
+                    next_step=(
+                        "**Retry now** runs a new pass on this source. This card closes by "
+                        "itself once a later pass is dispatched."
+                    ),
                 ),
             )
     session.commit()
     return len(running)
+
+
+def _what_runs_next(session: Session, source: SurveySource, closed: SurveyPass) -> str:
+    """Whether another pass will try this source again without a person."""
+    waiting = sorted(
+        (p for p in open_passes(session, source.id) if p.id != closed.id), key=lambda p: p.ordinal
+    )
+    if waiting:
+        return f"Pass {waiting[0].ordinal} is {waiting[0].status.value} and will try again on its turn."
+    return "No other pass is queued, so nothing tries again on its own."
+
+
+def _card_detail(*, failed: str, did: str, next_step: str) -> str:
+    """An exception card's body: what failed, what loregarden already did about
+    it, and what the operator can do next."""
+    return f"{failed}\n\n**What loregarden did:** {did}\n\n**What you can do:** {next_step}"
 
 
 def _refuse(
@@ -188,16 +223,29 @@ def _prepare_repo(session: Session, source: SurveySource) -> tuple[Path, Licence
         report_exception(
             session,
             workspace_id=source.workspace_id,
+            key=SurveyCardKey(kind=SurveyCardKind.LICENCE_DISAGREEMENT, source_id=source.id),
             title=f"Licence disagreement: {source.name}",
-            detail=(
-                f"Recorded by hand: {source.licence_name or 'none'} ({source.licence_use.value if source.licence_use else 'unset'}). "
-                f"Licence file at {head[:12]}: {verdict.name or 'none'} ({verdict.use.value}). "
-                f"The file's reading now applies: {verdict.constraint}"
+            detail=_card_detail(
+                failed=(
+                    f"Recorded by hand: {source.licence_name or 'none'} ({source.licence_use.value if source.licence_use else 'unset'}). "
+                    f"Licence file at {head[:12]}: {verdict.name or 'none'} ({verdict.use.value})."
+                ),
+                did=f"Applied the licence file's reading in place of the hand call: {verdict.constraint}",
+                next_step=(
+                    "Open the source to check the licence file. Nothing needs retrying; "
+                    "**Dismiss** once you agree with the file's reading."
+                ),
             ),
         )
     _apply_licence(source, verdict, head)
     session.add(source)
     session.commit()
+    close_cleared(
+        session,
+        source,
+        {SurveyCardKind.CLONE_FAILED},
+        reason=f"{source.name} cloned at {head[:12]}.",
+    )
     if verdict.use is not LicenceUse.EXCLUDED and source.mapped_commit != head:
         store_map(session, source, map_tree(path), head)
     return path, verdict
@@ -300,10 +348,18 @@ def _dispatch(
         report_exception(
             session,
             workspace_id=source.workspace_id,
+            key=SurveyCardKey(kind=SurveyCardKind.NO_CARRIER_PARENT),
             title="Reference survey has no carrier parent",
-            detail=(
-                f"Passes are queued but none can run: no open ticket in this workspace is tagged "
-                f"`{CARRIER_PARENT_TAG}`. Tag the feature survey passes should be filed under."
+            detail=_card_detail(
+                failed=(
+                    f"Passes are queued but none can run: no open ticket in this workspace is "
+                    f"tagged `{CARRIER_PARENT_TAG}`."
+                ),
+                did="Left every pass queued; the feeder checks again on each tick.",
+                next_step=(
+                    f"Tag the feature survey passes should be filed under with "
+                    f"`{CARRIER_PARENT_TAG}`. This card closes by itself once a pass is dispatched."
+                ),
             ),
         )
         return
@@ -322,8 +378,20 @@ def _dispatch(
             report_exception(
                 session,
                 workspace_id=source.workspace_id,
+                key=SurveyCardKey(kind=SurveyCardKind.CLONE_FAILED, source_id=source.id),
                 title=f"Survey clone failed: {source.name}",
-                detail=str(exc),
+                detail=_card_detail(
+                    failed=f"Cloning {source.url} failed:\n\n```\n{exc}\n```",
+                    did=(
+                        f"Refused pass {survey_pass.ordinal} before reading anything. "
+                        f"{_what_runs_next(session, source, survey_pass)}"
+                    ),
+                    next_step=(
+                        "**Retry now** clones again and, if it works, starts a pass. If the "
+                        "URL is wrong or the repository is gone, open the source and drop it. "
+                        "This card closes by itself once a clone succeeds."
+                    ),
+                ),
             )
             result.refused = survey_pass.id
             return
@@ -333,8 +401,20 @@ def _dispatch(
             report_exception(
                 session,
                 workspace_id=source.workspace_id,
+                key=SurveyCardKey(kind=SurveyCardKind.LICENCE_REFUSED, source_id=source.id),
                 title=f"Survey source refused by licence: {source.name}",
-                detail=reason,
+                detail=_card_detail(
+                    failed=reason,
+                    did=(
+                        "Refused the source: no file beyond its licence was opened, and no "
+                        "pass will run on it."
+                    ),
+                    next_step=(
+                        "If the licence does permit reading it, open the source and review it "
+                        "again with your reason; the licence gate still runs first. Otherwise "
+                        "**Dismiss**."
+                    ),
+                ),
             )
             result.refused = survey_pass.id
             return
@@ -391,9 +471,24 @@ def _dispatch(
         report_exception(
             session,
             workspace_id=source.workspace_id,
+            key=SurveyCardKey(
+                kind=SurveyCardKind.PASS_NOT_QUEUED,
+                source_id=source.id,
+                occurrence_id=survey_pass.id,
+            ),
             title=f"Survey pass could not be queued: {source.name} pass {survey_pass.ordinal}",
-            detail=f"{exc}. The carrier {carrier.external_id} exists; queue it by hand or close it.",
+            detail=_card_detail(
+                failed=f"Pass {survey_pass.ordinal} was dispatched but its carrier could not join a lane: {exc}.",
+                did=f"Created the carrier {carrier.external_id}; nothing runs it until it is queued.",
+                next_step=f"Queue {carrier.external_id} by hand from its ticket, or close it.",
+            ),
         )
+    close_cleared(
+        session,
+        source,
+        CLEARED_BY_DISPATCH,
+        reason=f"Pass {survey_pass.ordinal} on {source.name} cloned and dispatched as {carrier.external_id}.",
+    )
     result.dispatched = survey_pass.id
 
 

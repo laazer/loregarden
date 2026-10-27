@@ -1,55 +1,11 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 
-import { api } from "../../api/client";
-import type { ReviewNowRequest, ReviewNowResult } from "../../api/referenceLibraryApi";
-import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { IconCloseButton } from "../IconCloseButton";
 import { ModalShell } from "../ui/ModalShell";
 import { Textarea } from "../ui/Textarea";
 import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
-
-function alsoText(result: ReviewNowResult): string {
-  const parts = [];
-  if (result.workspaces_added.length) parts.push(`it now reads for ${result.workspaces_added.join(", ")} too`);
-  if (result.initiatives_linked.length) parts.push(`${result.initiatives_linked.join(", ")} now follow it`);
-  return parts.length ? ` ${parts.join("; ")}.` : "";
-}
-
-function report(name: string, result: ReviewNowResult) {
-  if (result.started) {
-    pushToast({
-      tone: "success",
-      title: `Reviewing ${name}`,
-      message: `Pass ${result.ordinal} is queued to run${result.carrier ? ` as ${result.carrier}` : ""}.${alsoText(result)}`,
-    });
-  } else if (result.refused) {
-    pushToast({ tone: "warning", title: `${name} was not reviewed`, message: result.refused });
-  } else {
-    pushToast({
-      tone: "warning",
-      title: `${name} is first in line but has not started`,
-      message: `Pass ${result.ordinal} is waiting: ${result.waiting.replace(/`/g, "")}.${alsoText(result)}`,
-    });
-  }
-}
-
-const NOTHING_MORE: ReviewNowRequest = { question: "", workspace_slugs: [], initiative_ids: [] };
-
-function useReviewNow(sourceId: string, name: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: ReviewNowRequest) => api.reviewSourceNow(sourceId, body),
-    onSuccess: (result) => {
-      report(name, result);
-      void queryClient.invalidateQueries({ queryKey: ["reference-source", sourceId] });
-      void queryClient.invalidateQueries({ queryKey: ["reference-library"] });
-    },
-    onError: (error) =>
-      pushToast({ tone: "error", title: `Could not review ${name} now`, message: describeError(error) }),
-  });
-}
+import { NOTHING_MORE, useReviewNow } from "./useReviewNow";
 
 /**
  * Dispatch this source's waiting pass now instead of at its turn. It goes

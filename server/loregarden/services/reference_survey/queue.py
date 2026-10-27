@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from loregarden.models.domain import Approval, ApprovalStatus, Workspace
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
+    SurveyCardKind,
     SurveyPassMode,
     SurveyPassStatus,
     SurveySourceKind,
@@ -30,7 +31,7 @@ from loregarden.services.reference_survey.errors import (
     SurveyError,
     SurveyNotFound,
 )
-from loregarden.services.reference_survey.inbox import file_card
+from loregarden.services.reference_survey.inbox import SurveyCardKey, file_card
 from loregarden.services.reference_survey.schemas import PassRequestIn, SourceIn
 from sqlalchemy import func
 from sqlmodel import Session, col, select
@@ -212,6 +213,7 @@ def _file_admission(session: Session, source: SurveySource, body: SourceIn) -> S
     card = file_card(
         session,
         workspace_id=source.workspace_id,
+        key=SurveyCardKey(kind=SurveyCardKind.ADMISSION, source_id=source.id),
         title=admission_title(source),
         impact=(
             f"A {source.kind.value} proposed for the reference survey, for {targets}.\n\n"

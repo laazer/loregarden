@@ -56,6 +56,7 @@ from loregarden.services.invariant_registry import (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
+    SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
 )
 from loregarden.services.invariants import Invariant, run_invariant
@@ -171,6 +172,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
     _invariant(PUBLISH_CARDS_CLOSE),
+    # A survey card closed only by a click, so "clone failed" stayed pending for
+    # days after the next pass cloned without trouble. The feeder now closes
+    # them as it succeeds; this catches any it did not.
+    _invariant(SURVEY_CARDS_CLOSE),
     # Report-only: work left in a finished ticket's tree is a person's call to
     # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
     # kept, which is a handful, not one per ticket.

@@ -27,6 +27,7 @@ from loregarden.services.dependency_release import releasable_tickets, release_t
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
@@ -221,6 +222,48 @@ PUBLISH_CARDS_CLOSE = Invariant(
     reentry=InvariantReentry.EXPECTED,
     since=date(2026, 10, 20),
     expected_because="a published PR is merged on GitHub by a person, not by the control plane",
+)
+
+
+def _cleared_survey_cards(session: Session) -> list[Violation]:
+    """`entered_at` is the later clone or dispatch that cleared the card's cause."""
+    return [
+        Violation(
+            subject_id=item.card.id,
+            ticket_id=None,
+            entered_at=item.cleared_at,
+            detail=f"{item.card.title}: {item.because}",
+        )
+        for item in cleared_cards(session)
+    ]
+
+
+def _close_survey_cards(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    closed = 0
+    for item in cleared_cards(session):
+        if item.card.id in wanted:
+            closed += close_cards(
+                session, [item.card], reason=f"Closed by the survey: {item.because}."
+            )
+    return closed
+
+
+SURVEY_CARDS_CLOSE = Invariant(
+    name="survey_cards_close_with_their_cause",
+    ticket="lg-reference-sources-1613",
+    statement=(
+        "no reference-survey exception card stays pending once a later clone or dispatch "
+        "on its source cleared what it reported"
+    ),
+    detect=_cleared_survey_cards,
+    repair=_close_survey_cards,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 27),
+    prevented_by=(
+        "server/tests/test_survey_card_clearing.py"
+        "::test_every_success_path_closes_the_cards_it_clears"
+    ),
 )
 
 
@@ -423,6 +466,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,
+    SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,

@@ -30,6 +30,7 @@ from loregarden.models.domain import Artifact, Ticket, TicketState, UpdateTicket
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
     LicenceUse,
+    SurveyCardKind,
     SurveyFindingStatus,
     SurveyPassStatus,
     SurveyTicketAction,
@@ -52,7 +53,7 @@ from loregarden.services.reference_survey.errors import (
     SurveyNotFound,
     TicketWriteMismatch,
 )
-from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.inbox import SurveyCardKey, report_exception
 from loregarden.services.reference_survey.initiatives import follow_new_tickets
 from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
@@ -445,6 +446,11 @@ def write_findings_to_ticket(session: Session, body: TicketWriteIn) -> TicketWri
         report_exception(
             session,
             workspace_id=source.workspace_id,
+            key=SurveyCardKey(
+                kind=SurveyCardKind.WRITE_DID_NOT_LAND,
+                source_id=source.id,
+                occurrence_id=survey_pass.id,
+            ),
             title=f"Survey write did not land: pass {survey_pass.id[:8]}",
             detail=f"{exc}\n\nSource {source.url}, pass {survey_pass.ordinal}. Nothing was retried.",
         )

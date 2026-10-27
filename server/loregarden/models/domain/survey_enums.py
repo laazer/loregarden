@@ -11,6 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 __all__ = [
+    "SurveyCardKind",
     "SurveyEvidenceStance",
     "SurveyFindingClaim",
     "SurveyFindingStatus",
@@ -265,3 +266,22 @@ class SurveyTopic(StrEnum):
     SIMILAR_TOOLS = "similar_tools"
     AGENT_ORCHESTRATION = "agent_orchestration"
     TESTING_VERIFICATION = "testing_verification"
+
+
+class SurveyCardKind(StrEnum):
+    """Which inbox card the survey filed (`reference_survey.inbox`).
+
+    The card is keyed by this and its source, not by its title: a title is copy,
+    and copy changes.
+    """
+
+    #: A proposed source waiting to be admitted. Approve admits it, Reject refuses it.
+    ADMISSION = "admission"
+    CLONE_FAILED = "clone_failed"
+    LICENCE_REFUSED = "licence_refused"
+    LICENCE_DISAGREEMENT = "licence_disagreement"
+    PASS_ABANDONED = "pass_abandoned"
+    PASS_NOT_QUEUED = "pass_not_queued"
+    NO_CARRIER_PARENT = "no_carrier_parent"
+    DISCOVERY_NOT_QUEUED = "discovery_not_queued"
+    WRITE_DID_NOT_LAND = "write_did_not_land"
