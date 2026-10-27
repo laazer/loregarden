@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
-import type { WorkspaceRuntimeSettings } from "../api/client";
+import type { TicketSummary, WorkspaceRuntimeSettings } from "../api/client";
 import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug, initiativeChatScope } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
@@ -74,7 +74,11 @@ export interface ChatModelBinding {
 
 export interface ActiveChatSession {
   session: ChatSession | null;
-  /** What the dock calls the bound conversation, e.g. "Ticket triage". */
+  /**
+   * What the bound conversation is looking at, as the dock's context line:
+   * "lg-external-harness-1413 · test-design", "loregarden · ux/b1", a workspace.
+   * Who answers is always Baxter, so the line names the subject, not the agent.
+   */
   label: string;
   /**
    * The ticket this conversation belongs to, when it has one.
@@ -128,6 +132,12 @@ export interface ActiveChatSession {
   agents: ChatAgents | null;
   /** Who answers in the bound conversation, as its thread names them. */
   assistantLabel: string;
+  /**
+   * Where this conversation opens full-page, or null when it has no page of its
+   * own. Only the workspace Baxter thread does: `/chat` shows the same thread,
+   * so maximising the dock is a navigation, not a copy.
+   */
+  maximisePath: string | null;
   /** Which openers apply: a `TRY_ASKING` key in `lib/dockChatPrompts`; "" for none. */
   promptKind: string;
   /**
@@ -153,16 +163,19 @@ export interface ChatAgents {
   select: (id: string) => void;
 }
 
+// Baxter's two modes on an initiative. Behind them sit two agents with their
+// own threads, but the operator talks to one assistant: the mode says what it
+// is doing, not who it is.
 const INITIATIVE_AGENTS: readonly ChatAgentOption[] = [
   {
     id: "planner",
-    label: "Planner",
-    description: "Proposes dates you accept, marks work for a person, and can start work or run the autopilot",
+    label: "Plan",
+    description: "Baxter proposes dates you accept, marks work for a person, and can start work or run the autopilot",
   },
   {
     id: "baxter",
-    label: "Baxter",
-    description: "Triages the work under this initiative across its workspaces: what is blocked, what to file, what to change",
+    label: "Triage",
+    description: "Baxter triages the work under this initiative across its workspaces: what is blocked, what to file, what to change",
   },
 ];
 
@@ -230,7 +243,7 @@ export function useActiveChatSession(): ActiveChatSession {
   const { data: initiatives } = useQuery({
     queryKey: ["initiatives"],
     queryFn: api.initiatives,
-    enabled: focusedInitiative !== null,
+    enabled: focusedInitiative !== null || plannerOnScreen,
   });
   // Bound on the chat page too, though the composer half stays hidden there: the
   // model picker lives in the bar on every screen, and it is the same thread.
@@ -272,8 +285,8 @@ export function useActiveChatSession(): ActiveChatSession {
   // request of its own; an empty id issues none off the plan page.
   const planner = useInitiativePlanner(initiativeUuid ?? "");
   const plannerModel: ChatModelBinding = {
-    assistant: "the initiative planner",
-    scopeLabel: "Initiative planner",
+    assistant: "Baxter, planning",
+    scopeLabel: "Baxter · plan",
     workspaceSlug: planner.workspaceSlug,
     runtime: planner.runtime,
     setRuntime: planner.setRuntime,
@@ -294,7 +307,7 @@ export function useActiveChatSession(): ActiveChatSession {
   );
   const initiativeBaxterModel: ChatModelBinding = {
     assistant: "Baxter",
-    scopeLabel: "Baxter · initiative",
+    scopeLabel: "Baxter · initiative triage",
     // A global thread runs on its host's runtime, known once the thread exists.
     workspaceSlug: initiativeBaxter.snapshot?.host_workspace_slug || "",
     runtime: initiativeBaxter.runtime,
@@ -346,6 +359,7 @@ export function useActiveChatSession(): ActiveChatSession {
     screenPrompts: null,
     agents: null,
     assistantLabel: "Baxter",
+    maximisePath: null,
     promptKind: "",
     composerBlocked: null,
   };
@@ -382,11 +396,13 @@ export function useActiveChatSession(): ActiveChatSession {
   // operator picked. Each keeps its own conversation, so switching never loses
   // a thread. Only Baxter's has an archive: the planner keeps one per initiative.
   if (plannerOnScreen) {
+    const initiativeRef =
+      initiatives?.find((i) => i.id === initiativeUuid)?.external_id ?? initiativeId;
     if (initiativeAgent === "baxter") {
       return {
         ...none,
         session: initiativeUuid ? initiativeBaxter : null,
-        label: "Baxter · initiative",
+        label: initiativeRef,
         pendingApprovals: initiativeBaxter.pendingApprovals,
         archive: initiativeBaxterArchive,
         model: initiativeBaxterModel,
@@ -397,14 +413,13 @@ export function useActiveChatSession(): ActiveChatSession {
     return {
       ...none,
       session: initiativeUuid ? planner.session : null,
-      label: "Initiative planner",
+      label: initiativeRef,
       model: plannerModel,
       agents: initiativeAgents,
-      assistantLabel: "Planner",
       promptKind: INITIATIVE_PLANNING,
       composerBlocked:
         plan.data && plan.data.milestones.length === 0
-          ? "Attach a milestone to this initiative, then the planner can schedule it"
+          ? "Attach a milestone to this initiative, then Baxter can schedule it"
           : null,
     };
   }
@@ -413,7 +428,7 @@ export function useActiveChatSession(): ActiveChatSession {
       ? {
           ...none,
           session: branchSession,
-          label: `Branch · ${branch}`,
+          label: branchWorkspace ? `${branchWorkspace} · ${branch}` : branch,
           branch,
           promptKind: branchSession.kind,
         }
@@ -423,7 +438,7 @@ export function useActiveChatSession(): ActiveChatSession {
     return {
       ...none,
       session: ticketSession,
-      label: "Ticket triage",
+      label: ticketContext(ticket),
       ticketId,
       pendingApprovals: pending,
       branch: ticket?.branch || null,
@@ -434,10 +449,24 @@ export function useActiveChatSession(): ActiveChatSession {
   return {
     ...none,
     session: baxterSession,
-    label: `Baxter · ${chatScopeLabel(chatScope, initiatives)}`,
+    label: chatScopeLabel(chatScope, initiatives),
     pendingApprovals: baxterSession.pendingApprovals,
     archive: baxterArchive,
     model: baxterModel,
+    maximisePath: chatPath(),
     promptKind: baxterSession.kind,
   };
+}
+
+/**
+ * A ticket conversation's context line: its id and the stage it is in, the two
+ * things that say which run Baxter is reading. The id alone until it loads.
+ */
+export function ticketContext(
+  ticket: Pick<TicketSummary, "external_id" | "workflow_stage_key"> | undefined,
+): string {
+  if (!ticket) return "";
+  return ticket.workflow_stage_key
+    ? `${ticket.external_id} · ${ticket.workflow_stage_key}`
+    : ticket.external_id;
 }

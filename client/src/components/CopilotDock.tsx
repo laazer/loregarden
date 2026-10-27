@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useState } from "react";
 
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { CopilotDockHeader } from "./CopilotDockHeader";
 import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
@@ -26,8 +27,20 @@ export function CopilotDock() {
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useLayoutDockEdge();
   const setDockPanelsVisible = useUiStore((s) => s.setDockPanelsVisible);
-  const { session, ticketId, pendingApprovals, branch, archive, assistantLabel, promptKind, composerBlocked } =
-    useActiveChatSession();
+  const {
+    session,
+    label,
+    ticketId,
+    pendingApprovals,
+    branch,
+    archive,
+    agents,
+    assistantLabel,
+    maximisePath,
+    promptKind,
+    composerBlocked,
+  } = useActiveChatSession();
+  const titleId = useId();
   const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
@@ -102,12 +115,22 @@ export function CopilotDock() {
       {panelsVisible ? <DockResizeHandle edge={edge} /> : null}
       <div className={`copilot-dock-body${showTerminal && !showChat ? " copilot-dock-body--bleed" : ""}`}>
         {showChat && session && (
-          <div className="copilot-dock-chat">
+          <section className="copilot-dock-chat" aria-labelledby={titleId}>
+            <CopilotDockHeader
+              titleId={titleId}
+              context={label}
+              agents={agents}
+              busy={session.isBusy}
+              archive={archive}
+              maximisePath={maximisePath}
+            />
+            <div className="copilot-dock-chat-row">
             <div className="copilot-dock-chat-main">
               <StudioChatMessages
                 messages={session.messages}
                 emptyMessage={composerBlocked ?? "No messages yet."}
                 isThinking={session.isBusy && pendingApprovals.length === 0}
+                thinkingMessage="Baxter is looking…"
                 activeTurnId={session.activeTurnId}
                 assistantLabel={assistantLabel}
                 // The action bar already shows the agent beside the composer; a
@@ -198,7 +221,8 @@ export function CopilotDock() {
                 )}
               </aside>
             )}
-          </div>
+            </div>
+          </section>
         )}
 
         {mountTerminal && keptSlug && (

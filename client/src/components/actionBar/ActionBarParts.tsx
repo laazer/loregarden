@@ -1,63 +1,13 @@
 /**
- * The action bar's small pieces: the agent switch, the one-click replies, and
- * the status pill. Split out of `AppActionBar`, which keeps the conversation
+ * The action bar's small pieces: the one-click replies and the status pill. Split out of `AppActionBar`, which keeps the conversation
  * state and decides where each piece is drawn (the row or the sheet).
  */
 
-import type { KeyboardEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import type { ChatAgents, ScreenPrompts } from "../../hooks/useActiveChatSession";
+import type { ScreenPrompts } from "../../hooks/useActiveChatSession";
 import { DOCK_QUICK_PROMPT_LIMIT, followUpPrompts } from "../../lib/dockChatPrompts";
 import { Button } from "../ui/Button";
-
-/**
- * Which agent the bar is talking to, where a screen offers more than one.
- *
- * A radio group rather than a menu: there are two or three agents, each is one
- * click, and the choice is visible without opening anything. Arrow keys move
- * between them as a radio group's do. Held while a turn runs, so a reply never
- * lands in a thread the operator has switched away from.
- */
-export function ActionBarAgentSwitch({ agents, disabled }: { agents: ChatAgents; disabled: boolean }) {
-  const ids = agents.options.map((option) => option.id);
-  const onKeyDown = (event: KeyboardEvent) => {
-    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1
-      : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1
-      : 0;
-    if (!step || disabled) return;
-    event.preventDefault();
-    const next = ids[(ids.indexOf(agents.active) + step + ids.length) % ids.length];
-    agents.select(next);
-    document.getElementById(`app-action-bar-agent-${next}`)?.focus();
-  };
-  return (
-    <div className="app-action-bar-agents" role="radiogroup" aria-label="Agent" onKeyDown={onKeyDown}>
-      {agents.options.map((option) => {
-        const active = option.id === agents.active;
-        return (
-          <Button
-            key={option.id}
-            id={`app-action-bar-agent-${option.id}`}
-            variant="plain"
-            role="radio"
-            aria-checked={active}
-            // Named for the agent; the title is its description. Without this
-            // the accessibility tree names the radio by its tooltip.
-            aria-label={option.label}
-            tabIndex={active ? 0 : -1}
-            className={`app-action-bar-agent${active ? " is-on" : ""}`}
-            title={disabled && !active ? "Wait for this turn to finish to switch agents" : option.description}
-            disabled={disabled && !active}
-            onClick={() => agents.select(option.id)}
-          >
-            {option.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
 /** The bar's one-click replies, capped to what fits beside the composer. */
 export function ActionBarQuickPrompts({
