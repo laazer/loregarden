@@ -1,3 +1,17 @@
+/* The text filter above the dropdown row, both full width in the pane. */
+.ticket-filter-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-filter-search {
+  width: 100%;
+  height: 28px;
+  font-size: var(--fs-small);
+}
+
 .ticket-filter-bar {
   display: flex;
   gap: 6px;
