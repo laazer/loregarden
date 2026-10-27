@@ -109,6 +109,15 @@ class ChatAttachmentKind(StrEnum):
     IMAGE = "image"
 
 
+class EditorChangeStatus(StrEnum):
+    """How a file differs from the merge-base, as the Editor's changed-files list shows it."""
+
+    ADDED = "added"
+    MODIFIED = "modified"
+    DELETED = "deleted"
+    UNTRACKED = "untracked"
+
+
 class PrListingState(StrEnum):
     """Whether a repository's pull-request listing is every PR it has.
 

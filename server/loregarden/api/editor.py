@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain import Workspace
+from loregarden.services.editor_changes import (
+    EditorChanges,
+    EditorChangesError,
+    list_editor_changes,
+)
 from loregarden.services.file_editor import (
     checkout_editor_branch,
     list_editor_browse,
@@ -71,6 +76,20 @@ def editor_browse(
     ws = _workspace_or_404(session, slug)
     try:
         return list_editor_browse(ws, path, context_root=context_root)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/{slug}/editor/changes")
+def editor_changes(
+    slug: str, context_root: str | None = None, session: Session = Depends(get_session)
+) -> EditorChanges:
+    """Files the open branch or worktree changed since its merge-base, uncommitted edits included."""
+    ws = _workspace_or_404(session, slug)
+    try:
+        return list_editor_changes(ws, context_root=context_root)
+    except EditorChangesError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

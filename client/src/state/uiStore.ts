@@ -34,6 +34,14 @@ export const MAX_COPILOT_WIDTH = 640;
  */
 export const MAX_COPILOT_HEIGHT_VIEWPORT_FRACTION = 0.44;
 
+/** How many recently opened files the Editor remembers per workspace and worktree. */
+export const EDITOR_RECENT_LIMIT = 10;
+
+/** One list of recent files per workspace and worktree: a path means nothing in another. */
+export function editorRecentKey(workspaceSlug: string, contextRoot: string): string {
+  return `${workspaceSlug}::${contextRoot}`;
+}
+
 /** Keep a restored or dragged height usable, whatever is in storage. */
 export function clampCopilotHeight(value: unknown): number {
   const height = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_COPILOT_HEIGHT;
@@ -75,6 +83,8 @@ interface UiState {
   editorWorkspace: string;
   editorContextRoot: string;
   editorFilePath: string | null;
+  /** Files opened in the Editor, newest first, keyed by `editorRecentKey`. */
+  editorRecentFiles: Record<string, string[]>;
   queueWorkspaceSlug: string;
   branchTriageWorkspaceSlug: string;
   /**
@@ -194,6 +204,7 @@ interface UiState {
   setEditorWorkspace: (slug: string) => void;
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
+  rememberEditorFile: (key: string, path: string) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
   setChatScope: (scope: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
@@ -231,6 +242,7 @@ type PersistedUiState = Pick<
   | "paneVisibility"
   | "editorWorkspace"
   | "editorContextRoot"
+  | "editorRecentFiles"
   | "queueWorkspaceSlug"
   | "branchTriageWorkspaceSlug"
   | "chatScope"
@@ -264,6 +276,7 @@ export const useUiStore = create<UiState>()(
       editorWorkspace: "",
       editorContextRoot: ".",
       editorFilePath: null,
+      editorRecentFiles: {},
       queueWorkspaceSlug: "",
       branchTriageWorkspaceSlug: "",
       chatScope: "",
@@ -352,6 +365,12 @@ export const useUiStore = create<UiState>()(
       setEditorWorkspace: (editorWorkspace) => set({ editorWorkspace }),
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
+      rememberEditorFile: (key, path) =>
+        set((state) => {
+          const was = state.editorRecentFiles[key] ?? [];
+          const next = [path, ...was.filter((item) => item !== path)].slice(0, EDITOR_RECENT_LIMIT);
+          return { editorRecentFiles: { ...state.editorRecentFiles, [key]: next } };
+        }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
       // Each scope is its own archive, and a global thread reads by id under any
       // focus, so a thread left open across a switch would show under the wrong
@@ -491,6 +510,7 @@ export const useUiStore = create<UiState>()(
         paneVisibility: s.paneVisibility,
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
+        editorRecentFiles: s.editorRecentFiles,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         chatScope: s.chatScope,

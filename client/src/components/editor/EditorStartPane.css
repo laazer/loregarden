@@ -1,0 +1,158 @@
+.editor-start {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.editor-start-section {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-start-heading {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.editor-start-total {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--txm);
+}
+
+.editor-start-ref {
+  font-family: var(--mono);
+  font-size: 0.9em; /* type-ok: relative to the heading or line it sits in */
+}
+
+.editor-start-meta,
+.editor-start-hint {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.editor-start-error {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--rdl);
+}
+
+.editor-start-filter {
+  max-width: 320px;
+  margin: 4px 0;
+}
+
+.editor-start-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-start-list > li {
+  border-top: 1px solid var(--bd);
+}
+
+.editor-start-list > li:last-child {
+  border-bottom: 1px solid var(--bd);
+}
+
+/* A row is its file: one line, the mark, the name, the folder it is in, then
+   the counts. The whole row is the button. */
+.editor-start-row {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  text-align: left;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.editor-start-list > li.editor-start-row {
+  color: var(--txm);
+}
+
+button.editor-start-row:hover {
+  background: var(--bg2);
+}
+
+.editor-start-mark {
+  flex: none;
+  width: 12px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+.editor-start-mark.is-added,
+.editor-start-mark.is-untracked {
+  color: var(--grl);
+}
+
+.editor-start-mark.is-modified {
+  color: var(--amb);
+}
+
+.editor-start-mark.is-deleted {
+  color: var(--rdl);
+}
+
+.editor-start-row.is-deleted .editor-start-name {
+  text-decoration: line-through;
+}
+
+.editor-start-name {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+.editor-start-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.editor-start-counts {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-start-counts .is-add {
+  color: var(--grl);
+}
+
+.editor-start-counts .is-del {
+  color: var(--rdl);
+}
