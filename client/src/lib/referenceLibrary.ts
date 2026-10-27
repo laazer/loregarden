@@ -251,9 +251,46 @@ export function nextCheckText(schedule: QueueSchedule, now: Date = new Date()): 
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-/** The URLs in pasted text: split on commas, tabs and new lines, blanks and repeats dropped. */
+const WEB_URL = /https?:\/\/[^\s<>"'`[\]{}|\\^]+/gi;
+const TRAILING_PUNCTUATION = /[.,;:!?*_~]+$/;
+
+function count(text: string, char: string): number {
+  return text.split(char).length - 1;
+}
+
+/** A URL found in prose, without the sentence or markdown around it. */
+function trimFound(url: string): string {
+  let trimmed = url.replace(TRAILING_PUNCTUATION, "");
+  // Keep a URL's own parentheses (wiki/Foo_(bar)); drop the one that closes the prose's.
+  while (trimmed.endsWith(")") && count(trimmed, ")") > count(trimmed, "(")) {
+    trimmed = trimmed.slice(0, -1).replace(TRAILING_PUNCTUATION, "");
+  }
+  return trimmed;
+}
+
+/**
+ * The URLs in pasted text, blanks and repeats dropped. A piece between commas, tabs and
+ * new lines that is one word is taken as written, so the server can name a bad one; a
+ * piece of prose (a bulleted list, markdown, an article) gives up only its http(s) URLs.
+ */
 export function splitUrls(text: string): string[] {
-  return [...new Set(text.split(/[,\t\r\n]+/).map((part) => part.trim()).filter(Boolean))];
+  const found = text.split(/[,\t\r\n]+/).flatMap((part) => {
+    const piece = part.trim();
+    if (!/\s/.test(piece)) return piece ? [piece] : [];
+    return [...piece.matchAll(WEB_URL)].map((match) => trimFound(match[0]));
+  });
+  return [...new Set(found.filter(Boolean))];
+}
+
+/**
+ * The URLs to put in the box for a paste, or null to let the paste through as typed:
+ * only text holding prose is rewritten, so a plain list pastes unchanged.
+ */
+export function urlsFromPaste(text: string): string[] | null {
+  const prose = text.split(/[,\t\r\n]+/).some((part) => /\s/.test(part.trim()));
+  if (!prose) return null;
+  const urls = splitUrls(text);
+  return urls.length ? urls : null;
 }
 
 function pluralOf(n: number, one: string): string {
