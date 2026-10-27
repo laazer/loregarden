@@ -354,7 +354,6 @@
 .gate-list-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -374,18 +373,22 @@
   align-self: flex-start;
 }
 
+/* Commands are rows in the panel, split by rules: the panel is the one bordered
+   level, and a box per command put a second inside it. */
 .gate-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--bd);
-  border-radius: 10px;
-  background: var(--bg2);
+  padding: 10px 4px;
 }
 
+.gate-row + .gate-row {
+  border-top: 1px solid var(--bd);
+}
+
+/* The row being edited still says so, as a flat wash rather than a box. */
 .gate-row:focus-within {
-  border-color: var(--bd2);
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
 }
 
 .gate-row-head {
