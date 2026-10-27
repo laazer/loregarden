@@ -4417,6 +4417,15 @@ label:is(
   width: min(720px, calc(100vw - 32px));
 }
 
+/* A modal whose body is a form: the form passes the panel's column through, so the
+   body scrolls and the footer stays in view instead of the panel overflowing. */
+.modal-panel > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .modal-panel.studio-preview-modal {
   width: min(1120px, calc(100vw - 24px));
   height: min(92vh, 980px);

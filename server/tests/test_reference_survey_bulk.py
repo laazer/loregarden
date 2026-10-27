@@ -13,7 +13,7 @@ from loregarden.models.domain.survey_enums import (
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_survey.bulk import enqueue_many, infer_kind
 from loregarden.services.reference_survey.errors import BRIEF_REASON_CHARS, brief_reason
-from loregarden.services.reference_survey.schemas import MAX_BULK_URLS, BulkSourceIn
+from loregarden.services.reference_survey.schemas import MAX_BULK_URLS, BulkEntryIn, BulkSourceIn
 from pydantic import ValidationError
 from sqlmodel import Session, select
 from tests.survey_support import build_world, second_workspace
@@ -127,6 +127,31 @@ def test_one_chosen_kind_applies_to_every_url(ctx):
         session, _bulk(world, ["https://example.dev/app"], kind=SurveySourceKind.RELEASED_APP)
     )
     assert items[0].kind is SurveySourceKind.RELEASED_APP
+
+
+def test_an_entry_gives_its_url_its_own_name_and_reason(ctx):
+    session, world = ctx
+    urls = ["https://github.com/acme/one", "https://docs.example.dev/harper"]
+    entries = [
+        BulkEntryIn(url=urls[0], queued_reason="A CRM built for agents"),
+        BulkEntryIn(url=urls[1], name="Harper", queued_reason=""),
+    ]
+    enqueue_many(session, _bulk(world, urls, entries=entries))
+    sources = {s.url: s for s in session.exec(select(SurveySource)).all()}
+    assert sources[urls[0]].queued_reason == "A CRM built for agents"
+    assert sources[urls[0]].name == "one"
+    # An entry with no reason of its own takes the shared one.
+    assert (sources[urls[1]].name, sources[urls[1]].queued_reason) == ("Harper", "Retry ledgers")
+
+
+def test_an_entry_must_name_a_listed_url(ctx):
+    _, world = ctx
+    with pytest.raises(ValidationError, match="not in urls"):
+        _bulk(
+            world,
+            ["https://github.com/acme/one"],
+            entries=[BulkEntryIn(url="https://github.com/acme/two")],
+        )
 
 
 def test_a_bulk_add_is_bounded():

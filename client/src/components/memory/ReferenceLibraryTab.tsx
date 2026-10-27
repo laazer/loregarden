@@ -25,6 +25,7 @@ import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
 import { ReferenceDiscoverButton } from "./ReferenceDiscover";
 import { ReferenceQueueStatus } from "./ReferenceQueueStatus";
+import { ReferencePasteForm } from "./ReferencePasteForm";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceDetail } from "./ReferenceSourceDetail";
 import "./ReferenceLibrary.css";
@@ -51,6 +52,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<LibrarySort>(DEFAULT_SORT);
   const [adding, setAdding] = useState(false);
+  const [pasting, setPasting] = useState(false);
 
   const library = useQuery({
     queryKey: ["reference-library", slug],
@@ -104,7 +106,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
       <div className="rl-state">
         <p>
           No repositories or sites are in the reference library for this workspace yet. Add one
-          with <strong>Add a reference</strong> above (agents use <code>loregarden_survey_queue</code>);
+          with <strong>Add a reference</strong> or <strong>Paste a list</strong> above (agents use <code>loregarden_survey_queue</code>);
           it joins the review queue at once.
         </p>
       </div>
@@ -179,6 +181,15 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
             >
               Add a reference
             </Button>
+            <Button
+              variant="secondary"
+              compact
+              aria-expanded={pasting}
+              aria-haspopup="dialog"
+              onClick={() => setPasting(true)}
+            >
+              Paste a list
+            </Button>
             <ReferenceDiscoverButton workspace={slug} />
             <span className="rl-count" aria-live="polite">
               {library.data ? `${rows.length} source${rows.length === 1 ? "" : "s"}` : ""}
@@ -195,6 +206,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               }}
             />
           ) : null}
+          {pasting ? <ReferencePasteForm workspace={slug} onClose={() => setPasting(false)} /> : null}
           {library.data ? <ReferenceQueueStatus
               schedule={library.data.schedule}
               discoveries={library.data.discoveries}

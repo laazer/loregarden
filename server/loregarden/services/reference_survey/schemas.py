@@ -119,8 +119,19 @@ class SourceIn(_In):
 MAX_BULK_URLS = 50
 
 
+class BulkEntryIn(_In):
+    """What a pasted list said about one of its URLs: its name, and why it is worth reading."""
+
+    url: str = Field(min_length=1)
+    name: str = ""
+    queued_reason: str = ""
+
+
 class BulkSourceIn(_In):
-    """Several URLs proposed together, for the same workspaces, question and reason."""
+    """Several URLs proposed together, for the same workspaces and question.
+
+    The reason is shared unless an entry gives a URL its own (a pasted list that
+    says why each link is in it)."""
 
     workspace_slugs: list[str] = Field(min_length=1)
     urls: list[str] = Field(min_length=1, max_length=MAX_BULK_URLS)
@@ -130,6 +141,15 @@ class BulkSourceIn(_In):
     queued_reason: str = ""
     priority: int = Field(default=100, ge=0)
     initiative_ids: list[str] = Field(default_factory=list)
+    #: Per-URL name and reason, each naming one of `urls`; a URL with none takes the shared reason.
+    entries: list[BulkEntryIn] = Field(default_factory=list, max_length=MAX_BULK_URLS)
+
+    @model_validator(mode="after")
+    def _entries_name_listed_urls(self) -> BulkSourceIn:
+        stray = [entry.url for entry in self.entries if entry.url not in self.urls]
+        if stray:
+            raise ValueError(f"entries name URLs not in urls: {', '.join(stray)}")
+        return self
 
 
 class PassRequestIn(_In):
