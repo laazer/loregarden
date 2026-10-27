@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { useLocation } from "react-router-dom";
 
 import type { Approval, SurveyCard } from "../../api/chatTypes";
 import { api } from "../../api/client";
@@ -6,6 +7,7 @@ import type { ReviewNowResult } from "../../api/referenceLibraryApi";
 import { useToastStore } from "../../state/toastStore";
 import { renderWithRouter } from "../../test/renderWithRouter";
 import { ApprovalCard } from "../ApprovalCard";
+import { RouterBridgeSync } from "../RouterBridgeSync";
 
 jest.mock("../../api/client");
 
@@ -49,10 +51,20 @@ function renderCard(approval: Approval, handlers: { onIgnore?: (reason: string) 
   const onApprove = jest.fn();
   const onReject = jest.fn();
   renderWithRouter(
-    <ApprovalCard approval={approval} onApprove={onApprove} onReject={onReject} onIgnore={handlers.onIgnore} />,
+    <>
+      <RouterBridgeSync />
+      <Path />
+      <ApprovalCard approval={approval} onApprove={onApprove} onReject={onReject} onIgnore={handlers.onIgnore} />
+    </>,
   );
   return { onApprove, onReject };
 }
+
+function Path() {
+  return <span data-testid="path">{useLocation().pathname}</span>;
+}
+
+const OPEN_SOURCE = { name: "Open aqueli in the reference library" };
 
 const buttonNames = () => screen.getAllByRole("button").map((b) => b.textContent);
 
@@ -76,8 +88,9 @@ describe("a card whose Approve and Reject would only close it", () => {
     "a %s card offers Retry now, the source and Dismiss, and no Approve or Reject",
     (kind) => {
       renderCard(survey(kind));
-      expect(buttonNames()).toEqual(["Retry now", "Dismiss"]);
-      expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute("href", "/memory/library/src_1");
+      expect(buttonNames()).toEqual(["Open source", "Retry now", "Dismiss"]);
+      fireEvent.click(screen.getByRole("button", OPEN_SOURCE));
+      expect(screen.getByTestId("path")).toHaveTextContent("/memory/library/src_1");
     },
   );
 
@@ -85,15 +98,13 @@ describe("a card whose Approve and Reject would only close it", () => {
     "a %s card has nothing to retry: the source and Dismiss only",
     (kind) => {
       renderCard(survey(kind));
-      expect(buttonNames()).toEqual(["Dismiss"]);
-      expect(screen.getByRole("link", { name: "Open source" })).toBeInTheDocument();
+      expect(buttonNames()).toEqual(["Open source", "Dismiss"]);
     },
   );
 
   it("a workspace-wide survey card has no source to open", () => {
     renderCard(survey("no_carrier_parent", { source_id: null, source_name: "" }));
     expect(buttonNames()).toEqual(["Dismiss"]);
-    expect(screen.queryByRole("link", { name: "Open source" })).toBeNull();
   });
 
   it("Retry now reviews the source once, holds while in flight, and reports what happened", async () => {

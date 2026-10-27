@@ -1,7 +1,5 @@
-import { Link } from "react-router-dom";
-
 import type { Approval, SurveyCard } from "../api/chatTypes";
-import { memoryPath } from "../lib/appNavigation";
+import { OpenReferenceSourceButton } from "./chat/primitives/ResourceActionButton";
 import { NOTHING_MORE, useReviewNow } from "./memory/useReviewNow";
 import { Button } from "./ui/Button";
 
@@ -46,25 +44,21 @@ export function CloseOnlyActions({
   const sourceId = card?.source_id ?? null;
   return (
     <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      {card?.retryable && card.retry_held ? (
-        <p
-          role="note"
-          style={{ margin: 0, padding: "6px 12px", fontSize: "var(--fs-small)", color: "var(--txm)" }}
+      {sourceId || (card?.retryable && card.retry_held) ? (
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", flexWrap: "wrap" }}
         >
-          Retry is held: {card.retry_held}
-        </p>
+          {card?.retryable && card.retry_held ? (
+            <p role="note" style={{ margin: 0, flex: 1, fontSize: "var(--fs-small)", color: "var(--txm)" }}>
+              Retry is held: {card.retry_held}
+            </p>
+          ) : null}
+          {/* Off inside a Flex View pane, like every Open control (`resourceNavigation`). */}
+          {sourceId ? <OpenReferenceSourceButton sourceId={sourceId} name={card?.source_name ?? ""} /> : null}
+        </div>
       ) : null}
       <div style={{ display: "flex" }}>
         {card?.retryable && sourceId ? <RetryNowButton card={card} sourceId={sourceId} /> : null}
-        {sourceId ? (
-          <Link
-            className="btn-secondary"
-            style={{ ...FOOTER_BUTTON, textAlign: "center" }}
-            to={memoryPath("library", sourceId)}
-          >
-            Open source
-          </Link>
-        ) : null}
         <Button
           variant="secondary"
           style={FOOTER_BUTTON}
