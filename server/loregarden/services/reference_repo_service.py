@@ -13,8 +13,13 @@ Clones are treated as read-only source material: nothing here writes into one be
 
 from __future__ import annotations
 
+import fcntl
+import logging
 import re
 import shutil
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +41,14 @@ from sqlmodel import Session, select
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SSH_RE = re.compile(r"^(?:ssh://)?git@(?P<host>[^:/]+)[:/](?P<path>.+)$")
 _ALLOWED_SCHEMES = ("https", "http", "ssh")
+
+#: A `.git` lock younger than this may belong to a git command someone is running
+#: in the clone by hand (an agent's `git status` takes `index.lock` for a moment),
+#: so it is left for git to report. Every loregarden writer is excluded by the
+#: refresh lock; only those outside callers need the grace.
+_STALE_LOCK_GRACE_SECONDS = 60
+
+logger = logging.getLogger(__name__)
 
 
 class ReferenceRepoError(ValueError):
@@ -141,26 +154,69 @@ def _run(args: list[str], *, cwd: Path | None = None) -> str:
         timeout=settings.reference_repo_clone_timeout,
     )
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        raise ReferenceRepoError(detail[-1] if detail else f"git {args[0]} failed")
+        # The whole message: git's last line alone ("remove the file manually to
+        # continue.") drops the line naming which file.
+        detail = (result.stderr or result.stdout or "").strip()
+        raise ReferenceRepoError(detail or f"git {args[0]} failed")
     return (result.stdout or "").strip()
+
+
+@contextmanager
+def _refresh_lock(path: Path) -> Iterator[None]:
+    """Hold the clone's refresh lock: one clone/fetch/reset per repo at a time.
+
+    The survey feeder, `add_repo` and `sync_repo` all refresh the same clone, and two
+    fetches at once leave one failing on the other's `.git/*.lock`. `flock` is
+    released by the kernel when its holder dies, so a crashed refresh never strands
+    it. The lock file sits beside the clone, not in it, so it survives the clone
+    being cleared.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with (path.parent / f"{path.name}.refresh-lock").open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _clear_stale_git_locks(path: Path) -> None:
+    """Remove `.git` locks no live refresh can own. Call only under `_refresh_lock`.
+
+    A git killed mid-command (a server restart, a timeout) leaves its lock behind and
+    every later command on the clone refuses until someone deletes it by hand.
+    """
+    git_dir = path / ".git"
+    candidates = [*git_dir.glob("*.lock"), *(git_dir / "refs").rglob("*.lock")]
+    cutoff = time.time() - _STALE_LOCK_GRACE_SECONDS
+    for lock in candidates:
+        try:
+            if lock.stat().st_mtime > cutoff:
+                continue
+            lock.unlink()
+        except FileNotFoundError:  # silent-ok: its owner finished and removed it; nothing is stale
+            continue
+        except OSError as exc:
+            raise ReferenceRepoError(f"Could not remove stale git lock {lock}: {exc}") from exc
+        logger.warning("Removed stale git lock %s left by an interrupted git command", lock)
 
 
 def clone_or_refresh(parsed: ParsedRepoUrl) -> tuple[Path, str, str]:
     """Ensure a current shallow clone exists; return (path, default_branch, head_sha)."""
     path = clone_path_for(parsed)
-    if is_cloned(path):
-        _run(["fetch", "--depth", "1", "origin", "HEAD"], cwd=path)
-        _run(["reset", "--hard", "FETCH_HEAD"], cwd=path)
-    else:
-        # A leftover directory from a failed clone would make git refuse; clear it.
-        if path.exists():
-            shutil.rmtree(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _run(["clone", "--depth", "1", "--single-branch", "--", parsed.url, str(path)])
+    with _refresh_lock(path):
+        if is_cloned(path):
+            _clear_stale_git_locks(path)
+            _run(["fetch", "--depth", "1", "origin", "HEAD"], cwd=path)
+            _run(["reset", "--hard", "FETCH_HEAD"], cwd=path)
+        else:
+            # A leftover directory from a failed clone would make git refuse; clear it.
+            if path.exists():
+                shutil.rmtree(path)
+            _run(["clone", "--depth", "1", "--single-branch", "--", parsed.url, str(path)])
 
-    branch = _run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
-    head = _run(["rev-parse", "HEAD"], cwd=path)
+        branch = _run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=path)
+        head = _run(["rev-parse", "HEAD"], cwd=path)
     return path, branch, head
 
 

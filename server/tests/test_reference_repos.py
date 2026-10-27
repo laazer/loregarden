@@ -1,5 +1,9 @@
+import fcntl
+import os
 import shutil
 import subprocess
+import threading
+import time
 from unittest import mock
 
 import pytest
@@ -139,6 +143,67 @@ def test_clone_then_refresh_tracks_the_origin(tmp_path, cache_dir):
     path, _, head_after = clone_or_refresh(parsed)
     assert head_after != head
     assert (path / "skills" / "new.py").exists()
+
+
+def _local_clone(tmp_path):
+    origin = _make_origin(tmp_path)
+    parsed = ParsedRepoUrl(url=f"file://{origin}", host="local", owner="o", name="reference")
+    path, _, _ = clone_or_refresh(parsed)
+    return parsed, path
+
+
+def test_refresh_clears_a_stale_lock_an_interrupted_git_left(tmp_path, cache_dir):
+    parsed, path = _local_clone(tmp_path)
+    old = time.time() - 3600
+    stale = [path / ".git" / "index.lock", path / ".git" / "shallow.lock"]
+    for lock in stale:
+        lock.write_text("", encoding="utf-8")
+        os.utime(lock, (old, old))
+
+    clone_or_refresh(parsed)
+
+    assert [lock for lock in stale if lock.exists()] == []
+
+
+def test_refresh_leaves_a_fresh_lock_and_the_error_names_it(tmp_path, cache_dir):
+    parsed, path = _local_clone(tmp_path)
+    lock = path / ".git" / "index.lock"
+    lock.write_text("", encoding="utf-8")
+
+    with pytest.raises(ReferenceRepoError) as raised:
+        clone_or_refresh(parsed)
+
+    assert lock.exists()
+    assert str(lock) in str(raised.value)
+
+
+def test_refreshes_of_one_clone_run_one_at_a_time(tmp_path, cache_dir):
+    parsed, path = _local_clone(tmp_path)
+    git_started = threading.Event()
+    failures: list[BaseException] = []
+    real_run = reference_repo_service._run
+
+    def run(*args, **kwargs):
+        git_started.set()
+        return real_run(*args, **kwargs)
+
+    def refresh():
+        try:
+            clone_or_refresh(parsed)
+        except BaseException as exc:  # noqa: BLE001 - re-asserted on the main thread below
+            failures.append(exc)
+
+    with mock.patch.object(reference_repo_service, "_run", side_effect=run):
+        with (path.parent / f"{path.name}.refresh-lock").open("a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            worker = threading.Thread(target=refresh)
+            worker.start()
+            assert not git_started.wait(0.5)
+            fcntl.flock(held, fcntl.LOCK_UN)
+        worker.join(30)
+    assert git_started.is_set()
+    assert not worker.is_alive()
+    assert failures == []
 
 
 def _add_repo(client: TestClient, tmp_path, cache_dir) -> dict:
