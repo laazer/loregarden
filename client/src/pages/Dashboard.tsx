@@ -31,6 +31,7 @@ import { AddWorkspaceFlow } from "../components/workspaces/AddWorkspaceFlow";
 import { CreateWorkItemFlow, type CreateWorkItemRequest } from "../components/dashboard/CreateWorkItemFlow";
 import { DashboardWorkspacesPane } from "../components/dashboard/DashboardWorkspacesPane";
 import { ImportTicketsFlow } from "../components/dashboard/ImportTicketsFlow";
+import { ChildTicketsList } from "../components/dashboard/ChildTicketsList";
 import { PaneHideButton } from "../components/dashboard/PaneHideButton";
 import { TicketPaneViewControls } from "../components/dashboard/TicketPaneViewControls";
 import { WorkflowRunControls } from "../components/dashboard/WorkflowRunControls";
@@ -811,18 +812,14 @@ export function Dashboard() {
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets
                     </div>
-                    <div className="lg-primitive-ticket-list--v6">
-                      <TicketTree
-                        nodes={selChildren}
-                        selectedId={selectedId}
-                        expandedIds={expandedSet}
-                        onSelect={selectTicket}
-                        onToggle={toggleExpanded}
-                        onAddChild={openCreateSubTicket}
-                        showExternalId
-                        presentation="v6"
-                      />
-                    </div>
+                    <ChildTicketsList
+                      nodes={selChildren}
+                      selectedId={selectedId}
+                      expandedIds={expandedSet}
+                      onSelect={selectTicket}
+                      onToggle={toggleExpanded}
+                      onAddChild={openCreateSubTicket}
+                    />
                   </div>
                 ) : (
                 <>
