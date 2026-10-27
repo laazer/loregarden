@@ -1,4 +1,5 @@
 
+import type { Approval } from "../../api/chatTypes";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
@@ -42,12 +43,18 @@ export function WorkItemsTable({
   sort,
   onSort,
   showWhy,
+  approvals,
+  onOpenApproval,
 }: {
   rows: WorkItemRow[];
   runs: ReadonlyMap<string, ActiveRun>;
   sort: WorkItemsSort;
   onSort: (key: WorkItemsSortKey) => void;
   showWhy: boolean;
+  /** Each ticket's pending approval, by ticket id; names what an awaiting row is asked. */
+  approvals: ReadonlyMap<string, Approval>;
+  /** Opens the inbox on that ticket's approval. */
+  onOpenApproval: (ticketId: string) => void;
 }) {
   return (
     <table className="wi-table">
@@ -117,7 +124,22 @@ export function WorkItemsTable({
                 </TicketLink>
               ) : null}
             </td>
-            {showWhy ? <td className="wi-col-why">{needsMeReason(node)}</td> : null}
+            {showWhy ? (
+              <td className="wi-col-why">
+                {approvals.has(node.id) && node.workflow_stage_status === "awaiting" ? (
+                  <Button
+                    variant="plain"
+                    className="wi-why-link"
+                    title="Open this approval in the inbox"
+                    onClick={() => onOpenApproval(node.id)}
+                  >
+                    {needsMeReason(node, approvals.get(node.id))}
+                  </Button>
+                ) : (
+                  needsMeReason(node)
+                )}
+              </td>
+            ) : null}
           </tr>
           );
         })}
