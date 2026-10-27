@@ -24,7 +24,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const appPage = useAppPage();
   const workspace = useUiStore((s) => s.workspace);
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
-  const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
   const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
   const utilityDockEdge = useLayoutDockEdge();
 
@@ -80,7 +79,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const resolvedWorkspaceSlug = useMemo(() => {
     if (workspaceChosen) return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
-    if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
     if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
     return workspaces.data?.[0]?.slug ?? "";
   }, [
@@ -88,7 +86,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     workspaceChosen,
     appPage,
     editorWorkspace,
-    queueWorkspaceSlug,
     branchTriageWorkspaceSlug,
     workspaces.data,
   ]);

@@ -211,18 +211,18 @@ it("says so in the picker when initiatives fail to load", async () => {
 
 it("keeps the sidebar's workspace off the route, and off the page-scoped slugs", async () => {
   // The settings modal resolves a workspace through the current page; the
-  // sidebar must not. Walking `/queue` → `/console` would otherwise swap the
+  // sidebar must not. Walking `/editor` → `/console` would otherwise swap the
   // entire tab set out from under the user on a navigation that says nothing
   // about workspaces.
   mockedApi.workspaces.mockResolvedValue([
     { slug: "loregarden", name: "Loregarden" },
     { slug: "blobert", name: "Blobert" },
   ] as never);
-  useUiStore.setState({ workspace: "all", queueWorkspaceSlug: "blobert" });
+  useUiStore.setState({ workspace: "all", editorWorkspace: "blobert" });
 
-  const queue = wrap(<div>queue body</div>, "/queue");
+  const editor = wrap(<div>editor body</div>, "/editor");
   await waitFor(() => expect(mockSidebarProps.at(-1)?.workspaceSlug).toBe("loregarden"));
-  queue.unmount();
+  editor.unmount();
 
   wrap(<div>console body</div>, "/console");
   await waitFor(() => expect(mockSidebarProps.at(-1)?.workspaceSlug).toBe("loregarden"));

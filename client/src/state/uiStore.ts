@@ -85,7 +85,6 @@ interface UiState {
   editorFilePath: string | null;
   /** Files opened in the Editor, newest first, keyed by `editorRecentKey`. */
   editorRecentFiles: Record<string, string[]>;
-  queueWorkspaceSlug: string;
   branchTriageWorkspaceSlug: string;
   /**
    * Which archive Baxter chat is on: a workspace slug, or a global scope
@@ -205,7 +204,6 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   rememberEditorFile: (key: string, path: string) => void;
-  setQueueWorkspaceSlug: (slug: string) => void;
   setChatScope: (scope: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
@@ -243,7 +241,6 @@ type PersistedUiState = Pick<
   | "editorWorkspace"
   | "editorContextRoot"
   | "editorRecentFiles"
-  | "queueWorkspaceSlug"
   | "branchTriageWorkspaceSlug"
   | "chatScope"
   | "hiveSkin"
@@ -277,7 +274,6 @@ export const useUiStore = create<UiState>()(
       editorContextRoot: ".",
       editorFilePath: null,
       editorRecentFiles: {},
-      queueWorkspaceSlug: "",
       branchTriageWorkspaceSlug: "",
       chatScope: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
@@ -371,7 +367,6 @@ export const useUiStore = create<UiState>()(
           const next = [path, ...was.filter((item) => item !== path)].slice(0, EDITOR_RECENT_LIMIT);
           return { editorRecentFiles: { ...state.editorRecentFiles, [key]: next } };
         }),
-      setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
       // Each scope is its own archive, and a global thread reads by id under any
       // focus, so a thread left open across a switch would show under the wrong
       // name. Leave it open only when the scope is first pinned.
@@ -511,7 +506,6 @@ export const useUiStore = create<UiState>()(
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
         editorRecentFiles: s.editorRecentFiles,
-        queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         chatScope: s.chatScope,
         baxterChatSessionId: s.baxterChatSessionId,

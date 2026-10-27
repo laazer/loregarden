@@ -1,8 +1,36 @@
-import { SIDEBAR_PAGES, type SidebarPageDef } from "../components/appSidebarPages";
+import type { ReactNode } from "react";
 
-/** Pages whose name contains the query, in rail order. */
-export function matchPages(query: string): SidebarPageDef[] {
-  return matchText(SIDEBAR_PAGES, query, (page) => [page.label]);
+import { SIDEBAR_PAGES } from "../components/appSidebarPages";
+import { pathForPage } from "./appNavigation";
+
+/** A place search can open: a rail page, or a tab that used to be one. */
+export interface SearchPage {
+  key: string;
+  label: string;
+  path: string;
+  icon: ReactNode;
+  /** What kind of place it is, beside its name in the results. */
+  meta: string;
+  /** Other names it answers to, such as the page it replaced. */
+  aliases: readonly string[];
+}
+
+/**
+ * The rail's pages, plus Machine's Lanes tab right after Machine. Lanes was the
+ * Queue page; it left the rail but not search, and still answers to "queue".
+ */
+const SEARCH_PAGES: readonly SearchPage[] = SIDEBAR_PAGES.flatMap((page): SearchPage[] => {
+  const own: SearchPage = { key: page.key, label: page.label, path: page.path, icon: page.icon, meta: "Page", aliases: [] };
+  if (page.key !== "machine") return [own];
+  return [
+    own,
+    { key: "queue", label: "Lanes", path: pathForPage("queue"), icon: page.icon, meta: "Machine tab", aliases: ["Queue"] },
+  ];
+});
+
+/** Places whose name (or former name) contains the query, in rail order. */
+export function matchPages(query: string): SearchPage[] {
+  return matchText(SEARCH_PAGES, query, (page) => [page.label, ...page.aliases]);
 }
 
 /**

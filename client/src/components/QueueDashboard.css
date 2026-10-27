@@ -354,14 +354,3 @@
 }
 
 /* Where the Machine view went: a plain link in the board header. */
-.queue-machine-link {
-  font-size: var(--fs-small);
-  color: var(--txm);
-  text-decoration: none;
-}
-
-.queue-machine-link:hover,
-.queue-machine-link:focus-visible {
-  color: var(--tx);
-  text-decoration: underline;
-}

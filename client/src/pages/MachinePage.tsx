@@ -3,6 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 
 import { DiskUsageView } from "../components/machine/DiskUsageView";
 import { MachineCapacityView } from "../components/machine/MachineCapacityView";
+import { MachineLanesView } from "../components/machine/MachineLanesView";
+import { QueueTopbarControls } from "../components/QueueTopbarControls";
 import { LocalInstancesModal } from "../components/LocalInstancesModal";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { UsageModal } from "../components/UsageModal";
@@ -18,18 +20,21 @@ import "./MachinePage.css";
 
 const TAB_LABELS: Record<MachineTab, string> = {
   capacity: "Capacity",
+  lanes: "Lanes",
   disk: "Disk",
 };
 
 const TAB_NOTES: Record<MachineTab, string> = {
   capacity: "CPU and memory for test runs, builds and containers",
+  lanes: "Agent runs holding a lane, and what waits for one",
   disk: "What is using the disk, and what can safely go",
 };
 
 /**
- * The machine every workspace shares: its CPU and memory (Capacity) and its
- * disk (Disk). Two tabs in the URL, `/machine` and `/machine/disk`, so a link
- * from a toast or a chat answer opens the right one.
+ * The machine every workspace shares: its CPU and memory (Capacity), the agent
+ * runs holding its lanes (Lanes, once the Queue page), and its disk (Disk).
+ * Three tabs in the URL, `/machine`, `/machine/lanes` and `/machine/disk`, so a
+ * link from a toast or a chat answer opens the right one.
  *
  * Local instances (branch servers on their own ports) and provider usage open
  * from here too. They used to sit in the topbar of every page; both are about
@@ -48,6 +53,7 @@ export function MachinePage() {
     <div className="screen-view screen-view--machine">
       <PageTopbar title="Machine">
         <span className="topbar-page-note">{TAB_NOTES[tab]}</span>
+        {tab === "lanes" ? <QueueTopbarControls /> : null}
         <Button
           variant="secondary"
           compact
@@ -84,7 +90,7 @@ export function MachinePage() {
             </Link>
           ))}
         </nav>
-        {tab === "disk" ? <DiskUsageView /> : <MachineCapacityView />}
+        {tab === "disk" ? <DiskUsageView /> : tab === "lanes" ? <MachineLanesView /> : <MachineCapacityView />}
       </div>
       <LocalInstancesModal open={instancesOpen} onClose={() => setInstancesOpen(false)} />
       <UsageModal

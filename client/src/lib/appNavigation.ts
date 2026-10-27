@@ -9,6 +9,12 @@ export type AppPage =
   | "initiatives"
   | "studio"
   | "editor"
+  /**
+   * Machine's Lanes tab, kept as a page key so `navigate.page queue` (agents,
+   * links, the server's UI-action catalog) still lands on the lanes. No path
+   * resolves to it: `/machine/lanes` is the `machine` page, and the old
+   * `/queue` redirects there.
+   */
   | "queue"
   | "machine"
   | "branch-triage"
@@ -72,7 +78,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   initiatives: "/initiatives",
   studio: "/studio/agents",
   editor: "/editor",
-  queue: "/queue",
+  queue: "/machine/lanes",
   machine: "/machine",
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
@@ -339,17 +345,18 @@ export function memoryPathForLegacyKnowledge(pathname: string): string {
  * The Machine page's tabs: what the machine's CPU and memory are rationed to,
  * and what its disk holds. Capacity is the page's own root.
  */
-export const MACHINE_TABS = ["capacity", "disk"] as const;
+export const MACHINE_TABS = ["capacity", "lanes", "disk"] as const;
 export type MachineTab = (typeof MACHINE_TABS)[number];
 
-const MACHINE_DISK_PATH_RE = /^\/machine\/disk(?:\/|$)/;
+const MACHINE_TAB_PATH_RE = /^\/machine\/(lanes|disk)(?:\/|$)/;
 
 export function machinePath(tab: MachineTab): string {
-  return tab === "disk" ? "/machine/disk" : "/machine";
+  return tab === "capacity" ? "/machine" : `/machine/${tab}`;
 }
 
 export function machineTabFromPath(pathname: string): MachineTab {
-  return MACHINE_DISK_PATH_RE.test(pathname) ? "disk" : "capacity";
+  const match = pathname.match(MACHINE_TAB_PATH_RE);
+  return match ? (match[1] as MachineTab) : "capacity";
 }
 
 export const WORKSPACES_TABS = ["workspaces", "instances"] as const;
@@ -394,7 +401,9 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/initiatives" || pathname.startsWith("/initiatives/")) return "initiatives";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
-  if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
+  // The Queue became Machine's Lanes tab; `/queue` redirects, and reads as
+  // Machine for the moment before it does.
+  if (pathname === "/queue" || pathname.startsWith("/queue/")) return "machine";
   if (pathname === "/machine" || pathname.startsWith("/machine/")) return "machine";
   if (pathname === "/branch-triage" || pathname.startsWith("/branch-triage/")) {
     return "branch-triage";

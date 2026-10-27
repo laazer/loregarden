@@ -123,9 +123,10 @@ test("a page shows on the first keystroke, and Enter goes there", async () => {
   const user = userEvent.setup();
   const box = renderSearch();
 
+  // "q" still finds the lanes by the Queue page's old name.
   await user.type(box, "q");
   const pages = await group("Pages");
-  expect(within(pages).getByRole("option", { name: /Queue/ })).toHaveAttribute(
+  expect(within(pages).getByRole("option", { name: /Lanes/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -134,7 +135,7 @@ test("a page shows on the first keystroke, and Enter goes there", async () => {
   expect(mockBranches).not.toHaveBeenCalled();
 
   await user.keyboard("{Enter}");
-  expect(screen.getByTestId("where")).toHaveTextContent("/queue");
+  expect(screen.getByTestId("where")).toHaveTextContent("/machine/lanes");
   expect(box).toHaveValue("");
 });
 

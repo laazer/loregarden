@@ -69,19 +69,22 @@ export function railCounts({
     };
   }
 
-  if (queueLive && stats.max_concurrent > 0) {
-    const busy = Math.min(stats.active_count, stats.max_concurrent);
-    counts.queue = {
-      text: `${busy}/${stats.max_concurrent}`,
-      label: `${busy} of ${stats.max_concurrent} lanes busy`,
-      tone: "plain",
-    };
-  }
-
-  // Usage left the topbar for the Machine page; its warning comes with it, so a
-  // limit coming up is still visible from every page.
+  // The lanes are Machine's Lanes tab, so their count sits on Machine. Usage
+  // left the topbar for the same page; a limit coming up outranks a count and
+  // takes the badge, while the label still says both.
+  const lanes =
+    queueLive && stats.max_concurrent > 0
+      ? { busy: Math.min(stats.active_count, stats.max_concurrent), max: stats.max_concurrent }
+      : null;
+  const lanesLabel = lanes ? `${lanes.busy} of ${lanes.max} lanes busy` : "";
   if (usageNearLimit) {
-    counts.machine = { text: "!", label: "usage limits are getting close", tone: "warn" };
+    counts.machine = {
+      text: "!",
+      label: lanes ? `usage limits are getting close; ${lanesLabel}` : "usage limits are getting close",
+      tone: "warn",
+    };
+  } else if (lanes) {
+    counts.machine = { text: `${lanes.busy}/${lanes.max}`, label: lanesLabel, tone: "plain" };
   }
 
   return counts;

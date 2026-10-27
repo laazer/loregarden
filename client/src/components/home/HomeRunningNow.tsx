@@ -35,7 +35,7 @@ export function HomeRunningNow({
         <span className="home-section-count">
           {lanes ? `${lanes.busy} of ${lanes.max} lanes` : "…"}
         </span>
-        <Link className="home-section-link" to="/queue">
+        <Link className="home-section-link" to="/machine/lanes">
           Lanes →
         </Link>
       </div>

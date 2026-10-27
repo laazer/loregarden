@@ -70,7 +70,7 @@ export const PRIMITIVE_HOMES: Record<HomedPrimitiveId, PrimitiveHome | null> = {
   // is where its button lives. A pane is the first place these are reachable
   // without covering the thing they are blocking.
   approvals: { path: "/", surface: "Inbox" },
-  queue_lane: { path: "/queue", surface: "Queue" },
+  queue_lane: { path: "/machine/lanes", surface: "Machine · Lanes" },
 
   chat_ticket: { path: "/", surface: "Ticket details" },
   chat_ticket_workflow: { path: "/", surface: "Ticket details" },
