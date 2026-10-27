@@ -5,10 +5,10 @@
  * dark theme and a light-mode branch renders a white card in a dark shell.
  */
 
+/* The board is the page's surface, not a card on it: one bordered level per
+   region, and here that level is the lane. A panel around the lanes put the
+   "stopped" rows three boxes deep. */
 .queue-panel {
-  background: var(--bg1);
-  border: 1px solid var(--bd);
-  border-radius: 16px;
   padding: 22px 24px;
   /* Squares off with the rail beside it. A definite height is what lets the
      lanes below size themselves against the panel rather than the other way
@@ -64,18 +64,24 @@
 
 /* ---- stat tiles ---- */
 
+/* Four numbers read across one strip, split by rules rather than boxed: they
+   are summaries to glance at, not things to act on. */
 .queue-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
   margin-bottom: 26px;
 }
 
 .queue-stat {
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 13px;
-  padding: 15px 16px;
+  padding: 4px 18px;
+}
+
+.queue-stat:first-child {
+  padding-left: 0;
+}
+
+.queue-stat + .queue-stat {
+  border-left: 1px solid var(--bd);
 }
 
 .queue-stat-label {
@@ -767,6 +773,13 @@
 @media (max-width: 1100px) {
   .queue-stat-grid {
     grid-template-columns: repeat(2, 1fr);
+    row-gap: 14px;
+  }
+
+  /* Two to a row: the third starts a row, so it loses the rule and the indent. */
+  .queue-stat:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
   }
 
   .queue-slot-grid {
@@ -807,15 +820,24 @@
   color: var(--amb);
 }
 
+/* Rows in the lane, split by rules, not cards inside the lane's card. The amber
+   left rule stays: it is the mark, not a box. */
 .queue-lane-attention-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 9px;
-  background: var(--bg3);
   border-left: 2px solid var(--amb);
+}
+
+.queue-lane-attention-item + .queue-lane-attention-item {
+  border-top: 1px solid var(--bd);
+}
+
+/* Divided rows sit flush; the gap was spacing between cards. */
+.queue-lane-attention .queue-lane-scroller {
+  gap: 0;
 }
 
 .queue-lane-attention-item.is-busy {
