@@ -99,7 +99,6 @@ const TOOL_LABELS = [
   "Studios",
   "Branch Triage",
   "Machine",
-  "Queue",
   "MCP Gateway",
   "Workspaces",
   "Memory",

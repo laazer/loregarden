@@ -26,7 +26,7 @@ Each tick, per plan with autopilot on:
    not check prerequisites at all — a queued ticket starts when its slot frees.
    Nor does it check ancestors: a ticket whose parent (or the plan's root) has
    its own orchestration running waits, since that run works through it.
-4. Queue it the way the Queue page's "Add ticket" does
+4. Queue it the way Machine's Lanes tab's "Add ticket" does
    (`QueueLaneService.add_to_lane`), into the least loaded agent slot, with
    `auto_approve` on: tool prompts do not stop it. Legacy stage sign-offs on
    what it started are answered by `autopilot_sign_off`; any other

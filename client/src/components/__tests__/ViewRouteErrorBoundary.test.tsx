@@ -87,11 +87,17 @@ jest.mock("../../pages/HomePage", () => ({
 jest.mock("../../pages/Dashboard", () => ({ Dashboard: () => null }));
 jest.mock("../../pages/StudioPage", () => ({ StudioPage: () => null }));
 jest.mock("../../pages/EditorPage", () => ({ EditorPage: () => null }));
-jest.mock("../../pages/QueuePage", () => ({ QueuePage: () => null }));
 jest.mock("../../pages/BaxterChatPage", () => ({ BaxterChatPage: () => null }));
 jest.mock("../../pages/BranchTriagePage", () => ({ BranchTriagePage: () => null }));
 jest.mock("../../pages/McpGatewayPage", () => ({ McpGatewayPage: () => null }));
 jest.mock("../TicketTabRedirect", () => ({ TicketTabRedirect: () => null }));
+// Reports where it landed, for the Queue page's redirect.
+jest.mock("../../pages/MachinePage", () => ({
+  MachinePage: () => {
+    const { useLocation } = jest.requireActual("react-router-dom");
+    return <div data-testid="machine-page">{useLocation().pathname}</div>;
+  },
+}));
 jest.mock("../StudioSectionRedirect", () => ({ StudioSectionRedirect: () => null }));
 
 function renderShell(path: string) {
@@ -121,6 +127,14 @@ beforeEach(() => {
 
 afterEach(() => {
   consoleError.mockRestore();
+});
+
+describe("the Queue page, now Machine's Lanes tab", () => {
+  it("sends an old /queue link, deep or not, to /machine/lanes", async () => {
+    renderShell("/queue/history");
+
+    expect(await screen.findByTestId("machine-page")).toHaveTextContent("/machine/lanes");
+  });
 });
 
 describe("AC1 — the view route exists and resolves its id", () => {

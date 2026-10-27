@@ -173,20 +173,6 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
-    key: "queue",
-    group: "system",
-    label: "Queue",
-    path: pathForPage("queue"),
-    ownsPage: ownsOnly("queue"),
-    icon: (
-      <svg {...STROKE} aria-hidden>
-        <rect x="3" y="4" width="5" height="16" rx="1.5" />
-        <rect x="10" y="4" width="5" height="16" rx="1.5" />
-        <rect x="17" y="4" width="4" height="16" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
     key: "mcp",
     group: "system",
     label: "MCP Gateway",

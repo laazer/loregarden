@@ -47,10 +47,11 @@ test("Console counts the tickets running now", () => {
   });
 });
 
-test("the lane fraction comes only from a live queue snapshot", () => {
+test("the lane fraction sits on Machine, and comes only from a live queue snapshot", () => {
   const stats = { ...DEFAULT_PARALLEL_STATS, max_concurrent: 3, active_count: 1 };
-  expect(railCounts({ ...quiet, stats }).queue).toBeUndefined();
-  expect(railCounts({ ...quiet, stats, queueLive: true }).queue).toEqual({
+  expect(railCounts({ ...quiet, stats }).machine).toBeUndefined();
+  expect(railCounts({ ...quiet, stats, queueLive: true }).queue).toBeUndefined();
+  expect(railCounts({ ...quiet, stats, queueLive: true }).machine).toEqual({
     text: "1/3",
     label: "1 of 3 lanes busy",
     tone: "plain",
@@ -58,7 +59,15 @@ test("the lane fraction comes only from a live queue snapshot", () => {
 });
 
 test("an idle machine still shows its lanes, since 0/3 answers the question", () => {
-  expect(railCounts({ ...quiet, queueLive: true }).queue?.text).toBe("0/3");
+  expect(railCounts({ ...quiet, queueLive: true }).machine?.text).toBe("0/3");
+});
+
+test("a usage warning outranks the lane count on Machine, and its label keeps both", () => {
+  expect(railCounts({ ...quiet, queueLive: true, usageNearLimit: true }).machine).toEqual({
+    text: "!",
+    label: "usage limits are getting close; 0 of 3 lanes busy",
+    tone: "warn",
+  });
 });
 
 test("usage near a limit flags Machine in amber, where Usage now lives", () => {

@@ -120,7 +120,7 @@ export function useTopbarSearchResults(query: string, open: boolean) {
       key: `page-${page.key}`,
       group: "Pages",
       title: page.label,
-      meta: "Page",
+      meta: page.meta,
       icon: page.icon,
       go: () => navigate(page.path),
     }));

@@ -37,7 +37,7 @@ describe("PRIMITIVE_HOMES", () => {
     // `homeOf` keeps them apart, because only one of them is a bug.
     expect(homeOf("not_a_primitive")).toBeUndefined();
     expect(homeOf("web_embed")).toMatchObject({ path: "/workspaces/instances" });
-    expect(homeOf("queue_lane")).toMatchObject({ path: "/queue" });
+    expect(homeOf("queue_lane")).toMatchObject({ path: "/machine/lanes" });
   });
 
   it("cannot be tricked into answering for a prototype key", () => {

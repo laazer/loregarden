@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
-import { pathForPage } from "../lib/appNavigation";
 import baxterHead from "../assets/chat/baxter-head.png";
 import {
   getQueueOperationDiff,
@@ -177,15 +175,9 @@ export function QueueDashboard({
               />
             </div>
           ) : (
-            <ParallelQueueVisualization
-              headerSlot={
-                // Machine capacity moved to its own page; the board points there
-                // so the old route to it is not a dead end.
-                <Link className="queue-machine-link" to={pathForPage("machine")}>
-                  Machine capacity →
-                </Link>
-              }
-            />
+            // Capacity is the tab beside this one on the Machine page, so the
+            // board no longer links out to it.
+            <ParallelQueueVisualization />
           )}
         </main>
 

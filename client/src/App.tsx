@@ -21,7 +21,6 @@ import { WorkItemsPage } from "./pages/WorkItemsPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
 import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
 import { MachinePage } from "./pages/MachinePage";
-import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
 import { ViewPage } from "./pages/ViewPage";
@@ -120,7 +119,8 @@ export function AppShell() {
             <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
             <Route path="/studio/:studioSection/*" element={<StudioPage />} />
             <Route path="/editor/*" element={<EditorPage />} />
-            <Route path="/queue/*" element={<QueuePage />} />
+            {/* The Queue is Machine's Lanes tab now; old links and bookmarks land there. */}
+            <Route path="/queue/*" element={<Navigate to="/machine/lanes" replace />} />
             <Route path="/machine/*" element={<MachinePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory/*" element={<MemoryPage />} />

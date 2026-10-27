@@ -1,16 +1,14 @@
 /**
- * Machine is its own page: Capacity (the docker board that used to be the
- * Queue page's toggle) and Disk, both in the URL. The Queue board no longer
- * switches to it; it links to it.
+ * Machine is one page with three tabs in the URL: Capacity (the docker board),
+ * Lanes (the agent-lane board that was the Queue page) and Disk.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { diskApi } from "../../api/diskApi";
-import { QueueDashboard } from "../../components/QueueDashboard";
 import { MachinePage } from "../MachinePage";
 
 jest.mock("../../components/ParallelQueueVisualization", () => ({
@@ -19,6 +17,10 @@ jest.mock("../../components/ParallelQueueVisualization", () => ({
   ),
 }));
 jest.mock("../../api/diskApi");
+// The topbar is the app shell's; render the page's half of it in place.
+jest.mock("../../components/TopbarPageSlot", () => ({
+  PageTopbar: ({ children }: { children: React.ReactNode }) => <div data-testid="topbar">{children}</div>,
+}));
 jest.mock("../../api/dockerApi", () => ({
   dockerApi: {
     capacity: jest.fn().mockResolvedValue({
@@ -46,14 +48,18 @@ jest.mock("../../api/dockerApi", () => ({
     }),
   },
 }));
+const mockQueueStatus = jest.fn();
 jest.mock("../../state/QueueStatusContext", () => ({
-  useQueueStatus: () => ({
-    activeRuns: [],
-    queuedRuns: [],
-    stats: { active_count: 0, max_concurrent: 3 },
-    workspaces: [{ id: "w1", slug: "loregarden", name: "loregarden" }],
-  }),
+  useQueueStatus: () => mockQueueStatus(),
 }));
+const QUEUE_STATUS = {
+  activeRuns: [],
+  queuedRuns: [],
+  stats: { active_count: 1, max_concurrent: 3, queued_count: 2 },
+  isWebSocket: true,
+  workspaces: [{ id: "w1", slug: "loregarden", name: "loregarden" }],
+  workspacesLoading: false,
+};
 
 const mockDisk = diskApi as jest.Mocked<typeof diskApi>;
 
@@ -64,7 +70,6 @@ function renderAt(path: string) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/machine/*" element={<MachinePage />} />
-          <Route path="/queue" element={<QueueDashboard />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -72,6 +77,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  mockQueueStatus.mockReturnValue(QUEUE_STATUS);
   mockDisk.overview.mockResolvedValue({
     volume: { path: "/", total_bytes: 100, used_bytes: 90, free_bytes: 10 },
     status: { state: "idle", started_at: null, entries: 0, current_root: "", error: "" },
@@ -101,13 +107,13 @@ describe("MachinePage", () => {
   });
 });
 
-describe("QueueDashboard after the move", () => {
-  it("has no Machine toggle, and links to the Machine page instead", async () => {
-    renderAt("/queue");
+describe("Lanes, once the Queue page", () => {
+  it("is the tab between Capacity and Disk, with the lane board, its rail and its metrics", async () => {
+    renderAt("/machine/lanes");
 
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Capacity", "Lanes", "Disk"]);
+    expect(screen.getByRole("link", { name: "Lanes" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("lane-board")).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Machine" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Machine capacity →" })).toHaveAttribute("href", "/machine");
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
       "Overview",
       "History",
@@ -115,5 +121,25 @@ describe("QueueDashboard after the move", () => {
       "Controls",
       "Analytics",
     ]);
+    expect(screen.getByText("Agent runs holding a lane, and what waits for one")).toBeInTheDocument();
+    expect(within(screen.getByTestId("topbar")).getByText("1/3")).toBeInTheDocument();
+    // Capacity is a tab away, so the board no longer links out to it.
+    expect(screen.queryByRole("link", { name: /Machine capacity/ })).not.toBeInTheDocument();
+  });
+
+  it("says why there is nothing to run before any workspace exists", () => {
+    mockQueueStatus.mockReturnValue({ ...QUEUE_STATUS, workspaces: [] });
+    renderAt("/machine/lanes");
+
+    expect(screen.getByText("Add a workspace before agents can run in a lane.")).toBeInTheDocument();
+    expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument();
+  });
+
+  it("shows the lanes' metrics only on their own tab", async () => {
+    renderAt("/machine");
+
+    expect(await screen.findByTestId("docker-free-slots")).toBeInTheDocument();
+    expect(within(screen.getByTestId("topbar")).getByText(/CPU and memory/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("topbar")).queryByText("1/3")).not.toBeInTheDocument();
   });
 });

@@ -44,6 +44,6 @@ describe("visual QA verdict", () => {
     const paths = VISUAL_QA_ROUTES.map((r) => r.path);
     expect(paths).toContain("/");
     expect(paths).toContain("/studio/agents");
-    expect(paths).toContain("/queue");
+    expect(paths).toContain("/machine/lanes");
   });
 });

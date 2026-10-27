@@ -104,7 +104,6 @@ const TOOL_LABELS = [
   "Studios",
   "Branch Triage",
   "Machine",
-  "Queue",
   "MCP Gateway",
   "Workspaces",
   "Memory",
@@ -325,7 +324,7 @@ test("the names revealed by expansion stay inside the rail's own subtree", async
   await user.hover(nav);
   await waitFor(() => expect(nav).toHaveAttribute("data-expanded", "true"));
 
-  for (const name of ["Home", "Queue", "Build Board", "Sketch Surface"]) {
+  for (const name of ["Home", "Machine", "Build Board", "Sketch Surface"]) {
     expect(nav).toContainElement(screen.getByRole("link", { name }));
   }
   // A React portal lands as a new direct child of `document.body`, which is
@@ -427,7 +426,7 @@ test("entry names resolve as accessible names while collapsed", async () => {
 
   expect(nav).toHaveAttribute("data-expanded", "false");
   expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Queue" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Machine" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Build Board" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
 });
@@ -440,7 +439,7 @@ test("the same names are still exposed once expanded", async () => {
   await waitFor(() => expect(nav).toHaveAttribute("data-expanded", "true"));
 
   expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Queue" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Machine" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Build Board" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
 });
@@ -453,7 +452,7 @@ test("entry names are text in the row, not a tooltip, in both states", async () 
   // drop the name out of the accessibility tree the moment the pointer leaves.
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
-  const names = ["Home", "Queue", "Build Board", "Sketch Surface"];
+  const names = ["Home", "Machine", "Build Board", "Sketch Surface"];
 
   expect(nav).toHaveAttribute("data-expanded", "false");
   for (const name of names) {
@@ -933,9 +932,10 @@ test("closing a view tab deletes the view, never its sidebar entry", async () =>
 // 472 AC4 — the current route marks its Tools entry, and no entry elsewhere.
 
 test("the built-in page for the current route carries aria-current", async () => {
-  await renderLoadedSidebar("/queue");
+  // Lanes is a tab of Machine (the Queue page it replaced has no rail entry).
+  await renderLoadedSidebar("/machine/lanes");
 
-  expect(screen.getByRole("link", { name: "Queue" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Machine" })).toHaveAttribute(
     "aria-current",
     "page",
   );
