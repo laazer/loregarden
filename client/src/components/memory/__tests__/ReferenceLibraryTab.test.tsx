@@ -593,6 +593,20 @@ describe("adding a reference", () => {
     });
   });
 
+  it("keeps only the URLs of a pasted article, switching to Several from the one-URL field", async () => {
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    const article = "1. Twenty – a CRM\n• GitHub: https://github.com/twentyhq/twenty\n2. Harper – grammar\n• GitHub: https://github.com/Automattic/harper.";
+    fireEvent.paste(within(form).getByRole("textbox", { name: "URL" }), { clipboardData: { getData: () => article } });
+    expect(within(form).getByRole("button", { name: "Several" })).toHaveAttribute("aria-pressed", "true");
+    const box = within(form).getByRole("textbox", { name: "URLs" });
+    expect(box).toHaveValue("https://github.com/twentyhq/twenty\nhttps://github.com/Automattic/harper");
+    expect(within(form).getByText(/Kept the 2 URLs in what you pasted/)).toBeInTheDocument();
+    fireEvent.paste(box, { clipboardData: { getData: () => "Also see https://docs.example.dev today" } });
+    expect(within(form).getByRole("button", { name: "Add 3 to queue" })).toBeEnabled();
+  });
+
   it("refuses more URLs than one bulk add takes, before sending", async () => {
     renderAt("/memory/library?view=queue");
     fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
