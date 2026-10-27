@@ -10,7 +10,7 @@ export const COMPOSER_PLACEHOLDER: Record<string, string> = {
   "ticket-triage": "Message about this ticket…",
   "branch-triage": "Message about this branch…",
   "baxter-home": "Ask Baxter anything about this workspace…",
-  "initiative-planner": "Ask the planner about dates, pace, or what to start…",
+  "initiative-planner": "Ask Baxter about dates, pace, or what to start…",
   "initiative-triage": "Ask Baxter about the work under this initiative…",
 };
 

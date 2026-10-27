@@ -24,7 +24,6 @@ import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
 import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 import {
-  ActionBarAgentSwitch,
   ActionBarQuickPrompts,
   ActionBarStatus,
   ScreenQuickPrompts,
@@ -53,7 +52,6 @@ export function AppActionBar() {
     model,
     composedOnScreen,
     screenPrompts,
-    agents,
     assistantLabel,
     promptKind,
     composerBlocked,
@@ -66,7 +64,6 @@ export function AppActionBar() {
   const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
   const utilityDockEdge = useUtilityDockEdge();
   const setUtilityDockEdge = useUiStore((s) => s.setUtilityDockEdge);
-  const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
 
   const [draft, setDraft] = useState("");
@@ -150,9 +147,9 @@ export function AppActionBar() {
     (ticket?.activity === "running" || ticket?.activity === "awaiting" || session.isBusy);
 
   const expanded = chatOpen && Boolean(session);
-  // With no conversation, no agent to pick and no model to set, the sheet would
-  // open empty; the composer then just says what to do instead.
-  const hasSheet = Boolean(session || agents || model);
+  // With no conversation and no model to set, the sheet would open empty; the
+  // composer then just says what to do instead.
+  const hasSheet = Boolean(session || model);
   const sendable = Boolean(session) && !session?.loadError && !composerBlocked;
   // Every surface exposes stop now, so the only question left is whether this
   // one is busy — and aside mode, which routes a busy composer to a read-only
@@ -345,12 +342,6 @@ export function AppActionBar() {
         <ComposerNotes commands={commands} />
       </div>
 
-      {/* In the row, not the sheet: it decides which conversation the composer
-          talks to, and when that agent cannot take a message the composer is
-          disabled, cannot take focus, and so could never open a sheet holding
-          the switch to another agent. */}
-      {agents ? <ActionBarAgentSwitch agents={agents} disabled={Boolean(session?.isBusy)} /> : null}
-
       {/* The composer and its sheet are one focus group: focus anywhere in it
           keeps the sheet open, and leaving it (or Escape) closes it. */}
       <div
@@ -492,50 +483,6 @@ export function AppActionBar() {
                 >
                   Run logs
                 </Button>
-              ) : null}
-              <span className="app-action-bar-spacer" aria-hidden />
-              {/* Only the Baxter thread keeps past conversations — a ticket's triage
-                  chat is the ticket's, and there is no other one to open — so these
-                  appear with the archive rather than as controls that do nothing. */}
-              {archive ? (
-                <>
-                  <Button
-                    variant="plain"
-                    className="app-action-bar-chat-new"
-                    title={`Start a new conversation with ${assistantLabel}`}
-                    onClick={() => {
-                      archive.startNewChat();
-                      setHistoryOpen(false);
-                      // Open the thread on the way out, so the new one is visible
-                      // rather than started behind a collapsed dock.
-                      setChatOpen(true);
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
-                    New chat
-                  </Button>
-                  <Button
-                    variant="plain"
-                    className={`app-action-bar-chat-history${historyOpen ? " is-on" : ""}`}
-                    aria-pressed={historyOpen}
-                    title="Open a past conversation"
-                    onClick={() => {
-                      const next = !historyOpen;
-                      setHistoryOpen(next);
-                      // The archive lists in the dock's rail, so opening it while the
-                      // dock is collapsed would show nothing.
-                      if (next) setChatOpen(true);
-                    }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                      <path d="M3 3v5h5M12 7v5l3 2" />
-                    </svg>
-                    History
-                  </Button>
-                </>
               ) : null}
             </>
           }

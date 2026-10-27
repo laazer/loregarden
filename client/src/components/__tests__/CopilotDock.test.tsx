@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
 import { CopilotDock } from "../CopilotDock";
-import { useActiveChatSession } from "../../hooks/useActiveChatSession";
+import { useActiveChatSession, type ChatAgents } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { useUiStore } from "../../state/uiStore";
 import { installPointerEvents } from "../../test/pointerEvents";
@@ -54,6 +55,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     archive: null,
     agents: null,
     assistantLabel: "Baxter",
+    maximisePath: null,
     composerBlocked: null,
     ...overrides,
     // As the real hook does: the openers follow the bound conversation's kind.
@@ -63,7 +65,9 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
 
 function renderDock(ui: ReactElement = <CopilotDock />) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>, {
+    wrapper: MemoryRouter,
+  });
 }
 
 function session(overrides = {}) {
@@ -99,7 +103,7 @@ it("draws nothing while collapsed — the action bar is the collapsed state", ()
   // Two bars stacked was the pre-v6 shape. The dock is now only the panels.
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
 
-  const { container } = render(<CopilotDock />);
+  const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
 
   expect(container).toBeEmptyDOMElement();
 });
@@ -110,7 +114,7 @@ it("tells the layout whether a panel is showing, so a right dock can collapse", 
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true, dockPanelsVisible: false });
 
-  const { rerender } = render(<CopilotDock />);
+  const { rerender } = render(<CopilotDock />, { wrapper: MemoryRouter });
   expect(useUiStore.getState().dockPanelsVisible).toBe(true);
 
   act(() => useUiStore.setState({ copilotOpen: false }));
@@ -122,7 +126,7 @@ it("shows the bound conversation's turns once opened", () => {
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
-  render(<CopilotDock />);
+  render(<CopilotDock />, { wrapper: MemoryRouter });
 
   expect(screen.getByText("No messages yet.")).toBeInTheDocument();
 });
@@ -165,7 +169,7 @@ it("renders pending approvals as an in-thread agent ask, not dock chrome", () =>
   );
   useUiStore.setState({ copilotOpen: true });
 
-  render(<CopilotDock />);
+  render(<CopilotDock />, { wrapper: MemoryRouter });
 
   const ask = screen.getByLabelText("Agent is asking");
   expect(ask).toBeInTheDocument();
@@ -180,7 +184,7 @@ it("stays empty when no screen owns a conversation and no shell was asked for", 
   mockResolver.mockReturnValue(bind({ session: null, label: "" }));
   useUiStore.setState({ copilotOpen: true });
 
-  const { container } = render(<CopilotDock />);
+  const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
 
   expect(container).toBeEmptyDOMElement();
 });
@@ -192,7 +196,7 @@ it("sends an opener through the bound session rather than filling a composer", (
   mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
-  render(<CopilotDock />);
+  render(<CopilotDock />, { wrapper: MemoryRouter });
   fireEvent.click(screen.getByRole("button", { name: "What is blocking this ticket?" }));
 
   expect(bound.send).toHaveBeenCalledWith("What is blocking this ticket?", {
@@ -204,7 +208,7 @@ it("keeps the openers beside the turns, not between them and the composer", () =
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
-  const { container } = render(<CopilotDock />);
+  const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
 
   const rail = container.querySelector(".copilot-dock-rail");
   expect(rail).not.toBeNull();
@@ -222,9 +226,183 @@ it("offers no openers once the thread has turns", () => {
   );
   useUiStore.setState({ copilotOpen: true });
 
-  render(<CopilotDock />);
+  render(<CopilotDock />, { wrapper: MemoryRouter });
 
   expect(screen.queryByText("Try asking")).not.toBeInTheDocument();
+});
+
+describe("the head", () => {
+  const archive = () => ({
+    scope: "loregarden",
+    sessionId: "s1",
+    openSession: jest.fn(),
+    startNewChat: jest.fn(),
+    sendInNewChat: jest.fn().mockResolvedValue(undefined),
+    forkSession: jest.fn().mockResolvedValue(undefined),
+    forkFromMessage: jest.fn().mockResolvedValue(undefined),
+  });
+
+  function agents(overrides: Partial<ChatAgents> = {}): ChatAgents {
+    return {
+      options: [
+        { id: "planner", label: "Plan", description: "Dates and pace" },
+        { id: "baxter", label: "Triage", description: "The tickets underneath" },
+      ],
+      active: "planner",
+      select: jest.fn(),
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    useUiStore.setState({ copilotOpen: true });
+  });
+
+  it("is Baxter on a ticket too, with the run it is reading as the context", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session(), label: "lg-external-harness-1413 · test-design" }),
+    );
+
+    renderDock();
+
+    const region = screen.getByRole("region", { name: "Baxter" });
+    expect(region).toHaveTextContent("lg-external-harness-1413 · test-design");
+    // A ticket's thread keeps no others and has no page of its own.
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open full page" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("says Baxter is looking while a turn runs, never a nameless assistant", () => {
+    mockResolver.mockReturnValue(bind({ session: session({ isBusy: true }), label: "x" }));
+
+    renderDock();
+
+    expect(screen.getByText("Baxter is looking…")).toBeInTheDocument();
+    expect(screen.queryByText(/Assistant is thinking/)).not.toBeInTheDocument();
+  });
+
+  it("starts a fresh thread and gives the archive's place back to it", () => {
+    const bound = archive();
+    mockResolver.mockReturnValue(
+      bind({ session: session({ kind: "baxter-home" }), label: "loregarden", archive: bound }),
+    );
+    useUiStore.setState({ copilotHistoryOpen: true });
+
+    renderDock();
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(bound.startNewChat).toHaveBeenCalled();
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
+    expect(useUiStore.getState().copilotOpen).toBe(true);
+  });
+
+  it("opens and closes the archive without collapsing the thread", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session({ kind: "baxter-home" }), label: "loregarden", archive: archive() }),
+    );
+
+    renderDock();
+    const history = screen.getByRole("button", { name: "History" });
+    expect(history).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(history);
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
+    expect(history).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(history);
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
+    expect(useUiStore.getState().copilotOpen).toBe(true);
+  });
+
+  it("opens the workspace thread full-page on the chat screen", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session({ kind: "baxter-home" }), label: "loregarden", maximisePath: "/chat" }),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/queue"]}>
+          <CopilotDock />
+          <Routes>
+            <Route path="/chat" element={<p>chat page</p>} />
+            <Route path="*" element={null} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open full page" }));
+
+    expect(screen.getByText("chat page")).toBeInTheDocument();
+  });
+
+  it("closes to the bar", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "x" }));
+
+    renderDock();
+    fireEvent.click(screen.getByRole("button", { name: "Close Baxter" }));
+
+    expect(useUiStore.getState().copilotOpen).toBe(false);
+  });
+
+  describe("Baxter's modes", () => {
+    function bindPlanner(overrides: Partial<ReturnType<typeof useActiveChatSession>> = {}) {
+      return bind({
+        session: session({ kind: "initiative-planner", id: "init1" }),
+        label: "init-tinkercg-build-1",
+        ticketId: null,
+        agents: agents(),
+        ...overrides,
+      });
+    }
+
+    it("shows the bound mode as checked", () => {
+      mockResolver.mockReturnValue(bindPlanner());
+      renderDock();
+
+      expect(screen.getByRole("radiogroup", { name: "Baxter mode" })).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Plan" })).toHaveAttribute("aria-checked", "true");
+      expect(screen.getByRole("radio", { name: "Triage" })).toHaveAttribute("aria-checked", "false");
+    });
+
+    it("switches on a click, and by arrow keys as a radio group does", () => {
+      const select = jest.fn();
+      mockResolver.mockReturnValue(bindPlanner({ agents: agents({ select }) }));
+      renderDock();
+
+      fireEvent.click(screen.getByRole("radio", { name: "Triage" }));
+      expect(select).toHaveBeenLastCalledWith("baxter");
+
+      const plan = screen.getByRole("radio", { name: "Plan" });
+      expect(plan).toHaveAttribute("tabindex", "0");
+      expect(screen.getByRole("radio", { name: "Triage" })).toHaveAttribute("tabindex", "-1");
+      select.mockClear();
+      fireEvent.keyDown(plan, { key: "ArrowLeft" });
+      expect(select).toHaveBeenLastCalledWith("baxter");
+    });
+
+    it("holds the switch while a turn runs, so the reply lands where it was asked", () => {
+      const select = jest.fn();
+      mockResolver.mockReturnValue(
+        bindPlanner({
+          session: session({ kind: "initiative-planner", id: "init1", isBusy: true }),
+          agents: agents({ select }),
+        }),
+      );
+      renderDock();
+
+      expect(screen.getByRole("radio", { name: "Triage" })).toBeDisabled();
+      fireEvent.keyDown(screen.getByRole("radio", { name: "Plan" }), { key: "ArrowRight" });
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it("keeps the switch usable while plan mode cannot take a message", () => {
+      mockResolver.mockReturnValue(bindPlanner({ composerBlocked: "Attach a milestone first" }));
+      renderDock();
+
+      expect(screen.getByRole("radio", { name: "Triage" })).toBeEnabled();
+    });
+  });
 });
 
 describe("the chat archive", () => {
@@ -352,7 +530,7 @@ describe("the terminal pane", () => {
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: false });
 
-    render(<CopilotDock />);
+    render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
@@ -362,7 +540,7 @@ describe("the terminal pane", () => {
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
-    render(<CopilotDock />);
+    render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
   });
@@ -372,7 +550,7 @@ describe("the terminal pane", () => {
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
-    render(<CopilotDock />);
+    render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
     expect(screen.getByText("No messages yet.")).toBeInTheDocument();
@@ -385,7 +563,7 @@ describe("the terminal pane", () => {
     mockTerminal.mockReturnValue({ workspaceSlug: "", agent: "" });
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
-    render(<CopilotDock />);
+    render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
@@ -395,7 +573,7 @@ describe("the terminal pane", () => {
     // Reaping it here is what made "just a terminal" impossible.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
-    const { rerender } = render(<CopilotDock />);
+    const { rerender } = render(<CopilotDock />, { wrapper: MemoryRouter });
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
 
     act(() => useUiStore.setState({ copilotOpen: false }));
@@ -411,7 +589,7 @@ describe("the terminal pane", () => {
     // a different workspace.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
-    const { rerender, container } = render(<CopilotDock />);
+    const { rerender, container } = render(<CopilotDock />, { wrapper: MemoryRouter });
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
 
     act(() => useUiStore.setState({ terminalOpen: false }));
@@ -424,7 +602,7 @@ describe("the terminal pane", () => {
   it("reaps the kept shell when the screen names a different workspace", () => {
     openDock();
     useUiStore.setState({ copilotOpen: false, terminalOpen: true });
-    const { rerender } = render(<CopilotDock />);
+    const { rerender } = render(<CopilotDock />, { wrapper: MemoryRouter });
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
 
     act(() => {
@@ -443,7 +621,7 @@ describe("the terminal pane", () => {
     mockResolver.mockReturnValue(bind({ session: null, label: "" }));
     useUiStore.setState({ copilotOpen: false, terminalOpen: true });
 
-    render(<CopilotDock />);
+    render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
   });
