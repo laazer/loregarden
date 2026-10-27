@@ -57,3 +57,15 @@ class FeatureLoopStatus(StrEnum):
     RUNNING = "running"
     #: The ticket is blocked; the loop will not start a round until it is cleared.
     BLOCKED = "blocked"
+
+
+class ChatMessageRole(StrEnum):
+    """Who wrote a Home Baxter chat message (``BaxterChatMessage.role``).
+
+    The column stays a plain string; this is the vocabulary it holds, so a
+    reader compares against a member rather than a literal.
+    """
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"

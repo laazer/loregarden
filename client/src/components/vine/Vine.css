@@ -80,6 +80,14 @@
   stroke: var(--red);
 }
 
+/* A topic: the stem forks, and its tendril leaves from here. */
+.vine-fork {
+  fill: none;
+  stroke: var(--ac2);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
 .vine-pruned {
   fill: none;
   stroke: var(--txl);

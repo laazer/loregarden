@@ -706,6 +706,7 @@ export function BaxterChatPage() {
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
           workbench={workbench}
+          sessionId={chat.sessionId}
         />
       ) : null}
       <ChatHistorySidebar
