@@ -9,6 +9,7 @@ import {
   INITIATIVE_SUGGESTIONS_PATH,
   initiativePath,
   isStudioSection,
+  memoryPath,
   pageFromPath,
   pathForPage,
   studioPath,
@@ -55,6 +56,12 @@ export function navigateToPage(page: AppPage, replace = false) {
   const navigate = getRouterNavigate();
   if (!navigate) return;
   navigate(pathForPage(page), { replace });
+}
+
+export function navigateToReferenceSource(sourceId: string, replace = false) {
+  const navigate = getRouterNavigate();
+  if (!navigate) return;
+  navigate(memoryPath("library", sourceId), { replace });
 }
 
 export function navigateToInitiative(initiativeId: string, replace = false) {

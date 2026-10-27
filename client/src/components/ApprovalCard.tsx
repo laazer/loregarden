@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
+import { CloseOnlyActions } from "./CloseOnlyActions";
 import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
 import { exitActionCategoryLabel } from "./exitActionCategories";
@@ -650,6 +651,18 @@ export function ApprovalCard({
       )}
       {isGate && <BringInChangesButton workspaceSlug={approval.workspace_slug} />}
       <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
+        {approval.close_only ? (
+          <CloseOnlyActions
+            approval={approval}
+            isSubmitting={isSubmitting}
+            dismissOpensDialog={Boolean(onIgnore)}
+            dismissDialogOpen={ignoreModalOpen}
+            // Without an Ignore flow on this surface, Reject is the close: on a
+            // card nothing acts on, it only closes it, which is what Dismiss says.
+            onDismiss={onIgnore ? () => setIgnoreModalOpen(true) : () => onReject()}
+          />
+        ) : (
+        <>
         {isQuestion ? (
           // A clamped card hides the options, so answering has to happen where
           // they are visible rather than behind a permanently disabled button.
@@ -721,6 +734,8 @@ export function ApprovalCard({
           >
             Ignore
           </Button>
+        )}
+        </>
         )}
         {!compact && onInspect && (
           <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>

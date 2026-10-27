@@ -16,12 +16,12 @@ from datetime import datetime
 
 from loregarden.config import settings
 from loregarden.models.domain import Ticket
-from loregarden.models.domain.survey_enums import SurveyTopic
+from loregarden.models.domain.survey_enums import SurveyCardKind, SurveyTopic
 from loregarden.models.domain.survey_tables import SurveyDiscovery, SurveySource
 from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
-from loregarden.services.reference_survey.inbox import report_exception
+from loregarden.services.reference_survey.inbox import SurveyCardKey, report_exception
 from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
 from loregarden.services.reference_survey.queue import Enqueued, enqueue_source, resolve_workspaces
 from loregarden.services.reference_survey.schemas import SourceIn
@@ -141,6 +141,7 @@ def start_discovery(session: Session, body: DiscoveryIn) -> DiscoveryView:
         report_exception(
             session,
             workspace_id=home.id,
+            key=SurveyCardKey(kind=SurveyCardKind.DISCOVERY_NOT_QUEUED, occurrence_id=discovery.id),
             title=f"Reference discovery could not be queued: {TOPICS[body.topic].label}",
             detail=f"{exc}. Its ticket {carrier.external_id} exists; queue it by hand or close it.",
         )

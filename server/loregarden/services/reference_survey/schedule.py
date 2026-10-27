@@ -21,9 +21,10 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
 from loregarden.services.reference_survey import feeder
-from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound, brief_reason
+from loregarden.services.reference_survey.errors import SurveyNotFound
 from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
 from loregarden.services.reference_survey.queue import open_passes, request_pass, serve_workspaces
+from loregarden.services.reference_survey.review_gate import refuse_unrunnable
 from loregarden.services.reference_survey.schemas import PassRequestIn
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
@@ -183,27 +184,6 @@ class ReviewNowResult(BaseModel):
     initiatives_linked: list[str]
 
 
-def _refuse_unrunnable(session: Session, source: SurveySource, reason: str) -> None:
-    """Refuse, before anything is written, a source no review can start on now."""
-    if source.status is SurveySourceStatus.REFUSED and not reason.strip():
-        raise SurveyError(
-            f"{source.name} was refused ({brief_reason(source.refused_reason)}). "
-            "Say why it should be read after all to review it again."
-        )
-    if source.status is SurveySourceStatus.PROPOSED:
-        raise SurveyError(
-            f"{source.name} has not been admitted: approve its card in the inbox first."
-            if source.approval_id
-            else f"{source.name} has not been proposed: add it to the queue first."
-        )
-    reading = next(
-        (p for p in open_passes(session, source.id) if p.status is SurveyPassStatus.DISPATCHED),
-        None,
-    )
-    if reading is not None:
-        raise SurveyError(f"Pass {reading.ordinal} is reading {source.name} now.")
-
-
 def _reopen(session: Session, source: SurveySource, reason: str) -> None:
     """Put a refused source back in the queue on a person's reason.
 
@@ -246,7 +226,7 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     source = session.get(SurveySource, source_id)
     if source is None:
         raise SurveyNotFound(f"No survey source {source_id!r}")
-    _refuse_unrunnable(session, source, body.reason)
+    refuse_unrunnable(session, source, body.reason)
     initiatives = resolve_initiatives(session, body.initiative_ids)
     added = (
         serve_workspaces(

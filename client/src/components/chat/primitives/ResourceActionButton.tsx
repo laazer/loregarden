@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   DEFAULT_ARTIFACT_TAB,
   navigateToPage,
+  navigateToReferenceSource,
   navigateToStudio,
   navigateToStudioAgent,
   navigateToStudioWorkflow,
@@ -127,6 +128,17 @@ export function TicketNameLink({
     >
       {children}
     </Button>
+  );
+}
+
+export function OpenReferenceSourceButton({ sourceId, name }: { sourceId: string; name: string }) {
+  return (
+    <ResourceActionButton
+      label={`Open ${name || "the source"} in the reference library`}
+      onClick={() => navigateToReferenceSource(sourceId)}
+    >
+      Open source
+    </ResourceActionButton>
   );
 }
 

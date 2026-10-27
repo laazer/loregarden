@@ -37,6 +37,30 @@ export interface PreparedAction {
   captures: string[];
 }
 
+/** Kinds of card the reference survey files (`SurveyCardKind` on the server). */
+export type SurveyCardKind =
+  | "admission"
+  | "clone_failed"
+  | "licence_refused"
+  | "licence_disagreement"
+  | "pass_abandoned"
+  | "pass_not_queued"
+  | "no_carrier_parent"
+  | "discovery_not_queued"
+  | "write_did_not_land";
+
+/** What the inbox needs to offer a survey card's own actions (`card_view.py`). */
+export interface SurveyCard {
+  kind: SurveyCardKind;
+  /** null for a workspace-wide card, or a source since deleted. */
+  source_id: string | null;
+  source_name: string;
+  /** "Retry now" applies to this card and its source still exists. */
+  retryable: boolean;
+  /** Why "Retry now" cannot start at the moment; "" when it can or does not apply. */
+  retry_held: string;
+}
+
 /** Server ExitActionResolutionMode — never `approve_or_reject`. */
 export type ExitActionResolutionMode = "approve" | "recheck";
 
@@ -90,6 +114,10 @@ export interface Approval {
     | "block_decision";
   /** Present on `human_action`: what the agent prepared before handing over. */
   prepared_action?: PreparedAction | null;
+  /** Set on a card the reference survey filed. */
+  survey_card?: SurveyCard | null;
+  /** Approve and Reject would only close this card: nothing acts on either. */
+  close_only?: boolean;
   status?: string;
   run_id: string;
   tool_name: string;

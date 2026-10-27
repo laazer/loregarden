@@ -11,6 +11,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     IgnoreEffect,
+    SurveyCardKind,
     Ticket,
     WorkflowTemplate,
     Workspace,
@@ -18,6 +19,7 @@ from loregarden.models.domain import (
 from loregarden.services.approval_ignore import ignore_effect
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.prepared_action import PreparedAction
+from loregarden.services.reference_survey.card_view import SurveyCardView, survey_card_view
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
 
@@ -103,6 +105,17 @@ def _stage_name(session: Session, ws: Workspace | None, stage_key: str) -> str:
     return stage_key
 
 
+def _close_only(
+    approval: Approval, prepared_action: dict | None, survey_card: SurveyCardView | None
+) -> bool:
+    """True when Approve and Reject would only close the card: a hand-over with
+    nothing prepared to run, where no handler acts on either answer. A survey
+    admission card is the exception: approving it admits the source."""
+    if approval.kind != ApprovalKind.HUMAN_ACTION or prepared_action is not None:
+        return False
+    return survey_card is None or survey_card.kind is not SurveyCardKind.ADMISSION
+
+
 def approval_to_view(session: Session, approval: Approval) -> dict:
     # Workspace-scoped approvals (Home Baxter chat) carry no ticket.
     ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
@@ -139,6 +152,7 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         checklist = expand_gate_checklist_for_ticket(session, ticket, checklist)
 
     prepared_action = _parsed_prepared_action(approval)
+    survey_card = survey_card_view(session, approval)
 
     route_options: list[dict] = []
     if approval.kind in _ROUTABLE_KINDS and approval.status == ApprovalStatus.PENDING:
@@ -155,6 +169,8 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "checklist": checklist,
         "route_options": route_options,
         "prepared_action": prepared_action,
+        "survey_card": survey_card.model_dump(mode="json") if survey_card else None,
+        "close_only": _close_only(approval, prepared_action, survey_card),
         "ticket_id": approval.ticket_id or "",
         "ticket_external_id": ticket.external_id if ticket else "",
         "kind": approval.kind.value if hasattr(approval.kind, "value") else str(approval.kind),
