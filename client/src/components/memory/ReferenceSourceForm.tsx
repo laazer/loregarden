@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type ClipboardEvent, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "../../api/client";
@@ -10,7 +10,7 @@ import type {
   TopicView,
 } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
-import { refusedSourceId, splitUrls } from "../../lib/referenceLibrary";
+import { refusedSourceId, splitUrls, urlsFromPaste } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -100,7 +100,8 @@ function BulkResults({ items }: { items: BulkAddItem[] }) {
 
 /**
  * Add repositories or sites to the review queue, for this workspace: one, or
- * several pasted together (separated by commas, tabs or new lines) sharing one
+ * several pasted together (separated by commas, tabs or new lines, or lifted
+ * out of a pasted list or article) sharing one
  * question and reason. A person adding one is its admission, so it is queued at
  * once with no inbox card; one
  * already known gains the workspace instead of being surveyed twice.
@@ -122,6 +123,8 @@ export function ReferenceSourceForm({
   const [several, setSeveral] = useState(false);
   const [url, setUrl] = useState(initialUrl);
   const [urlsText, setUrlsText] = useState("");
+  // How many URLs the last paste lifted out of prose, to say the rest was left out.
+  const [lifted, setLifted] = useState(0);
   const [kind, setKind] = useState<SourceKind>(initialKind);
   const [bulkKind, setBulkKind] = useState<SourceKind | typeof DETECT>(DETECT);
   const [question, setQuestion] = useState("");
@@ -159,6 +162,34 @@ export function ReferenceSourceForm({
     hint: useId(),
   };
   const urls = splitUrls(urlsText);
+
+  // A list or article pasted into the box keeps only its URLs, in place of the selection.
+  function pasteIntoList(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const found = urlsFromPaste(event.clipboardData.getData("text"));
+    if (!found) return;
+    event.preventDefault();
+    const box = event.currentTarget;
+    const before = urlsText.slice(0, box.selectionStart).trimEnd();
+    const after = urlsText.slice(box.selectionEnd).trimStart();
+    setUrlsText([before, found.join("\n"), after].filter(Boolean).join("\n"));
+    setLifted(found.length);
+  }
+
+  // Several URLs pasted into the one-URL field switch the form to Several.
+  function pasteIntoOne(event: ClipboardEvent<HTMLInputElement>) {
+    const text = event.clipboardData.getData("text");
+    const found = urlsFromPaste(text);
+    const all = found ?? splitUrls(text);
+    if (all.length > 1) {
+      event.preventDefault();
+      setUrlsText(all.join("\n"));
+      setLifted(found ? found.length : 0);
+      setSeveral(true);
+    } else if (found) {
+      event.preventDefault();
+      setUrl(found[0]);
+    }
+  }
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ["reference-library"] });
@@ -283,7 +314,11 @@ export function ReferenceSourceForm({
                   id={ids.url}
                   rows={4}
                   value={urlsText}
-                  onChange={(event) => setUrlsText(event.target.value)}
+                  onChange={(event) => {
+                    setUrlsText(event.target.value);
+                    setLifted(0);
+                  }}
+                  onPaste={pasteIntoList}
                   placeholder={
                     "https://github.com/owner/one, https://github.com/owner/two\nhttps://docs.example.dev"
                   }
@@ -297,7 +332,9 @@ export function ReferenceSourceForm({
                 >
                   {tooMany
                     ? `${urls.length} URLs; at most ${MAX_BULK_URLS} at a time.`
-                    : `Separate them with commas, tabs or new lines. ${urls.length} URL${urls.length === 1 ? "" : "s"}.`}
+                    : lifted
+                      ? `Kept the ${lifted} URL${lifted === 1 ? "" : "s"} in what you pasted and left the rest out. ${urls.length} URL${urls.length === 1 ? "" : "s"}.`
+                      : `Separate them with commas, tabs or new lines, or paste a list or article and keep its URLs. ${urls.length} URL${urls.length === 1 ? "" : "s"}.`}
                 </span>
               </div>
               <div className="rl-field">
@@ -328,6 +365,7 @@ export function ReferenceSourceForm({
                   id={ids.url}
                   value={url}
                   onChange={(event) => setUrl(event.target.value)}
+                  onPaste={initialUrl ? undefined : pasteIntoOne}
                   placeholder="https://github.com/owner/repo"
                   readOnly={Boolean(initialUrl)}
                   autoFocus={!initialUrl}
