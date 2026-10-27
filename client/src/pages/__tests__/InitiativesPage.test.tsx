@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api, type InitiativeMilestone, type InitiativeView } from "../../api/client";
+import { useReaderStore } from "../../state/readerStore";
 import { InitiativesPage } from "../InitiativesPage";
 
 jest.mock("../../api/client");
@@ -129,7 +130,18 @@ test("an initiative shows its milestones across workspaces with progress", async
   expect(screen.getByRole("button", { name: "Delete initiative" })).toBeDisabled();
 });
 
-test("a markdown brief renders as structure, and a long one opens in the reader", async () => {
+/** jsdom lays nothing out; give the brief the heights a browser would. */
+function layOutBrief(scrollHeight: number, clientHeight: number) {
+  jest.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(scrollHeight);
+  jest.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(clientHeight);
+}
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+test("a markdown brief renders as structure, clamped, and the rest opens in the reader", async () => {
+  layOutBrief(400, 58);
   const brief = [
     "Ship **one login** across workspaces.",
     "",
@@ -145,7 +157,19 @@ test("a markdown brief renders as structure, and a long one opens in the reader"
   expect(await screen.findByRole("table")).toBeInTheDocument();
   expect(screen.getByText("one login").tagName).toBe("STRONG");
   expect(screen.queryByText(/\*\*one login\*\*/)).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Open Auth migration in the reader" })).toBeInTheDocument();
+  const more = screen.getByRole("button", { name: "Read the brief for Auth migration" });
+  expect(more).toHaveTextContent("Read brief");
+  await userEvent.setup().click(more);
+  expect(useReaderStore.getState().document).toMatchObject({ title: "Auth migration", subtitle: "init-auth-1", content: brief });
+});
+
+test("a brief that fits in three lines offers nothing more to read", async () => {
+  layOutBrief(40, 58);
+  mockApi.initiatives.mockResolvedValue([initiative({ description: "Ship one login across workspaces." })]);
+  renderPage();
+
+  expect(await screen.findByText("Ship one login across workspaces.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Read the brief/ })).not.toBeInTheDocument();
 });
 
 test("attach and detach reparent the milestone", async () => {
@@ -163,8 +187,25 @@ test("attach and detach reparent the milestone", async () => {
   await user.click(screen.getByRole("button", { name: "Attach" }));
   await waitFor(() => expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("free", "i1"));
 
-  await user.click(screen.getByRole("button", { name: "Detach Backend half from this initiative" }));
+  // Detach lives in the row's menu, not on the row.
+  expect(screen.queryByRole("button", { name: /Detach/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "lor-m-1 actions" }));
+  await user.click(screen.getByRole("menuitem", { name: "Detach from this initiative" }));
   await waitFor(() => expect(mockApi.setMilestoneInitiative).toHaveBeenCalledWith("m1", null));
+});
+
+test("a detach in flight replaces the row's menu, so it cannot fire twice", async () => {
+  mockApi.initiatives.mockResolvedValue([initiative()]);
+  mockApi.setMilestoneInitiative.mockReturnValue(new Promise(() => {}));
+  const user = userEvent.setup();
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: "lor-m-1 actions" }));
+  await user.click(screen.getByRole("menuitem", { name: "Detach from this initiative" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Detaching…");
+  expect(screen.queryByRole("button", { name: "lor-m-1 actions" })).not.toBeInTheDocument();
+  expect(mockApi.setMilestoneInitiative).toHaveBeenCalledTimes(1);
 });
 
 test("a failed load says so instead of showing the empty state", async () => {
