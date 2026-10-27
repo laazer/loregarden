@@ -2,12 +2,11 @@ import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
 import { navigateToInitiative } from "../../lib/useAppNavigation";
-import { peekTicket } from "../../state/ticketPeekStore";
-import { OverflowMenu, OverflowMenuItem } from "../OverflowMenu";
 import { Button } from "../ui/Button";
 import { InitiativeBrief } from "./InitiativeBrief";
-import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
-import { TICKET_STATE_COLORS, ticketStateChip } from "../../lib/ticketStates";
+import { InitiativeRows } from "./InitiativeRows";
+import { AddSprintWork } from "./SprintWorkControls";
+import { ticketStateChip } from "../../lib/ticketStates";
 import { StatusChip } from "../ui/StatusChip";
 import { progressFillStyle } from "../../lib/progressFill";
 import { Select } from "../ui/Select";
@@ -28,13 +27,6 @@ interface InitiativeCardProps {
 
 function StatePill({ state }: { state: InitiativeView["state"] }) {
   return <StatusChip {...ticketStateChip(state)} />;
-}
-
-/** Where a row lives; a member also names the milestone it stays under. */
-function placeLabel(m: InitiativeMilestone): string {
-  const kind = m.work_item_type === "milestone" && !m.member ? "" : `${m.work_item_type} · `;
-  const home = m.home_milestone ? `in ${m.home_milestone} · ` : "";
-  return `${kind}${home}${m.workspace_slug}`;
 }
 
 function milestoneOptionLabel(m: InitiativeMilestone): string {
@@ -89,66 +81,6 @@ function AttachControl({
         Attach
       </button>
     </div>
-  );
-}
-
-function MilestoneRow({
-  milestone,
-  milestoneChoices,
-  busy,
-  onDetach,
-  onMoveTo,
-}: {
-  milestone: InitiativeMilestone;
-  milestoneChoices: InitiativeMilestone[];
-  busy: boolean;
-  onDetach: () => void;
-  onMoveTo: (milestoneId: string) => void;
-}) {
-  return (
-    <li className="initiative-milestone">
-      <span
-        className="tree-state-dot"
-        style={{ background: TICKET_STATE_COLORS[milestone.state] }}
-        aria-hidden
-      />
-      <Button
-        variant="plain"
-        className="initiative-milestone-link"
-        title={`Open ${milestone.external_id}`}
-        onClick={() => peekTicket(milestone.id)}
-      >
-        <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
-      </Button>
-      <span className="initiative-ws-pill">{placeLabel(milestone)}</span>
-      <StatusChip {...ticketStateChip(milestone.state)} />
-      {milestone.member ? (
-        <span className="initiative-muted" title="Tracked without moving it: remove it from Plan & board">
-          Tracked
-        </span>
-      ) : milestone.work_item_type === "milestone" ? (
-        // Detach is the row's only action and the destructive one, so it sits
-        // behind the menu rather than repeating as a button on every row.
-        busy ? (
-          <span className="initiative-muted" role="status">
-            Detaching…
-          </span>
-        ) : (
-          <OverflowMenu label={`${milestone.external_id} actions`}>
-            <OverflowMenuItem onSelect={() => peekTicket(milestone.id)}>Open {milestone.external_id}</OverflowMenuItem>
-            <OverflowMenuItem
-              danger
-              title="It stays a milestone in its workspace; only its link to this initiative goes"
-              onSelect={onDetach}
-            >
-              Detach from this initiative
-            </OverflowMenuItem>
-          </OverflowMenu>
-        )
-      ) : (
-        <MoveToMilestone item={milestone} milestones={milestoneChoices} busy={busy} onMove={onMoveTo} />
-      )}
-    </li>
   );
 }
 
@@ -211,18 +143,11 @@ export function InitiativeCard({
       </div>
 
       {hasMilestones ? (
-        <ul className="initiative-milestones">
-          {initiative.milestones.map((m) => (
-            <MilestoneRow
-              key={m.id}
-              milestone={m}
-              milestoneChoices={milestoneChoices}
-              busy={busyId === m.id}
-              onDetach={() => onDetach(m.id)}
-              onMoveTo={(milestoneId) => onMoveWork(m.id, milestoneId)}
-            />
-          ))}
-        </ul>
+        <InitiativeRows
+          title={initiative.title}
+          rows={initiative.milestones}
+          actions={{ milestoneChoices, busyId, onDetach, onMoveWork }}
+        />
       ) : (
         <p className="initiative-hint">
           Attach a milestone below. Its progress, and every milestone after it, rolls up here.
