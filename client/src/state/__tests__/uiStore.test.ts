@@ -1,4 +1,4 @@
-import { useUiStore } from "../uiStore";
+import { EDITOR_RECENT_LIMIT, editorRecentKey, useUiStore } from "../uiStore";
 
 // Requirement 5 — a keyed, non-persisted auto-follow map. Component-local
 // state was explicitly rejected because it would not survive the per-lane
@@ -61,4 +61,30 @@ it("is excluded from the persisted slice — run ids are meaningless across sess
   expect(partialize).toBeDefined();
   const persisted = partialize!(useUiStore.getState()) as Record<string, unknown>;
   expect(persisted).not.toHaveProperty("autoFollowByRunId");
+});
+
+describe("the Editor's recent files", () => {
+  beforeEach(() => {
+    useUiStore.setState({ editorRecentFiles: {} });
+  });
+
+  it("keeps the newest first, once each, up to the limit, per workspace and worktree", () => {
+    const key = editorRecentKey("loregarden", ".");
+    const remember = useUiStore.getState().rememberEditorFile;
+    for (let index = 0; index < EDITOR_RECENT_LIMIT + 2; index += 1) remember(key, `f${index}.ts`);
+    remember(key, "f5.ts");
+    remember(editorRecentKey("loregarden", "../wt"), "other.ts");
+
+    const recent = useUiStore.getState().editorRecentFiles[key];
+    expect(recent).toHaveLength(EDITOR_RECENT_LIMIT);
+    expect(recent.slice(0, 2)).toEqual(["f5.ts", "f11.ts"]);
+    expect(recent.filter((path) => path === "f5.ts")).toHaveLength(1);
+    expect(recent).not.toContain("other.ts");
+  });
+
+  it("survives a reload", () => {
+    useUiStore.getState().rememberEditorFile(editorRecentKey("loregarden", "."), "a.ts");
+    const persisted = useUiStore.persist.getOptions().partialize!(useUiStore.getState()) as Record<string, unknown>;
+    expect(persisted.editorRecentFiles).toEqual({ "loregarden::.": ["a.ts"] });
+  });
 });

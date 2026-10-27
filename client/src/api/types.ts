@@ -570,47 +570,6 @@ export interface BrowseImportEntry extends BrowseDirectoryEntry {
   kind: "directory" | "file";
 }
 
-export interface EditorBrowseEntry extends BrowseImportEntry {}
-
-export interface EditorBrowseResponse {
-  current_path: string;
-  repo_path: string;
-  parent_path: string | null;
-  parent_repo_path: string | null;
-  context_root: string;
-  context_path: string;
-  entries: EditorBrowseEntry[];
-}
-
-export interface EditorBranchRef {
-  name: string;
-  current: boolean;
-}
-
-export interface EditorWorktreeRef {
-  path: string;
-  branch: string;
-  label: string;
-  current: boolean;
-  repo_path: string;
-}
-
-export interface EditorRefsResponse {
-  workspace_root: string;
-  context_root: string;
-  context_path: string;
-  current_branch: string;
-  branches: EditorBranchRef[];
-  worktrees: EditorWorktreeRef[];
-}
-
-export interface EditorFileResponse {
-  path: string;
-  content: string;
-  language: string;
-  size: number;
-}
-
 export interface BrowseDirectoryResponse {
   current_path: string;
   repo_path: string;
@@ -1189,3 +1148,4 @@ export interface WorkflowReassignmentPreview {
 }
 
 export type * from "./gateTypes";
+export type * from "./editorTypes";

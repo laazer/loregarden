@@ -1,6 +1,8 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import { useCallback } from "react";
 
+import { Button } from "../ui/Button";
+
 interface CodeEditorProps {
   path: string;
   language: string;
@@ -9,6 +11,8 @@ interface CodeEditorProps {
   readOnly?: boolean;
   onChange: (value: string) => void;
   onSave: () => void;
+  /** Back to the start pane; the page asks before discarding unsaved edits. */
+  onClose: () => void;
 }
 
 export function CodeEditor({
@@ -19,6 +23,7 @@ export function CodeEditor({
   readOnly = false,
   onChange,
   onSave,
+  onClose,
 }: CodeEditorProps) {
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
@@ -37,6 +42,17 @@ export function CodeEditor({
           {path}
           {dirty ? <span className="code-editor-dirty">●</span> : null}
         </span>
+        <Button
+          variant="plain"
+          className="code-editor-close"
+          aria-label={`Close ${path}`}
+          title="Close this file"
+          onClick={onClose}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </Button>
         <div style={{ flex: 1 }} />
         <button
           type="button"

@@ -1,0 +1,129 @@
+.editor-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 8px;
+}
+
+/* 24px rows, one name each: a tree is scanned, so it is as dense as reading
+   allows and nothing on a row competes with the name. */
+.editor-tree-row {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--tx);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.editor-tree-row:hover {
+  background: var(--bg2);
+}
+
+.editor-tree-row:focus-visible {
+  outline: 1px solid var(--ac2);
+  outline-offset: -1px;
+}
+
+.editor-tree-row.is-selected {
+  background: color-mix(in srgb, var(--ac2) 16%, transparent);
+  color: var(--ac2);
+}
+
+/* One guide per level: a vertical rule down the middle of each indent step,
+   so the eye can follow a deep file back to its folder. */
+.editor-tree-guide {
+  flex: none;
+  align-self: stretch;
+  width: 12px;
+  margin-left: 2px;
+  border-left: 1px solid var(--bd);
+}
+
+.editor-tree-twisty {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--txm);
+}
+
+.editor-tree-twisty svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.editor-tree-twisty svg.is-open {
+  transform: rotate(90deg);
+}
+
+.editor-tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-tree-name.is-folder {
+  color: var(--tx);
+}
+
+.editor-tree-note {
+  color: var(--txm);
+  cursor: default;
+}
+
+.editor-tree-note:hover {
+  background: none;
+}
+
+.editor-tree-error {
+  color: var(--rdl);
+}
+
+.editor-tree-mark {
+  flex: none;
+  margin-left: 8px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+.editor-tree-mark.is-added,
+.editor-tree-mark.is-untracked {
+  color: var(--grl);
+}
+
+.editor-tree-mark.is-modified {
+  color: var(--amb);
+}
+
+.editor-tree-mark.is-deleted {
+  color: var(--rdl);
+}
+
+.editor-tree-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--amb);
+}
+
+.editor-tree-failed {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--rdl);
+  font-size: var(--fs-small);
+}
+
+.editor-tree-failed p {
+  margin: 0;
+}

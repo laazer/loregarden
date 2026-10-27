@@ -50,6 +50,7 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   EditorBrowseResponse,
+  EditorChangesResponse,
   EditorRefsResponse,
   EditorFileResponse,
   BrowseDirectoryResponse,
@@ -860,6 +861,12 @@ export const api = {
     if (contextRoot) q.set("context_root", contextRoot);
     const suffix = q.toString() ? `?${q}` : "";
     return request<EditorBrowseResponse>(`/api/workspaces/${slug}/editor/browse${suffix}`);
+  },
+  editorChanges: (slug: string, contextRoot?: string) => {
+    const q = new URLSearchParams();
+    if (contextRoot) q.set("context_root", contextRoot);
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<EditorChangesResponse>(`/api/workspaces/${slug}/editor/changes${suffix}`);
   },
   editorReadFile: (slug: string, path: string, contextRoot?: string) => {
     const q = new URLSearchParams({ path });
