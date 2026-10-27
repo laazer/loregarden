@@ -1,10 +1,11 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
-import { MarkdownContent } from "../chat/MarkdownContent";
 import { navigateToInitiative } from "../../lib/useAppNavigation";
 import { peekTicket } from "../../state/ticketPeekStore";
+import { OverflowMenu, OverflowMenuItem } from "../OverflowMenu";
 import { Button } from "../ui/Button";
+import { InitiativeBrief } from "./InitiativeBrief";
 import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
 import { TICKET_STATE_COLORS, ticketStateChip } from "../../lib/ticketStates";
 import { StatusChip } from "../ui/StatusChip";
@@ -126,15 +127,24 @@ function MilestoneRow({
           Tracked
         </span>
       ) : milestone.work_item_type === "milestone" ? (
-        <Button
-          variant="secondary"
-          className="initiative-small-btn"
-          aria-label={`Detach ${milestone.title} from this initiative`}
-          disabled={busy}
-          onClick={onDetach}
-        >
-          {busy ? "Detaching…" : "Detach"}
-        </Button>
+        // Detach is the row's only action and the destructive one, so it sits
+        // behind the menu rather than repeating as a button on every row.
+        busy ? (
+          <span className="initiative-muted" role="status">
+            Detaching…
+          </span>
+        ) : (
+          <OverflowMenu label={`${milestone.external_id} actions`}>
+            <OverflowMenuItem onSelect={() => peekTicket(milestone.id)}>Open {milestone.external_id}</OverflowMenuItem>
+            <OverflowMenuItem
+              danger
+              title="It stays a milestone in its workspace; only its link to this initiative goes"
+              onSelect={onDetach}
+            >
+              Detach from this initiative
+            </OverflowMenuItem>
+          </OverflowMenu>
+        )
       ) : (
         <MoveToMilestone item={milestone} milestones={milestoneChoices} busy={busy} onMove={onMoveTo} />
       )}
@@ -174,14 +184,13 @@ export function InitiativeCard({
           </Button>
         </div>
       </header>
-      {initiative.description && (
-        <MarkdownContent
+      {initiative.description.trim() ? (
+        <InitiativeBrief
           content={initiative.description}
-          className="initiative-desc"
-          readerTitle={initiative.title}
-          readerSubtitle={initiative.external_id}
+          title={initiative.title}
+          subtitle={initiative.external_id}
         />
-      )}
+      ) : null}
 
       <div
         className="initiative-progress"
