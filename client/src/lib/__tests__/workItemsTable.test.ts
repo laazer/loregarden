@@ -212,3 +212,27 @@ describe("filters", () => {
     expect(parseWorkItemsFilters(new URLSearchParams("prio=9")).priorities).toEqual([]);
   });
 });
+
+describe("needsMeReason with the ticket's approval", () => {
+  const awaiting = {
+    id: "t1",
+    external_id: "lg-1",
+    title: "T",
+    state: "in_progress",
+    priority: 2,
+    work_item_type: "bug",
+    workspace_slug: "loregarden",
+    workflow_stage_name: "Implement",
+    workflow_stage_status: "awaiting",
+    child_count: 0,
+    children: [],
+  } as unknown as Parameters<typeof needsMeReason>[0];
+
+  it("names what the approval asks, falling back to its kind, then to the generic reason", () => {
+    expect(needsMeReason(awaiting, { title: "Resolve Playtest exit actions", kind: "workflow_gate" } as never)).toBe(
+      "Resolve Playtest exit actions",
+    );
+    expect(needsMeReason(awaiting, { title: "", kind: "cli_question" } as never)).toBe("Question");
+    expect(needsMeReason(awaiting)).toBe("Your approval or answer");
+  });
+});
