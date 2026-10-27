@@ -30,9 +30,13 @@ export interface RoutingRule {
   key: string;
   /** Agent display name, or "Every agent" where reach is not per-agent. */
   agent: string;
+  /** The agent to open in Agent Studio, where its tool grant is edited; null for "Every agent". */
+  agentSlug: string | null;
   server: string;
   /** What the agent may call, in the operator's terms. */
   scope: string;
+  /** The whole list behind `scope`, for the cell's tooltip. */
+  scopeTitle: string;
   policy: RoutingPolicy;
   policyLabel: string;
   /** Why the policy reads the way it does, for the row's tooltip. */
@@ -77,6 +81,49 @@ function agentToolsByServer(agent: StudioAgent): Map<string, string[]> {
   return byServer;
 }
 
+/** What a row holding exactly the standard set reads in its tools column. */
+export const STANDARD_SET = "Standard set";
+
+/** Past this many differences a grant is listed in full rather than as a change to the standard set. */
+const MAX_LISTED_DIFFERENCES = 4;
+
+/**
+ * The loregarden grant most agents share, when at least two do: the "standard
+ * set". On the live registry 21 of 32 agents hold the same 39 tools, and a
+ * table printing those 39 names twenty-one times cannot show how any agent
+ * differs; rows describe themselves against this instead.
+ */
+export function standardGrant(agents: StudioAgent[]): string[] | null {
+  const counts = new Map<string, { tools: string[]; count: number }>();
+  for (const agent of agents) {
+    if (!agent.mcp_enabled) continue;
+    const tools = [...(agentToolsByServer(agent).get(LOREGARDEN_SERVER) ?? [])].sort();
+    if (tools.length === 0) continue;
+    const key = tools.join(",");
+    const entry = counts.get(key) ?? { tools, count: 0 };
+    entry.count += 1;
+    counts.set(key, entry);
+  }
+  let best: { tools: string[]; count: number } | null = null;
+  for (const entry of counts.values()) if (!best || entry.count > best.count) best = entry;
+  return best && best.count >= 2 ? best.tools : null;
+}
+
+/** A grant as the standard set, the standard set with changes, or its own list. */
+function describeGrant(granted: string[], standard: string[] | null): string {
+  if (!standard) return granted.join(", ");
+  const have = new Set(granted);
+  const base = new Set(standard);
+  const added = granted.filter((tool) => !base.has(tool));
+  const removed = standard.filter((tool) => !have.has(tool));
+  // A column value, not a sentence: the fold above the table says what the set
+  // is and how many agents hold it.
+  if (added.length === 0 && removed.length === 0) return STANDARD_SET;
+  if (added.length + removed.length > MAX_LISTED_DIFFERENCES) return granted.join(", ");
+  const changes = [...added.map((tool) => `+ ${tool}`), ...removed.map((tool) => `− ${tool}`)];
+  return `Standard set ${changes.join(" ")}`;
+}
+
 function serverPolicy(server: McpServerView): RoutingPolicy {
   if (!server.enabled) return "disabled";
   return server.tool_policy === "auto" ? "auto" : "prompt";
@@ -104,6 +151,7 @@ export function routingRules(
   policy: McpPolicy | undefined,
 ): RoutingRule[] {
   const autoApproved = new Set(policy?.auto_approved ?? []);
+  const standard = standardGrant(agents);
   const rules: RoutingRule[] = [];
 
   for (const agent of agents) {
@@ -111,8 +159,10 @@ export function routingRules(
       rules.push({
         key: `${agent.slug}:none`,
         agent: agent.name,
+        agentSlug: agent.slug,
         server: "—",
         scope: "MCP switched off for this agent",
+        scopeTitle: "MCP switched off for this agent",
         policy: "disabled",
         policyLabel: POLICY_LABELS.disabled,
         policyTitle: "This agent runs without any MCP tools",
@@ -128,8 +178,10 @@ export function routingRules(
     rules.push({
       key: `${agent.slug}:${LOREGARDEN_SERVER}`,
       agent: agent.name,
+      agentSlug: agent.slug,
       server: LOREGARDEN_SERVER,
-      scope: granted.length ? granted.join(", ") : "workspace default set",
+      scope: granted.length ? describeGrant(granted, standard) : "workspace default set",
+      scopeTitle: granted.length ? granted.join(", ") : "workspace default set",
       policy: mixed || unattended === 0 ? "prompt" : "auto",
       policyLabel: policy
         ? mixed
@@ -144,11 +196,16 @@ export function routingRules(
     });
   }
 
+  // Agents whose grant differs come first: they are what the table is for.
+  // Stable, so agents keep registry order within each half.
+  rules.sort((a, b) => Number(a.scope === STANDARD_SET) - Number(b.scope === STANDARD_SET));
+
   for (const server of servers) {
     const serverRule = serverPolicy(server);
     rules.push({
       key: `all:${server.id}`,
       agent: "Every agent",
+      agentSlug: null,
       server: server.name,
       // No per-agent grant exists for registered servers, and saying otherwise
       // would show a control the operator does not have.
@@ -157,6 +214,7 @@ export function routingRules(
         : server.tools_listed_at
           ? "this server exposes no tools"
           : "tools not listed yet — check the server",
+      scopeTitle: server.tools.length ? server.tools.join(", ") : "",
       policy: serverRule,
       policyLabel: POLICY_LABELS[serverRule],
       policyTitle: SERVER_POLICY_TITLES[serverRule],

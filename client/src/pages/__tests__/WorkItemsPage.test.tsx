@@ -7,6 +7,8 @@ import type { TicketState, TicketTreeNode } from "../../api/types";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useQueueStatus, type QueueStatusValue } from "../../state/QueueStatusContext";
+import { useUiStore } from "../../state/uiStore";
+import type { Approval } from "../../api/chatTypes";
 import { WorkItemsPage } from "../WorkItemsPage";
 
 jest.mock("../../api/client");
@@ -120,6 +122,7 @@ function bodyRows() {
 describe("WorkItemsPage", () => {
   beforeEach(() => {
     mockApi.ticketTree.mockReset();
+    mockApi.approvals.mockReset().mockResolvedValue([]);
     running();
   });
 
@@ -277,5 +280,26 @@ describe("WorkItemsPage", () => {
       </ul>,
     );
     expect(findUsabilityProblems(container).map((p) => p.kind)).toContain("tabular-list");
+  });
+
+  it("names what an awaiting ticket is asked, and opens that approval in the inbox", async () => {
+    // The first fifteen in-progress leaves await a person: t1043 to t1057.
+    const approval = (ticket: string, title: string): Approval =>
+      ({ id: `a-${ticket}`, title, kind: "workflow_gate", ticket_id: ticket, status: "pending" }) as Approval;
+    mockApi.approvals.mockResolvedValue([
+      approval("t1043", "Resolve Playtest exit actions"),
+      approval("t1044", "Merge conflict: integration cannot take main"),
+    ]);
+    mockApi.ticketTree.mockResolvedValue(prodShapedTree());
+    useUiStore.setState({ inboxOpen: false });
+    renderPage();
+
+    const named = await screen.findByRole("button", { name: "Resolve Playtest exit actions" });
+    expect(screen.getByRole("button", { name: "Merge conflict: integration cannot take main" })).toBeInTheDocument();
+    // An awaiting ticket with no pending approval still says it waits on you.
+    expect(screen.getAllByText("Your approval or answer")).toHaveLength(13);
+
+    fireEvent.click(named);
+    expect(useUiStore.getState().inboxOpen).toBe(true);
   });
 });

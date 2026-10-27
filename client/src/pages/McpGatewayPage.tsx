@@ -9,6 +9,7 @@ import {
   switchboardAgents,
   switchboardServers,
   LOREGARDEN_SERVER,
+  standardGrant,
 } from "../components/mcp/mcpRouting";
 import { McpRoutingRules } from "../components/mcp/McpRoutingRules";
 import { McpServerDetail } from "../components/mcp/McpServerDetail";
@@ -162,6 +163,7 @@ export function McpGatewayPage() {
     () => routingRules(rows, agentRows, policy.data),
     [rows, agentRows, policy.data],
   );
+  const standard = useMemo(() => standardGrant(agentRows), [agentRows]);
   const boardAgents = useMemo(() => switchboardAgents(agentRows), [agentRows]);
   const boardServers = useMemo(() => switchboardServers(rows), [rows]);
 
@@ -261,7 +263,7 @@ export function McpGatewayPage() {
             {rules.length > 0 && <span className="count-pill">{rules.length}</span>}
             <span className="mcp-section-note">what each agent may call, and what stops for you</span>
           </div>
-          <McpRoutingRules rules={rules} />
+          <McpRoutingRules rules={rules} standard={standard} />
         </main>
 
         <aside className="mcp-detail" data-testid="mcp-server-detail">
