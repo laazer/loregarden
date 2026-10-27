@@ -7,6 +7,7 @@ import { notifyIfQueued } from "../lib/notifyIfQueued";
 import { canRunStage } from "../lib/stageRunPolicy";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { CopyValueButton } from "../components/CopyValueButton";
+import { Button } from "../components/ui/Button";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { TicketGithubSyncButton } from "../components/TicketGithubSyncButton";
 import { PrioBars } from "../components/PrioBars";
@@ -100,6 +101,7 @@ export function Dashboard() {
     blockedOnFilters,
     typeFilters,
     search,
+    setSearch,
     ticketDensity,
     expandedTicketIds,
     workspace,
@@ -708,6 +710,8 @@ export function Dashboard() {
                     </div>
                   </div>
                   <TicketPaneFilters
+                    search={search}
+                    onSearch={setSearch}
                     typeFilters={typeFilters}
                     stateFilters={stateFilters}
                     stateCounts={counts}
@@ -732,6 +736,13 @@ export function Dashboard() {
                       onAddChild={openCreateSubTicket}
                       presentation={ticketDensity === "cards" ? "v6" : "compact"}
                     />
+                  ) : search.trim() ? (
+                    <div className="empty-tree">
+                      <p>No work item&apos;s title or id contains “{search.trim()}”.</p>
+                      <Button variant="secondary" compact onClick={() => setSearch("")}>
+                        Clear the filter
+                      </Button>
+                    </div>
                   ) : (
                     <div className="empty-tree">No work items match filters</div>
                   )}

@@ -7,7 +7,6 @@ import { useUiStore } from "../state/uiStore";
 import { TopbarCrumbs, TopbarPageSlot } from "./TopbarPageSlot";
 import { TopbarSearch } from "./TopbarSearch";
 import { Button } from "./ui/Button";
-import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
 
 /** Beside History: the chat's other panel, toggled from the same place. */
@@ -91,12 +90,9 @@ function ChatScopePicker() {
  */
 export function AppTopbar() {
   const appPage = useAppPage();
-  const search = useUiStore((s) => s.search);
-  const setSearch = useUiStore((s) => s.setSearch);
   const requestBaxterChatReset = useUiStore((s) => s.requestBaxterChatReset);
   const historyOpen = useUiStore((s) => s.baxterHistoryOpen);
   const toggleBaxterHistory = useUiStore((s) => s.toggleBaxterHistory);
-  const isConsole = appPage === "dashboard";
   const isChat = appPage === "chat";
 
   return (
@@ -104,17 +100,6 @@ export function AppTopbar() {
       <span className="brand-title topbar-wordmark">loregarden</span>
       <TopbarCrumbs />
       <TopbarSearch />
-      {/* The Console's tree filter: a page control, so it narrows the tree in
-          place rather than searching the app the way the box beside it does. */}
-      {isConsole ? (
-        <Input
-          className="topbar-filter"
-          aria-label="Filter tickets"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter tickets…"
-        />
-      ) : null}
       <TopbarPageSlot />
       <div className="topbar-spacer" />
       {isChat ? (
