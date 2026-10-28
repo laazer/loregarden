@@ -239,3 +239,66 @@ export function summarizeThinking(content: string, activity: string): string {
   const lead = targets ? `${current.verb} ${targets}` : pending ? `${current.verb}…` : current.verb;
   return `${lead}${tally}`;
 }
+
+/** The present-tense lead of each action, as a finished turn says it. */
+const PAST_TENSE: Record<string, string> = {
+  Reading: "Read",
+  "Searching for": "Searched for",
+  Finding: "Found",
+  "Looking in": "Looked in",
+  Running: "Ran",
+  "Running a script": "Ran a script",
+  Editing: "Edited",
+  Writing: "Wrote",
+  Fetching: "Fetched",
+  "Searching the web for": "Searched the web for",
+  "Handing off to a helper": "Handed off to a helper",
+  "Loading tools": "Loaded tools",
+  "Updating the plan": "Updated the plan",
+  "Asking you a question": "Asked you a question",
+  Watching: "Watched",
+  "Querying the database": "Queried the database",
+};
+
+function pastTense(verb: string): string {
+  if (PAST_TENSE[verb]) return PAST_TENSE[verb];
+  // "Calling get ticket" → "Called get ticket".
+  if (verb.startsWith("Calling ")) return `Called ${verb.slice("Calling ".length)}`;
+  return verb;
+}
+
+/** A finished turn's trace in one line: what it mostly did, and how many tool calls it made. */
+export interface TraceSummary {
+  /** "Read runner.py and cli.py", or "Thought it through" when no tool was called. */
+  lead: string;
+  toolCalls: number;
+}
+
+/**
+ * The one line a settled reply's reasoning folds to: the longest run of
+ * like steps, in the past tense, and the number of tool calls behind it.
+ *
+ * The longest run rather than the last, because a finished turn is described
+ * by what it spent its time on: six reads and a closing `git status` read as
+ * reading, not as running git.
+ */
+export function summarizeTrace(content: string): TraceSummary {
+  const actions = parseThinkingBlocks(content)
+    .filter((block) => block.kind === "step")
+    .map((block) => actionFor(splitStep(block.text)));
+  if (actions.length === 0) return { lead: "Thought it through", toolCalls: 0 };
+
+  let best = { start: 0, end: 0 };
+  let start = 0;
+  for (let index = 1; index <= actions.length; index += 1) {
+    if (index === actions.length || actions[index].verb !== actions[start].verb) {
+      // `>=` so a tie goes to the later run.
+      if (index - start >= best.end - best.start) best = { start, end: index };
+      start = index;
+    }
+  }
+  const run = actions.slice(best.start, best.end);
+  const verb = pastTense(run[0].verb);
+  const targets = listTargets(run.map((action) => action.target));
+  return { lead: targets ? `${verb} ${targets}` : verb, toolCalls: actions.length };
+}

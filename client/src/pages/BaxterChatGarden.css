@@ -1,0 +1,213 @@
+/*
+ * Baxter's garden (Mock 4), for the chat page's conversation only: the empty
+ * page keeps its greeting, the dock (380px) has no room for edge vines, and the
+ * Workbench belongs to the living map.
+ *
+ * Two straight vines run down the edges of the reading column and stop on the
+ * composer, whose square top corners carry them down its sides. Each turn grows
+ * a leaf off its own side: Baxter's on the left near his first line, yours on
+ * the right near your last. Everything here is decoration: no element is added
+ * for it but the star field, which is aria-hidden.
+ */
+
+.baxter-chat--garden {
+  /* The gap between a vine and the messages, which a leaf spans. */
+  --garden-gutter: 32px;
+  /* The thread's scrollbar gutter, per side; measured (useScrollbarGutterVar). */
+  --garden-sb: 0px;
+  /* The reading column the vines frame: the thread's own column, inside its
+     22px padding and its gutters. */
+  --garden-col: min(var(--baxter-reading), 100% - 44px - 2 * var(--garden-sb));
+}
+
+.baxter-chat-garden {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* A night ground: a little of the accent at the top, fading into the page. */
+  background: radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%);
+}
+
+.baxter-chat-garden > .baxter-chat-thread {
+  position: relative;
+  z-index: 1;
+}
+
+.garden-sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.garden-sky circle {
+  fill: var(--tx);
+}
+
+/* The vines, on the frame that does not scroll. */
+.baxter-chat-garden::before,
+.baxter-chat-garden::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--ac) 55%, transparent) 5%);
+}
+
+.baxter-chat-garden::before {
+  left: calc(50% - var(--garden-col) / 2);
+}
+
+.baxter-chat-garden::after {
+  right: calc(50% - var(--garden-col) / 2);
+}
+
+/* Messages sit inside the vines, the width of a leaf away. */
+.baxter-chat--garden .baxter-chat-thread .lg-chat-messages {
+  box-sizing: border-box;
+  padding-inline: var(--garden-gutter);
+}
+
+/* A leaf per turn, from its vine to the turn's edge, and a glowing node where it joins. */
+.baxter-chat--garden .lg-chat-turn--assistant,
+.baxter-chat--garden .lg-chat-turn--user {
+  position: relative;
+}
+
+.baxter-chat--garden .lg-chat-turn--assistant::before,
+.baxter-chat--garden .lg-chat-turn--user::before {
+  content: "";
+  position: absolute;
+  width: 28px;
+  height: 13px;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ac) 85%, transparent),
+    color-mix(in srgb, var(--ac) 45%, transparent)
+  );
+}
+
+.baxter-chat--garden .lg-chat-turn--assistant::after,
+.baxter-chat--garden .lg-chat-turn--user::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: var(--ac2);
+  box-shadow: 0 0 4px var(--ac), 0 0 9px color-mix(in srgb, var(--ac) 60%, transparent);
+}
+
+.baxter-chat--garden .lg-chat-turn--assistant::before {
+  left: calc(-1 * var(--garden-gutter));
+  top: 8px;
+  border-radius: 0 100% 0 100%;
+  transform: rotate(-24deg);
+  transform-origin: 0 50%;
+}
+
+.baxter-chat--garden .lg-chat-turn--assistant::after {
+  left: calc(-1 * var(--garden-gutter) - 2.5px);
+  top: 12px;
+}
+
+.baxter-chat--garden .lg-chat-turn--user::before {
+  right: calc(-1 * var(--garden-gutter));
+  bottom: 14px;
+  border-radius: 100% 0 100% 0;
+  transform: rotate(24deg);
+  transform-origin: 100% 50%;
+}
+
+.baxter-chat--garden .lg-chat-turn--user::after {
+  right: calc(-1 * var(--garden-gutter) - 2.5px);
+  bottom: 18px;
+}
+
+/* Baxter's turn still in progress is a node without a leaf yet. */
+.baxter-chat--garden .lg-chat-turn--assistant[role="status"]::before {
+  display: none;
+}
+
+/* The composer the vines run into: square top corners where they join, the
+   vines' colour down its sides. */
+/* The composer sits on the same column, so its corners meet the vines. The
+   dock's 100% is already inside its own 22px padding, so only the gutters come
+   off here (a custom property holding 100% would resolve against the dock). */
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap {
+  max-width: min(var(--baxter-reading), 100% - 2 * var(--garden-sb));
+}
+
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer {
+  border: 1.5px solid color-mix(in srgb, var(--ac) 55%, transparent);
+  border-radius: 0 0 14px 14px;
+}
+
+/* The leaf send, everywhere on the chat page: the round send keeps its size
+   and its label, and takes a leaf's outline. The labelled and Stop buttons
+   keep their shapes, which say something different. */
+.baxter-chat .lg-chat-composer-send:not(.lg-chat-composer-send--labeled):not(.lg-chat-composer-send--stop) {
+  width: 40px;
+  height: 34px;
+  border-radius: 18px 3px 18px 3px;
+  background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ac) 40%, transparent),
+    0 4px 14px color-mix(in srgb, var(--ac) 25%, transparent);
+}
+
+/* The sprout ring: Baxter keeps his own face; two small leaves on the ring
+   around it are the only nod to the concept's leaf avatar. */
+.baxter-chat-hero-avatar {
+  position: relative;
+}
+
+.baxter-chat-hero-avatar::before,
+.baxter-chat-hero-avatar::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 7px;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+}
+
+.baxter-chat-hero-avatar::before {
+  top: -4px;
+  right: -6px;
+  border-radius: 0 100% 0 100%;
+  transform: rotate(-30deg);
+}
+
+.baxter-chat-hero-avatar::after {
+  bottom: -3px;
+  left: -6px;
+  border-radius: 100% 0 100% 0;
+  transform: rotate(-30deg);
+}
+
+/* At phone width the gutters cost the messages more room than the vines are
+   worth: the garden keeps its ground and stars and drops the vines and leaves. */
+@media (max-width: 640px) {
+  .baxter-chat--garden {
+    --garden-gutter: 0px;
+  }
+
+  .baxter-chat-garden::before,
+  .baxter-chat-garden::after,
+  .baxter-chat--garden .lg-chat-turn--assistant::before,
+  .baxter-chat--garden .lg-chat-turn--assistant::after,
+  .baxter-chat--garden .lg-chat-turn--user::before,
+  .baxter-chat--garden .lg-chat-turn--user::after {
+    display: none;
+  }
+}
