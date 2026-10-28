@@ -1266,6 +1266,11 @@
   overflow: hidden;
 }
 
+/* In a card's head the toggle sits with the other head controls. */
+.lg-primitive-seg--head {
+  margin-left: 0;
+}
+
 .lg-primitive-seg > button {
   padding: 2px 9px;
   font-size: var(--fs-small);
@@ -1964,52 +1969,35 @@
   border-left-color: var(--vio);
 }
 
-/* The aside card's attribution is a sentence, not a chip.
-   `.lg-primitive-card-meta` upper-cases and letter-spaces its contents, which is
-   right for "3 FILES · 2m AGO" and wrong for the one line that says who answered
-   and who did not — the card's most load-bearing sentence was being rendered in
-   the style reserved for its least. */
-.lg-btw-attribution {
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: var(--fs-micro);
-  line-height: 1.5;
+/* The aside: the question as a quiet quote, the answer, then the sentence
+   that says who answered and who did not, the card's most load-bearing line. */
+.lg-btw-question {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--bd2);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg2);
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
+.lg-btw-attribution {
+  margin: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--txl);
+}
+
 .lg-btw-log-link {
-  border: none;
-  background: none;
   padding: 0;
   font: inherit;
   color: var(--ac);
   text-decoration: underline;
   text-underline-offset: 2px;
-  cursor: pointer;
 }
 
 .lg-btw-log-link:hover {
   color: var(--ac2);
-}
-
-/* The caveat sits beside the control rather than inside its label. */
-.lg-btw-escalate {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Away from the escalation: the two are opposite decisions and a mis-click on
-   this row is one the operator cannot undo on the other button. */
-.lg-btw-dismiss {
-  margin-left: auto;
-}
-
-.lg-btw-dismiss:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 18%, var(--bg3));
-  border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
-  color: var(--red);
 }
 
 /* An initiative's member, listed under it; the real row sits under its parent. */

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type Approval } from "../../../api/client";
-import type { TicketDetail, WorkflowStageView } from "../../../api/types";
+import type { TicketDetail } from "../../../api/types";
 import { ApprovalCard, type ApprovalResolvePayload } from "../../ApprovalCard";
 import { CIApprovalGateCheck } from "../../CIApprovalGateCheck";
 import { useApprovalResolution } from "../../../hooks/useApprovalResolution";
@@ -10,6 +10,8 @@ import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenGateStudioButton, OpenTicketButton } from "./ResourceActionButton";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { stageStatusChip } from "../../../lib/ticketStates";
+import { describeError } from "../../../state/toastStore";
+import { Button } from "../../ui/Button";
 
 function draftChecks(draft: Record<string, unknown>): string[] {
   const checklist = draft.checklist;
@@ -97,75 +99,13 @@ function GateApprovals({
   );
 }
 
-function LiveGateBody({
-  ticket,
-  stage,
-  approvals,
-}: {
-  ticket: TicketDetail;
-  stage: WorkflowStageView | undefined;
-  approvals: Approval[];
-}) {
-  const qc = useQueryClient();
-  const advance = useMutation({
-    meta: { errorTitle: "Advance ticket" },
-    mutationFn: () => api.advance(ticket.id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["ticket", ticket.id] });
-      void qc.invalidateQueries({ queryKey: ["approvals", ticket.id] });
-    },
-  });
-
-  const canAdvance =
-    stage?.status === "awaiting" &&
-    approvals.length === 0 &&
-    !advance.isPending;
-
+/** What the gate checks and who must sign it off; its state is the card's chip. */
+function LiveGateBody({ ticket, approvals }: { ticket: TicketDetail; approvals: Approval[] }) {
   return (
     <div className="lg-primitive-gate">
-      <div className="lg-primitive-gate-status">
-        <p className="lg-primitive-gate-status-label">
-          {stage?.name ?? "Gate"} · {(stage?.status ?? "pending").replace("_", " ")}
-        </p>
-        <p className="lg-primitive-gate-status-copy">{statusCopy(stage?.status)}</p>
-        {ticket.external_id ? (
-          <p className="lg-primitive-gate-status-meta">
-            {ticket.external_id}
-            {stage?.agent_id ? ` · ${stage.agent_id}` : ""}
-          </p>
-        ) : null}
-      </div>
-
       <CIApprovalGateCheck ticketId={ticket.id} />
-
-      <CriteriaList
-        items={ticket.acceptance_criteria ?? []}
-        title="Acceptance criteria"
-      />
-
+      <CriteriaList items={ticket.acceptance_criteria ?? []} title="Acceptance criteria" />
       <GateApprovals ticketId={ticket.id} approvals={approvals} />
-
-      {canAdvance ? (
-        <div className="lg-primitive-gate-section">
-          <p className="lg-primitive-gate-section-title">Ready to continue</p>
-          <p className="lg-primitive-card-sub">
-            No pending gate approvals. Advance the ticket past this gate when the evidence looks good.
-          </p>
-          <button
-            type="button"
-            className="lg-primitive-run-btn lg-primitive-run-btn--confirm"
-            disabled={advance.isPending}
-            onClick={() => void advance.mutate()}
-          >
-            {advance.isPending ? "Advancing…" : "Advance past gate"}
-          </button>
-          {advance.isError ? (
-            <p className="lg-primitive-card-error" role="alert">
-              {advance.error instanceof Error ? advance.error.message : "Advance failed"}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -181,12 +121,6 @@ function DraftGateBody({ draft }: { draft: Record<string, unknown> }) {
 
   return (
     <div className="lg-primitive-gate">
-      <div className="lg-primitive-gate-status lg-primitive-gate-status--draft">
-        <p className="lg-primitive-gate-status-label">Draft gate preview</p>
-        <p className="lg-primitive-gate-status-copy">
-          This card previews a gate definition. Save it in Gate Studio to attach it to a workflow.
-        </p>
-      </div>
       {description ? <p className="lg-primitive-card-sub">{description}</p> : null}
       <CriteriaList items={checks} title="Gate checks" />
       {!description && !checks.length ? (
@@ -228,6 +162,17 @@ export function GatePrimitive({ part }: { part: GatePart }) {
       (!part.stage_key || approval.stage_key === part.stage_key || !approval.stage_key),
   );
 
+  const qc = useQueryClient();
+  const advance = useMutation({
+    meta: { errorTitle: "Advance ticket" },
+    mutationFn: () => api.advance(ticketId!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      void qc.invalidateQueries({ queryKey: ["approvals", ticketId] });
+    },
+  });
+  // Signed off by nobody and waiting: the gate's one forward action is to advance.
+  const canAdvance = Boolean(ticket) && stage?.status === "awaiting" && pendingGates.length === 0;
   const title =
     part.title ??
     stage?.name ??
@@ -241,7 +186,7 @@ export function GatePrimitive({ part }: { part: GatePart }) {
       title={title}
       refLine={
         ticket
-          ? `${ticket.external_id || ticket.id.slice(0, 8)} · ${part.stage_key ?? stage?.key ?? "gate"}`
+          ? `${ticket.external_id || ticket.id.slice(0, 8)} · ${stage?.agent_id || part.stage_key || stage?.key || "gate"}`
           : (part.stage_key ?? stage?.key ?? undefined)
       }
       loading={Boolean(ticketId) && ticketQuery.isLoading}
@@ -259,24 +204,35 @@ export function GatePrimitive({ part }: { part: GatePart }) {
             ? stageStatusChip(stage.status)
             : null
       }
-      meta={
-        <>
-          {stage?.agent_id ? <span>{stage.agent_id}</span> : null}
-          {ticket?.workspace_slug ? <span>{ticket.workspace_slug}</span> : null}
-        </>
+      footerHint={
+        ticket
+          ? canAdvance
+            ? "No sign-off pending: advance when the evidence looks good"
+            : statusCopy(stage?.status)
+          : part.draft
+            ? "Save it in Gate Studio to attach it to a workflow"
+            : null
       }
-      resourceAction={
-        ticketId ? (
-          <>
-            <OpenTicketButton ticketId={ticketId} />
-          </>
-        ) : (
+      resourceAction={ticketId ? <OpenTicketButton ticketId={ticketId} compact /> : null}
+      actions={
+        canAdvance ? (
+          <Button variant="primary" compact disabled={advance.isPending} onClick={() => advance.mutate()}>
+            {advance.isPending ? "Advancing…" : "Advance past gate"}
+          </Button>
+        ) : !ticketId ? (
           <OpenGateStudioButton />
-        )
+        ) : null
       }
     >
       {ticket ? (
-        <LiveGateBody ticket={ticket} stage={stage} approvals={pendingGates} />
+        <>
+          <LiveGateBody ticket={ticket} approvals={pendingGates} />
+          {advance.isError ? (
+            <p className="lg-primitive-card-error" role="alert">
+              {describeError(advance.error, "Advance failed")}
+            </p>
+          ) : null}
+        </>
       ) : ticketId && ticketQuery.isLoading ? null : part.draft ? (
         <DraftGateBody draft={draft} />
       ) : ticketId ? null : (

@@ -31,7 +31,7 @@ export function GiphyPrimitive({ part }: { part: GiphyPart }) {
     <PrimitiveCard
       kind="giphy"
       title={part.title ?? "Giphy"}
-      subtitle={part.caption}
+      refLine="reaction"
       error={
         !mediaUrl
           ? "Provide a valid Giphy ID or HTTPS Giphy media URL"

@@ -33,33 +33,29 @@ export function WorkspacePrimitive({ part }: { part: WorkspacePart }) {
       meta={
         workspace ? (
           <>
-            <span>{workspace.ticket_count} tickets</span>
-            <span>{workspace.cli_adapter}</span>
+            <span className="lg-primitive-fact">
+              Tickets <b>{workspace.ticket_count}</b>
+            </span>
+            <span className="lg-primitive-fact">
+              Workflow <b>{workspace.workflow_template_slug || "not configured"}</b>
+            </span>
+            <span className="lg-primitive-fact">
+              Agent <b>{workspace.cli_adapter}</b>
+            </span>
+            <span className="lg-primitive-fact">
+              Repo <b>{workspace.repo_exists ? "ready" : "unavailable"}</b>
+            </span>
           </>
         ) : null
       }
-      resourceAction={<OpenIdeButton workspaceSlug={part.workspace_slug} />}
-    >
-      {workspace ? (
-        <div className="lg-primitive-workspace-grid">
-          <div>
-            <span className="lg-primitive-workspace-label">Workflow</span>
-            <strong>{workspace.workflow_template_slug || "Not configured"}</strong>
-          </div>
-          <div>
-            <span className="lg-primitive-workspace-label">Repository</span>
-            <strong>{workspace.repo_exists ? "Ready" : "Unavailable"}</strong>
-          </div>
-          <div>
-            <span className="lg-primitive-workspace-label">Model</span>
-            <strong>
-              {workspace.cli_adapter === "cursor"
+      footerHint={
+        workspace
+          ? `Model: ${(workspace.cli_adapter === "cursor"
                 ? workspace.cursor_model
-                : workspace.claude_model || workspace.lmstudio_model || "Default"}
-            </strong>
-          </div>
-        </div>
-      ) : null}
-    </PrimitiveCard>
+                : workspace.claude_model || workspace.lmstudio_model) || "workspace default"}`
+          : null
+      }
+      actions={<OpenIdeButton workspaceSlug={part.workspace_slug} />}
+    />
   );
 }

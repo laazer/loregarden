@@ -377,7 +377,8 @@ describe("Gate primitive", () => {
       />,
     );
     expect(screen.getByText("Acceptance gate")).toBeInTheDocument();
-    expect(screen.getByText("Draft gate preview")).toBeInTheDocument();
+    // A draft says where it gets saved, in the footer beside the Studio link.
+    expect(screen.getByText("Save it in Gate Studio to attach it to a workflow")).toBeInTheDocument();
     expect(screen.getByText("Pause until evidence is attached.")).toBeInTheDocument();
     expect(screen.getByText("Diff reviewed")).toBeInTheDocument();
     expect(screen.getByText("Tests green")).toBeInTheDocument();
@@ -428,7 +429,11 @@ describe("Gate primitive", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Advance past gate" })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Advance past gate" }));
+    // The gate's one forward action: the footer's leaf, with the hint beside it.
+    const advance = screen.getByRole("button", { name: "Advance past gate" });
+    expect(advance.closest(".lg-primitive-card-actions")).toHaveTextContent("No sign-off pending");
+    expect(advance).toHaveClass("btn-primary");
+    fireEvent.click(advance);
     await waitFor(() => {
       expect(mockedApi.advance).toHaveBeenCalledWith("gate-ticket-1");
     });

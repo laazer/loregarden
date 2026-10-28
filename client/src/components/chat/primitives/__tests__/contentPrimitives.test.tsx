@@ -76,7 +76,8 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     );
 
     expect(await screen.findByText("Lore Garden")).toBeInTheDocument();
-    expect(screen.getByText("12 tickets")).toBeInTheDocument();
+    // The facts row: tickets, workflow, agent, repo.
+    expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("2 blocked")).toBeInTheDocument();
     expect(screen.getByText("tdd")).toBeInTheDocument();
   });
