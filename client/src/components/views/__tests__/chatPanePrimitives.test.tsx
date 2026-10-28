@@ -362,12 +362,14 @@ describe("AC7 — two panes of the same primitive coexist", () => {
     // query is in flight — so this waits for the board, not for a timer.
     const leftToggle = await within(boards[0]).findByRole("button", { name: "Backlog" });
     const rightToggle = await within(boards[1]).findByRole("button", { name: "Backlog" });
-    expect(leftToggle).toHaveAttribute("aria-pressed", "true");
+    // Both open on All; picking Backlog on the left must not move the right.
+    expect(leftToggle).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(leftToggle);
 
-    await waitFor(() => expect(leftToggle).toHaveAttribute("aria-pressed", "false"));
-    expect(rightToggle).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(leftToggle).toHaveAttribute("aria-pressed", "true"));
+    expect(rightToggle).toHaveAttribute("aria-pressed", "false");
+    expect(within(boards[1]).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
