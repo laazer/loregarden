@@ -9,7 +9,7 @@ import type { BranchTriageEntry } from "./branchTriageApi";
  * total. "Merged" uses the cleanup dialog's own two merged reasons, so the list
  * and the dialog never disagree about which branches are merged.
  */
-export type NextMove = "all" | "merged" | "stale" | "no_ticket";
+export type NextMove = "all" | "merged" | "ticket_done" | "stale" | "no_ticket";
 
 const MERGED_REASONS = CLEANUP_CATEGORIES.filter((category) =>
   category.id === "pr_merged" || category.id === "merged_into_base",
@@ -19,6 +19,12 @@ const MATCHES: Record<Exclude<NextMove, "all">, (entry: BranchTriageEntry) => bo
   // The base and the checked-out branch are never deletable, so never "merged" work to clear.
   merged: (entry) =>
     !entry.is_base && !entry.is_current && MERGED_REASONS.some((category) => category.matches(entry)),
+  // Its work is accounted for: every ticket it carries is done, though git may still hold it.
+  ticket_done: (entry) =>
+    !entry.is_base &&
+    !entry.is_current &&
+    entry.linked_tickets.length > 0 &&
+    entry.linked_tickets.every((ticket) => ticket.state === "done"),
   stale: (entry) => entry.issues.some((issue) => issue.code === "stale"),
   no_ticket: (entry) => !entry.is_base && entry.linked_tickets.length === 0,
 };
@@ -26,6 +32,7 @@ const MATCHES: Record<Exclude<NextMove, "all">, (entry: BranchTriageEntry) => bo
 export const NEXT_MOVES: readonly { id: NextMove; label: string; hint: string }[] = [
   { id: "all", label: "All", hint: "Every branch in the repo" },
   { id: "merged", label: "Merged", hint: "Its work is in the base branch: safe to delete" },
+  { id: "ticket_done", label: "Ticket done", hint: "Every ticket on it is done: check it landed, then let it go" },
   { id: "stale", label: "Stale", hint: "No commits for a while: finish it or let it go" },
   { id: "no_ticket", label: "No ticket", hint: "Work no ticket accounts for" },
 ];
@@ -38,6 +45,7 @@ export function nextMoveCounts(branches: readonly BranchTriageEntry[]): Record<N
   return {
     all: branches.length,
     merged: branches.filter(MATCHES.merged).length,
+    ticket_done: branches.filter(MATCHES.ticket_done).length,
     stale: branches.filter(MATCHES.stale).length,
     no_ticket: branches.filter(MATCHES.no_ticket).length,
   };
