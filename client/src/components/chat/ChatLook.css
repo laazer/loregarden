@@ -421,9 +421,7 @@
   justify-content: center;
   gap: 6px;
   border: none;
-  border-radius: 999px;
-  background: var(--ac);
-  color: var(--onac);
+  /* Shape and colour come from .send-leaf (index.css); Stop sets its own. */
   cursor: pointer;
   font-size: var(--fs-small);
   font-weight: 600;
@@ -434,14 +432,10 @@
   width: auto;
   height: 34px;
   padding: 0 14px;
-  border-radius: 999px;
-}
-
-.lg-chat-composer-send:hover:not(:disabled) {
-  background: var(--ac2);
 }
 
 .lg-chat-composer-send--stop {
+  border-radius: 10px;
   background: var(--danger, #b42318);
   color: #fff;
 }

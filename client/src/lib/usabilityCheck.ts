@@ -160,14 +160,15 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   // most items share one shape of several fields, the reader is comparing the
   // same attributes down the page — that is a table without its columns.
   //
-  // A board lane (`data-board-lane`) is the one exception: its cards share a
-  // shape by design, and the board, which answers "what stage is each item
-  // in?", is the layout CLAUDE.md prescribes for them. The other list checks
-  // still apply to it.
+  // A board lane (`data-board-lane`) and a tree (`role="tree"`) are the
+  // exceptions: their items share a shape by design, and each is the layout
+  // CLAUDE.md prescribes for its question, "what stage is each item in?" for
+  // the board and "what belongs under what?" for the tree. The other list
+  // checks still apply to both.
   for (const { el: list, items, kind } of itemLists) {
     // A tbody is already the table this check would ask for.
     if (kind === "tbody") continue;
-    if (list.closest("[data-board-lane]")) continue;
+    if (list.closest("[data-board-lane], [role='tree']")) continue;
     if (items.length < TABULAR_ITEMS) continue;
     const shapes = new Map<string, number>();
     for (const item of items) {

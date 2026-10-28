@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useLocation } from "react-router-dom";
 
 import { api } from "../api/client";
-import { useAppPage } from "../lib/useAppNavigation";
 import { PANE_LABELS, PANE_ORDER } from "../lib/appTopbarConfig";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
@@ -19,7 +19,7 @@ import { Button } from "./ui/Button";
  * they moved to Settings, each ticket's header and the Machine page.
  */
 export function AppTopbarActions() {
-  const appPage = useAppPage();
+  const { pathname } = useLocation();
   const paneVisibility = useUiStore((s) => s.paneVisibility);
   const setPaneVisible = useUiStore((s) => s.setPaneVisible);
   const inboxOpen = useUiStore((s) => s.inboxOpen);
@@ -55,7 +55,8 @@ export function AppTopbarActions() {
     .filter(Boolean)
     .join(" — ");
 
-  const isIde = appPage === "dashboard";
+  // The pane picker belongs to the Console; a ticket page has no panes to hide.
+  const isIde = pathname === "/console";
   const panesLabel =
     hiddenPaneCount > 0 ? `Panes · ${hiddenPaneCount} hidden` : "Panes";
 

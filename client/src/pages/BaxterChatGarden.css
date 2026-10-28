@@ -152,19 +152,6 @@
   border-radius: 0 0 14px 14px;
 }
 
-/* The leaf send, everywhere on the chat page: the round send keeps its size
-   and its label, and takes a leaf's outline. The labelled and Stop buttons
-   keep their shapes, which say something different. */
-.baxter-chat .lg-chat-composer-send:not(.lg-chat-composer-send--labeled):not(.lg-chat-composer-send--stop) {
-  width: 40px;
-  height: 34px;
-  border-radius: 18px 3px 18px 3px;
-  background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--ac) 40%, transparent),
-    0 4px 14px color-mix(in srgb, var(--ac) 25%, transparent);
-}
-
 /* The sprout ring: Baxter keeps his own face; two small leaves on the ring
    around it are the only nod to the concept's leaf avatar. */
 .baxter-chat-hero-avatar {

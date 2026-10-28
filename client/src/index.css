@@ -2285,6 +2285,15 @@ label:is(
   line-height: 1.4;
 }
 
+/* A blocked or awaiting stage's note is the reason it stopped, so it takes that colour. */
+.workflow-stage-note[data-status="blocked"] {
+  color: var(--rdl);
+}
+
+.workflow-stage-note[data-status="awaiting"] {
+  color: var(--aml);
+}
+
 .workflow-stage-status-pill {
   margin-left: auto;
   font-size: var(--fs-micro);
@@ -2753,6 +2762,33 @@ label:is(
   cursor: not-allowed;
 }
 
+/*
+ * The send button's leaf: every send in the app has this shape and a paper
+ * airplane (the chat composer, the bottom bar, a run's steer box). Round on two
+ * corners and nearly square on the other two, at any size, so a round send, a
+ * labelled one and a small one read as the same control. Stop keeps a square:
+ * it is not a send.
+ */
+button.send-leaf {
+  border-radius: 999px 3px 999px 3px;
+  background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
+  color: var(--onac);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ac) 40%, transparent),
+    0 4px 14px color-mix(in srgb, var(--ac) 25%, transparent);
+}
+
+/* A run's steer box: the label and its airplane side by side. */
+.run-steer-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.send-leaf:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+}
+
 .app-action-bar-send {
   flex: none;
   width: 28px;
@@ -2761,18 +2797,12 @@ label:is(
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 11px;
-  background: var(--ac);
-  color: var(--onac);
-  box-shadow: 0 3px 12px rgba(111, 174, 143, 0.35);
+  /* Shape and colour come from .send-leaf; Stop sets its own. */
   cursor: pointer;
 }
 
-.app-action-bar-send:hover:not(:disabled) {
-  background: var(--ac2);
-}
-
 .app-action-bar-send--stop {
+  border-radius: 8px;
   background: var(--danger, #b42318);
   color: #fff;
   box-shadow: 0 3px 12px rgba(180, 35, 24, 0.35);
@@ -2915,6 +2945,21 @@ label:is(
   min-height: 0;
 }
 
+/* The Console: workspaces in a column, the tree across the rest of the page. */
+.sidebar.console-workspaces {
+  width: 280px;
+}
+
+.sidebar.console-workspaces--fill {
+  flex: 1;
+  width: auto;
+}
+
+.tickets-pane.console-tickets {
+  min-width: 0;
+  background: var(--bg0);
+}
+
 .workspaces-pane {
   flex: 0 0 38%;
   min-height: 0;
@@ -2978,8 +3023,9 @@ label:is(
   width: 100%;
 }
 
+/* Sized to their labels: the pane spans the Console now, and halves of it read as banners. */
 .tickets-pane-primary-actions .btn-icon-label {
-  flex: 1;
+  flex: none;
   min-width: 0;
   justify-content: center;
 }
@@ -3924,6 +3970,21 @@ label:is(
 
 .btn-primary:hover:not(:disabled) {
   background: var(--ac2);
+}
+
+/* The primary action turns leaf-shaped under the pointer or keyboard focus,
+   the same leaf every send button wears, so the one action a surface offers
+   reads as the garden's. Only the corners move; reduced motion makes it a
+   plain change (the global rule in this file). */
+.btn-primary {
+  transition:
+    border-radius var(--t-fast) var(--ease-out),
+    background-color var(--t-fast) var(--ease-out);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-primary:focus-visible:not(:disabled) {
+  border-radius: 18px 3px 18px 3px;
 }
 
 .btn-cta {
