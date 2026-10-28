@@ -91,7 +91,10 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
         }}
       />,
     );
-    expect(screen.getByRole("checkbox", { name: "Run tests" })).toBeDisabled();
+    // The agent ticks its own steps: they are buds on a vine, not boxes you can tick.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByRole("listitem")).toHaveTextContent("Run tests, to do");
+    expect(screen.getByText("Agent owned")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
     agent.unmount();
 
