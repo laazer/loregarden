@@ -5,6 +5,7 @@ import { buildOrchestrateTerminalCommand } from "../../lib/terminalCommands";
 import { agentsAssembleLabel } from "../../lib/workflowHelpers";
 import { OverflowMenu, OverflowMenuItem } from "../OverflowMenu";
 import { WorkflowRunOverflowMenu } from "../WorkflowRunOverflowMenu";
+import { Button } from "../ui/Button";
 
 interface WorkflowRunControlsProps {
   ticket: TicketDetail;
@@ -68,49 +69,38 @@ export function WorkflowRunControls({
             workflowBusy || startRunPending || !cursorRun.allowed || runningCursor;
           return (
             <>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={assemblePending}
-                onClick={() => onAssemble()}
-              >
-                {agentsAssembleLabel(ticket, assemblePending)}
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.6"
-                  aria-hidden
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
+              {/* Secondary first, the forward action last before ⋯: the primary sits
+                  where the eye ends the row, and every control is the same height. */}
+              <Button
+                variant="secondary"
+                compact
                 disabled={!canPause || pausePending}
                 title={canPause ? "Pause the running stage" : "Nothing to pause"}
                 onClick={() => onPause()}
               >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden
-                >
+                {pausePending ? "Pausing…" : "Pause"}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                   <rect x="6" y="4" width="4" height="16" />
                   <rect x="14" y="4" width="4" height="16" />
                 </svg>
-                {pausePending ? "Pausing…" : "Pause"}
-              </button>
-              <div style={{ flex: 1 }} />
-              {templateLabel ? (
-                <span className="run-controls-template">{templateLabel}</span>
+              </Button>
+              <Button
+                variant="primary"
+                compact
+                disabled={assemblePending}
+                onClick={() => onAssemble()}
+              >
+                {agentsAssembleLabel(ticket, assemblePending)}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden>
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </Button>
+              {/* In a page header the template is the meta row's; under a pane it ends the bar. */}
+              {placement === "bar" && templateLabel ? (
+                <>
+                  <div style={{ flex: 1 }} />
+                  <span className="run-controls-template">{templateLabel}</span>
+                </>
               ) : null}
               <WorkflowRunOverflowMenu
                 ticket={ticket}
@@ -126,18 +116,10 @@ export function WorkflowRunControls({
         })()
       ) : (
         <>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={assemblePending}
-            onClick={() => onAssemble()}
-          >
-            {agentsAssembleLabel(
-              ticket,
-              assemblePending,
-            )}
-          </button>
-          <div style={{ flex: 1 }} />
+          <Button variant="primary" compact disabled={assemblePending} onClick={() => onAssemble()}>
+            {agentsAssembleLabel(ticket, assemblePending)}
+          </Button>
+          {placement === "bar" ? <div style={{ flex: 1 }} /> : null}
           {onEditState ? (
             <OverflowMenu label="More workflow actions" align="right">
               <OverflowMenuItem onSelect={onEditState}>Update state…</OverflowMenuItem>

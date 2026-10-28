@@ -210,12 +210,12 @@ export function Dashboard() {
                     disabled={importSlug !== null}
                     onClick={() => setImportSlug(scopedSlug)}
                   >
+                    Import
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                       <path d="M12 3v12" />
                       <path d="m8 11 4 4 4-4" />
                       <path d="M5 21h14" />
                     </svg>
-                    Import
                   </Button>
                 </div>
               </div>

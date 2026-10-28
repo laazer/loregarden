@@ -1,4 +1,8 @@
 :root {
+  /* The leaf: round on two opposite corners, nearly square on the others. One
+     value for every primary action and every send, so Run and the send arrow
+     are visibly the same control. */
+  --leaf: 18px 3px 18px 3px;
   /* Native control parts the CSS cannot reach — a <select>'s open list, a
      checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
      a light-mode OS draws them light inside the dark app. A light theme sets
@@ -2769,7 +2773,8 @@ label:is(
  * it is not a send.
  */
 button.send-leaf {
-  border-radius: 999px 3px 999px 3px;
+  /* Run's shape: the same corners, and wider than tall where it is icon-only. */
+  border-radius: var(--leaf);
   background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
   color: var(--onac);
   box-shadow:
@@ -2790,7 +2795,7 @@ button.send-leaf:hover:not(:disabled) {
 
 .app-action-bar-send {
   flex: none;
-  width: 28px;
+  width: 40px;
   height: 28px;
   display: flex;
   align-items: center;
@@ -3976,7 +3981,7 @@ button.send-leaf:hover:not(:disabled) {
    so the one action a surface offers reads as the garden's. Every size and
    placement keeps it: no rule further in sets a primary's corners. */
 .btn-primary {
-  border-radius: 18px 3px 18px 3px;
+  border-radius: var(--leaf);
   transition: background-color var(--t-fast) var(--ease-out);
 }
 

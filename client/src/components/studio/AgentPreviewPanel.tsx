@@ -31,10 +31,10 @@ export function AgentPreviewPanel({
             onClick={() => setModalOpen(true)}
             title={canExpand ? "Open full preview" : "Add agent details to preview"}
           >
+            Expand
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
             </svg>
-            Expand
           </button>
         </div>
         <AgentPreviewContent preview={preview} loading={loading} slug={slug} compact />
