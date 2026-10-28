@@ -190,7 +190,6 @@ export function TicketPage() {
           ticket={sel}
           hasRunErrors={work.hasRunErrors}
           failureShown={view === "ticket"}
-          onOpenParent={openTicket}
           onAddChild={openCreateSubTicket}
         />
       </header>
