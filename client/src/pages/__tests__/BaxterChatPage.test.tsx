@@ -861,7 +861,8 @@ describe("BaxterChatPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Show me examples of every chat UI primitive.")).toBeInTheDocument();
     });
-    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    // The gallery's reasoning has no tool calls, so its one line says so.
+    expect(screen.getByRole("button", { name: /Thought it through/ })).toBeInTheDocument();
     expect(screen.getAllByText("client · npm test").length).toBeGreaterThan(0);
     // In the thread; the workbench shows the newest card as well.
     const thread = container.querySelector<HTMLElement>(".baxter-chat-thread");
