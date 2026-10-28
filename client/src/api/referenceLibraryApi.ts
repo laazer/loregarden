@@ -175,6 +175,14 @@ export interface BulkAddRequest {
   question: string;
   queued_reason: string;
   initiative_ids: string[];
+  /** Per-URL name and reason, each naming one of `urls`; a URL with none takes the shared reason. */
+  entries?: BulkAddEntry[];
+}
+
+export interface BulkAddEntry {
+  url: string;
+  name: string;
+  queued_reason: string;
 }
 
 export interface BulkAddItem {
