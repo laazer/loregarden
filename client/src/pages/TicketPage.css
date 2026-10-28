@@ -134,19 +134,20 @@
   margin-bottom: 6px;
 }
 
-.ticket-workflow-lifecycle {
-  margin-top: 24px;
+/* A leaf ticket's column is two cards, narrower than a parent's child tree. */
+.ticket-page-workflow:has(> .ticket-workflow-cards) {
+  width: 320px;
+  padding: 16px;
 }
 
-.ticket-workflow-lifecycle-head {
+.ticket-workflow-cards {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.ticket-workflow-lifecycle-head .state-label {
-  margin: 0;
+.ticket-workflow-cards--below {
+  margin-top: 20px;
 }
 
 .ticket-page-main {
@@ -210,12 +211,23 @@
     padding: 10px 16px;
   }
 
+  /* The breadcrumb and the run controls wrap rather than push the page wide. */
+  .ticket-page-crumbs ol,
+  .run-controls.run-controls--header {
+    flex-wrap: wrap;
+  }
+
+  .ticket-page-crumb-parent {
+    max-width: 60vw;
+  }
+
   .ticket-page-body {
     flex: none;
     flex-direction: column;
   }
 
-  .ticket-page-workflow {
+  .ticket-page-workflow,
+  .ticket-page-workflow:has(> .ticket-workflow-cards) {
     width: auto;
     overflow: visible;
     border-right: 0;
