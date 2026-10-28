@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { Dashboard } from '../Dashboard';
+import { TicketPage } from '../TicketPage';
 import { RouterBridgeSync } from '../../components/RouterBridgeSync';
 import * as apiClient from '../../api/client';
 import { useUiStore } from '../../state/uiStore';
@@ -16,7 +16,7 @@ jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock
  * announced 5 children and rendered 1.
  */
 
-const MILESTONE_ID = 'milestone-bug-hole';
+const MILESTONE_ID = '00000000-0000-4000-8000-0000000000b0';
 
 const mkWorkspace = (): apiClient.WorkspaceSummary => ({
   id: 'ws-1',
@@ -113,7 +113,7 @@ const mkDetail = (): apiClient.TicketDetail => ({
   artifacts: { diff: null, logs: [], tests: null, context: [], error: null, live: null },
 });
 
-describe('Dashboard — child tickets ignore the sidebar filter', () => {
+describe('TicketPage — child tickets ignore the Console filter', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -124,7 +124,7 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
       search: '',
       expandedTicketIds: [],
       workspace: 'loregarden',
-      paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+      paneVisibility: { workspaces: true, tickets: true },
     });
     useUiStore.persist?.clearStorage?.();
     jest.clearAllMocks();
@@ -142,14 +142,14 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
       );
   });
 
-  const renderDashboard = () =>
+  const renderTicketPage = () =>
     render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[`/tickets/${MILESTONE_ID}`]}>
           <RouterBridgeSync />
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/tickets/:ticketId" element={<Dashboard />} />
+            <Route path="/" element={<TicketPage />} />
+            <Route path="/tickets/:ticketId" element={<TicketPage />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -162,7 +162,7 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
 
   it('lists every child of the selected milestone while the sidebar filters to in_progress', async () => {
     useUiStore.setState({ stateFilters: ['in_progress'] });
-    renderDashboard();
+    renderTicketPage();
 
     const panel = await childPanel();
     await waitFor(() => {
@@ -176,7 +176,7 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
 
   it('lists every child while the sidebar filters by work item type', async () => {
     useUiStore.setState({ typeFilters: ['bug'] });
-    renderDashboard();
+    renderTicketPage();
 
     const panel = await childPanel();
     await waitFor(() => {
@@ -186,7 +186,7 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
   });
 
   it('still lists every child when no filter is active', async () => {
-    renderDashboard();
+    renderTicketPage();
 
     const panel = await childPanel();
     await waitFor(() => {
@@ -196,7 +196,7 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
   });
 
   it('does not fetch a second tree when no filter is narrowing the sidebar', async () => {
-    renderDashboard();
+    renderTicketPage();
     await childPanel();
 
     await waitFor(() => expect(apiClient.api.ticketTree).toHaveBeenCalled());
@@ -205,70 +205,3 @@ describe('Dashboard — child tickets ignore the sidebar filter', () => {
   });
 });
 
-describe('Dashboard — the Work items pane filters its own tree', () => {
-  let queryClient: QueryClient;
-
-  beforeEach(() => {
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    useUiStore.setState({
-      stateFilters: [],
-      typeFilters: [],
-      search: '',
-      expandedTicketIds: [],
-      workspace: 'loregarden',
-      paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
-    });
-    jest.clearAllMocks();
-    jest.mocked(apiClient.api.workspaces).mockResolvedValue([mkWorkspace()]);
-    jest.mocked(apiClient.api.ticket).mockResolvedValue(mkDetail());
-    jest.mocked(apiClient.api.runs).mockResolvedValue([]);
-    jest.mocked(apiClient.api.approvals).mockResolvedValue([]);
-    jest.mocked(apiClient.api.workflowTemplates).mockResolvedValue([]);
-    // The server keeps a match's ancestors; nothing matches "zzz".
-    jest
-      .mocked(apiClient.api.ticketTree)
-      .mockImplementation(async (params?: Parameters<typeof apiClient.api.ticketTree>[0]) =>
-        params?.search === 'zzz' ? [] : params?.search ? FILTERED_TREE : FULL_TREE,
-      );
-  });
-
-  const renderAt = (path: string) =>
-    render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[path]}>
-          <RouterBridgeSync />
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/console" element={<Dashboard />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-
-  it('sits in the pane beside the tree, narrows it by title or id, and Escape clears it', async () => {
-    const { container } = renderAt('/console');
-    const field = await screen.findByRole('searchbox', { name: 'Filter work items by title or id' });
-    // In the pane it narrows, not in the app's topbar.
-    expect(container.querySelector('.tickets-pane')).toContainElement(field);
-
-    fireEvent.change(field, { target: { value: 'unblock' } });
-    await waitFor(() =>
-      expect(apiClient.api.ticketTree).toHaveBeenCalledWith(expect.objectContaining({ search: 'unblock' })),
-    );
-    expect(useUiStore.getState().search).toBe('unblock');
-
-    fireEvent.keyDown(field, { key: 'Escape' });
-    expect(useUiStore.getState().search).toBe('');
-  });
-
-  it('says what it searched for when nothing matches, and clears from there', async () => {
-    renderAt('/console');
-    fireEvent.change(await screen.findByRole('searchbox', { name: 'Filter work items by title or id' }), {
-      target: { value: 'zzz' },
-    });
-
-    expect(await screen.findByText(/“zzz”/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Clear the filter' }));
-    expect(useUiStore.getState().search).toBe('');
-  });
-});

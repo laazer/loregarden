@@ -14,6 +14,7 @@ import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
+import { TicketPage } from "./pages/TicketPage";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
 import { InitiativePlanRoute } from "./pages/InitiativePlanPage";
@@ -111,7 +112,7 @@ export function AppShell() {
               element={
                 <TicketRouteResolver>
                   <TicketAgentActions />
-                  <Dashboard />
+                  <TicketPage />
                 </TicketRouteResolver>
               }
             />

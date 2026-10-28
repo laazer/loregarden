@@ -117,7 +117,7 @@ describe("Dashboard - Smart Import Routing Integration Tests", () => {
       search: "",
       expandedTicketIds: [],
       workspace: "all",
-      paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+      paneVisibility: { workspaces: true, tickets: true },
     });
     useUiStore.persist?.clearStorage?.();
     jest.clearAllMocks();

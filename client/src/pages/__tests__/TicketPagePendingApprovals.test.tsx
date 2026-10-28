@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { Dashboard } from '../Dashboard';
+import { TicketPage } from '../TicketPage';
 import { RouterBridgeSync } from '../../components/RouterBridgeSync';
 import * as apiClient from '../../api/client';
 import type { Approval } from '../../api/chatTypes';
@@ -24,7 +24,7 @@ describe('Dashboard - pending approvals on the selected ticket', () => {
       search: '',
       expandedTicketIds: [],
       workspace: 'all',
-      paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+      paneVisibility: { workspaces: true, tickets: true },
     });
     jest.clearAllMocks();
     jest.mocked(apiClient.api.workspaces).mockResolvedValue([]);
@@ -61,7 +61,7 @@ describe('Dashboard - pending approvals on the selected ticket', () => {
         <MemoryRouter initialEntries={[`/tickets/${TICKET_ID}/timeline`]}>
           <RouterBridgeSync />
           <Routes>
-            <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+            <Route path="/tickets/:ticketId/:artifactTab" element={<TicketPage />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,

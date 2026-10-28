@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import * as apiClient from '../../api/client';
 import { RouterBridgeSync } from '../../components/RouterBridgeSync';
 import { useUiStore } from '../../state/uiStore';
-import { Dashboard } from '../Dashboard';
+import { TicketPage } from '../TicketPage';
 
 jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock'));
 
@@ -93,16 +93,16 @@ const tree: apiClient.TicketTreeNode[] = [
   },
 ];
 
-function renderDashboard(path: string) {
+function renderTicketPage(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <RouterBridgeSync />
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+          <Route path="/" element={<TicketPage />} />
+          <Route path="/tickets/:ticketId" element={<TicketPage />} />
+          <Route path="/tickets/:ticketId/:artifactTab" element={<TicketPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -116,7 +116,7 @@ beforeEach(() => {
     search: '',
     expandedTicketIds: [],
     workspace: 'all',
-    paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+    paneVisibility: { workspaces: true, tickets: true },
   });
   useUiStore.persist?.clearStorage?.();
   jest.clearAllMocks();
@@ -134,14 +134,14 @@ beforeEach(() => {
 const parentButton = () => screen.getByRole('button', { name: /↑ Parent/ });
 
 it('offers a parent jump when the selected ticket has one', async () => {
-  renderDashboard(`/tickets/${CHILD_ID}`);
+  renderTicketPage(`/tickets/${CHILD_ID}`);
 
   await waitFor(() => expect(parentButton()).toBeInTheDocument());
-  expect(screen.getByText('Workflow').closest('.workflow-pane')).toContainElement(parentButton());
+  expect(screen.getByRole('banner')).toContainElement(parentButton());
 });
 
 it('selects the parent when the button is clicked', async () => {
-  renderDashboard(`/tickets/${CHILD_ID}`);
+  renderTicketPage(`/tickets/${CHILD_ID}`);
 
   await waitFor(() => expect(parentButton()).toBeInTheDocument());
   fireEvent.click(parentButton());
@@ -152,7 +152,7 @@ it('selects the parent when the button is clicked', async () => {
 });
 
 it('offers no parent jump on a top-level ticket', async () => {
-  renderDashboard(`/tickets/${PARENT_ID}`);
+  renderTicketPage(`/tickets/${PARENT_ID}`);
 
   await waitFor(() => {
     expect(screen.getByRole('heading', { name: 'Parent Ticket', level: 1 })).toBeInTheDocument();
@@ -165,7 +165,7 @@ it('shows the ticket tags as pills in the workflow pane', async () => {
     mockTicket({ parent_ticket_id: PARENT_ID, tags: ['backend', 'needs-design'] }),
   );
 
-  renderDashboard(`/tickets/${CHILD_ID}`);
+  renderTicketPage(`/tickets/${CHILD_ID}`);
 
   await waitFor(() => expect(screen.getByText('backend')).toBeInTheDocument());
   expect(screen.getByText('needs-design')).toBeInTheDocument();

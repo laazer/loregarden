@@ -3,6 +3,7 @@ import { API_BASE } from "../../api/client";
 import { canRunStage } from "../../lib/stageRunPolicy";
 import { buildOrchestrateTerminalCommand } from "../../lib/terminalCommands";
 import { agentsAssembleLabel } from "../../lib/workflowHelpers";
+import { OverflowMenu, OverflowMenuItem } from "../OverflowMenu";
 import { WorkflowRunOverflowMenu } from "../WorkflowRunOverflowMenu";
 
 interface WorkflowRunControlsProps {
@@ -19,6 +20,9 @@ interface WorkflowRunControlsProps {
   onPause: () => void;
   onRerun: (stageKey: string) => void;
   onDelete: () => void;
+  onEditState?: () => void;
+  /** Where it sits: the default is a bar under a pane; "header" lays it inline in a page header. */
+  placement?: "bar" | "header";
 }
 
 /**
@@ -39,9 +43,11 @@ export function WorkflowRunControls({
   onPause,
   onRerun,
   onDelete,
+  onEditState,
+  placement = "bar",
 }: WorkflowRunControlsProps) {
   return (
-    <div className="run-controls">
+    <div className={placement === "header" ? "run-controls run-controls--header" : "run-controls"}>
       {ticket.child_count === 0 ? (
         (() => {
           const cursorStage = ticket.stages.find((s) => s.key === ticket.workflow_stage_key);
@@ -113,6 +119,7 @@ export function WorkflowRunControls({
                 rerunTitle={cursorRun.reason}
                 onRerun={() => onRerun(ticket.workflow_stage_key)}
                 onDelete={() => onDelete()}
+                onEditState={onEditState}
               />
             </>
           );
@@ -131,6 +138,11 @@ export function WorkflowRunControls({
             )}
           </button>
           <div style={{ flex: 1 }} />
+          {onEditState ? (
+            <OverflowMenu label="More workflow actions" align="right">
+              <OverflowMenuItem onSelect={onEditState}>Update state…</OverflowMenuItem>
+            </OverflowMenu>
+          ) : null}
         </>
       )}
     </div>

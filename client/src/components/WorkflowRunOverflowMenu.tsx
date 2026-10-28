@@ -15,6 +15,8 @@ interface WorkflowRunOverflowMenuProps {
   rerunTitle?: string;
   onRerun: () => void;
   onDelete: () => void;
+  /** Opens the state editor; the ticket page keeps it here rather than as its own button. */
+  onEditState?: () => void;
 }
 
 export function WorkflowRunOverflowMenu({
@@ -24,6 +26,7 @@ export function WorkflowRunOverflowMenu({
   rerunTitle,
   onRerun,
   onDelete,
+  onEditState,
 }: WorkflowRunOverflowMenuProps) {
   return (
     <OverflowMenu label="More workflow actions" align="right">
@@ -31,6 +34,7 @@ export function WorkflowRunOverflowMenu({
       <OverflowMenuItem disabled={rerunDisabled} title={rerunTitle} onSelect={onRerun}>
         Re-run current stage
       </OverflowMenuItem>
+      {onEditState ? <OverflowMenuItem onSelect={onEditState}>Update state…</OverflowMenuItem> : null}
       {isAgentWorkflowTicket(ticket) ? (
         <>
           <OverflowMenuSection title="Terminal" />
