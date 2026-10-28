@@ -1,0 +1,229 @@
+/* The ticket page: a header across the top, the workflow down the left, and
+   what the ticket's runs produced in the main column. */
+.ticket-page {
+  min-width: 0;
+}
+
+.ticket-page-header {
+  flex: none;
+  padding: 12px 22px 10px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ticket-page-crumbs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.ticket-page-crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-page-crumbs li + li::before {
+  content: "/";
+  color: var(--txl);
+}
+
+.ticket-page-crumbs a {
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.ticket-page-crumbs a:hover,
+.ticket-page-crumbs a:focus-visible {
+  color: var(--tx);
+  text-decoration: underline;
+}
+
+.ticket-page-crumb-parent {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-page-id {
+  max-width: 220px;
+}
+
+.ticket-page-views {
+  display: flex;
+  gap: 2px;
+}
+
+.ticket-page-view {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.ticket-page-view:hover,
+.ticket-page-view:focus-visible {
+  color: var(--tx);
+  background: var(--bg2);
+}
+
+.ticket-page-view.is-active {
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+}
+
+.ticket-page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ticket-page-title {
+  margin: 0;
+  flex: 1 1 280px;
+  min-width: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.ticket-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The run controls sit inline here, not as the bar under a pane. */
+.run-controls.run-controls--header {
+  border-top: 0;
+  background: none;
+  padding: 0;
+}
+
+.ticket-page-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.ticket-page-workflow {
+  width: 400px;
+  flex: none;
+  overflow-y: auto;
+  padding: 18px 20px;
+  border-right: 1px solid var(--bd);
+  background: var(--bg0);
+}
+
+.ticket-workflow-heading {
+  margin-bottom: 6px;
+}
+
+.ticket-workflow-lifecycle {
+  margin-top: 24px;
+}
+
+.ticket-workflow-lifecycle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ticket-workflow-lifecycle-head .state-label {
+  margin: 0;
+}
+
+.ticket-page-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ticket-page-fallback {
+  padding: 40px 22px;
+  color: var(--txm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.ticket-page-fallback p {
+  margin: 0;
+}
+
+.ticket-page-fallback-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ticket-page-skeleton {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ticket-page-skeleton-line {
+  height: 12px;
+  width: 60%;
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.ticket-page-skeleton-line--short {
+  width: 22%;
+}
+
+.ticket-page-skeleton-line--title {
+  height: 22px;
+  width: 44%;
+}
+
+/* At phone width the header, the workflow and the outputs stack, and the whole
+   page scrolls: a pinned header would take most of the screen. */
+@media (max-width: 760px) {
+  .ticket-page {
+    overflow-y: auto;
+  }
+
+  .ticket-page-header {
+    padding: 10px 16px;
+  }
+
+  .ticket-page-body {
+    flex: none;
+    flex-direction: column;
+  }
+
+  .ticket-page-workflow {
+    width: auto;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--bd);
+    padding: 14px 16px;
+  }
+
+  .ticket-page-main {
+    min-height: 60vh;
+  }
+}

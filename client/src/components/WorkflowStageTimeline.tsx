@@ -86,7 +86,11 @@ export function WorkflowStageTimeline({
                 </div>
               ) : null}
 
-              {stage.note ? <div className="workflow-stage-note">{stage.note}</div> : null}
+              {stage.note ? (
+                <div className="workflow-stage-note" data-status={stage.status}>
+                  {stage.note}
+                </div>
+              ) : null}
 
               {renderStageActions ? (
                 <div className="workflow-stage-actions">{renderStageActions(stage)}</div>

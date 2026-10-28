@@ -10,7 +10,8 @@ import {
 import { DEFAULT_HIVE_SKIN, normalizeHiveSkinId, resolveHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";
 
-export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
+/** The Console's panes. A ticket's workflow and outputs moved to its own page. */
+export type PaneId = "workspaces" | "tickets";
 
 export type PaneVisibility = Record<PaneId, boolean>;
 
@@ -63,6 +64,18 @@ export type TicketDensity = "compact" | "cards";
 
 export function normalizeTicketDensity(value: unknown): TicketDensity {
   return value === "cards" ? "cards" : "compact";
+}
+
+/**
+ * The Console's two panes from a persisted value that may still carry the
+ * retired workflow and artifact panes. Someone who had hidden both of these to
+ * read a ticket wide gets the tree back: it is what the Console is for now.
+ */
+export function consolePaneVisibility(value: unknown): PaneVisibility {
+  const persisted = (value ?? {}) as Partial<Record<string, unknown>>;
+  const workspaces = persisted.workspaces !== false;
+  const tickets = persisted.tickets !== false;
+  return { workspaces, tickets: tickets || !workspaces };
 }
 
 interface UiState {
@@ -267,8 +280,6 @@ export const useUiStore = create<UiState>()(
       paneVisibility: {
         workspaces: true,
         tickets: true,
-        workflow: true,
-        artifacts: true,
       },
       editorWorkspace: "",
       editorContextRoot: ".",
@@ -424,9 +435,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 14,
+      version: 15,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 15) {
+          state.paneVisibility = consolePaneVisibility(state.paneVisibility);
+        }
         if (version < 14) {
           state.ticketDensity = normalizeTicketDensity(state.ticketDensity);
         }

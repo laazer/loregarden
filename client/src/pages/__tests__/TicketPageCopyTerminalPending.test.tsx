@@ -6,7 +6,7 @@ import * as apiClient from "../../api/client";
 import { RouterBridgeSync } from "../../components/RouterBridgeSync";
 import * as terminalCommands from "../../lib/terminalCommands";
 import { useUiStore } from "../../state/uiStore";
-import { Dashboard } from "../Dashboard";
+import { TicketPage } from '../TicketPage';
 
 jest.mock("../../api/client", () => jest.requireActual("../../test/apiClientMock"));
 jest.mock("../../lib/terminalCommands", () => ({
@@ -114,16 +114,16 @@ const mkTicket = (): apiClient.TicketDetail => ({
   artifacts: { diff: null, logs: [], tests: null, context: [], error: null, live: null },
 });
 
-function renderDashboard() {
+function renderTicketPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/tickets/${TICKET_ID}`]}>
         <RouterBridgeSync />
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+          <Route path="/" element={<TicketPage />} />
+          <Route path="/tickets/:ticketId" element={<TicketPage />} />
+          <Route path="/tickets/:ticketId/:artifactTab" element={<TicketPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -144,7 +144,7 @@ beforeEach(() => {
     search: "",
     expandedTicketIds: [],
     workspace: "all",
-    paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+    paneVisibility: { workspaces: true, tickets: true },
   });
   useUiStore.persist?.clearStorage?.();
   jest.clearAllMocks();
@@ -172,7 +172,7 @@ describe("Dashboard — copy-terminal in-flight guard is ticket-wide", () => {
         settle = () => resolve(true);
       }));
 
-    renderDashboard();
+    renderTicketPage();
 
     // Both rows are enabled before anything is in flight.
     expect(await copyTerminalItem("Specification")).toBeEnabled();
