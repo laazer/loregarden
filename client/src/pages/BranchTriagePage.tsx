@@ -143,19 +143,6 @@ export function BranchTriagePage() {
         >
           {triage.isFetching ? "Scanning…" : "Rescan"}
         </Button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => setCleanupOpen(true)}
-          disabled={!triage.data?.branches.length}
-          title={
-            triage.data?.branches.length
-              ? undefined
-              : "Scan a workspace repo before cleaning up branches"
-          }
-        >
-          Clean up merged
-        </button>
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
           <Select
@@ -230,6 +217,7 @@ export function BranchTriagePage() {
                 selectedBranch={selectedBranch}
                 onSelectBranch={setSelectedBranch}
                 onReviewBranch={handleReviewBranch}
+                onCleanUp={() => setCleanupOpen(true)}
                 onBranchDeleted={(branch) => {
                   if (selectedBranch === branch) setSelectedBranch("");
                 }}

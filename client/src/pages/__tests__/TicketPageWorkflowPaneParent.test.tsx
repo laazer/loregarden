@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import * as apiClient from '../../api/client';
@@ -131,7 +131,9 @@ beforeEach(() => {
   );
 });
 
-const parentButton = () => screen.getByRole('button', { name: /↑ Parent/ });
+// The parent is the breadcrumb's link: one way up, in the header, not a second button beside it.
+const parentButton = () =>
+  within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Parent Ticket' });
 
 it('offers a parent jump when the selected ticket has one', async () => {
   renderTicketPage(`/tickets/${CHILD_ID}`);
@@ -157,7 +159,7 @@ it('offers no parent jump on a top-level ticket', async () => {
   await waitFor(() => {
     expect(screen.getByRole('heading', { name: 'Parent Ticket', level: 1 })).toBeInTheDocument();
   });
-  expect(screen.queryByRole('button', { name: /^↑ Parent$/ })).not.toBeInTheDocument();
+  expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).queryAllByRole('link')).toHaveLength(1);
 });
 
 it('shows the ticket tags as pills in the workflow pane', async () => {

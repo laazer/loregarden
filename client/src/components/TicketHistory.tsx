@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api } from "../api/client";
 import { historyLines } from "../utils/ticketHistory";
+import { Button } from "./ui/Button";
 
 interface TicketHistoryProps {
   ticketId: string;
@@ -32,9 +33,9 @@ export function TicketHistory({ ticketId }: TicketHistoryProps) {
 
   return (
     <div className="ticket-history">
-      <button type="button" className="btn-secondary btn-compact" onClick={() => setOpen(!open)}>
+      <Button variant="plain" className="ticket-history-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         {open ? "Hide history" : `History (${lines.length})`}
-      </button>
+      </Button>
       {open && (
         <ol className="ticket-history-list">
           {lines.map((line) => (
