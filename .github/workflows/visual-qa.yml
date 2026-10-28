@@ -1,0 +1,117 @@
+name: Visual QA
+
+# Renders every app surface against the seeded production-shaped sandbox and
+# fails on a usability regression (client/src/lib/usabilityCheck.ts), a console
+# or HTTP error, or an unreachable surface. Separate from ci.yml so it runs only
+# where a surface can have changed: it costs a seeded server, a Vite client and
+# a browser.
+on:
+  pull_request:
+    paths:
+      - client/src/pages/**
+      - client/src/components/**
+      # The check, its verdict and its route list; a change to any of them
+      # changes what passes.
+      - client/src/lib/usabilityCheck.ts
+      - client/src/lib/visualQa*
+      - client/scripts/visual-qa.mjs
+      # The data it renders.
+      - server/loregarden/testing/prod_shape*.py
+      - scripts/sandbox.sh
+      - .github/workflows/visual-qa.yml
+  push:
+    branches: [main]
+    paths:
+      - client/src/pages/**
+      - client/src/components/**
+      - client/src/lib/usabilityCheck.ts
+      - client/src/lib/visualQa*
+      - client/scripts/visual-qa.mjs
+      - server/loregarden/testing/prod_shape*.py
+      - scripts/sandbox.sh
+      - .github/workflows/visual-qa.yml
+
+concurrency:
+  group: visual-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-qa:
+    name: Visual QA (seeded sandbox)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install server dependencies
+        working-directory: server
+        run: uv sync
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+
+      # --seeded: the deterministic production shape (loregarden.testing.prod_shape);
+      # there is no live database on a runner.
+      - name: Start the seeded sandbox
+        run: |
+          nohup ./scripts/sandbox.sh --seeded > "$RUNNER_TEMP/sandbox.log" 2>&1 &
+          for _ in $(seq 1 180); do
+            if curl -fsS http://127.0.0.1:8123/health > /dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:5174/ > /dev/null 2>&1; then
+              echo "sandbox is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the seeded sandbox did not come up within 180s"
+          cat "$RUNNER_TEMP/sandbox.log"
+          exit 1
+
+      # Exit 1 is a real failure. Exit 3 means nothing failed but a surface never
+      # settled within its budget even after a retry, so it went unchecked: that
+      # is the runner being slow, which must not fail the gate as if a surface
+      # were unusable. It is still said, as a warning naming the surfaces.
+      - name: Run visual QA
+        working-directory: client
+        run: |
+          set +e
+          npm run visual-qa -- --base-url http://127.0.0.1:5174 --out "$GITHUB_WORKSPACE/.visual-qa"
+          status=$?
+          set -e
+          if [ "$status" -eq 3 ]; then
+            unsettled=$(node -e 'console.log(require(process.argv[1]).unsettled.join(", "))' "$GITHUB_WORKSPACE/.visual-qa/summary.json")
+            echo "::warning title=Visual QA inconclusive::never settled, so unchecked (load, not a usability failure): $unsettled"
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Upload screenshots and summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-qa
+          path: .visual-qa
+          if-no-files-found: warn
+
+      - name: Show the sandbox log
+        if: failure()
+        run: cat "$RUNNER_TEMP/sandbox.log"

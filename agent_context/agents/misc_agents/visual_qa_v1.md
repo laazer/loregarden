@@ -22,7 +22,7 @@ npm run visual-qa                       # defaults to http://localhost:5173
 npm run visual-qa -- --base-url <url>   # against another origin
 ```
 
-It visits every surface, screenshots each to `.visual-qa/`, and writes `summary.json`. It exits non-zero if any surface failed or was never reached.
+It visits every surface, screenshots each to `.visual-qa/`, and writes `summary.json`. It exits 1 if any surface failed or was never reached. It exits 3 (INCONCLUSIVE) when nothing failed but a surface never settled within its budget, even on one retry at double it: that surface went unchecked because the machine is slow, not because it is unusable. Rerun it with a larger `--settle-timeout`, or when the box is quieter; never read exit 3 as a pass or as a usability failure.
 
 If it reports playwright is missing: `npm install && npx playwright install chromium`.
 
