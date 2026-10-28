@@ -4,7 +4,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -87,13 +87,41 @@ beforeEach(() => {
 });
 
 describe("MachinePage", () => {
-  it("opens on Capacity: the machine board with its own rail, no agent-lane panels", async () => {
+  it("opens on Capacity: what needs a person, then the board, with no rail beside it", async () => {
     renderAt("/machine");
 
     expect(await screen.findByTestId("docker-free-slots")).toBeInTheDocument();
-    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
-    expect(tabs).toEqual(["Capacity", "Attention"]);
+    expect(screen.getByRole("heading", { name: "Needs attention" })).toBeInTheDocument();
+    // The summary is drawn once: the rail's Capacity/Attention tabs are gone.
+    expect(screen.queryAllByRole("tab")).toEqual([]);
+    expect(screen.getByRole("meter", { name: "Disk" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Capacity" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("flags a full disk, and its scan opens the Disk tab to show the scan running", async () => {
+    mockDisk.overview.mockResolvedValue({
+      volume: { path: "/", total_bytes: 100, used_bytes: 96, free_bytes: 4 },
+      status: { state: "idle", started_at: null, entries: 0, current_root: "", error: "" },
+      scan: null,
+      added_roots: [],
+    });
+    mockDisk.scan.mockResolvedValue({
+      state: "running",
+      started_at: null,
+      entries: 0,
+      current_root: "",
+      error: "",
+    });
+    renderAt("/machine");
+
+    const item = await screen.findByTestId("attention-disk");
+    await userEvent.click(within(item).getByRole("button", { name: "Scan now" }));
+
+    expect(mockDisk.scan).toHaveBeenCalledTimes(1);
+    // The tab changes when the scan request answers, not on the click.
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Disk" })).toHaveAttribute("aria-current", "page"),
+    );
   });
 
   it("moves between Capacity and Disk by link, so each has its own URL", async () => {
