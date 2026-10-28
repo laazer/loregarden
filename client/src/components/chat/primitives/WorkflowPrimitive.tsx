@@ -176,8 +176,10 @@ export function WorkflowPrimitive({ part }: { part: WorkflowPart }) {
 
   return (
     <PrimitiveCard
+      kind="workflow"
       title={title}
-      subtitle={slug ?? undefined}
+      refLine={slug}
+      copyRef={slug}
       loading={isLoading && !part.draft}
       error={
         !part.draft && error

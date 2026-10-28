@@ -69,8 +69,10 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
   return (
     <PrimitiveCard
       className="lg-primitive-ticket-list--v6"
+      kind="ticket_list"
       title={part.title ?? parentQuery.data?.title ?? "Ticket list"}
-      subtitle={parentId ? parentQuery.data?.external_id : `${nodes.length} tickets`}
+      refLine={parentId ? parentQuery.data?.external_id : null}
+      subtitle={`${nodes.length} tickets`}
       loading={treeQuery.isLoading || (Boolean(parentId) && parentQuery.isLoading)}
       error={
         missingParent

@@ -62,7 +62,7 @@ describe("agent execution plan identity", () => {
       />,
     );
     expect(screen.getAllByText("Agent execution plan")).toHaveLength(1);
-    expect(screen.getByText("1/1 complete")).toBeInTheDocument();
+    expect(screen.getByText("Complete")).toBeInTheDocument();
   });
 
   it("asks for the same plan id back when the card carries one", () => {

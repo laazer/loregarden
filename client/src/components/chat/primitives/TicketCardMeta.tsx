@@ -67,6 +67,19 @@ export function childProgressSegments(
   };
 }
 
+/** A ticket's priority as its P-badge, as a card's head and its rows show it. */
+export function TicketPriorityBadge({ priority }: { priority: number }) {
+  const prio = priorityStyle(priority);
+  return (
+    <span
+      className="lg-primitive-ticket-prio"
+      style={{ color: prio.color, background: prio.background, borderColor: prio.border }}
+    >
+      {prio.code}
+    </span>
+  );
+}
+
 /** The v6 console ticket card body: P-badge, state, segmented progress, stage line. */
 export function TicketCardBody({
   title,
@@ -81,6 +94,7 @@ export function TicketCardBody({
   compact = false,
   underPriority,
   blockedOn,
+  headless = false,
 }: {
   title: string;
   /** Optional id shown ahead of the title (ticket lists). */
@@ -99,6 +113,8 @@ export function TicketCardBody({
   underPriority?: ReactNode;
   /** What a stuck ticket waits for; named beside the state so "Blocked" says whose move it is. */
   blockedOn?: BlockedOn | null;
+  /** The card's head already names the ticket and its state: draw the progress and stage only. */
+  headless?: boolean;
 }) {
   const prio = priorityStyle(priority);
   const stateColor = ticketStateColor(state);
@@ -106,12 +122,16 @@ export function TicketCardBody({
 
   return (
     <div
-      className={
-        compact
-          ? "lg-primitive-ticket-v6 lg-primitive-ticket-v6--compact"
-          : "lg-primitive-ticket-v6"
-      }
+      className={[
+        "lg-primitive-ticket-v6",
+        compact ? "lg-primitive-ticket-v6--compact" : null,
+        headless ? "lg-primitive-ticket-v6--headless" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
+{headless ? null : (
+        <>
       <div className="lg-primitive-ticket-v6-title-row">
         <div className="lg-primitive-ticket-prio-col">
           <span
@@ -158,6 +178,9 @@ export function TicketCardBody({
           </>
         ) : null}
       </div>
+
+        </>
+      )}
 
       {segments.length ? (
         <div

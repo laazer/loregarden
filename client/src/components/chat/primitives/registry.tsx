@@ -34,8 +34,9 @@ function TextPrimitive({ part }: { part: Extract<ChatPart, { primitive: "text" }
 export function UnknownPrimitiveCard({ part }: { part: UnknownPart }) {
   return (
     <PrimitiveCard
+      kind={part.primitive}
       title={`Unknown primitive: ${part.primitive}`}
-      tone="warn"
+      status={{ tone: "wait", label: "Unknown" }}
       subtitle="This client does not know how to render this card."
     >
       <pre className="lg-primitive-thinking">{JSON.stringify(part, null, 2)}</pre>

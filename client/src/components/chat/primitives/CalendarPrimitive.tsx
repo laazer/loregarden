@@ -82,8 +82,9 @@ export function CalendarEventPrimitive({ part }: { part: CalendarEventPart }) {
   const starts = parseDate(event.starts_at);
   return (
     <PrimitiveCard
+      kind="calendar_event"
       title={event.title}
-      subtitle={[
+      refLine={[
         event.kind ?? "one_time",
         starts ? formatTime(starts) : event.starts_at,
       ].join(" · ")}
@@ -394,6 +395,7 @@ export function CalendarPrimitive({ part }: { part: CalendarPart }) {
 
   return (
     <PrimitiveCard
+      kind="calendar"
       title={part.title ?? "Calendar"}
       subtitle={subtitle}
       loading={remote.isLoading && !part.events?.length}

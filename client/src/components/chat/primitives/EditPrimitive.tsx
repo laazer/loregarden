@@ -100,10 +100,12 @@ export function EditPrimitive({
 
   return (
     <PrimitiveCard
+      kind="edit"
       title={title}
-      subtitle={part.path ?? part.target_id ?? part.language ?? undefined}
+      refLine={part.path ?? part.target_id ?? part.language}
+      copyRef={part.path}
       resourceAction={resourceAction}
-      tone={sent ? "ok" : hasDiff ? "accent" : "default"}
+      status={sent ? { tone: "done", label: "Comments sent" } : hasDiff ? { tone: "you", label: "Proposed" } : null}
       meta={
         hasDiff ? (
           <span>{sent ? "Comments sent" : "Proposed edit — comment a line to chat"}</span>

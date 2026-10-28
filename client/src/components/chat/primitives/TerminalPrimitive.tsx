@@ -6,8 +6,10 @@ export function TerminalPrimitive({ part }: { part: TerminalPart }) {
   const lines = part.lines ?? [];
   return (
     <PrimitiveCard
+      kind="terminal"
       title={part.title ?? "Terminal"}
-      subtitle={part.cwd ?? undefined}
+      refLine={part.cwd}
+      copyRef={part.cwd}
       resourceAction={part.cwd ? <OpenIdeButton /> : null}
     >
       <div className="lg-primitive-terminal">

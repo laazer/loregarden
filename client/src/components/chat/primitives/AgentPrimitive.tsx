@@ -39,8 +39,10 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
 
   return (
     <PrimitiveCard
+      kind="agent"
       title={part.title ?? preview?.name ?? slug ?? "Agent"}
-      subtitle={slug ?? undefined}
+      refLine={slug}
+      copyRef={slug}
       loading={isLoading && !part.draft}
       error={
         !part.draft && error

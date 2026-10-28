@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { PrimitiveCard } from "./PrimitiveCard";
 import type { QAItem, QAPart } from "./types";
+import { Button } from "../../ui/Button";
 
 function initialAnswers(items: QAItem[]): string[] {
   return items.map((item) => item.answer ?? "");
@@ -52,28 +53,28 @@ export function QAPrimitive({
 
   return (
     <PrimitiveCard
+      kind="qa"
+      tint={canAnswer ? "you" : "mute"}
       title={part.title ?? "Questions & answers"}
+      // The chip says sent, waiting or empty; the line under the title is the ask.
       subtitle={
-        submitted
-          ? "Answers sent"
-          : canAnswer
-            ? part.prompt ?? "Answer these before continuing"
-            : items.length
-              ? "Question and answer review"
-              : "Nothing to answer"
+        submitted ? null : canAnswer ? part.prompt ?? "Answer these before continuing" : items.length ? "Question and answer review" : null
       }
-      tone={submitted ? "ok" : canAnswer ? "accent" : items.length ? "default" : "warn"}
-      meta={<span>{items.length === 1 ? "1 question" : `${items.length} questions`}</span>}
+      status={
+        submitted
+          ? { tone: "done", label: "Answers sent" }
+          : canAnswer
+            ? { tone: "you", label: items.length === 1 ? "Needs you" : `Needs you · ${items.length}` }
+            : items.length
+              ? null
+              : { tone: "wait", label: "Nothing to answer" }
+      }
+      footerHint={canAnswer ? "Answers go back into this chat" : null}
       actions={
         canAnswer ? (
-          <button
-            type="button"
-            className="lg-primitive-run-btn lg-primitive-run-btn--confirm"
-            disabled={!complete}
-            onClick={submit}
-          >
-            Send answers
-          </button>
+          <Button variant="primary" compact disabled={!complete} onClick={submit}>
+            {items.length === 1 ? "Send answer" : `Send ${items.length} answers`}
+          </Button>
         ) : null
       }
     >

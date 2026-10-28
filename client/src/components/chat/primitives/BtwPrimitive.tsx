@@ -84,9 +84,10 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
 
   return (
     <PrimitiveCard
+      kind="btw"
       title={part.title ?? "Aside"}
       subtitle={part.question}
-      tone={status === "failed" ? "warn" : "default"}
+      status={status === "failed" ? { tone: "bad", label: "Unanswered" } : null}
       meta={
         <span className="lg-btw-attribution">
           {attribution}

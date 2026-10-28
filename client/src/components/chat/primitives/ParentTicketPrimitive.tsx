@@ -9,12 +9,14 @@ import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
 import {
   TicketCardBody,
+  TicketPriorityBadge,
   childProgressSegments,
   stageProgressSegments,
 } from "./TicketCardMeta";
 import { toTicketTreeNode } from "./ticketTreeNodes";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
+import { ticketStateChip } from "../../../lib/ticketStates";
 
 /** Children arrive one level deep, so no row in this card is expandable. */
 const NO_EXPANDED_ROWS: Set<string> = new Set();
@@ -47,12 +49,16 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
 
   return (
     <PrimitiveCard
-      className="lg-primitive-ticket-card lg-primitive-ticket-card--parent"
+      className="lg-primitive-ticket-card--parent"
       title={title}
-      header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
+      kind="parent_ticket"
+      lead={data ? <TicketPriorityBadge priority={data.priority} /> : null}
+      refLine={data ? `${data.external_id} · ${data.workspace_slug}` : part.ticket_id}
+      status={data ? ticketStateChip(data.state) : null}
+      copyRef={data?.external_id ?? part.ticket_id}
+      footerHint={data ? (running ? "Stop pauses the running stage" : "Continue runs the next ready work") : null}
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
-      tone={running ? "accent" : "default"}
       resourceAction={<OpenTicketButton ticketId={part.ticket_id} compact />}
       actions={
         running ? (
@@ -67,6 +73,7 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
     >
       {data ? (
         <TicketCardBody
+          headless
           title={title}
           priority={data.priority}
           state={data.state}
