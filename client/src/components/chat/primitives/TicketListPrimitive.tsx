@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { TicketTreeNode } from "../../../api/types";
-import { TicketTree } from "../../TicketTree";
 import type { TicketListPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { TicketTable } from "./TicketTable";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
@@ -61,18 +61,22 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
     return filterTree(raw, idSet);
   }, [treeQuery.data, part.ticket_ids, parentId, idSet]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const running = ticketIsRunning(parentQuery.data?.workflow_stage_status);
   const missingParent = Boolean(parentId && parentQuery.isError);
 
   return (
     <PrimitiveCard
-      className="lg-primitive-ticket-list--v6"
       kind="ticket_list"
       title={part.title ?? parentQuery.data?.title ?? "Ticket list"}
       refLine={parentId ? parentQuery.data?.external_id : null}
       subtitle={`${nodes.length} tickets`}
+      footerHint={
+        parentId && !missingParent
+          ? running
+            ? "Stop pauses the parent's running stage"
+            : "Run continues the parent's work"
+          : null
+      }
       loading={treeQuery.isLoading || (Boolean(parentId) && parentQuery.isLoading)}
       error={
         missingParent
@@ -100,27 +104,7 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
         ) : null
       }
     >
-      {!missingParent ? (
-        <TicketTree
-          nodes={nodes}
-          selectedId={selectedId}
-          expandedIds={expandedIds}
-          onSelect={setSelectedId}
-          presentation="v6"
-          showExternalId
-          renderRowAction={(node) => (
-            <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
-          )}
-          onToggle={(id) =>
-            setExpandedIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            })
-          }
-        />
-      ) : null}
+      {!missingParent ? <TicketTable nodes={nodes} label={part.title ?? "Tickets"} /> : null}
     </PrimitiveCard>
   );
 }

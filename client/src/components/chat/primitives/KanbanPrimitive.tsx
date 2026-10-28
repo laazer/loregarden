@@ -242,61 +242,73 @@ export function StatusColumnPrimitive({ part }: { part: StatusColumnPart }) {
   );
 }
 
+/** Tiles per column on the whole board; a column picked alone shows more. */
+const ALL_VIEW_TILES = 3;
+const ONE_COLUMN_TILES = 24;
+
+/**
+ * One board for both board cards. The filter is always there: All shows every
+ * column with its first few tiles, and picking a column shows it alone. A
+ * filterable board's `filters` only narrow which columns it offers.
+ */
 export function KanbanPrimitive({
   part,
 }: {
   part: KanbanPart | FilterableKanbanPart;
 }) {
-  const filterable = part.primitive === "filterable_kanban";
   const statuses = (part.statuses?.length ? part.statuses : DEFAULT_STATUSES) as TicketState[];
-  const filters =
-    filterable && "filters" in part && part.filters?.length
-      ? (part.filters as TicketState[])
+  const offered =
+    "filters" in part && part.filters?.length
+      ? statuses.filter((s) => (part.filters as string[]).includes(s))
       : statuses;
-  const [active, setActive] = useState<Set<string>>(
-    () => new Set(filterable ? filters : statuses),
-  );
+  const [picked, setPicked] = useState<TicketState | "all">("all");
   const { data, isLoading, error } = useTicketBucket(part.ticket_ids, part.workspace_slug);
 
   const columns = useMemo(() => {
     const tickets = data ?? [];
-    return statuses
-      .filter((s) => active.has(s))
-      .map((status) => ({
-        status,
-        tickets: tickets.filter((t) => t.state === status),
-      }));
-  }, [data, statuses, active]);
+    const keys = picked === "all" ? offered : [picked];
+    const cap = picked === "all" ? ALL_VIEW_TILES : ONE_COLUMN_TILES;
+    return keys.map((status) => {
+      const all = tickets.filter((t) => t.state === status);
+      return { status, tickets: all.slice(0, cap), total: all.length };
+    });
+  }, [data, offered, picked]);
+
+  const counts = useMemo(() => {
+    const tickets = data ?? [];
+    const of = (state: TicketState) => tickets.filter((t) => t.state === state).length;
+    const parts = [
+      of("in_progress") ? `${of("in_progress")} in progress` : "",
+      of("blocked") ? `${of("blocked")} blocked` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : `${tickets.length} tickets`;
+  }, [data]);
 
   return (
     <PrimitiveCard
       kind="kanban"
-      title={part.title ?? (filterable ? "Filterable board" : "Kanban")}
+      title={part.title ?? "Board"}
+      subtitle={data ? counts : null}
       loading={isLoading}
+      skeletonLines={4}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
     >
-      {filterable ? (
-        <div className="lg-primitive-filters" role="group" aria-label="Status filters">
-          {filters.map((status) => (
-            <button
-              key={status}
-              type="button"
-              aria-pressed={active.has(status)}
-              onClick={() =>
-                setActive((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(status)) next.delete(status);
-                  else next.add(status);
-                  return next;
-                })
-              }
-            >
-              {ticketStateLabel(status)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <KanbanColumns columns={columns} />
+      <div className="lg-primitive-filters" role="group" aria-label="Show columns">
+        {(["all", ...offered] as const).map((key) => (
+          <Button
+            key={key}
+            variant="plain"
+            aria-pressed={picked === key}
+            onClick={() => setPicked(key)}
+          >
+            {key === "all" ? "All" : ticketStateLabel(key)}
+          </Button>
+        ))}
+      </div>
+      <KanbanColumns
+        columns={columns}
+        onShowAll={picked === "all" ? (status) => setPicked(status as TicketState) : undefined}
+      />
     </PrimitiveCard>
   );
 }

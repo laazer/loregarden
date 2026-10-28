@@ -144,6 +144,17 @@
   color: var(--txl);
 }
 
+.lg-primitive-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lg-primitive-fact b {
+  font-weight: 500;
+  color: var(--tx);
+}
+
 .lg-primitive-card-actions {
   display: flex;
   align-items: center;
@@ -1315,9 +1326,17 @@
   gap: 12px;
 }
 
+.lg-primitive-stage-more {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
 .lg-primitive-ticket-timeline {
-  padding-top: 12px;
-  border-top: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
 }
 
 .lg-primitive-ticket-children {
@@ -1947,4 +1966,153 @@
   font-family: var(--mono);
   font-size: var(--fs-micro);
   color: var(--txl);
+}
+
+/* Tickets compared across rows. Flush to the card's edges, rules between rows;
+   at a narrow width each row stacks, so it stays a list a phone can read. */
+.lg-ticket-table-wrap {
+  margin: 0 -12px;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+}
+
+.lg-ticket-table-filter {
+  margin: 0 12px 8px;
+}
+
+.lg-ticket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.lg-ticket-table th {
+  padding: 6px 12px;
+  border-top: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--bd);
+  color: var(--txm);
+  vertical-align: middle;
+}
+
+.lg-ticket-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.lg-ticket-table-p {
+  width: 1%;
+}
+
+.lg-ticket-table-ticket {
+  max-width: 0;
+  width: 100%;
+}
+
+.lg-ticket-table-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lg-ticket-table-toggle {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: var(--fs-small);
+  line-height: 1;
+  color: var(--txm);
+}
+
+.lg-ticket-table-toggle:hover,
+.lg-ticket-table-toggle[aria-expanded="true"] {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-ticket-table-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--tx);
+}
+
+.lg-ticket-table-open:hover .lg-ticket-table-title,
+.lg-ticket-table-open:focus-visible .lg-ticket-table-title {
+  text-decoration: underline;
+}
+
+.lg-ticket-table-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-ticket-table-id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table-status,
+.lg-ticket-table-stage {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.lg-ticket-table-stage {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table-more {
+  align-self: flex-start;
+  margin: 8px 12px 0;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
+@container (max-width: 420px) {
+  .lg-ticket-table thead {
+    display: none;
+  }
+
+  .lg-ticket-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .lg-ticket-table td {
+    padding: 0 4px;
+    border: 0;
+  }
+
+  .lg-ticket-table-ticket {
+    max-width: none;
+    width: auto;
+  }
+
+  .lg-ticket-table-stage {
+    display: none;
+  }
 }

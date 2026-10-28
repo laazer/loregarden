@@ -67,6 +67,42 @@ export function childProgressSegments(
   };
 }
 
+/**
+ * A ticket card's key facts, as one row under its head: the stage it is on and
+ * that stage's state, who is working it, and how far through its stages it is.
+ */
+export function TicketFacts({
+  stageName,
+  stageStatus,
+  agent,
+  progressLabel,
+}: {
+  stageName?: string;
+  stageStatus?: StageStatus;
+  agent?: string;
+  progressLabel?: string | null;
+}) {
+  return (
+    <>
+      {stageName ? (
+        <span className="lg-primitive-fact">
+          Stage <b>{stageName}</b> <StatusChip {...stageStatusChip(stageStatus)} />
+        </span>
+      ) : null}
+      {agent ? (
+        <span className="lg-primitive-fact">
+          Agent <b>{agent}</b>
+        </span>
+      ) : null}
+      {progressLabel ? (
+        <span className="lg-primitive-fact">
+          Progress <b>{progressLabel}</b>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /** A ticket's priority as its P-badge, as a card's head and its rows show it. */
 export function TicketPriorityBadge({ priority }: { priority: number }) {
   const prio = priorityStyle(priority);
@@ -206,13 +242,14 @@ export function TicketCardBody({
               />
             ))}
           </div>
-          {progressLabel ? (
+          {/* Under a card's head the facts row carries the fraction. */}
+          {progressLabel && !headless ? (
             <span className="lg-primitive-ticket-segs-label">{progressLabel}</span>
           ) : null}
         </div>
       ) : null}
 
-      {stageName ? (
+      {stageName && !headless ? (
         <div className="lg-primitive-ticket-stage">
           <span
             className="lg-primitive-ticket-stage-dot"
