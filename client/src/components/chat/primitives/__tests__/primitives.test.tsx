@@ -501,12 +501,12 @@ describe("Ticket primitive chrome", () => {
     expect(container.querySelector(".lg-primitive-card-actions")?.textContent).toContain(
       "Stop pauses the running stage",
     );
+    // One segment per stage, and the facts row: the stage and its state, and progress.
     expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(3);
-    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("1/3");
-    expect(container.querySelector(".lg-primitive-ticket-stage")?.textContent).toContain(
-      "Quality Gate",
-    );
-    expect(container.querySelector(".lg-primitive-ticket-stage")?.textContent).toContain("Awaiting");
+    const facts = container.querySelector(".lg-primitive-card-meta")?.textContent;
+    expect(facts).toContain("Quality Gate");
+    expect(facts).toContain("Awaiting");
+    expect(facts).toContain("Progress 1/3");
   });
 
   it("labels parent progress as children done out of total", async () => {
@@ -529,11 +529,14 @@ describe("Ticket primitive chrome", () => {
       expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
     });
     expect(mockedApi.tickets).toHaveBeenCalledWith({ parent_ticket_id: "gate-ticket-1" });
-    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("1/2");
+    expect(container.querySelector(".lg-primitive-card-ref")?.textContent).toContain("1 of 2 children done");
     expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(2);
-    expect(container.querySelectorAll(".tree-row")).toHaveLength(2);
-    expect(screen.getByText("Child one")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Child two" })).toBeInTheDocument();
+    // The children are rows of a table, each opening its ticket.
+    const table = screen.getByRole("table", { name: "Under Ship gate polish" });
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByRole("button", { name: /Child two/ })).toBeInTheDocument();
+    // Its stage is awaiting, so the footer offers Stop; idle, it would offer Continue run.
+    expect(container.querySelector(".lg-primitive-card-actions")?.textContent).toContain("Stop pauses");
   });
 
   it("falls back to stage progress when a parent has no children yet", async () => {
@@ -547,11 +550,12 @@ describe("Ticket primitive chrome", () => {
     await waitFor(() => {
       expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
     });
-    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("0/1");
-    expect(container.querySelector(".lg-primitive-ticket-children")).toBeNull();
+    expect(container.querySelector(".lg-primitive-card-meta")).toBeNull();
+    expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(1);
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("renders open-work list rows with the v6 ticket treatment", async () => {
+  it("lays open work out as a table: priority, ticket, status, stage", async () => {
     mockedApi.ticket.mockResolvedValue(gateTicket({ title: "Open work parent" }));
     mockedApi.tickets.mockResolvedValue([
       gateTicket({
@@ -575,14 +579,20 @@ describe("Ticket primitive chrome", () => {
     await waitFor(() => {
       expect(screen.getByText("Hive Workplace Upgrade")).toBeInTheDocument();
     });
-    const row = container.querySelector(".tree-row--v6");
-    expect(row).not.toBeNull();
-    expect(row?.querySelector(".lg-primitive-ticket-prio")?.textContent).toBe("P1");
-    expect(row?.textContent).toContain("43-hive-upgrade");
-    expect(row?.textContent).toContain("In Progress");
-    expect(row?.textContent).toContain("Quality Gate");
-    expect(row?.textContent).toContain("Awaiting");
-    expect(screen.getByRole("button", { name: "Open Hive Workplace Upgrade" })).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Open work" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "P",
+      "Ticket",
+      "Status",
+      "Stage",
+    ]);
+    const cells = within(table).getAllByRole("row")[1].querySelectorAll("td");
+    expect(cells[0].textContent).toBe("P1");
+    expect(cells[1].textContent).toContain("43-hive-upgrade");
+    expect(cells[2].textContent).toContain("In Progress");
+    expect(cells[3].textContent).toBe("Quality Gate");
+    // A parent's list names the parent it lists.
+    expect(container.querySelector(".lg-primitive-card-ref")?.textContent).toBe("42-quality-gate");
   });
 
   it("links to the ticket from the header and runs it from the actions row", async () => {
@@ -658,7 +668,7 @@ describe("Ticket primitive chrome", () => {
   });
 
   it("gives the workflow card the v6 head above its stage timeline", async () => {
-    mockedApi.ticket.mockResolvedValue(gateTicket({ priority: 1 }));
+    mockedApi.ticket.mockResolvedValue(gateTicket({ priority: 1, workflow_stage_status: "pending" }));
 
     const { container } = wrap(
       <TicketWorkflowPrimitive
@@ -672,8 +682,8 @@ describe("Ticket primitive chrome", () => {
     expect(container.querySelector(".lg-primitive-card-header-actions")?.textContent).toContain(
       "In Progress",
     );
-    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("0/1");
     expect(container.querySelector(".lg-primitive-ticket-timeline")).not.toBeNull();
+    expect(container.querySelector(".lg-primitive-card-actions")?.textContent).toContain("0 of 1 stages done");
   });
 });
 

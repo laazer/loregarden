@@ -5,7 +5,7 @@ import type { TicketPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
-import { TicketCardBody, TicketPriorityBadge, stageProgressSegments } from "./TicketCardMeta";
+import { TicketCardBody, TicketFacts, TicketPriorityBadge, stageProgressSegments } from "./TicketCardMeta";
 import { ticketStateChip } from "../../../lib/ticketStates";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
@@ -40,6 +40,16 @@ export function TicketPrimitive({ part }: { part: TicketPart }) {
       status={data ? ticketStateChip(data.state) : null}
       copyRef={data?.external_id ?? part.ticket_id}
       footerHint={live ? (running ? "Stop pauses the running stage" : "Run starts the next stage") : null}
+      meta={
+        data ? (
+          <TicketFacts
+            stageName={data.workflow_stage_name || undefined}
+            stageStatus={data.workflow_stage_status}
+            agent={data.current_stage_agent || undefined}
+            progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
+          />
+        ) : null
+      }
       loading={isLoading}
       error={loadError}
       resourceAction={live ? <OpenTicketButton ticketId={part.ticket_id} compact /> : null}
