@@ -483,6 +483,23 @@
   font-size: var(--fs-micro);
 }
 
+/* Failures in a row, folded: the same grid as an attempt, as one disclosure. */
+.tl-failed-run {
+  width: 100%;
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tl-failed-run:hover {
+  background: color-mix(in srgb, var(--red) 6%, transparent);
+}
+
+.tl-attempts--nested {
+  padding-left: 12px;
+  border-left: 1px solid var(--bd);
+}
+
 .tl-agent {
   color: var(--txm);
   overflow: hidden;

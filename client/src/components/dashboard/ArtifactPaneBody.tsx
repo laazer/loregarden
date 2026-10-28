@@ -5,7 +5,7 @@ import { ApprovalsView } from "./ApprovalsView";
 import { ArtifactView } from "./ArtifactView";
 import { HiveSimulationPanel } from "./HiveSimulationPanel";
 import { TicketOutputs } from "./TicketOutputs";
-import { TicketTimeline, type TimelineRun } from "./TicketTimeline";
+import { TicketTimeline } from "./TicketTimeline";
 import { WorkflowMonitorView } from "./WorkflowMonitorView";
 
 /**
@@ -24,7 +24,6 @@ import { WorkflowMonitorView } from "./WorkflowMonitorView";
 export function ArtifactPaneBody({
   artifactTab,
   ticket,
-  runs,
   hasActiveRun,
   pendingApprovals,
   childTickets,
@@ -40,7 +39,6 @@ export function ArtifactPaneBody({
 }: {
   artifactTab: ArtifactTab;
   ticket?: TicketDetail;
-  runs: readonly TimelineRun[];
   hasActiveRun: boolean;
   pendingApprovals: number;
   childTickets: readonly TicketTreeNode[];
@@ -64,7 +62,6 @@ export function ArtifactPaneBody({
     return (
       <TicketTimeline
         ticket={ticket}
-        runs={runs}
         isActive={isActive}
         pendingApprovals={pendingApprovals}
         childTickets={childTickets}

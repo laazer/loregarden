@@ -185,7 +185,6 @@ describe("A worked ticket's history at the live p90 (33 runs, 172 rows)", () => 
       withProviders(
         <TicketTimeline
             ticket={ticket}
-            runs={[]}
             isActive={false}
             pendingApprovals={0}
             childTickets={[]}

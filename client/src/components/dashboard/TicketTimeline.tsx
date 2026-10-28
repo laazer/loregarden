@@ -6,11 +6,11 @@ import type { TicketDetail } from "../../api/client";
 import type { LedgerAttempt, TicketArtifactItem, TicketTreeNode, TransientRetryNotice } from "../../api/types";
 import { duration } from "../../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../../lib/ledgerStatus";
+import { attemptRows, ticketFailure, type AttemptRow as AttemptRowModel } from "../../lib/ticketFailure";
 import { buildTicketTimeline, isErrorOutput, isFailedStatus, type TimelineVisit } from "../../lib/ticketTimeline";
 import { formatLocalTimestamp } from "../../lib/timestamps";
 import { navigateToTicketTab } from "../../lib/useAppNavigation";
 import { describeError } from "../../state/toastStore";
-import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
 import { LaneLogView } from "../logs/LaneLogView";
 import { StageFanoutPanel } from "../StageFanoutPanel";
 import { TicketChildrenRollup } from "./TicketChildrenRollup";
@@ -19,14 +19,6 @@ import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { formatShortTime, openOutput, outputTitle } from "../../lib/ticketOutputs";
 import { KindTag, VerdictPill } from "./outputParts";
 import "./ArtifactPane.css";
-
-/** The run fields the timeline reads from the ticket's run list. */
-export interface TimelineRun {
-  id: string;
-  run_code: string;
-  status: string;
-  stderr?: string;
-}
 
 const STDERR_PREVIEW_LINES = 8;
 
@@ -39,12 +31,13 @@ const STDERR_PREVIEW_LINES = 8;
  * read next to the stage it happened in, and a revisit shows up as a second
  * visit rather than as one more row in a flat list.
  *
- * What needs a person comes first and only when there is something: a block,
- * automatic retries, approvals waiting.
+ * What stopped the ticket leads the page above this tab (`TicketFailurePanel`);
+ * here the attempt it came from says so, and the failures before it fold into
+ * one row. Automatic retries and approvals waiting come first, and only when
+ * there are some.
  */
 export function TicketTimeline({
   ticket,
-  runs,
   isActive,
   pendingApprovals,
   childTickets,
@@ -52,7 +45,6 @@ export function TicketTimeline({
   onOpenTicket,
 }: {
   ticket: TicketDetail;
-  runs: readonly TimelineRun[];
   isActive: boolean;
   pendingApprovals: number;
   /** The tickets directly under this one, from the board's tree. */
@@ -102,11 +94,13 @@ export function TicketTimeline({
   const onlyChildren = timeline.visits.length === 0 && ticket.child_count > 0;
   const newestFirst = [...timeline.visits].reverse();
   const current = newestFirst.find((visit) => visit.active);
+  // The attempt whose output the failure panel above already shows.
+  const shownAbove = ticketFailure(ticket, timeline.visits)?.attempt?.run_id ?? null;
   const data = ledger.data;
 
   return (
     <div className="tl">
-      <Attention ticket={ticket} runs={runs} pendingApprovals={pendingApprovals} onOpenRunLog={onOpenRunLog} />
+      <Attention ticket={ticket} pendingApprovals={pendingApprovals} />
 
       {feed.isError ? (
         <div className="tl-feed-note" role="alert">
@@ -163,7 +157,7 @@ export function TicketTimeline({
                 visit={visit}
                 stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
                 isLatest={index === 0}
-                runs={runs}
+                shownAbove={shownAbove}
                 onOpenRunLog={onOpenRunLog}
               />
             ))}
@@ -233,13 +227,13 @@ function VisitItem({
   visit,
   stageName,
   isLatest,
-  runs,
+  shownAbove,
   onOpenRunLog,
 }: {
   visit: TimelineVisit;
   stageName: string;
   isLatest: boolean;
-  runs: readonly TimelineRun[];
+  shownAbove: string | null;
   onOpenRunLog: (runId: string) => void;
 }) {
   const bodyId = useId();
@@ -303,15 +297,20 @@ function VisitItem({
       {open ? (
         <div id={bodyId} className="tl-visit-body">
           <ul className="tl-attempts">
-            {visit.visit.attempts.map((attempt) => (
-              <AttemptRow
-                key={attempt.run_id}
-                attempt={attempt}
-                stderr={runs.find((run) => run.id === attempt.run_id)?.stderr}
-                showLiveLog={attempt.run_id === liveRunId}
-                onOpenRunLog={onOpenRunLog}
-              />
-            ))}
+            {attemptRows(visit.visit.attempts, { isParallel: visit.visit.is_parallel, standAlone: shownAbove }).map((row) =>
+              row.kind === "attempt" ? (
+                <AttemptRow
+                  key={row.attempt.run_id}
+                  attempt={row.attempt}
+                  note={row.attempt.run_id === shownAbove ? "output shown above" : ""}
+                  showExcerpt={row.attempt.run_id !== shownAbove}
+                  showLiveLog={row.attempt.run_id === liveRunId}
+                  onOpenRunLog={onOpenRunLog}
+                />
+              ) : (
+                <FailedRunRow key={row.attempts[0].run_id} row={row} onOpenRunLog={onOpenRunLog} />
+              ),
+            )}
           </ul>
           {visit.outputs.length > 0 ? (
             <OutputList outputs={visit.outputs} stageName={stageName} />
@@ -326,24 +325,30 @@ function VisitItem({
 
 function AttemptRow({
   attempt,
-  stderr,
+  note,
+  showExcerpt,
   showLiveLog,
   onOpenRunLog,
 }: {
   attempt: LedgerAttempt;
-  stderr?: string;
+  /** Said after the agent: "output shown above" when the failure panel holds it. */
+  note: string;
+  /** Off where the output is already on screen: in the panel, or once for a run of the same error. */
+  showExcerpt: boolean;
   showLiveLog: boolean;
   onOpenRunLog: (runId: string) => void;
 }) {
   const running = ACTIVE_LEDGER_STATUSES.has(attempt.status);
   const failed = isFailedStatus(attempt.status);
-  const excerpt = failed && stderr ? stderr.trim().split("\n").slice(-STDERR_PREVIEW_LINES).join("\n") : "";
+  const excerpt =
+    failed && showExcerpt ? attempt.error_tail.split("\n").slice(-STDERR_PREVIEW_LINES).join("\n") : "";
   return (
     <li>
       <div className="tl-attempt-row">
         <span className="tl-agent">
           {attempt.agent_id}
           {attempt.skill_name ? <span className="tl-skill"> · {attempt.skill_name}</span> : null}
+          {note ? <span className="tl-skill"> · {note}</span> : null}
         </span>
         <span className={`tl-status${running ? " tl-status--active" : failed ? " tl-status--bad" : ""}`}>
           {attempt.status.replace("_", " ")}
@@ -370,6 +375,64 @@ function AttemptRow({
   );
 }
 
+/**
+ * Attempts that failed back to back, as one row until opened. When they all
+ * recorded the same error it is shown once, not once per attempt.
+ */
+function FailedRunRow({
+  row,
+  onOpenRunLog,
+}: {
+  row: Extract<AttemptRowModel, { kind: "failed-run" }>;
+  onOpenRunLog: (runId: string) => void;
+}) {
+  const bodyId = useId();
+  const [open, setOpen] = useState(false);
+  const seconds = row.attempts.map((attempt) => attempt.duration_seconds).filter((s): s is number => s !== null);
+  const shortest = seconds.length ? duration(Math.min(...seconds)) : "";
+  const longest = seconds.length ? duration(Math.max(...seconds)) : "";
+  const span = shortest === longest ? shortest : `${shortest}–${longest}`;
+  const sharedError = row.sameError ? row.attempts[0].error_tail.split("\n").slice(-STDERR_PREVIEW_LINES).join("\n") : "";
+  return (
+    <li>
+      <Button
+        variant="plain"
+        className="tl-attempt-row tl-failed-run"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="tl-agent">
+          Attempts {row.first}–{row.last}
+          <span className="tl-skill"> · {row.sameError ? "same error" : "each failed"}</span>
+        </span>
+        <span className="tl-status tl-status--bad">failed ×{row.attempts.length}</span>
+        <span className="tl-attempt-time">{span}</span>
+        <span className="tl-chevron" aria-hidden>
+          {open ? "▾" : "▸"}
+        </span>
+      </Button>
+      {open ? (
+        <div id={bodyId}>
+          {sharedError ? <pre className="tl-stderr">{sharedError}</pre> : null}
+          <ul className="tl-attempts tl-attempts--nested">
+            {row.attempts.map((attempt) => (
+              <AttemptRow
+                key={attempt.run_id}
+                attempt={attempt}
+                note=""
+                showExcerpt={!row.sameError}
+                showLiveLog={false}
+                onOpenRunLog={onOpenRunLog}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 function OutputList({ outputs, stageName }: { outputs: readonly TicketArtifactItem[]; stageName?: string }) {
   return (
     <ul className="tl-outputs">
@@ -390,68 +453,13 @@ function OutputList({ outputs, stageName }: { outputs: readonly TicketArtifactIt
   );
 }
 
-/** Everything that wants a person, before any history. Renders nothing when nothing does. */
-function Attention({
-  ticket,
-  runs,
-  pendingApprovals,
-  onOpenRunLog,
-}: {
-  ticket: TicketDetail;
-  runs: readonly TimelineRun[];
-  pendingApprovals: number;
-  onOpenRunLog: (runId: string) => void;
-}) {
-  // The server sends only an error nothing has run since; older ones are
-  // outputs on the visits below, not a state the ticket is in.
-  const errorArt = ticket.artifacts?.error ?? null;
+/** What else wants a person, before any history. Renders nothing when nothing does. */
+function Attention({ ticket, pendingApprovals }: { ticket: TicketDetail; pendingApprovals: number }) {
   const retries = ticket.artifacts?.transient_retries ?? [];
-  // "Blocked" is the ticket's word for itself, never inferred from an artifact:
-  // a failed run the orchestrator is about to retry is not a block.
-  const blocked = ticket.state === "blocked" || Boolean(ticket.blocking_issues?.trim());
-  // `blocking_issues` is only a pointer ("see the Timeline tab") when the message
-  // was long; `block_message` is the text it points at.
-  const blockText = (ticket.block_message || ticket.blocking_issues)?.trim();
-  const blockMessage = blocked ? blockText || errorArt?.message || "" : errorArt?.message || "";
-  // The error artifact records a run_code; the log fetch needs the run's id.
-  const errorRunId = errorArt ? runs.find((run) => run.run_code === errorArt.run_code)?.id : undefined;
-
-  if (!blockMessage && !blocked && retries.length === 0 && pendingApprovals === 0) return null;
+  if (retries.length === 0 && pendingApprovals === 0) return null;
 
   return (
     <div className="tl-attention">
-      {blocked || blockMessage ? (
-        <section
-          className={`tl-callout ${blocked ? "tl-callout--bad" : "tl-callout--warn"}`}
-          aria-label={blocked ? "Blocking issue" : "Last run failed"}
-        >
-          <div className="tl-callout-head">
-            <span className="tl-callout-title">
-              {blocked ? `Blocked${ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}` : "Last run failed"}
-            </span>
-            {errorArt ? (
-              <span className="tl-callout-meta">
-                {errorArt.stage_key} · {errorArt.agent_id} · {errorArt.run_code}
-              </span>
-            ) : null}
-            {errorRunId ? (
-              <Button variant="secondary" compact onClick={() => onOpenRunLog(errorRunId)}>
-                View log
-              </Button>
-            ) : null}
-          </div>
-          {blocked && ticket.block_kind ? <div className="tl-callout-sub">{blockKindMeaning(ticket.block_kind)}</div> : null}
-          {blockMessage ? (
-            <pre className="tl-callout-body">{blockMessage}</pre>
-          ) : ticket.block_kind === "tickets" ? null : (
-            <div className="tl-callout-sub">
-              {ticket.child_count > 0
-                ? "Blocked because work under it is blocked. Open its child tickets to see which."
-                : "No reason was recorded on this ticket. The run log of the stage that stopped is the place to look."}
-            </div>
-          )}
-        </section>
-      ) : null}
       {retries.length > 0 ? <RetryCallout notices={retries} /> : null}
       {pendingApprovals > 0 ? (
         <section className="tl-callout tl-callout--warn" aria-label="Approvals waiting">

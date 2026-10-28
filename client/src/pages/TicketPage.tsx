@@ -11,6 +11,7 @@ import { WorkflowRunControls } from "../components/dashboard/WorkflowRunControls
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketGithubSyncButton } from "../components/TicketGithubSyncButton";
+import { TicketFailurePanel } from "../components/ticket/TicketFailurePanel";
 import { TicketWorkflowColumn } from "../components/ticket/TicketWorkflowColumn";
 import { TicketWorkModals } from "../components/ticket/TicketWorkModals";
 import { Button } from "../components/ui/Button";
@@ -168,6 +169,7 @@ export function TicketPage() {
         <WorkflowPaneTicketMeta
           ticket={sel}
           hasRunErrors={work.hasRunErrors}
+          failureShown={view === "ticket"}
           onOpenParent={openTicket}
           onAddChild={openCreateSubTicket}
         />
@@ -188,6 +190,14 @@ export function TicketPage() {
         ) : null}
         <section className="ticket-page-main" aria-label={VIEW_LABELS[view]}>
           {view === "ticket" ? (
+            <TicketFailurePanel
+              ticket={sel}
+              runs={work.ticketRuns.data ?? []}
+              isActive={work.hasActiveRun || sel.workflow_stage_status === "running"}
+              onOpenRunLog={work.setLogRunId}
+            />
+          ) : null}
+          {view === "ticket" ? (
             <div className="tab-bar">
               <ArtifactTabBar
                 artifactTab={artifactTab}
@@ -205,7 +215,6 @@ export function TicketPage() {
             <ArtifactPaneBody
               artifactTab={artifactTab}
               ticket={sel}
-              runs={work.ticketRuns.data ?? []}
               hasActiveRun={work.hasActiveRun}
               pendingApprovals={work.pendingApprovalCount}
               childTickets={work.children}

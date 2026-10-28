@@ -17,14 +17,22 @@ workflow looped.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from loregarden.core.timestamps import iso_utc
 from loregarden.models.domain import AgentRun, RunStatus
+from loregarden.services.run_errors import normalize_timeout_stderr
+from sqlmodel import Session, col, select
 
 #: Statuses that mean a run is still going, so its visit has no end yet.
 _OPEN_STATUSES = frozenset({RunStatus.RUNNING, RunStatus.QUEUED})
+
+#: How much of a failed run's stderr the ledger carries: the end, where the
+#: error is. The whole text is on GET /runs/{id}/log.
+ERROR_TAIL_LINES = 20
+ERROR_TAIL_CHARS = 4000
 
 
 @dataclass
@@ -113,8 +121,35 @@ def build_ledger(runs: list[AgentRun]) -> list[LedgerVisit]:
     return visits
 
 
-def ledger_payload(runs: list[AgentRun]) -> dict:
-    """The ledger as JSON for the API, with the totals worth showing at a glance."""
+def error_tail(stderr: str) -> str:
+    """The last lines of a run's stderr, where its error is."""
+    lines = normalize_timeout_stderr(stderr).splitlines()[-ERROR_TAIL_LINES:]
+    return "\n".join(lines)[-ERROR_TAIL_CHARS:]
+
+
+def failed_run_error_tails(session: Session, runs: list[AgentRun]) -> dict[str, str]:
+    """Each failed run's error tail, by run id, in one query.
+
+    The run list defers stderr (it is a blob), so this selects it for the
+    failed runs alone. A failed run whose stderr is empty is left out.
+    """
+    failed_ids = [run.id for run in runs if run.status == RunStatus.FAILED]
+    if not failed_ids:
+        return {}
+    rows = session.exec(
+        select(AgentRun.id, AgentRun.stderr).where(col(AgentRun.id).in_(failed_ids))
+    ).all()
+    tails = {run_id: error_tail(stderr or "") for run_id, stderr in rows}
+    return {run_id: tail for run_id, tail in tails.items() if tail}
+
+
+def ledger_payload(runs: list[AgentRun], error_tails: Mapping[str, str] | None = None) -> dict:
+    """The ledger as JSON for the API, with the totals worth showing at a glance.
+
+    `error_tails` is `failed_run_error_tails`: a failed attempt's error, so a
+    reader can tell whether its retries failed the same way.
+    """
+    tails = error_tails or {}
     visits = build_ledger(runs)
     durations = [
         attempt.duration_seconds
@@ -139,6 +174,7 @@ def ledger_payload(runs: list[AgentRun]) -> dict:
                         "started_at": iso_utc(a.started_at),
                         "finished_at": iso_utc(a.finished_at),
                         "duration_seconds": a.duration_seconds,
+                        "error_tail": tails.get(a.run_id, ""),
                     }
                     for a in visit.attempts
                 ],

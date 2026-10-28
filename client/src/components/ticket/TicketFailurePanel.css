@@ -1,0 +1,167 @@
+/* What stopped the ticket, above the reading tabs. Red only when the ticket is
+   blocked; a failed run the orchestrator may still retry is amber. */
+.tf {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.tf--bad {
+  --tf-tone: var(--red);
+}
+
+.tf--warn {
+  --tf-tone: var(--amb);
+}
+
+.tf-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tf-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--tf-tone) 60%, transparent);
+  background: color-mix(in srgb, var(--tf-tone) 14%, var(--bg1));
+  color: var(--tf-tone);
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 700;
+}
+
+.tf-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.tf-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.tf-meta {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.tf-chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--tf-tone) 45%, transparent);
+  background: color-mix(in srgb, var(--tf-tone) 12%, transparent);
+  color: var(--tf-tone);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tf-sub {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.tf-out {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  overflow: hidden;
+}
+
+.tf-out-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  font-size: var(--fs-small);
+}
+
+.tf-out-title {
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.tf-out-run {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.tf-out-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.tf-out-action {
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.tf-out-action:hover {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+/* Numbered lines; an error line gets a bar in the gutter, never an underline. */
+.tf-lines {
+  margin: 0;
+  padding: 6px 0;
+  max-height: 240px;
+  overflow: auto;
+  list-style: none;
+  counter-reset: tf-line;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  color: var(--tx);
+}
+
+.tf-lines li {
+  counter-increment: tf-line;
+  display: grid;
+  grid-template-columns: 3ch 1fr;
+  gap: 12px;
+  padding: 0 12px 0 9px;
+  border-left: 3px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tf-lines li::before {
+  content: counter(tf-line);
+  text-align: right;
+  color: var(--txl);
+}
+
+.tf-lines li.is-error {
+  border-left-color: var(--tf-tone);
+  background: color-mix(in srgb, var(--tf-tone) 9%, transparent);
+}
+
+.tf-lines:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}

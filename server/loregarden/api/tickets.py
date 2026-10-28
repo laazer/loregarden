@@ -80,7 +80,7 @@ from loregarden.services.path_browser import read_import_files
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.run_cancellation import request_cancel, request_orchestration_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
-from loregarden.services.run_ledger import ledger_payload
+from loregarden.services.run_ledger import failed_run_error_tails, ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.stage_retry_budget import (
     StageRetryBudgetExceeded,
@@ -1107,7 +1107,7 @@ def get_ticket_ledger(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     runs = RunService(session).list_runs(ticket_id=ticket_id, limit=limit)
-    return ledger_payload(runs)
+    return ledger_payload(runs, failed_run_error_tails(session, runs))
 
 
 @router.get("/{ticket_id}/artifacts", response_model=dict)
