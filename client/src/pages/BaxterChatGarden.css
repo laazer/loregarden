@@ -3,8 +3,9 @@
  * page keeps its greeting, the dock (380px) has no room for edge vines, and the
  * Workbench belongs to the living map.
  *
- * Two straight vines run down the edges of the reading column and stop on the
- * composer, whose square top corners carry them down its sides. Each turn grows
+ * Two straight vines run down the edges of a column wider than the composer,
+ * on down past its sides, and bend inward under it into its bottom edge, so
+ * the composer sits cradled at their foot. Each turn grows
  * a leaf off its own side: Baxter's on the left near his first line, yours on
  * the right near your last. Everything here is decoration: no element is added
  * for it but the star field, which is aria-hidden.
@@ -15,9 +16,24 @@
   --garden-gutter: 32px;
   /* The thread's scrollbar gutter, per side; measured (useScrollbarGutterVar). */
   --garden-sb: 0px;
-  /* The reading column the vines frame: the thread's own column, inside its
-     22px padding and its gutters. */
-  --garden-col: min(var(--baxter-reading), 100% - 44px - 2 * var(--garden-sb));
+  /* The thread's and dock's side padding (BaxterChatPage.css), which the
+     column sits inside. */
+  --garden-pad: 22px;
+  /* The column the vines frame. Wider than the composer, so the garden spends
+     the page's width and the vines have somewhere to bend back from. */
+  --garden-wide: 1120px;
+  --garden-col: min(var(--garden-wide), 100% - 2 * var(--garden-pad) - 2 * var(--garden-sb));
+  /* The vines' colour, opaque so the stretches that overlap (the elbow on the
+     garden's foot, the elbow on the composer's border) show no seam. */
+  --garden-vine: color-mix(in srgb, var(--ac) 55%, var(--bg0));
+  /* The radius of the bend where a vine turns toward the composer. */
+  --garden-elbow: 28px;
+}
+
+/* The thread's reading measure is the vines' column, so messages, leaves and
+   breakout cards all line up with them. The dock keeps the narrower measure. */
+.baxter-chat--garden .baxter-chat-thread {
+  --baxter-reading: var(--garden-wide);
 }
 
 .baxter-chat-garden {
@@ -58,7 +74,7 @@
   width: 1.5px;
   z-index: 0;
   pointer-events: none;
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--ac) 55%, transparent) 5%);
+  background: linear-gradient(to bottom, transparent, var(--garden-vine) 5%);
 }
 
 .baxter-chat-garden::before {
@@ -138,18 +154,64 @@
   display: none;
 }
 
-/* The composer the vines run into: square top corners where they join, the
-   vines' colour down its sides. */
-/* The composer sits on the same column, so its corners meet the vines. The
-   dock's 100% is already inside its own 22px padding, so only the gutters come
-   off here (a custom property holding 100% would resolve against the dock). */
+/* The composer the vines run into, centred on the same axis. The dock's 100%
+   is already inside its own padding, so only the gutters come off here (a
+   custom property holding 100% would resolve against the dock). The dock is a
+   size container so the elbows below can read its width as 100cqw. */
+.baxter-chat--garden .baxter-chat-dock {
+  container-type: inline-size;
+}
+
 .baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap {
+  /* The vines' column, measured from the dock as the thread measures it. */
+  --garden-dock-col: min(var(--garden-wide), 100cqw - 2 * var(--garden-sb));
+  /* The composer's own width, the same min() as max-width below in cqw. */
+  --garden-dock-composer: min(var(--baxter-reading), 100cqw - 2 * var(--garden-sb));
+  position: relative;
   max-width: min(var(--baxter-reading), 100% - 2 * var(--garden-sb));
 }
 
 .baxter-chat--garden .baxter-chat-dock .lg-chat-composer {
-  border: 1.5px solid color-mix(in srgb, var(--ac) 55%, transparent);
-  border-radius: 0 0 14px 14px;
+  border: 1.5px solid var(--garden-vine);
+}
+
+/* Each vine's foot: on down from where the garden's vine meets the dock
+   (under the dock's 30px fade, which would otherwise dim it), past the
+   composer's side, round a bend, and in along its bottom edge to past its
+   rounded corner, where the border takes over. Hung on the wrap rather than
+   the composer: the wrap has no border, so its 100% is the composer's outer
+   width at any pixel ratio, and its bottom is the composer's. */
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::before,
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::after {
+  content: "";
+  position: absolute;
+  /* The dock's 12px top padding and its 30px fade. */
+  top: -42px;
+  /* The line's foot lies on the composer's bottom border. */
+  bottom: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  border-bottom: 1.5px solid var(--garden-vine);
+  /* The bend, no wider than the run plus the composer's corner, so where the
+     column is no wider than the composer it rounds into that corner exactly. */
+  --garden-foot-radius: min(
+    var(--garden-elbow),
+    (var(--garden-dock-col) - var(--garden-dock-composer)) / 2 + 14px
+  );
+}
+
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::before {
+  left: calc((100% - var(--garden-dock-col)) / 2);
+  right: calc(100% - 14px);
+  border-left: 1.5px solid var(--garden-vine);
+  border-bottom-left-radius: var(--garden-foot-radius);
+}
+
+.baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::after {
+  right: calc((100% - var(--garden-dock-col)) / 2);
+  left: calc(100% - 14px);
+  border-right: 1.5px solid var(--garden-vine);
+  border-bottom-right-radius: var(--garden-foot-radius);
 }
 
 /* The sprout ring: Baxter keeps his own face; two small leaves on the ring
@@ -184,6 +246,12 @@
 
 /* At phone width the gutters cost the messages more room than the vines are
    worth: the garden keeps its ground and stars and drops the vines and leaves. */
+@media (max-width: 880px) {
+  .baxter-chat--garden {
+    --garden-pad: 14px;
+  }
+}
+
 @media (max-width: 640px) {
   .baxter-chat--garden {
     --garden-gutter: 0px;
@@ -191,6 +259,8 @@
 
   .baxter-chat-garden::before,
   .baxter-chat-garden::after,
+  .baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::before,
+  .baxter-chat--garden .baxter-chat-dock .lg-chat-composer-wrap::after,
   .baxter-chat--garden .lg-chat-turn--assistant::before,
   .baxter-chat--garden .lg-chat-turn--assistant::after,
   .baxter-chat--garden .lg-chat-turn--user::before,
