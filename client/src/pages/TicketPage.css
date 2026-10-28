@@ -109,10 +109,69 @@
 }
 
 /* The run controls sit inline here, not as the bar under a pane. */
+/* The run controls are the title row's own buttons here, not a nested bar, so
+   Details, Pause, the forward action and ⋯ wrap as one row on a narrow screen. */
 .run-controls.run-controls--header {
-  border-top: 0;
-  background: none;
+  display: contents;
+}
+
+/* Every control in the title row is one height and one type size, so Details,
+   Pause, the forward action and ⋯ read as one row; only the primary's fill and
+   leaf shape set it apart. */
+.ticket-page-actions :is(.btn-primary, .btn-secondary) {
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--fs-small);
+  gap: 6px;
+}
+
+.ticket-page-actions .overflow-menu-trigger {
+  width: 30px;
   padding: 0;
+}
+
+/* Where it sits and how it is labelled, then its two quiet controls, on one
+   line; history, when opened, takes the line below. */
+.ticket-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-page-meta-actions {
+  display: contents;
+}
+
+.ticket-page-meta-btn,
+.ticket-page-meta .ticket-history-toggle {
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.ticket-page-meta-btn:first-of-type {
+  margin-left: 6px;
+}
+
+.ticket-page-meta-btn:hover,
+.ticket-page-meta-btn:focus-visible,
+.ticket-page-meta .ticket-history-toggle:hover,
+.ticket-page-meta .ticket-history-toggle:focus-visible,
+.ticket-page-meta .ticket-history-toggle[aria-expanded="true"] {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.ticket-page-meta .ticket-history {
+  display: contents;
+}
+
+.ticket-page-meta .ticket-history-list {
+  flex-basis: 100%;
+  margin: 4px 0 0;
 }
 
 .ticket-page-body {
@@ -212,8 +271,7 @@
   }
 
   /* The breadcrumb and the run controls wrap rather than push the page wide. */
-  .ticket-page-crumbs ol,
-  .run-controls.run-controls--header {
+  .ticket-page-crumbs ol {
     flex-wrap: wrap;
   }
 

@@ -178,4 +178,30 @@ describe("TicketPage header", () => {
       window.matchMedia = matchMedia;
     }
   });
+
+  it("lays its actions out secondary first, the forward action last before ⋯, each label before its icon", async () => {
+    jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket({ tags: ["bug"] } as Partial<apiClient.TicketDetail>));
+
+    const { container } = renderAt(`/tickets/${TICKET_ID}/timeline`);
+    await screen.findByRole("heading", { name: "Modal Feature" });
+
+    const actions = container.querySelector(".ticket-page-actions") as HTMLElement;
+    const names = within(actions)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label") ?? b.textContent?.trim());
+    const pause = names.findIndex((n) => /Pause/.test(n ?? ""));
+    const primary = names.findIndex((n) => /Continue|Run|Assemble/i.test(n ?? ""));
+    expect(pause).toBeGreaterThan(-1);
+    expect(primary).toBeGreaterThan(pause);
+    expect(names[names.length - 1]).toBe("More workflow actions");
+    // The word first, then its icon.
+    const pauseButton = within(actions).getByRole("button", { name: /Pause/ });
+    expect(pauseButton.firstChild?.nodeName).not.toBe("svg");
+
+    // Where it sits and how it is labelled, on the row below; the template is no longer among the buttons.
+    const meta = container.querySelector(".ticket-page-meta") as HTMLElement;
+    expect(meta).toHaveTextContent("Default");
+    expect(meta).toHaveTextContent("bug");
+    expect(actions).not.toHaveTextContent("Default");
+  });
 });

@@ -51,8 +51,8 @@ export function PlayButton({
         onClick();
       }}
     >
-      <PlayIcon />
       {label}
+      <PlayIcon />
     </Button>
   );
 }
@@ -77,8 +77,8 @@ export function StopButton({
         onClick();
       }}
     >
-      <StopIcon />
       {label}
+      <StopIcon />
     </Button>
   );
 }
