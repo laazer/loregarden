@@ -25,6 +25,7 @@ line naming which one.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -178,13 +179,26 @@ def _keep_reason(worktree: Worktree) -> KeepReason | None:
     path = Path(worktree.worktree_path) if worktree.worktree_path else None
     if path is None or not path.is_dir():
         return None
-    if _is_dirty(path):
-        return KeepReason.UNCOMMITTED
-    if _has_stranded_commits(path):
-        return KeepReason.STRANDED_HEAD
+    loss = checkout_loss(path)
+    if loss is not None:
+        return loss
     if not _has_preserved_commits(path, worktree):
         return KeepReason.NOTHING_COMMITTED
     return None
+
+
+def _chat_keep_reason(worktree: Worktree) -> KeepReason | None:
+    """`_keep_reason` without its ticket question, for a thread being deleted.
+
+    A chat that only read code never commits, so "no commits beyond its base"
+    held every such thread's checkout forever and the delete reported it as
+    unpublished work. Deleting the thread is the operator's own decision, and
+    a clean checkout of an empty branch loses nothing when it goes.
+    """
+    path = Path(worktree.worktree_path) if worktree.worktree_path else None
+    if path is None or not path.is_dir():
+        return None
+    return checkout_loss(path)
 
 
 def checkout_loss(path: Path) -> KeepReason | None:
@@ -278,7 +292,13 @@ class ChatWorktreeHold:
     removal_failed: bool = False
 
 
-def retire_worktree(session: Session, service: WorktreeService, worktree: Worktree) -> Retirement:
+def retire_worktree(
+    session: Session,
+    service: WorktreeService,
+    worktree: Worktree,
+    *,
+    keep_reason: Callable[[Worktree], KeepReason | None] | None = None,
+) -> Retirement:
     """Remove a worktree's checkout, unless doing so would lose something.
 
     Returns a `Retirement`: whether the checkout is gone, and when it is not,
@@ -301,7 +321,9 @@ def retire_worktree(session: Session, service: WorktreeService, worktree: Worktr
     fallthrough here is the destructive step, so a `KeepReason` this function
     has no case for would delete the checkout it was added to protect.
     """
-    reason = _keep_reason(worktree)
+    # Looked up per call, not bound as the default: a default would freeze the
+    # function object at import, past any later rebinding of the module name.
+    reason = (keep_reason or _keep_reason)(worktree)
     if reason is not None:
         logger.warning(
             "Worktree %s at %s kept on disk: %s (%s)",
@@ -376,9 +398,10 @@ def release_chat_worktree(
     a removal was *attempted*, so it can say why rather than guessing.
 
     The conversational counterpart of :func:`release_ticket_worktree`, and
-    subject to the same refusals: `retire_worktree` keeps a tree with
-    uncommitted changes, a HEAD holding a commit no ref reaches, or a branch
-    carrying no commits of its own, because removing any of them loses work. A
+    subject to the refusals that lose work: `retire_worktree` keeps a tree with
+    uncommitted changes or a HEAD holding a commit no ref reaches. Not the
+    empty-branch refusal (see `_chat_keep_reason`): a thread that never
+    committed has nothing on its branch to lose. A
     removal that failed is returned here too — the thread still has a checkout,
     so the caller must not drop the row that owns it.
     """
@@ -406,7 +429,7 @@ def release_chat_worktree(
         # written for a tree the server chose to leave alone.
         return ChatWorktreeHold(worktree=worktree)
 
-    outcome = retire_worktree(session, service, worktree)
+    outcome = retire_worktree(session, service, worktree, keep_reason=_chat_keep_reason)
     if outcome.removed:
         return None
     return ChatWorktreeHold(worktree=worktree, removal_failed=outcome.failure != "")

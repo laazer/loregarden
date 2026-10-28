@@ -576,6 +576,22 @@ def test_a_thread_whose_checkout_went_is_released_outright(session, workspace, c
     assert release_chat_worktree(session, chat_session) is None
 
 
+def test_a_thread_that_never_committed_has_its_clean_checkout_released(
+    session, workspace, chat_session
+):
+    """A thread that only read code leaves a clean checkout of an empty branch.
+
+    The ticket path keeps such a tree ("no commits beyond its base"), and the
+    delete then refused every read-only thread as holding unpublished work.
+    Nothing is lost by removing it, so the delete goes through.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+
+    assert release_chat_worktree(session, chat_session) is None
+    assert not root.exists()
+
+
 def test_a_thread_with_no_active_worktree_is_released_outright(session, chat_session):
     """AC17 — nothing to hold. Distinct from the failure above only in the
     database, which is why it is asserted rather than assumed."""
