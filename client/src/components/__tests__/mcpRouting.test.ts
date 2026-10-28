@@ -4,6 +4,7 @@ import {
   initials,
   MAX_AGENT_NODES,
   routingRules,
+  standardGrant,
   switchboardAgents,
   switchboardServers,
 } from "../mcp/mcpRouting";
@@ -150,4 +151,45 @@ it("counts the agents it could not draw instead of dropping them", () => {
 
   expect(nodes).toHaveLength(MAX_AGENT_NODES);
   expect(nodes[nodes.length - 1].label).toBe("+18 more");
+});
+
+
+describe("the standard set", () => {
+  const STD = ["loregarden_get_ticket", "loregarden_list_tickets", "loregarden_complete_stage"];
+  const agents = [
+    studioAgent({ slug: "a", name: "A", mcp_tools: STD }),
+    studioAgent({ slug: "b", name: "B", mcp_tools: [...STD].reverse() }),
+    studioAgent({ slug: "c", name: "C", mcp_tools: [...STD, "loregarden_land_ticket"] }),
+    studioAgent({ slug: "d", name: "D", mcp_tools: ["loregarden_get_ticket", "loregarden_list_tickets"] }),
+    studioAgent({ slug: "e", name: "E", mcp_tools: ["loregarden_doctor"] }),
+  ];
+
+  it("is the grant most agents share, in any order, when at least two do", () => {
+    expect(standardGrant(agents)).toEqual([...STD].sort());
+    expect(standardGrant(agents.slice(2))).toBeNull();
+  });
+
+  it("describes each grant against it, keeping the whole list for the tooltip", () => {
+    const rules = routingRules([], agents, POLICY);
+    const scope = Object.fromEntries(rules.map((r) => [r.agent, r.scope]));
+
+    expect(scope.A).toBe("Standard set");
+    expect(scope.B).toBe("Standard set");
+    expect(scope.C).toBe("Standard set + loregarden_land_ticket");
+    expect(scope.D).toBe("Standard set − loregarden_complete_stage");
+    // Four changes is still within the cap, so it reads as changes to the set.
+    expect(scope.E).toBe("Standard set + loregarden_doctor − loregarden_complete_stage − loregarden_get_ticket − loregarden_list_tickets");
+    expect(rules.find((r) => r.agent === "C")?.scopeTitle).toBe([...STD, "loregarden_land_ticket"].join(", "));
+  });
+
+  it("puts the agents that differ above the ones on the standard set", () => {
+    const order = routingRules([], agents, POLICY).map((r) => r.agent);
+    expect(order).toEqual(["C", "D", "E", "A", "B"]);
+  });
+
+  it("lists a grant in full once it differs by more than four tools", () => {
+    const far = studioAgent({ slug: "f", name: "F", mcp_tools: ["t1", "t2", "t3", "t4", "t5"].map((t) => `loregarden_${t}`) });
+    const rules = routingRules([], [...agents, far], POLICY);
+    expect(rules.find((r) => r.agent === "F")?.scope).toBe("loregarden_t1, loregarden_t2, loregarden_t3, loregarden_t4, loregarden_t5");
+  });
 });

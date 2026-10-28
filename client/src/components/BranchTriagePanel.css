@@ -47,6 +47,12 @@
   gap: 8px;
 }
 
+.branch-triage-filter {
+  flex: none;
+  height: 28px;
+  font-size: var(--fs-small);
+}
+
 .branch-triage-card {
   text-align: left;
   border: 1px solid var(--bd);

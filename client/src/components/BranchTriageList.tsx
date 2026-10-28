@@ -15,6 +15,8 @@ import { BranchDeleteConfirmModal } from "./BranchDeleteConfirmModal";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
 import { BranchWorktreesModal } from "./BranchWorktreesModal";
 import { STATE_COLORS, STATE_LABELS } from "./UpdateStateModal";
+import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 import "./BranchTriagePanel.css";
 
 function branchNeedsWorktreeRemoval(branch: BranchTriageEntry): boolean {
@@ -84,6 +86,8 @@ export function BranchTriageList({
   const [branchPendingDelete, setBranchPendingDelete] = useState<BranchTriageEntry | null>(null);
   const [branchPendingCheckout, setBranchPendingCheckout] = useState<BranchTriageEntry | null>(null);
   const [worktreesBranchName, setWorktreesBranchName] = useState<string | null>(null);
+  // A repo carries well over a hundred branches; the list needs a way to narrow it.
+  const [filter, setFilter] = useState("");
 
   const checkout = useMutation({
     meta: { errorTitle: "Checkout branch" },
@@ -143,8 +147,40 @@ export function BranchTriageList({
     return <div className="branch-triage-empty">No branches found in this workspace repo.</div>;
   }
 
+  // By branch name, or by a linked ticket's id: "which branch is lg-x-12 on?"
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? sorted.filter(
+        (branch) =>
+          branch.name.toLowerCase().includes(needle) ||
+          branch.linked_tickets.some((ticket) => ticket.external_id.toLowerCase().includes(needle)),
+      )
+    : sorted;
+
   return (
     <div className="branch-triage-list">
+      <Input
+        type="search"
+        className="branch-triage-filter"
+        aria-label="Filter branches by name or linked ticket"
+        placeholder={`Filter ${sorted.length} branches by name or ticket…`}
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && filter) {
+            event.preventDefault();
+            setFilter("");
+          }
+        }}
+      />
+      {shown.length === 0 ? (
+        <div className="branch-triage-empty">
+          <p>No branch name or linked ticket contains “{filter.trim()}”.</p>
+          <Button variant="secondary" compact onClick={() => setFilter("")}>
+            Clear the filter
+          </Button>
+        </div>
+      ) : null}
       <BranchCheckoutConfirmModal
         open={branchPendingCheckout !== null}
         branch={branchPendingCheckout}
@@ -193,7 +229,7 @@ export function BranchTriageList({
           {remove.error instanceof Error ? remove.error.message : "Failed to delete branch"}
         </div>
       ) : null}
-      {sorted.map((branch) => (
+      {shown.map((branch) => (
         <div
           key={branch.name}
           className={`branch-triage-card${selectedBranch === branch.name ? " selected" : ""}`}
