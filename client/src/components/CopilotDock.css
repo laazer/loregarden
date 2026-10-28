@@ -404,3 +404,55 @@
     display: none;
   }
 }
+
+/* Chat, or what the chat has made: a tab row under the head. */
+.copilot-dock-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.copilot-dock-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px 6px;
+  border-bottom: 2px solid transparent;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.copilot-dock-tab:hover {
+  color: var(--tx);
+}
+
+.copilot-dock-tab.is-on {
+  color: var(--tx);
+  font-weight: 600;
+  border-bottom-color: var(--ac);
+}
+
+.copilot-dock-tab:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.copilot-dock-tab-count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--txm);
+}
+
+/* The panels stay mounted; a display rule on either must not show a hidden one. */
+.copilot-dock-tab-panel[hidden] {
+  display: none;
+}
+
+.copilot-dock-artifacts {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
