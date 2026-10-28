@@ -790,6 +790,64 @@
   color: var(--aml);
 }
 
+/* A pasted list: one row per link found, its name and reason editable. */
+.rl-paste-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rl-paste-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--txm);
+  padding: 0 8px 6px 0;
+}
+
+.rl-paste-table td {
+  padding: 6px 8px 6px 0;
+  vertical-align: top;
+  border-top: 1px solid var(--bd);
+}
+
+.rl-paste-table td:nth-child(1) {
+  width: 22%;
+}
+
+.rl-paste-table td:nth-child(2) {
+  width: 26%;
+  padding-top: 12px;
+}
+
+.rl-paste-table td:last-child {
+  width: 1%;
+  padding-right: 0;
+}
+
+.rl-paste-table input,
+.rl-paste-table textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .rl-paste-table thead {
+    display: none;
+  }
+
+  .rl-paste-table tr,
+  .rl-paste-table td {
+    display: block;
+    width: auto;
+  }
+
+  .rl-paste-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--txm);
+  }
+}
+
 /* Who a review is for: workspaces to read for, initiatives to feed. */
 .rl-targets {
   display: flex;

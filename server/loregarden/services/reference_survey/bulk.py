@@ -57,12 +57,16 @@ class BulkAddItem(BaseModel):
 def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
     # Refused here, before any URL is added, rather than half-way down the list.
     initiatives = resolve_initiatives(session, body.initiative_ids)
+    entries = {entry.url: entry for entry in body.entries}
     items = []
     for url in dict.fromkeys(u.strip() for u in body.urls if u.strip()):
         kind = body.kind or infer_kind(url)
+        entry = entries.get(url)
         one = SourceIn(
             workspace_slugs=body.workspace_slugs, kind=kind, url=url, question=body.question,
-            queued_reason=body.queued_reason, priority=body.priority,
+            name=entry.name if entry else "",
+            queued_reason=(entry and entry.queued_reason) or body.queued_reason,
+            priority=body.priority,
         )  # fmt: skip
         try:
             added = enqueue_source(session, one, admitted=True)
