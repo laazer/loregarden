@@ -85,10 +85,15 @@
   right: calc(50% - var(--garden-col) / 2);
 }
 
-/* Messages sit inside the vines, the width of a leaf away. */
+/* Messages sit inside the vines, the width of a leaf away. A breakout card
+   stops at the right one: the column already spans the garden, so its room is
+   the column between the gutters (the card's own containing block), not the
+   chat page's reach to the thread's edge, which measures from the column's
+   outer edge and so ran every wide card a gutter past the vine and the thread. */
 .baxter-chat--garden .baxter-chat-thread .lg-chat-messages {
   box-sizing: border-box;
   padding-inline: var(--garden-gutter);
+  --lg-primitive-breakout-max: 100%;
 }
 
 /* A leaf per turn, from its vine to the turn's edge, and a glowing node where it joins. */
