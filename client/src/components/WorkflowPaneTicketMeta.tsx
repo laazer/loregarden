@@ -9,6 +9,8 @@ interface WorkflowPaneTicketMetaProps {
   hasRunErrors: boolean;
   onOpenParent: (parentId: string) => void;
   onAddChild: (ticket: TicketDetail) => void;
+  /** The page shows the ticket's failure in full, so the attention row leaves it out. */
+  failureShown?: boolean;
 }
 
 /** The pill row under the workflow pane's title: where the ticket sits
@@ -18,6 +20,7 @@ export function WorkflowPaneTicketMeta({
   hasRunErrors,
   onOpenParent,
   onAddChild,
+  failureShown = false,
 }: WorkflowPaneTicketMetaProps) {
   const parentId = ticket.parent_ticket_id;
   const tags = ticket.tags ?? [];
@@ -56,7 +59,7 @@ export function WorkflowPaneTicketMeta({
           </button>
         )}
       </div>
-      <TicketAttention ticket={ticket} hasRunErrors={hasRunErrors} />
+      <TicketAttention ticket={ticket} hasRunErrors={hasRunErrors} failureShown={failureShown} />
       <TicketHistory ticketId={ticket.id} />
       {tags.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>

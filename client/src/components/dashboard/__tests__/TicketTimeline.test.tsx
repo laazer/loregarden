@@ -7,7 +7,7 @@ import type { LedgerAttempt, LedgerVisit, TicketArtifactItem, TicketLedger, Tick
 import { stageFanoutApi } from "../../../lib/stageFanoutApi";
 import { navigateToTicketTab } from "../../../lib/useAppNavigation";
 import { useReaderStore } from "../../../state/readerStore";
-import { TicketTimeline, type TimelineRun } from "../TicketTimeline";
+import { TicketTimeline } from "../TicketTimeline";
 
 jest.mock("../../../api/client");
 jest.mock("../../../lib/stageFanoutApi");
@@ -28,6 +28,7 @@ function attempt(overrides: Partial<LedgerAttempt> = {}): LedgerAttempt {
     started_at: "2026-09-20T10:00:00+00:00",
     finished_at: "2026-09-20T10:10:00+00:00",
     duration_seconds: 600,
+    error_tail: "",
     ...overrides,
   };
 }
@@ -89,7 +90,6 @@ function renderTimeline({
   visits = [PLAN, IMPLEMENT, GATE],
   items = [] as TicketArtifactItem[],
   detail = ticket(),
-  runs = [] as TimelineRun[],
   pendingApprovals = 0,
   childTickets = [] as TicketTreeNode[],
   onOpenRunLog = jest.fn(),
@@ -102,7 +102,6 @@ function renderTimeline({
     <QueryClientProvider client={client}>
       <TicketTimeline
         ticket={detail}
-        runs={runs}
         isActive={false}
         pendingApprovals={pendingApprovals}
         childTickets={childTickets}
@@ -183,16 +182,80 @@ it("toggles a stage open and closed", async () => {
   expect(plan).toHaveAttribute("aria-expanded", "false");
 });
 
-it("shows a failed run's stderr under it and opens its log", async () => {
-  const { onOpenRunLog } = renderTimeline({
-    runs: [{ id: "i1", run_code: "run_a", status: "failed", stderr: "line one\nAssertionError: boom" }],
-  });
+it("shows a failed run's error under it and opens its log", async () => {
+  const failing = visit("implement", [
+    attempt({ run_id: "i1", status: "failed", error_tail: "line one\nAssertionError: boom" }),
+    attempt({ run_id: "i2" }),
+  ]);
+  const { onOpenRunLog } = renderTimeline({ visits: [PLAN, failing, GATE] });
 
   fireEvent.click(await screen.findByRole("button", { name: /Implementation/ }));
   expect(await screen.findByText(/AssertionError: boom/)).toBeInTheDocument();
   const implementBody = document.getElementById(stageButton(/Implementation/).getAttribute("aria-controls")!)!;
   fireEvent.click(within(implementBody).getAllByRole("button", { name: /Open the log/ })[0]);
   expect(onOpenRunLog).toHaveBeenCalledWith("i1");
+});
+
+describe("a stage that failed more than once", () => {
+  const LAUNCH = "Agent launch failed\ntmux: command too long";
+  const failed = (run_id: string, error_tail = LAUNCH, duration_seconds = 2) =>
+    attempt({ run_id, run_code: `run_${run_id}`, agent_id: "test_designer", status: "failed", error_tail, duration_seconds });
+  const blockedOnDesign = ticket({
+    state: "blocked",
+    block_message: "Agent launch failed",
+    stages: [{ key: "test_design", name: "Design tests" }],
+  } as Partial<TicketDetail>);
+
+  it("folds the earlier failures into one row and points the latest at the panel above", async () => {
+    renderTimeline({
+      visits: [visit("test_design", [failed("d1", LAUNCH, 1), failed("d2"), failed("d3"), failed("d4")])],
+      detail: blockedOnDesign,
+    });
+
+    const stage = await screen.findByRole("button", { name: /Design tests/ });
+    const body = document.getElementById(stage.getAttribute("aria-controls")!)!;
+    const fold = within(body).getByRole("button", { name: /Attempts 1–3 · same error/ });
+    expect(fold).toHaveTextContent("failed ×3");
+    expect(fold).toHaveTextContent("1s–2s");
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(within(body).getByText(/output shown above/)).toBeInTheDocument();
+    // The latest attempt's output is in the panel, the folded ones are closed: no excerpt yet.
+    expect(within(body).queryByText(/command too long/)).not.toBeInTheDocument();
+    expect(within(body).getAllByRole("button", { name: /Open the log/ })).toHaveLength(1);
+  });
+
+  it("opens the folded attempts with their shared error once and a log for each", async () => {
+    const onOpenRunLog = jest.fn();
+    renderTimeline({
+      visits: [visit("test_design", [failed("d1"), failed("d2"), failed("d3"), failed("d4")])],
+      detail: blockedOnDesign,
+      onOpenRunLog,
+    });
+
+    const stage = await screen.findByRole("button", { name: /Design tests/ });
+    const body = document.getElementById(stage.getAttribute("aria-controls")!)!;
+    fireEvent.click(within(body).getByRole("button", { name: /Attempts 1–3/ }));
+
+    expect(within(body).getAllByText(/command too long/)).toHaveLength(1);
+    const logs = within(body).getAllByRole("button", { name: /Open the log/ });
+    expect(logs).toHaveLength(4);
+    fireEvent.click(logs[1]);
+    expect(onOpenRunLog).toHaveBeenCalledWith("d2");
+  });
+
+  it("does not claim the same error when the attempts failed differently", async () => {
+    renderTimeline({
+      visits: [visit("test_design", [failed("d1", "timeout"), failed("d2", "exit 1"), attempt({ run_id: "d3" })])],
+    });
+
+    // The latest stage, so it is open already.
+    const stage = await screen.findByRole("button", { name: /test_design/ });
+    const body = document.getElementById(stage.getAttribute("aria-controls")!)!;
+    const fold = within(body).getByRole("button", { name: /Attempts 1–2 · each failed/ });
+    fireEvent.click(fold);
+    expect(within(body).getByText("timeout")).toBeInTheDocument();
+    expect(within(body).getByText("exit 1")).toBeInTheDocument();
+  });
 });
 
 it("puts each output under the stage that was running and opens it in the reader", async () => {
@@ -213,63 +276,6 @@ it("puts each output under the stage that was running and opens it in the reader
 
   fireEvent.click(within(gateBody).getByRole("button", { name: /Stage report — gate/ }));
   expect(useReaderStore.getState().document?.title).toBe("Stage report — gate");
-});
-
-it("leads with the block and opens the failing run's log, resolving its run code", async () => {
-  const { onOpenRunLog } = renderTimeline({
-    detail: ticket({
-      blocking_issues: "Gate failed: 2 commands",
-      artifacts: { error: { message: "Gate failed: 2 commands", run_code: "run_zz", agent_id: "gatekeeper", stage_key: "gate", command: "" } },
-    } as Partial<TicketDetail>),
-    runs: [{ id: "g1", run_code: "run_zz", status: "failed" }],
-  });
-
-  const block = await screen.findByRole("region", { name: "Blocking issue" });
-  expect(block).toHaveTextContent("Gate failed: 2 commands");
-  fireEvent.click(within(block).getByRole("button", { name: "View log" }));
-  expect(onOpenRunLog).toHaveBeenCalledWith("g1");
-});
-
-it("shows a long block's full text, not the pointer back to this tab", async () => {
-  renderTimeline({
-    detail: ticket({
-      state: "blocked",
-      blocking_issues: "Stage 'test-break' hit a blocking issue — see the Timeline tab for details.",
-      block_message: "No failing test could be written: the module under test does not exist.",
-    } as Partial<TicketDetail>),
-  });
-
-  const block = await screen.findByRole("region", { name: "Blocking issue" });
-  expect(block).toHaveTextContent("the module under test does not exist");
-  expect(block).not.toHaveTextContent("see the Timeline tab");
-});
-
-it("never calls a ticket blocked on the strength of an error artifact alone", async () => {
-  renderTimeline({
-    detail: ticket({
-      state: "in_progress",
-      artifacts: { error: { message: "Run exited 1", run_code: "run_zz", agent_id: "implementer", stage_key: "implement", command: "" } },
-    } as Partial<TicketDetail>),
-    runs: [{ id: "g1", run_code: "run_zz", status: "failed" }],
-  });
-
-  const failed = await screen.findByRole("region", { name: "Last run failed" });
-  expect(failed).toHaveTextContent("Run exited 1");
-  expect(screen.queryByRole("region", { name: "Blocking issue" })).toBeNull();
-});
-
-it("shows a blocked ticket as blocked even when no reason was recorded", async () => {
-  renderTimeline({ detail: ticket({ state: "blocked" } as Partial<TicketDetail>) });
-
-  const block = await screen.findByRole("region", { name: "Blocking issue" });
-  expect(block).toHaveTextContent(/No reason was recorded/);
-});
-
-it("explains a parent blocked by its children rather than pointing at a run", async () => {
-  renderTimeline({ detail: ticket({ state: "blocked", child_count: 4 } as Partial<TicketDetail>) });
-
-  const block = await screen.findByRole("region", { name: "Blocking issue" });
-  expect(block).toHaveTextContent(/work under it is blocked/);
 });
 
 it("groups automatic retries by stage and shows the latest cause", async () => {
@@ -314,7 +320,6 @@ it("names what failed to load and retries it", async () => {
     <QueryClientProvider client={client}>
       <TicketTimeline
         ticket={ticket()}
-        runs={[]}
         isActive={false}
         pendingApprovals={0}
         childTickets={[]}
@@ -339,7 +344,6 @@ function renderWithFeed(feed: Promise<{ items: TicketArtifactItem[]; total: numb
     <QueryClientProvider client={client}>
       <TicketTimeline
         ticket={ticket()}
-        runs={[]}
         isActive={false}
         pendingApprovals={0}
         childTickets={[]}
@@ -378,7 +382,6 @@ it("waits for the feed before saying nothing has run", async () => {
     <QueryClientProvider client={client}>
       <TicketTimeline
         ticket={ticket()}
-        runs={[]}
         isActive={false}
         pendingApprovals={0}
         childTickets={[]}

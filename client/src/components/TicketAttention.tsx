@@ -38,12 +38,23 @@ function findingLabel(finding: MonitorFinding): string {
  * workflow itself below the fold. Now each signal is one line with its next
  * step; the detail is in the Timeline, the reader, or one disclosure away.
  *
+ * `failureShown`: the page already leads with the block or the failed run in
+ * full (`TicketFailurePanel`), so the one-line teaser for it would repeat it.
+ *
  * Renders nothing when nothing needs attention. The monitor's findings stay
  * quiet while loading and on failure: they are advisory, the block and the
  * run errors above them come from the ticket itself, and an always-present
  * row would be noise on the many tickets that are fine.
  */
-export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail; hasRunErrors: boolean }) {
+export function TicketAttention({
+  ticket,
+  hasRunErrors,
+  failureShown = false,
+}: {
+  ticket: TicketDetail;
+  hasRunErrors: boolean;
+  failureShown?: boolean;
+}) {
   const findingsId = useId();
   const [showFindings, setShowFindings] = useState(false);
   const { data: findings = [] } = useQuery({
@@ -52,11 +63,12 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
     enabled: Boolean(ticket.id),
   });
 
-  const block = ticket.blocking_issues?.trim() ?? "";
+  const block = failureShown ? "" : (ticket.blocking_issues?.trim() ?? "");
+  const runFailed = hasRunErrors && !failureShown;
   const waiting = (ticket.waiting_on?.length ?? 0) > 0 || (ticket.dependencies ?? []).some(
     (dep) => dep.unmet_reason === "not_landed" && !dep.overridden,
   );
-  if (!block && !hasRunErrors && findings.length === 0 && !waiting) return null;
+  if (!block && !runFailed && findings.length === 0 && !waiting) return null;
 
   const teaser = firstLine(block);
   const truncated = block.length > TEASER_CHARS || teaser !== block;
@@ -88,7 +100,7 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
             Timeline
           </Button>
         </div>
-      ) : hasRunErrors ? (
+      ) : runFailed ? (
         <div className="attn-row attn-row--bad">
           <span className="attn-label">Run failed</span>
           <span className="attn-text">A run on this ticket failed; its output is on the timeline.</span>

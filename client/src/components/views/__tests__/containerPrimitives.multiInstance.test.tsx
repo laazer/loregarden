@@ -168,6 +168,7 @@ describe("AC7 — two run-ledger panels side by side", () => {
               started_at: "2026-08-14T09:00:00",
               finished_at: "2026-08-14T09:00:30",
               duration_seconds: 30,
+              error_tail: "",
             },
           ],
         },

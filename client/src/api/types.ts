@@ -300,6 +300,8 @@ export interface LedgerAttempt {
   started_at: string | null;
   finished_at: string | null;
   duration_seconds: number | null;
+  /** The end of a failed run's stderr, where its error is; "" for any other run. */
+  error_tail: string;
 }
 
 /** One contiguous stretch of work on a stage. */
