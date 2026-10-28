@@ -692,8 +692,14 @@ class OrchestrationService:
             return ticket
 
         self._assert_human_gate_allowed(ticket, stage_def, target_key)
-        self._park_ticket_at_gate(ticket, instance, stages, target_key)
-        self._ensure_exit_action_gate_approval(ticket, stage_def, target_key)
+        if parse_stage_map(instance, stages).get(target_key) == StageStatus.WONT_DO:
+            raise ValueError(f"Stage '{target_key}' is marked won't do")
+        # The approval first: a stage parked `awaiting` with nothing in the inbox
+        # waits on a person nobody asked, and the reconcile timer reads between
+        # commits. No unresolved actions means nothing to ask, so the stage is done.
+        raised = self._ensure_exit_action_gate_approval(ticket, stage_def, target_key)
+        status = StageStatus.AWAITING if raised else StageStatus.DONE
+        self._park_ticket_at_gate(ticket, instance, stages, target_key, status)
 
         event_bus.publish(
             self.session,
@@ -726,10 +732,8 @@ class OrchestrationService:
         instance: WorkflowInstance,
         stages: list[WorkflowStageDef],
         target_key: str,
+        status: StageStatus,
     ) -> WorkflowInstance:
-        stage_map = parse_stage_map(instance, stages)
-        if stage_map.get(target_key) == StageStatus.WONT_DO:
-            raise ValueError(f"Stage '{target_key}' is marked won't do")
         # Opening the gate is a fresh attempt — drop any stale blocking message
         # left over from a prior failure (see the matching comment in
         # start_run for why this must be unconditional, not just BLOCKED/DONE).
@@ -739,7 +743,7 @@ class OrchestrationService:
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
         ticket.workflow_stage_key = target_key
-        set_stage_status(ticket, instance, stages, target_key, StageStatus.AWAITING)
+        set_stage_status(ticket, instance, stages, target_key, status)
         ticket.blocking_issues = ""
         self.session.add(ticket)
         self.session.add(instance)
@@ -748,20 +752,15 @@ class OrchestrationService:
 
     def _ensure_exit_action_gate_approval(
         self, ticket: Ticket, stage_def: WorkflowStageDef, target_key: str
-    ) -> None:
+    ) -> bool:
+        """Whether a pending gate now asks a person about ``target_key``.
+
+        `create_workflow_gate_approval` returns the stage's pending gate when
+        one is already open, and None when no exit action is left to resolve.
+        """
         human_actions = resolve_exit_actions(stage_def, None).human_required_actions
         template = self.get_template_for_ticket(ticket)
         stage_name = stage_display_name(template, target_key) if template else target_key
-        existing = self.session.exec(
-            select(Approval).where(
-                Approval.ticket_id == ticket.id,
-                Approval.stage_key == target_key,
-                Approval.status == ApprovalStatus.PENDING,
-                Approval.kind == ApprovalKind.WORKFLOW_GATE,
-            )
-        ).first()
-        if existing:
-            return
         created = create_workflow_gate_approval(
             self.session,
             ticket,
@@ -770,15 +769,7 @@ class OrchestrationService:
             stage_def=stage_def,
             human_required_actions=human_actions,
         )
-        if created is not None:
-            return
-        # No unresolved actions — mark done instead of parking.
-        instance, stages = self._resolve_stages(ticket)
-        if instance and stages:
-            set_stage_status(ticket, instance, stages, target_key, StageStatus.DONE)
-            self.session.add(ticket)
-            self.session.add(instance)
-            self.session.commit()
+        return created is not None
 
     def _reject_if_ticket_busy(self, ticket: Ticket, target_key: str) -> None:
         """Refuse to start when something is already in flight on this ticket.

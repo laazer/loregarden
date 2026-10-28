@@ -4,7 +4,7 @@
 on anyone and every block unclassified, so a tree surface rendered over it saw
 two levels and a "Needs me" view with nothing to sort. Live, capabilities sit
 under features and tasks under capabilities (four levels below the roots), a
-stage waits on a person on 15 tickets, and a quarter of the backlog is held by
+stage waits on a person on 12 tickets, and a quarter of the backlog is held by
 an unmet prerequisite. Measured 2026-10-19 (read-only); counts that scale with
 volume are scaled to the scenario by `scale`.
 
@@ -21,6 +21,9 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
     BlockKind,
     StageStatus,
     Ticket,
@@ -37,9 +40,10 @@ class TreeShape(BaseModel):
     tickets: int
     #: Child type -> parent type -> live count. Features always hang off a milestone.
     parents: dict[WorkItemType, dict[WorkItemType, int]]
-    #: In progress, with the current stage awaiting a person.
+    #: In progress, with the current stage awaiting a person, each asked by a
+    #: pending gate approval.
     awaiting: int
-    #: The stage those wait in, by type (live: playtest features, script_review bugs).
+    #: The stage those wait in, by type (live: playtest features).
     awaiting_stage: dict[WorkItemType, str]
     #: Backlog tickets, and those held by an unfinished prerequisite.
     backlog: int
@@ -62,8 +66,11 @@ TREE_CALIBRATION = TreeShape(
             WorkItemType.CAPABILITY: 5,
         },
     },
-    awaiting=15,
-    awaiting_stage={WorkItemType.FEATURE: "playtest", WorkItemType.BUG: "script_review"},
+    # 15 on 2026-10-19, but three were the defect lg-workflow-integrity-1625
+    # repairs: bugs at script_review with no approval asking anyone. Re-measured
+    # 2026-10-27 without them: 12 playtest features, each with its gate.
+    awaiting=12,
+    awaiting_stage={WorkItemType.FEATURE: "playtest"},
     backlog=1132,
     prerequisite_held=303,
 )
@@ -102,7 +109,7 @@ def add_tree_shape(
     rows = [(slug, session.get(Ticket, tid), milestone) for slug, tid, _e, _s, milestone in tickets]
     _nest(rows, rng)
     blocked_kinds = _classify_blocks(session, rows)
-    awaiting = _park(rows, rng, round(TREE_CALIBRATION.awaiting * scale))
+    awaiting = _park(session, rows, rng, round(TREE_CALIBRATION.awaiting * scale))
     held = _hold(session, rows, rng, make_id)
     for _slug, ticket, _milestone in rows:
         session.add(ticket)
@@ -160,8 +167,12 @@ def _classify_blocks(session: Session, rows: list) -> dict[BlockKind, int]:
 _CHAIN = (WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.CAPABILITY)
 
 
-def _park(rows: list, rng: random.Random, count: int) -> int:
-    """`count` in-progress tickets whose current stage awaits a person."""
+def _park(session: Session, rows: list, rng: random.Random, count: int) -> int:
+    """`count` in-progress tickets whose current stage awaits a person, who is asked.
+
+    A stage awaiting nobody's approval is the defect `awaiting_stages_have_a_pending_approval`
+    repairs; the scenario raises the gate that parks it, as live does.
+    """
     eligible = [
         ticket
         for _slug, ticket, _milestone in rows
@@ -169,8 +180,21 @@ def _park(rows: list, rng: random.Random, count: int) -> int:
         and ticket.work_item_type in TREE_CALIBRATION.awaiting_stage
     ]
     for ticket in rng.sample(eligible, k=min(count, len(eligible))):
-        ticket.workflow_stage_key = TREE_CALIBRATION.awaiting_stage[ticket.work_item_type]
+        stage_key = TREE_CALIBRATION.awaiting_stage[ticket.work_item_type]
+        ticket.workflow_stage_key = stage_key
         ticket.workflow_stage_status = StageStatus.AWAITING
+        session.add(
+            Approval(
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+                kind=ApprovalKind.WORKFLOW_GATE,
+                title=f"Resolve {stage_key.capitalize()} exit actions",
+                level="medium",
+                stage_key=stage_key,
+                impact=f"Stage '{stage_key}' requires human sign-off.",
+                status=ApprovalStatus.PENDING,
+            )
+        )
     return min(count, len(eligible))
 
 

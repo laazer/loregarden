@@ -47,6 +47,7 @@ from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
+    AWAITING_STAGES_ARE_ASKED,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     EXHAUSTED_GATES_BLOCK,
@@ -192,6 +193,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # flush guard closes them now; this repairs the backlog and reports a writer
     # that gets past it.
     _invariant(CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS),
+    # After closed tickets close: a stage awaiting a person with no approval
+    # waits on nobody (lg-workflow-integrity-1625). It is blocked and settled,
+    # so the operator sees why and a requeue runs it.
+    _invariant(AWAITING_STAGES_ARE_ASKED),
     # A ticket held on prerequisites, or parked on them by a person, waits for
     # them to land, and nothing else reads a landing (lg-milestone-that-1315).
     # The mark comes first, so a park seen waiting in this pass is releasable in

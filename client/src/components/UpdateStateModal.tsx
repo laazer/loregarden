@@ -8,6 +8,7 @@ import type { StageStatus, TicketDetail, TicketState } from "../api/client";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { ModalShell } from "./ui/ModalShell";
+import { stageStatusChoices } from "../lib/stageStatusChoices";
 
 export const TICKET_STATES: TicketState[] = [
   "backlog",
@@ -21,15 +22,6 @@ export const TICKET_STATES: TicketState[] = [
 export const STATE_COLORS = TICKET_STATE_COLORS;
 
 export const STATE_LABELS = TICKET_STATE_LABELS;
-
-const STAGE_STATUSES: StageStatus[] = [
-  "pending",
-  "running",
-  "blocked",
-  "awaiting",
-  "done",
-  "wont_do",
-];
 
 export interface StateUpdateDraft {
   state: TicketState;
@@ -263,7 +255,7 @@ export function UpdateStateModal({
                 )
               }
             >
-              {STAGE_STATUSES.map((s) => (
+              {stageStatusChoices(ticket.workflow_stage_status).map((s) => (
                 <option key={s} value={s}>
                   {s.replace("_", " ")}
                 </option>
@@ -307,7 +299,7 @@ export function UpdateStateModal({
                 disabled={isSaving}
                 onChange={(e) => setBulkStatus(e.target.value as StageStatus)}
               >
-                {STAGE_STATUSES.map((s) => (
+                {stageStatusChoices(null).map((s) => (
                   <option key={s} value={s}>
                     {s.replace("_", " ")}
                   </option>
@@ -402,7 +394,7 @@ export function UpdateStateModal({
                       )
                     }
                   >
-                    {STAGE_STATUSES.map((st) => (
+                    {stageStatusChoices(stage.status).map((st) => (
                       <option key={st} value={st}>
                         {st}
                       </option>
