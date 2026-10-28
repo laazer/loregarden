@@ -13,6 +13,11 @@
   overflow: hidden;
 }
 
+/* A card waiting on the operator, the one card whose edge carries colour. */
+.lg-primitive-card--needs-you {
+  border-color: color-mix(in srgb, var(--vil) 45%, var(--bd2));
+}
+
 .lg-primitive-card-header {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) auto;
@@ -138,6 +143,7 @@
 
 .lg-primitive-card-meta {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px 14px;
   font-size: var(--fs-small);
@@ -562,25 +568,15 @@
   color: var(--ac);
 }
 
+/* Output in mono on the darkest ground, flush to the card's edges under its
+   head: the theme's own tokens, so a light theme reaches it too. */
 .lg-primitive-terminal {
+  margin: 0 -12px -12px;
   font-family: var(--mono);
   font-size: var(--fs-small);
-  background: #0d1117;
-  color: #c9d1d9;
-  border-radius: 10px;
-  border: 1px solid var(--bd);
-  overflow: hidden;
-}
-
-.lg-primitive-terminal-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-  color: #8b949e;
-  font-size: var(--fs-micro);
+  background: var(--bg0);
+  color: var(--txm);
+  border-top: 1px solid var(--bd);
 }
 
 .lg-primitive-terminal-body {
@@ -589,15 +585,19 @@
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
-  line-height: 1.45;
+  line-height: 1.6;
 }
 
 .lg-primitive-terminal-cmd {
-  color: #7ee787;
+  color: var(--tx);
+}
+
+.lg-primitive-terminal-cmd::first-letter {
+  color: var(--ac);
 }
 
 .lg-primitive-terminal-err {
-  color: #ffa198;
+  color: var(--red);
 }
 
 .lg-primitive-thinking {
@@ -1257,9 +1257,37 @@
   background: var(--bg0);
 }
 
-.lg-primitive-edit-mode-toggle {
+/* A two-way toggle: two halves of one control, the chosen one filled. */
+.lg-primitive-seg {
   display: inline-flex;
-  gap: 4px;
+  margin-left: auto;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.lg-primitive-seg > button {
+  padding: 2px 9px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.lg-primitive-seg > button.is-on {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-primitive-seg > button:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.lg-primitive-add {
+  color: var(--grn);
+}
+
+.lg-primitive-del {
+  color: var(--txl);
 }
 
 /* Ticket cards match the v6 console list card: P-badge, state, stage segments, stage line. */
@@ -1709,85 +1737,114 @@
   text-transform: uppercase;
 }
 
+/* Plan steps and commits are rows, not boxes; where order matters a vine says so. */
 .lg-primitive-todo-list,
 .lg-primitive-commit-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .lg-primitive-todo-list li {
-  padding: 8px 10px;
-  border: 1px solid var(--bd);
-  border-radius: 9px;
-  background: var(--bg0);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
 }
 
 .lg-primitive-todo-list label {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  color: var(--txm);
+  align-items: center;
+  gap: 10px;
+  color: var(--tx);
   font-size: var(--fs-small);
   line-height: 1.4;
 }
 
+/* Your boxes are square, so they never read as the agent's round buds. */
 .lg-primitive-todo-list input {
-  margin-top: 2px;
-  accent-color: var(--grn);
+  margin: 0;
+  border-radius: 3px;
+  accent-color: var(--ac);
 }
 
 .lg-primitive-todo-list li.is-checked span {
   color: var(--txl);
-  text-decoration: line-through;
+}
+
+.lg-primitive-todo-list--agent li {
+  gap: 10px;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.lg-primitive-todo-list--agent li .vine-node {
+  display: flex;
+  align-items: center;
+}
+
+.lg-primitive-todo-list--agent li .vine-stem {
+  top: 50%;
+}
+
+.lg-primitive-owner {
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--bg2);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.lg-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .lg-primitive-commit-list li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 14px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid var(--bd);
-  border-radius: 9px;
-  background: var(--bg0);
-}
-
-.lg-primitive-commit-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--amb);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--amb) 55%, transparent);
-}
-
-.lg-primitive-commit-dot.is-pushed {
-  background: var(--grn);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--grn) 55%, transparent);
-}
-
-.lg-primitive-commit-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.lg-primitive-commit-copy strong {
-  overflow: hidden;
-  color: var(--tx);
+  gap: 10px;
+  min-height: 30px;
   font-size: var(--fs-small);
+}
+
+.lg-primitive-commit-list li .vine-node {
+  display: flex;
+  align-items: center;
+}
+
+.lg-primitive-commit-list li .vine-stem {
+  top: 50%;
+}
+
+.lg-primitive-commit-sha {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-primitive-commit-subject {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--tx);
 }
 
-.lg-primitive-commit-copy span,
-.lg-primitive-commit-list time {
+.lg-primitive-commit-local {
   color: var(--txl);
+}
+
+.lg-primitive-commit-list time {
+  font-family: var(--mono);
   font-size: var(--fs-micro);
+  color: var(--txl);
 }
 
 .lg-primitive-commit-detail > p {

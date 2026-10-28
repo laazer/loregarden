@@ -823,7 +823,8 @@ describe("Edit primitive", () => {
       />,
     );
 
-    expect(screen.getByText(/Proposed edit/)).toBeInTheDocument();
+    expect(screen.getByText("Proposed")).toBeInTheDocument();
+    expect(screen.getByText("Comment a line to send it to chat")).toBeInTheDocument();
     expect(screen.getByText("You never write code.")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByTitle("Add inline review comment")[0]);
@@ -854,7 +855,7 @@ describe("Edit primitive", () => {
       />,
     );
     expect(screen.getByTestId("monaco-editor")).toHaveValue("scratch pad");
-    expect(screen.queryByText(/Proposed edit/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Proposed")).not.toBeInTheDocument();
   });
 
   it("opens the file in the editor view, not Agent Studio", () => {

@@ -55,6 +55,8 @@ export function QAPrimitive({
     <PrimitiveCard
       kind="qa"
       tint={canAnswer ? "you" : "mute"}
+      // The only card with a coloured edge: it is waiting on you.
+      className={canAnswer ? "lg-primitive-card--needs-you" : undefined}
       title={part.title ?? "Questions & answers"}
       // The chip says sent, waiting or empty; the line under the title is the ask.
       subtitle={
