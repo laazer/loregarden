@@ -661,7 +661,6 @@ textarea::placeholder {
   height: 30px;
   padding: 0 14px;
   font-size: var(--fs-small);
-  border-radius: 9px;
 }
 
 /* Phone width: next to the ~60px rail the row has ~300px. The rail already
@@ -3077,6 +3076,9 @@ button.send-leaf:hover:not(:disabled) {
 .btn-secondary.btn-compact,
 .btn-primary.btn-compact {
   padding: 4px 9px;
+}
+
+.btn-secondary.btn-compact {
   border-radius: 8px;
 }
 
@@ -3930,7 +3932,6 @@ button.send-leaf:hover:not(:disabled) {
   align-items: center;
 }
 
-.run-controls .btn-primary,
 .run-controls .btn-secondary {
   border-radius: 11px;
 }
@@ -3962,7 +3963,6 @@ button.send-leaf:hover:not(:disabled) {
   background: var(--ac);
   color: var(--onac);
   border: none;
-  border-radius: 9px;
   padding: 9px 15px;
   cursor: pointer;
   box-shadow: 0 2px 12px rgba(111, 174, 143, 0.3);
@@ -3972,24 +3972,16 @@ button.send-leaf:hover:not(:disabled) {
   background: var(--ac2);
 }
 
-/* The primary action turns leaf-shaped under the pointer or keyboard focus,
-   the same leaf every send button wears, so the one action a surface offers
-   reads as the garden's. Only the corners move; reduced motion makes it a
-   plain change (the global rule in this file). */
+/* The primary action is leaf-shaped, the same leaf every send button wears,
+   so the one action a surface offers reads as the garden's. Every size and
+   placement keeps it: no rule further in sets a primary's corners. */
 .btn-primary {
-  transition:
-    border-radius var(--t-fast) var(--ease-out),
-    background-color var(--t-fast) var(--ease-out);
-}
-
-.btn-primary:hover:not(:disabled),
-.btn-primary:focus-visible:not(:disabled) {
   border-radius: 18px 3px 18px 3px;
+  transition: background-color var(--t-fast) var(--ease-out);
 }
 
 .btn-cta {
   font-size: var(--fs-body);
-  border-radius: 10px;
   padding: 10px 18px;
   box-shadow: 0 2px 12px rgba(111, 174, 143, 0.28);
 }
