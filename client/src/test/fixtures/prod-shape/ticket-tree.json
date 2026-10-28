@@ -10126,7 +10126,7 @@
     "waiting_on": [],
     "work_item_type": "feature",
     "workflow_stage_name": "",
-    "workflow_stage_status": "awaiting",
+    "workflow_stage_status": "pending",
     "workspace_slug": "loregarden"
    },
    {
@@ -11874,7 +11874,7 @@
     "waiting_on": [],
     "work_item_type": "feature",
     "workflow_stage_name": "",
-    "workflow_stage_status": "awaiting",
+    "workflow_stage_status": "pending",
     "workspace_slug": "loregarden"
    },
    {
