@@ -4,7 +4,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -118,7 +118,10 @@ describe("MachinePage", () => {
     await userEvent.click(within(item).getByRole("button", { name: "Scan now" }));
 
     expect(mockDisk.scan).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("link", { name: "Disk" })).toHaveAttribute("aria-current", "page");
+    // The tab changes when the scan request answers, not on the click.
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Disk" })).toHaveAttribute("aria-current", "page"),
+    );
   });
 
   it("moves between Capacity and Disk by link, so each has its own URL", async () => {
