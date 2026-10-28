@@ -363,7 +363,7 @@ export function TicketTree({
   return (
     <div
       className={presentation === "compact" ? "ticket-tree ticket-tree--compact" : "ticket-tree"}
-      role={depth === 0 ? "tree" : undefined}
+      role={undefined}
     >
       {nodes.map((node) => (
         <TreeRow
