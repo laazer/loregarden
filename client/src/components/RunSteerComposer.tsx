@@ -197,8 +197,11 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
             disabled={send.isPending || stopRequested}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <Button type="submit" variant="primary" disabled={!canSend}>
+          <Button type="submit" variant="primary" className="send-leaf run-steer-send" disabled={!canSend}>
             {send.isPending ? "Sending…" : "Send"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+              <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+            </svg>
           </Button>
         </form>
       )}

@@ -13,6 +13,7 @@ import { ComposerNotes } from "../chat/ComposerNotes";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
+import { Button } from "../ui/Button";
 import {
   agentPlanPartKey,
   agentPlanRequestTask,
@@ -599,11 +600,12 @@ export function StudioChatComposer({
               ⌘J
             </span>
           ) : null}
-          <button
-            type="button"
+          <Button
+            variant="plain"
             className={[
               "lg-chat-composer-send",
               "ticket-studio-composer-send",
+              showStop ? "" : "send-leaf",
               roundSend ? "" : "lg-chat-composer-send--labeled",
               showStop ? "lg-chat-composer-send--stop" : "",
             ]
@@ -641,7 +643,7 @@ export function StudioChatComposer({
                 <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
               </svg>
             )}
-          </button>
+          </Button>
         </div>
         {error ? <div className="lg-chat-composer-error studio-chat-composer-error">{error}</div> : null}
       </div>
