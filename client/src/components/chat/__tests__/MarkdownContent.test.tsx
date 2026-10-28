@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 
-import { MarkdownContent, MarkdownPre } from "../MarkdownContent";
+import { MarkdownCell, MarkdownContent, MarkdownPre } from "../MarkdownContent";
 
 describe("MarkdownContent", () => {
   it("renders GFM markdown tables", () => {
@@ -59,5 +59,32 @@ describe("MarkdownContent", () => {
 
     expect(container.querySelector("details")).toBeNull();
     expect(container.querySelector("pre")).toHaveTextContent("const x = 1;");
+  });
+});
+
+describe("MarkdownCell", () => {
+  // react-markdown is mocked in jest and ignores `components`, so the cell is
+  // tested on its own, as react-markdown hands cells to it.
+  const cell = (children: React.ReactNode) =>
+    render(
+      <table>
+        <tbody>
+          <tr>
+            <MarkdownCell>{children}</MarkdownCell>
+          </tr>
+        </tbody>
+      </table>,
+    ).container;
+
+  it("renders a cell that is exactly a status word as the shared chip", () => {
+    const chip = cell(["Needs permission"]).querySelector(".status-chip");
+    expect(chip).toHaveTextContent("Needs permission");
+    expect(chip).toHaveAttribute("data-tone", "you");
+    expect(cell("Reading").querySelector(".status-chip")).toHaveAttribute("data-tone", "run");
+  });
+
+  it("leaves prose and rich cells as written", () => {
+    expect(cell("Pass 2 running · 711 files").querySelector(".status-chip")).toBeNull();
+    expect(cell(<code>done</code>).querySelector(".status-chip")).toBeNull();
   });
 });

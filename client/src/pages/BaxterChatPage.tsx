@@ -37,7 +37,10 @@ import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { pushToast } from "../state/toastStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { GardenSky } from "../components/chat/GardenSky";
+import { useScrollbarGutterVar } from "../hooks/useScrollbarGutterVar";
 import "./BaxterChatPage.css";
+import "./BaxterChatGarden.css";
 
 /**
  * Everything a composer needs for `/` and `@` except its own draft.
@@ -328,6 +331,11 @@ export function BaxterChatPage() {
   // A turn waiting on the operator still owns the thread chrome — don't drop
   // back to the welcome hero while the approval card is the thing to answer.
   const isEmpty = !hasThread && !busy && turnApprovals.length === 0;
+  // The garden's vines and composer sit on the thread's column edge, which the
+  // thread's scrollbar gutter moves by a platform-dependent amount.
+  const chatRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  useScrollbarGutterVar(threadRef, chatRef, "--garden-sb");
 
   const summaryLine = useMemo(() => {
     const parts: string[] = [];
@@ -586,7 +594,7 @@ export function BaxterChatPage() {
 
   return (
     <div className="baxter-chat-layout">
-      <div className="baxter-chat lg-chat-surface">
+      <div ref={chatRef} className={`baxter-chat lg-chat-surface${isEmpty ? "" : " baxter-chat--garden"}`}>
         {isEmpty ? (
           <div className="baxter-chat-welcome">
             <header className="baxter-chat-intro">
@@ -614,7 +622,12 @@ export function BaxterChatPage() {
           </div>
         ) : (
           <>
-            <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
+            {/* Baxter's garden (Mock 4): the vines and stars hang on this frame,
+                which does not scroll, so they stay put while the thread moves
+                under them. Decoration only; see BaxterChatGarden.css. */}
+            <div className="baxter-chat-garden">
+            <GardenSky />
+            <div ref={threadRef} className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
               <StudioChatMessages
                 messages={threadMessages}
                 isThinking={busy && !awaitingInput && turnApprovals.length === 0}
@@ -679,6 +692,7 @@ export function BaxterChatPage() {
                   ) : null
                 }
               />
+            </div>
             </div>
 
             {sendError}
