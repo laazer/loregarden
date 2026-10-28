@@ -15,8 +15,10 @@ export function WorkspacePrimitive({ part }: { part: WorkspacePart }) {
 
   return (
     <PrimitiveCard
+      kind="workspace"
       title={part.title ?? workspace?.name ?? part.workspace_slug}
-      subtitle={workspace?.repo_path ?? part.workspace_slug}
+      refLine={workspace?.repo_path ?? part.workspace_slug}
+      copyRef={workspace?.repo_path}
       loading={query.isLoading}
       error={
         query.error
@@ -27,12 +29,11 @@ export function WorkspacePrimitive({ part }: { part: WorkspacePart }) {
             ? "Workspace not found"
             : null
       }
-      tone={workspace?.blocked_count ? "warn" : "accent"}
+      status={workspace?.blocked_count ? { tone: "bad", label: `${workspace.blocked_count} blocked` } : null}
       meta={
         workspace ? (
           <>
             <span>{workspace.ticket_count} tickets</span>
-            <span>{workspace.blocked_count} blocked</span>
             <span>{workspace.cli_adapter}</span>
           </>
         ) : null

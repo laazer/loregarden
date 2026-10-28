@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 
@@ -108,54 +108,72 @@ describe("ticketProgress", () => {
 });
 
 describe("PrimitiveCard", () => {
-  it("renders title and actions", () => {
-    render(
-      <PrimitiveCard title="Ticket" actions={<button type="button">Play</button>}>
-        Body
-      </PrimitiveCard>,
-    );
-    expect(screen.getByText("Ticket")).toBeInTheDocument();
-    expect(screen.getByText("Body")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
-  });
-
-  it("places the external-resource link last in the header, after the card controls", () => {
+  it("heads every card the same way: kind icon, title, ref line, status chip, then Open and ⋯", () => {
     const { container } = render(
       <PrimitiveCard
-        title="Ticket"
-        collapsible
-        resourceAction={<OpenTicketButton ticketId="t1" />}
-        actions={<PlayButton onClick={() => {}} />}
+        kind="ticket"
+        title="Bootstrap vertical slice"
+        refLine="lg-bootstrap-vertical-1 · loregarden"
+        status={{ tone: "run", label: "In progress" }}
+        copyRef="lg-bootstrap-vertical-1"
+        resourceAction={<OpenTicketButton ticketId="t1" compact />}
       >
         Body
       </PrimitiveCard>,
     );
 
-    const header = container.querySelector(".lg-primitive-card-header-actions");
-    const headerItems = Array.from(header?.children ?? []);
-    expect(headerItems).toHaveLength(2);
-    expect(headerItems[0]).toHaveClass("lg-primitive-card-collapse");
-    expect(headerItems[1]).toHaveClass("lg-primitive-resource-btn");
-    expect(
-      container.querySelector(".lg-primitive-card-actions .lg-primitive-resource-btn"),
-    ).toBeNull();
+    expect(screen.getByRole("heading", { name: "Bootstrap vertical slice" })).toBeInTheDocument();
+    expect(screen.getByText("lg-bootstrap-vertical-1 · loregarden")).toHaveClass("lg-primitive-card-ref");
+    expect(container.querySelector(".lg-primitive-card-icon--work svg")).not.toBeNull();
+    const head = container.querySelector(".lg-primitive-card-header-actions");
+    const items = Array.from(head?.children ?? []);
+    expect(items[0]).toHaveTextContent("In progress");
+    expect(items[1]).toHaveClass("lg-primitive-resource-btn");
+    expect(within(head as HTMLElement).getByRole("button", { name: "More for Bootstrap vertical slice" })).toBeInTheDocument();
   });
 
-  it("keeps the resource link visible while the body is collapsed", () => {
+  it("puts one action in the footer with a line saying what it does, never in the head", () => {
     const { container } = render(
-      <PrimitiveCard
-        title="Ticket"
-        collapsible
-        defaultCollapsed
-        resourceAction={<OpenTicketButton ticketId="t1" />}
-      >
+      <PrimitiveCard kind="ticket" title="Ticket" footerHint="Run starts the next stage" actions={<PlayButton onClick={() => {}} />}>
         Body
       </PrimitiveCard>,
     );
+
+    const footer = container.querySelector(".lg-primitive-card-actions") as HTMLElement;
+    expect(footer).toHaveTextContent("Run starts the next stage");
+    // The action that moves work forward is the leaf-shaped primary.
+    expect(within(footer).getByRole("button", { name: "Run" })).toHaveClass("btn-primary");
+    expect(container.querySelector(".lg-primitive-card-header .btn-primary")).toBeNull();
+  });
+
+  it("has no footer when the card only shows something", () => {
+    const { container } = render(
+      <PrimitiveCard kind="terminal" title="client · npm test" refLine="~/workspace/loregarden/client">
+        Output
+      </PrimitiveCard>,
+    );
+    expect(container.querySelector(".lg-primitive-card-actions")).toBeNull();
+  });
+
+  it("keeps its head while loading, with a skeleton where the body will be", () => {
+    const { container } = render(
+      <PrimitiveCard kind="ticket" title="Ticket" loading>
+        Body
+      </PrimitiveCard>,
+    );
+    expect(screen.getByRole("heading", { name: "Ticket" })).toBeInTheDocument();
     expect(screen.queryByText("Body")).not.toBeInTheDocument();
-    expect(
-      container.querySelector(".lg-primitive-card-header-actions .lg-primitive-resource-btn"),
-    ).not.toBeNull();
+    expect(container.querySelectorAll(".lg-primitive-card-skeleton-line")).toHaveLength(2);
+  });
+
+  it("keeps its title when its ref no longer resolves, and says so in the body", () => {
+    render(
+      <PrimitiveCard kind="ticket" title="lg-gone-1" error="Ticket not found">
+        Body
+      </PrimitiveCard>,
+    );
+    expect(screen.getByRole("heading", { name: "lg-gone-1" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Ticket not found");
   });
 });
 
@@ -473,12 +491,15 @@ describe("Ticket primitive chrome", () => {
     await waitFor(() => {
       expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
     });
+    // The head names the ticket, its state and where it lives; the body is progress.
     expect(screen.getByText("P1")).toBeInTheDocument();
-    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
+    expect(container.querySelector(".lg-primitive-card-header-actions")?.textContent).toContain(
       "In Progress",
     );
-    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
-      "loregarden",
+    expect(container.querySelector(".lg-primitive-card-ref")?.textContent).toContain("loregarden");
+    // Awaiting counts as running, so the footer offers Stop and says what it does.
+    expect(container.querySelector(".lg-primitive-card-actions")?.textContent).toContain(
+      "Stop pauses the running stage",
     );
     expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(3);
     expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("1/3");
@@ -648,7 +669,7 @@ describe("Ticket primitive chrome", () => {
     await waitFor(() => {
       expect(screen.getByText("P1")).toBeInTheDocument();
     });
-    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
+    expect(container.querySelector(".lg-primitive-card-header-actions")?.textContent).toContain(
       "In Progress",
     );
     expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("0/1");

@@ -79,24 +79,21 @@ export function TodoListPrimitive({
 
   return (
     <PrimitiveCard
+      kind="todo_list"
+      tint={userOwned ? "work" : "run"}
       title={part.title ?? (userOwned ? "Your checklist" : "Agent todo list")}
-      subtitle={
-        state.started
-          ? "Execution requested"
-          : userOwned
-            ? "You control this checklist"
-            : canRun
-              ? "Press Run to execute this plan in chat"
-              : allDone
-                ? "All steps complete"
-                : "Updated by the agent as work completes"
+      // Whose list it is; the chip carries progress and the footer what Run does.
+      subtitle={userOwned ? "You tick these off" : "Baxter runs this in chat"}
+      status={
+        allDone
+          ? { tone: "done", label: "Complete" }
+          : state.started
+            ? { tone: "run", label: "Running" }
+            : { tone: "idle", label: `${completed}/${items.length}` }
       }
-      tone={allDone ? "ok" : canRun || state.started ? "accent" : "default"}
+      footerHint={canRun ? "Runs this plan in chat" : null}
       meta={
         <>
-          <span>
-            {completed}/{items.length} complete
-          </span>
           <span>{owner} owned</span>
         </>
       }

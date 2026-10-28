@@ -9,6 +9,7 @@ import type { GatePart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenGateStudioButton, OpenTicketButton } from "./ResourceActionButton";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
+import { stageStatusChip } from "../../../lib/ticketStates";
 
 function draftChecks(draft: Record<string, unknown>): string[] {
   const checklist = draft.checklist;
@@ -22,13 +23,6 @@ function draftChecks(draft: Record<string, unknown>): string[] {
     const title = (check as { title?: unknown }).title;
     return typeof title === "string" && title.trim() ? [title] : [];
   });
-}
-
-function gateTone(status: string | undefined): "default" | "accent" | "warn" | "danger" | "ok" {
-  if (status === "blocked") return "danger";
-  if (status === "done") return "ok";
-  if (status === "awaiting" || status === "running") return "warn";
-  return "default";
 }
 
 function statusCopy(status: string | undefined): string {
@@ -243,8 +237,9 @@ export function GatePrimitive({ part }: { part: GatePart }) {
 
   return (
     <PrimitiveCard
+      kind="gate"
       title={title}
-      subtitle={
+      refLine={
         ticket
           ? `${ticket.external_id || ticket.id.slice(0, 8)} · ${part.stage_key ?? stage?.key ?? "gate"}`
           : (part.stage_key ?? stage?.key ?? undefined)
@@ -257,11 +252,15 @@ export function GatePrimitive({ part }: { part: GatePart }) {
             : "Failed to load gate"
           : null
       }
-      tone={gateTone(stage?.status ?? (pendingGates.length ? "awaiting" : undefined))}
+      status={
+        pendingGates.length
+          ? { tone: "you", label: `${pendingGates.length} pending` }
+          : stage
+            ? stageStatusChip(stage.status)
+            : null
+      }
       meta={
         <>
-          {stage ? <span>{stage.status.replace("_", " ")}</span> : null}
-          {pendingGates.length ? <span>{pendingGates.length} pending</span> : null}
           {stage?.agent_id ? <span>{stage.agent_id}</span> : null}
           {ticket?.workspace_slug ? <span>{ticket.workspace_slug}</span> : null}
         </>

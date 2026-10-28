@@ -45,7 +45,10 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   const LONG_LIST = 50;
   const ACTIONABLE =
     "a[href], button, input, select, textarea, summary, [role='button'], [role='link'], [tabindex]";
-  const NARROWING = "input[type='search'], input[type='text'], select, [role='searchbox']";
+  // A text field with no type attribute is a text field: the app's Input
+  // primitive renders one, and missing it called a filtered list unfiltered.
+  const NARROWING =
+    "input:not([type]), input[type='search'], input[type='text'], select, [role='searchbox']";
   /**
    * Items that each repeat this many text fields are records, and records are
    * rows. A name and three short tags is still a list (an issue tracker's); a

@@ -227,6 +227,7 @@ export function StatusColumnPrimitive({ part }: { part: StatusColumnPart }) {
 
   return (
     <PrimitiveCard
+      kind="status_column"
       title={part.title ?? ticketStateLabel(part.status)}
       subtitle={`${tickets.length} tickets`}
       loading={isLoading}
@@ -269,6 +270,7 @@ export function KanbanPrimitive({
 
   return (
     <PrimitiveCard
+      kind="kanban"
       title={part.title ?? (filterable ? "Filterable board" : "Kanban")}
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}

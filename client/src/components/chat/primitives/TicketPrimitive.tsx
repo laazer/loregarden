@@ -5,7 +5,8 @@ import type { TicketPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
-import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
+import { TicketCardBody, TicketPriorityBadge, stageProgressSegments } from "./TicketCardMeta";
+import { ticketStateChip } from "../../../lib/ticketStates";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
@@ -32,12 +33,15 @@ export function TicketPrimitive({ part }: { part: TicketPart }) {
 
   return (
     <PrimitiveCard
-      className="lg-primitive-ticket-card"
       title={title}
-      header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
+      kind="ticket"
+      lead={data ? <TicketPriorityBadge priority={data.priority} /> : null}
+      refLine={data ? `${data.external_id} · ${data.workspace_slug}` : part.ticket_id}
+      status={data ? ticketStateChip(data.state) : null}
+      copyRef={data?.external_id ?? part.ticket_id}
+      footerHint={live ? (running ? "Stop pauses the running stage" : "Run starts the next stage") : null}
       loading={isLoading}
       error={loadError}
-      tone={running ? "accent" : "default"}
       resourceAction={live ? <OpenTicketButton ticketId={part.ticket_id} compact /> : null}
       actions={
         live ? (
@@ -54,6 +58,7 @@ export function TicketPrimitive({ part }: { part: TicketPart }) {
     >
       {data ? (
         <TicketCardBody
+          headless
           title={title}
           priority={data.priority}
           state={data.state}

@@ -33,8 +33,10 @@ export function BranchHistoryPrimitive({ part }: { part: BranchHistoryPart }) {
 
   return (
     <PrimitiveCard
+      kind="branch_history"
       title={part.title ?? part.branch}
-      subtitle={
+      copyRef={part.branch}
+      refLine={
         activity ? (activity.upstream ? `tracking ${activity.upstream}` : "No upstream") : part.branch
       }
       loading={query.isLoading}
@@ -100,8 +102,10 @@ export function CommitPrimitive({ part }: { part: CommitPart }) {
 
   return (
     <PrimitiveCard
+      kind="commit"
       title={part.title ?? commit?.message ?? "Commit"}
-      subtitle={commit ? `${commit.short_sha} · ${commit.author}` : part.sha}
+      refLine={commit ? `${commit.short_sha} · ${commit.author}` : part.sha}
+      copyRef={commit?.sha ?? part.sha}
       loading={query.isLoading}
       error={
         query.error
@@ -110,7 +114,7 @@ export function CommitPrimitive({ part }: { part: CommitPart }) {
             : "Failed to load commit"
           : null
       }
-      tone={commit?.pushed ? "ok" : "default"}
+      status={commit ? (commit.pushed ? { tone: "done", label: "Pushed" } : { tone: "idle", label: "Local only" }) : null}
       meta={
         commit ? (
           <>

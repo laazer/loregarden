@@ -1,3 +1,5 @@
+import { Button } from "../../ui/Button";
+
 function PlayIcon() {
   return (
     <svg
@@ -38,9 +40,11 @@ export function PlayButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="lg-primitive-run-btn lg-primitive-run-btn--play"
+    // The card's one action that moves work forward: primary, so leaf-shaped.
+    <Button
+      variant="primary"
+      compact
+      className="lg-primitive-run-btn--play"
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
@@ -49,7 +53,7 @@ export function PlayButton({
     >
       <PlayIcon />
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -63,9 +67,10 @@ export function StopButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="lg-primitive-run-btn lg-primitive-run-btn--stop"
+    <Button
+      variant="secondary"
+      compact
+      className="lg-primitive-run-btn--stop"
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
@@ -74,6 +79,6 @@ export function StopButton({
     >
       <StopIcon />
       {label}
-    </button>
+    </Button>
   );
 }

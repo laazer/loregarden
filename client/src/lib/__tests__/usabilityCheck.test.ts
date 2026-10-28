@@ -100,6 +100,11 @@ describe("rendered lists (cards, not <ul>)", () => {
     expect(kinds(html)).not.toContain("unfiltered-long-list");
   });
 
+  it("counts a text field with no type attribute as the filter", () => {
+    const html = `<div><input aria-label="Filter changed files" /><div>${repeat(51, card)}</div></div>`;
+    expect(kinds(html)).not.toContain("unfiltered-long-list");
+  });
+
   it("passes cards that each hold something to click", () => {
     const linked = (i: number) =>
       `<div class="branch-triage-card"><a href="/b/${i}">branch ${i}</a><span class="age">${i}d</span></div>`;
