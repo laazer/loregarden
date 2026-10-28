@@ -13,7 +13,16 @@ import {
   type HierarchyRectangularNode,
 } from "d3-hierarchy";
 
-import type { DiskKind, DiskNode } from "../api/diskTypes";
+import type { DiskKind, DiskNode, DiskVolume } from "../api/diskTypes";
+import type { CapacityTone } from "../components/ui/CapacityMeter";
+
+/** A volume's meter tone, from how little is free: red under 5%, amber under 15%. */
+export function volumeTone({ free_bytes: free, total_bytes: total }: DiskVolume): CapacityTone {
+  if (total <= 0) return "unknown";
+  if (free / total < 0.05) return "full";
+  if (free / total < 0.15) return "tight";
+  return "normal";
+}
 
 export function formatDiskBytes(bytes: number): string {
   const units: [string, number][] = [

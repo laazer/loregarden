@@ -1,30 +1,41 @@
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
+import { useDiskOverview } from "../../hooks/useDiskUsage";
 import { useDockerCapacity } from "../../hooks/useDockerCapacity";
-import { Button } from "../ui/Button";
-import { DockerAttentionRail } from "../DockerAttentionRail";
-import { DockerCapacityRail } from "../DockerCapacityRail";
+import { machinePath } from "../../lib/appNavigation";
+import { formatDiskBytes, volumeTone } from "../../lib/diskUsage";
+import { machineAttention } from "../../lib/machineAttention";
+import { describeError } from "../../state/toastStore";
 import { DockerQueueBoard } from "../DockerQueueBoard";
+import { CapacityMeter } from "../ui/CapacityMeter";
+import { MachineAttention } from "./MachineAttention";
 import "../QueueDashboard.css";
 
-type RailTab = "capacity" | "attention";
-
-const RAIL_TABS: { key: RailTab; label: string }[] = [
-  { key: "capacity", label: "Capacity" },
-  { key: "attention", label: "Attention" },
-];
-
 /**
- * Who holds the machine's CPU and memory, who waits behind them, and what
- * needs a person: the board that used to be the Queue page's "Machine" toggle.
+ * Machine → Capacity: what needs a person on this machine, how full it is,
+ * and who holds and waits for its CPU and memory.
  *
- * One `useDockerCapacity` read feeds the board and the rail, so the two halves
- * of the screen cannot disagree about the same moment. It polls only while this
- * view is mounted, which is now true only on this tab.
+ * One `useDockerCapacity` read feeds the band and the board, so the two cannot
+ * disagree about the same moment; it polls only while this view is mounted.
+ * The disk's overview is the Disk tab's own query, so a scan started here is
+ * the one that tab shows in progress.
+ *
+ * The capacity summary is drawn once, as the board's meters. A rail beside the
+ * board used to draw it a second time (free cpus, slots held, waiting) and kept
+ * what needed a person behind an Attention tab nobody opened.
  */
 export function MachineCapacityView() {
   const docker = useDockerCapacity();
-  const [tab, setTab] = useState<RailTab>("capacity");
+  const { overview, scan } = useDiskOverview();
+  const navigate = useNavigate();
+  const disk = overview.data;
+  const volume = disk?.volume ?? null;
+  const items = machineAttention(docker.status, volume);
+  const checking = (docker.loading && !docker.status) || overview.isPending;
+
+  const startScan = () => {
+    scan.mutate(undefined, { onSuccess: () => navigate(machinePath("disk")) });
+  };
 
   return (
     <div className="queue-dashboard">
@@ -35,43 +46,40 @@ export function MachineCapacityView() {
             error={docker.error}
             loading={docker.loading}
             onChanged={docker.reload}
+            attention={(ending) => (
+              <MachineAttention
+                items={items}
+                checking={checking}
+                disk={{
+                  scanned: Boolean(disk?.scan),
+                  scanning: disk?.status.state === "running" || scan.isPending,
+                  onScan: startScan,
+                }}
+                diskError={
+                  overview.isError ? describeError(overview.error, "The disk overview did not load.") : ""
+                }
+                onRetryDisk={() => void overview.refetch()}
+                onEndLease={ending.onEnd}
+                pendingLeaseId={ending.pendingId}
+              />
+            )}
+            meters={
+              volume ? (
+                <section className="docker-board-pool" aria-label="Disk">
+                  <div className="docker-board-meters">
+                    <CapacityMeter
+                      label="Disk"
+                      used={volume.used_bytes}
+                      total={volume.total_bytes}
+                      format={formatDiskBytes}
+                      tone={volumeTone(volume)}
+                    />
+                  </div>
+                </section>
+              ) : null
+            }
           />
         </main>
-        <aside className="queue-rail">
-          <div className="queue-rail-card">
-            <div className="queue-rail-tabs tab-bar">
-              <div
-                className="tab-bar-scroll"
-                role="tablist"
-                aria-label="Machine capacity panels"
-              >
-                {RAIL_TABS.map((option) => (
-                  <Button
-                    key={option.key}
-                    variant="plain"
-                    role="tab"
-                    aria-selected={tab === option.key}
-                    className={`tab-btn${tab === option.key ? " active" : ""}`}
-                    onClick={() => setTab(option.key)}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div className="queue-rail-body">
-              {tab === "capacity" ? (
-                <DockerCapacityRail
-                  status={docker.status}
-                  error={docker.error}
-                  loading={docker.loading}
-                />
-              ) : (
-                <DockerAttentionRail status={docker.status} />
-              )}
-            </div>
-          </div>
-        </aside>
       </div>
     </div>
   );
