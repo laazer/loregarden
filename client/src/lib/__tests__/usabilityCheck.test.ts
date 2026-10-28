@@ -24,6 +24,15 @@ describe("tabular-list", () => {
     expect(kinds(lane)).not.toContain("tabular-list");
   });
 
+  it("lets a tree hold same-shaped rows, and still asks a long one for a filter", () => {
+    const node = (i: number) =>
+      `<div class="tree-node"><div role="treeitem" tabindex="0"><span class="prio">P3</span>` +
+      `<span class="title">Ticket ${i}</span><span class="state">open</span>` +
+      `<span class="agent">planner</span><span class="age">${i}d</span></div></div>`;
+    expect(kinds(`<div role="tree">${repeat(10, node)}</div>`)).not.toContain("tabular-list");
+    expect(kinds(`<div role="tree">${repeat(60, node)}</div>`)).toContain("unfiltered-long-list");
+  });
+
   it("passes a name with three short tags", () => {
     const item = (i: number) =>
       `<li><a href="/t/${i}">Ticket ${i}</a><span class="state">open</span>` +
