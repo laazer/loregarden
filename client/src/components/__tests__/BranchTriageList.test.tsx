@@ -91,14 +91,18 @@ describe("BranchTriageList next move", () => {
     ...branch("wip/old", ["lg-old-3"]),
     issues: [{ code: "stale", severity: "low" as const, message: "No commits in the last 30 days" }],
   };
-  const MIX = [merged, prMerged, onlyHere, stale];
+  const finished = { ...branch("loregarden/lg-thing-9", ["lg-thing-9"]), ahead: 3 };
+  finished.linked_tickets[0].state = "done";
+  const MIX = [merged, prMerged, onlyHere, stale, finished];
 
   it("counts each next move and narrows the table to one", () => {
     renderList(MIX);
     const moves = screen.getByRole("group", { name: "Next move" });
     // A branch can be merged and have no ticket, so the views overlap.
-    expect(within(moves).getByRole("button", { name: "All 4" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(moves).getByRole("button", { name: "All 5" })).toHaveAttribute("aria-pressed", "true");
     expect(within(moves).getByRole("button", { name: "Merged 3" })).toBeInTheDocument();
+    // Unmerged, but its ticket is finished: worth checking it landed, then letting it go.
+    expect(within(moves).getByRole("button", { name: "Ticket done 1" })).toBeInTheDocument();
     expect(within(moves).getByRole("button", { name: "Stale 1" })).toBeInTheDocument();
     expect(within(moves).getByRole("button", { name: "No ticket 3" })).toBeInTheDocument();
 
