@@ -143,4 +143,39 @@ describe("TicketPage header", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Modal Feature" })).toBeInTheDocument();
   });
+
+  it("opens Baxter docked on the right as the page's guide, and gives the operator's edge back on leaving", async () => {
+    jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket());
+    useUiStore.setState({ copilotOpen: false, screenDockEdge: null });
+
+    const { unmount } = renderAt(`/tickets/${TICKET_ID}/timeline`);
+
+    await screen.findByRole("heading", { name: "Modal Feature" });
+    expect(useUiStore.getState().copilotOpen).toBe(true);
+    expect(useUiStore.getState().screenDockEdge).toBe("right");
+    unmount();
+    expect(useUiStore.getState().screenDockEdge).toBeNull();
+  });
+
+  it("leaves Baxter at the bottom, and closed, on a narrow window", async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("1280px"),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket());
+      useUiStore.setState({ copilotOpen: false, screenDockEdge: null });
+
+      renderAt(`/tickets/${TICKET_ID}/timeline`);
+
+      await screen.findByRole("heading", { name: "Modal Feature" });
+      expect(useUiStore.getState().copilotOpen).toBe(false);
+      expect(useUiStore.getState().screenDockEdge).toBeNull();
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
 });

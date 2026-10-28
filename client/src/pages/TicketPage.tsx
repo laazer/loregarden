@@ -26,6 +26,7 @@ import {
   useTicketIdFromRoute,
 } from "../lib/useAppNavigation";
 import { canHaveChildren } from "../lib/workItemHierarchy";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useUiStore } from "../state/uiStore";
 import { describeError } from "../state/toastStore";
 
@@ -44,6 +45,9 @@ function viewForTab(tab: ArtifactTab): TicketView {
   if (tab === "hive") return "hive";
   return "ticket";
 }
+
+/** Below this the workflow, the outputs and Baxter cannot sit side by side; he docks at the bottom. */
+const GUIDE_NARROW = "(max-width: 1280px)";
 
 type SubTicketParent = { id: string; title: string; work_item_type: WorkItemType; workspace_slug?: string };
 
@@ -68,6 +72,22 @@ export function TicketPage() {
   useEffect(() => {
     if (view === "ticket") setLastReadingTab(artifactTab);
   }, [view, artifactTab]);
+
+  // Baxter is the page's guide: on a wide window his conversation opens docked
+  // on the right, the composer inside it, as on the initiative plan page.
+  // Opened per ticket, so arriving at one shows its chat; the edge is the
+  // screen's, so leaving gives the operator's own back.
+  const narrow = useMediaQuery(GUIDE_NARROW);
+  const setCopilotOpen = useUiStore((s) => s.setCopilotOpen);
+  const setScreenDockEdge = useUiStore((s) => s.setScreenDockEdge);
+  useEffect(() => {
+    if (!narrow && ticketId) setCopilotOpen(true);
+  }, [narrow, ticketId, setCopilotOpen]);
+  useEffect(() => {
+    if (narrow) return undefined;
+    setScreenDockEdge("right");
+    return () => setScreenDockEdge(null);
+  }, [narrow, setScreenDockEdge]);
 
   useEffect(() => {
     if (!ticketId || !rawArtifactTab || isArtifactTab(rawArtifactTab)) return;

@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
@@ -6,7 +6,11 @@ import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { CopilotDockHeader } from "./CopilotDockHeader";
 import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
+import { ChatArtifactsList } from "./chat/ChatArtifactsList";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
+import { primitiveHistory } from "./chat/primitiveHistory";
+import { Button } from "./ui/Button";
+import { showChatMessage } from "../lib/chatJump";
 import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
@@ -72,6 +76,16 @@ export function CopilotDock() {
     }
   }, [terminalOpen, terminal.workspaceSlug, keptSlug]);
 
+  // Which tab the panel shows, remembered per conversation: moving to another
+  // ticket opens its chat, not the artifacts of the last one.
+  const conversation = archive?.sessionId ?? ticketId ?? label;
+  const [tabFor, setTabFor] = useState<{ conversation: string; tab: DockTab }>({ conversation, tab: "chat" });
+  const tab: DockTab = tabFor.conversation === conversation ? tabFor.tab : "chat";
+  const setTab = (next: DockTab) => setTabFor({ conversation, tab: next });
+  const chatRef = useRef<HTMLDivElement>(null);
+  const messages = session?.messages;
+  const artifacts = useMemo(() => primitiveHistory(messages ?? []), [messages]);
+
   const showTerminal = terminalOpen && Boolean(keptSlug);
   const mountTerminal = Boolean(keptSlug);
   const showChat = open && Boolean(session);
@@ -124,7 +138,39 @@ export function CopilotDock() {
               archive={archive}
               maximisePath={maximisePath}
             />
-            <div className="copilot-dock-chat-row">
+            <DockTabs
+              idPrefix={titleId}
+              tab={tab}
+              artifactCount={artifacts.length}
+              onSelect={setTab}
+            />
+            <div
+              className="copilot-dock-tab-panel copilot-dock-artifacts"
+              role="tabpanel"
+              id={`${titleId}-panel-artifacts`}
+              aria-labelledby={`${titleId}-tab-artifacts`}
+              hidden={tab !== "artifacts"}
+            >
+              {tab === "artifacts" ? (
+                <ChatArtifactsList
+                  entries={artifacts}
+                  onSubmit={sendQuick}
+                  onShowInChat={(messageId) => {
+                    setTab("chat");
+                    // After the chat panel is shown again: a hidden turn cannot scroll into view.
+                    requestAnimationFrame(() => showChatMessage(messageId, chatRef.current ?? document));
+                  }}
+                />
+              ) : null}
+            </div>
+            <div
+              ref={chatRef}
+              className="copilot-dock-chat-row copilot-dock-tab-panel"
+              role="tabpanel"
+              id={`${titleId}-panel-chat`}
+              aria-labelledby={`${titleId}-tab-chat`}
+              hidden={tab !== "chat"}
+            >
             <div className="copilot-dock-chat-main">
               <StudioChatMessages
                 messages={session.messages}
@@ -241,6 +287,55 @@ export function CopilotDock() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+type DockTab = "chat" | "artifacts";
+
+const DOCK_TABS: readonly DockTab[] = ["chat", "artifacts"];
+
+/**
+ * The conversation, or everything it has made. Arrow keys move between the
+ * two as a tablist's do; the panels stay mounted so the thread keeps its
+ * scroll position across a switch.
+ */
+function DockTabs({
+  idPrefix,
+  tab,
+  artifactCount,
+  onSelect,
+}: {
+  idPrefix: string;
+  tab: DockTab;
+  artifactCount: number;
+  onSelect: (tab: DockTab) => void;
+}) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const next = DOCK_TABS[(DOCK_TABS.indexOf(tab) + 1) % DOCK_TABS.length];
+    onSelect(next);
+    document.getElementById(`${idPrefix}-tab-${next}`)?.focus();
+  };
+  return (
+    <div className="copilot-dock-tabs" role="tablist" aria-label="Baxter" onKeyDown={onKeyDown}>
+      {DOCK_TABS.map((id) => (
+        <Button
+          key={id}
+          variant="plain"
+          role="tab"
+          id={`${idPrefix}-tab-${id}`}
+          aria-selected={tab === id}
+          aria-controls={`${idPrefix}-panel-${id}`}
+          tabIndex={tab === id ? 0 : -1}
+          className={`copilot-dock-tab${tab === id ? " is-on" : ""}`}
+          onClick={() => onSelect(id)}
+        >
+          {id === "chat" ? "Chat" : "Artifacts"}
+          {id === "artifacts" && artifactCount > 0 ? <span className="copilot-dock-tab-count">{artifactCount}</span> : null}
+        </Button>
+      ))}
     </div>
   );
 }

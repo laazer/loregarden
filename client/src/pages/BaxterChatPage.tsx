@@ -35,7 +35,7 @@ import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
 import { withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
-import { pushToast } from "../state/toastStore";
+import { showChatMessage } from "../lib/chatJump";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { GardenSky } from "../components/chat/GardenSky";
 import { useScrollbarGutterVar } from "../hooks/useScrollbarGutterVar";
@@ -541,24 +541,7 @@ export function BaxterChatPage() {
     setOpen: setWorkbenchOpen,
   } = useChatWorkbench();
 
-  const jumpToMessage = useCallback((messageId: string) => {
-    const node = document.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(messageId)}"]`,
-    );
-    if (!node) {
-      pushToast({
-        tone: "warning",
-        title: "Card not in view",
-        message: "That turn isn't loaded in this thread any more.",
-      });
-      return;
-    }
-    node.scrollIntoView({ behavior: "smooth", block: "start" });
-    node.classList.remove("lg-chat-turn--flash");
-    // Restarts the highlight when the same card is picked twice in a row.
-    void node.offsetWidth;
-    node.classList.add("lg-chat-turn--flash");
-  }, []);
+  const jumpToMessage = useCallback((messageId: string) => showChatMessage(messageId), []);
 
   const composerMenu = (
     <ChatComposerMenu
