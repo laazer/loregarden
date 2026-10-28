@@ -408,7 +408,7 @@ export function AppActionBar() {
         </kbd>
         <Button
           variant="plain"
-          className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : ""}`}
+          className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : " send-leaf"}`}
           aria-label={
             canStop
               ? session?.isStopping
