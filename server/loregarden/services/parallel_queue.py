@@ -33,7 +33,7 @@ from loregarden.services.lane_count import lane_count
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.queue_cards import orchestration_card, run_card
 from loregarden.services.queue_repair import (
-    begin_repair,
+    hold_for_repair,
     repair_exhausted,
     resolve_repair_route,
 )
@@ -626,9 +626,12 @@ class ParallelQueueService:
         route = resolve_repair_route(self.session, ticket)
         if route is None:
             return False
-        begin_repair(entry, route)
-        self.session.add(entry)
-        self.session.commit()
+        refused = hold_for_repair(self.session, entry, ticket, route)
+        if refused:
+            logger.warning(
+                "Lane %d not held for ticket %s: %s", entry.slot_number, entry.ticket_id, refused
+            )
+            return False
         logger.info(
             "Lane %d held for repair of ticket %s stage %r via %s",
             entry.slot_number,

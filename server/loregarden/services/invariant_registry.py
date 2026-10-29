@@ -27,6 +27,7 @@ from loregarden.services.dependency_release import releasable_tickets, release_t
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
@@ -500,6 +501,38 @@ LANDED_WORK_IS_COMMITTED = Invariant(
     ),
 )
 
+
+def _held_but_blocked(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=ticket.id,
+            ticket_id=ticket.id,
+            entered_at=entry.repairing_since,
+            detail=f"{ticket.external_id} reads blocked on '{ticket.workflow_stage_key}' while "
+            f"lane {entry.slot_number} is held for its {entry.repair_route} repair",
+        )
+        for entry, ticket in held_but_blocked(session)
+    ]
+
+
+def _rearm_held(session: Session, violations: Sequence[Violation]) -> int:
+    return rearm_held(session, _tickets(session, violations))
+
+
+HELD_REPAIRS_READ_IN_PROGRESS = Invariant(
+    name="held_repairs_read_in_progress",
+    ticket="lg-queue-execution-1656",
+    statement=(
+        "no ticket whose lane is held for a repair (other than an interruption) reads blocked"
+    ),
+    detect=_held_but_blocked,
+    repair=_rearm_held,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 29),
+    prevented_by="server/tests/test_lane_repair_hold.py::test_every_lane_hold_re_arms_its_stage",
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EXHAUSTED_GATES_BLOCK,
@@ -514,4 +547,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     HELD_TICKETS_RESUME,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
+    HELD_REPAIRS_READ_IN_PROGRESS,
 )
