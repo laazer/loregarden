@@ -575,6 +575,11 @@
  */
 /* A running ticket's stage ring: the track, the stages settled, and while the
    run is live a short arc turning around it. */
+.app-sidebar-ring {
+  flex: none;
+  display: block;
+}
+
 .app-sidebar-ring-track {
   stroke: var(--bd2);
 }
