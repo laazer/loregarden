@@ -584,6 +584,11 @@
   stroke: var(--bd2);
 }
 
+/* The settled share of the stages, drawn from twelve o'clock. */
+.app-sidebar-ring-progress {
+  fill: none;
+}
+
 .app-sidebar-ring-track.is-unknown {
   stroke-dasharray: 2 2.4;
 }
