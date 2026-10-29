@@ -430,47 +430,52 @@ function child(id: string, state: TicketTreeNode["state"], stage = "Triage"): Ti
   };
 }
 
-describe("a parent that runs nothing itself", () => {
+describe("a parent's timeline is where each child is", () => {
   const parent = ticket({ child_count: 4 } as Partial<TicketDetail>);
   const kids = [child("a", "done", "Done"), child("b", "in_progress", "Implement"), child("c", "backlog"), child("d", "blocked", "Verify")];
+  const summaries = kids.map((kid) => ({ ...kid, workflow_stage_key: kid.workflow_stage_name.toLowerCase(), stages: [], activity: "idle" }));
 
-  it("lists the work under it by state instead of saying nothing has run", async () => {
-    renderTimeline({ visits: [], detail: parent, childTickets: kids });
-
-    expect(await screen.findByText(/1 of 4 done/)).toBeInTheDocument();
-    expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
-    const groups = within(screen.getByRole("region", { name: "Work under this ticket" })).getAllByRole("group");
-    expect(groups.map((g) => g.querySelector("summary")?.textContent)).toEqual(["Blocked1", "In Progress1", "Done1", "Backlog1"]);
-    // What needs the operator is open; the bulk (done, not started) waits behind its count.
-    expect(groups.map((g) => g.hasAttribute("open"))).toEqual([true, true, false, false]);
+  beforeEach(() => {
+    mockApi.tickets.mockResolvedValue(summaries as never);
   });
 
-  it("opens a child from the list", async () => {
+  it("shows the stage board instead of saying nothing has run", async () => {
+    renderTimeline({ visits: [], detail: parent, childTickets: kids });
+
+    expect(await screen.findByRole("table", { name: "Stages of each child" })).toBeInTheDocument();
+    expect(screen.getByText(/of 4/)).toHaveTextContent("1 of 4");
+    expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
+    expect(mockApi.tickets).toHaveBeenCalledWith({ parent_ticket_id: parent.id });
+  });
+
+  it("opens a child from its row", async () => {
     const { onOpenTicket } = renderTimeline({ visits: [], detail: parent, childTickets: kids });
 
-    fireEvent.click(await screen.findByRole("button", { name: /lg-b/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Child b" }));
     expect(onOpenTicket).toHaveBeenCalledWith("b");
   });
 
-  it("waits for the board's tree rather than claiming the parent is empty", async () => {
-    renderTimeline({ visits: [], detail: parent, childTickets: [] });
+  it("shows a skeleton while the children load, rather than claiming the parent is empty", async () => {
+    mockApi.tickets.mockReturnValue(new Promise(() => {}));
+    renderTimeline({ visits: [], detail: parent, childTickets: kids });
 
-    expect(await screen.findByText("Loading the 4 tickets under this one…")).toBeInTheDocument();
+    expect(await screen.findByText("Loading the tickets under this one…")).toBeInTheDocument();
     expect(screen.queryByText("Nothing has run for this ticket yet")).not.toBeInTheDocument();
   });
 
-  it("still lists the work under it when it holds an output from before any run", async () => {
+  it("still shows an output from before any run beside the board", async () => {
     renderTimeline({ visits: [], detail: parent, childTickets: kids, items: [item({ title: "Integration diff", kind: "diff" })] });
 
-    expect(await screen.findByText(/1 of 4 done/)).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Stages of each child" })).toBeInTheDocument();
     expect(screen.getByText("Before the first run")).toBeInTheDocument();
-    expect(screen.queryByText(/0 runs/)).not.toBeInTheDocument();
   });
 
-  it("keeps its own visits when it has run something", async () => {
+  it("shows the board first and then its own stages when it ran some before it got children", async () => {
     renderTimeline({ visits: [PLAN], detail: parent, childTickets: kids });
 
-    expect(await screen.findByRole("button", { name: /Planning/ })).toBeInTheDocument();
-    expect(screen.queryByText(/of 4 done/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Stages of each child" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This ticket’s own stages" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Planning/ })).toBeInTheDocument();
   });
 });
+

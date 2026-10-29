@@ -13,6 +13,7 @@ import type {
   TicketLedger,
   TicketSummary,
 } from "../../api/types";
+import { ChildStageBoard } from "../../components/dashboard/ChildStageBoard";
 import { TicketCIAutoFix } from "../../components/dashboard/TicketCIAutoFix";
 import { TicketOutputs } from "../../components/dashboard/TicketOutputs";
 import { TicketTimeline } from "../../components/dashboard/TicketTimeline";
@@ -35,6 +36,7 @@ import historyArtifacts from "../fixtures/prod-shape/ticket-history-artifacts.js
 import historyLedger from "../fixtures/prod-shape/ticket-history-ledger.json";
 import ciStatus from "../fixtures/prod-shape/ticket-ci-status.json";
 import heldTickets from "../fixtures/prod-shape/tickets-waiting-on-tickets.json";
+import largestParentChildren from "../fixtures/prod-shape/tickets-under-the-largest-parent.json";
 
 /**
  * The surfaces that shipped unusable, rendered over the API's own responses on
@@ -250,3 +252,47 @@ describe("Tickets waiting on other tickets, at production volume", () => {
     expect(findUsabilityProblems(container)).toEqual([]);
   });
 });
+
+describe("A parent's stage board, over the largest parent's children", () => {
+  const children = largestParentChildren as unknown as TicketSummary[];
+  const stages = ["triage", "plan", "spec", "implement", "review", "done"].map((key) => ({
+    key,
+    name: key,
+    status: "pending" as const,
+    agent_id: "",
+    skill_name: "",
+    optional: false,
+    note: "",
+    stage_type: "agent",
+    agents: [],
+  }));
+
+  it("control: the children as a list of five-field rows, with nothing to open, are flagged", () => {
+    const { container } = render(
+      <ul>
+        {children.map((child) => (
+          <li key={child.id}>
+            <span>{child.external_id}</span>
+            <span>{child.title}</span>
+            <span>{child.state}</span>
+            <span>{child.workflow_stage_name || "no stage"}</span>
+            <span>P{child.priority}</span>
+          </li>
+        ))}
+      </ul>,
+    );
+    expect(findUsabilityProblems(container).length).toBeGreaterThan(0);
+  });
+
+  it("puts every child on a row of the board, each name a link", async () => {
+    mockApi.tickets.mockResolvedValue(children);
+    const { container } = render(
+      withProviders(<ChildStageBoard parentId="parent" parentStages={stages} childNodes={[]} onOpenTicket={jest.fn()} onOpenRunLog={jest.fn()} />),
+    );
+
+    const board = await screen.findByRole("table", { name: "Stages of each child" });
+    expect(board.querySelectorAll('[role="rowheader"]')).toHaveLength(children.length);
+    expect(findUsabilityProblems(container)).toEqual([]);
+  });
+});
+

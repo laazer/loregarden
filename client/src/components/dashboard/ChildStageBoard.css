@@ -1,0 +1,443 @@
+/* A parent's Timeline: one row per child, one column per workflow stage. */
+.csb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  container-type: inline-size;
+}
+
+.csb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.csb-head b {
+  color: var(--tx);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.csb-head b.csb-bad {
+  color: var(--red);
+}
+
+.csb-filter {
+  max-width: 260px;
+}
+
+.csb-scroll {
+  overflow-x: auto;
+}
+
+.csb-grid {
+  display: grid;
+  min-width: 640px;
+}
+
+.csb-row,
+.csb-counts {
+  display: contents;
+}
+
+/* how many children sit at each stage now */
+.csb-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 30px;
+  padding-bottom: 4px;
+}
+
+.csb-count-n {
+  color: var(--tx);
+  font: 600 var(--fs-small) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.csb-count-bar {
+  width: 16px;
+  border-radius: 3px 3px 0 0;
+  background: var(--bd2);
+}
+
+.csb-hd {
+  padding: 6px 2px;
+  border-top: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  overflow: hidden;
+  color: var(--txl);
+  font-size: var(--fs-micro);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csb-hd--name {
+  text-align: left;
+}
+
+.csb-group {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px 4px;
+  color: var(--txl);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.csb-group-n {
+  color: var(--txm);
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+
+.csb-fold {
+  margin-left: auto;
+  color: var(--ac2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.csb-name,
+.csb-cell,
+.csb-parts {
+  border-bottom: 1px solid var(--bd);
+}
+
+.csb-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 10px 7px 2px;
+}
+
+.csb-expand {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  color: var(--txm);
+  font-size: var(--fs-micro);
+}
+
+.csb-expand[aria-expanded="true"] {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.csb-name-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.csb-title {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  color: var(--tx);
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csb-title:hover,
+.csb-title:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.csb-row--settled .csb-title {
+  color: var(--txm);
+  font-weight: 400;
+}
+
+.csb-ref {
+  overflow: hidden;
+  color: var(--txl);
+  font: var(--fs-micro) var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csb-ref-run {
+  color: var(--blue);
+}
+
+.csb-ref-bad {
+  color: var(--red);
+}
+
+/* one stage: a track through the row, and the stage's mark on it */
+.csb-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.csb-cell::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--bd);
+}
+
+.csb-cell--first::before {
+  left: 50%;
+}
+
+.csb-cell--last::before {
+  right: 50%;
+}
+
+.csb-cell--past::before {
+  background: color-mix(in srgb, var(--grn) 45%, var(--bd));
+}
+
+.csb-mark {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bd2);
+  border-radius: 50%;
+  background: var(--bg0);
+}
+
+.csb-mark--pending {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--bd2);
+}
+
+.csb-mark--absent {
+  width: 0;
+  height: 0;
+  border: 0;
+}
+
+.csb-mark--done {
+  border-color: var(--grn);
+  background: var(--grn);
+}
+
+.csb-row--settled .csb-mark--done {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--grn) 55%, var(--bg0));
+}
+
+.csb-mark--running {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+
+.csb-mark--running::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+.csb-mark--blocked {
+  border-color: var(--red);
+  border-radius: 3px;
+  background: var(--red);
+}
+
+.csb-mark--awaiting {
+  border-color: var(--vio);
+  border-radius: 2px;
+  background: var(--vio);
+  transform: rotate(45deg) scale(0.85);
+}
+
+.csb-mark--wont_do {
+  width: 10px;
+  height: 2px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--bd2);
+}
+
+.csb-mark--landed {
+  border-color: var(--ac2);
+  border-radius: 3px;
+  background: var(--ac2);
+  transform: rotate(45deg) scale(0.85);
+}
+
+/* a child with children of its own shows their progress across the row */
+.csb-parts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.csb-parts-bar {
+  display: flex;
+  flex: 1;
+  gap: 3px;
+}
+
+.csb-parts-bar i {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bd2);
+}
+
+.csb-parts-bar i.is-done {
+  background: var(--grn);
+}
+
+.csb-parts-bar i.is-running {
+  background: var(--blue);
+}
+
+.csb-parts-bar i.is-blocked {
+  background: var(--red);
+}
+
+.csb-parts-label {
+  color: var(--txm);
+  font: var(--fs-small) var(--mono);
+  white-space: nowrap;
+}
+
+/* an active row's live log, opened under it */
+.csb-log {
+  grid-column: 1 / -1;
+  padding: 0 0 8px 26px;
+}
+
+.csb-log-inner {
+  border: 1px solid var(--bd);
+  border-left: 2px solid var(--blue);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg1);
+}
+
+.csb-log-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--bd);
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.csb-log-head b {
+  color: var(--tx);
+  font-weight: 600;
+}
+
+.csb-log-sp {
+  flex: 1;
+}
+
+.csb-log-body {
+  height: 260px;
+}
+
+.csb-log-note {
+  padding: 10px 12px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.csb-link {
+  padding: 0;
+  color: var(--ac2);
+}
+
+.csb-none {
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+
+/* A narrow pane (the Timeline beside the parts column and Baxter): a column per
+   stage would be a few pixels wide, so each row becomes its name with a strip of
+   stage marks under it. The marks keep their words; the column names do not fit. */
+@container (max-width: 620px) {
+  .csb-grid {
+    display: block;
+    min-width: 0;
+  }
+
+  .csb-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  /* after .csb-row, which would otherwise show the head row again */
+  .csb-counts,
+  .csb-row--head {
+    display: none;
+  }
+
+  .csb-name,
+  .csb-cell,
+  .csb-parts {
+    border-bottom: 0;
+  }
+
+  .csb-name {
+    flex: 1 1 100%;
+    padding-bottom: 2px;
+  }
+
+  .csb-cell {
+    flex: 1;
+    height: 14px;
+    margin-bottom: 8px;
+  }
+
+  .csb-parts {
+    flex: 1 1 100%;
+    padding: 0 0 8px;
+  }
+
+  .csb-mark {
+    width: 10px;
+    height: 10px;
+    border-width: 1.5px;
+  }
+
+  .csb-mark--pending {
+    width: 6px;
+    height: 6px;
+  }
+
+  .csb-log {
+    padding-left: 0;
+  }
+}
