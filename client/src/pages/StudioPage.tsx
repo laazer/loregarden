@@ -12,8 +12,10 @@ import {
   type StudioWorkflowStage,
   type WorkflowTransition,
 } from "../api/client";
+import { AgentIndex } from "../components/studio/AgentIndex";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
+import { NewAgentDialog } from "../components/studio/NewAgentDialog";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
@@ -118,6 +120,13 @@ export function StudioPage() {
   // separately when a stored grant names one that is gone.
   const mcpServers = useQuery({ queryKey: ["mcp-servers"], queryFn: api.mcpServers });
   const agents = useQuery({ queryKey: ["studio-agents"], queryFn: api.studioAgents });
+  const showAgentIndex = tab === "agents" && studioResourceId === null;
+  const agentRunStats = useQuery({
+    queryKey: ["studio-agent-run-stats"],
+    queryFn: api.studioAgentRunStats,
+    enabled: showAgentIndex,
+  });
+  const [newAgentOpen, setNewAgentOpen] = useState(false);
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
@@ -399,12 +408,6 @@ export function StudioPage() {
   }, [isNewWorkflow]);
 
   useEffect(() => {
-    if (tab === "agents" && studioResourceId === null) {
-      navigateToStudioAgentNew(true);
-    }
-  }, [tab, studioResourceId]);
-
-  useEffect(() => {
     if (tab === "workflows" && studioResourceId === null) {
       navigateToStudioWorkflowNew(true);
     }
@@ -425,7 +428,7 @@ export function StudioPage() {
   }, [tab, selectedWorkflowSlug, workflows.data]);
 
   const startNewAgent = () => {
-    navigateToStudioAgentNew();
+    setNewAgentOpen(true);
   };
 
   const duplicateAgent = (agent: StudioAgent) => {
@@ -489,7 +492,7 @@ export function StudioPage() {
                 : "Ticket Studio"
         }
       >
-        {(tab === "agents" || tab === "workflows") && (
+        {((tab === "agents" && !showAgentIndex) || tab === "workflows") && (
           <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
             <button
               type="button"
@@ -555,6 +558,13 @@ export function StudioPage() {
             workspacesError={workspaces.isError ? workspaces.error : null}
             onRetryWorkspaces={() => workspaces.refetch()}
             activeWorkspaceSlug={activeWorkspaceSlug}
+          />
+        ) : showAgentIndex ? (
+          <AgentIndex
+            agents={agents}
+            stats={agentRunStats}
+            onNewAgent={startNewAgent}
+            newAgentOpen={newAgentOpen}
           />
         ) : tab === "agents" ? (
           <div className="studio-shell">
@@ -1157,6 +1167,14 @@ export function StudioPage() {
           </div>
         )}
       </div>
+      <NewAgentDialog
+        open={newAgentOpen}
+        onClose={() => setNewAgentOpen(false)}
+        onCreated={(slug) => {
+          setNewAgentOpen(false);
+          navigateToStudioAgent(slug);
+        }}
+      />
     </div>
   );
 }

@@ -785,6 +785,16 @@ export interface StudioDefaults {
   skip_conditions?: string[];
 }
 
+/** One agent's run record, from `GET /api/studio/agent-run-stats`. */
+export interface AgentRunStats {
+  agent_id: string;
+  /** Finished runs: succeeded, failed or cancelled. */
+  runs: number;
+  failed: number;
+  /** When its latest run of any status was created; naive UTC. */
+  last_run_at: string | null;
+}
+
 export interface StudioGeneratedAgent {
   name: string;
   slug: string;
