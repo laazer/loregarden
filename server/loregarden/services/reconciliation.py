@@ -51,6 +51,7 @@ from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     EXHAUSTED_GATES_BLOCK,
+    HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
     LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
@@ -123,6 +124,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_orphaned_agent_runs", settle_orphaned_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
+    # Before the lanes are driven: a hold whose ticket still reads blocked is
+    # re-armed here, so the same pass's re-dispatch runs the stage (1656).
+    _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     # Periodic by the same rule: it selects only tickets with no agent run and
     # no orchestration behind them. It sits after the settlers so a stage they

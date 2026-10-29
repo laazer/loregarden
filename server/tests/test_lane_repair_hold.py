@@ -7,7 +7,9 @@ the driver that spends it, and the two caps that end it — and the one thing th
 must not change: a block with no repair route still settles immediately.
 """
 
+import ast
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from loregarden.models.domain import (
@@ -25,7 +27,9 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services import queue_repair
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.parallel_queue import ParallelQueueService
@@ -36,6 +40,7 @@ from loregarden.services.queue_repair import (
     resolve_repair_route,
 )
 from loregarden.services.run_interruption import INTERRUPTED_RUN_MESSAGE
+from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 from tests.test_block_repair import (  # noqa: F401 - fixtures are used by name
     REVIEWER,
@@ -458,3 +463,70 @@ def test_a_held_block_with_no_workflow_to_re_run_settles_and_says_why(
     assert entry.repair_attempts == 0
     # Settled out loud, naming the ticket, rather than spending attempts on nothing.
     assert ticket.external_id in entry.failure_reason
+
+
+def test_a_held_stage_retry_reads_in_progress_while_its_lane_waits(db_session, ticket, monkeypatch):
+    """Between the failed run and the sweep that re-dispatches it, the ticket used
+    to read blocked: the hold left its stage BLOCKED until the sweep re-armed it,
+    so every surface showed a retry as a final block for up to a sweep."""
+    _script(monkeypatch, {WORKER: (RunStatus.FAILED, "", "Error: something broke")})
+    lanes = QueueLaneService(
+        db_session, max_concurrent=3, dispatcher=_ClaimingDispatcher(db_session)
+    )
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, auto_repair=False)
+
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="hold-test"), max_stages=10, auto_repair=False
+    )
+
+    entry = db_session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).one()
+    db_session.refresh(ticket)
+    assert entry.status == QueuePosition.REPAIRING
+    assert entry.repair_attempts == 0, "no sweep has run: this is the moment the lane is held"
+    assert ticket.state is TicketState.IN_PROGRESS
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+
+
+def test_every_lane_hold_re_arms_its_stage():
+    """The writers of a hold, enumerated: `begin_repair` (the entry write) is
+    called only by `hold_for_repair`, which re-arms the stage first. A new hold
+    site that called it directly would bring the blocked-while-held window back."""
+    services = Path(queue_repair.__file__).parent
+    callers = sorted(
+        f"{path.relative_to(services)}::{func.name}"
+        for path in services.rglob("*.py")
+        for func in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if type(func) is ast.FunctionDef
+        for node in ast.walk(func)
+        if type(node) is ast.Call
+        and getattr(node.func, "id", getattr(node.func, "attr", "")) == "begin_repair"
+    )
+    assert callers == ["queue_repair.py::hold_for_repair"], callers
+
+
+def test_a_hold_left_reading_blocked_is_found_and_re_armed(db_session, ticket, monkeypatch):
+    """The invariant's half: a held ticket some writer left blocked is detected
+    and re-armed, so it reads in progress again before the lane re-dispatches."""
+    _script(monkeypatch, {WORKER: (RunStatus.FAILED, "", "Error: something broke")})
+    lanes = QueueLaneService(
+        db_session, max_concurrent=3, dispatcher=_ClaimingDispatcher(db_session)
+    )
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, auto_repair=False)
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="hold-test"), max_stages=10, auto_repair=False
+    )
+    db_session.refresh(ticket)
+    orch = OrchestrationService(db_session)
+    instance, stages = orch._resolve_stages(ticket)
+    set_stage_status(ticket, instance, stages, ticket.workflow_stage_key, StageStatus.BLOCKED)
+    db_session.add_all([instance, ticket])
+    db_session.commit()
+    assert ticket.state is TicketState.BLOCKED
+
+    held = queue_repair.held_but_blocked(db_session)
+    assert [t.id for _, t in held] == [ticket.id]
+    assert queue_repair.rearm_held(db_session, [t for _, t in held]) == 1
+
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.IN_PROGRESS
+    assert queue_repair.held_but_blocked(db_session) == []
