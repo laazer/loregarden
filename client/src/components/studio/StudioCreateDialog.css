@@ -1,12 +1,12 @@
-/* Agent Studio → New agent…: the create dialog. */
+/* Studio's create dialog (New agent…, New workflow…). */
 
-.new-agent-body {
+.studio-create-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.new-agent-describe {
+.studio-create-describe {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -16,30 +16,30 @@
   border-bottom: 1px solid var(--bd);
 }
 
-.new-agent-describe .new-agent-field {
+.studio-create-describe .studio-create-field {
   align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.new-agent-field {
+.studio-create-field {
   margin-top: 4px;
   font-size: var(--fs-small);
   color: var(--txm);
 }
 
-.new-agent-slug {
+.studio-create-slug {
   font-family: var(--mono);
 }
 
-.new-agent-note {
+.studio-create-note {
   margin: 0;
   font-size: var(--fs-small);
   color: var(--txm);
 }
 
-.new-agent-error {
+.studio-create-error {
   margin: 0;
   font-size: var(--fs-small);
   color: var(--rdl);

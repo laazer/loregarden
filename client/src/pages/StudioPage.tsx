@@ -16,6 +16,8 @@ import { AgentIndex } from "../components/studio/AgentIndex";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
 import { NewAgentDialog } from "../components/studio/NewAgentDialog";
+import { NewWorkflowDialog } from "../components/studio/NewWorkflowDialog";
+import { WorkflowIndex } from "../components/studio/WorkflowIndex";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
@@ -128,6 +130,13 @@ export function StudioPage() {
   });
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
+  const showWorkflowIndex = tab === "workflows" && studioResourceId === null;
+  const workflowUsage = useQuery({
+    queryKey: ["studio-workflow-usage"],
+    queryFn: api.studioWorkflowUsage,
+    enabled: showWorkflowIndex,
+  });
+  const [newWorkflowOpen, setNewWorkflowOpen] = useState(false);
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
   const runtimeOptions = useRuntimeOptionsQuery({ queryKey: ["runtime-options"] });
@@ -408,12 +417,6 @@ export function StudioPage() {
   }, [isNewWorkflow]);
 
   useEffect(() => {
-    if (tab === "workflows" && studioResourceId === null) {
-      navigateToStudioWorkflowNew(true);
-    }
-  }, [tab, studioResourceId]);
-
-  useEffect(() => {
     if (tab !== "agents" || !selectedAgentSlug || !agents.data) return;
     if (!agents.data.some((agent) => agent.slug === selectedAgentSlug)) {
       navigateToStudio("agents", true);
@@ -467,7 +470,7 @@ export function StudioPage() {
   };
 
   const startNewWorkflow = () => {
-    navigateToStudioWorkflowNew();
+    setNewWorkflowOpen(true);
   };
 
   const toggleMcpTool = (tool: string) => {
@@ -492,7 +495,7 @@ export function StudioPage() {
                 : "Ticket Studio"
         }
       >
-        {((tab === "agents" && !showAgentIndex) || tab === "workflows") && (
+        {((tab === "agents" && !showAgentIndex) || (tab === "workflows" && !showWorkflowIndex)) && (
           <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
             <button
               type="button"
@@ -565,6 +568,13 @@ export function StudioPage() {
             stats={agentRunStats}
             onNewAgent={startNewAgent}
             newAgentOpen={newAgentOpen}
+          />
+        ) : showWorkflowIndex ? (
+          <WorkflowIndex
+            workflows={workflows}
+            usage={workflowUsage}
+            onNewWorkflow={startNewWorkflow}
+            newWorkflowOpen={newWorkflowOpen}
           />
         ) : tab === "agents" ? (
           <div className="studio-shell">
@@ -1174,6 +1184,15 @@ export function StudioPage() {
           setNewAgentOpen(false);
           navigateToStudioAgent(slug);
         }}
+      />
+      <NewWorkflowDialog
+        open={newWorkflowOpen}
+        onClose={() => setNewWorkflowOpen(false)}
+        onCreated={(slug) => {
+          setNewWorkflowOpen(false);
+          navigateToStudioWorkflow(slug);
+        }}
+        workflows={workflows.data ?? []}
       />
     </div>
   );

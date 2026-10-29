@@ -21,25 +21,22 @@ import {
   sortAgentRows,
   type AgentIndexRow,
   type AgentSortKey,
-  type SortDirection,
 } from "../../lib/agentIndex";
 import { studioAgentPath } from "../../lib/appNavigation";
 import { formatRelativeAge } from "../../lib/timestamps";
-import { describeError } from "../../state/toastStore";
-import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import {
+  IndexLoadError,
+  IndexStatsWarning,
+  NoMatch,
+  SortableHead,
+  StudioIndexFrame,
+  type IndexQuery,
+} from "./StudioIndex";
+import { useIndexSort, type IndexColumn } from "../../lib/indexSort";
 import "./AgentIndex.css";
 
-interface Column {
-  key: AgentSortKey;
-  label: string;
-  numeric: boolean;
-  /** The direction a first click sorts: worst or most first for numbers. */
-  first: SortDirection;
-}
-
-const COLUMNS: Column[] = [
+const COLUMNS: IndexColumn<AgentSortKey>[] = [
   { key: "name", label: "Agent", numeric: false, first: "ascending" },
   { key: "runs", label: "Runs", numeric: true, first: "descending" },
   { key: "failed", label: "Failed", numeric: true, first: "descending" },
@@ -47,23 +44,15 @@ const COLUMNS: Column[] = [
   { key: "lastRun", label: "Last run", numeric: true, first: "descending" },
 ];
 
-interface Query<T> {
-  data: T | undefined;
-  isPending: boolean;
-  isError: boolean;
-  error: unknown;
-  refetch: () => unknown;
-}
-
 interface Props {
-  agents: Query<StudioAgent[]>;
-  stats: Query<AgentRunStats[]>;
+  agents: IndexQuery<StudioAgent[]>;
+  stats: IndexQuery<AgentRunStats[]>;
   onNewAgent: () => void;
   newAgentOpen: boolean;
 }
 
 function RateCell({ row }: { row: AgentIndexRow }) {
-  if (row.rate === null) return <span className="agent-index-muted">—</span>;
+  if (row.rate === null) return <span className="studio-index-muted">—</span>;
   const percent = ratePercent(row.rate);
   const alert = isFailureAlert(row);
   return (
@@ -80,22 +69,10 @@ function RateCell({ row }: { row: AgentIndexRow }) {
 
 export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<{ key: AgentSortKey; dir: SortDirection }>({
-    key: "rate",
-    dir: "descending",
-  });
+  const { sort, onSort } = useIndexSort<AgentSortKey>({ key: "rate", dir: "descending" });
 
   if (agents.isPending) return <PaneSkeleton variant="list" label="Loading agents…" />;
-  if (agents.isError || !agents.data) {
-    return (
-      <div className="agent-index agent-index--message" role="alert">
-        <p>Could not load the agents: {describeError(agents.error, "the request failed")}</p>
-        <Button variant="secondary" onClick={() => void agents.refetch()}>
-          Try again
-        </Button>
-      </div>
-    );
-  }
+  if (agents.isError || !agents.data) return <IndexLoadError what="agents" query={agents} />;
 
   const statsReady = Boolean(stats.data);
   const allRows = agentIndexRows(agents.data, stats.data ?? []);
@@ -108,93 +85,44 @@ export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
   const totalFailed = allRows.reduce((sum, row) => sum + row.failed, 0);
   const neverRun = statsReady ? allRows.filter((row) => !row.lastRunAt) : [];
 
-  const onSort = (column: Column) =>
-    setSort((current) =>
-      current.key === column.key
-        ? { key: column.key, dir: current.dir === "ascending" ? "descending" : "ascending" }
-        : { key: column.key, dir: column.first },
-    );
-
   return (
-    <section className="agent-index" aria-labelledby="agent-index-title">
-      <header className="agent-index-head">
-        <div>
-          <h2 id="agent-index-title" className="agent-index-title">
-            Agents
-          </h2>
-          <p className="agent-index-summary">
-            {allRows.length} agents
-            {statsReady
-              ? ` · ${totalRuns.toLocaleString()} finished runs · ${totalFailed.toLocaleString()} failed`
-              : ""}
-          </p>
-        </div>
-        <Input
-          type="search"
-          className="agent-index-filter"
-          aria-label="Filter agents"
-          placeholder="Filter agents"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Button variant="primary" onClick={onNewAgent} aria-expanded={newAgentOpen}>
-          New agent…
-        </Button>
-      </header>
-
-      {stats.isError ? (
-        <div className="agent-index-warning" role="alert">
-          <span>
-            Run counts did not load ({describeError(stats.error, "the request failed")}), so the
-            table cannot rank agents yet.
-          </span>
-          <Button variant="secondary" compact onClick={() => void stats.refetch()}>
-            Try again
-          </Button>
-        </div>
-      ) : null}
+    <StudioIndexFrame
+      id="agent-index-title"
+      title="Agents"
+      summary={`${allRows.length} agents${
+        statsReady
+          ? ` · ${totalRuns.toLocaleString()} finished runs · ${totalFailed.toLocaleString()} failed`
+          : ""
+      }`}
+      noun="agent"
+      query={query}
+      onQuery={setQuery}
+      newLabel="New agent…"
+      onNew={onNewAgent}
+      newOpen={newAgentOpen}
+    >
+      <IndexStatsWarning query={stats}>
+        Run counts did not load, so the table cannot rank agents yet
+      </IndexStatsWarning>
 
       {allRows.length === 0 ? (
-        <p className="agent-index-empty">
+        <p className="studio-index-empty">
           No agents yet. New agent… creates one; built-in agents appear here once the server has
           seeded them.
         </p>
       ) : rows.length === 0 ? (
-        <p className="agent-index-empty">
-          No agent matches “{query}”.{" "}
-          <Button variant="plain" className="agent-index-clear" onClick={() => setQuery("")}>
-            Show every agent
-          </Button>
-        </p>
+        <NoMatch noun="agent" query={query} onClear={() => setQuery("")} />
       ) : (
-        <table className="agent-index-table">
-          <thead>
-            <tr>
-              {COLUMNS.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  className={column.numeric ? "num" : undefined}
-                  aria-sort={sort.key === column.key ? sort.dir : "none"}
-                >
-                  <Button variant="plain" className="agent-index-sort" onClick={() => onSort(column)}>
-                    {column.label}
-                    <span aria-hidden className="agent-index-sort-mark">
-                      {sort.key === column.key ? (sort.dir === "ascending" ? "↑" : "↓") : ""}
-                    </span>
-                  </Button>
-                </th>
-              ))}
-            </tr>
-          </thead>
+        <table className="studio-index-table">
+          <SortableHead columns={COLUMNS} sort={sort} onSort={onSort} />
           <tbody>
             {rows.map((row) => (
               <tr key={row.agent.slug} className={isFailureAlert(row) ? "is-alert" : undefined}>
                 <th scope="row">
-                  <Link className="agent-index-name" to={studioAgentPath(row.agent.slug)}>
+                  <Link className="studio-index-name" to={studioAgentPath(row.agent.slug)}>
                     {row.agent.name}
                   </Link>
-                  <span className="agent-index-slug">
+                  <span className="studio-index-slug">
                     {row.agent.slug}
                     {row.agent.built_in ? "" : " · custom"}
                   </span>
@@ -212,7 +140,7 @@ export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
                   {row.lastRunAt ? (
                     formatRelativeAge(row.lastRunAt)
                   ) : (
-                    <span className="agent-index-muted">{statsReady ? "never" : "—"}</span>
+                    <span className="studio-index-muted">{statsReady ? "never" : "—"}</span>
                   )}
                 </td>
               </tr>
@@ -222,7 +150,7 @@ export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
       )}
 
       {statsReady && rows.length ? (
-        <p className="agent-index-foot">
+        <p className="studio-index-foot">
           A rate from fewer than {MIN_RUNS_FOR_RATE} finished runs is faded and ranks last.
           {neverRun.length
             ? ` ${neverRun.length} ${neverRun.length === 1 ? "agent has" : "agents have"} never run: ${neverRun
@@ -231,6 +159,6 @@ export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
             : ""}
         </p>
       ) : null}
-    </section>
+    </StudioIndexFrame>
   );
 }
