@@ -12,6 +12,7 @@ import type { Approval } from "../api/chatTypes";
 import type { BlockedOn, StageStatus, TicketState, TicketTreeNode, WorkItemType } from "../api/types";
 import { approvalLabel } from "./homeNeedsYou";
 import { blockedOnStateLabel } from "../utils/blockKinds";
+import { hasParts } from "./ticketParts";
 
 export interface WorkItemParent {
   id: string;
@@ -22,6 +23,8 @@ export interface WorkItemParent {
 export interface WorkItemRow {
   node: TicketTreeNode;
   parent: WorkItemParent | null;
+  /** "part 2/4" when the parent was split and this row is one of its parts. */
+  partLabel?: string;
 }
 
 export type WorkItemsView = "needs_me" | "running" | "in_flight" | "blocked" | "open" | "all";
@@ -87,17 +90,17 @@ export function inView(view: WorkItemsView, node: TicketTreeNode, running: Runni
 export function flattenWorkItems(nodes: TicketTreeNode[]): WorkItemRow[] {
   const rows: WorkItemRow[] = [];
   const seen = new Set<string>();
-  const walk = (items: TicketTreeNode[], parent: WorkItemParent | null) => {
-    for (const node of items) {
+  const walk = (items: TicketTreeNode[], parent: WorkItemParent | null, partsParent: boolean) => {
+    items.forEach((node, index) => {
       // An initiative's member copy points at a ticket that also appears
       // under its real parent; list it there, once.
-      if (node.member_link || seen.has(node.id)) continue;
+      if (node.member_link || seen.has(node.id)) return;
       seen.add(node.id);
-      rows.push({ node, parent });
-      walk(node.children, { id: node.id, external_id: node.external_id, title: node.title });
-    }
+      rows.push(partsParent ? { node, parent, partLabel: `part ${index + 1}/${items.length}` } : { node, parent });
+      walk(node.children, { id: node.id, external_id: node.external_id, title: node.title }, hasParts(node));
+    });
   };
-  walk(nodes, null);
+  walk(nodes, null, false);
   return rows;
 }
 

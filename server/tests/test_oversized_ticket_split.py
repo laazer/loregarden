@@ -18,6 +18,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.hierarchy_service import build_tree
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.oversized_ticket_split import (
     MAX_ACCEPTANCE_CRITERIA,
@@ -25,6 +26,7 @@ from loregarden.services.oversized_ticket_split import (
     split_oversized_ticket,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_split_view import ticket_split
 from loregarden.services.workflow_state import set_stage_status
 from loregarden.testing.factories import NO_REPO, make_ticket
 from sqlmodel import Session, select
@@ -165,6 +167,38 @@ def test_a_failed_model_turn_leaves_the_ticket_whole_and_visible(
     assert "exited 1" in result.detail
     assert _children(db_session, oversized) == []
     callbacks.attach_artifact.assert_called_once()
+
+
+def test_a_split_ticket_says_when_where_and_why(db_session: Session, oversized: Ticket):
+    assert ticket_split(db_session, oversized) is None
+
+    split_oversized_ticket(
+        db_session, oversized, MagicMock(), generate=lambda _prompt: _reply(HALVES)
+    )
+
+    split = ticket_split(db_session, oversized)
+    assert split is not None
+    assert split.stage_key == oversized.workflow_stage_key
+    assert split.over_limits == [
+        f"{len(CRITERIA)} criteria, over the {MAX_ACCEPTANCE_CRITERIA} limit"
+    ]
+    tickets = list(
+        db_session.exec(select(Ticket).where(Ticket.workspace_id == oversized.workspace_id))
+    )
+    (root,) = build_tree(db_session, tickets)
+    assert root.was_split
+    assert root.children and not any(child.was_split for child in root.children)
+
+
+def test_a_ticket_run_oversized_and_unsplit_is_not_reported_split(
+    db_session: Session, oversized: Ticket
+):
+    split_oversized_ticket(
+        db_session, oversized, MagicMock(), generate=lambda _prompt: "not a split"
+    )
+
+    assert _children(db_session, oversized) == []
+    assert ticket_split(db_session, oversized) is None
 
 
 def test_a_ticket_under_the_threshold_is_left_alone(db_session: Session, oversized: Ticket):

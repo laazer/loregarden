@@ -101,6 +101,7 @@ from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_split_view import ticket_split
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.triage_run_service import (
@@ -945,6 +946,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         compatibility_posture=ticket.compatibility_posture,
         resolved_compatibility_posture=posture.posture.value,
         compatibility_posture_source=posture.source,
+        split=ticket_split(session, ticket),
     )
 
 

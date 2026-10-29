@@ -401,6 +401,10 @@ export function useTicketWork(ticketId: string | null) {
     activeWorkspaceRuntime,
     children,
     workspaceTree: workspaceTree.data ?? NO_NODES,
+    /** The tree the children come from: still loading, or failed (and how to try again). */
+    treeLoading: workspaceTree.isPending,
+    treeError: workspaceTree.error,
+    refetchTree: () => void workspaceTree.refetch(),
     workspaceWorkflow,
     copyTerminalStageKey,
     setCopyTerminalStageKey,

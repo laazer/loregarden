@@ -24,6 +24,8 @@ interface WorkflowRunControlsProps {
   onEditState?: () => void;
   /** Where it sits: the default is a bar under a pane; "header" lays it inline in a page header. */
   placement?: "bar" | "header";
+  /** On a split ticket, what the forward action is instead: opening the part that runs, or running the parts. */
+  partsAction?: { label: string; onClick: () => void };
 }
 
 /**
@@ -46,6 +48,7 @@ export function WorkflowRunControls({
   onDelete,
   onEditState,
   placement = "bar",
+  partsAction,
 }: WorkflowRunControlsProps) {
   return (
     <div className={placement === "header" ? "run-controls run-controls--header" : "run-controls"}>
@@ -116,9 +119,18 @@ export function WorkflowRunControls({
         })()
       ) : (
         <>
-          <Button variant="primary" compact disabled={assemblePending} onClick={() => onAssemble()}>
-            {agentsAssembleLabel(ticket, assemblePending)}
-          </Button>
+          {partsAction ? (
+            <Button variant="primary" compact disabled={assemblePending} onClick={partsAction.onClick}>
+              {partsAction.label}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden>
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </Button>
+          ) : (
+            <Button variant="primary" compact disabled={assemblePending} onClick={() => onAssemble()}>
+              {agentsAssembleLabel(ticket, assemblePending)}
+            </Button>
+          )}
           {placement === "bar" ? <div style={{ flex: 1 }} /> : null}
           {onEditState ? (
             <OverflowMenu label="More workflow actions" align="right">

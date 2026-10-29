@@ -12,6 +12,8 @@ import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetai
 import { PrioBars } from "../components/PrioBars";
 import { TicketGithubSyncButton } from "../components/TicketGithubSyncButton";
 import { TicketFailurePanel } from "../components/ticket/TicketFailurePanel";
+import { TicketPartOf } from "../components/ticket/TicketPartOf";
+import { TicketSplitLine } from "../components/ticket/TicketSplitLine";
 import { TicketWorkflowColumn } from "../components/ticket/TicketWorkflowColumn";
 import { TicketWorkModals } from "../components/ticket/TicketWorkModals";
 import { Button } from "../components/ui/Button";
@@ -25,6 +27,8 @@ import {
   useArtifactTabFromRoute,
   useTicketIdFromRoute,
 } from "../lib/useAppNavigation";
+import { findTicketTreeNode } from "../lib/parentTicketTree";
+import { hasParts, partsProgress } from "../lib/ticketParts";
 import { canHaveChildren } from "../lib/workItemHierarchy";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useUiStore } from "../state/uiStore";
@@ -103,6 +107,20 @@ export function TicketPage() {
   });
 
   const openTicket = (id: string) => navigateToTicket(id, { tab: lastReadingTab });
+
+  // A split ticket's forward action is its parts': open the one running, or
+  // run them. Its own stages stopped at the split.
+  const showsParts = Boolean(sel && hasParts(sel) && sel.child_count > 0);
+  const progress = partsProgress(work.children);
+  const partsAction = !showsParts
+    ? undefined
+    : progress.running && progress.current
+      ? { label: "Open running part", onClick: () => openTicket(progress.current!.id) }
+      : progress.current
+        ? { label: work.orchestrate.isPending ? "Starting…" : "Run parts", onClick: () => work.setAssembleModalOpen(true) }
+        : undefined;
+  const parentShowsParts = Boolean(parent.data && hasParts(parent.data));
+  const siblings = parentShowsParts && parentId ? (findTicketTreeNode(work.workspaceTree, parentId)?.children ?? []) : [];
 
   const openCreateSubTicket = (target: SubTicketParent) => {
     if (!canHaveChildren(target.work_item_type)) return;
@@ -183,6 +201,7 @@ export function TicketPage() {
               onRerun={work.setRunConfirmStageKey}
               onDelete={() => work.setDeleteTicketTarget(sel)}
               onEditState={() => work.setStateModalOpen(true)}
+              partsAction={partsAction}
             />
           </div>
         </div>
@@ -192,6 +211,18 @@ export function TicketPage() {
           failureShown={view === "ticket"}
           onAddChild={openCreateSubTicket}
         />
+        {showsParts ? (
+          <TicketSplitLine
+            ticket={sel}
+            parts={work.children}
+            loading={work.treeLoading}
+            error={work.treeError}
+            onRetry={work.refetchTree}
+          />
+        ) : null}
+        {parent.data && siblings.length > 0 ? (
+          <TicketPartOf ticketId={sel.id} parent={parent.data} siblings={siblings} tab={lastReadingTab} />
+        ) : null}
       </header>
 
       <div className="ticket-page-body">

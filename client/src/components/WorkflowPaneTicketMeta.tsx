@@ -2,6 +2,7 @@ import type { TicketDetail } from "../api/client";
 import { TicketHistory } from "./TicketHistory";
 import { TicketAttention } from "./TicketAttention";
 import { Button } from "./ui/Button";
+import { hasParts } from "../lib/ticketParts";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 
 interface WorkflowPaneTicketMetaProps {
@@ -37,6 +38,11 @@ export function WorkflowPaneTicketMeta({
         <span className="count-pill" title="Type">
           {ticket.work_item_type}
         </span>
+        {hasParts(ticket) && ticket.child_count > 0 ? (
+          <span className="count-pill ticket-page-parts-pill" title={ticket.split ? "Split into parts" : "Sub-items"}>
+            {ticket.child_count} {ticket.split ? "parts" : "sub-items"}
+          </span>
+        ) : null}
         {ticket.workflow_template_name ? (
           <span className="count-pill" title="Workflow">
             {ticket.workflow_template_name}

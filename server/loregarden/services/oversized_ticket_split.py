@@ -56,6 +56,11 @@ from loregarden.services.orchestrator_decisions import record_orchestrator_decis
 from loregarden.services.proposal_validator import ProposalValidationError
 from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_size_limits import (
+    MAX_ACCEPTANCE_CRITERIA,
+    MAX_DESCRIPTION_CHARS,
+    is_oversized,
+)
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import parse_stage_map
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -63,10 +68,6 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
-
-# Measured 2026-10-09: 40 of ~1,280 tickets exceed one or the other.
-MAX_ACCEPTANCE_CRITERIA = 15
-MAX_DESCRIPTION_CHARS = 15_000
 
 SPLIT_CREATED_BY = "oversized-ticket-split"
 
@@ -97,13 +98,6 @@ class SplitResult:
     outcome: SplitOutcome
     detail: str = ""
     child_ids: list[str] = field(default_factory=list)
-
-
-def is_oversized(ticket: Ticket) -> bool:
-    return (
-        len(load_criteria(ticket.acceptance_criteria_json)) > MAX_ACCEPTANCE_CRITERIA
-        or len(ticket.description or "") > MAX_DESCRIPTION_CHARS
-    )
 
 
 def split_child_type(parent_type: WorkItemType) -> WorkItemType | None:

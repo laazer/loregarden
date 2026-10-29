@@ -297,3 +297,225 @@
     min-height: 60vh;
   }
 }
+
+/* ---- A ticket split into parts ---- */
+.ticket-page-parts-pill {
+  color: var(--ac2);
+  border-color: color-mix(in srgb, var(--ac) 45%, transparent);
+}
+
+.ticket-split-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ac) 9%, var(--bg1));
+  font-size: var(--fs-body);
+}
+
+.ticket-split-icon {
+  flex: none;
+  color: var(--ac);
+}
+
+.ticket-split-what {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-split-what b {
+  font-weight: 600;
+}
+
+.ticket-split-why {
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.ticket-split-retry {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.ticket-split-bar,
+.ticket-part-of-segments {
+  display: flex;
+  gap: 3px;
+}
+
+.ticket-split-bar {
+  flex: none;
+  width: 140px;
+}
+
+.ticket-split-bar i,
+.ticket-part-of-segments i {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+}
+
+.ticket-part-of-segments i {
+  flex: none;
+  width: 20px;
+}
+
+.ticket-split-bar i.is-done,
+.ticket-part-of-segments i.is-done {
+  background: var(--grn);
+}
+
+.ticket-split-bar i.is-running,
+.ticket-part-of-segments i.is-running {
+  background: var(--blue);
+}
+
+.ticket-split-bar i.is-blocked,
+.ticket-part-of-segments i.is-blocked {
+  background: var(--red);
+}
+
+.ticket-part-of-segments i.is-current {
+  background: var(--blue);
+  outline: 2px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 1px;
+}
+
+.ticket-split-count {
+  flex: none;
+  color: var(--txm);
+  font: var(--fs-small) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket-part-of {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.ticket-part-of a {
+  color: var(--ac2);
+}
+
+/* Parent titles run long; the full title is the link's tooltip and the breadcrumb's. */
+.ticket-part-of-parent {
+  display: inline-block;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Parts on the vine: a leaf when done, a ringed bud while running, a closed bud for the rest. */
+.ticket-parts {
+  margin-bottom: 14px;
+}
+
+.ticket-parts-count {
+  color: var(--txl);
+  font-family: var(--mono);
+}
+
+.ticket-parts-list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticket-parts-list::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 8px;
+  width: 2px;
+  background: var(--bd2);
+}
+
+.ticket-part {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 7px 0;
+}
+
+.ticket-part-mark {
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 2px solid var(--bd2);
+  border-radius: 50%;
+  background: var(--bg0);
+}
+
+.ticket-part.is-done .ticket-part-mark {
+  border-color: var(--grn);
+  border-radius: 12px 2px 12px 2px;
+  background: var(--grn);
+}
+
+.ticket-part.is-running .ticket-part-mark {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+
+.ticket-part.is-blocked .ticket-part-mark {
+  border-color: var(--red);
+}
+
+.ticket-part-body {
+  min-width: 0;
+}
+
+.ticket-part-name {
+  display: block;
+  padding: 0;
+  color: var(--tx);
+  font-weight: 500;
+  text-align: left;
+}
+
+.ticket-part-name:hover,
+.ticket-part-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.ticket-part-ref {
+  margin-top: 2px;
+  color: var(--txl);
+  font: var(--fs-micro) var(--mono);
+}
+
+.ticket-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .ticket-split-line {
+    flex-wrap: wrap;
+  }
+
+  .ticket-split-bar {
+    width: 100%;
+  }
+}

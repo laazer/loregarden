@@ -12,6 +12,7 @@ import {
   type WorkItemsSort,
   type WorkItemsSortKey,
 } from "../../lib/workItemsTable";
+import { hasParts, partsTag } from "../../lib/ticketParts";
 import { PrioBars } from "../PrioBars";
 import { Button } from "../ui/Button";
 import { TicketLink } from "../TicketLink";
@@ -88,7 +89,7 @@ export function WorkItemsTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ node, parent }) => {
+        {rows.map(({ node, parent, partLabel }) => {
           const run = runs.get(node.id);
           const live = run ? LIVE_RUN_STATUSES.has(run.status) : false;
           return (
@@ -102,6 +103,8 @@ export function WorkItemsTable({
               <TicketLink className="wi-title" ticketId={node.id} title={node.title}>
                 {node.title}
               </TicketLink>
+              {node.children.length > 0 && hasParts(node) ? <span className="wi-parts">{partsTag(node.children)}</span> : null}
+              {partLabel ? <span className="wi-parts wi-parts--of">{partLabel}</span> : null}
             </td>
             <td className="wi-col-state">
               <span className="wi-dot" style={{ background: TICKET_STATE_COLORS[node.state] }} aria-hidden />
