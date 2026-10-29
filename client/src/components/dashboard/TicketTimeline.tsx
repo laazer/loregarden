@@ -13,7 +13,7 @@ import { navigateToTicketTab } from "../../lib/useAppNavigation";
 import { describeError } from "../../state/toastStore";
 import { LaneLogView } from "../logs/LaneLogView";
 import { StageFanoutPanel } from "../StageFanoutPanel";
-import { TicketChildrenRollup } from "./TicketChildrenRollup";
+import { ChildStageBoard } from "./ChildStageBoard";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { formatShortTime, openOutput, outputTitle } from "../../lib/ticketOutputs";
@@ -119,7 +119,13 @@ export function TicketTimeline({
 
       {onlyChildren ? (
         <>
-          <TicketChildrenRollup tickets={childTickets} childCount={ticket.child_count} onOpenTicket={onOpenTicket} />
+          <ChildStageBoard
+            parentId={ticket.id}
+            parentStages={ticket.stages}
+            childNodes={childTickets}
+            onOpenTicket={onOpenTicket}
+            onOpenRunLog={onOpenRunLog}
+          />
           {timeline.beforeFirstRun.length > 0 ? (
             <ol className="tl-list">
               <BeforeFirstRun outputs={timeline.beforeFirstRun} />
@@ -135,6 +141,20 @@ export function TicketTimeline({
         </div>
       ) : (
         <>
+          {ticket.child_count > 0 ? (
+            // A ticket that ran stages and then got children (a split) shows
+            // where the children are first; its own stages follow.
+            <>
+              <ChildStageBoard
+                parentId={ticket.id}
+                parentStages={ticket.stages}
+                childNodes={childTickets}
+                onOpenTicket={onOpenTicket}
+                onOpenRunLog={onOpenRunLog}
+              />
+              <h3 className="tl-own-heading">This ticket&rsquo;s own stages</h3>
+            </>
+          ) : null}
           <div className="tl-summary">
             {current ? (
               <span className="tl-summary-now">
