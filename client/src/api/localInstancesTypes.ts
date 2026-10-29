@@ -124,6 +124,12 @@ export interface WorkspaceInstallerStatus {
   detail: string;
 }
 
+/** What opening an installer's pull request did; `detail` is the PR url when opened. */
+export interface InstallPullRequest {
+  outcome: "opened" | "no_change";
+  detail: string;
+}
+
 export interface WorkspaceIntegration {
   slug: string;
   repo_root: string;

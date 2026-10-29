@@ -73,6 +73,8 @@ function RunningGatesList({ running, name }: { running: RunningGates; name: stri
 interface WorkspaceGatePresetsPanelProps {
   slug: string;
   name: string;
+  /** Told whether ticks are waiting to be saved, so a closing dialog can ask first. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b.size && [...a].every((x) => b.has(x));
@@ -88,7 +90,7 @@ const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b
  * Commands not offered here (guardrails, anything hand-written in Studio) are
  * never touched.
  */
-export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPanelProps) {
+export function WorkspaceGatePresetsPanel({ slug, name, onDirtyChange }: WorkspaceGatePresetsPanelProps) {
   const queryClient = useQueryClient();
   const presets = useQuery({
     queryKey: ["gate-presets", "workspace", slug],
@@ -119,6 +121,8 @@ export function WorkspaceGatePresetsPanel({ slug, name }: WorkspaceGatePresetsPa
   const remove = [...configured]
     .filter((command) => !selected.has(command))
     .map((command) => runningAs.get(command) ?? command);
+  const dirty = add.length > 0 || remove.length > 0;
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
   const save = useMutation({
     meta: { suppressErrorToast: true },
