@@ -92,24 +92,26 @@ test("an idle queue and an unreachable one say different things", () => {
   expect(failed.textContent).not.toBe(idleText);
 });
 
-test("a running ticket's ring fills with its settled stages, and says so in words", () => {
+test("a running ticket's ring closes as far as its settled stages, and says so in words", () => {
   queue({ activeRuns: [run({ stages_done: 4, stages_total: 9 })] });
   const list = renderSection();
 
   const link = within(list).getByRole("link");
   expect(link).toHaveTextContent("Ticket A, 4 of 9 stages done");
-  const arcs = link.querySelectorAll(".app-sidebar-ring circle[stroke-dasharray]");
-  // The settled arc, then the live spinner.
-  expect(arcs).toHaveLength(2);
-  const [filled, ofTotal] = arcs[0].getAttribute("stroke-dasharray")!.split(" ").map(Number);
+  const progress = link.querySelector(".app-sidebar-ring-progress");
+  const [filled, ofTotal] = progress!.getAttribute("stroke-dasharray")!.split(" ").map(Number);
   expect(filled / ofTotal).toBeCloseTo(4 / 9, 2);
+  // Nothing turns: a live run lights the centre instead of a spinning arc.
+  expect(link.querySelectorAll(".app-sidebar-ring circle")).toHaveLength(3);
+  expect(link.querySelector(".app-sidebar-ring-live")).not.toBeNull();
 });
 
-test("a ticket with no workflow yet shows the empty track, not an invented fraction", () => {
+test("a ticket with no workflow yet shows a dashed track, not an invented fraction", () => {
   queue({ activeRuns: [run({ stages_done: null, stages_total: null, status: "queued" })] });
   const list = renderSection();
 
   const link = within(list).getByRole("link");
   expect(link).not.toHaveTextContent("stages done");
-  expect(link.querySelectorAll(".app-sidebar-ring circle[stroke-dasharray]")).toHaveLength(0);
+  expect(link.querySelector(".app-sidebar-ring-progress")).toBeNull();
+  expect(link.querySelector(".app-sidebar-ring-track")).toHaveClass("is-unknown");
 });

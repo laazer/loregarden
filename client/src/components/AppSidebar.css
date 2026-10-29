@@ -584,22 +584,33 @@
   stroke: var(--bd2);
 }
 
-.app-sidebar-ring-spin {
-  transform-origin: 9px 9px;
-  animation: app-sidebar-ring-turn 1.6s linear infinite;
+/* The settled share of the stages, drawn from twelve o'clock. */
+.app-sidebar-ring-progress {
+  fill: none;
 }
 
-@keyframes app-sidebar-ring-turn {
-  from {
-    transform: rotate(0deg);
+.app-sidebar-ring-track.is-unknown {
+  stroke-dasharray: 2 2.4;
+}
+
+/* A live run's dot breathes; the ring itself stays still, since how closed it
+   is is the progress. */
+.app-sidebar-ring-live {
+  animation: app-sidebar-ring-breathe 2s ease-in-out infinite;
+}
+
+@keyframes app-sidebar-ring-breathe {
+  0%,
+  100% {
+    opacity: 1;
   }
-  to {
-    transform: rotate(360deg);
+  50% {
+    opacity: 0.35;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-sidebar-ring-spin {
+  .app-sidebar-ring-live {
     animation: none;
   }
 }
