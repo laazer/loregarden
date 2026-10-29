@@ -1,0 +1,115 @@
+/* Machine → Capacity: the attention band at the top of the board. */
+
+.machine-attention {
+  margin-bottom: 20px;
+}
+
+.machine-attention-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.machine-attention-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg3);
+  color: var(--txm);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.machine-attention-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.machine-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--bd2);
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.machine-attention-item--bad {
+  border-left-color: var(--red);
+}
+
+.machine-attention-item--warn {
+  border-left-color: var(--amb);
+}
+
+.machine-attention-item--info {
+  border-left-color: var(--blue);
+}
+
+.machine-attention-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.machine-attention-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.machine-attention-detail {
+  margin-top: 2px;
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.machine-attention-cmd {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg1);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  overflow-wrap: anywhere;
+}
+
+.machine-attention-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.machine-attention-link {
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
+.machine-attention-empty {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+@media (max-width: 640px) {
+  .machine-attention-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}

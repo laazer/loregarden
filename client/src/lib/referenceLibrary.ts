@@ -293,6 +293,75 @@ export function urlsFromPaste(text: string): string[] | null {
   return urls.length ? urls : null;
 }
 
+/** One link lifted out of a pasted list or article, with what the text said about it. */
+export interface PastedEntry {
+  url: string;
+  name: string;
+  why: string;
+}
+
+// A heading or numbered item starts an entry; text above the last one (an intro) is not its.
+const ENTRY_START = /^\s*(#{1,6}\s|\d{1,3}[.)]\s)/;
+const LIST_MARKER = /^\s*(#{1,6}\s+|\d{1,3}[.)]\s+|[-*•+]\s+)/;
+const MARKDOWN_LINK = /\[([^\]]+)\]\(\s*https?:\/\/[^\s)]*\)/i;
+// "Twenty – The Open-Source CRM": the name, then a tagline after a spaced dash or a colon.
+const NAME_BREAK = /\s+[–—-]\s+|:\s+/;
+// A label left on its own once its URL is taken out ("GitHub:", "Link —").
+const BARE_LABEL = /^[\p{L}\d .'’/]{1,24}[:–—-]$/u;
+
+function cleanLine(line: string): string {
+  return line.replace(LIST_MARKER, "").replace(/\*\*|__/g, "").trim();
+}
+
+function entryFrom(context: string[], urlLine: string, url: string): PastedEntry {
+  const startAt = context.findLastIndex((line) => ENTRY_START.test(line));
+  const before = (startAt >= 0 ? context.slice(startAt) : context).map(cleanLine).filter(Boolean);
+  const own = cleanLine(urlLine);
+  const linked = MARKDOWN_LINK.exec(own)?.[1].trim();
+  const around = own.replace(MARKDOWN_LINK, "").replace(WEB_URL, "").replace(/\s+/g, " ").trim();
+  let heading = around;
+  let rest: string[] = [];
+  if (linked) [heading, rest] = [linked, [...before, around]];
+  else if (before.length) [heading, rest] = [before[0], [...before.slice(1), around]];
+  const [name = "", ...tagline] = heading.split(NAME_BREAK);
+  const why = [tagline.join(": "), ...rest]
+    .map((part) => part.replace(/^[\s–—:-]+/, "").trim())
+    .filter((part) => part && !BARE_LABEL.test(part));
+  return { url, name: name.replace(/[\s:–—-]+$/, ""), why: why.join("\n") };
+}
+
+/**
+ * Every link in a pasted list or article, with its name and what the text said about
+ * it: the lines since the previous link, from the heading or numbered item that starts
+ * the entry. A plain list of URLs gives entries with no name or reason. Repeats are
+ * dropped, keeping the first.
+ */
+export function entriesFromPaste(text: string): PastedEntry[] {
+  const found: { context: string[]; line: string; url: string }[] = [];
+  let context: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const urls = splitUrls(line).filter((url) => /^https?:\/\//i.test(url));
+    if (urls.length === 0) {
+      if (line.trim()) context.push(line);
+      continue;
+    }
+    // Several links on one line share no description: none of it is about one of them.
+    for (const url of urls) found.push({ context: urls.length > 1 ? [] : context, line: urls.length > 1 ? "" : line, url });
+    context = [];
+  }
+  // With no heading to start it, the first entry is as long as the second; what is
+  // above that is the article's introduction.
+  const [first, second] = found;
+  if (first && second && !first.context.some((line) => ENTRY_START.test(line))) {
+    first.context = second.context.length ? first.context.slice(-second.context.length) : [];
+  }
+  const entries = new Map<string, PastedEntry>();
+  for (const { context: lines, line, url } of found) {
+    if (!entries.has(url)) entries.set(url, entryFrom(lines, line, url));
+  }
+  return [...entries.values()];
+}
+
 function pluralOf(n: number, one: string): string {
   return `${n} ${n === 1 ? one : `${one}s`}`;
 }

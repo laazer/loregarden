@@ -27,6 +27,7 @@ from loregarden.services.dependency_release import releasable_tickets, release_t
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
@@ -39,6 +40,7 @@ from loregarden.services.tree_publish_scheduler import (
     close_held_cards,
     published_cards_held,
 )
+from loregarden.services.unasked_awaits import block_unasked_awaits, unasked_awaits
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -441,6 +443,45 @@ NO_TICKET_DEPENDS_ON_AN_ANCESTOR = Invariant(
 )
 
 
+def _unasked_awaits(session: Session) -> list[Violation]:
+    """`entered_at` is the ticket's `updated_at`: a stage row has no timestamp of its own."""
+    return [
+        Violation(
+            subject_id=item.ticket.id,
+            ticket_id=item.ticket.id,
+            entered_at=item.ticket.updated_at,
+            detail=f"{item.ticket.external_id} awaits a person at '{item.stage_key}' "
+            "with no pending approval asking anyone",
+        )
+        for item in unasked_awaits(session)
+    ]
+
+
+def _block_unasked_awaits(session: Session, violations: Sequence[Violation]) -> int:
+    wanted = {v.subject_id for v in violations}
+    return block_unasked_awaits(
+        session, [item for item in unasked_awaits(session) if item.ticket.id in wanted]
+    )
+
+
+AWAITING_STAGES_ARE_ASKED = Invariant(
+    name="awaiting_stages_have_a_pending_approval",
+    ticket="lg-workflow-integrity-1625",
+    statement=(
+        "no open ticket has a stage awaiting a person without a pending approval at that "
+        "stage asking them"
+    ),
+    detect=_unasked_awaits,
+    repair=_block_unasked_awaits,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 27),
+    prevented_by=(
+        "server/tests/test_unasked_awaits.py"
+        "::test_no_manual_writer_sets_awaiting_without_an_approval"
+    ),
+)
+
+
 LANDED_WORK_IS_COMMITTED = Invariant(
     name="landed_work_is_committed",
     ticket="lg-milestone-that-1314",
@@ -460,6 +501,38 @@ LANDED_WORK_IS_COMMITTED = Invariant(
     ),
 )
 
+
+def _held_but_blocked(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=ticket.id,
+            ticket_id=ticket.id,
+            entered_at=entry.repairing_since,
+            detail=f"{ticket.external_id} reads blocked on '{ticket.workflow_stage_key}' while "
+            f"lane {entry.slot_number} is held for its {entry.repair_route} repair",
+        )
+        for entry, ticket in held_but_blocked(session)
+    ]
+
+
+def _rearm_held(session: Session, violations: Sequence[Violation]) -> int:
+    return rearm_held(session, _tickets(session, violations))
+
+
+HELD_REPAIRS_READ_IN_PROGRESS = Invariant(
+    name="held_repairs_read_in_progress",
+    ticket="lg-queue-execution-1656",
+    statement=(
+        "no ticket whose lane is held for a repair (other than an interruption) reads blocked"
+    ),
+    detect=_held_but_blocked,
+    repair=_rearm_held,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 29),
+    prevented_by="server/tests/test_lane_repair_hold.py::test_every_lane_hold_re_arms_its_stage",
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EXHAUSTED_GATES_BLOCK,
@@ -470,7 +543,9 @@ INVARIANTS: tuple[Invariant, ...] = (
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
+    AWAITING_STAGES_ARE_ASKED,
     HELD_TICKETS_RESUME,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
+    HELD_REPAIRS_READ_IN_PROGRESS,
 )

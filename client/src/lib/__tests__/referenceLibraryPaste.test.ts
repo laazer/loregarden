@@ -1,4 +1,4 @@
-import { splitUrls, urlsFromPaste } from "../referenceLibrary";
+import { entriesFromPaste, splitUrls, urlsFromPaste } from "../referenceLibrary";
 
 // The shape of a "tools worth bookmarking" post copied from a rendered page.
 const ARTICLE = `1. Twenty – The Open-Source CRM Built for AI Agents
@@ -44,5 +44,49 @@ describe("urlsFromPaste", () => {
 
   it("rewrites prose to its URLs", () => {
     expect(urlsFromPaste(ARTICLE)).toEqual(["https://github.com/twentyhq/twenty", "https://github.com/Automattic/harper"]);
+  });
+});
+
+describe("entriesFromPaste", () => {
+  it("names each link and keeps what the article said about it", () => {
+    expect(entriesFromPaste(`Here are 3 open-source tools worth bookmarking today:\n${ARTICLE}`)).toEqual([
+      {
+        url: "https://github.com/twentyhq/twenty",
+        name: "Twenty",
+        why: "The Open-Source CRM Built for AI Agents\nReplaces: Salesforce / HubSpot Enterprise ($150+/user/mo).\nWhy it's trending: A modern, fast CRM, easily deployable via Docker.",
+      },
+      {
+        url: "https://github.com/Automattic/harper",
+        name: "Harper",
+        why: "Offline, Privacy-First AI Grammar & Writing Engine\nReplaces: Grammarly Premium / Copy.ai subscriptions.",
+      },
+    ]);
+  });
+
+  it("drops an introduction above unnumbered entries by the shape of the next one", () => {
+    const text = `Tools worth a look:\nTwenty – a CRM\nGitHub: https://github.com/a/twenty\nHarper – grammar\nGitHub: https://github.com/a/harper`;
+    expect(entriesFromPaste(text).map((entry) => [entry.name, entry.why])).toEqual([
+      ["Twenty", "a CRM"],
+      ["Harper", "grammar"],
+    ]);
+  });
+
+  it("reads a markdown list with the description on the link's line", () => {
+    const text = "- [Twenty](https://github.com/a/twenty) — a CRM for agents\n- **Harper**: https://github.com/a/harper";
+    expect(entriesFromPaste(text)).toEqual([
+      { url: "https://github.com/a/twenty", name: "Twenty", why: "a CRM for agents" },
+      { url: "https://github.com/a/harper", name: "Harper", why: "" },
+    ]);
+  });
+
+  it("gives a plain list of URLs no names or reasons", () => {
+    expect(entriesFromPaste("Some links:\nhttps://github.com/a/one\nhttps://github.com/a/two")).toEqual([
+      { url: "https://github.com/a/one", name: "", why: "" },
+      { url: "https://github.com/a/two", name: "", why: "" },
+    ]);
+  });
+
+  it("finds nothing in text with no web link", () => {
+    expect(entriesFromPaste("no links here, ftp://nope")).toEqual([]);
   });
 });

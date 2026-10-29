@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { useLocation } from "react-router-dom";
 
 import { api } from "../api/client";
-import { useAppPage } from "../lib/useAppNavigation";
 import { PANE_LABELS, PANE_ORDER } from "../lib/appTopbarConfig";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
@@ -19,7 +19,7 @@ import { Button } from "./ui/Button";
  * they moved to Settings, each ticket's header and the Machine page.
  */
 export function AppTopbarActions() {
-  const appPage = useAppPage();
+  const { pathname } = useLocation();
   const paneVisibility = useUiStore((s) => s.paneVisibility);
   const setPaneVisible = useUiStore((s) => s.setPaneVisible);
   const inboxOpen = useUiStore((s) => s.inboxOpen);
@@ -40,22 +40,29 @@ export function AppTopbarActions() {
     [paneVisibility],
   );
   const approvalCount = approvals.data?.length ?? 0;
-  const inboxCount = approvalCount + notificationCount;
   const failedCount = notifications.filter((n) => n.tone === "error").length;
-  // One meaning per hue: red only when something failed, violet when an
-  // approval is waiting on a person, a neutral count for everything else. A
-  // badge that was always red (or green at zero) taught people to ignore it.
+  const otherCount = notificationCount - failedCount;
+  // One chip per kind, so a pile of finished runs no longer reads as one big
+  // number beside the two that need a person. One meaning per hue: red only
+  // for failures, violet for an approval waiting on you, neutral for the rest.
+  const inboxChips = [
+    { tone: "bad", count: failedCount, glyph: "■" },
+    { tone: "you", count: approvalCount, glyph: "◆" },
+    { tone: "neutral", count: otherCount, glyph: "" },
+  ].filter((chip) => chip.count > 0);
   const inboxTone = failedCount > 0 ? "bad" : approvalCount > 0 ? "you" : "neutral";
   const inboxNeedsAttention = inboxTone !== "neutral";
   const inboxLabel = [
     "Open approvals and notifications inbox",
     failedCount > 0 ? `${failedCount} failed` : null,
     approvalCount > 0 ? `${approvalCount} waiting on you` : null,
+    otherCount > 0 ? `${otherCount} other ${otherCount === 1 ? "notification" : "notifications"}` : null,
   ]
     .filter(Boolean)
     .join(" — ");
 
-  const isIde = appPage === "dashboard";
+  // The pane picker belongs to the Console; a ticket page has no panes to hide.
+  const isIde = pathname === "/console";
   const panesLabel =
     hiddenPaneCount > 0 ? `Panes · ${hiddenPaneCount} hidden` : "Panes";
 
@@ -92,9 +99,17 @@ export function AppTopbarActions() {
               <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
             </svg>
             <span className="topbar-action-label">Inbox</span>
-            <span className={`approvals-badge approvals-badge--${inboxTone}`} data-tone={inboxTone}>
-              {inboxCount}
-            </span>
+            {inboxChips.map((chip) => (
+              <span
+                key={chip.tone}
+                className={`approvals-badge approvals-badge--${chip.tone}`}
+                data-tone={chip.tone}
+                aria-hidden
+              >
+                {chip.glyph ? <span className="approvals-badge-glyph">{chip.glyph}</span> : null}
+                {chip.count}
+              </span>
+            ))}
           </Button>
         </div>
       </div>

@@ -93,6 +93,13 @@ export interface CalendarEventView {
   description: string | null;
 }
 
+/** The orchestrator split a ticket into parts: at which stage, when, and the limits it was over. */
+export interface TicketSplit {
+  stage_key: string;
+  split_at: string;
+  over_limits: string[];
+}
+
 export interface TicketTreeNode {
   id: string;
   external_id: string;
@@ -104,6 +111,8 @@ export interface TicketTreeNode {
   workflow_stage_name: string;
   workflow_stage_status: StageStatus;
   child_count: number;
+  /** The orchestrator split it into parts; its children are those parts. */
+  was_split?: boolean;
   /** What it waits for, derived server-side; absent or null when it is not stuck. */
   blocked_on?: BlockedOn | null;
   /** Its unfinished prerequisites — the waits the tree cannot draw. */
@@ -187,6 +196,8 @@ export interface TicketDetail extends TicketSummary {
   /** What applies after inheritance, and where it came from. */
   resolved_compatibility_posture?: string;
   compatibility_posture_source?: string;
+  /** Set when the orchestrator split this ticket into parts. */
+  split?: TicketSplit | null;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -300,6 +311,8 @@ export interface LedgerAttempt {
   started_at: string | null;
   finished_at: string | null;
   duration_seconds: number | null;
+  /** The end of a failed run's stderr, where its error is; "" for any other run. */
+  error_tail: string;
 }
 
 /** One contiguous stretch of work on a stage. */
@@ -781,6 +794,26 @@ export interface StudioDefaults {
   handoff_checks: StudioHandoffCheck[];
   /** Allowed `skip_when` values, served so the client never mirrors the vocabulary. */
   skip_conditions?: string[];
+}
+
+/** How many tickets run on one template, from `GET /api/studio/workflow-usage`. */
+export interface WorkflowUsageStats {
+  template_slug: string;
+  tickets: number;
+  /** Of those, not yet done or won't do. */
+  open: number;
+  /** When a ticket last started on it; naive UTC. */
+  last_used_at: string | null;
+}
+
+/** One agent's run record, from `GET /api/studio/agent-run-stats`. */
+export interface AgentRunStats {
+  agent_id: string;
+  /** Finished runs: succeeded, failed or cancelled. */
+  runs: number;
+  failed: number;
+  /** When its latest run of any status was created; naive UTC. */
+  last_run_at: string | null;
 }
 
 export interface StudioGeneratedAgent {

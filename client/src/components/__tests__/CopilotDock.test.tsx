@@ -732,3 +732,69 @@ describe("resizing the dock", () => {
     expect(screen.queryByRole("separator")).toBeNull();
   });
 });
+
+describe("the Chat and Artifacts tabs", () => {
+  const withCards = [
+    { id: "u1", role: "user", content: "Plan it" },
+    {
+      id: "a1",
+      role: "assistant",
+      content: "Here is the plan.",
+      parts: [
+        { primitive: "text" as const, content: "Here is the plan." },
+        {
+          primitive: "todo_list" as const,
+          owner: "agent" as const,
+          title: "Ship the guide",
+          items: [{ id: "s1", text: "Write the tabs", status: "pending" as const }],
+        },
+      ],
+    },
+  ];
+
+  it("collects what the chat made under Artifacts, drawn in full, and leads back to its turn", async () => {
+    mockResolver.mockReturnValue(bind({ session: session({ messages: withCards }), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+    const scrollIntoView = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    renderDock();
+
+    const chatTab = screen.getByRole("tab", { name: "Chat" });
+    const artifactsTab = screen.getByRole("tab", { name: "Artifacts 1" });
+    expect(chatTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(artifactsTab);
+    expect(artifactsTab).toHaveAttribute("aria-selected", "true");
+    const list = screen.getByRole("list", { name: "1 artifacts in this chat" });
+    expect(list).toHaveTextContent("Plan");
+    expect(list).toHaveTextContent("Write the tabs");
+    // The thread is hidden, not unmounted, so it keeps its place.
+    expect(screen.getByText("Here is the plan.")).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Show Plan Ship the guide in chat/ }));
+    expect(chatTab).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  });
+
+  it("says what will collect there before Baxter has made anything", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    renderDock();
+    fireEvent.click(screen.getByRole("tab", { name: "Artifacts" }));
+
+    expect(screen.getByText(/Nothing made yet/)).toBeInTheDocument();
+  });
+
+  it("moves between the tabs with the arrow keys", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    renderDock();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Chat" }), { key: "ArrowRight" });
+
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveFocus();
+  });
+});

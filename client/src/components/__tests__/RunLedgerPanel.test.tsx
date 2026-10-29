@@ -20,6 +20,7 @@ function attempt(overrides = {}) {
     started_at: "2026-07-20T09:00:00",
     finished_at: "2026-07-20T09:00:30",
     duration_seconds: 30,
+    error_tail: "",
     ...overrides,
   };
 }

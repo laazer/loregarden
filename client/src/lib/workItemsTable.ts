@@ -8,8 +8,11 @@
  * 5.7 MB and 14 s, because every flat row carries its full stage list.
  */
 
+import type { Approval } from "../api/chatTypes";
 import type { BlockedOn, StageStatus, TicketState, TicketTreeNode, WorkItemType } from "../api/types";
+import { approvalLabel } from "./homeNeedsYou";
 import { blockedOnStateLabel } from "../utils/blockKinds";
+import { hasParts } from "./ticketParts";
 
 export interface WorkItemParent {
   id: string;
@@ -20,6 +23,8 @@ export interface WorkItemParent {
 export interface WorkItemRow {
   node: TicketTreeNode;
   parent: WorkItemParent | null;
+  /** "part 2/4" when the parent was split and this row is one of its parts. */
+  partLabel?: string;
 }
 
 export type WorkItemsView = "needs_me" | "running" | "in_flight" | "blocked" | "open" | "all";
@@ -50,10 +55,12 @@ export function isOpen(node: TicketTreeNode): boolean {
  * answer (`awaiting`, which is what fills the inbox), and a block only a person
  * can clear (`blocked_on === "person"`, the board's "Needs you" column).
  */
-export function needsMeReason(node: TicketTreeNode): string | null {
+export function needsMeReason(node: TicketTreeNode, approval?: Approval): string | null {
   if (!isOpen(node)) return null;
   if (node.workflow_stage_status === "awaiting") {
-    return "Your approval or answer";
+    // The pending approval says what is being asked; fifteen rows of "your
+    // approval or answer" said nothing a row's position did not.
+    return approval ? approvalLabel(approval) : "Your approval or answer";
   }
   if (node.blocked_on === "person") return "Blocked until you act";
   return null;
@@ -83,17 +90,17 @@ export function inView(view: WorkItemsView, node: TicketTreeNode, running: Runni
 export function flattenWorkItems(nodes: TicketTreeNode[]): WorkItemRow[] {
   const rows: WorkItemRow[] = [];
   const seen = new Set<string>();
-  const walk = (items: TicketTreeNode[], parent: WorkItemParent | null) => {
-    for (const node of items) {
+  const walk = (items: TicketTreeNode[], parent: WorkItemParent | null, partsParent: boolean) => {
+    items.forEach((node, index) => {
       // An initiative's member copy points at a ticket that also appears
       // under its real parent; list it there, once.
-      if (node.member_link || seen.has(node.id)) continue;
+      if (node.member_link || seen.has(node.id)) return;
       seen.add(node.id);
-      rows.push({ node, parent });
-      walk(node.children, { id: node.id, external_id: node.external_id, title: node.title });
-    }
+      rows.push(partsParent ? { node, parent, partLabel: `part ${index + 1}/${items.length}` } : { node, parent });
+      walk(node.children, { id: node.id, external_id: node.external_id, title: node.title }, hasParts(node));
+    });
   };
-  walk(nodes, null);
+  walk(nodes, null, false);
   return rows;
 }
 

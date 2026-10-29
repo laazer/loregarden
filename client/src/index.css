@@ -1,4 +1,8 @@
 :root {
+  /* The leaf: round on two opposite corners, nearly square on the others. One
+     value for every primary action and every send, so Run and the send arrow
+     are visibly the same control. */
+  --leaf: 18px 3px 18px 3px;
   /* Native control parts the CSS cannot reach — a <select>'s open list, a
      checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
      a light-mode OS draws them light inside the dark app. A light theme sets
@@ -534,17 +538,6 @@ textarea::placeholder {
 }
 
 /* The Console's tree filter: narrower than the search, since it holds a word. */
-.topbar-filter {
-  flex: 0 1 180px;
-  min-width: 120px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--bd);
-  border-radius: 9px;
-  background: var(--bg2);
-  color: var(--tx);
-  font-size: var(--fs-small);
-}
 
 .topbar-action-btn {
   display: inline-flex;
@@ -600,18 +593,7 @@ textarea::placeholder {
 @media (max-width: 1100px) {
   .topbar-workspace-picker-label {
     display: none;
-  }
-
-  /* Icon-only; each keeps its name in `aria-label`. */
-  .topbar-action-btn--collapsible .topbar-action-label {
-    display: none;
-  }
-}
-
-/* The chat's picker holds its width; it has nothing to give back. */
-.topbar-workspace-picker--fixed {
-  flex: none;
-}
+  }}
 
 .topbar-workspace-picker-select.btn-secondary {
   height: 30px;
@@ -672,7 +654,6 @@ textarea::placeholder {
   height: 30px;
   padding: 0 14px;
   font-size: var(--fs-small);
-  border-radius: 9px;
 }
 
 /* Phone width: next to the ~60px rail the row has ~300px. The rail already
@@ -711,21 +692,9 @@ textarea::placeholder {
     border-left: none;
   }
 
-  /* Icon-only buttons go square. */
-  .topbar-action-btn--collapsible.btn-secondary {
-    padding: 0 9px;
-  }
-
   /* With search on the row, it is what fills the space — not the spacer. */
   .app-topbar:has(.topbar-search) .topbar-spacer {
     display: none;
-  }
-
-  /* The picker is the one control here that can give width back: it shrinks
-     (truncating the name) before anything is pushed off the edge. */
-  .topbar-workspace-picker--fixed {
-    flex: 0 1 130px;
-    min-width: 72px;
   }
 
   .topbar-workspace-picker-select.btn-secondary {
@@ -2296,6 +2265,15 @@ label:is(
   line-height: 1.4;
 }
 
+/* A blocked or awaiting stage's note is the reason it stopped, so it takes that colour. */
+.workflow-stage-note[data-status="blocked"] {
+  color: var(--rdl);
+}
+
+.workflow-stage-note[data-status="awaiting"] {
+  color: var(--aml);
+}
+
 .workflow-stage-status-pill {
   margin-left: auto;
   font-size: var(--fs-micro);
@@ -2764,26 +2742,48 @@ label:is(
   cursor: not-allowed;
 }
 
+/*
+ * The send button's leaf: every send in the app has this shape and a paper
+ * airplane (the chat composer, the bottom bar, a run's steer box). Round on two
+ * corners and nearly square on the other two, at any size, so a round send, a
+ * labelled one and a small one read as the same control. Stop keeps a square:
+ * it is not a send.
+ */
+button.send-leaf {
+  /* Run's shape: the same corners, and wider than tall where it is icon-only. */
+  border-radius: var(--leaf);
+  background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
+  color: var(--onac);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ac) 40%, transparent),
+    0 4px 14px color-mix(in srgb, var(--ac) 25%, transparent);
+}
+
+/* A run's steer box: the label and its airplane side by side. */
+.run-steer-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.send-leaf:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+}
+
 .app-action-bar-send {
   flex: none;
-  width: 28px;
+  width: 40px;
   height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 11px;
-  background: var(--ac);
-  color: var(--onac);
-  box-shadow: 0 3px 12px rgba(111, 174, 143, 0.35);
+  /* Shape and colour come from .send-leaf; Stop sets its own. */
   cursor: pointer;
 }
 
-.app-action-bar-send:hover:not(:disabled) {
-  background: var(--ac2);
-}
-
 .app-action-bar-send--stop {
+  border-radius: 8px;
   background: var(--danger, #b42318);
   color: #fff;
   box-shadow: 0 3px 12px rgba(180, 35, 24, 0.35);
@@ -2926,6 +2926,21 @@ label:is(
   min-height: 0;
 }
 
+/* The Console: workspaces in a column, the tree across the rest of the page. */
+.sidebar.console-workspaces {
+  width: 280px;
+}
+
+.sidebar.console-workspaces--fill {
+  flex: 1;
+  width: auto;
+}
+
+.tickets-pane.console-tickets {
+  min-width: 0;
+  background: var(--bg0);
+}
+
 .workspaces-pane {
   flex: 0 0 38%;
   min-height: 0;
@@ -2989,8 +3004,9 @@ label:is(
   width: 100%;
 }
 
+/* Sized to their labels: the pane spans the Console now, and halves of it read as banners. */
 .tickets-pane-primary-actions .btn-icon-label {
-  flex: 1;
+  flex: none;
   min-width: 0;
   justify-content: center;
 }
@@ -3042,6 +3058,9 @@ label:is(
 .btn-secondary.btn-compact,
 .btn-primary.btn-compact {
   padding: 4px 9px;
+}
+
+.btn-secondary.btn-compact {
   border-radius: 8px;
 }
 
@@ -3217,6 +3236,18 @@ label:is(
 
 .tree-child-count {
   flex-shrink: 0;
+}
+
+/* A split ticket's row says how far its parts are; a part's row says which it is. */
+.tree-parts-tag {
+  flex-shrink: 0;
+  color: var(--ac2);
+  border-color: color-mix(in srgb, var(--ac) 40%, transparent);
+}
+
+.tree-part-of {
+  flex-shrink: 0;
+  color: var(--txl);
 }
 
 .tree-row-trail {
@@ -3895,7 +3926,6 @@ label:is(
   align-items: center;
 }
 
-.run-controls .btn-primary,
 .run-controls .btn-secondary {
   border-radius: 11px;
 }
@@ -3927,7 +3957,6 @@ label:is(
   background: var(--ac);
   color: var(--onac);
   border: none;
-  border-radius: 9px;
   padding: 9px 15px;
   cursor: pointer;
   box-shadow: 0 2px 12px rgba(111, 174, 143, 0.3);
@@ -3937,9 +3966,16 @@ label:is(
   background: var(--ac2);
 }
 
+/* The primary action is leaf-shaped, the same leaf every send button wears,
+   so the one action a surface offers reads as the garden's. Every size and
+   placement keeps it: no rule further in sets a primary's corners. */
+.btn-primary {
+  border-radius: var(--leaf);
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
 .btn-cta {
   font-size: var(--fs-body);
-  border-radius: 10px;
   padding: 10px 18px;
   box-shadow: 0 2px 12px rgba(111, 174, 143, 0.28);
 }
@@ -4010,6 +4046,12 @@ label:is(
 .approvals-badge--bad {
   background: var(--red);
   color: var(--bg0);
+}
+
+/* The chip's shape, so failed and waiting differ without their colour. */
+.approvals-badge-glyph {
+  margin-right: 3px;
+  font-size: 0.8em;
 }
 
 .usage-btn-warning {
@@ -4426,6 +4468,15 @@ label:is(
 
 .modal-panel-wide {
   width: min(720px, calc(100vw - 32px));
+}
+
+/* A modal whose body is a form: the form passes the panel's column through, so the
+   body scrolls and the footer stays in view instead of the panel overflowing. */
+.modal-panel > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-panel.studio-preview-modal {

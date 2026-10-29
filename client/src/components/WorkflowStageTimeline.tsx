@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { WorkflowStageView } from "../api/types";
-import { stageStatusMeta } from "../lib/stageDisplay";
+import { stageAgentMeta, stageStatusMeta } from "../lib/stageDisplay";
 import { vineMark } from "../lib/vine";
 import { VineNode } from "./vine/VineNode";
 
@@ -14,22 +14,6 @@ function AgentRobotIcon() {
       <circle cx="15" cy="14" r="1" fill="var(--vil)" />
     </svg>
   );
-}
-
-function stageAgentMeta(stage: WorkflowStageView): { agent: string | null; skill: string | null } {
-  if (stage.agent_id?.trim()) {
-    return { agent: stage.agent_id, skill: stage.skill_name?.trim() || null };
-  }
-  if (stage.agents.length === 1) {
-    return {
-      agent: stage.agents[0].agent_id,
-      skill: stage.agents[0].skill_name?.trim() || null,
-    };
-  }
-  if (stage.agents.length > 1) {
-    return { agent: stage.agents.map((entry) => entry.agent_id).join(" · "), skill: null };
-  }
-  return { agent: null, skill: null };
 }
 
 export function WorkflowStageTimeline({
@@ -86,7 +70,11 @@ export function WorkflowStageTimeline({
                 </div>
               ) : null}
 
-              {stage.note ? <div className="workflow-stage-note">{stage.note}</div> : null}
+              {stage.note ? (
+                <div className="workflow-stage-note" data-status={stage.status}>
+                  {stage.note}
+                </div>
+              ) : null}
 
               {renderStageActions ? (
                 <div className="workflow-stage-actions">{renderStageActions(stage)}</div>

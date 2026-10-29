@@ -13,13 +13,16 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     RunStatus,
+    StageStatus,
     Ticket,
     TicketState,
     Workspace,
 )
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.queue_status import build_queue_status
 from loregarden.services.reconciliation import reconcile_once
+from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 
 
@@ -224,3 +227,31 @@ async def test_a_lane_carries_what_blocked_or_failed_in_it(db_session):
 
     other = next(lane for lane in snapshot["lanes"] if lane["slot_number"] == 1)
     assert other["attention"] == []
+
+
+async def test_a_lane_card_says_how_many_of_its_stages_are_settled(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "RING-1", TicketState.IN_PROGRESS)
+    orch = OrchestrationService(db_session)
+    orch.ensure_workflow_instance(ticket, commit=True)
+    instance, stages = orch._resolve_stages(ticket)
+    set_stage_status(ticket, instance, stages, stages[0].key, StageStatus.DONE)
+    db_session.add(instance)
+    db_session.commit()
+    _occupy_slot(db_session, ticket, RunStatus.RUNNING)
+
+    snapshot = build_queue_status(db_session)
+    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
+
+    assert (card["stages_done"], card["stages_total"]) == (1, len(stages))
+
+
+async def test_a_lane_card_with_no_workflow_yet_claims_no_progress(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "RING-2", TicketState.IN_PROGRESS)
+    _occupy_slot(db_session, ticket, RunStatus.RUNNING)
+
+    snapshot = build_queue_status(db_session)
+    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
+
+    assert (card["stages_done"], card["stages_total"]) == (None, None)

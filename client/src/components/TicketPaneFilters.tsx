@@ -5,6 +5,7 @@ import { BLOCKED_ON_FILTERS, TYPE_FILTERS } from "../lib/ticketFilterOptions";
 import { useDismissOnOutside } from "../hooks/useDismissOnOutside";
 import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import { STATE_LABELS } from "./UpdateStateModal";
+import { Input } from "./ui/Input";
 import "./TicketPaneFilters.css";
 
 type FilterDropdownProps<T extends string> = {
@@ -122,7 +123,17 @@ const STATE_OPTIONS: TicketState[] = [
   "wont_do",
 ];
 
+/**
+ * The Work items pane's narrowing controls, beside the tree they narrow: a text
+ * filter over title and id (the server keeps each match's ancestors, so a hit
+ * stays under its milestone), then Status, Blocked on and Type.
+ *
+ * The text filter used to sit in the topbar beside the app's search box, two
+ * boxes side by side of which one quietly narrowed a panel on the left.
+ */
 export function TicketPaneFilters({
+  search,
+  onSearch,
   typeFilters,
   stateFilters,
   stateCounts,
@@ -135,6 +146,8 @@ export function TicketPaneFilters({
   onClearStates,
   onClearBlockedOn,
 }: {
+  search: string;
+  onSearch: (value: string) => void;
   typeFilters: WorkItemType[];
   stateFilters: TicketState[];
   stateCounts: Record<string, number>;
@@ -159,7 +172,22 @@ export function TicketPaneFilters({
   }));
 
   return (
-    <div className="ticket-filter-bar">
+    <div className="ticket-filter-stack">
+      <Input
+        type="search"
+        className="ticket-filter-search"
+        aria-label="Filter work items by title or id"
+        placeholder="Filter by title or id…"
+        value={search}
+        onChange={(event) => onSearch(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && search) {
+            event.preventDefault();
+            onSearch("");
+          }
+        }}
+      />
+      <div className="ticket-filter-bar">
       <FilterDropdown
         title="Status"
         allLabel="All"
@@ -184,6 +212,7 @@ export function TicketPaneFilters({
         onToggle={onToggleType}
         onClear={onClearTypes}
       />
+      </div>
     </div>
   );
 }

@@ -69,11 +69,11 @@ export function TicketGithubSyncButton({ ticketId }: { ticketId: string }) {
       title={`Sync with ${issue}`}
       onClick={() => sync.mutate()}
     >
+      <span>{sync.isPending ? "Syncing…" : "Sync"}</span>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
         <path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2" />
         <path d="M21 4v5h-5M3 20v-5h5" />
       </svg>
-      <span>{sync.isPending ? "Syncing…" : "Sync"}</span>
     </Button>
   );
 }

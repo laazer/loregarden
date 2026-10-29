@@ -54,6 +54,7 @@ function renderOutputs(items = ITEMS) {
             started_at: "2026-09-20T10:00:00+00:00",
             finished_at: "2026-09-20T10:45:00+00:00",
             duration_seconds: 2700,
+            error_tail: "",
           },
         ],
       },

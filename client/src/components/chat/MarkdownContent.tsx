@@ -1,10 +1,12 @@
-import { memo, type ReactNode } from "react";
+import { Children, memo, type ReactNode } from "react";
 import type { Components, ExtraProps } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { statusToneForWord } from "../../lib/statusWords";
 import { isLongProse } from "../../lib/structuredContent";
 import { openReader } from "../../state/readerStore";
+import { StatusChip } from "../ui/StatusChip";
 import { normalizeChatMarkdown } from "./chatUtils";
 import "../reader/Reader.css";
 
@@ -41,6 +43,19 @@ export function MarkdownPre({ node, children }: { node?: PreNode; children?: Rea
   );
 }
 
+/**
+ * A table cell. One that is exactly a status word reads as the shared chip, so
+ * a status column in Baxter's tables scans like every other status in the app
+ * (lib/statusWords). Anything else renders as written.
+ */
+export function MarkdownCell({ children }: { children?: ReactNode }) {
+  // react-markdown hands a plain cell over as a string or a one-string array.
+  const parts = Children.toArray(children);
+  const text = parts.length > 0 && parts.every((part) => typeof part === "string") ? parts.join("") : null;
+  const tone = text ? statusToneForWord(text) : null;
+  return <td>{tone && text ? <StatusChip tone={tone} label={text.trim()} /> : children}</td>;
+}
+
 const markdownComponents: Components = {
   pre: MarkdownPre,
   a: ({ href, children }) => (
@@ -53,6 +68,7 @@ const markdownComponents: Components = {
       <table>{children}</table>
     </div>
   ),
+  td: ({ children }) => <MarkdownCell>{children}</MarkdownCell>,
 };
 
 /**

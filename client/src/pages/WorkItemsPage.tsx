@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
@@ -10,6 +10,8 @@ import { Input } from "../components/ui/Input";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import { WorkItemsFilterBar } from "../components/workItems/WorkItemsFilterBar";
 import { WorkItemsTable } from "../components/workItems/WorkItemsTable";
+import { ticketPath } from "../lib/appNavigation";
+import { pendingApprovals } from "../lib/homeNeedsYou";
 import { runningTickets } from "../lib/runningTickets";
 import {
   DEFAULT_WORK_ITEMS_SORT,
@@ -34,6 +36,7 @@ import {
 import { useQueueStatus } from "../state/QueueStatusContext";
 import { peekTicket } from "../state/ticketPeekStore";
 import { describeError, pushToast } from "../state/toastStore";
+import { useUiStore } from "../state/uiStore";
 import "./WorkItemsPage.css";
 
 /** Rows drawn at once; the rest are a click away, so 1,200 rows never mount together. */
@@ -81,6 +84,33 @@ export function WorkItemsPage() {
       pushToast({ tone: "error", title: "Work items did not load", message: describeError(tree.error) });
     }
   }, [tree.isError, tree.error]);
+
+  // What each awaiting ticket is asked, for the "Needs me" view's reason
+  // column. Shares Home's query, so the two never disagree about the inbox.
+  const approvalsQ = useQuery({
+    queryKey: ["home-approvals"],
+    queryFn: () => api.approvals(),
+    enabled: view === "needs_me",
+    refetchInterval: 15_000,
+  });
+  useEffect(() => {
+    if (approvalsQ.isError) {
+      pushToast({
+        tone: "error",
+        title: "Approvals did not load",
+        message: `${describeError(approvalsQ.error)}. The reason column says only that a ticket awaits you until they do.`,
+      });
+    }
+  }, [approvalsQ.isError, approvalsQ.error]);
+  const approvalsByTicket = useMemo(() => {
+    const byTicket = new Map<string, NonNullable<typeof approvalsQ.data>[number]>();
+    for (const approval of pendingApprovals(approvalsQ.data)) {
+      if (!byTicket.has(approval.ticket_id)) byTicket.set(approval.ticket_id, approval);
+    }
+    return byTicket;
+  }, [approvalsQ.data]);
+  const navigate = useNavigate();
+  const setInboxOpen = useUiStore((s) => s.setInboxOpen);
 
   const { activeRuns } = useQueueStatus();
   const runs = useMemo(() => new Map(runningTickets(activeRuns).map((run) => [run.ticket_id, run])), [activeRuns]);
@@ -225,6 +255,11 @@ export function WorkItemsPage() {
               sort={sort}
               onSort={toggleSort}
               showWhy={view === "needs_me"}
+              approvals={approvalsByTicket}
+              onOpenApproval={(ticketId) => {
+                setInboxOpen(true);
+                navigate(ticketPath(ticketId));
+              }}
             />
             {rows.length > shown ? (
               <div className="wi-more">

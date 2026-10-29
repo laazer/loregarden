@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
-from loregarden.models.domain import AgentRun, Artifact
+from loregarden.models.domain import AgentRun, Artifact, Ticket
 from loregarden.models.domain.enums import utcnow
 from loregarden.services import initiative_suggestions
 from loregarden.services.memory_store import AgentMemoryService
@@ -37,7 +37,8 @@ from loregarden.testing.prod_shape import (
     prod_shape_id,
 )
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, col, select
 
 FIXTURES = (
     Path(__file__).resolve().parents[2] / "client" / "src" / "test" / "fixtures" / "prod-shape"
@@ -84,6 +85,12 @@ ENDPOINTS = {
     ),
     # The reference library: every source serving loregarden, and its deepest
     # source (24 passes, 71 linked tickets, 41 unresolved legacy references).
+    # A parent's Timeline: every child of the scenario's largest parent, with
+    # each child's stages, as the stage board reads them.
+    "tickets-under-the-largest-parent.json": (
+        "/api/tickets",
+        {"parent_ticket_id": "{largest_parent}"},
+    ),
     "reference-library-loregarden.json": (
         "/api/reference-library",
         {"workspace_slug": "loregarden"},
@@ -144,6 +151,12 @@ def test_fixture_matches_the_api(api, isolated_db, name):
         plan_ticket = session.get(Artifact, prod_shape_id("plan", 0)).ticket_id
         worked_ticket = session.get(AgentRun, prod_shape_id("worked-run", 0)).ticket_id
         ci_ticket = ci_history_ticket(session)
+        largest_parent = session.exec(
+            select(Ticket.parent_ticket_id)
+            .where(col(Ticket.parent_ticket_id).is_not(None))
+            .group_by(Ticket.parent_ticket_id)
+            .order_by(func.count().desc(), Ticket.parent_ticket_id)
+        ).first()
     with ExitStack() as stack:
         if name in _CLOCKED:
             pinned = datetime.fromisoformat(_PINNED.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -159,7 +172,9 @@ def test_fixture_matches_the_api(api, isolated_db, name):
             ),
             # "Since" is relative to the build, as the scenario's events are.
             params={
-                key: value.format(since=(utcnow() - ACTIVITY_WINDOW).isoformat())
+                key: value.format(
+                    since=(utcnow() - ACTIVITY_WINDOW).isoformat(), largest_parent=largest_parent
+                )
                 for key, value in params.items()
             },
         )

@@ -605,12 +605,12 @@ export function TicketStudioPanel({
             }}
             title={draftDirty ? "Save draft edits before committing" : undefined}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
             {isPreview && !previewConfirmed
               ? `Confirm to finalize`
               : `Create ${selectedCount || importedTickets.length} ticket${(selectedCount || importedTickets.length) === 1 ? "" : "s"} under milestone`}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
           </button>
         )}
       {(commitSession.isPending || commitSession.isSuccess || commitSession.isError) && (
@@ -669,10 +669,10 @@ export function TicketStudioPanel({
               setSmartImportOpen(true);
             }}
           >
+            Smart import
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
             </svg>
-            Smart import
           </button>
 
           <div className="studio-library-section-label">Sessions</div>
@@ -790,10 +790,10 @@ export function TicketStudioPanel({
                       disabled={deleteSession.isPending}
                       onClick={() => deleteSession.mutate(selectedSession.id)}
                     >
+                      Delete
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                       </svg>
-                      Delete
                     </button>
                   )}
                 </div>

@@ -413,17 +413,15 @@
 }
 
 .lg-chat-composer-send {
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 34px;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   border: none;
-  border-radius: 999px;
-  background: var(--ac);
-  color: var(--onac);
+  /* Shape and colour come from .send-leaf (index.css); Stop sets its own. */
   cursor: pointer;
   font-size: var(--fs-small);
   font-weight: 600;
@@ -434,14 +432,10 @@
   width: auto;
   height: 34px;
   padding: 0 14px;
-  border-radius: 999px;
-}
-
-.lg-chat-composer-send:hover:not(:disabled) {
-  background: var(--ac2);
 }
 
 .lg-chat-composer-send--stop {
+  border-radius: 10px;
   background: var(--danger, #b42318);
   color: #fff;
 }
@@ -642,4 +636,26 @@
   color: var(--tx);
   text-align: left;
   white-space: normal;
+}
+
+/* "Show in chat" from a list of the thread's cards: a brief ring on the turn it landed on. */
+.lg-chat-turn--flash {
+  animation: baxter-turn-flash 1.4s ease-out;
+  border-radius: 12px;
+}
+
+@keyframes baxter-turn-flash {
+  from {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-chat-turn--flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
+  }
 }

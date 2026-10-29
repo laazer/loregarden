@@ -10,6 +10,8 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import type { MemoryNode } from "../../api/memoryApi";
 import { describeError } from "../../state/toastStore";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { LearningDetail } from "./LearningDetail";
 import { recordTitle } from "../../lib/memoryInferred";
@@ -48,11 +50,15 @@ function NodeRow({
 function NodeList({
   workspaceSlug,
   includeDiscredited,
+  filter,
+  onClearFilter,
   selectedId,
   onSelect,
 }: {
   workspaceSlug: string;
   includeDiscredited: boolean;
+  filter: string;
+  onClearFilter: () => void;
   selectedId: string | null;
   onSelect: (nodeId: string) => void;
 }) {
@@ -84,10 +90,22 @@ function NodeList({
     );
   }
   const selected = list.find((node) => node.id === selectedId) ?? null;
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? list.filter((node) => `${node.title} ${node.body}`.toLowerCase().includes(needle))
+    : list;
   return (
     <div className="memory-learnings-body">
+      {shown.length === 0 ? (
+        <div className="memory-empty">
+          <p>No learning in {workspaceSlug} mentions “{filter.trim()}”.</p>
+          <Button variant="secondary" compact onClick={onClearFilter}>
+            Clear the filter
+          </Button>
+        </div>
+      ) : (
       <ul className="memory-node-list" aria-label="Learnings">
-        {list.map((node) => (
+        {shown.map((node) => (
           <NodeRow
             key={node.id}
             node={node}
@@ -96,6 +114,7 @@ function NodeList({
           />
         ))}
       </ul>
+      )}
       {selected ? (
         <LearningDetail
           key={selected.id}
@@ -131,12 +150,28 @@ export function LearningsPanel({
   // loregarden graph 268 of 302 records were discredited — 181 of them smoke
   // records — and listing them by default buried the 34 that are in use.
   const [includeDiscredited, setIncludeDiscredited] = useState(false);
+  // Hundreds of learnings in one workspace; the list needs a way to narrow it.
+  const [filter, setFilter] = useState("");
   return (
     <section className="memory-panel" aria-labelledby="memory-learnings-title">
       <header className="memory-panel-header">
         <h2 id="memory-learnings-title" className="memory-panel-title">
           Learnings
         </h2>
+        <Input
+          type="search"
+          className="memory-learnings-filter"
+          aria-label="Filter learnings by title or text"
+          placeholder="Filter by title or text…"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && filter) {
+              event.preventDefault();
+              setFilter("");
+            }
+          }}
+        />
         <label className="memory-filters">
           <input
             type="checkbox"
@@ -150,6 +185,8 @@ export function LearningsPanel({
         key={`${workspaceSlug}:${includeDiscredited}`}
         workspaceSlug={workspaceSlug}
         includeDiscredited={includeDiscredited}
+        filter={filter}
+        onClearFilter={() => setFilter("")}
         selectedId={selectedId}
         onSelect={onSelect}
       />

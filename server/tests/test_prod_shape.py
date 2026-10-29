@@ -103,7 +103,7 @@ def test_activity_digest_matches_the_live_two_weeks(isolated_db):
 
 
 def test_the_tree_nests_parks_and_holds_like_production(isolated_db):
-    """Live, 2026-10-19: four levels below the roots, 15 stages awaiting a person,
+    """Live, 2026-10-19: four levels below the roots, 12 stages awaiting a person,
     and blocked work waiting on people, agents and other tickets.
 
     Over the scenario alone, as the recorded tree is: the seed adds tickets of its own.

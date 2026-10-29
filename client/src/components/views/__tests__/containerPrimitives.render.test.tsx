@@ -261,6 +261,7 @@ describe("AC4 — RunLedgerPanel is embeddable as a primitive, taking its input 
           started_at: "2026-08-14T09:00:00",
           finished_at: "2026-08-14T09:00:30",
           duration_seconds: 30,
+          error_tail: "",
         },
       ],
       ...overrides,

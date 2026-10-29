@@ -1,0 +1,210 @@
+/* Studio's index pages (Agents, Workflows): heading, filter and table. */
+
+.studio-index {
+  padding: 22px 24px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.studio-index--message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--txm);
+}
+
+.studio-index-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.studio-index-head > div {
+  flex: 1;
+  min-width: 160px;
+}
+
+.studio-index-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.studio-index-summary {
+  margin: 2px 0 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-index-filter {
+  width: 220px;
+  max-width: 100%;
+}
+
+.studio-index-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--amb);
+  border-radius: 6px;
+  background: var(--bg2);
+  font-size: var(--fs-small);
+  color: var(--aml);
+}
+
+.studio-index-empty,
+.studio-index-foot {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-index-foot {
+  margin: 12px 0 0;
+  line-height: 1.5;
+}
+
+.studio-index-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+
+.studio-index-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 10px 6px;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-index-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-index-table td,
+.studio-index-table tbody th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+.studio-index-table tbody th {
+  text-align: left;
+  font-weight: 400;
+}
+
+.studio-index-sort {
+  font: inherit;
+  color: inherit;
+}
+
+.studio-index-table th.num .studio-index-sort {
+  margin-left: auto;
+}
+
+.studio-index-sort-mark {
+  display: inline-block;
+  min-width: 1ch;
+  margin-left: 3px;
+}
+
+.studio-index-name {
+  display: block;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.studio-index-name:hover,
+.studio-index-name:focus-visible {
+  color: var(--ac);
+}
+
+.studio-index-slug {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.studio-index-clear {
+  font: inherit;
+  color: var(--ac);
+}
+
+.studio-index-muted {
+  color: var(--txm);
+  opacity: 0.7;
+}
+
+.studio-index-fold td {
+  padding: 6px 10px;
+}
+
+.studio-index-fold-toggle {
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-index-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .studio-index {
+    padding: 16px;
+  }
+
+  .studio-index-table thead {
+    display: none;
+  }
+
+  .studio-index-table,
+  .studio-index-table tbody,
+  .studio-index-table tr,
+  .studio-index-table td,
+  .studio-index-table tbody th {
+    display: block;
+  }
+
+  .studio-index-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .studio-index-table td,
+  .studio-index-table tbody th {
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .studio-index-table td {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .studio-index-table td::before {
+    content: attr(data-label);
+    color: var(--txm);
+    font-size: var(--fs-small);
+  }
+}

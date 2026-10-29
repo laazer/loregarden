@@ -1,0 +1,523 @@
+/* The ticket page: a header across the top, the workflow down the left, and
+   what the ticket's runs produced in the main column. */
+.ticket-page {
+  min-width: 0;
+}
+
+.ticket-page-header {
+  flex: none;
+  padding: 12px 22px 10px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ticket-page-crumbs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.ticket-page-crumbs li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-page-crumbs li + li::before {
+  content: "/";
+  color: var(--txl);
+}
+
+.ticket-page-crumbs a {
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.ticket-page-crumbs a:hover,
+.ticket-page-crumbs a:focus-visible {
+  color: var(--tx);
+  text-decoration: underline;
+}
+
+.ticket-page-crumb-parent {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-page-id {
+  max-width: 220px;
+}
+
+.ticket-page-views {
+  display: flex;
+  gap: 2px;
+}
+
+.ticket-page-view {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.ticket-page-view:hover,
+.ticket-page-view:focus-visible {
+  color: var(--tx);
+  background: var(--bg2);
+}
+
+.ticket-page-view.is-active {
+  color: var(--ac2);
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+}
+
+.ticket-page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ticket-page-title {
+  margin: 0;
+  flex: 1 1 280px;
+  min-width: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.ticket-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The run controls sit inline here, not as the bar under a pane. */
+/* The run controls are the title row's own buttons here, not a nested bar, so
+   Details, Pause, the forward action and ⋯ wrap as one row on a narrow screen. */
+.run-controls.run-controls--header {
+  display: contents;
+}
+
+/* Every control in the title row is one height and one type size, so Details,
+   Pause, the forward action and ⋯ read as one row; only the primary's fill and
+   leaf shape set it apart. */
+.ticket-page-actions :is(.btn-primary, .btn-secondary) {
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--fs-small);
+  gap: 6px;
+}
+
+.ticket-page-actions .overflow-menu-trigger {
+  width: 30px;
+  padding: 0;
+}
+
+/* Where it sits and how it is labelled, then its two quiet controls, on one
+   line; history, when opened, takes the line below. */
+.ticket-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-page-meta-actions {
+  display: contents;
+}
+
+.ticket-page-meta-btn,
+.ticket-page-meta .ticket-history-toggle {
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.ticket-page-meta-btn:first-of-type {
+  margin-left: 6px;
+}
+
+.ticket-page-meta-btn:hover,
+.ticket-page-meta-btn:focus-visible,
+.ticket-page-meta .ticket-history-toggle:hover,
+.ticket-page-meta .ticket-history-toggle:focus-visible,
+.ticket-page-meta .ticket-history-toggle[aria-expanded="true"] {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.ticket-page-meta .ticket-history {
+  display: contents;
+}
+
+.ticket-page-meta .ticket-history-list {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+}
+
+.ticket-page-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.ticket-page-workflow {
+  width: 400px;
+  flex: none;
+  overflow-y: auto;
+  padding: 18px 20px;
+  border-right: 1px solid var(--bd);
+  background: var(--bg0);
+}
+
+.ticket-workflow-heading {
+  margin-bottom: 6px;
+}
+
+/* A leaf ticket's column is two cards, narrower than a parent's child tree. */
+.ticket-page-workflow:has(> .ticket-workflow-cards) {
+  width: 320px;
+  padding: 16px;
+}
+
+.ticket-workflow-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ticket-workflow-cards--below {
+  margin-top: 20px;
+}
+
+.ticket-page-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ticket-page-fallback {
+  padding: 40px 22px;
+  color: var(--txm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.ticket-page-fallback p {
+  margin: 0;
+}
+
+.ticket-page-fallback-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ticket-page-skeleton {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ticket-page-skeleton-line {
+  height: 12px;
+  width: 60%;
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.ticket-page-skeleton-line--short {
+  width: 22%;
+}
+
+.ticket-page-skeleton-line--title {
+  height: 22px;
+  width: 44%;
+}
+
+/* At phone width the header, the workflow and the outputs stack, and the whole
+   page scrolls: a pinned header would take most of the screen. */
+@media (max-width: 760px) {
+  .ticket-page {
+    overflow-y: auto;
+  }
+
+  .ticket-page-header {
+    padding: 10px 16px;
+  }
+
+  /* The breadcrumb and the run controls wrap rather than push the page wide. */
+  .ticket-page-crumbs ol {
+    flex-wrap: wrap;
+  }
+
+  .ticket-page-crumb-parent {
+    max-width: 60vw;
+  }
+
+  .ticket-page-body {
+    flex: none;
+    flex-direction: column;
+  }
+
+  .ticket-page-workflow,
+  .ticket-page-workflow:has(> .ticket-workflow-cards) {
+    width: auto;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--bd);
+    padding: 14px 16px;
+  }
+
+  .ticket-page-main {
+    min-height: 60vh;
+  }
+}
+
+/* ---- A ticket split into parts ---- */
+.ticket-page-parts-pill {
+  color: var(--ac2);
+  border-color: color-mix(in srgb, var(--ac) 45%, transparent);
+}
+
+.ticket-split-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ac) 9%, var(--bg1));
+  font-size: var(--fs-body);
+}
+
+.ticket-split-icon {
+  flex: none;
+  color: var(--ac);
+}
+
+.ticket-split-what {
+  flex: 1;
+  min-width: 0;
+}
+
+.ticket-split-what b {
+  font-weight: 600;
+}
+
+.ticket-split-why {
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.ticket-split-retry {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.ticket-split-bar,
+.ticket-part-of-segments {
+  display: flex;
+  gap: 3px;
+}
+
+.ticket-split-bar {
+  flex: none;
+  width: 140px;
+}
+
+.ticket-split-bar i,
+.ticket-part-of-segments i {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+}
+
+.ticket-part-of-segments i {
+  flex: none;
+  width: 20px;
+}
+
+.ticket-split-bar i.is-done,
+.ticket-part-of-segments i.is-done {
+  background: var(--grn);
+}
+
+.ticket-split-bar i.is-running,
+.ticket-part-of-segments i.is-running {
+  background: var(--blue);
+}
+
+.ticket-split-bar i.is-blocked,
+.ticket-part-of-segments i.is-blocked {
+  background: var(--red);
+}
+
+.ticket-part-of-segments i.is-current {
+  background: var(--blue);
+  outline: 2px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 1px;
+}
+
+.ticket-split-count {
+  flex: none;
+  color: var(--txm);
+  font: var(--fs-small) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket-part-of {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.ticket-part-of a {
+  color: var(--ac2);
+}
+
+/* Parent titles run long; the full title is the link's tooltip and the breadcrumb's. */
+.ticket-part-of-parent {
+  display: inline-block;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Parts on the vine: a leaf when done, a ringed bud while running, a closed bud for the rest. */
+.ticket-parts {
+  margin-bottom: 14px;
+}
+
+.ticket-parts-count {
+  color: var(--txl);
+  font-family: var(--mono);
+}
+
+.ticket-parts-list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticket-parts-list::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 8px;
+  width: 2px;
+  background: var(--bd2);
+}
+
+.ticket-part {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 7px 0;
+}
+
+.ticket-part-mark {
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 2px solid var(--bd2);
+  border-radius: 50%;
+  background: var(--bg0);
+}
+
+.ticket-part.is-done .ticket-part-mark {
+  border-color: var(--grn);
+  border-radius: 12px 2px 12px 2px;
+  background: var(--grn);
+}
+
+.ticket-part.is-running .ticket-part-mark {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+
+.ticket-part.is-blocked .ticket-part-mark {
+  border-color: var(--red);
+}
+
+.ticket-part-body {
+  min-width: 0;
+}
+
+.ticket-part-name {
+  display: block;
+  padding: 0;
+  color: var(--tx);
+  /* set, not inherited: the column inherits the body's 16px */
+  font-size: var(--fs-body);
+  font-weight: 500;
+  text-align: left;
+}
+
+.ticket-part-name:hover,
+.ticket-part-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.ticket-part-ref {
+  margin-top: 2px;
+  color: var(--txl);
+  font: var(--fs-micro) var(--mono);
+}
+
+.ticket-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .ticket-split-line {
+    flex-wrap: wrap;
+  }
+
+  .ticket-split-bar {
+    width: 100%;
+  }
+}

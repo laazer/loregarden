@@ -17,12 +17,13 @@ import {
   DISK_LEGEND_KINDS,
   formatDiskBytes,
   outermostPaths,
+  volumeTone,
 } from "../../lib/diskUsage";
 import { describeError } from "../../state/toastStore";
 import { formatRelativeAge } from "../../lib/timestamps";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { CapacityMeter, type CapacityTone } from "../ui/CapacityMeter";
+import { CapacityMeter } from "../ui/CapacityMeter";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { DiskCleanupModal } from "./DiskCleanupModal";
 import { DiskEntriesTable } from "./DiskEntriesTable";
@@ -31,13 +32,6 @@ import { DiskTreemap } from "./DiskTreemap";
 import "./DiskUsageView.css";
 
 const ALL_FOLDERS = "All scanned folders";
-
-function volumeTone(free: number, total: number): CapacityTone {
-  if (total <= 0) return "unknown";
-  if (free / total < 0.05) return "full";
-  if (free / total < 0.15) return "tight";
-  return "normal";
-}
 
 interface Crumb {
   label: string;
@@ -169,7 +163,7 @@ export function DiskUsageView() {
             used={volume.used_bytes}
             total={volume.total_bytes}
             format={formatDiskBytes}
-            tone={volumeTone(volume.free_bytes, volume.total_bytes)}
+            tone={volumeTone(volume)}
           />
           <p className="disk-volume-free">
             {formatDiskBytes(volume.free_bytes)} free

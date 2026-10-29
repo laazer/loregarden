@@ -1,0 +1,55 @@
+/* One line until opened, as Mock 4 draws a tool call: quiet, beside the reply. */
+.lg-thinking-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.lg-thinking-line-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg1) 85%, transparent);
+  font-size: var(--fs-small);
+  color: var(--txm);
+  text-align: left;
+}
+
+.lg-thinking-line-head:hover,
+.lg-thinking-line-head:focus-visible {
+  color: var(--tx);
+  border-color: var(--bd);
+}
+
+.lg-thinking-line-glyph {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-thinking-line-lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-thinking-line-count,
+.lg-thinking-line-caret {
+  flex: none;
+  color: var(--txl);
+}
+
+.lg-thinking-line-body {
+  max-width: 100%;
+  padding: 8px 12px;
+  border-left: 2px solid var(--bd2);
+}

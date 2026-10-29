@@ -30,35 +30,16 @@ from loregarden.models.domain import (
     TicketState,
     UpdateTicketRequest,
     WorkflowInstance,
-    WorkItemType,
 )
 from loregarden.services.invariant_registry import CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS
 from loregarden.services.invariants import run_invariant
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_service import choose, derive
 from loregarden.services.workflow_service import WorkflowService, resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
 from sqlalchemy import text
 from sqlmodel import Session, select
-
-
-def _task(session: Session, title: str) -> Ticket:
-    svc = TicketService(session)
-    parent = None
-    for kind in (WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.CAPABILITY):
-        parent = svc.create_ticket(
-            workspace_slug="loregarden",
-            title=f"{title} — {kind.value}",
-            work_item_type=kind,
-            parent_ticket_id=parent.id if parent else None,
-        )
-    return svc.create_ticket(
-        workspace_slug="loregarden",
-        title=title,
-        work_item_type=WorkItemType.TASK,
-        parent_ticket_id=parent.id,
-    )
+from tests.factories import make_task_in_tree
 
 
 def _instance(session: Session, ticket: Ticket) -> WorkflowInstance:
@@ -94,7 +75,7 @@ def _second_stage(session: Session, ticket: Ticket) -> str:
 
 @pytest.fixture(name="stuck")
 def stuck_fixture(db_session: Session) -> Ticket:
-    ticket = _task(db_session, "closed workflow guard")
+    ticket = make_task_in_tree(db_session, "closed workflow guard")
     _block_a_stage(db_session, ticket, _second_stage(db_session, ticket))
     assert open_stage_keys(_instance(db_session, ticket).stages_json), "fixture has nothing open"
     return ticket

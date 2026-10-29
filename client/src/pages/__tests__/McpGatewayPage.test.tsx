@@ -164,10 +164,10 @@ it("states that reach is not per-agent rather than implying grants", async () =>
   expect(await screen.findByText("Every agent")).toBeInTheDocument();
 });
 
-it("keeps the rules table scrollable and labelled with its size", async () => {
-  // The table outgrows the viewport once a registry has real agents in it.
-  // Letting it grow pushed the switchboard off the top of the column, so it
-  // scrolls itself — which only works if it stays reachable and countable.
+it("keeps the rules table labelled with its size, each agent a way into Agent Studio", async () => {
+  // The table outgrows the viewport once a registry has real agents in it, so
+  // it scrolls itself; it stays countable by its caption, and reachable by its
+  // agent links, which are also the row's action: the grant is edited there.
   mockApi.mcpServers.mockResolvedValue([mcpServer()]);
   mockApi.studioAgents.mockResolvedValue([
     studioAgent({ slug: "a", name: "Planner" }),
@@ -178,8 +178,16 @@ it("keeps the rules table scrollable and labelled with its size", async () => {
 
   // Two agent rows plus one server row.
   const table = await screen.findByRole("table", { name: /routing rules, 3 rules/i });
-  // Keyboard users need the region focusable; it holds nothing focusable itself.
-  expect(table).toHaveAttribute("tabindex", "0");
+  expect(within(table).getByRole("link", { name: "Planner" })).toHaveAttribute("href", "/studio/agents/a");
+  expect(within(table).getByRole("link", { name: "Reviewer" })).toHaveAttribute("href", "/studio/agents/b");
+  // A registered server's row is every agent's; there is no one agent to open.
+  expect(within(table).queryByRole("link", { name: "Every agent" })).not.toBeInTheDocument();
+  expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+    "Agent",
+    "Server",
+    "Allowed tools",
+    "Policy",
+  ]);
   expect(await screen.findByText("3")).toBeInTheDocument();
 });
 
@@ -241,4 +249,19 @@ it("edits an existing server through the same modal", async () => {
   expect(mockApi.updateMcpServer.mock.calls[0][1]).toMatchObject({
     description: "Repos and issues",
   });
+});
+
+it("says once what the standard set is, and each sharing agent's row says it holds it", async () => {
+  const tools = ["loregarden_get_ticket", "loregarden_list_tickets"];
+  mockApi.mcpServers.mockResolvedValue([]);
+  mockApi.studioAgents.mockResolvedValue([
+    studioAgent({ slug: "a", name: "Planner", mcp_tools: tools }),
+    studioAgent({ slug: "b", name: "Reviewer", mcp_tools: tools }),
+  ]);
+
+  renderPage();
+
+  expect(await screen.findByText("Standard set: the 2 loregarden tools 2 agents share")).toBeInTheDocument();
+  const table = screen.getByRole("table", { name: /routing rules/i });
+  expect(within(table).getAllByText("Standard set")).toHaveLength(2);
 });

@@ -160,6 +160,10 @@ test("tickets waiting on a person show beside Work items, as its description", (
   const link = screen.getByRole("link", { name: "Work items" });
   expect(link).toHaveAccessibleDescription("21 need you");
   expect(link).toHaveTextContent("21");
+  // On the icon's corner, outside what folds away with the labels.
+  const badge = link.querySelector(".app-sidebar-icon .app-sidebar-page-count");
+  expect(badge).toHaveTextContent("21");
+  expect(badge).not.toHaveClass("app-sidebar-reveal");
 });
 
 test("with nobody waited on, Work items carries no count", () => {

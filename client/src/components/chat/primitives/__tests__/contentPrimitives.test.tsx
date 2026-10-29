@@ -76,7 +76,8 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     );
 
     expect(await screen.findByText("Lore Garden")).toBeInTheDocument();
-    expect(screen.getByText("12 tickets")).toBeInTheDocument();
+    // The facts row: tickets, workflow, agent, repo.
+    expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("2 blocked")).toBeInTheDocument();
     expect(screen.getByText("tdd")).toBeInTheDocument();
   });
@@ -91,7 +92,10 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
         }}
       />,
     );
-    expect(screen.getByRole("checkbox", { name: "Run tests" })).toBeDisabled();
+    // The agent ticks its own steps: they are buds on a vine, not boxes you can tick.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByRole("listitem")).toHaveTextContent("Run tests, to do");
+    expect(screen.getByText("Agent owned")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
     agent.unmount();
 
@@ -107,7 +111,8 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     const checkbox = screen.getByRole("checkbox", { name: "Review diff" });
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
-    expect(screen.getByText("1/1 complete")).toBeInTheDocument();
+    // Progress is the card's chip: done once every step is ticked.
+    expect(screen.getByText("Complete")).toBeInTheDocument();
   });
 
   it("runs an agent execution plan through the chat callback", () => {
@@ -138,7 +143,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
         "- [x] Run focused tests (id: verify)",
       ].join("\n"),
     );
-    expect(screen.getByText("Execution requested")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
   });
 
@@ -155,7 +160,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
-    expect(screen.getByText("All steps complete")).toBeInTheDocument();
+    expect(screen.getByText("Complete")).toBeInTheDocument();
   });
 
   it("keeps user ticks through a re-render but adopts a changed payload", () => {
@@ -173,7 +178,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
 
     view.rerender(userList([{ id: "ship", text: "Approve release", checked: false }]));
     expect(screen.getByRole("checkbox", { name: "Approve release" })).not.toBeChecked();
-    expect(screen.getByText("0/1 complete")).toBeInTheDocument();
+    expect(screen.getByText("0/1")).toBeInTheDocument();
   });
 
   it("keeps typed Q&A answers through a re-render", () => {
@@ -190,7 +195,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     view.rerender(card([{ ...items[0] }]));
 
     expect(screen.getByLabelText("Who is this for?")).toHaveValue("Operators");
-    expect(screen.getByRole("button", { name: "Send answers" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Send answer" })).toBeEnabled();
   });
 
   it("does not offer to answer a Q&A card that carries no questions", () => {
@@ -199,12 +204,12 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     // answer to nothing.
     render(<QAPrimitive part={{ primitive: "qa", items: [] }} onSubmit={jest.fn()} />);
 
-    expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Send/ })).toBeNull();
     expect(screen.getByText(/carried no questions/)).toBeInTheDocument();
     expect(screen.queryByText("Answer these before continuing")).toBeNull();
   });
 
-  it("counts a single question in the singular", () => {
+  it("asks for a single answer in the singular", () => {
     render(
       <QAPrimitive
         part={{ primitive: "qa", items: [{ id: "scope", question: "Who is this for?" }] }}
@@ -212,7 +217,8 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
       />,
     );
 
-    expect(screen.getByText("1 question")).toBeInTheDocument();
+    expect(screen.getByText("Needs you")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send answer" })).toBeInTheDocument();
   });
 
   it("renders live branch history and commit detail", async () => {
@@ -284,7 +290,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
       />,
     );
 
-    const send = screen.getByRole("button", { name: "Send answers" });
+    const send = screen.getByRole("button", { name: "Send answer" });
     expect(send).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Who is this for?"), {
       target: { value: "Operators" },

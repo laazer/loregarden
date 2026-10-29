@@ -103,6 +103,9 @@ export interface ActiveRun extends RunLabels, RunEstimates {
   elapsed_seconds: number;
   status: string;
   agent_id: string;
+  /** The ticket's stages settled out of its total; null before it has a workflow. */
+  stages_done?: number | null;
+  stages_total?: number | null;
   /**
    * Set only while `status` is `repairing`: which mechanism justified holding
    * the lane through a block, and how many re-dispatches this entry has already

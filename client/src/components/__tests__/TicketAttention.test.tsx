@@ -96,6 +96,22 @@ describe("the block", () => {
 
     expect(await screen.findByRole("region", { name: "Needs attention" })).toHaveTextContent("Run failed");
   });
+
+  it("leaves the block and the failed run to the page when it already shows them in full", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TicketAttention
+          ticket={ticket({ state: "blocked", block_kind: "harness", blocking_issues: "Weekly usage limit reached." })}
+          hasRunErrors
+          failureShown
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(monitorFindings).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Needs attention" })).not.toBeInTheDocument();
+  });
 });
 
 describe("the monitor's findings", () => {

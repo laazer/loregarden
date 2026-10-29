@@ -48,6 +48,26 @@
   border-color: var(--bd2);
 }
 
+.chat-side-card-icon-btn[aria-pressed="true"] {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+/* History, New chat and the workbench toggle (ChatPanelControls). */
+.chat-panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Where they sit while the workbench is closed: the thread's top right. */
+.baxter-chat-panel-controls {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 3;
+}
+
 .chat-side-card-link {
   border: none;
   background: none;

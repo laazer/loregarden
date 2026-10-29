@@ -15,8 +15,9 @@ import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 
 import { DockerQueueBoard } from "../DockerQueueBoard";
+import { Button } from "../ui/Button";
 import { dockerApi } from "../../api/dockerApi";
-import type { DockerCapacityStatus, DockerLeaseRow } from "../../api/dockerTypes";
+import { capacityStatus as status, lease } from "../../test/dockerFixtures";
 import { uiActionRegistry } from "../../lib/agentActions/registry";
 import { pushToast } from "../../state/toastStore";
 
@@ -36,76 +37,6 @@ function render(ui: ReactElement) {
   return {
     ...view,
     rerender: (next: ReactElement) => view.rerender(<MemoryRouter>{next}</MemoryRouter>),
-  };
-}
-
-function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
-  return {
-    lease_id: "lease-1",
-    status: "held",
-    holder_label: "e2e suite",
-    holder: { what: "e2e suite", branch: null, worktree: null, pid: null },
-    holder_kind: "ad_hoc",
-    pool: "docker",
-    parent_lease_id: null,
-    agent_run_id: null,
-    ticket_id: null,
-    footprint: "stack",
-    cpus: 2,
-    memory_mb: 4096,
-    compose_project: "",
-    container_names: [],
-    position: null,
-    expires_at: null,
-    expires_in_seconds: 600,
-    estimated_wait_seconds: null,
-    estimate_basis: "unknown",
-    poll_count: 0,
-    requested_at: null,
-    held_seconds: null,
-    progress: null,
-    waiting_seconds: null,
-    last_seen_seconds_ago: null,
-    poll_stalled: false,
-    drops_in_seconds: null,
-    running_container_count: null,
-    last_probe_outcome: "",
-    last_probe_error: "",
-    ...overrides,
-  };
-}
-
-function status(overrides: Partial<DockerCapacityStatus> = {}): DockerCapacityStatus {
-  return {
-    enabled: true,
-    ceiling: {
-      cpus: 5,
-      memory_mb: 9942,
-      leases: 4,
-      source: "probe",
-      probed_at: "2026-09-10T12:00:00+00:00",
-      error: "",
-    },
-    in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
-    available: { cpus: 3, memory_mb: 5846, leases: 3 },
-    host: {
-      ceiling: {
-        cpus: 12,
-        memory_mb: 32768,
-        leases: 4,
-        source: "probe",
-        probed_at: "2026-09-10T12:00:00+00:00",
-        error: "",
-      },
-      in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
-      available: { cpus: 10, memory_mb: 28672, leases: 3 },
-    },
-    holders: [],
-    waiting: [],
-    head_shortfall: null,
-    orphaned: [],
-    unverifiable: [],
-    ...overrides,
   };
 }
 
@@ -452,5 +383,33 @@ describe("DockerQueueBoard", () => {
 
     view.unmount();
     expect(uiActionRegistry.available()).not.toContain("capacity.release");
+  });
+  it("hands the attention slot its own confirm, so a lease ends one way", async () => {
+    releaseLease.mockResolvedValue({ lease_id: "lease-1", released: true });
+    const row = lease();
+    render(
+      <DockerQueueBoard
+        status={status({ holders: [row] })}
+        {...idle}
+        attention={(ending) => (
+          <Button variant="secondary" onClick={() => ending.onEnd(row)} disabled={ending.pendingId === row.lease_id}>
+            From the band
+          </Button>
+        )}
+        meters={<div data-testid="extra-meter" />}
+      />,
+    );
+    expect(screen.getByTestId("extra-meter")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "From the band" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Release" }));
+    expect(releaseLease).toHaveBeenCalledWith("lease-1", expect.any(String));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("draws the attention slot while the first read is still in flight", () => {
+    render(
+      <DockerQueueBoard status={null} error="" loading onChanged={onChanged} attention={() => <p>band</p>} />,
+    );
+    expect(screen.getByText("band")).toBeInTheDocument();
   });
 });
