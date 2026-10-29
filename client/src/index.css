@@ -4048,6 +4048,12 @@ button.send-leaf:hover:not(:disabled) {
   color: var(--bg0);
 }
 
+/* The chip's shape, so failed and waiting differ without their colour. */
+.approvals-badge-glyph {
+  margin-right: 3px;
+  font-size: 0.8em;
+}
+
 .usage-btn-warning {
   border-color: rgba(240, 180, 41, 0.85);
   box-shadow: 0 0 0 1px rgba(240, 180, 41, 0.2);
