@@ -7,6 +7,7 @@ own checkout is left alone.
 """
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -111,6 +112,21 @@ def test_a_block_already_on_the_default_branch_opens_nothing(
 
     assert again.json()["outcome"] == "no_change", again.text
     gh.assert_not_called()
+
+
+def test_two_requests_in_the_same_second_each_open_their_own_branch(
+    client: TestClient, repo: Path
+) -> None:
+    frozen = datetime(2026, 10, 29, 12, 0, 0)
+    with mock.patch.object(workspace_integration, "utcnow", return_value=frozen):
+        first, _ = _post(client, "docs")
+        second, _ = _post(client, "docs")
+
+    assert first.json()["outcome"] == "opened", first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["outcome"] == "opened", second.text
+    branches = _git(_origin(repo), "for-each-ref", "--format=%(refname)", "refs/heads/loregarden")
+    assert len(branches.splitlines()) == 2
 
 
 def test_loregarden_itself_is_refused(client: TestClient, repo: Path) -> None:

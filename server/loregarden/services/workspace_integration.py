@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -263,7 +264,9 @@ def pull_request(
     if found.state in (InstallState.UNAVAILABLE, InstallState.BUILT_IN):
         raise InstallerError(found.detail)
     title, body = _PR_COPY[installer]
-    stamp = utcnow().strftime("%Y%m%d-%H%M%S")
+    # The suffix keeps two requests in one second (a double click, two tabs)
+    # from naming the same branch, which `change_pr` refuses.
+    stamp = f"{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
     return open_change_pr(
         ChangeRequest(
             repo=resolve_workspace_root(workspace),
