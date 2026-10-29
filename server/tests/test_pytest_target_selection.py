@@ -317,7 +317,11 @@ def test_server_hook_gives_pytest_a_private_temp_root():
     # whole spelling.
     (trap,) = [line for line in script.splitlines() if line.startswith("trap ")]
     assert trap.endswith("' EXIT")
-    assert 'rm -rf "$BASETEMP" 2>/dev/null || true' in trap
+    # The root is $RUN_TEMP, not $BASETEMP: pytest rmtree's a basetemp it is
+    # handed, so the test-count file lives beside it, and removing the parent is
+    # what removes both.
+    assert 'BASETEMP="$RUN_TEMP/pytest"' in script
+    assert 'rm -rf "$RUN_TEMP" 2>/dev/null || true' in trap
 
 
 def test_client_hook_narrows_jest_and_keeps_the_wide_checks():

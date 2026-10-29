@@ -20,6 +20,8 @@ source "$SCRIPT_DIR/ensure-node.sh"
 source "$SCRIPT_DIR/test-workers.sh"
 # shellcheck source=push-progress.sh
 source "$SCRIPT_DIR/push-progress.sh"
+# shellcheck source=test-count-guard.sh
+source "$SCRIPT_DIR/test-count-guard.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CLIENT_ROOT="$ROOT/client"
@@ -31,7 +33,13 @@ if [ ! -d node_modules ]; then
   exit 1
 fi
 
-trap 'progress_finish $?' EXIT
+# A private temp root for this run, holding the one file jest's own reporter
+# records its suite count in. Removed on exit, never the progress file, and
+# written only by the reporter: run_and_judge reads it after jest exits, so a
+# selection that ran nothing cannot leave this push looking green.
+COUNT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-jest-XXXXXX")"
+trap 'rc=$?; progress_finish "$rc"; rm -rf "$COUNT_ROOT" 2>/dev/null || true' EXIT
+export LOREGARDEN_TEST_COUNT_FILE="$COUNT_ROOT/test-count.json"
 progress_begin "client-tests" 3
 
 progress_step "oxlint"
@@ -65,27 +73,43 @@ fi
 # nothing when no capacity holder named one.
 REPORTERS=(--reporters=default --reporters="$SCRIPT_DIR/jest_push_progress.cjs")
 
+# The second, independent reading, paid only when the reporter recorded zero
+# suites (run_and_judge decides). It asks one question: does the harness see any
+# test file AT ALL? So it is jest's own testMatch selection, deliberately NOT
+# narrowed by --changedSince — a probe carrying the same narrowing would return
+# zero in exactly the cases the count is zero, and every ordinary "no test
+# imports the component you edited" push would fail. That is R-5, the hostile
+# guard that earns a --no-verify.
+#
+# Measured: `npx jest --listTests` prints 287 paths here, and one empty line
+# while still exiting 0 when the selection resolves to nothing — so the number
+# of paths is the reading, never the probe's exit code. Zero paths means a
+# drifted testMatch, a renamed client/src, or a bogus pattern: the harness found
+# nothing to run, which is an absence rather than an empty selection.
+LIST_PROBE=(npx jest --listTests)
+
 # `--bail` is jest's `-x`: stop at the first failing suite. Same reasoning as
 # the server runner — the first failure is the one to read, and a client suite
 # that has already gone red does not get more informative by finishing.
 if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
   echo "pre-push: full jest run — LOREGARDEN_FULL_TESTS is set"
   progress_step "jest, full suite"
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
+  run_and_judge jest -- "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 elif [ -z "$BASE" ]; then
   echo "pre-push: full jest run — no @{push} or origin/main to diff against"
   progress_step "jest, full suite"
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
+  run_and_judge jest -- "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 elif [ -n "$WIDE_CHANGE" ]; then
   echo "pre-push: full jest run — shared config changed:"
   printf '  %s\n' $WIDE_CHANGE
   progress_step "jest, full suite"
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
+  run_and_judge jest -- "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}"
 else
   echo "pre-push: jest --changedSince=$BASE (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   progress_step "jest, changed since push base"
-  # --passWithNoTests because "no test imports what you changed" is a real
-  # answer here, not a misconfiguration. It is printed, never silent, and CI
-  # still runs everything.
-  "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}" --changedSince="$BASE" --passWithNoTests
+  # --passWithNoTests stays: "no test imports what you changed" is a real answer
+  # here, not a misconfiguration. What changed is who decides — jest's exit code
+  # is identical for that case and for a harness that found no test file at all,
+  # so the judge decides from the recorded suite count and the listing probe.
+  run_and_judge jest -- "${TEST_NICE[@]}" npm test -- --bail --maxWorkers="$TEST_WORKERS" "${REPORTERS[@]}" --changedSince="$BASE" --passWithNoTests
 fi

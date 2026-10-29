@@ -22,6 +22,8 @@ source "$(cd "$(dirname "$0")" && pwd)/hook-noninteractive.sh"
 source "$(cd "$(dirname "$0")" && pwd)/test-workers.sh"
 # shellcheck source=push-progress.sh
 source "$(cd "$(dirname "$0")" && pwd)/push-progress.sh"
+# shellcheck source=test-count-guard.sh
+source "$(cd "$(dirname "$0")" && pwd)/test-count-guard.sh"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PY_ROOT="$ROOT/server"
@@ -64,8 +66,15 @@ fi
 # that removes it — not a belt-and-braces extra. It must never fail the push on
 # its own: a temp dir that outlives a run costs disk, a cleanup that raises
 # costs the push.
-BASETEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
-trap 'rc=$?; progress_finish "$rc"; rm -rf "$BASETEMP" 2>/dev/null || true' EXIT
+RUN_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
+# pytest OWNS its basetemp: given one, `_pytest.tmpdir` rmtree's it at the first
+# `tmp_path` use, which is after collection. So the count file lives beside that
+# directory rather than inside it; in it, a serial run would have its recorded
+# count deleted by the first test that asks for a temp dir, and the judge would
+# report COULD NOT RUN for a suite that ran.
+BASETEMP="$RUN_TEMP/pytest"
+mkdir -p "$BASETEMP"
+trap 'rc=$?; progress_finish "$rc"; rm -rf "$RUN_TEMP" 2>/dev/null || true' EXIT
 progress_begin "server-tests" 5
 
 # Fail fast. `-x` stops at the first failure instead of collecting every one,
@@ -124,35 +133,43 @@ else
   rm -f "$ERR_FILE"
 fi
 
-# The plugin counts tests into the progress file; it does nothing when no
-# capacity holder named one.
+# The plugin records what collection found, and counts tests into the progress
+# file. The count is always recorded; the progress half does nothing when no
+# capacity holder named a file.
 export PYTHONPATH="$ROOT/.lefthook/scripts${PYTHONPATH:+:$PYTHONPATH}"
+
+# Where this run's collection records how many tests it found. Private to this
+# invocation (under $RUN_TEMP, removed by the trap above), never the progress
+# file, and written only by the plugin. run_and_judge reads it after pytest
+# exits: a run that collected nothing fails this push whatever pytest's own
+# code was, and a run that recorded no count at all fails it differently.
+export LOREGARDEN_TEST_COUNT_FILE="$RUN_TEMP/test-count.json"
 
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
   progress_step "pytest, full suite"
-  LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+  run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
     pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress
-  exit 0
+else
+  # Paths arrive repo-relative; pytest runs from server/.
+  FILES=()
+  while IFS= read -r target; do
+    [ -n "$target" ] || continue
+    rel="${target#server/}"
+    if [ ! -f "$PY_ROOT/$rel" ]; then
+      # A path pytest cannot collect is reported as a pass, not an error, so a
+      # stale selection would look exactly like a green suite. This check is
+      # earlier and narrower than the judge, and stays as it is.
+      echo "pre-push: selector named a missing file: $target" >&2
+      exit 1
+    fi
+    FILES+=("$rel")
+  done <<< "$TARGETS"
+
+  echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes:"
+  printf '  %s\n' "${FILES[@]}"
+  echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
+  progress_step "pytest on ${#FILES[@]} file(s)"
+  run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress "${FILES[@]}"
 fi
-
-# Paths arrive repo-relative; pytest runs from server/.
-FILES=()
-while IFS= read -r target; do
-  [ -n "$target" ] || continue
-  rel="${target#server/}"
-  if [ ! -f "$PY_ROOT/$rel" ]; then
-    # A path pytest cannot collect is reported as a pass, not an error, so a
-    # stale selection would look exactly like a green suite.
-    echo "pre-push: selector named a missing file: $target" >&2
-    exit 1
-  fi
-  FILES+=("$rel")
-done <<< "$TARGETS"
-
-echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes:"
-printf '  %s\n' "${FILES[@]}"
-echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
-progress_step "pytest on ${#FILES[@]} file(s)"
-LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-  pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress "${FILES[@]}"

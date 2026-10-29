@@ -24,6 +24,10 @@ _pp_started=0
 _pp_step_started=0
 _pp_steps=()
 _pp_times=()
+#: The step the judge has already reported for, so progress_finish leaves it
+#: alone. Writing both would replace the judge's count with a bare FAILED line
+#: and two NULLs — the shape 13 live leases carry today.
+_pp_reported_index=0
 
 progress_begin() {
   _pp_name="$1"
@@ -42,6 +46,35 @@ progress_write() {
   local tmp="$file.$$.tmp"
   # silent-ok: progress is a view of the run; a write that fails leaves the last report showing
   { printf '{"step": "%s"}\n' "$step" >"$tmp" && mv -f "$tmp" "$file"; } 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  return 0
+}
+
+# Where test-count-guard.sh asks the judge to compose this step's report.
+# Beside the progress file, so putting it in place is a rename and a reader
+# never sees half a report. Non-zero when nobody asked for progress.
+progress_report_path() {
+  local file="${LOREGARDEN_PROGRESS_FILE:-}"
+  [ -n "$file" ] || return 1
+  printf '%s.judge.%s.tmp' "$file" "$$"
+}
+
+# The judge's report IS this step's final write: it carries the outcome in words
+# and the count the judge judged, so the terminal and the queue board can never
+# disagree about how many tests ran. Written once, after the runner has exited,
+# when exactly one writer is live.
+progress_report_commit() {
+  local src="$1"
+  local file="${LOREGARDEN_PROGRESS_FILE:-}"
+  if [ -z "$file" ] || [ ! -s "$src" ]; then
+    # silent-ok: no progress file (or no report) means nothing to put in place;
+    # the judge's own line has already said the outcome on the terminal
+    rm -f "$src" 2>/dev/null || true
+    return 0
+  fi
+  # silent-ok: progress is a view of the run; a write that fails leaves the last
+  # report showing, and the terminal still carries the judge's verdict
+  mv -f "$src" "$file" 2>/dev/null || rm -f "$src" 2>/dev/null || true
+  _pp_reported_index="$_pp_index"
   return 0
 }
 
@@ -88,7 +121,9 @@ progress_finish() {
   done
   if [ "$rc" -ne 0 ]; then
     echo "  (the first failure is printed above the summary; read it before any that follow)"
-    progress_write "FAILED: ${_pp_steps[$last]} ($_pp_index/$_pp_total)"
+    if [ "$_pp_reported_index" -ne "$_pp_index" ]; then
+      progress_write "FAILED: ${_pp_steps[$last]} ($_pp_index/$_pp_total)"
+    fi
   fi
   return 0
 }
