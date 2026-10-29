@@ -25,9 +25,10 @@ const RING_R = 7;
 const RING_C = 2 * Math.PI * RING_R;
 
 /**
- * How far through its stages a running ticket is: the ring fills with the
- * stages settled, and a short arc turns around it while the run is live. A
- * ticket with no workflow yet shows the empty track, not an invented fraction.
+ * How far through its stages a running ticket is, read as how closed the ring
+ * is: 5 of 12 stages done draws five-twelfths of the circle. A live run lights
+ * the dot in the middle; nothing turns, so the ring never reads as a loading
+ * spinner. A ticket with no workflow yet shows a dashed track, not a fraction.
  */
 function StageRing({
   done,
@@ -40,37 +41,33 @@ function StageRing({
   live: boolean;
   color: string;
 }) {
+  const known = Boolean(total);
   const fraction = total ? Math.min(done ?? 0, total) / total : 0;
   return (
-    <svg className={`app-sidebar-ring${live ? " is-live" : ""}`} width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-      <circle className="app-sidebar-ring-track" cx="9" cy="9" r={RING_R} fill="none" strokeWidth="2.2" />
+    <svg className="app-sidebar-ring" width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <circle
+        className={`app-sidebar-ring-track${known ? "" : " is-unknown"}`}
+        cx="9"
+        cy="9"
+        r={RING_R}
+        fill="none"
+        strokeWidth="2.4"
+      />
       {fraction > 0 ? (
         <circle
+          className="app-sidebar-ring-progress"
           cx="9"
           cy="9"
           r={RING_R}
           fill="none"
           stroke={color}
-          strokeWidth="2.2"
-          strokeLinecap="round"
+          strokeWidth="2.4"
+          strokeLinecap={fraction >= 1 ? "butt" : "round"}
           strokeDasharray={`${fraction * RING_C} ${RING_C}`}
           transform="rotate(-90 9 9)"
         />
       ) : null}
-      {live ? (
-        <circle
-          className="app-sidebar-ring-spin"
-          cx="9"
-          cy="9"
-          r={RING_R}
-          fill="none"
-          stroke={color}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeDasharray={`${RING_C * 0.12} ${RING_C}`}
-          opacity="0.55"
-        />
-      ) : null}
+      {live ? <circle className="app-sidebar-ring-live" cx="9" cy="9" r="2.2" fill={color} /> : null}
     </svg>
   );
 }
