@@ -157,7 +157,7 @@ interface UiState {
    */
   branchTriageBranch: string;
   /**
-   * Bumped by the global topbar "New chat" action so BaxterChatPage can clear
+   * Bumped by the chat page's "New chat" control so BaxterChatPage can clear
    * its local thread without owning the chrome.
    */
   baxterChatResetNonce: number;

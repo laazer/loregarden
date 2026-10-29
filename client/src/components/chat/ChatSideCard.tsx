@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type {
   ChatBranch,
   ChatFocus,
@@ -56,6 +58,7 @@ export function ChatSideCard({
   onJumpTo,
   onOpenGallery,
   onCollapse,
+  controls,
   workbench,
 }: {
   /** A narrow window: the workbench covers the thread, so Escape and the scrim close it. */
@@ -68,6 +71,8 @@ export function ChatSideCard({
   onJumpTo: (messageId: string) => void;
   onOpenGallery: () => void;
   onCollapse: () => void;
+  /** History, New chat and the toggle that hides this card (ChatPanelControls). */
+  controls: ReactNode;
   workbench: ChatWorkbenchState;
 }) {
   useDialogDismiss(overlay ? onCollapse : null);
@@ -94,17 +99,7 @@ export function ChatSideCard({
       <aside className="chat-side-card" aria-label="Workbench">
         <header className="chat-side-card-head">
           <h2>Workbench</h2>
-          <Button
-            variant="plain"
-            className="chat-side-card-icon-btn"
-            aria-label="Hide the workbench"
-            title="Hide the workbench"
-            onClick={onCollapse}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-          </Button>
+          {controls}
         </header>
 
         <ScopeCard
