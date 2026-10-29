@@ -479,11 +479,16 @@
 
 .ticket-part-body {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ticket-part-name {
   display: block;
+  max-width: 100%;
   padding: 0;
+  /* A title can hold one long identifier (ci_service._reachable_branches) that
+     no space breaks; let it break anywhere rather than run under the chip. */
+  overflow-wrap: anywhere;
   color: var(--tx);
   /* set, not inherited: the column inherits the body's 16px */
   font-size: var(--fs-body);
