@@ -93,6 +93,13 @@ export interface CalendarEventView {
   description: string | null;
 }
 
+/** The orchestrator split a ticket into parts: at which stage, when, and the limits it was over. */
+export interface TicketSplit {
+  stage_key: string;
+  split_at: string;
+  over_limits: string[];
+}
+
 export interface TicketTreeNode {
   id: string;
   external_id: string;
@@ -104,6 +111,8 @@ export interface TicketTreeNode {
   workflow_stage_name: string;
   workflow_stage_status: StageStatus;
   child_count: number;
+  /** The orchestrator split it into parts; its children are those parts. */
+  was_split?: boolean;
   /** What it waits for, derived server-side; absent or null when it is not stuck. */
   blocked_on?: BlockedOn | null;
   /** Its unfinished prerequisites — the waits the tree cannot draw. */
@@ -187,6 +196,8 @@ export interface TicketDetail extends TicketSummary {
   /** What applies after inheritance, and where it came from. */
   resolved_compatibility_posture?: string;
   compatibility_posture_source?: string;
+  /** Set when the orchestrator split this ticket into parts. */
+  split?: TicketSplit | null;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;

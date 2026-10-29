@@ -243,6 +243,22 @@
   text-decoration: none;
 }
 
+/* A split ticket's progress, or which part a row is, after its title. */
+.wi-parts {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--ac) 40%, transparent);
+  border-radius: 4px;
+  color: var(--ac2);
+  font: var(--fs-micro) var(--mono);
+  white-space: nowrap;
+}
+
+.wi-parts--of {
+  border-color: var(--bd2);
+  color: var(--txl);
+}
+
 .wi-parent {
   color: var(--txm);
   text-decoration: none;

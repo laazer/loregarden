@@ -276,6 +276,8 @@ class TicketTreeNode(SQLModel):
     workflow_stage_name: str = ""
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
+    #: The orchestrator split it into parts (`ticket_split_view`); its children are those parts.
+    was_split: bool = False
     #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
     blocked_on: BlockedOn | None = None
     #: Its unfinished prerequisites — the waits the tree cannot draw.
@@ -322,6 +324,16 @@ class TicketRelationRequest(SQLModel):
     related_to: str
 
 
+class TicketSplit(SQLModel):
+    """The orchestrator split this ticket into parts, before its own stages could run on."""
+
+    stage_key: str
+    split_at: datetime
+    #: Each limit the ticket is over, as a phrase ("23,749-character description,
+    #: over the 15,000 limit"). Empty when it has since been edited under both.
+    over_limits: list[str] = Field(default_factory=list)
+
+
 class TicketDetail(TicketSummary):
     #: Set only on the responses that start work. When the slot pool is full the
     #: request is queued rather than started, and the caller has to be able to
@@ -357,6 +369,9 @@ class TicketDetail(TicketSummary):
     #: an inherited value is meaningless to the operator without its origin.
     resolved_compatibility_posture: str = ""
     compatibility_posture_source: str = ""
+    #: Set when the orchestrator split this ticket into parts; None otherwise,
+    #: including for a ticket given sub-items by hand.
+    split: TicketSplit | None = None
 
 
 class WorkspaceSummary(SQLModel):

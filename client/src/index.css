@@ -3261,6 +3261,18 @@ button.send-leaf:hover:not(:disabled) {
   flex-shrink: 0;
 }
 
+/* A split ticket's row says how far its parts are; a part's row says which it is. */
+.tree-parts-tag {
+  flex-shrink: 0;
+  color: var(--ac2);
+  border-color: color-mix(in srgb, var(--ac) 40%, transparent);
+}
+
+.tree-part-of {
+  flex-shrink: 0;
+  color: var(--txl);
+}
+
 .tree-row-trail {
   display: flex;
   align-items: center;

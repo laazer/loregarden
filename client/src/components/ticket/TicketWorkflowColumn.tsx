@@ -1,9 +1,11 @@
 import type { TicketDetail, TicketTreeNode, WorkItemType } from "../../api/client";
 import type { TicketWork } from "../../hooks/useTicketWork";
+import { hasParts } from "../../lib/ticketParts";
 import { canHaveChildren } from "../../lib/workItemHierarchy";
 import { ChildTicketsList } from "../dashboard/ChildTicketsList";
 import { SubtreeAutopilotCard } from "../SubtreeAutopilotCard";
 import { TicketLinksCard } from "./TicketLinksCard";
+import { TicketPartsList } from "./TicketPartsList";
 import { TicketWorkflowCard } from "./TicketWorkflowCard";
 
 type SubTicketParent = { id: string; title: string; work_item_type: WorkItemType; workspace_slug?: string };
@@ -18,8 +20,9 @@ interface TicketWorkflowColumnProps {
 }
 
 /**
- * The ticket page's left column: a parent's children and their autopilot, or a
- * leaf ticket's Workflow card; then, for both, the tickets it is linked to.
+ * The ticket page's left column: a split ticket's parts, a parent's children
+ * and their autopilot, or a leaf ticket's Workflow card; then, for all of them,
+ * the tickets it is linked to.
  */
 export function TicketWorkflowColumn({
   ticket,
@@ -29,6 +32,25 @@ export function TicketWorkflowColumn({
   onToggleChild,
   onAddChild,
 }: TicketWorkflowColumnProps) {
+  if (hasParts(ticket) && work.children.length > 0) {
+    // A split ticket's parts lead: they are what it became, and where its work now runs.
+    return (
+      <div>
+        <TicketPartsList
+          heading={ticket.split ? "Parts" : "Sub-items"}
+          parts={work.children}
+          onOpenTicket={onOpenTicket}
+        />
+        {ticket.work_item_type !== "initiative" ? (
+          <SubtreeAutopilotCard ticketId={ticket.id} workItemType={ticket.work_item_type} onOpenTicket={onOpenTicket} />
+        ) : null}
+        <div className="ticket-workflow-cards ticket-workflow-cards--below">
+          <TicketLinksCard ticket={ticket} />
+        </div>
+      </div>
+    );
+  }
+
   if (ticket.child_count > 0 || work.children.length > 0) {
     return (
       <div>

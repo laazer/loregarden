@@ -13,6 +13,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prerequisite
 from loregarden.services.ticket_ids import respell_external_id
+from loregarden.services.ticket_split_view import split_ticket_ids
 from sqlmodel import Session, col, select
 
 
@@ -79,6 +80,7 @@ def build_tree(
     blocked_on = blocked_on or {}
     waiting_on = waiting_on or {}
     by_id = {t.id: t for t in tickets}
+    split_ids = split_ticket_ids(session, [t.id for t in tickets])
     workspace_slugs: dict[str | None, str] = {None: ""}
     for ticket in tickets:
         wid = ticket.workspace_id
@@ -117,6 +119,7 @@ def build_tree(
             workflow_stage_status=ticket.workflow_stage_status,
             blocked_on=blocked_on.get(ticket.id),
             waiting_on=waiting_on.get(ticket.id, []),
+            was_split=ticket.id in split_ids,
         )
 
     def member_node(ticket: Ticket) -> TicketTreeNode:
