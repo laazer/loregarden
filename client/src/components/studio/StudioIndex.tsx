@@ -26,10 +26,13 @@ export function SortableHead<K extends string>({
   columns,
   sort,
   onSort,
+  trailing,
 }: {
   columns: IndexColumn<K>[];
   sort: { key: K; dir: SortDirection };
   onSort: (column: IndexColumn<K>) => void;
+  /** Names an unsorted last column (a row's ⋯ menu) for screen readers only. */
+  trailing?: string;
 }) {
   return (
     <thead>
@@ -49,6 +52,11 @@ export function SortableHead<K extends string>({
             </Button>
           </th>
         ))}
+        {trailing ? (
+          <th scope="col">
+            <span className="studio-index-sr-only">{trailing}</span>
+          </th>
+        ) : null}
       </tr>
     </thead>
   );

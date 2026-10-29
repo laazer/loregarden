@@ -35,8 +35,8 @@ jest.mock("../../api/localInstancesApi", () => ({
     ],
   },
 }));
-// The cards' own contents are not under test; the tab's archive mutation is.
-jest.mock("../instances/WorkspaceSetupCard", () => ({ WorkspaceSetupCard: () => null }));
+// The table's own contents are not under test; the tab's archive mutation is.
+jest.mock("../workspaces/WorkspacesTable", () => ({ WorkspacesTable: () => null }));
 jest.mock("../workspaces/AddWorkspaceFlow", () => ({ AddWorkspaceFlow: () => null }));
 
 const summary = (slug: string, archived = false) => ({

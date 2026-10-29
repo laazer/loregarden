@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -35,6 +36,13 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
+from loregarden.models.domain.enums import utcnow
+from loregarden.services.change_pr import (
+    WORKTREE_PLACEHOLDER,
+    ChangeRequest,
+    ChangeResult,
+    open_change_pr,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 
@@ -131,8 +139,11 @@ def is_loregarden(workspace: Workspace, checkout: Path) -> bool:
     return result.returncode == 0 and Path(result.stdout.strip()).resolve().parent == checkout
 
 
-def _argv(installer: Installer, workspace: Workspace, *, check: bool) -> list[str]:
-    """The installer from the checkout this server runs from.
+def _argv(
+    installer: Installer, workspace: Workspace, *, check: bool, target: str | None = None
+) -> list[str]:
+    """The installer from the checkout this server runs from, aimed at the
+    workspace's root, or at ``target`` (a pull request's throwaway worktree).
 
     Not the primary checkout's copy: the scripts resolve the primary themselves
     for the paths they render, and running main's scripts from a worktree meant
@@ -143,7 +154,7 @@ def _argv(installer: Installer, workspace: Workspace, *, check: bool) -> list[st
         argv.append("--check")
     if installer is Installer.DOCS:
         argv += ["--slug", workspace.slug]
-    argv.append(str(resolve_workspace_root(workspace)))
+    argv.append(target or str(resolve_workspace_root(workspace)))
     return argv
 
 
@@ -219,3 +230,50 @@ def install(workspace: Workspace, installer: Installer) -> InstallerStatus:
     if result.state in (InstallState.UNAVAILABLE, InstallState.BUILT_IN):
         raise InstallerError(result.detail)
     return installer_status(workspace, installer)
+
+
+#: What each installer's pull request says it is. The body is the commit body too.
+_PR_COPY: dict[Installer, tuple[str, str]] = {
+    Installer.HOOKS: (
+        "chore: refresh loregarden's managed hook block",
+        "Written by loregarden's scripts/install-workspace-hooks.sh. The block runs "
+        ".lefthook/scripts/workspace-gates.sh from loregarden, which holds the gate list.",
+    ),
+    Installer.DOCS: (
+        "docs: refresh loregarden's section of AGENTS.md",
+        "Written by loregarden's scripts/install-workspace-docs.sh. It tells this repo's "
+        "agents that their tickets live in loregarden's database, and which tools reach them.",
+    ),
+}
+
+
+def pull_request(
+    workspace: Workspace, installer: Installer, *, gh_token: str | None
+) -> ChangeResult:
+    """Write or refresh the block as a pull request, never in the workspace's checkout.
+
+    `change_pr` cuts a throwaway worktree from the remote's default branch, runs
+    the installer there, then commits, pushes and opens the PR. Pushing runs
+    that repository's own hooks, so this can take minutes. Refuses only where
+    nothing can be installed (loregarden itself, or no repository). "Already
+    current" is not checked here: the check reads the workspace's checkout and
+    the PR is cut from the default branch, which can differ, so an unchanged
+    tree is `change_pr`'s NO_CHANGE answer instead.
+    """
+    found = installer_status(workspace, installer)
+    if found.state in (InstallState.UNAVAILABLE, InstallState.BUILT_IN):
+        raise InstallerError(found.detail)
+    title, body = _PR_COPY[installer]
+    # The suffix keeps two requests in one second (a double click, two tabs)
+    # from naming the same branch, which `change_pr` refuses.
+    stamp = f"{utcnow().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
+    return open_change_pr(
+        ChangeRequest(
+            repo=resolve_workspace_root(workspace),
+            branch=f"loregarden/refresh-{installer.value}-{stamp}",
+            title=title,
+            body=body,
+            command=_argv(installer, workspace, check=False, target=WORKTREE_PLACEHOLDER),
+        ),
+        gh_token=gh_token,
+    )

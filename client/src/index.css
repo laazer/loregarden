@@ -593,18 +593,7 @@ textarea::placeholder {
 @media (max-width: 1100px) {
   .topbar-workspace-picker-label {
     display: none;
-  }
-
-  /* Icon-only; each keeps its name in `aria-label`. */
-  .topbar-action-btn--collapsible .topbar-action-label {
-    display: none;
-  }
-}
-
-/* The chat's picker holds its width; it has nothing to give back. */
-.topbar-workspace-picker--fixed {
-  flex: none;
-}
+  }}
 
 .topbar-workspace-picker-select.btn-secondary {
   height: 30px;
@@ -703,21 +692,9 @@ textarea::placeholder {
     border-left: none;
   }
 
-  /* Icon-only buttons go square. */
-  .topbar-action-btn--collapsible.btn-secondary {
-    padding: 0 9px;
-  }
-
   /* With search on the row, it is what fills the space — not the spacer. */
   .app-topbar:has(.topbar-search) .topbar-spacer {
     display: none;
-  }
-
-  /* The picker is the one control here that can give width back: it shrinks
-     (truncating the name) before anything is pushed off the edge. */
-  .topbar-workspace-picker--fixed {
-    flex: 0 1 130px;
-    min-width: 72px;
   }
 
   .topbar-workspace-picker-select.btn-secondary {

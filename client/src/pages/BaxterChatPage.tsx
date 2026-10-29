@@ -5,6 +5,7 @@ import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
+import { ChatPanelControls } from "../components/chat/ChatPanelControls";
 import { ChatPromptRow } from "../components/chat/ChatPromptRow";
 import { ChatScopeNote } from "../components/chat/ChatScopeNote";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
@@ -286,6 +287,8 @@ export function BaxterChatPage() {
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
   const initialFilesRef = useRef(takeHomeBaxterFiles());
   const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
+  const requestChatReset = useUiStore((s) => s.requestBaxterChatReset);
+  const toggleHistory = useUiStore((s) => s.toggleBaxterHistory);
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
@@ -541,6 +544,16 @@ export function BaxterChatPage() {
     setOpen: setWorkbenchOpen,
   } = useChatWorkbench();
 
+  const panelControls = (
+    <ChatPanelControls
+      workbenchOpen={workbenchOpen}
+      historyOpen={historyOpen}
+      onToggleWorkbench={() => setWorkbenchOpen(!workbenchOpen)}
+      onToggleHistory={toggleHistory}
+      onNewChat={requestChatReset}
+    />
+  );
+
   const jumpToMessage = useCallback((messageId: string) => showChatMessage(messageId), []);
 
   const composerMenu = (
@@ -692,6 +705,7 @@ export function BaxterChatPage() {
           </>
         )}
       </div>
+      {workbenchOpen ? null : <div className="baxter-chat-panel-controls">{panelControls}</div>}
       {workbenchOpen ? (
         <ChatSideCard
           overlay={workbenchOverlays}
@@ -702,6 +716,7 @@ export function BaxterChatPage() {
           onJumpTo={jumpToMessage}
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
+          controls={panelControls}
           workbench={workbench}
         />
       ) : null}
