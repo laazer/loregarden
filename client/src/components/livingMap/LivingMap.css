@@ -165,10 +165,35 @@
   opacity: 0.8;
 }
 
+/* Opens just under its row, over the rows below it, so it is read where it was
+   clicked and no row moves. Left of it the vine stays visible (node 14px +
+   gap 8px); right of it, the tendril gutter. */
 .living-map-detail {
-  padding: 8px 2px 0;
-  border-top: 1px solid var(--bd);
+  position: absolute;
+  left: 22px;
+  right: 16px;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 60%, transparent);
   font-size: var(--fs-small);
+}
+
+.living-map-detail-close {
+  margin-top: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+/* A run repeated back to back, folded into its first row. */
+.living-map-times {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
 }
 
 .living-map-detail dl {

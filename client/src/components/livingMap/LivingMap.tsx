@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useId, useMemo, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { livingMapApi, type MapItem, type MapScope } from "../../api/livingMapApi";
 import {
   LENSES,
   MAP_ROW_PX,
+  chipTopicId,
+  foldRuns,
   inLens,
   itemMark,
   lensCounts,
@@ -76,8 +78,20 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
   const counts = useMemo(() => lensCounts(items), [items]);
   const topics = useMemo(() => new Map(items.filter((i) => i.kind === "topic").map((i) => [i.id, i])), [items]);
   const needle = filter.trim().toLowerCase();
-  const rows = items.filter((item) => inLens(item, lens) && (!needle || item.title.toLowerCase().includes(needle)));
-  const selected = items.find((item) => item.id === selectedId) ?? null;
+  const shown = items.filter((item) => inLens(item, lens) && (!needle || item.title.toLowerCase().includes(needle)));
+  const rows = foldRuns(shown);
+  const selectedIndex = rows.findIndex((row) => row.item.id === selectedId);
+  const selected = selectedIndex >= 0 ? rows[selectedIndex] : null;
+  const rowButtons = useRef(new Map<string, HTMLButtonElement>());
+  // The details sit over the rows below their row; near the tip they would hang
+  // past the vine, so the vine grows to hold them.
+  const [detailHeight, setDetailHeight] = useState(0);
+  const detailRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => setDetailHeight(detailRef.current?.offsetHeight ?? 0), [selectedId, map.data]);
+  const vineHeight = Math.max(
+    rows.length * MAP_ROW_PX,
+    selected ? (selectedIndex + 1) * MAP_ROW_PX + detailHeight : 0,
+  );
 
   if (map.isLoading) return <PaneSkeleton variant="list" label="Reading this map…" />;
   if (map.error) {
@@ -92,13 +106,21 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
   }
 
   const problems = (map.data?.sources ?? []).filter((source) => !source.ok);
-  const topicRow = topicId ? rows.findIndex((row) => row.id === topicId) : -1;
+  const topicRow = topicId ? rows.findIndex((row) => row.item.id === topicId) : -1;
   const memberRows = topicId
-    ? rows.flatMap((row, index) => (row.topic_id === topicId ? [index] : []))
+    ? rows.flatMap((row, index) => (row.item.topic_id === topicId ? [index] : []))
     : [];
 
+  // Escape closes the open details and hands focus back to the row they belong to.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || !selectedId) return;
+    event.stopPropagation();
+    rowButtons.current.get(selectedId)?.focus();
+    setSelectedId(null);
+  };
+
   return (
-    <section className="living-map" aria-label={`Living map: ${map.data?.title ?? ""}`}>
+    <section className="living-map" aria-label={`Living map: ${map.data?.title ?? ""}`} onKeyDown={onKeyDown}>
       {items.length === 0 ? (
         <p className="living-map-empty">{EMPTY_TEXT[scope]}</p>
       ) : (
@@ -139,32 +161,48 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
               {needle ? `Nothing here matches “${filter}”.` : `Nothing here: ${LENSES.find((l) => l.key === lens)?.question.toLowerCase()}.`}
             </p>
           ) : (
-            <div className="living-map-vine" style={{ height: rows.length * MAP_ROW_PX }}>
-              <ol className="living-map-rows" aria-label={`${rows.length} of ${items.length} items, in the order they happened`}>
-                {rows.map((item, index) => {
-                  const topic = item.topic_id ? topics.get(item.topic_id) : undefined;
+            <div className="living-map-vine" style={{ height: vineHeight }}>
+              <ol
+                className="living-map-rows"
+                aria-label={`${shown.length} of ${items.length} items${rows.length < shown.length ? ` in ${rows.length} rows` : ""}, in the order they happened`}
+              >
+                {rows.map(({ item, members }, index) => {
+                  const chip = chipTopicId(rows, index);
+                  const topic = chip ? topics.get(chip) : undefined;
                   const dim = topicId !== null && item.id !== topicId && item.topic_id !== topicId;
+                  const open = item.id === selectedId;
                   return (
                     <li
                       key={item.id}
-                      className={`living-map-row is-${item.state}${dim ? " is-dim" : ""}${item.id === selectedId ? " is-selected" : ""}`}
+                      className={`living-map-row is-${item.state}${dim ? " is-dim" : ""}${open ? " is-selected" : ""}`}
                       style={{ height: MAP_ROW_PX }}
                     >
                       <VineNode index={item.seq} mark={itemMark(item)} last={index === rows.length - 1} />
                       <Button
+                        ref={(node: HTMLButtonElement | null) => {
+                          if (node) rowButtons.current.set(item.id, node);
+                          else rowButtons.current.delete(item.id);
+                        }}
                         variant="plain"
                         className={`living-map-title${item.kind === "topic" ? " is-topic" : ""}`}
-                        aria-expanded={item.id === selectedId}
-                        aria-controls={item.id === selectedId ? detailId : undefined}
+                        aria-expanded={open}
+                        aria-controls={open ? detailId : undefined}
                         title={item.title}
                         onClick={() => {
-                          setSelectedId(item.id === selectedId ? null : item.id);
+                          setSelectedId(open ? null : item.id);
                           if (item.kind === "topic") setTopicId(item.id === topicId ? null : item.id);
                         }}
                       >
-                        <span className="living-map-sr">{`${KIND_LABEL[item.kind]}, ${STATE_LABEL[item.state]}: `}</span>
+                        <span className="living-map-sr">
+                          {`${KIND_LABEL[item.kind]}, ${STATE_LABEL[item.state]}${members.length > 1 ? `, ${members.length} times` : ""}: `}
+                        </span>
                         {item.title}
                       </Button>
+                      {members.length > 1 ? (
+                        <span className="living-map-times" aria-hidden>
+                          ×{members.length}
+                        </span>
+                      ) : null}
                       {topic ? (
                         <Button
                           variant="plain"
@@ -176,7 +214,7 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
                           {topic.title}
                         </Button>
                       ) : null}
-                      <span className="living-map-age">{formatRelativeAge(item.happened_at)}</span>
+                      <span className="living-map-age">{formatRelativeAge(members.at(-1)?.happened_at ?? item.happened_at)}</span>
                     </li>
                   );
                 })}
@@ -191,30 +229,54 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
                   <path d={tendrilPath(topicRow, memberRows, GUTTER_PX - 2)} />
                 </svg>
               ) : null}
-            </div>
-          )}
-
-          {selected ? (
-            <div id={detailId} className="living-map-detail">
-              <dl>
-                <dt>What</dt>
-                <dd>
-                  {KIND_LABEL[selected.kind]} · {STATE_LABEL[selected.state]}
-                </dd>
-                <dt>When</dt>
-                <dd>{new Date(selected.happened_at).toLocaleString()}</dd>
-                {selected.topic_id && topics.get(selected.topic_id) ? (
-                  <>
-                    <dt>Topic</dt>
-                    <dd>{topics.get(selected.topic_id)?.title}</dd>
-                  </>
-                ) : null}
-              </dl>
-              {selected.detail && selected.detail !== selected.title ? (
-                <p className="living-map-detail-text">{selected.detail}</p>
+              {selected ? (
+                // Under the row it belongs to, over the rows below: the rows
+                // keep their places, so the tendrils and positions stay true.
+                <div
+                  key={selected.item.id}
+                  ref={detailRef}
+                  id={detailId}
+                  className="living-map-detail"
+                  role="region"
+                  aria-label={`Details: ${selected.item.title}`}
+                  style={{ top: (selectedIndex + 1) * MAP_ROW_PX }}
+                >
+                  <dl>
+                    <dt>What</dt>
+                    <dd>
+                      {KIND_LABEL[selected.item.kind]} · {STATE_LABEL[selected.item.state]}
+                      {selected.members.length > 1 ? ` · ${selected.members.length} times` : ""}
+                    </dd>
+                    <dt>When</dt>
+                    <dd>
+                      {selected.members.length > 1
+                        ? `${new Date(selected.item.happened_at).toLocaleString()} to ${new Date(selected.members.at(-1)!.happened_at).toLocaleString()}`
+                        : new Date(selected.item.happened_at).toLocaleString()}
+                    </dd>
+                    {selected.item.topic_id && topics.get(selected.item.topic_id) ? (
+                      <>
+                        <dt>Topic</dt>
+                        <dd>{topics.get(selected.item.topic_id)?.title}</dd>
+                      </>
+                    ) : null}
+                  </dl>
+                  {selected.item.detail && selected.item.detail !== selected.item.title ? (
+                    <p className="living-map-detail-text">{selected.item.detail}</p>
+                  ) : null}
+                  <Button
+                    variant="plain"
+                    className="living-map-detail-close"
+                    onClick={() => {
+                      rowButtons.current.get(selected.item.id)?.focus();
+                      setSelectedId(null);
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
               ) : null}
             </div>
-          ) : null}
+          )}
         </>
       )}
 

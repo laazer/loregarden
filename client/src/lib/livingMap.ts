@@ -80,3 +80,52 @@ export function tendrilPath(topicRow: number, memberRows: readonly number[], gut
     .join(" ");
   return `${spine} ${curls}`;
 }
+
+/**
+ * One drawn row: an item, or a run of identical runs folded into one.
+ *
+ * A ticket's runs repeat: the same agent on the same stage, settling the same
+ * way, a dozen times over a rework loop. Consecutive repeats fold into the
+ * first one's row with a count, so the row stays where the first one was and
+ * a later repeat raises the count rather than adding a row (still
+ * append-stable). A repeat that ended differently (one failed among
+ * successes) is not folded: that difference is the news.
+ */
+export interface MapRow {
+  item: MapItem;
+  /** Every item the row stands for, oldest first; one for an unfolded row. */
+  members: MapItem[];
+}
+
+const foldsInto = (row: MapRow, item: MapItem) =>
+  item.kind === "change" &&
+  row.item.kind === "change" &&
+  item.title === row.item.title &&
+  item.state === row.item.state &&
+  item.topic_id === row.item.topic_id;
+
+export function foldRuns(items: readonly MapItem[]): MapRow[] {
+  const rows: MapRow[] = [];
+  for (const item of items) {
+    const last = rows.at(-1);
+    if (last && foldsInto(last, item)) last.members.push(item);
+    else rows.push({ item, members: [item] });
+  }
+  return rows;
+}
+
+/**
+ * The topic a row's chip should name, or null when the chip would only repeat
+ * the topic heading the row already sits under (the nearest topic row above
+ * it). The chip earns its place where an item's topic is not the one it is
+ * drawn beneath: interleaved stages, or a lens that hid the heading.
+ */
+export function chipTopicId(rows: readonly MapRow[], index: number): string | null {
+  const topicId = rows[index].item.topic_id;
+  if (!topicId) return null;
+  for (let above = index - 1; above >= 0; above -= 1) {
+    const row = rows[above].item;
+    if (row.kind === "topic") return row.id === topicId ? null : topicId;
+  }
+  return topicId;
+}

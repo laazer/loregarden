@@ -83,13 +83,72 @@ describe("LivingMap", () => {
     await screen.findByRole("list");
     const before = rowTitles();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Release checklist" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^Topic.*Release checklist/ }));
 
     expect(rowTitles()).toEqual(before);
     expect(container.querySelector(".living-map-tendril path")?.getAttribute("d")).toBeTruthy();
     const rows = [...container.querySelectorAll(".living-map-row")];
     expect(rows.map((row) => row.classList.contains("is-dim"))).toEqual([false, false, false, true]);
-    expect(screen.getAllByRole("button", { name: "Release checklist", pressed: true }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /Release checklist/, expanded: true })).toBeInTheDocument();
+  });
+
+  it("shows a topic chip only where the heading above is a different topic", async () => {
+    mockGet.mockResolvedValue(
+      map([
+        ...ITEMS.slice(0, 3),
+        item({ id: "t2", seq: 4, kind: "topic", title: "Launch post" }),
+        item({ id: "k2", seq: 5, kind: "task", title: "Tag the release", topic_id: "t1" }),
+      ]),
+    );
+    const { container } = renderMap();
+    await screen.findByRole("list");
+
+    const chips = [...container.querySelectorAll(".living-map-row")].map(
+      (row) => row.querySelector(".living-map-topic")?.textContent ?? null,
+    );
+    expect(chips).toEqual([null, null, null, null, "Release checklist"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Release checklist", pressed: false }));
+    expect(screen.getByRole("button", { name: "Release checklist", pressed: true })).toBeInTheDocument();
+    expect(container.querySelector(".living-map-tendril path")?.getAttribute("d")).toBeTruthy();
+  });
+
+  it("folds back-to-back identical runs into one row that counts them", async () => {
+    const run = (id: string, seq: number, state: MapItem["state"], at: string) =>
+      item({ id, seq, kind: "change", state, title: "scheduler ran classify", happened_at: at });
+    mockGet.mockResolvedValue(
+      map([
+        run("r1", 1, "failed", "2026-10-27T10:00:00Z"),
+        run("r2", 2, "failed", "2026-10-27T10:05:00Z"),
+        run("r3", 3, "failed", "2026-10-27T10:10:00Z"),
+        run("r4", 4, "settled", "2026-10-27T10:15:00Z"),
+      ]),
+    );
+    renderMap();
+
+    const list = await screen.findByRole("list", { name: "4 of 4 items in 2 rows, in the order they happened" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    const folded = screen.getByRole("button", { name: "Run, Failed, 3 times: scheduler ran classify" });
+    expect(list.querySelector(".living-map-times")).toHaveTextContent("×3");
+
+    fireEvent.click(folded);
+    expect(screen.getByRole("region", { name: "Details: scheduler ran classify" })).toHaveTextContent("3 times");
+  });
+
+  it("opens details just under the clicked row, and Escape hands focus back to it", async () => {
+    mockGet.mockResolvedValue(map());
+    renderMap();
+
+    const row = await screen.findByRole("button", { name: /Cut the branch/ });
+    fireEvent.click(row);
+    const detail = screen.getByRole("region", { name: "Details: Cut the branch" });
+    expect(detail.style.top).toBe("96px");
+    expect(row).toHaveAttribute("aria-controls", detail.id);
+
+    fireEvent.keyDown(detail, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: /Details/ })).not.toBeInTheDocument();
+    expect(row).toHaveFocus();
+    expect(row).toHaveAttribute("aria-expanded", "false");
   });
 
   it("grows at the tip: a new item leaves every row above it where it was", async () => {

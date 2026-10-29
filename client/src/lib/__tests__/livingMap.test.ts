@@ -1,5 +1,5 @@
 import type { MapItem } from "../../api/livingMapApi";
-import { MAP_ROW_PX, inLens, itemMark, lensCounts, tendrilPath } from "../livingMap";
+import { MAP_ROW_PX, chipTopicId, foldRuns, inLens, itemMark, lensCounts, tendrilPath } from "../livingMap";
 
 function item(overrides: Partial<MapItem>): MapItem {
   return {
@@ -66,5 +66,45 @@ describe("tendrilPath", () => {
 
   it("draws nothing for a topic with no rows showing", () => {
     expect(tendrilPath(3, [], 12)).toBe("");
+  });
+});
+
+describe("foldRuns", () => {
+  const run = (id: string, overrides: Partial<MapItem> = {}) =>
+    item({ id, kind: "change", state: "failed", title: "scheduler ran classify", topic_id: "t", ...overrides });
+
+  it("folds back-to-back identical runs into the first one's row", () => {
+    const rows = foldRuns([run("a"), run("b"), run("c")]);
+    expect(rows.map((row) => [row.item.id, row.members.map((m) => m.id)])).toEqual([["a", ["a", "b", "c"]]]);
+  });
+
+  it("keeps apart runs that ended differently, sit under another topic, or are not back to back", () => {
+    const rows = foldRuns([
+      run("a"),
+      run("b", { state: "settled" }),
+      run("c", { state: "settled", topic_id: "u" }),
+      item({ id: "q" }),
+      run("d", { state: "settled", topic_id: "u" }),
+    ]);
+    expect(rows.map((row) => row.item.id)).toEqual(["a", "b", "c", "q", "d"]);
+  });
+
+  it("never folds what is not a run", () => {
+    expect(foldRuns([item({ id: "a" }), item({ id: "b" })])).toHaveLength(2);
+  });
+});
+
+describe("chipTopicId", () => {
+  const rows = foldRuns([
+    item({ id: "k0", topic_id: "t1" }),
+    item({ id: "t1", kind: "topic" }),
+    item({ id: "k1", topic_id: "t1" }),
+    item({ id: "t2", kind: "topic" }),
+    item({ id: "k2", topic_id: "t1" }),
+    item({ id: "k3" }),
+  ]);
+
+  it("names the topic only where the nearest heading above is not it", () => {
+    expect(rows.map((_, index) => chipTopicId(rows, index))).toEqual(["t1", null, null, null, "t1", null]);
   });
 });
