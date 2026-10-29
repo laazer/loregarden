@@ -737,7 +737,7 @@ describe("BaxterChatPage", () => {
     });
   });
 
-  it("starts a new chat when the global topbar reset fires", async () => {
+  it("starts a new chat when the chat reset is requested", async () => {
     await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
@@ -1003,6 +1003,44 @@ describe("BaxterChatPage", () => {
 
     await showWorkbenchFromComposer();
     expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+  });
+
+  it("keeps History and New chat beside the toggle that hides and shows the workbench", async () => {
+    await renderChatReady();
+    const inWorkbench = within(screen.getByRole("complementary", { name: "Workbench" }));
+    const hide = inWorkbench.getByRole("button", { name: "Hide the workbench" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    expect(inWorkbench.getByRole("button", { name: "History" })).toBeInTheDocument();
+    expect(inWorkbench.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+
+    fireEvent.click(hide);
+    expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+    const controls = within(screen.getByRole("group", { name: "Chat panels" }));
+    const history = controls.getByRole("button", { name: "History" });
+    expect(controls.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    fireEvent.click(history);
+    expect(useUiStore.getState().baxterHistoryOpen).toBe(true);
+    expect(history).toHaveAttribute("aria-pressed", "true");
+
+    const show = controls.getByRole("button", { name: "Show the workbench" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(show);
+    expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+  });
+
+  it("starts a new chat from the New chat control", async () => {
+    await renderChatReady();
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("What should we ship today?")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Hello")).not.toBeInTheDocument();
   });
 
   it("starts a narrow window without the workbench, which covers the thread there", async () => {
