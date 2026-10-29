@@ -12,6 +12,7 @@ from loregarden.models.domain import (
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
+from loregarden.services.agent_run_stats import AgentRunStats, agent_run_stats
 from loregarden.services.exit_actions import requirement_catalog
 from loregarden.services.studio_drift import (
     StageRemovalNeedsConfirmation,
@@ -68,6 +69,13 @@ def generate_studio_agent(
 @router.get("/agents")
 def list_studio_agents(session: Session = Depends(get_session)) -> list[dict]:
     return [item.model_dump() for item in StudioService(session).list_agents()]
+
+
+@router.get("/agent-run-stats")
+def list_agent_run_stats(session: Session = Depends(get_session)) -> list[AgentRunStats]:
+    """Runs and failures per agent id, for Agent Studio's index. Its own path
+    rather than `/agents/run-stats`, which `/agents/{slug}` would also match."""
+    return agent_run_stats(session)
 
 
 @router.get("/agents/{slug}")

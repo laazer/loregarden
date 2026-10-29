@@ -1,0 +1,46 @@
+/* Agent Studio → New agent…: the create dialog. */
+
+.new-agent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.new-agent-describe {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.new-agent-describe .new-agent-field {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.new-agent-field {
+  margin-top: 4px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.new-agent-slug {
+  font-family: var(--mono);
+}
+
+.new-agent-note {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.new-agent-error {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--rdl);
+}
