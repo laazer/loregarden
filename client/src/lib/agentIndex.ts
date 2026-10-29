@@ -48,8 +48,19 @@ export function agentIndexRows(
   });
 }
 
+/** Whole percent, as the table prints it. */
+export function ratePercent(rate: number): number {
+  return Math.round(rate * 100);
+}
+
+/**
+ * Compared on the printed percent, not the raw ratio: 44 of 301 is 14.6% and
+ * prints as "15%", and a "15%" left unflagged under a 15% rule reads as a bug.
+ */
 export function isFailureAlert(row: AgentIndexRow): boolean {
-  return row.rateReliable && row.rate !== null && row.rate >= FAILURE_RATE_ALERT;
+  return (
+    row.rateReliable && row.rate !== null && ratePercent(row.rate) >= ratePercent(FAILURE_RATE_ALERT)
+  );
 }
 
 /** The rate as ranked: unreliable and missing rates sort below every reliable one. */

@@ -35,10 +35,11 @@ describe("agentIndex", () => {
 
   it("alerts at 15% on enough runs, and never on a thin sample", () => {
     const rows = agentIndexRows(
-      [agent("a"), agent("b"), agent("c")],
-      [stat("a", 100, 15), stat("b", 100, 14), stat("c", 9, 9)],
+      [agent("a"), agent("b"), agent("c"), agent("d")],
+      [stat("a", 100, 15), stat("b", 100, 14), stat("c", 9, 9), stat("d", 301, 44)],
     );
-    expect(rows.map(isFailureAlert)).toEqual([true, false, false]);
+    // d is 14.6%, printed as 15%, so it is flagged like a.
+    expect(rows.map(isFailureAlert)).toEqual([true, false, false, true]);
   });
 
   it("sorts by name, and breaks ties by runs", () => {

@@ -17,6 +17,7 @@ import {
   agentIndexRows,
   isFailureAlert,
   matchesAgentFilter,
+  ratePercent,
   sortAgentRows,
   type AgentIndexRow,
   type AgentSortKey,
@@ -63,7 +64,7 @@ interface Props {
 
 function RateCell({ row }: { row: AgentIndexRow }) {
   if (row.rate === null) return <span className="agent-index-muted">—</span>;
-  const percent = Math.round(row.rate * 100);
+  const percent = ratePercent(row.rate);
   const alert = isFailureAlert(row);
   return (
     <span
