@@ -10,6 +10,7 @@
  */
 
 import type { AgentRunStats, StudioAgent } from "../api/types";
+import type { SortDirection } from "./indexSort";
 
 export const MIN_RUNS_FOR_RATE = 10;
 export const FAILURE_RATE_ALERT = 0.15;
@@ -26,7 +27,6 @@ export interface AgentIndexRow {
 }
 
 export type AgentSortKey = "name" | "runs" | "failed" | "rate" | "lastRun";
-export type SortDirection = "ascending" | "descending";
 
 export function agentIndexRows(
   agents: readonly StudioAgent[],

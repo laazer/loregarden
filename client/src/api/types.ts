@@ -785,6 +785,16 @@ export interface StudioDefaults {
   skip_conditions?: string[];
 }
 
+/** How many tickets run on one template, from `GET /api/studio/workflow-usage`. */
+export interface WorkflowUsageStats {
+  template_slug: string;
+  tickets: number;
+  /** Of those, not yet done or won't do. */
+  open: number;
+  /** When a ticket last started on it; naive UTC. */
+  last_used_at: string | null;
+}
+
 /** One agent's run record, from `GET /api/studio/agent-run-stats`. */
 export interface AgentRunStats {
   agent_id: string;

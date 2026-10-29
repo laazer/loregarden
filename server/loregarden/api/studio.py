@@ -20,6 +20,7 @@ from loregarden.services.studio_drift import (
     detect_drift,
 )
 from loregarden.services.studio_service import StudioService
+from loregarden.services.workflow_usage_stats import WorkflowUsageStats, workflow_usage_stats
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -228,6 +229,13 @@ def generate_studio_workflow(
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/workflow-usage")
+def list_workflow_usage(session: Session = Depends(get_session)) -> list[WorkflowUsageStats]:
+    """Tickets per workflow template, for Workflow Studio's index. Its own path
+    for the same reason as `/agent-run-stats`: `/workflows/{slug}` would match."""
+    return workflow_usage_stats(session)
 
 
 @router.get("/workflows/{slug}")
