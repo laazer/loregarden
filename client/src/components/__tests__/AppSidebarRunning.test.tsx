@@ -91,3 +91,25 @@ test("an idle queue and an unreachable one say different things", () => {
   expect(within(failed).getByRole("status")).toBeInTheDocument();
   expect(failed.textContent).not.toBe(idleText);
 });
+
+test("a running ticket's ring fills with its settled stages, and says so in words", () => {
+  queue({ activeRuns: [run({ stages_done: 4, stages_total: 9 })] });
+  const list = renderSection();
+
+  const link = within(list).getByRole("link");
+  expect(link).toHaveTextContent("Ticket A, 4 of 9 stages done");
+  const arcs = link.querySelectorAll(".app-sidebar-ring circle[stroke-dasharray]");
+  // The settled arc, then the live spinner.
+  expect(arcs).toHaveLength(2);
+  const [filled, ofTotal] = arcs[0].getAttribute("stroke-dasharray")!.split(" ").map(Number);
+  expect(filled / ofTotal).toBeCloseTo(4 / 9, 2);
+});
+
+test("a ticket with no workflow yet shows the empty track, not an invented fraction", () => {
+  queue({ activeRuns: [run({ stages_done: null, stages_total: null, status: "queued" })] });
+  const list = renderSection();
+
+  const link = within(list).getByRole("link");
+  expect(link).not.toHaveTextContent("stages done");
+  expect(link.querySelectorAll(".app-sidebar-ring circle[stroke-dasharray]")).toHaveLength(0);
+});
