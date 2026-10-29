@@ -39,8 +39,8 @@
 
 .wsd-title {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 34px;
+  font-family: var(--ui);
+  font-size: 34px; /* type-ok: the workspace page greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
@@ -49,7 +49,7 @@
 .wsd-standing {
   margin: 8px 0 0;
   max-width: 62ch;
-  font-size: 15px;
+  font-size: var(--fs-lead);
   line-height: 1.5;
   color: var(--tx);
 }
@@ -60,7 +60,7 @@
   align-items: baseline;
   gap: 4px 14px;
   margin: 8px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .wsd-repo a {
@@ -75,7 +75,7 @@
 
 .wsd-path {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   overflow-wrap: anywhere;
 }
@@ -89,7 +89,7 @@
 
 .wsd-error-inline {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--rdl);
 }
 
@@ -114,7 +114,7 @@
 }
 
 .wsd-stat dt {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -127,15 +127,15 @@
 }
 
 .wsd-stat-value {
-  font-family: var(--mono);
-  font-size: 26px;
+  font-family: var(--ui);
+  font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
   line-height: 1.1;
   color: var(--tx);
   font-variant-numeric: tabular-nums;
 }
 
 .wsd-stat-note {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   white-space: nowrap;
   overflow: hidden;
@@ -224,8 +224,8 @@
   align-items: center;
   gap: 10px;
   margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -235,7 +235,7 @@
   border: 1px solid color-mix(in srgb, var(--ac) 30%, transparent);
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 400;
   color: var(--ac2);
   background: color-mix(in srgb, var(--ac) 10%, transparent);
@@ -253,7 +253,7 @@
 .wsd-headline {
   margin-top: 0;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
@@ -274,7 +274,7 @@
 
 .wsd-section-error p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   overflow-wrap: anywhere;
 }
@@ -285,7 +285,7 @@
 
 .wsd-group-title {
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--txl);
 }
@@ -344,7 +344,7 @@ a.wsd-row-link:focus-visible .wsd-row-title {
 }
 
 .wsd-row-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.4;
   color: var(--tx);
   display: -webkit-box;
@@ -361,7 +361,7 @@ a.wsd-row-link:focus-visible .wsd-row-title {
   justify-content: flex-end;
   gap: 4px 8px;
   max-width: 50%;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -372,14 +372,14 @@ a.wsd-row-link:focus-visible .wsd-row-title {
 .wsd-row-note {
   display: flex;
   gap: 12px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .wsd-id {
   flex: none;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
   text-decoration: none;
   white-space: nowrap;
@@ -392,7 +392,7 @@ a.wsd-id:focus-visible {
 
 .wsd-mono {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .wsd-muted {
@@ -465,7 +465,7 @@ a.wsd-id:focus-visible {
 }
 
 .wsd-card-title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.35;
   color: var(--tx);
   display: -webkit-box;
@@ -479,13 +479,12 @@ a.wsd-id:focus-visible {
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .wsd-card-state {
   flex: none;
-  color: var(--txm);
 }
 
 .wsd-card-where {
@@ -512,7 +511,7 @@ a.wsd-id:focus-visible {
 
 .wsd-card--compact .wsd-card-title {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -521,7 +520,7 @@ a.wsd-id:focus-visible {
 .wsd-more {
   margin-top: 6px;
   padding: 2px 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--ac2);
   background: transparent;
 }
@@ -544,7 +543,7 @@ a.wsd-id:focus-visible {
   padding: 3px 10px;
   border: 1px solid var(--bd2);
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   background: transparent;
   font-variant-numeric: tabular-nums;
@@ -564,28 +563,25 @@ a.wsd-id:focus-visible {
   display: inline-block;
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
   color: var(--txm);
   background: var(--bg3);
 }
 
 .wsd-tag--ready_to_merge,
-.wsd-tag--activity-running,
 .wsd-tag--instance-ready {
   color: var(--grl);
   background: color-mix(in srgb, var(--grn) 18%, transparent);
 }
 
 .wsd-tag--to_review,
-.wsd-tag--activity-queued,
 .wsd-tag--instance-starting {
   color: var(--bll);
   background: color-mix(in srgb, var(--blue) 18%, transparent);
 }
 
 .wsd-tag--needs_work,
-.wsd-tag--activity-awaiting,
 .wsd-tag--block-agent,
 .wsd-tag--block-parked,
 .wsd-tag--instance-stalled {
@@ -658,7 +654,7 @@ a.wsd-id:focus-visible {
 .wsd-event-when {
   padding-top: 1px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-align: right;
   white-space: nowrap;
@@ -675,7 +671,7 @@ a.wsd-id:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 12px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -696,14 +692,14 @@ a.wsd-id:focus-visible {
 .wsd-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .wsd-table th {
   padding: 6px 10px 8px;
   border-bottom: 1px solid var(--bd);
   font-weight: 500;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-align: left;
   white-space: nowrap;
@@ -734,7 +730,7 @@ a.wsd-id:focus-visible {
 .wsd-table .wsd-num {
   text-align: right;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -748,8 +744,8 @@ a.wsd-id:focus-visible {
 }
 
 .wsd-table td.wsd-rank {
-  font-family: var(--dp);
-  font-size: 22px;
+  font-family: var(--ui);
+  font-size: var(--fs-display);
   font-weight: 600;
   line-height: 1;
   color: var(--tx);
@@ -768,7 +764,7 @@ a.wsd-id:focus-visible {
   }
 
   .wsd-title {
-    font-size: 26px;
+    font-size: 26px; /* type-ok: phone-width step-down of the page title above the scale */
   }
 
   .wsd-row,
@@ -813,7 +809,7 @@ a.wsd-id:focus-visible {
     content: attr(data-label);
     flex: 0 0 96px;
     font-family: var(--ui);
-    font-size: 11.5px;
+    font-size: var(--fs-micro);
     font-weight: 400;
     color: var(--txl);
   }
@@ -828,5 +824,5 @@ a.wsd-id:focus-visible {
 .workspace-dashboard-link {
   display: block;
   padding: 8px 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }

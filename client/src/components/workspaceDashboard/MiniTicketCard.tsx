@@ -1,18 +1,11 @@
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 
 import type { TicketState } from "../../api/types";
-import { ticketPath, type ArtifactTab } from "../../lib/appNavigation";
+import type { ArtifactTab } from "../../lib/appNavigation";
 import { Button } from "../ui/Button";
-
-const STATE_LABELS: Record<TicketState, string> = {
-  backlog: "Backlog",
-  in_progress: "In progress",
-  blocked: "Blocked",
-  parked: "Parked",
-  done: "Done",
-  wont_do: "Won't do",
-};
+import { StatusChip } from "../ui/StatusChip";
+import { ticketStateChip } from "../../lib/ticketStates";
+import { TicketLink } from "../TicketLink";
 
 export interface MiniTicket {
   id: string;
@@ -43,20 +36,21 @@ interface MiniTicketCardProps {
 export function MiniTicketCard({ ticket, tab, compact = false }: MiniTicketCardProps) {
   const title = ticket.title || ticket.externalId;
   return (
-    <Link
-      to={ticketPath(ticket.id, tab)}
+    <TicketLink
+      ticketId={ticket.id}
+      tab={tab}
       className={compact ? "wsd-card wsd-card--compact" : "wsd-card"}
-      data-state={ticket.state}
+      state={ticket.state}
     >
       <span className="wsd-card-title">{title}</span>
       {ticket.title ? <span className="visually-hidden"> ({ticket.externalId})</span> : null}
       {compact ? null : (
         <span className="wsd-card-foot">
-          {ticket.tag ?? (ticket.state ? <span className="wsd-card-state">{STATE_LABELS[ticket.state]}</span> : null)}
+          {ticket.tag ?? (ticket.state ? <StatusChip {...ticketStateChip(ticket.state)} className="wsd-card-state" /> : null)}
           {ticket.where ? <span className="wsd-card-where">{ticket.where}</span> : null}
         </span>
       )}
-    </Link>
+    </TicketLink>
   );
 }
 

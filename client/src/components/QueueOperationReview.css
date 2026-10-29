@@ -28,8 +28,8 @@
 
 .review-header h3 {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -42,7 +42,7 @@
   background: var(--bg3);
   border: 1px solid var(--grn);
   border-radius: 11px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--grl);
 }
@@ -56,7 +56,7 @@
 
 .section-title {
   margin: 0;
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txl);
   text-transform: uppercase;
@@ -77,7 +77,7 @@
 }
 
 .no-comments .text {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 /* Comment threads */
@@ -97,7 +97,7 @@
   padding: 9px 12px;
   background: var(--bg3);
   border-bottom: 1px solid var(--bd);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txm);
 }
@@ -130,7 +130,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .comment-header .author {
@@ -149,7 +149,7 @@
   padding: 2px 8px;
   background: var(--bg4);
   border-radius: 9px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--grl);
   text-transform: uppercase;
@@ -157,7 +157,7 @@
 }
 
 .comment-body {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--tx);
   word-wrap: break-word;
@@ -189,7 +189,7 @@
   border: 1px solid var(--bd);
   border-radius: 9px;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   resize: vertical;
   background: var(--bg1);
@@ -217,12 +217,16 @@
 .btn {
   padding: 7px 14px;
   border: 1px solid transparent;
-  border-radius: 9px;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
   transition: border-color var(--t-med) ease;
+}
+
+.btn:not(.btn-primary) {
+  /* A primary keeps its leaf (index.css). */
+  border-radius: 9px;
 }
 
 .btn:disabled {
@@ -298,8 +302,8 @@
 
 .modal-content h4 {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -312,7 +316,7 @@
 }
 
 .form-group label {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--tx);
 }
@@ -323,7 +327,7 @@
   border: 1px solid var(--bd);
   border-radius: 9px;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   background: var(--bg2);
   color: var(--tx);
 }
@@ -353,7 +357,7 @@
 .context-item {
   display: flex;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .context-item .label {
@@ -368,7 +372,7 @@
 }
 
 .context-hint {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-style: italic;
   margin-top: 4px;
@@ -394,7 +398,7 @@
   border: 1px solid var(--bd);
   border-radius: 11px;
   color: var(--bll);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 

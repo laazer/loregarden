@@ -21,8 +21,8 @@
 
 .controls-header h3 {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 14px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
@@ -33,7 +33,7 @@
   background: var(--bg4);
   color: var(--bll);
   border-radius: 9px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 
@@ -46,7 +46,7 @@
   border: 1px solid var(--red);
   border-radius: 11px;
   color: var(--rdl);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .error-dismiss {
@@ -69,7 +69,7 @@
 }
 
 .section-title {
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -128,7 +128,7 @@
 
 .run-ticket {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--tx);
   white-space: nowrap;
   overflow: hidden;
@@ -137,7 +137,7 @@
 
 .run-detail {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   margin-top: 2px;
 }
@@ -156,7 +156,7 @@
   border: none;
   color: var(--txm);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--fs-lead);
   padding: 0;
   transition: color var(--t-med);
 }
@@ -182,7 +182,7 @@
   color: var(--tx);
   cursor: pointer;
   font-family: var(--ui);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   transition: border-color var(--t-med);
   flex: 1;
@@ -230,7 +230,7 @@
   color: var(--tx);
   cursor: pointer;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   transition: border-color var(--t-med);
 }
@@ -253,5 +253,5 @@
   text-align: center;
   padding: 20px;
   color: var(--txl);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }

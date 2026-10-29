@@ -17,7 +17,7 @@
 }
 
 .operation-diff-review-tab {
-  font-size: 12px;
+  font-size: var(--fs-small);
   border-radius: 8px;
   padding: 6px 12px;
   cursor: pointer;
@@ -42,7 +42,7 @@
   border: 1px solid rgba(240, 96, 63, 0.35);
   background: rgba(240, 96, 63, 0.1);
   color: var(--rdl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .operation-diff-review-output {
@@ -63,7 +63,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -81,5 +81,5 @@
   padding: 24px;
   text-align: center;
   color: var(--txl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }

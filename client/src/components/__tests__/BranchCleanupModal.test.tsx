@@ -17,6 +17,7 @@ function entry(overrides: Partial<BranchTriageEntry> = {}): BranchTriageEntry {
     is_current: false,
     is_base: false,
     squash_merged: false,
+    commits_only_here: 0,
     ahead: 2,
     behind: 0,
     dirty: false,
@@ -115,8 +116,9 @@ test("deletes each selected branch, removing worktrees, and closes when all succ
   fireEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
 
   await waitFor(() => expect(onClose).toHaveBeenCalled());
-  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/a", true, false);
-  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/b", true, true);
+  // Bulk cleanup never discards commits: `false` is the server's `force`.
+  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/a", false, false);
+  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/b", false, true);
 });
 
 test("one branch failing does not stop the rest, and the failure is named", async () => {
@@ -133,7 +135,7 @@ test("one branch failing does not stop the rest, and the failure is named", asyn
   fireEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
 
   expect(await screen.findByText(/worktree is locked/)).toBeInTheDocument();
-  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/b", true, false);
+  expect(mockDelete).toHaveBeenCalledWith("demo", "feature/b", false, false);
   // The operator still has a decision to make about the survivor, so the
   // dialog stays up rather than closing over its own error.
   expect(onClose).not.toHaveBeenCalled();
@@ -144,4 +146,55 @@ test("says so plainly when there is nothing it can clean up", () => {
 
   expect(screen.getByText(/Nothing to clean up/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete selected (0)" })).toBeDisabled();
+});
+
+test("a worktree the server keeps says why, from the server's own response", async () => {
+  // Through the real request wrapper: the 400 body is what the API sends when
+  // `checkout_guard` refuses, and its `detail` must reach the dialog intact.
+  const actual = jest.requireActual<typeof import("../../lib/branchTriageApi")>("../../lib/branchTriageApi");
+  mockDelete.mockImplementation(actual.deleteBranchTriage);
+  const refusal = "Kept /wt/b: It has uncommitted or untracked changes that exist nowhere else.";
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = jest.fn().mockResolvedValue({
+    ok: false,
+    status: 400,
+    statusText: "Bad Request",
+    text: async () => JSON.stringify({ detail: refusal }),
+  }) as unknown as typeof fetch;
+
+  const { onClose } = renderModal([
+    entry({
+      name: "feature/b",
+      ahead: 0,
+      worktrees: [{ path: "/wt/b", label: "b", dirty: false, is_primary: false }],
+    }),
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+
+  expect(await screen.findByText((_, el) => el?.tagName === "LI" && el.textContent?.includes(refusal) === true)).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  globalThis.fetch = realFetch;
+});
+
+test("a branch holding the only copy of its commits is flagged, never pre-selected, never discarded", async () => {
+  renderModal([
+    entry({
+      name: "feature/unpushed",
+      ahead: 3,
+      commits_only_here: 3,
+      pr: { state: "merged", is_draft: false, url: "u", number: 9, title: "t" },
+    }),
+    entry({ name: "feature/unknown", ahead: 2, commits_only_here: null }),
+  ]);
+
+  // A merged PR is normally pre-selected; three commits nowhere else override it.
+  expect(checkboxFor("feature/unpushed").checked).toBe(false);
+  expect(screen.getByText("3 commits only here")).toBeInTheDocument();
+  expect(screen.getByText("may hold unpushed commits")).toBeInTheDocument();
+
+  fireEvent.click(checkboxFor("feature/unpushed"));
+  expect(screen.getByText(/holds commits that exist nowhere else, so it will be kept/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+
+  await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("demo", "feature/unpushed", false, false));
 });

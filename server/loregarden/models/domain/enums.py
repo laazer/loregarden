@@ -109,6 +109,30 @@ class ChatAttachmentKind(StrEnum):
     IMAGE = "image"
 
 
+class EditorChangeStatus(StrEnum):
+    """How a file differs from the merge-base, as the Editor's changed-files list shows it."""
+
+    ADDED = "added"
+    MODIFIED = "modified"
+    DELETED = "deleted"
+    UNTRACKED = "untracked"
+
+
+class PrListingState(StrEnum):
+    """Whether a repository's pull-request listing is every PR it has.
+
+    Read from GitHub's own page boundary, never from a row count: ``COMPLETE``
+    means the last page said there was no next page, so a branch missing from
+    the listing has no PR. ``INCOMPLETE`` means pages remained when reading
+    stopped, and ``UNAVAILABLE`` means not one page was read; in both, a
+    missing branch's PR status is unknown, which is not the same as none.
+    """
+
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    UNAVAILABLE = "unavailable"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 
@@ -207,6 +231,21 @@ class StageStatus(StrEnum):
     AWAITING = "awaiting"
     DONE = "done"
     WONT_DO = "wont_do"
+
+
+class DiscoveryStatus(StrEnum):
+    """What a model-discovery probe can tell a caller right now.
+
+    ``probing`` and ``unavailable`` used to be the same answer — an empty list —
+    which made "the catalogue has not arrived" indistinguishable from "the CLI is
+    not installed". The picker then asserted the second whenever the first was
+    true, which is what left it permanently empty.
+    """
+
+    PROBING = "probing"
+    FRESH = "fresh"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
 
 
 class RunStatus(str, Enum):
@@ -421,6 +460,10 @@ class ArtifactKind(StrEnum):
     #: A ticket's answers for the PR "User-facing surfaces" section: the question,
     #: action and real data, or why nobody can see the change (`services.ux_answers`).
     UX_ANSWERS = "ux_answers"
+    #: A bug ticket's answers for the PR "Fix coverage" section: how rows already
+    #: in the bad state are repaired, which invariant catches re-entry, which test
+    #: proves prevention, and the learning (`services.fix_coverage`).
+    FIX_COVERAGE = "fix_coverage"
 
 
 class StageBudgetArtifactKind(StrEnum):
@@ -532,6 +575,12 @@ class MonitorCondition(StrEnum):
     TIMEOUT_FLOOR_STALE = "timeout_floor_stale"
     #: Workspace failed-stage window is mostly harness interruptions. Report-only.
     HARNESS_FAILURE_CLUSTER = "harness_failure_cluster"
+    #: A DEFECT invariant found violated by a row that entered the state after
+    #: its guard landed (`services.invariants`). Report-only; escalates at one.
+    INVARIANT_REENTERED = "invariant_reentered"
+    #: A report-only invariant's violation from before its guard landed: nothing
+    #: repairs it, so a person must (`Invariant.unrepaired_action`). Escalates at one.
+    INVARIANT_UNREPAIRED = "invariant_unrepaired"
 
 
 #: Auto-fix may only repair these (idempotent, zero agent runs). Lives here so

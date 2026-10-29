@@ -1,134 +1,215 @@
+/* One anatomy for every chat card: a head, a body laid out by its content, and
+   a footer with at most one action. State is the chip in the head, never the
+   card's border. */
 .lg-primitive-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   width: 100%;
   max-width: min(620px, 100%);
-  padding: 12px 14px;
-  /* Square top-left matches agent text replies — these cards are Baxter answering. */
-  border-radius: 0 14px 14px 14px;
-  background: linear-gradient(180deg, var(--bg2), var(--bg1));
-  border: 1px solid var(--bd);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 8px 24px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--bd2);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg1) 94%, transparent);
   color: var(--tx);
+  overflow: hidden;
 }
 
-.lg-primitive-card--accent {
-  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd));
-}
-
-.lg-primitive-card--warn {
-  border-color: color-mix(in srgb, var(--amb) 50%, var(--bd));
-}
-
-.lg-primitive-card--danger {
-  border-color: color-mix(in srgb, var(--red) 50%, var(--bd));
-}
-
-.lg-primitive-card--ok {
-  border-color: color-mix(in srgb, var(--grn) 50%, var(--bd));
-}
-
-/* v6 carries a record's status on the card's left edge, so it outranks the tone border. */
-.lg-primitive-card--accented {
-  border-left: 3px solid var(--lg-primitive-accent, var(--bd));
-  padding-left: 12px;
+/* A card waiting on the operator, the one card whose edge carries colour. */
+.lg-primitive-card--needs-you {
+  border-color: color-mix(in srgb, var(--vil) 45%, var(--bd2));
 }
 
 .lg-primitive-card-header {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
+  padding: 10px 10px 10px 12px;
 }
 
 .lg-primitive-card-icon {
-  flex: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  background: var(--bg3);
-  border: 1px solid var(--bd2);
-  font-size: 13px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+  color: var(--ac);
 }
 
-.lg-primitive-card-dot {
-  flex: none;
-  width: 9px;
-  height: 9px;
-  margin-top: 6px;
-  border-radius: 50%;
-  box-shadow: 0 0 9px currentColor;
+.lg-primitive-card-icon--run {
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+  color: var(--blue);
+}
+
+.lg-primitive-card-icon--you {
+  background: color-mix(in srgb, var(--vil) 16%, transparent);
+  color: var(--vil);
+}
+
+.lg-primitive-card-icon--mute {
+  background: var(--bg3);
+  color: var(--txm);
 }
 
 .lg-primitive-card-titles {
-  flex: 1;
   min-width: 0;
 }
 
 .lg-primitive-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   margin: 0;
-  font-family: var(--dp);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
   color: var(--tx);
 }
 
-.lg-primitive-card-sub {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--txm);
-  line-height: 1.4;
+.lg-primitive-card-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.lg-primitive-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 6px;
-  font-size: 11px;
+.lg-primitive-card-ref {
+  margin: 1px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
   color: var(--txl);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+}
+
+.lg-primitive-card-sub {
+  margin: 1px 0 0;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  color: var(--txm);
 }
 
 .lg-primitive-card-header-actions {
-  flex: none;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
 }
 
-.lg-primitive-card-collapse {
-  border: 1px solid var(--bd2);
-  background: var(--bg3);
+.lg-primitive-card-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
   color: var(--txm);
-  border-radius: 8px;
-  padding: 4px 8px;
-  font-size: 11px;
-  cursor: pointer;
+}
+
+.lg-primitive-card-icon-btn:hover,
+.lg-primitive-card-icon-btn[aria-pressed="true"] {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-primitive-card-icon-btn:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+
+.lg-primitive-card-header-actions .overflow-menu-trigger {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--txm);
+}
+
+.lg-primitive-card-header-actions .overflow-menu-trigger:hover,
+.lg-primitive-card-header-actions .overflow-menu-trigger[aria-expanded="true"] {
+  background: var(--bg3);
+  color: var(--tx);
 }
 
 .lg-primitive-card-body {
   min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.lg-primitive-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.lg-primitive-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lg-primitive-fact b {
+  font-weight: 500;
+  color: var(--tx);
 }
 
 .lg-primitive-card-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  padding-top: 2px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--bd);
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.lg-primitive-card-hint {
+  min-width: 0;
+}
+
+.lg-primitive-card-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.lg-primitive-card-error {
+  margin: 0;
+  padding: 0 12px 12px;
+  font-size: var(--fs-small);
+  color: var(--red);
+}
+
+/* Loading holds the height the body will take, so the thread does not jump. */
+.lg-primitive-card-skeleton {
+  display: grid;
+  gap: 8px;
+  padding: 2px 12px 14px;
+}
+
+.lg-primitive-card-skeleton-line {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bg3);
+}
+
+.lg-primitive-card-skeleton-line:last-child {
+  width: 60%;
 }
 
 /* Resource buttons keep their own blue treatment wherever they are placed. */
 .lg-primitive-card-actions
-  button:not(.lg-primitive-resource-btn):not(.lg-primitive-run-btn),
+  button:not(.lg-primitive-resource-btn):not(.lg-primitive-run-btn):not(.btn-primary):not(.btn-secondary),
 .lg-primitive-run-btn {
   display: inline-flex;
   align-items: center;
@@ -138,7 +219,7 @@
   background: var(--bg3);
   color: var(--tx);
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
 }
@@ -154,7 +235,7 @@
   border-radius: 10px;
   background: color-mix(in srgb, var(--blue) 12%, var(--bg3));
   color: color-mix(in srgb, var(--blue) 78%, var(--tx));
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 650;
   cursor: pointer;
   transition:
@@ -184,7 +265,7 @@
   min-height: 24px;
   padding: 3px;
   border-radius: 7px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-resource-btn--compact .lg-primitive-resource-btn-label {
@@ -196,30 +277,24 @@
 }
 
 .lg-primitive-run-btn--play,
-.lg-primitive-run-btn--confirm {
-  background: color-mix(in srgb, var(--grn) 18%, var(--bg3));
-  border-color: color-mix(in srgb, var(--grn) 46%, var(--bd2));
-  color: var(--grn);
-}
-
-.lg-primitive-run-btn--play:hover:not(:disabled),
-.lg-primitive-run-btn--confirm:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--grn) 28%, var(--bg3));
-  border-color: color-mix(in srgb, var(--grn) 68%, var(--bd2));
+.lg-primitive-run-btn--stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .lg-primitive-run-btn--stop {
-  background: color-mix(in srgb, var(--red) 18%, var(--bg3));
-  border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
   color: var(--red);
 }
 
-.lg-primitive-run-btn--stop:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 28%, var(--bg3));
-  border-color: color-mix(in srgb, var(--red) 68%, var(--bd2));
+/* The chosen half of a toggle, and in-body confirmations, until each card's
+   own pass moves them onto the shared buttons. */
+.lg-primitive-run-btn--confirm {
+  border-color: color-mix(in srgb, var(--ac) 46%, var(--bd2));
+  color: var(--ac);
 }
 
-.lg-primitive-card-actions .lg-primitive-run-btn[aria-pressed="true"] {
+.lg-primitive-run-btn[aria-pressed="true"] {
   background: color-mix(in srgb, var(--ac) 20%, var(--bg3));
   border-color: color-mix(in srgb, var(--ac) 48%, var(--bd2));
   color: var(--ac);
@@ -230,17 +305,6 @@
   cursor: not-allowed;
 }
 
-.lg-primitive-card-error {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--red);
-}
-
-.lg-primitive-card-loading {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--txm);
-}
 
 .lg-primitive-parts {
   display: flex;
@@ -405,7 +469,7 @@
   gap: 6px;
   margin: 0;
   padding: 1px 2px 5px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--txl);
@@ -416,7 +480,7 @@
 .lg-primitive-kanban-col-more {
   margin: 0;
   padding: 6px 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   text-align: center;
 }
@@ -456,7 +520,7 @@
   align-self: flex-start;
   padding: 1px 4px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -476,7 +540,7 @@
   border-radius: 999px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0;
   color: var(--txm);
 }
@@ -494,7 +558,7 @@
   background: var(--bg3);
   color: var(--txm);
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -504,25 +568,15 @@
   color: var(--ac);
 }
 
+/* Output in mono on the darkest ground, flush to the card's edges under its
+   head: the theme's own tokens, so a light theme reaches it too. */
 .lg-primitive-terminal {
+  margin: 0 -12px -12px;
   font-family: var(--mono);
-  font-size: 12px;
-  background: #0d1117;
-  color: #c9d1d9;
-  border-radius: 10px;
-  border: 1px solid var(--bd);
-  overflow: hidden;
-}
-
-.lg-primitive-terminal-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-  color: #8b949e;
-  font-size: 11px;
+  font-size: var(--fs-small);
+  background: var(--bg0);
+  color: var(--txm);
+  border-top: 1px solid var(--bd);
 }
 
 .lg-primitive-terminal-body {
@@ -531,19 +585,23 @@
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
-  line-height: 1.45;
+  line-height: 1.6;
 }
 
 .lg-primitive-terminal-cmd {
-  color: #7ee787;
+  color: var(--tx);
+}
+
+.lg-primitive-terminal-cmd::first-letter {
+  color: var(--ac);
 }
 
 .lg-primitive-terminal-err {
-  color: #ffa198;
+  color: var(--red);
 }
 
 .lg-primitive-thinking {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
   font-style: italic;
   line-height: 1.5;
@@ -565,7 +623,7 @@
   border-radius: 8px;
   background: var(--bg0);
   border: 1px solid var(--bd);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-calendar-cell--muted {
@@ -622,7 +680,7 @@
 .lg-primitive-calendar-more {
   display: block;
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -670,7 +728,7 @@
 .lg-primitive-calendar-week-weekday {
   margin: 0;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -679,10 +737,11 @@
 
 .lg-primitive-calendar-week-date {
   margin: 2px 0 0;
-  font-family: var(--dp);
-  font-size: 14px;
-  font-weight: 650;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .lg-primitive-calendar-week-day--today .lg-primitive-calendar-week-weekday,
@@ -701,7 +760,7 @@
   border-radius: 999px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -751,7 +810,7 @@
   justify-content: space-between;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -773,7 +832,7 @@
   flex: 1;
   min-width: 0;
   margin: 5px 0 0;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   line-height: 1.35;
   color: var(--tx);
@@ -790,7 +849,7 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txl);
 }
@@ -803,7 +862,7 @@
   margin: 0;
   padding: 12px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--txl) 70%, transparent);
@@ -834,7 +893,7 @@
 .lg-primitive-calendar-day-weekday {
   margin: 0;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -843,17 +902,18 @@
 
 .lg-primitive-calendar-day-date {
   margin: 2px 0 0;
-  font-family: var(--dp);
-  font-size: 18px;
-  font-weight: 650;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .lg-primitive-calendar-day-count {
   margin: 0;
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -861,7 +921,7 @@
   margin: 0;
   padding: 28px 8px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--txm);
 }
@@ -909,7 +969,7 @@
   gap: 2px;
   padding-top: 1px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txm);
 }
@@ -942,7 +1002,7 @@
   border: 1px solid var(--bd2);
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -952,7 +1012,7 @@
 .lg-primitive-calendar-agenda-title {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 650;
   color: var(--tx);
   line-height: 1.35;
@@ -961,7 +1021,7 @@
 
 .lg-primitive-calendar-agenda-desc {
   margin: 5px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   color: var(--txm);
 }
@@ -969,7 +1029,7 @@
 .lg-primitive-calendar-agenda-meta {
   margin: 6px 0 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1037,9 +1097,9 @@
 
 .lg-primitive-workflow-node-head strong {
   min-width: 0;
-  font-family: var(--dp);
-  font-size: 12px;
-  font-weight: 680;
+  font-family: var(--ui);
+  font-size: var(--fs-small);
+  font-weight: 600;
   line-height: 1.3;
   color: var(--tx);
   overflow-wrap: anywhere;
@@ -1052,7 +1112,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg3) 82%, transparent);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1071,7 +1131,7 @@
   gap: 8px;
   padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -1084,7 +1144,7 @@
 
 .lg-primitive-workflow-node-owner small {
   flex: none;
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1106,7 +1166,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--amb) 7%, var(--bg0));
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-workflow-agent-index {
@@ -1133,7 +1193,7 @@
 
 .lg-primitive-workflow-node-empty {
   padding: 4px;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1149,7 +1209,7 @@
   border-radius: 5px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1197,9 +1257,42 @@
   background: var(--bg0);
 }
 
-.lg-primitive-edit-mode-toggle {
+/* A two-way toggle: two halves of one control, the chosen one filled. */
+.lg-primitive-seg {
   display: inline-flex;
-  gap: 4px;
+  margin-left: auto;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* In a card's head the toggle sits with the other head controls. */
+.lg-primitive-seg--head {
+  margin-left: 0;
+}
+
+.lg-primitive-seg > button {
+  padding: 2px 9px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.lg-primitive-seg > button.is-on {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-primitive-seg > button:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.lg-primitive-add {
+  color: var(--grn);
+}
+
+.lg-primitive-del {
+  color: var(--txl);
 }
 
 /* Ticket cards match the v6 console list card: P-badge, state, stage segments, stage line. */
@@ -1259,36 +1352,6 @@
   border-left-color: var(--bd2);
 }
 
-.lg-primitive-ticket-card {
-  position: relative;
-  background: var(--bg1);
-  box-shadow: none;
-}
-
-.lg-primitive-ticket-card.lg-primitive-card--accent {
-  border-color: color-mix(in srgb, var(--ac) 55%, var(--bd));
-  box-shadow:
-    0 10px 26px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 1px color-mix(in srgb, var(--ac) 35%, transparent);
-}
-
-.lg-primitive-ticket-card > .lg-primitive-card-header {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  z-index: 1;
-  gap: 6px;
-}
-
-.lg-primitive-ticket-card-spacer {
-  display: none;
-}
-
-.lg-primitive-ticket-card > .lg-primitive-card-body {
-  display: block;
-  padding-right: 28px;
-}
-
 .lg-primitive-ticket-card--parent > .lg-primitive-card-body,
 .lg-primitive-ticket-card--workflow > .lg-primitive-card-body {
   display: flex;
@@ -1296,9 +1359,17 @@
   gap: 12px;
 }
 
+.lg-primitive-stage-more {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
 .lg-primitive-ticket-timeline {
-  padding-top: 12px;
-  border-top: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
 }
 
 .lg-primitive-ticket-children {
@@ -1346,7 +1417,7 @@
   border: 1px solid;
   border-radius: 6px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -1356,7 +1427,7 @@
   min-width: 0;
   margin: 0;
   font-family: var(--ui);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   line-height: 1.35;
   color: var(--tx);
@@ -1368,7 +1439,7 @@
 .lg-primitive-ticket-external-id {
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
 }
 
@@ -1389,12 +1460,18 @@
 
 .lg-primitive-ticket-v6--compact .lg-primitive-ticket-v6-meta,
 .lg-primitive-ticket-v6--compact .lg-primitive-ticket-segs,
+/* Under a card's head the badge column is gone, so nothing indents to it. */
+.lg-primitive-ticket-v6--headless .lg-primitive-ticket-segs,
+.lg-primitive-ticket-v6--headless .lg-primitive-ticket-stage {
+  padding-left: 0;
+}
+
 .lg-primitive-ticket-v6--compact .lg-primitive-ticket-stage {
   padding-left: 0;
 }
 
 .lg-primitive-ticket-v6--compact .lg-primitive-ticket-v6-title {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .lg-primitive-ticket-v6-meta {
@@ -1403,7 +1480,7 @@
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-ticket-state {
@@ -1426,7 +1503,7 @@
 
 .lg-primitive-ticket-slug {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1473,7 +1550,7 @@
 .lg-primitive-ticket-segs-label {
   flex: none;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1483,7 +1560,7 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -1496,10 +1573,6 @@
 
 .lg-primitive-ticket-stage-name {
   font-weight: 500;
-}
-
-.lg-primitive-ticket-stage-status {
-  color: var(--txl);
 }
 
 .lg-primitive-ticket-tile {
@@ -1528,7 +1601,7 @@
 /* Which tickets this one waits on; the detail pane links them. */
 .lg-primitive-ticket-tile-waiting {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow-wrap: anywhere;
 }
@@ -1548,11 +1621,11 @@
   gap: 12px;
 }
 
+/* The gate's state is the card's chip; this box only holds what it says. */
 .lg-primitive-gate-status {
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--amb) 45%, var(--bd));
-  background: color-mix(in srgb, var(--amb) 10%, var(--bg0));
+  border-radius: 8px;
+  background: var(--bg0);
 }
 
 .lg-primitive-gate-status--draft {
@@ -1560,21 +1633,12 @@
   background: var(--bg0);
 }
 
-.lg-primitive-card--danger .lg-primitive-gate-status {
-  border-color: color-mix(in srgb, var(--red) 50%, var(--bd));
-  background: color-mix(in srgb, var(--red) 10%, var(--bg0));
-}
-
-.lg-primitive-card--ok .lg-primitive-gate-status {
-  border-color: color-mix(in srgb, var(--grn) 50%, var(--bd));
-  background: color-mix(in srgb, var(--grn) 10%, var(--bg0));
-}
 
 .lg-primitive-gate-status-label {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txm);
@@ -1582,7 +1646,7 @@
 
 .lg-primitive-gate-status-copy {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.4;
   color: var(--tx);
 }
@@ -1590,7 +1654,7 @@
 .lg-primitive-gate-status-meta {
   margin: 6px 0 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -1602,9 +1666,9 @@
 
 .lg-primitive-gate-section-title {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -1625,7 +1689,7 @@
   border: 1px solid var(--bd);
   border-radius: 8px;
   background: var(--bg0);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   color: var(--txm);
 }
@@ -1665,104 +1729,133 @@
   margin-top: 3px;
   overflow: hidden;
   color: var(--tx);
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .lg-primitive-workspace-label {
   color: var(--txl);
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
+/* Plan steps and commits are rows, not boxes; where order matters a vine says so. */
 .lg-primitive-todo-list,
 .lg-primitive-commit-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .lg-primitive-todo-list li {
-  padding: 8px 10px;
-  border: 1px solid var(--bd);
-  border-radius: 9px;
-  background: var(--bg0);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
 }
 
 .lg-primitive-todo-list label {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  color: var(--txm);
-  font-size: 12.5px;
+  align-items: center;
+  gap: 10px;
+  color: var(--tx);
+  font-size: var(--fs-small);
   line-height: 1.4;
 }
 
+/* Your boxes are square, so they never read as the agent's round buds. */
 .lg-primitive-todo-list input {
-  margin-top: 2px;
-  accent-color: var(--grn);
+  margin: 0;
+  border-radius: 3px;
+  accent-color: var(--ac);
 }
 
 .lg-primitive-todo-list li.is-checked span {
   color: var(--txl);
-  text-decoration: line-through;
+}
+
+.lg-primitive-todo-list--agent li {
+  gap: 10px;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.lg-primitive-todo-list--agent li .vine-node {
+  display: flex;
+  align-items: center;
+}
+
+.lg-primitive-todo-list--agent li .vine-stem {
+  top: 50%;
+}
+
+.lg-primitive-owner {
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--bg2);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.lg-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .lg-primitive-commit-list li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 14px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid var(--bd);
-  border-radius: 9px;
-  background: var(--bg0);
+  gap: 10px;
+  min-height: 30px;
+  font-size: var(--fs-small);
 }
 
-.lg-primitive-commit-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--amb);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--amb) 55%, transparent);
-}
-
-.lg-primitive-commit-dot.is-pushed {
-  background: var(--grn);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--grn) 55%, transparent);
-}
-
-.lg-primitive-commit-copy {
+.lg-primitive-commit-list li .vine-node {
   display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
 }
 
-.lg-primitive-commit-copy strong {
+.lg-primitive-commit-list li .vine-stem {
+  top: 50%;
+}
+
+.lg-primitive-commit-sha {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-primitive-commit-subject {
+  min-width: 0;
   overflow: hidden;
-  color: var(--tx);
-  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--tx);
 }
 
-.lg-primitive-commit-copy span,
-.lg-primitive-commit-list time {
+.lg-primitive-commit-local {
   color: var(--txl);
-  font-size: 10.5px;
+}
+
+.lg-primitive-commit-list time {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
 }
 
 .lg-primitive-commit-detail > p {
   margin: 0 0 10px;
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -1772,7 +1865,7 @@
   gap: 10px;
   color: var(--txl);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-commit-stats .is-add {
@@ -1799,7 +1892,7 @@
   display: flex;
   gap: 8px;
   color: var(--tx);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -1814,7 +1907,7 @@
   border-radius: 6px;
   color: var(--ac2);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
 }
 
 .lg-primitive-qa-item textarea {
@@ -1827,7 +1920,7 @@
   background: var(--bg0);
   color: var(--tx);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .lg-primitive-qa-item textarea:focus {
@@ -1839,7 +1932,7 @@
   padding: 8px 10px;
   border-left: 2px solid var(--bd2);
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.45;
 }
 
@@ -1861,7 +1954,7 @@
 .lg-primitive-giphy figcaption {
   padding: 8px 10px;
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 @media (max-width: 560px) {
@@ -1876,52 +1969,35 @@
   border-left-color: var(--vio);
 }
 
-/* The aside card's attribution is a sentence, not a chip.
-   `.lg-primitive-card-meta` upper-cases and letter-spaces its contents, which is
-   right for "3 FILES · 2m AGO" and wrong for the one line that says who answered
-   and who did not — the card's most load-bearing sentence was being rendered in
-   the style reserved for its least. */
-.lg-btw-attribution {
-  text-transform: none;
-  letter-spacing: normal;
-  font-size: 11.5px;
-  line-height: 1.5;
+/* The aside: the question as a quiet quote, the answer, then the sentence
+   that says who answered and who did not, the card's most load-bearing line. */
+.lg-btw-question {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--bd2);
+  border-radius: 0 6px 6px 0;
+  background: var(--bg2);
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
+.lg-btw-attribution {
+  margin: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--txl);
+}
+
 .lg-btw-log-link {
-  border: none;
-  background: none;
   padding: 0;
   font: inherit;
   color: var(--ac);
   text-decoration: underline;
   text-underline-offset: 2px;
-  cursor: pointer;
 }
 
 .lg-btw-log-link:hover {
   color: var(--ac2);
-}
-
-/* The caveat sits beside the control rather than inside its label. */
-.lg-btw-escalate {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Away from the escalation: the two are opposite decisions and a mis-click on
-   this row is one the operator cannot undo on the other button. */
-.lg-btw-dismiss {
-  margin-left: auto;
-}
-
-.lg-btw-dismiss:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 18%, var(--bg3));
-  border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
-  color: var(--red);
 }
 
 /* An initiative's member, listed under it; the real row sits under its parent. */
@@ -1933,6 +2009,155 @@
 .tree-member-note {
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
+}
+
+/* Tickets compared across rows. Flush to the card's edges, rules between rows;
+   at a narrow width each row stacks, so it stays a list a phone can read. */
+.lg-ticket-table-wrap {
+  margin: 0 -12px;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+}
+
+.lg-ticket-table-filter {
+  margin: 0 12px 8px;
+}
+
+.lg-ticket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.lg-ticket-table th {
+  padding: 6px 12px;
+  border-top: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--bd);
+  color: var(--txm);
+  vertical-align: middle;
+}
+
+.lg-ticket-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.lg-ticket-table-p {
+  width: 1%;
+}
+
+.lg-ticket-table-ticket {
+  max-width: 0;
+  width: 100%;
+}
+
+.lg-ticket-table-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lg-ticket-table-toggle {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: var(--fs-small);
+  line-height: 1;
+  color: var(--txm);
+}
+
+.lg-ticket-table-toggle:hover,
+.lg-ticket-table-toggle[aria-expanded="true"] {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-ticket-table-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--tx);
+}
+
+.lg-ticket-table-open:hover .lg-ticket-table-title,
+.lg-ticket-table-open:focus-visible .lg-ticket-table-title {
+  text-decoration: underline;
+}
+
+.lg-ticket-table-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-ticket-table-id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table-status,
+.lg-ticket-table-stage {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.lg-ticket-table-stage {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.lg-ticket-table-more {
+  align-self: flex-start;
+  margin: 8px 12px 0;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
+@container (max-width: 420px) {
+  .lg-ticket-table thead {
+    display: none;
+  }
+
+  .lg-ticket-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .lg-ticket-table td {
+    padding: 0 4px;
+    border: 0;
+  }
+
+  .lg-ticket-table-ticket {
+    max-width: none;
+    width: auto;
+  }
+
+  .lg-ticket-table-stage {
+    display: none;
+  }
 }

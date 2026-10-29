@@ -27,8 +27,8 @@
 
 .reader-title {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 18px;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
   font-weight: 600;
   line-height: 1.3;
   color: var(--tx);
@@ -41,7 +41,7 @@
   padding: 2px 8px;
   border-radius: 5px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   vertical-align: 3px;
 }
@@ -64,7 +64,7 @@
 .reader-subtitle {
   margin: 4px 0 0;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -90,20 +90,20 @@
 /* Reading size. The inline surfaces keep 12px for a glance; here the whole
    point is the long read, so the body steps up and the lines open out. */
 .reader-measure .markdown-preview {
-  font-size: 14.5px;
+  font-size: var(--fs-lead);
   line-height: 1.7;
 }
 
 .reader-measure .markdown-preview pre code {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .reader-measure .reader-measure .sc-facts {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .reader-source {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   max-height: none;
 }
 
@@ -123,7 +123,7 @@
   grid-template-columns: minmax(10ch, max-content) minmax(0, 1fr);
   gap: 5px 18px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .sc-fact {
@@ -190,7 +190,7 @@
   border-radius: 8px;
   background: var(--bg1);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.5;
   overflow-x: auto;
 }
@@ -223,7 +223,7 @@
 
 .sc-heading {
   margin: 0 0 6px;
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-weight: 600;
   color: var(--tx);
 }
@@ -280,7 +280,7 @@ h4.sc-heading {
   border: 1px solid var(--bd);
   background: var(--bg2);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -309,7 +309,7 @@ h4.sc-heading {
   background: var(--bg3);
   color: var(--txm);
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -329,7 +329,7 @@ h4.sc-heading {
   }
 
   .reader-measure .markdown-preview {
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
 }
 
@@ -341,7 +341,7 @@ h4.sc-heading {
   border: 1px dashed var(--bd2);
   border-radius: 8px;
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .md-unparsed-card > summary {

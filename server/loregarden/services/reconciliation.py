@@ -42,9 +42,26 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from loregarden.services.block_settlement import sweep_unclassified_blocks
+from loregarden.services.chat_feature_loop import advance_feature_loops
+from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
+from loregarden.services.invariant_registry import (
+    AWAITING_STAGES_ARE_ASKED,
+    CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
+    EVERY_BLOCK_IS_SETTLED,
+    EXHAUSTED_GATES_BLOCK,
+    HELD_REPAIRS_READ_IN_PROGRESS,
+    HELD_TICKETS_RESUME,
+    LANDED_WORK_IS_COMMITTED,
+    LANDING_BLOCKS_CLEAR,
+    LIVE_WORKSPACES_HAVE_REAL_REPOS,
+    NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
+    PUBLISH_CARDS_CLOSE,
+    SURVEY_CARDS_CLOSE,
+    TICKET_BRANCHES_HOLD_HISTORY,
+)
+from loregarden.services.invariants import Invariant, run_invariant
 from loregarden.services.network_wait_resume import resume_network_waits
 from loregarden.services.parked_stage_resume import (
     resume_stranded_stages,
@@ -57,12 +74,8 @@ from loregarden.services.run_service import (
     settle_orphaned_agent_runs,
     settle_stranded_stages,
 )
-from loregarden.services.terminal_stage_sweep import (
-    finish_parked_terminal_tickets,
-    finish_tickets_whose_landing_cleared,
-)
+from loregarden.services.terminal_stage_sweep import finish_parked_terminal_tickets
 from loregarden.services.ticket_rollup import reconcile_all_parents
-from loregarden.services.tree_publish_scheduler import close_published_cards
 from loregarden.services.workflow_monitor import sweep as monitor_sweep
 from sqlmodel import Session
 
@@ -75,6 +88,15 @@ class SweepStep:
 
     name: str
     run: Callable[[Session], object]
+
+
+def _invariant(invariant: Invariant) -> SweepStep:
+    """A registered invariant as a step, under the invariant's own name."""
+
+    def run(session: Session) -> object:
+        return run_invariant(session, invariant)
+
+    return SweepStep(invariant.name, run)
 
 
 def _settle_leases(session: Session) -> object:
@@ -102,6 +124,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_orphaned_agent_runs", settle_orphaned_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
+    # Before the lanes are driven: a hold whose ticket still reads blocked is
+    # re-armed here, so the same pass's re-dispatch runs the stage (1656).
+    _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     # Periodic by the same rule: it selects only tickets with no agent run and
     # no orchestration behind them. It sits after the settlers so a stage they
@@ -112,8 +137,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # terminal stage the step above leaves alone. It acts only when a read-only
     # merge preview says the landing would now succeed, so a conflict that is
     # still there is never retried (928).
-    SweepStep("finish_tickets_whose_landing_cleared", finish_tickets_whose_landing_cleared),
+    _invariant(LANDING_BLOCKS_CLEAR),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
+    # After the parents settle, so a feature ticket finished this pass is read
+    # as done: its chat loop marks the round met and starts the queued one.
+    SweepStep("advance_feature_loops", advance_feature_loops),
     # Periodic by the same rule as the steps above: it consults liveness
     # predicates — a pid, the run behind the lease, and docker itself — rather
     # than assuming everything in flight is an orphan. It also never frees a
@@ -124,10 +152,13 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.
     SweepStep("scan_workflow_monitor", monitor_sweep),
+    # Blocks, and settles, the tickets an exhausted gate parked before its
+    # writer blocked them (lg-milestone-that-1432).
+    _invariant(EXHAUSTED_GATES_BLOCK),
     # After the settlers, because they are what writes most of the harness
     # blocks this classifies: a lease expiry settled two steps up gets its
     # kind here, in the same pass, without the settler having to know (749).
-    SweepStep("classify_unclassified_blocks", sweep_unclassified_blocks),
+    _invariant(EVERY_BLOCK_IS_SETTLED),
     # Periodic by the same rule: it acts only on tickets still blocked on the
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
@@ -145,7 +176,40 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("check_integration_branches", check_integration_branches),
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
-    SweepStep("close_published_cards", close_published_cards),
+    _invariant(PUBLISH_CARDS_CLOSE),
+    # A survey card closed only by a click, so "clone failed" stayed pending for
+    # days after the next pass cloned without trouble. The feeder now closes
+    # them as it succeeds; this catches any it did not.
+    _invariant(SURVEY_CARDS_CLOSE),
+    # Report-only: work left in a finished ticket's tree is a person's call to
+    # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
+    # kept, which is a handful, not one per ticket.
+    _invariant(LANDED_WORK_IS_COMMITTED),
+    # A branch that merged a squash of its integration branch conflicts on every
+    # later checkout merge (lg-external-harness-1318). The next checkout repairs
+    # it too; this catches the idle ones and reports one entering after #654.
+    _invariant(TICKET_BRANCHES_HOLD_HISTORY),
+    # A probe once wrote three workspaces on temp-directory repos into the live
+    # database (lg-milestone-that-1319); every sweep over workspaces met them.
+    _invariant(LIVE_WORKSPACES_HAVE_REAL_REPOS),
+    # Closing a ticket never touched its stages, so 361 of 466 closed tickets
+    # still showed pending or blocked ones (lg-workflow-integrity-1328). The
+    # flush guard closes them now; this repairs the backlog and reports a writer
+    # that gets past it.
+    _invariant(CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS),
+    # After closed tickets close: a stage awaiting a person with no approval
+    # waits on nobody (lg-workflow-integrity-1625). It is blocked and settled,
+    # so the operator sees why and a requeue runs it.
+    _invariant(AWAITING_STAGES_ARE_ASKED),
+    # A ticket held on prerequisites, or parked on them by a person, waits for
+    # them to land, and nothing else reads a landing (lg-milestone-that-1315).
+    # The mark comes first, so a park seen waiting in this pass is releasable in
+    # a later one; last overall, so every settler and landing above has run.
+    SweepStep("mark_parked_waits", mark_parked_waits),
+    _invariant(HELD_TICKETS_RESUME),
+    # After holds resume: dropping a parent-edge must not unpark a ticket whose
+    # only remaining wait was the illegal one (release requires an edge).
+    _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),
 )
 
 

@@ -19,6 +19,7 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.devdocs_tool import search_reference_tool
+from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
     docker_capacity_status_tool,
     force_release_docker_lease_tool,
@@ -32,12 +33,15 @@ from loregarden.mcp.external_harness_tools import (
     begin_external_stage_tool,
     finish_external_stage_tool,
 )
+from loregarden.mcp.feature_loop_tools import HANDLERS as FEATURE_LOOP_HANDLERS
+from loregarden.mcp.fix_coverage_tools import HANDLERS as FIX_COVERAGE_HANDLERS
 from loregarden.mcp.github_issue_tool import sync_github_issues
 from loregarden.mcp.initiative_membership_tools import HANDLERS as INITIATIVE_MEMBERSHIP_HANDLERS
 from loregarden.mcp.initiative_plan_tools import HANDLERS as INITIATIVE_PLAN_HANDLERS
 from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDLERS
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
+from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
 from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
@@ -64,6 +68,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.CHECK_ORGANIZATION.value: check_organization,
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
     McpTool.DOCTOR.value: doctor,
+    McpTool.DISK_USAGE.value: disk_usage_tool,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
     McpTool.FETCH_REFERENCE.value: fetch_reference_tool,
@@ -76,8 +81,11 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **LOCAL_INSTANCE_HANDLERS,
     **INITIATIVE_PLAN_HANDLERS,
     **INITIATIVE_MEMBERSHIP_HANDLERS,
+    **FEATURE_LOOP_HANDLERS,
     **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
     **DOCUMENT_HANDLERS,
     **UX_ANSWERS_HANDLERS,
+    **FIX_COVERAGE_HANDLERS,
+    **SURVEY_HANDLERS,
 }

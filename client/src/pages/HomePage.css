@@ -17,26 +17,19 @@
 
 .home-kicker {
   margin: 0 0 6px;
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--ui);
+  font-size: var(--fs-small);
   color: var(--txl);
   letter-spacing: 0.02em;
 }
 
 .home-greeting {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 34px;
+  font-family: var(--dp); /* type-ok: the Home greeting */
+  font-size: 34px; /* type-ok: the Home greeting, a display size above the scale */
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--tx);
-}
-
-.home-summary {
-  margin: 8px 0 0;
-  font-size: 14px;
-  color: var(--txm);
-  max-width: 52ch;
 }
 
 .home-console-link {
@@ -48,7 +41,7 @@
   background: var(--bg2);
   color: var(--tx);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .home-console-link:hover {
@@ -106,7 +99,7 @@
   border-radius: 999px;
   background: var(--bg1);
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 6px 12px;
   cursor: pointer;
 }
@@ -117,395 +110,307 @@
   background: var(--bg3);
 }
 
-.home-board {
-  flex: 1 1 auto;
-  min-height: 380px;
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(360px, 1.5fr);
-  gap: 14px;
-  align-items: stretch;
-}
-
-.home-card {
+/* Four small numbers in place of the old eight tiles: what needs you, what
+   failed, what is moving, and how much is open. Violet and red only when they
+   mean something (F4): a zero failed count is plain. */
+.home-kpis {
+  margin: 0 0 0 auto;
   display: flex;
-  flex-direction: column;
-  min-height: 380px;
-  border: 1px solid var(--bd);
-  border-radius: 14px;
-  background: var(--bg1);
-  overflow: hidden;
+  align-items: flex-end;
+  gap: 22px;
 }
 
-.home-card--status {
-  flex: none;
-  min-height: 0;
-}
-
-.home-card-head {
+.home-kpi {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--bd);
+  flex-direction: column-reverse;
+  align-items: flex-end;
 }
 
-.home-card-head h2 {
-  margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.home-card-head-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
-.home-card-count {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ac2);
-  background: rgba(111, 174, 143, 0.1);
-  border: 1px solid rgba(111, 174, 143, 0.22);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.home-card-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px;
-  overflow: auto;
-}
-
-.home-card-foot {
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--bd);
-}
-
-.home-card-action {
-  width: 100%;
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  background: var(--bg2);
-  color: var(--txm);
-  font-size: 12px;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.home-card-action--inline {
-  width: auto;
-  padding: 5px 10px;
-}
-
-.home-card-action:hover {
-  color: var(--tx);
-  border-color: var(--bd2);
-  background: var(--bg3);
-}
-
-.home-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  padding: 8px 8px;
-  cursor: pointer;
-}
-
-.home-row:hover {
-  background: var(--bg3);
-}
-
-.home-row-title {
-  font-size: 13px;
-  color: var(--tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-row-meta {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 11px;
+.home-kpi dt {
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
-.home-row-meta--blocked {
+.home-kpi dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-title);
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+
+.home-kpi dd a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-kpi dd a:hover {
+  text-decoration: underline;
+}
+
+.home-kpi--you dd {
+  color: var(--vil);
+}
+
+.home-kpi--bad dd {
   color: var(--rdl);
 }
 
-.home-row-meta--in_progress {
-  color: var(--bll);
+.home-header-actions {
+  flex: none;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.home-row-tags {
-  flex: none;
+/* Needs you and Running now on the left, the feed on the right. */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.home-grid-main {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 0;
+}
+
+/* A section is a heading over rows, not a card: one level, no border (F5). */
+.home-section {
+  min-width: 0;
+}
+
+.home-section-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bd);
 }
 
-.home-row-activity {
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-/* Full-width strip: two groups of four, so the labels actually fit. */
-.home-status-body {
-  display: flex;
-  gap: 20px 32px;
-  padding: 16px 18px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.home-status-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.home-status-label {
+.home-section-head h2 {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--txl);
-}
-
-.home-status-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  width: 100%;
-}
-
-.home-stat {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--bd);
-  border-radius: 10px;
-  background: var(--bg2);
-  min-width: 0;
-  min-height: 72px;
-}
-
-.home-stat dt {
-  font-size: 11px;
-  color: var(--txl);
-  white-space: nowrap;
-}
-
-.home-stat dd {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 26px;
-  line-height: 1.1;
+  font-size: var(--fs-lead);
+  font-weight: 600;
   color: var(--tx);
 }
 
-/* The point of the card: work with an agent on it reads as live. */
-.home-stat[data-activity="running"] {
-  border-color: rgba(111, 174, 143, 0.32);
-  background: rgba(111, 174, 143, 0.08);
+.home-section-count {
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.home-section-link {
+  margin-left: auto;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  text-decoration: none;
+}
+
+.home-section-link:hover {
+  color: var(--tx);
+}
+
+.home-section-more {
+  margin-top: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
 }
 
 .home-empty {
-  margin: 12px 8px;
-  font-size: 13px;
+  margin: 12px 0;
+  font-size: var(--fs-body);
   color: var(--txl);
 }
 
-.home-activity {
-  display: flex;
-  flex-direction: column;
-  min-height: 380px;
-  border: 1px solid var(--bd);
-  border-radius: 14px;
-  background: var(--bg1);
-  overflow: hidden;
+.home-empty--error {
+  color: var(--rdl);
 }
 
-.home-activity-head {
+.home-rows,
+.home-feed,
+.home-run-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One row per thing to do; the row is the action. */
+.home-needs-row,
+.home-feed-row {
+  width: 100%;
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 1px solid var(--bd);
+  border-radius: 0;
+  background: transparent;
+  color: var(--txm);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-needs-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.home-needs-row:hover,
+.home-feed-row:hover:not(.home-feed-row--static) {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.home-needs-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx);
+}
+
+.home-needs-count {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--vil);
+}
+
+.home-needs-where {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+.home-needs-act {
+  font-size: var(--fs-small);
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+/* Running now: a few cards (one per lane), each a stage strip. */
+.home-run-cards {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.home-run-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  color: var(--txm);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-run-card:hover {
+  border-color: var(--bd2);
+  background: var(--bg2);
+}
+
+.home-run-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--bd);
 }
 
-.home-activity-head h2 {
-  margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
-  font-weight: 600;
+.home-run-card-id,
+.home-run-card-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
 }
 
-.home-activity-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 8px 8px;
+.home-run-card-title {
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-run-stages {
   display: flex;
-  flex-direction: column;
+  gap: 3px;
+}
+
+.home-run-stages i {
   flex: 1;
-  min-height: 0;
-  overflow: auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bd2);
 }
 
-.home-activity-item {
-  border-bottom: 1px solid var(--bd);
+.home-run-stages i[data-status="done"] {
+  background: var(--txm);
 }
 
-.home-activity-item:last-child {
-  border-bottom: none;
+.home-run-stages i[data-status="running"] {
+  background: var(--blue);
 }
 
-.home-activity-row {
-  display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  width: 100%;
-  padding: 10px 8px;
-  font-size: 12.5px;
-  background: none;
-  border: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
+.home-run-stages i[data-status="blocked"] {
+  background: var(--red);
 }
 
-button.home-activity-row {
-  cursor: pointer;
-  border-radius: 8px;
+.home-run-stages i[data-status="awaiting"] {
+  background: var(--vio);
 }
 
-button.home-activity-row:hover {
-  background: var(--bg2);
+/* The feed: time, what happened, on what. */
+.home-feed-row {
+  grid-template-columns: 52px auto minmax(0, 1fr);
 }
 
-.home-activity-row--static {
+.home-feed-row--static {
   cursor: default;
 }
 
-.home-run-status {
+.home-feed-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding-top: 2px;
+  white-space: nowrap;
 }
 
-.home-run-status--running,
-.home-run-status--queued,
-.home-run-status--awaiting_permission {
-  color: var(--aml);
-}
-
-.home-run-status--succeeded,
-.home-run-status--completed,
-.home-run-status--done {
-  color: var(--grl);
-}
-
-.home-run-status--failed,
-.home-run-status--error {
-  color: var(--rdl);
-}
-
-.home-activity-main {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+.home-feed-text {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.home-activity-ticket {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+.home-feed-text b {
+  font-weight: 600;
   color: var(--tx);
-  font-size: 13px;
-  font-weight: 500;
-  overflow: hidden;
 }
 
-.home-activity-ticket-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.home-activity-ticket-id {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ac2);
-}
-
-.home-activity-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.home-activity-agent {
-  color: var(--txm);
-  font-weight: 500;
-}
-
-.home-activity-stage {
+.home-feed-stage {
   color: var(--txl);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.home-activity-cmd {
-  color: var(--txl);
-  font-family: var(--mono);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
 }
 
 @media (max-width: 1100px) {
-  .home-board {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .home-activity {
-    grid-column: 1 / -1;
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -514,19 +419,23 @@ button.home-activity-row:hover {
     padding: 20px 18px 32px;
   }
 
-  .home-board {
-    grid-template-columns: 1fr;
+  .home-header {
+    flex-wrap: wrap;
+  }
+
+  .home-kpis {
+    margin-left: 0;
   }
 
   .home-hero {
     grid-template-columns: 1fr;
   }
 
-  .home-status-body {
-    flex-direction: column;
+  .home-needs-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
-  .home-activity-row {
-    grid-template-columns: 96px 1fr;
+  .home-needs-act {
+    display: none;
   }
 }

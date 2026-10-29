@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   DEFAULT_ARTIFACT_TAB,
   navigateToPage,
+  navigateToReferenceSource,
   navigateToStudio,
   navigateToStudioAgent,
   navigateToStudioWorkflow,
@@ -10,6 +11,8 @@ import {
   type ArtifactTab,
 } from "../../../lib/useAppNavigation";
 import { useUiStore } from "../../../state/uiStore";
+import { peekTicket } from "../../../state/ticketPeekStore";
+import { Button } from "../../ui/Button";
 import { useResourceNavigation } from "./resourceNavigation";
 
 function ArrowIcon() {
@@ -86,6 +89,56 @@ export function OpenTicketButton({
       compact={compact}
       onClick={() => navigateToTicket(ticketId, { tab })}
     />
+  );
+}
+
+/**
+ * A ticket's name that opens it: the inline twin of `OpenTicketButton`, for a
+ * line that names several tickets ("Waiting on lg-x-1, lg-x-2"). Disarmed the
+ * same way: on a surface with nowhere to go it is the name, as text.
+ */
+export function TicketNameLink({
+  ticketId,
+  className,
+  title,
+  children,
+}: {
+  ticketId: string;
+  className?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  const canNavigate = useResourceNavigation();
+  if (!canNavigate) {
+    return (
+      <span className={className} title={title}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Button
+      variant="plain"
+      className={className}
+      title={title}
+      onClick={(event) => {
+        event.stopPropagation();
+        peekTicket(ticketId);
+      }}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export function OpenReferenceSourceButton({ sourceId, name }: { sourceId: string; name: string }) {
+  return (
+    <ResourceActionButton
+      label={`Open ${name || "the source"} in the reference library`}
+      onClick={() => navigateToReferenceSource(sourceId)}
+    >
+      Open source
+    </ResourceActionButton>
   );
 }
 

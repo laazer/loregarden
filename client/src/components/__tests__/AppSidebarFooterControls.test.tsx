@@ -330,10 +330,14 @@ test("each control is one tab stop, and the rows gain none", async () => {
     stops.push(active);
   }
 
-  const named = stops.map((stop) => stop.textContent?.trim());
+  // The name text, not the whole row: a page's live count ("0/3") sits in the
+  // same link and is its description, not its name.
+  const named = stops.map(
+    (stop) => (stop.querySelector(".app-sidebar-name") ?? stop).textContent?.trim(),
+  );
   expect(named.filter((name) => name === "Pin tab")).toHaveLength(1);
   expect(named.filter((name) => name === "New tab")).toHaveLength(1);
-  // One stop per entry: every Tools row, three tabs, the pair and Settings —
+  // One stop per entry: every page row, three tabs, the pair and Settings —
   // and nothing from a row's own controls, which are reached with Left/Right
   // instead.
   expect(named).toEqual([
@@ -344,11 +348,11 @@ test("each control is one tab stop, and the rows gain none", async () => {
     "Initiatives",
     "Editor",
     "Studios",
-    "Parallel Execution",
+    "Branch Triage",
+    "Machine",
     "MCP Gateway",
     "Workspaces",
     "Memory",
-    "Branch Triage",
     "Build Board",
     "Sketch Surface",
     "Scratch Pad",

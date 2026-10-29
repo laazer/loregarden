@@ -26,6 +26,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import { Button } from './ui/Button';
+import { StatusChip } from './ui/StatusChip';
 import { AddToTabItems } from './AddToTabMenu';
 import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
@@ -42,7 +43,8 @@ import type {
 } from '../lib/queueSocket';
 import { describeError } from '../state/toastStore';
 import { navigateToTicket } from '../lib/useAppNavigation';
-import { runStatusLabel } from '../lib/ticketStates';
+import { runStatusChip } from '../lib/ticketStates';
+import type { ChipStatus } from '../lib/statusTone';
 import {
   LaneTicketMenu,
   RunningSlotBody,
@@ -56,6 +58,10 @@ import {
   runningChildFromLabels,
   treeSummary,
 } from '../lib/queueRunFormat';
+
+// A slot with no run in it: nothing is wrong, and nothing is happening. The
+// lane's title already says "Available"; the chip gives its state, not a repeat.
+const FREE_SLOT: ChipStatus = { tone: 'idle', label: 'Idle' };
 import './ParallelQueueVisualization.css';
 import { progressFillStyle } from '../lib/progressFill';
 
@@ -142,7 +148,7 @@ function formatWhen(entry: LaneAttentionEntry): string {
 }
 
 /**
- * `headerSlot` carries the queue-kind toggle. Passed in rather than imported so
+ * `headerSlot` carries the link to Machine capacity. Passed in rather than imported so
  * this component keeps knowing nothing about the docker pool — it draws lanes,
  * and which board is on screen is the dashboard's decision.
  */
@@ -320,12 +326,10 @@ export function ParallelQueueVisualization({ headerSlot }: { headerSlot?: ReactN
             <div className="queue-slot-head">
               <span className="queue-slot-dot" aria-hidden />
               <span className="queue-slot-name">Slot {lane.slot_number}</span>
-              <span
-                className="queue-slot-badge"
-                data-run-status={lane.running ? lane.running.status : 'available'}
-              >
-                {lane.running ? runStatusLabel(lane.running.status) : 'available'}
-              </span>
+              <StatusChip
+                {...(lane.running ? runStatusChip(lane.running.status) : FREE_SLOT)}
+                className="queue-slot-status"
+              />
               <LaneMenu
                 slotNumber={lane.slot_number}
                 onAddTicket={() => setPickerOpenSlot(lane.slot_number)}

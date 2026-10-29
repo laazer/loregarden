@@ -1,9 +1,12 @@
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
+from loregarden.models.domain.enums import EditorChangeStatus
+from loregarden.services.editor_changes import EditorChangesError, list_editor_changes
 from loregarden.services.file_editor import (
     checkout_editor_branch,
     list_editor_browse,
@@ -140,3 +143,101 @@ def test_editor_api_round_trip(client, editor_repo, db_session):
     )
     assert checkout.status_code == 200
     assert checkout.json()["current_branch"] == "feature/editor"
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+@pytest.fixture
+def changed_branch(editor_repo):
+    """feature/editor with a commit (add, edit, delete), an uncommitted edit and an untracked file."""
+    _git(editor_repo, "checkout", "-q", "feature/editor")
+    (editor_repo / "client" / "new.ts").write_text("a\nb\n", encoding="utf-8")
+    (editor_repo / "client" / "app.ts").write_text(
+        "export const app = 2;\nexport const b = 3;\n", encoding="utf-8"
+    )
+    (editor_repo / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x01")
+    _git(editor_repo, "rm", "-q", "README.md")
+    _git(editor_repo, "add", ".")
+    _git(editor_repo, "commit", "-q", "-m", "feature work")
+    (editor_repo / "client" / "new.ts").write_text("a\nb\nc\n", encoding="utf-8")
+    (editor_repo / "scratch.md").write_text("draft\n", encoding="utf-8")
+    return editor_repo
+
+
+def test_editor_changes_lists_commits_and_working_tree_against_the_merge_base(
+    editor_workspace, changed_branch
+):
+    changes = list_editor_changes(editor_workspace)
+
+    assert (changes.branch, changes.base, changes.total) == ("feature/editor", "main", 5)
+    by_path = {change.path: change for change in changes.files}
+    assert by_path["client/app.ts"].status is EditorChangeStatus.MODIFIED
+    assert (by_path["client/app.ts"].additions, by_path["client/app.ts"].deletions) == (2, 1)
+    # Committed as two lines, then a third added without committing: both count.
+    assert by_path["client/new.ts"].status is EditorChangeStatus.ADDED
+    assert by_path["client/new.ts"].additions == 3
+    assert by_path["README.md"].status is EditorChangeStatus.DELETED
+    assert (by_path["logo.png"].additions, by_path["logo.png"].deletions) == (None, None)
+    assert by_path["scratch.md"].status is EditorChangeStatus.UNTRACKED
+    assert [change.path for change in changes.files] == sorted(by_path)
+
+
+def test_editor_changes_is_empty_on_a_branch_with_nothing_of_its_own(editor_workspace, editor_repo):
+    changes = list_editor_changes(editor_workspace)
+
+    assert changes.files == []
+    assert changes.total == 0
+
+
+def test_editor_changes_reads_the_worktree_it_is_pointed_at(
+    editor_workspace, editor_repo, tmp_path
+):
+    worktree = tmp_path / "wt"
+    _git(editor_repo, "worktree", "add", "-q", "-b", "ticket/x", str(worktree))
+    (worktree / "client" / "app.ts").write_text("changed\n", encoding="utf-8")
+
+    in_worktree = list_editor_changes(editor_workspace, context_root=str(worktree))
+    in_checkout = list_editor_changes(editor_workspace)
+
+    assert [change.path for change in in_worktree.files] == ["client/app.ts"]
+    assert in_worktree.branch == "ticket/x"
+    assert in_checkout.files == []
+
+
+def test_editor_changes_counts_past_the_cap(editor_workspace, changed_branch):
+    with mock.patch("loregarden.services.editor_changes.MAX_CHANGED_FILES", 2):
+        changes = list_editor_changes(editor_workspace)
+
+    assert len(changes.files) == 2
+    assert changes.total == 5
+
+
+def test_editor_changes_refuses_rather_than_reporting_nothing_without_a_base(
+    editor_workspace, editor_repo
+):
+    # "Nothing changed" and "could not compare" must not be the same answer.
+    with mock.patch("loregarden.services.editor_changes.git_base_ref", return_value=None):
+        with pytest.raises(EditorChangesError, match="No base branch"):
+            list_editor_changes(editor_workspace)
+
+
+def test_editor_changes_api(client, changed_branch, db_session):
+    ws = db_session.exec(
+        __import__("sqlmodel").select(Workspace).where(Workspace.slug == "loregarden")
+    ).first()
+    assert ws is not None
+    ws.repo_path = "."
+    db_session.add(ws)
+    db_session.commit()
+
+    ok = client.get(f"/api/workspaces/{ws.slug}/editor/changes")
+    assert ok.status_code == 200
+    assert ok.json()["total"] == 5
+    assert {"path", "status", "additions", "deletions"} <= set(ok.json()["files"][0])
+
+    with mock.patch("loregarden.services.editor_changes.git_base_ref", return_value=None):
+        refused = client.get(f"/api/workspaces/{ws.slug}/editor/changes")
+    assert refused.status_code == 409
+    assert "No base branch" in refused.json()["detail"]

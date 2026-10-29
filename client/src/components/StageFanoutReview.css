@@ -14,14 +14,14 @@
 
 .fanout-review__title {
   display: block;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text, #e6e8ec);
 }
 
 .fanout-review__hint {
   display: block;
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--text-dim, #8b8f98);
 }
 
@@ -31,7 +31,7 @@
   border: 1px solid var(--danger, #d9534f);
   border-radius: 6px;
   color: var(--danger, #d9534f);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* A row, not a grid: the columns are meant to be read against each other, and
@@ -66,12 +66,12 @@
 }
 
 .fanout-attempt__name {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text, #e6e8ec);
 }
 
 .fanout-attempt__status {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-dim, #8b8f98);
@@ -90,7 +90,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--text-dim, #8b8f98);
 }
 
@@ -102,7 +102,7 @@
 
 .fanout-attempt__failure {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--danger, #d9534f);
 }
 
@@ -125,7 +125,7 @@
   background: transparent;
   color: var(--text, #e6e8ec);
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   text-align: left;
   cursor: pointer;
 }
@@ -152,7 +152,7 @@
 
 .fanout-attempt__empty {
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--text-dim, #8b8f98);
 }
 
@@ -164,7 +164,7 @@
   border-radius: 6px;
   background: var(--panel-2, #1b1e24);
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.45;
   white-space: pre;
 }

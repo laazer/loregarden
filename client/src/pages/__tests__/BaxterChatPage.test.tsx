@@ -12,6 +12,17 @@ import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 import { BaxterChatPage } from "../BaxterChatPage";
 
+/** A thread on one workspace with no focus beyond it, no loop and no branch. */
+const NO_WORKBENCH = {
+  focus: {
+    all_workspaces: false,
+    workspaces: [{ id: "ws-1", slug: "loregarden", fixed: true }],
+    initiatives: [],
+  },
+  feature: null,
+  chat_branch: null,
+};
+
 jest.mock("../../api/client", () => {
   const actual = jest.requireActual("../../api/client");
   return {
@@ -84,6 +95,7 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: title || "New chat",
       messages: [],
       pending_approvals: [],
@@ -299,6 +311,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Yesterday's triage",
       messages: [
         { id: "m1", role: "user", content: "Where did we stop?", created_at: "2026-07-29T09:00:00Z" },
@@ -466,6 +479,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Queue history",
       messages: [
         {
@@ -623,6 +637,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Hello",
       messages: [
         { id: "m1", role: "user", content: "Hello", created_at: "2026-07-30T09:00:00Z" },
@@ -650,6 +665,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "In flight",
       messages: [
         { id: "m1", role: "user", content: "Still working?", created_at: "2026-07-30T09:00:00Z" },
@@ -681,6 +697,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      ...NO_WORKBENCH,
       title: "Stop me",
       messages: [
         { id: "m1", role: "user", content: "Go forever", created_at: "2026-07-30T09:00:00Z" },
@@ -720,7 +737,7 @@ describe("BaxterChatPage", () => {
     });
   });
 
-  it("starts a new chat when the global topbar reset fires", async () => {
+  it("starts a new chat when the chat reset is requested", async () => {
     await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
@@ -844,7 +861,8 @@ describe("BaxterChatPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Show me examples of every chat UI primitive.")).toBeInTheDocument();
     });
-    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    // The gallery's reasoning has no tool calls, so its one line says so.
+    expect(screen.getByRole("button", { name: /Thought it through/ })).toBeInTheDocument();
     expect(screen.getAllByText("client · npm test").length).toBeGreaterThan(0);
     // In the thread; the workbench shows the newest card as well.
     const thread = container.querySelector<HTMLElement>(".baxter-chat-thread");
@@ -985,6 +1003,44 @@ describe("BaxterChatPage", () => {
 
     await showWorkbenchFromComposer();
     expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+  });
+
+  it("keeps History and New chat beside the toggle that hides and shows the workbench", async () => {
+    await renderChatReady();
+    const inWorkbench = within(screen.getByRole("complementary", { name: "Workbench" }));
+    const hide = inWorkbench.getByRole("button", { name: "Hide the workbench" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    expect(inWorkbench.getByRole("button", { name: "History" })).toBeInTheDocument();
+    expect(inWorkbench.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+
+    fireEvent.click(hide);
+    expect(screen.queryByRole("complementary", { name: "Workbench" })).not.toBeInTheDocument();
+    const controls = within(screen.getByRole("group", { name: "Chat panels" }));
+    const history = controls.getByRole("button", { name: "History" });
+    expect(controls.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    fireEvent.click(history);
+    expect(useUiStore.getState().baxterHistoryOpen).toBe(true);
+    expect(history).toHaveAttribute("aria-pressed", "true");
+
+    const show = controls.getByRole("button", { name: "Show the workbench" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(show);
+    expect(screen.getByRole("complementary", { name: "Workbench" })).toBeInTheDocument();
+  });
+
+  it("starts a new chat from the New chat control", async () => {
+    await renderChatReady();
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("What should we ship today?")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Hello")).not.toBeInTheDocument();
   });
 
   it("starts a narrow window without the workbench, which covers the thread there", async () => {

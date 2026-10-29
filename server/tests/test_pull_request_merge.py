@@ -22,6 +22,7 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services import pull_request_merge, ticket_pull_request
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.pull_request_merge import MergeFailed, MergeRefused, merge_and_clean_up
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
@@ -213,19 +214,35 @@ def test_a_worktree_with_uncommitted_work_is_kept_and_said_so(
 def test_a_tree_roots_pr_is_looked_up_on_its_integration_branch(
     session, workspace, ticket, repo, github
 ):
-    """`publish_tree` publishes a root's integration branch, so its PR lives there."""
+    """`publish_tree` publishes a root's integration branch as ``publish/<branch>``,
+    so its PR lives there."""
     git(repo, "branch", "integration/lg-1")
     session.add(
         Ticket(external_id="lg-2", workspace_id=workspace.id, title="c", parent_ticket_id=ticket.id)
     )
     session.commit()
-    fake = github(FakeGitHub(_pr(headRefName="integration/lg-1")))
+    published = publish_ref_for("integration/lg-1")
+    fake = github(FakeGitHub(_pr(headRefName=published)))
 
     found = ticket_pull_request.ticket_pull_request(session, ticket, workspace)
 
-    assert fake.calls[0][:3] == ["pr", "view", "integration/lg-1"]
-    assert found.branch == "integration/lg-1"
+    assert fake.calls[0][:3] == ["pr", "view", published]
+    assert found.branch == published
     assert found.pull_request is not None and found.pull_request.mergeable_now
+
+
+def test_a_published_pr_cleans_up_the_branch_it_publishes_and_its_remote_name(
+    session, workspace, ticket, repo, github
+):
+    """The head is ``publish/<branch>`` on the remote; what is held here is the branch."""
+    fake = github(FakeGitHub(_pr(headRefName=publish_ref_for(BRANCH))))
+
+    result = merge_and_clean_up(session, ticket, workspace, number=7, head_sha=SHA)
+
+    assert all(step.ok for step in result.steps), result.steps
+    assert git(repo, "branch", "--list", BRANCH).stdout.strip() == ""
+    remote = f"repos/{{owner}}/{{repo}}/git/refs/heads/{publish_ref_for(BRANCH)}"
+    assert fake.did("api", "-X", "DELETE", remote)
 
 
 def test_a_blocked_pr_names_its_unsigned_commits_and_a_clean_one_is_not_asked(

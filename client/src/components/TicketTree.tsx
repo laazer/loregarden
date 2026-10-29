@@ -6,6 +6,7 @@ import {
   stageStatusColor,
 } from "../lib/ticketStates";
 import { blockedOnStateLabel } from "../utils/blockKinds";
+import { hasParts, partsTag } from "../lib/ticketParts";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
@@ -16,17 +17,20 @@ import {
   childProgressSegments,
 } from "./chat/primitives/TicketCardMeta";
 import "./chat/primitives/PrimitiveCard.css";
+import { WaitingOnLinks } from "./waiting/WaitingOnLinks";
 
 export type TicketTreePresentation = "default" | "v6" | "compact";
 
 function TreeRowTrail({
   node,
+  partLabel,
   workflowRunning,
   showAddChild,
   onAddChild,
   renderRowAction,
 }: {
   node: TicketTreeNode;
+  partLabel?: string;
   workflowRunning: boolean;
   showAddChild: boolean;
   onAddChild?: (node: TicketTreeNode) => void;
@@ -42,9 +46,12 @@ function TreeRowTrail({
           aria-label="Workflow running"
         />
       )}
-      {hasChildren && (
+      {partLabel ? <span className="count-pill tree-part-of">{partLabel}</span> : null}
+      {hasChildren && hasParts(node) ? (
+        <span className="count-pill tree-parts-tag">{partsTag(node.children)}</span>
+      ) : hasChildren ? (
         <span className="count-pill tree-child-count">{node.child_count}</span>
-      )}
+      ) : null}
       {showAddChild && (
         <button
           type="button"
@@ -84,6 +91,7 @@ function TreeRow({
   showExternalId = false,
   presentation = "default",
   depth = 0,
+  partLabel,
 }: {
   node: TicketTreeNode;
   selectedId: string | null;
@@ -95,6 +103,8 @@ function TreeRow({
   showExternalId?: boolean;
   presentation?: TicketTreePresentation;
   depth?: number;
+  /** "part 2/4" when this row is one part of a split ticket. */
+  partLabel?: string;
 }) {
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.has(node.id);
@@ -108,7 +118,7 @@ function TreeRow({
   const isV6 = presentation === "v6";
   const isCompact = presentation === "compact";
 
-  const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
+  const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren || Boolean(partLabel);
   const childProgress = hasChildren ? childProgressSegments(node.children) : null;
 
   const handleRowClick = () => {
@@ -153,6 +163,7 @@ function TreeRow({
               showTrail ? (
                 <TreeRowTrail
                   node={node}
+                  partLabel={partLabel}
                   workflowRunning={workflowRunning}
                   showAddChild={showAddChild}
                   onAddChild={onAddChild}
@@ -250,11 +261,17 @@ function TreeRow({
                   <span className="tree-state-dot" style={{ background: stateColor }} />
                   {blockedOnStateLabel(node.state, node.blocked_on)}
                 </span>
+                {node.waiting_on?.length ? (
+                  <>
+                    <span style={{ color: "var(--bd2)" }}>·</span>
+                    <WaitingOnLinks refs={node.waiting_on} here={node.workspace_slug} shown={2} />
+                  </>
+                ) : null}
                 {node.workspace_slug ? (
                   <>
                     <span style={{ color: "var(--bd2)" }}>·</span>
                     <span
-                      style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}
+                      style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", color: "var(--txl)" }}
                     >
                       {node.workspace_slug}
                     </span>
@@ -264,6 +281,7 @@ function TreeRow({
               {showTrail ? (
                 <TreeRowTrail
                   node={node}
+                  partLabel={partLabel}
                   workflowRunning={workflowRunning}
                   showAddChild={showAddChild}
                   onAddChild={onAddChild}
@@ -297,6 +315,7 @@ function TreeRow({
             showExternalId={showExternalId}
             presentation={presentation}
             depth={depth + 1}
+            partsParent={hasParts(node)}
           />
         </div>
       )}
@@ -315,6 +334,8 @@ interface TicketTreeProps {
   showExternalId?: boolean;
   presentation?: TicketTreePresentation;
   depth?: number;
+  /** These nodes are the parts of a split ticket, so each row says which part it is. */
+  partsParent?: boolean;
 }
 
 export function findAncestorIds(nodes: TicketTreeNode[], targetId: string): string[] {
@@ -352,13 +373,14 @@ export function TicketTree({
   showExternalId = false,
   presentation = "default",
   depth = 0,
+  partsParent = false,
 }: TicketTreeProps) {
   return (
     <div
       className={presentation === "compact" ? "ticket-tree ticket-tree--compact" : "ticket-tree"}
       role={depth === 0 ? "tree" : undefined}
     >
-      {nodes.map((node) => (
+      {nodes.map((node, index) => (
         <TreeRow
           key={node.member_link ? `member:${node.id}` : node.id}
           node={node}
@@ -371,6 +393,7 @@ export function TicketTree({
           showExternalId={showExternalId}
           presentation={presentation}
           depth={depth}
+          partLabel={partsParent && !node.member_link ? `part ${index + 1}/${nodes.length}` : undefined}
         />
       ))}
     </div>

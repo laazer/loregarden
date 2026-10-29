@@ -11,6 +11,7 @@ function attempt(overrides: Partial<LedgerAttempt> = {}): LedgerAttempt {
     started_at: "2026-09-20T10:00:00+00:00",
     finished_at: "2026-09-20T10:10:00+00:00",
     duration_seconds: 600,
+    error_tail: "",
     ...overrides,
   };
 }

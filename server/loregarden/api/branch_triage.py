@@ -15,6 +15,7 @@ from loregarden.services.branch_triage_run_service import (
 from loregarden.services.branch_triage_service import (
     branch_activity,
     branch_diff_snapshot,
+    branch_pull_requests,
     branch_triage_snapshot,
     commit_snapshot,
     delete_branch,
@@ -47,6 +48,8 @@ class BranchCheckoutRequest(BaseModel):
 
 
 class BranchDeleteRequest(BaseModel):
+    #: Discard commits that exist only on this branch. Without it a branch whose
+    #: commits no other ref has (and whose work is not in the base) is refused.
     force: bool = False
     remove_worktrees: bool = False
 
@@ -95,6 +98,17 @@ def _linked_ticket_for_branch(session: Session, workspace_id: str, branch: str) 
 def get_branch_triage(slug: str, session: Session = Depends(get_session)) -> dict:
     ws = _workspace_or_404(session, slug)
     return branch_triage_snapshot(session, ws)
+
+
+@router.get("/{slug}/branch-triage/pull-requests")
+def get_branch_pull_requests(slug: str, session: Session = Depends(get_session)) -> dict:
+    """PR status for the branch list, fetched after it so GitHub never holds up first paint."""
+    ws = _workspace_or_404(session, slug)
+    # The listing can take up to PR_LISTING_TIMEOUT_SECONDS on GitHub and reads
+    # nothing else from the database; holding a pooled connection across it is
+    # how slow discovery once exhausted the pool (lg-bug-hole-689).
+    session.close()
+    return branch_pull_requests(ws)
 
 
 @router.get("/{slug}/branch-triage/diff")

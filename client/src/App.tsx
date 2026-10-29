@@ -14,13 +14,14 @@ import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
+import { TicketPage } from "./pages/TicketPage";
 import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
 import { InitiativePlanRoute } from "./pages/InitiativePlanPage";
 import { WorkItemsPage } from "./pages/WorkItemsPage";
 import { InitiativesPage } from "./pages/InitiativesPage";
 import { InitiativeSuggestionsPage } from "./pages/InitiativeSuggestionsPage";
-import { QueuePage } from "./pages/QueuePage";
+import { MachinePage } from "./pages/MachinePage";
 import { StudioPage } from "./pages/StudioPage";
 import { LegacyInstancesRedirect, WorkspacesPage } from "./pages/WorkspacesPage";
 import { ViewPage } from "./pages/ViewPage";
@@ -111,7 +112,7 @@ export function AppShell() {
               element={
                 <TicketRouteResolver>
                   <TicketAgentActions />
-                  <Dashboard />
+                  <TicketPage />
                 </TicketRouteResolver>
               }
             />
@@ -119,7 +120,9 @@ export function AppShell() {
             <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
             <Route path="/studio/:studioSection/*" element={<StudioPage />} />
             <Route path="/editor/*" element={<EditorPage />} />
-            <Route path="/queue/*" element={<QueuePage />} />
+            {/* The Queue is Machine's Lanes tab now; old links and bookmarks land there. */}
+            <Route path="/queue/*" element={<Navigate to="/machine/lanes" replace />} />
+            <Route path="/machine/*" element={<MachinePage />} />
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/memory/*" element={<MemoryPage />} />
             <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />

@@ -30,7 +30,9 @@ from loregarden.models.domain import (
     BlockKind,
     OrchestrationRun,
     OrchestratorDecision,
+    StageStatus,
     Ticket,
+    TicketState,
     WorkflowInstance,
     WorkflowStageDef,
 )
@@ -38,7 +40,7 @@ from loregarden.services.block_classification import block_message_for, record_b
 from loregarden.services.block_repair import RepairOffer, offer_repair
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.run_concurrency import find_active_run
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 
 @dataclass(frozen=True)
@@ -175,15 +177,44 @@ def sweep_unclassified_blocks(session: Session) -> int:
     why it must go through `settle_block` rather than classifying alone — each
     ticket it reaches records a `REPAIR_ESCALATED` saying the block is waiting
     for a person, instead of quietly acquiring a kind and looking dealt with.
+
+    The reconciler reaches this as the `every_block_is_settled` invariant
+    (`services.invariant_registry`), which also reports each ticket found here
+    as a writer that bypassed `settle_block`.
+    """
+    return settle_unclassified_blocks(session, unclassified_blocks(session))
+
+
+def unclassified_blocks(session: Session) -> list[Ticket]:
+    """Blocked tickets with no kind and no run still going to settle them.
+
+    Only a blocked ticket or stage is a block. ``blocking_issues`` alone is not: a
+    rework reroute writes its feedback there and leaves the stage pending, and
+    between that run and the next the sweep took the feedback for an unsettled
+    block, stamped it ``work`` and reported a writer that skipped `settle_block`
+    (lg-milestone-that-1315, 2026-10-20).
     """
     stale = session.exec(
-        select(Ticket).where(Ticket.blocking_issues != "", Ticket.block_kind.is_(None))
+        select(Ticket).where(
+            or_(
+                Ticket.state == TicketState.BLOCKED,
+                Ticket.workflow_stage_status == StageStatus.BLOCKED,
+            ),
+            Ticket.blocking_issues != "",
+            Ticket.block_kind.is_(None),
+        )
     ).all()
+    # A ticket whose run is still going is left to that run's completion, which
+    # settles the block with its orchestration and may yet repair it.
+    return [ticket for ticket in stale if find_active_run(session, ticket.id) is None]
+
+
+def settle_unclassified_blocks(session: Session, tickets: list[Ticket]) -> int:
+    """Settle each of ``tickets`` still blocked with no kind. Returns how many."""
     settled = 0
-    for ticket in stale:
-        if find_active_run(session, ticket.id) is not None:
-            # Its run is still going; that run's completion settles the block,
-            # with its orchestration, and may yet repair it.
+    for ticket in tickets:
+        session.refresh(ticket)
+        if not ticket.blocking_issues or ticket.block_kind is not None:
             continue
         settle_block(
             session,

@@ -1,6 +1,6 @@
 .kb-counts,
 .kb-checked {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -16,7 +16,7 @@
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .kb-toolbar {
@@ -39,7 +39,7 @@
   background: transparent;
   color: var(--txm);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 4px 10px;
   cursor: pointer;
 }
@@ -116,18 +116,18 @@
 }
 
 .kb-row-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .kb-row-excerpt,
 .kb-muted {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
 .kb-pill {
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   border: 1px dashed var(--rdl, #ff6a54);
   color: var(--rdl, #ff6a54);
   border-radius: 999px;
@@ -142,7 +142,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   min-height: 0;
   overflow-y: auto;
   position: relative;
@@ -156,13 +156,13 @@
 
 .kb-panel-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-lead);
   padding-right: 28px;
 }
 
 .kb-section-title {
   margin: 8px 0 2px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--txm);
@@ -218,7 +218,7 @@
 .kb-meta,
 .kb-superseded {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -228,7 +228,7 @@
 
 .kb-state h2 {
   margin: 0 0 6px;
-  font-size: 15px;
+  font-size: var(--fs-lead);
 }
 
 @media (max-width: 900px) {
@@ -330,7 +330,7 @@
 }
 
 .mm-label {
-  font: 500 11px var(--ui);
+  font: 500 var(--fs-micro) var(--ui);
   fill: var(--tx);
   paint-order: stroke;
   stroke: var(--bg0);
@@ -373,7 +373,7 @@
   border-bottom: 1px solid var(--bd);
   background: transparent;
   color: var(--tx);
-  font: 600 15px var(--ui);
+  font: 600 var(--fs-lead) var(--ui);
   cursor: pointer;
 }
 
@@ -395,7 +395,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -452,7 +452,7 @@
   border-radius: 10px;
   background: var(--bg1);
   padding: 14px 16px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .mm-overview section {
@@ -484,7 +484,7 @@
 }
 
 .mm-figures dt {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--txm);
@@ -492,8 +492,9 @@
 
 .mm-figures dd {
   margin: 2px 0 0;
-  font: 600 20px var(--dp);
+  font: 600 var(--fs-title) var(--ui);
   color: var(--tx);
+  font-variant-numeric: tabular-nums;
 }
 
 .mm-list {
@@ -528,7 +529,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -576,8 +577,19 @@
   justify-content: space-between;
   gap: 8px;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
+}
+
+.mm-group-more {
+  margin: 4px 0 2px;
+  font-size: var(--fs-small);
+  color: var(--ac2);
+}
+
+.mm-group-more:hover,
+.mm-group-more:focus-visible {
+  text-decoration: underline;
 }
 
 .mm-group summary:focus-visible {
@@ -588,7 +600,7 @@
 
 .mm-group-kind {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   white-space: nowrap;
 }
@@ -607,7 +619,7 @@
 }
 
 .kb-shared-label {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   margin-bottom: 4px;
 }

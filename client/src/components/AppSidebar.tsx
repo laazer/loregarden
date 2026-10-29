@@ -1,9 +1,15 @@
 /**
- * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest,
- * then the tickets running right now.
+ * The sidebar: the app's pages in three labelled groups (Work, Build, System),
+ * then pinned view tabs, then the rest, then the tickets running right now.
  *
- * **Tools is not stored.** It is the static page catalog, rendered directly.
- * The seven built-in pages are the application's own navigation, and reaching
+ * **Docked by default.** The rail stays open at 196px with every page named and
+ * its live count beside it, and pushes the page over to make room, the way a
+ * column would. The operator can fold it to 60px icons; folded, it keeps the
+ * behaviour described below, widening over the page on hover and focus. The
+ * choice is `uiStore.railDocked`, persisted.
+ *
+ * **The pages are not stored.** They are the static page catalog, rendered directly.
+ * The built-in pages are the application's own navigation, and reaching
  * them must not depend on rows a bad write could empty — a sidebar that lost
  * its pages offers no control that brings them back. Nothing seeds it, and it
  * cannot drift from the app's routes.
@@ -44,14 +50,21 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSidebarTabs } from "../hooks/useSidebarTabs";
 import { pageFromPath, viewIdFromPath, viewPath } from "../lib/appNavigation";
+import type { TicketStatusSummary } from "../api/types";
+import { railCounts } from "../lib/railCounts";
+import { runningTickets } from "../lib/runningTickets";
 import type { SidebarEntry, ViewSummary } from "../lib/viewsApi";
+import { useQueueStatus } from "../state/QueueStatusContext";
+import { useUiStore } from "../state/uiStore";
 import { BrandMark } from "./BrandMark";
 import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
-import { SIDEBAR_PAGES } from "./appSidebarPages";
+import { SIDEBAR_GROUPS, SIDEBAR_PAGES } from "./appSidebarPages";
 import { SidebarRunningSection } from "./AppSidebarRunning";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { Button } from "./ui/Button";
 import {
   ControlIcon,
   ToolRow,
@@ -60,6 +73,9 @@ import {
   type MoveHandlers,
 } from "./appSidebarRows";
 import "./AppSidebar.css";
+
+/** Wide enough to keep the labelled rail open beside the page. */
+export const RAIL_DOCK_QUERY = "(min-width: 1024px)";
 
 /** Drawn before either read lands: no rows, and the same array every render. */
 const NO_ROWS: SidebarEntry[] = [];
@@ -228,10 +244,16 @@ function useRailInsets(navRef: RefObject<HTMLElement | null>) {
 export function AppSidebar({
   workspaceSlug,
   onOpenSettings,
+  ticketSummary,
+  usageNearLimit = false,
 }: {
   /** A concrete slug — never `"all"`, which 404s against every view route. */
   workspaceSlug: string;
   onOpenSettings: () => void;
+  /** Board counts for the rail's "need you" number; undefined until they land. */
+  ticketSummary?: TicketStatusSummary;
+  /** Provider usage is close to a limit; flagged on Machine, where Usage lives. */
+  usageNearLimit?: boolean;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -245,9 +267,29 @@ export function AppSidebar({
   const [draggingId, setDraggingId] = useState("");
   const [newViewOpen, setNewViewOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ViewSummary | null>(null);
-  const expanded = hovered || focusWithin;
+  const dockPreferred = useUiStore((s) => s.railDocked);
+  const setDocked = useUiStore((s) => s.setRailDocked);
+  // Below this the page needs the 136px more than the labels do, so the rail
+  // folds whatever the preference says, and the preference comes back with
+  // the width.
+  const roomToDock = useMediaQuery(RAIL_DOCK_QUERY);
+  const docked = dockPreferred && roomToDock;
+  const expanded = docked || hovered || focusWithin;
 
-  const toolsHeadingId = useId();
+  const queue = useQueueStatus();
+  const counts = useMemo(
+    () =>
+      railCounts({
+        summary: ticketSummary,
+        runningCount: runningTickets(queue.activeRuns).length,
+        stats: queue.stats,
+        queueLive: !queue.loading && queue.error === null,
+        usageNearLimit,
+      }),
+    [ticketSummary, queue.activeRuns, queue.stats, queue.loading, queue.error, usageNearLimit],
+  );
+
+  const groupHeadingId = useId();
   const pinnedHeadingId = useId();
   const tabsHeadingId = useId();
   const runningHeadingId = useId();
@@ -466,6 +508,7 @@ export function AppSidebar({
         className="app-sidebar"
         aria-label="Main navigation"
         data-expanded={expanded ? "true" : "false"}
+        data-docked={docked ? "true" : "false"}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onFocus={() => setFocusWithin(true)}
@@ -476,23 +519,35 @@ export function AppSidebar({
             <BrandMark />
           </div>
 
-          <div className="app-sidebar-section">
-            <div className="app-sidebar-section-head">
-              <span className="app-sidebar-section-title app-sidebar-reveal" id={toolsHeadingId}>
-                Tools
-              </span>
-            </div>
-            {/* Straight from the catalog: no query, no readiness gate, nothing
-                a failed read or an empty table could shorten. */}
-            <ul className="app-sidebar-list" aria-labelledby={toolsHeadingId}>
-              {SIDEBAR_PAGES.map((page) => (
-                <ToolRow
-                  key={page.key}
-                  page={page}
-                  active={activeViewId === null && page.ownsPage(activePage)}
-                />
-              ))}
-            </ul>
+          {/* Straight from the catalog: no query, no readiness gate, nothing
+              a failed read or an empty table could shorten. One section per
+              group, so each heading labels its own list, and one scroll
+              window around all three, so a short screen scrolls the pages
+              together rather than clipping one group into a window of its
+              own. */}
+          <div className="app-sidebar-pages">
+            {SIDEBAR_GROUPS.map((group) => (
+              <div key={group.key} className="app-sidebar-section app-sidebar-section--group">
+                <div className="app-sidebar-section-head">
+                  <span
+                    className="app-sidebar-section-title app-sidebar-reveal"
+                    id={`${groupHeadingId}-${group.key}`}
+                  >
+                    {group.label}
+                  </span>
+                </div>
+                <ul className="app-sidebar-list" aria-labelledby={`${groupHeadingId}-${group.key}`}>
+                  {SIDEBAR_PAGES.filter((page) => page.group === group.key).map((page) => (
+                    <ToolRow
+                      key={page.key}
+                      page={page}
+                      active={activeViewId === null && page.ownsPage(activePage)}
+                      count={counts[page.key]}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
 
           <div className="app-sidebar-section">
@@ -547,23 +602,56 @@ export function AppSidebar({
             </div>
           )}
 
-          <button type="button" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
-            <span className="app-sidebar-icon">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                aria-hidden
+          <div className="app-sidebar-footer-controls">
+            <Button variant="plain" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
+              <span className="app-sidebar-icon">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  aria-hidden
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </span>
+              <span className="app-sidebar-name app-sidebar-reveal">Settings</span>
+            </Button>
+            {/* A toggle, so it says which way it is set rather than flipping its
+                own label: pressed is docked. An icon paired with Settings, so folded
+                it sits in the column the bars never cover, and open it costs the
+                footer no row of its own. Not
+                offered where the window is too narrow to dock, since pressing it
+                there would change nothing. */}
+            {roomToDock ? (
+              <Button
+                variant="plain"
+                className="app-sidebar-footer-btn app-sidebar-dock-toggle"
+                aria-label="Keep sidebar open"
+                title="Keep sidebar open"
+                aria-pressed={docked}
+                onClick={(event) => {
+                  setDocked(!docked);
+                  // Folding from a pointer press leaves the pointer over the rail and
+                  // focus on this button, and either would hold it open. A keyboard
+                  // press (`detail` 0) keeps focus, so the operator is not dropped
+                  // out of the rail they are working in.
+                  setHovered(false);
+                  if (event.detail > 0) event.currentTarget.blur();
+                }}
               >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </span>
-            <span className="app-sidebar-name app-sidebar-reveal">Settings</span>
-          </button>
+                <span className="app-sidebar-icon">
+                  <ControlIcon>
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M9 4v16" />
+                  </ControlIcon>
+                </span>
+              </Button>
+            ) : null}
+          </div>
 
           <div className="app-sidebar-footer-row">
             <span className="app-sidebar-avatar">

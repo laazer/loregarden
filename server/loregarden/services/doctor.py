@@ -595,27 +595,23 @@ def check_migration_ledger(
 
 
 def check_migration_chain(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
-    """Versioned migrations that claim to follow the same id.
+    """Which versioned migrations follow the same id, for the record.
 
-    Such a merge has no textual conflict, so it reaches main quietly; the build
-    then orders the siblings by id and logs it once at import, which nobody
-    reads. WARN rather than FAIL: the server runs and every migration still
-    applies — what is uncertain is only the order, against a database that may
-    have seen them the other way round.
+    A fork is legitimate: two branches written at once both follow the tip they
+    saw. What it could risk, siblings that interact applied in a different
+    order on a fresh database than on this one, is what
+    `test_migration_forks_commute` rules out before a fork can merge. So this
+    reports forks and passes; a dangling `after` or a cycle never gets this far,
+    because the registry refuses it at import.
     """
     if not VERSION_CHAIN.forks:
         return _ok(DoctorCheck.MIGRATION_CHAIN, "Versioned migrations form one chain.")
-    return DoctorFinding(
-        check=DoctorCheck.MIGRATION_CHAIN,
-        status=DoctorStatus.WARN,
-        finding="; ".join(
-            f"{', '.join(fork.children)} all follow {fork.parent}" for fork in VERSION_CHAIN.forks
-        )
-        + ".",
-        remediation=(
-            "Point the later-merged migration's `after` at the earlier one in "
-            "server/loregarden/db/versions/. Do not rename either id."
-        ),
+    forks = "; ".join(
+        f"{', '.join(fork.children)} follow {fork.parent}" for fork in VERSION_CHAIN.forks
+    )
+    return _ok(
+        DoctorCheck.MIGRATION_CHAIN,
+        f"Versioned migrations fork, and the suite proves each fork commutes: {forks}.",
     )
 
 

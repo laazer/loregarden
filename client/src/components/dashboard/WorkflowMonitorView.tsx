@@ -1,10 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
-import { ticketPath } from "../../lib/appNavigation";
 import {
   conditionLabel,
   conditionMeaning,
@@ -18,6 +16,7 @@ import {
 import { formatRelativeAge } from "../../lib/timestamps";
 import { describeError } from "../../state/toastStore";
 import "./WorkflowMonitorView.css";
+import { TicketLink } from "../TicketLink";
 
 /**
  * Every current workflow-monitor finding, arranged around the question a
@@ -56,10 +55,10 @@ function TicketCard({ ticket }: { ticket: TicketFindings }) {
   return (
     <li className="wm-ticket">
       <div className="wm-ticket-head">
-        <Link className="wm-ticket-link" to={ticketPath(ticket.ticketId)}>
+        <TicketLink className="wm-ticket-link" ticketId={ticket.ticketId}>
           <span className="wm-ticket-id">{ticket.externalId || ticket.ticketId.slice(0, 8)}</span>
           <span className="wm-ticket-title">{ticket.title || "Untitled or deleted ticket"}</span>
-        </Link>
+        </TicketLink>
         <StatePill state={ticket.state} />
       </div>
       <ul className="wm-lines">
@@ -100,10 +99,10 @@ function RecurringRow({ group, tickets }: { group: FindingGroup; tickets: Ticket
         <ul className="wm-recurring-tickets">
           {tickets.map((ticket) => (
             <li key={ticket.ticketId}>
-              <Link to={ticketPath(ticket.ticketId)}>
+              <TicketLink ticketId={ticket.ticketId}>
                 <span className="wm-ticket-id">{ticket.externalId || ticket.ticketId.slice(0, 8)}</span>{" "}
                 {ticket.title}
-              </Link>{" "}
+              </TicketLink>{" "}
               <StatePill state={ticket.state} />
             </li>
           ))}

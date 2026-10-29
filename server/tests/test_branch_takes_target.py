@@ -8,6 +8,7 @@ checkout or an existing tree (`git_branch.ensure_ticket_branch`), and a tree
 cut for the ticket (`WorktreeService.get_or_create_for_ticket`).
 """
 
+import subprocess
 from pathlib import Path
 from unittest import mock
 
@@ -16,6 +17,7 @@ from loregarden.models.domain import AgentRun, RunStatus, Workspace
 from loregarden.services import integration_merge_agent
 from loregarden.services.branch_takes_target import MergeTurnSeat, take_target
 from loregarden.services.git_branch import ensure_ticket_branch, resolve_ticket_branch
+from loregarden.services.git_merge_noco import squash_twin
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.worktree_service import WorktreeRefreshError, WorktreeService
 from sqlmodel import Session, select
@@ -134,13 +136,123 @@ def test_a_superseded_branch_is_moved_before_its_worktree_is_cut(
 def test_a_superseded_branch_with_work_of_its_own_is_not_moved(
     session, workspace, ticket, repo, superseded
 ):
+    """Its first commit is a snapshot `main` also holds, so it takes `main`
+    through that twin; it is never moved onto `main`, which would drop the work."""
     tip = commit_on(repo, superseded, "extra.txt", "only on the branch\n")
 
-    with pytest.raises(ValueError, match="could not take"):
-        ensure_ticket_branch(repo, ticket, start_point="main")
+    ensure_ticket_branch(repo, ticket, start_point="main")
 
-    assert _sha(repo, superseded) == tip, "a branch with unique work is never moved"
+    git(repo, "merge-base", "--is-ancestor", tip, superseded)
+    assert _sha(repo, superseded) != _sha(repo, "main"), "a branch with unique work is never moved"
+    assert (repo / "extra.txt").read_text() == "only on the branch\n"
+    assert (repo / "feature.txt").read_text() == "first\nthen main\n"
     assert _clean(repo)
+    assert _merge_runs(session, ticket) == []
+
+
+# --- the branch holds a squash of its target: history recorded, no agent ---------------
+
+INTEGRATION = "integration/lg-root"
+
+
+@pytest.fixture(name="twinned")
+def twinned_fixture(repo, ticket):
+    """1026's shape, 2026-10-20: the branch merged a squash of its integration
+    branch (what `publish_tree` pushed under the branch's name) and then edited
+    a file the tree added. Every merge of the real branch is add/add in it."""
+    branch = resolve_ticket_branch(ticket)
+    git(repo, "branch", INTEGRATION, "main")
+    landed = commit_on(repo, INTEGRATION, "shared.txt", "the tree's version\n")
+    tree = _sha(repo, f"{landed}^{{tree}}")
+    squash = git(repo, "commit-tree", tree, "-p", "main", "-m", "publish").stdout.strip()
+    git(repo, "branch", branch, squash)
+    tip = commit_on(repo, branch, "shared.txt", "the tree's version\nthe ticket's line\n")
+    commit_on(repo, INTEGRATION, "later.txt", "landed after the squash\n")
+    probe = _merge_tree_names(repo, branch, INTEGRATION)
+    assert probe.returncode == 1 and "shared.txt" in probe.stdout, "fixture: must conflict"
+    return branch, tip, landed
+
+
+def _merge_tree_names(repo: Path, ours: str, theirs: str) -> subprocess.CompletedProcess[str]:
+    """`merge-tree`, which exits 1 on the conflict these tests look for."""
+    return subprocess.run(
+        ["git", "merge-tree", "--write-tree", "--name-only", ours, theirs],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _assert_took_the_tree(path: Path, tip: str, landed: str) -> None:
+    git(path, "merge-base", "--is-ancestor", tip, "HEAD")
+    git(path, "merge-base", "--is-ancestor", landed, "HEAD")
+    git(path, "merge-base", "--is-ancestor", INTEGRATION, "HEAD")
+    assert (path / "shared.txt").read_text() == "the tree's version\nthe ticket's line\n"
+    assert (path / "later.txt").read_text() == "landed after the squash\n"
+    assert _clean(path), git(path, "status", "--porcelain").stdout
+
+
+def test_a_branch_holding_a_squash_of_its_target_takes_it_in_the_checkout(
+    session, workspace, ticket, repo, twinned
+):
+    branch, tip, landed = twinned
+    git(repo, "checkout", "-q", branch)
+
+    ensure_ticket_branch(repo, ticket, start_point=INTEGRATION)
+
+    _assert_took_the_tree(repo, tip, landed)
+    assert _merge_runs(session, ticket) == [], "no agent turn for history alone"
+
+
+def test_a_branch_holding_a_squash_of_its_target_takes_it_before_its_worktree_is_cut(
+    session, workspace, ticket, repo, twinned
+):
+    branch, tip, landed = twinned
+    run = make_run(session, workspace, ticket, "r1")
+
+    tree = WorktreeService(session, repo_path=str(repo)).get_or_create_for_ticket(
+        ticket, run.id, parent_branch=INTEGRATION
+    )
+
+    assert tree is not None
+    _assert_took_the_tree(Path(tree.worktree_path), tip, landed)
+    assert _merge_runs(session, ticket) == []
+
+
+def test_recording_the_twin_changes_no_file(repo, twinned):
+    branch, tip, landed = twinned
+
+    taken = take_target(repo, branch, INTEGRATION)
+
+    assert taken.ok and taken.moved_from == tip and taken.moved_to == _sha(repo, branch)
+    assert _sha(repo, f"{branch}^{{tree}}") == _sha(repo, f"{tip}^{{tree}}")
+    parents = git(repo, "rev-list", "--parents", "-n1", branch).stdout.split()[1:]
+    assert parents == [tip, landed]
+
+
+def test_a_twin_with_a_real_conflict_behind_it_still_goes_to_the_turn(
+    session, workspace, ticket, repo, twinned
+):
+    """The history is recorded either way; a conflict it does not explain is
+    the agent's, and without a seat it blocks naming the file."""
+    branch, tip, landed = twinned
+    commit_on(repo, branch, "later.txt", "the ticket's own later.txt\n")
+    run = make_run(session, workspace, ticket, "r1")
+
+    with pytest.raises(WorktreeRefreshError, match="later.txt"):
+        WorktreeService(session, repo_path=str(repo)).get_or_create_for_ticket(
+            ticket, run.id, parent_branch=INTEGRATION
+        )
+
+    git(repo, "merge-base", "--is-ancestor", landed, branch)
+    assert "shared.txt" not in _merge_tree_names(repo, branch, INTEGRATION).stdout
+
+
+def test_no_twin_on_an_ordinary_conflict(repo, diverged):
+    branch, _tip = diverged
+
+    assert squash_twin(repo, _sha(repo, branch), _sha(repo, "main")) is None
 
 
 # --- the branch has work of its own: the agent's merge turn -----------------------------

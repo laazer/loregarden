@@ -1,7 +1,10 @@
+import { useState } from "react";
+
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { BranchTriageEntry } from "../lib/branchTriageApi";
 import { Button } from "./ui/Button";
+import { Input } from "./ui/Input";
 import { ModalShell } from "./ui/ModalShell";
 
 interface BranchDeleteConfirmModalProps {
@@ -10,7 +13,8 @@ interface BranchDeleteConfirmModalProps {
   isDeleting: boolean;
   error?: string | null;
   onClose: () => void;
-  onConfirm: () => void;
+  /** `discardCommits`: the person ticked "discard" for commits only this branch has. */
+  onConfirm: (discardCommits: boolean) => void;
 }
 
 export function BranchDeleteConfirmModal({
@@ -26,8 +30,38 @@ export function BranchDeleteConfirmModal({
     return <ModalShell open={false} onDismiss={undefined} labelledBy="branch-delete-confirm-title">{null}</ModalShell>;
   }
 
+  return (
+    <BranchDeleteConfirmBody
+      key={branch.name}
+      branch={branch}
+      isDeleting={isDeleting}
+      error={error}
+      onClose={onClose}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+/**
+ * Keyed by branch, so the "discard" tick never carries from one branch to the next.
+ *
+ * A branch whose commits exist nowhere else (not pushed, not on another branch,
+ * not in the base) can be deleted here only after the person ticks a box that
+ * names how many commits go with it. Without the tick the server refuses.
+ */
+function BranchDeleteConfirmBody({
+  branch,
+  isDeleting,
+  error,
+  onClose,
+  onConfirm,
+}: Omit<BranchDeleteConfirmModalProps, "open" | "branch"> & { branch: BranchTriageEntry }) {
+  const [discard, setDiscard] = useState(false);
   const worktreePaths = branch.worktrees.map((item) => item.path).filter(Boolean);
   const removeWorktrees = worktreePaths.length > 0;
+  const onlyHere = branch.commits_only_here;
+  const losesCommits = onlyHere !== 0;
+  const commitWord = onlyHere === 1 ? "commit" : "commits";
 
   return (
     <ModalShell open onDismiss={isDeleting ? undefined : onClose} labelledBy="branch-delete-confirm-title" panelClassName="branch-delete-confirm-modal">
@@ -45,29 +79,52 @@ export function BranchDeleteConfirmModal({
       </div>
 
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
-          {branch.ahead > 0 ? (
+        <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
+          {losesCommits ? (
             <>
-              This branch has{" "}
-              <strong style={{ color: "var(--tx)" }}>
-                {branch.ahead} commit{branch.ahead === 1 ? "" : "s"}
-              </strong>{" "}
-              not merged into main. Deleting it is permanent and cannot be undone.
+              {onlyHere === null ? (
+                <>Git could not tell whether this branch holds commits that exist nowhere else.</>
+              ) : (
+                <>
+                  <strong style={{ color: "var(--tx)" }}>
+                    {onlyHere} {commitWord}
+                  </strong>{" "}
+                  on this branch {onlyHere === 1 ? "exists" : "exist"} nowhere else: not pushed, not
+                  on another branch, and not in the base.
+                </>
+              )}{" "}
+              Push the branch to keep {onlyHere === 1 ? "it" : "them"}.
             </>
           ) : (
-            <>This will permanently delete the local branch. This action cannot be undone.</>
+            <>Every commit on this branch is also somewhere else, so deleting the branch loses none.</>
           )}
         </p>
+
+        {losesCommits ? (
+          <label className="branch-delete-confirm-discard">
+            <Input
+              type="checkbox"
+              checked={discard}
+              disabled={isDeleting}
+              onChange={(event) => setDiscard(event.target.checked)}
+            />
+            <span>
+              {onlyHere === null
+                ? "Delete anyway, discarding any commits only this branch has"
+                : `Discard ${onlyHere} ${commitWord} with the branch`}
+            </span>
+          </label>
+        ) : null}
 
         {removeWorktrees ? (
           <div className="branch-delete-confirm-worktrees">
             <div className="modal-section-title">
               {worktreePaths.length === 1 ? "Linked worktree" : "Linked worktrees"}
             </div>
-            <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: "var(--txm)" }}>
+            <p style={{ margin: "0 0 8px", fontSize: "var(--fs-small)", lineHeight: 1.5, color: "var(--txm)" }}>
               This branch is checked out in {worktreePaths.length} worktree
               {worktreePaths.length === 1 ? "" : "s"}. They will be removed before the branch is
-              deleted.
+              deleted, unless one holds work that exists nowhere else.
             </p>
             <ul className="branch-delete-confirm-path-list">
               {worktreePaths.map((path) => (
@@ -78,7 +135,8 @@ export function BranchDeleteConfirmModal({
             </ul>
             {branch.dirty ? (
               <p className="modal-hint" style={{ marginTop: 8 }}>
-                Uncommitted changes in those worktrees will be lost.
+                One has uncommitted changes, so the branch will be kept. Commit or discard them
+                first.
               </p>
             ) : null}
           </div>
@@ -98,8 +156,8 @@ export function BranchDeleteConfirmModal({
         <Button
           variant="primary"
           className="branch-delete-confirm-submit"
-          disabled={isDeleting}
-          onClick={onConfirm}
+          disabled={isDeleting || (losesCommits && !discard)}
+          onClick={() => onConfirm(losesCommits && discard)}
         >
           {isDeleting
             ? "Deleting…"

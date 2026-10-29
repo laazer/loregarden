@@ -62,6 +62,19 @@ while [ $# -gt 0 ]; do
 done
 [ ${#flags[@]} -gt 0 ] || [ ${#files[@]} -gt 0 ] || usage
 
+# Git hooks and the orchestration runner inherit whatever PATH they were started
+# with, and on an nvm machine that can be a default Node too old for the client
+# toolchain. ensure-node.sh switches to Node 20 when it can; when it cannot, the
+# gate runs on PATH's node and reports itself unavailable (69), naming the
+# version, rather than this script failing every TS gate as a violation.
+ts_node=""
+resolve_ts_node() {
+  [ -z "$ts_node" ] || return 0
+  # A subshell: ensure-node.sh sets -e and exits non-zero when it cannot help.
+  ts_node="$(bash -c 'source "$1/ensure-node.sh" >/dev/null 2>&1 && command -v node' _ "$SCRIPTS")" ||
+    ts_node="node"
+}
+
 failed=0
 unavailable=0
 for gate in "${GATES[@]}"; do
@@ -81,7 +94,15 @@ for gate in "${GATES[@]}"; do
 
   case "$lang" in
     py) cmd=(bash "$SCRIPTS/server_python.sh" "$SCRIPTS/$checker") ;;
-    ts) cmd=(node "$SCRIPTS/$checker") ;;
+    ts)
+      resolve_ts_node
+      if ! command -v "$ts_node" >/dev/null 2>&1; then
+        echo "[loregarden gates] $checker — could not run (no node on PATH; install Node 20)"
+        unavailable=1
+        continue
+      fi
+      cmd=("$ts_node" "$SCRIPTS/$checker")
+      ;;
   esac
 
   # Merged into stdout: the orchestration runner reports stderr *instead of*

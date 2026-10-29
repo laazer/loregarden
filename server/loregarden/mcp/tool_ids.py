@@ -27,6 +27,7 @@ class McpTool(StrEnum):
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
     RECORD_UX_ANSWERS = "loregarden_record_ux_answers"
+    RECORD_FIX_COVERAGE = "loregarden_record_fix_coverage"
     WRITE_DOCUMENT = "loregarden_write_document"
     LIST_ARTIFACTS = "loregarden_list_artifacts"
     READ_ARTIFACT = "loregarden_read_artifact"
@@ -56,8 +57,13 @@ class McpTool(StrEnum):
     CREATE_MEMORY_RELATION = "loregarden_create_memory_relation"
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
+    DISK_USAGE = "loregarden_disk_usage"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
+    SURVEY_QUEUE = "loregarden_survey_queue"
+    SURVEY_PASS = "loregarden_survey_pass"
+    SURVEY_RECORD = "loregarden_survey_record"
+    SURVEY_WRITE = "loregarden_survey_write"
     RESERVE_DOCKER_CAPACITY = "loregarden_reserve_docker_capacity"
     RENEW_DOCKER_LEASE = "loregarden_renew_docker_lease"
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
@@ -77,6 +83,7 @@ class McpTool(StrEnum):
     MARK_NEEDS_PERSON = "loregarden_mark_needs_person"
     ADD_INITIATIVE_MEMBER = "loregarden_add_initiative_member"
     REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
+    PROPOSE_FEATURE_CRITERIA = "loregarden_propose_feature_criteria"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -92,6 +99,14 @@ def mcp_tool_values(tools: Iterable[McpTool]) -> list[str]:
 
 
 # --- Grant defaults (what an agent is offered) --------------------------------
+
+#: The reference survey's tools (`mcp.survey_tools`).
+SURVEY_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.SURVEY_QUEUE,
+    McpTool.SURVEY_PASS,
+    McpTool.SURVEY_RECORD,
+    McpTool.SURVEY_WRITE,
+)
 
 #: Booking docker capacity. Folded into `STAGE_DEFAULT_MCP_TOOLS`, which
 #: reverses the first cut of this feature and is worth explaining, because the
@@ -154,6 +169,8 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # whichever stage settles them (ui-design, or the implementer that built the
     # surface) needs to be able to record them.
     McpTool.RECORD_UX_ANSWERS,
+    # A bug ticket's spec stage cannot pass without its fix coverage record.
+    McpTool.RECORD_FIX_COVERAGE,
     McpTool.REQUEST_APPROVAL,
     # Stage work reads library documentation. Offering the cache means the raw
     # HTML is paid for once per URL rather than once per run, and a stage that
@@ -162,6 +179,9 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # Offered beside it, because the pair is a two-step flow: search finds the
     # exact page, fetch reads it. A stage given only the fetcher guesses URLs.
     McpTool.SEARCH_REFERENCE,
+    # A survey pass runs as a stage of its carrier ticket and records everything
+    # through these; any stage reading a reference source may cite it the same way.
+    *SURVEY_MCP_TOOLS,
     # Docker capacity, offered to every stage — see DOCKER_CAPACITY_MCP_TOOLS
     # below for why this reverses the first cut.
     *DOCKER_CAPACITY_MCP_TOOLS,
@@ -223,6 +243,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
         McpTool.DOCTOR,
+        # Names and sizes from the disk scan; `rescan` walks metadata only.
+        McpTool.DISK_USAGE,
         McpTool.DOCKER_CAPACITY_STATUS,
         McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
@@ -247,6 +269,8 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.APPEND_CHECKPOINT,
         # Files a *pending* proposal only; a person accepting it is the write.
         McpTool.PROPOSE_INITIATIVE_SCHEDULE,
+        # Same: chat feature-loop criteria are drafts until the operator accepts them.
+        McpTool.PROPOSE_FEATURE_CRITERIA,
         # A tag that keeps the autopilot away from a ticket; it starts nothing.
         McpTool.MARK_NEEDS_PERSON,
         McpTool.APPEND_LEARNING,
@@ -255,9 +279,14 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.UPSERT_BLOG_POST,
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
+        McpTool.RECORD_FIX_COVERAGE,
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
+        # The survey drains unattended by decision (2026-10-21): its ticket writes
+        # are read back byte-exact, and the one human gate (admitting a source) is
+        # an inbox card the service files itself.
+        *SURVEY_MCP_TOOLS,
     }
 )
 
@@ -383,9 +412,11 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         #: still be running. An agent that finds the pool full has a legitimate
         #: reason to want this and no way to know whose work it would break.
         McpTool.FORCE_RELEASE_DOCKER_LEASE,
-        #: Orchestrated agents may not spawn tickets mid-run
-        #: (a9-create-ticket-mcp-tool).
-        McpTool.CREATE_TICKET,
+        # CREATE_TICKET was here (a9-create-ticket-mcp-tool) while the review
+        # contract told reviewers to file findings with it. Denied the tool, a
+        # reviewer filed lg-milestone-that-1315 by curling the REST API instead,
+        # unattributed. It is allowed again, attributed and capped per run, in
+        # `services.agent_ticket_filing`.
         # An agent this control plane dispatched is *inside* a stage; checking
         # another one out to an outside harness from there would fork the
         # pipeline it is running.
@@ -422,7 +453,9 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: writes no `approvals` row while doing it, and a direct `/mcp` POST never
 #: reaches the bridge at all.
 ORCHESTRATED_DENIED_MCP_ARGUMENTS: dict[McpTool, frozenset[str]] = {
-    McpTool.START_STAGE: frozenset({"force"}),
+    # `ignore_prerequisites` starts a ticket past the prerequisites holding it:
+    # a person's call, never the call of an agent inside the stage it would start.
+    McpTool.START_STAGE: frozenset({"force", "ignore_prerequisites"}),
 }
 
 
@@ -433,6 +466,7 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.BLOCK_TICKET,
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
+        McpTool.RECORD_FIX_COVERAGE,
         McpTool.ATTACH_EVIDENCE,
         McpTool.APPEND_CHECKPOINT,
         McpTool.APPEND_LEARNING,

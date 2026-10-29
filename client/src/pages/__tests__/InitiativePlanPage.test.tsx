@@ -12,12 +12,17 @@ import type {
   PlanNode,
   PlannerSnapshot,
 } from "../../api/initiativeApi";
-import type { BaxterChatSnapshot } from "../../api/chatTypes";
 import type { TicketState, TicketSummary } from "../../api/types";
+import {
+  TopbarCrumbs,
+  TopbarPageSlot,
+  TopbarPageSlotProvider,
+} from "../../components/TopbarPageSlot";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
 import { useTicketRefStore } from "../../state/ticketRefStore";
+import { useUiStore } from "../../state/uiStore";
 import { InitiativePlanPage, InitiativePlanRoute } from "../InitiativePlanPage";
 
 jest.mock("../../api/client");
@@ -180,25 +185,6 @@ const emptyChat: PlannerSnapshot = {
   workspace_slug: "loregarden",
 };
 
-function baxterThread(overrides: Partial<BaxterChatSnapshot> = {}): BaxterChatSnapshot {
-  return {
-    id: "bx1",
-    workspace_id: "w1",
-    scope: "global",
-    initiative_id: "init1",
-    host_workspace_slug: "tinkercg",
-    title: "",
-    messages: [],
-    pending_approvals: [],
-    runtime: DEFAULT_RUNTIME,
-    run_status: "idle",
-    active_turn_id: null,
-    created_at: "2026-10-12T00:00:00Z",
-    updated_at: "2026-10-12T00:00:00Z",
-    ...overrides,
-  };
-}
-
 function setNarrow(narrow: boolean) {
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: narrow && query.includes("max-width"),
@@ -213,9 +199,13 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/initiatives/init1"]}>
-        <Routes>
-          <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage initiativeId="init1" />} />
-        </Routes>
+        <TopbarPageSlotProvider>
+          <TopbarCrumbs />
+          <TopbarPageSlot />
+          <Routes>
+            <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage initiativeId="init1" />} />
+          </Routes>
+        </TopbarPageSlotProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -276,6 +266,150 @@ test("the schedule is one table in phase order, and the page passes the usabilit
   );
   expect(within(table).getByLabelText("4 items estimated without a measurement")).toBeInTheDocument();
   expect(findUsabilityProblems(container)).toEqual([]);
+});
+
+test("the way back to all initiatives comes before the initiative's title", async () => {
+  // The breadcrumb is the way back now: "Initiatives › <title>", the first step
+  // a link to the list.
+  renderPage();
+  const title = await screen.findByRole("heading", { level: 1, name: "TinkerCG: build and launch" });
+  const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+  const back = within(crumbs).getByRole("link", { name: "Initiatives" });
+  expect(back).toHaveAttribute("href", "/initiatives");
+  expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test("a phase opens into the tree of work under it, one level at a time", async () => {
+  const tickets = boardTickets();
+  tickets.push({ ...tickets[0], id: "t0-0-a", external_id: "tin-t-0-0-a", title: "Card slice subtask", parent_ticket_id: "t0-0" });
+  mockApi.tickets.mockResolvedValue(tickets);
+  const user = userEvent.setup();
+  const { container } = renderPage();
+
+  await user.click(await screen.findByRole("button", { name: "Show the 21 under tin-m-0" }));
+  const tree = screen.getByRole("list", { name: "Work under tin-m-0" });
+  // Twelve, then the rest on request.
+  expect(within(tree).getAllByRole("button", { name: /^tin-t-0-/ })).toHaveLength(12);
+  expect(within(tree).queryByText("Card slice subtask")).not.toBeInTheDocument();
+  expect(findUsabilityProblems(container)).toEqual([]);
+  await user.click(within(tree).getByRole("button", { name: "Show all 21" }));
+  expect(within(tree).getAllByRole("button", { name: /^tin-t-0-\d+ / })).toHaveLength(21);
+
+  const subtree = within(tree).getByRole("button", { name: "Show the 1 under tin-t-0-0" });
+  await user.click(subtree);
+  expect(subtree).toHaveAttribute("aria-expanded", "true");
+  expect(within(tree).getByText("Card slice subtask")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Hide the 21 under tin-m-0" }));
+  expect(screen.queryByRole("list", { name: "Work under tin-m-0" })).not.toBeInTheDocument();
+});
+
+test("a tracked ticket is a phase that names where it lives, and stops being tracked from its row", async () => {
+  const tracked = { ...milestones()[1], id: "f780", external_id: "lg-milestone-that-780", work_item_type: "feature" as const, member: true };
+  mockApi.initiativePlan.mockResolvedValue(plan({ milestones: [milestones()[0], tracked] }));
+  mockApi.initiative.mockResolvedValue({
+    id: "init1",
+    external_id: "init-tinkercg-build-1",
+    title: "TinkerCG build",
+    description: "",
+    state: "in_progress",
+    priority: 3,
+    milestones: [
+      {
+        id: "f780",
+        external_id: "lg-milestone-that-780",
+        title: tracked.title,
+        state: "in_progress",
+        workspace_slug: "loregarden",
+        work_item_type: "feature",
+        member: true,
+        home_milestone: "lg-milestone-that-491",
+      },
+    ],
+    progress: { resolved: 0, total: 1 },
+    workspaces: ["loregarden"],
+  });
+  mockApi.removeInitiativeMember.mockResolvedValue(undefined);
+  const user = userEvent.setup();
+  renderPage();
+
+  const table = await screen.findByRole("table", { name: "Milestones in phase order" });
+  expect(await within(table).findByText(/tracked feature in lg-milestone-that-491/)).toBeInTheDocument();
+  // One table: no second list of the same tickets below it.
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+
+  await user.click(within(table).getByRole("button", { name: "Stop tracking lg-milestone-that-780 in this initiative" }));
+  await waitFor(() => expect(mockApi.removeInitiativeMember).toHaveBeenCalledWith("init1", "f780"));
+  await waitFor(() => expect(mockApi.initiativePlan).toHaveBeenCalledTimes(2));
+});
+
+/** The live shape, scheduled: each ticket a day or two, one after another within its phase. */
+function scheduledNodes(): PlanNode[] {
+  return nodes().map((n, i) => {
+    const start = Date.parse("2026-10-02T00:00:00Z") + (i % 21) * 86_400_000;
+    return {
+      ...n,
+      start: new Date(start).toISOString(),
+      finish: new Date(start + (1 + (i % 2)) * 86_400_000).toISOString(),
+      deps: n.id === "t0-1" ? ["t0-0"] : [],
+    };
+  });
+}
+
+test("the Gantt draws each phase as a span, opens into its work, and passes the usability check", async () => {
+  mockApi.initiativePlan.mockResolvedValue(plan({ nodes: scheduledNodes() }));
+  const user = userEvent.setup();
+  const { container } = renderPage();
+
+  await user.click(await screen.findByRole("tab", { name: "Gantt" }));
+  const chart = screen.getByRole("region", { name: "Chart, scrolls sideways through time" });
+  const rows = within(chart).getByRole("list", { name: "Phases and their work" });
+  // A phase of more than twelve tickets starts folded, its count on the toggle.
+  expect(within(rows).getAllByRole("button", { name: /^Show the 21 in / })).toHaveLength(2);
+  expect(rows.querySelector(".plan-gantt-label .plan-gantt-name:not(button)")).toHaveTextContent("Outside this initiative");
+  expect(findUsabilityProblems(container)).toEqual([]);
+
+  const toggle = within(rows).getByRole("button", { name: "Show the 21 in tin-m-0" });
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(within(rows).getByRole("button", { name: "tin-t-0-1 Card slice task 1" })).toHaveAccessibleDescription(
+    /, waiting, on the critical path$/,
+  );
+  expect(container.querySelectorAll(".plan-gantt-link")).toHaveLength(1);
+
+  await user.click(toggle);
+  expect(within(rows).queryByRole("button", { name: "tin-t-0-1 Card slice task 1" })).not.toBeInTheDocument();
+  // The prerequisite folds into its phase's row, so the line between the two goes with it.
+  expect(container.querySelectorAll(".plan-gantt-link")).toHaveLength(0);
+
+  const day = screen.getByRole("button", { name: "Day" });
+  await user.click(day);
+  expect(day).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Week" })).toHaveAttribute("aria-pressed", "false");
+});
+
+test("the Gantt filters by id or title, opening the phases it finds work in", async () => {
+  mockApi.initiativePlan.mockResolvedValue(plan({ nodes: scheduledNodes() }));
+  const user = userEvent.setup();
+  renderPage();
+
+  await user.click(await screen.findByRole("tab", { name: "Gantt" }));
+  await user.type(screen.getByRole("searchbox", { name: "Filter the chart by id or title" }), "Public beta task 3");
+  const rows = screen.getByRole("list", { name: "Phases and their work" });
+  expect(within(rows).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(rows).getByRole("button", { name: "tin-t-3-3 Public beta task 3" })).toBeInTheDocument();
+
+  await user.clear(screen.getByRole("searchbox", { name: "Filter the chart by id or title" }));
+  await user.type(screen.getByRole("searchbox", { name: "Filter the chart by id or title" }), "zzz");
+  expect(screen.getByText("Nothing matches “zzz”.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Show everything" }));
+  expect(screen.getByRole("list", { name: "Phases and their work" })).toBeInTheDocument();
+});
+
+test("with nothing scheduled the Gantt says what would put work on it", async () => {
+  renderPage();
+  await userEvent.click(await screen.findByRole("tab", { name: "Gantt" }));
+  expect(screen.getByText(/Nothing is scheduled yet/)).toBeInTheDocument();
 });
 
 test("a target date says it is not saved until Enter, then that it is", async () => {
@@ -521,101 +655,37 @@ test("pace mode drops targets and shows where the work will likely land", async 
   expect(screen.getByText("Projected")).toBeInTheDocument();
 });
 
-test("on a narrow screen the agents are a tab, not a panel below everything", async () => {
-  setNarrow(true);
-  const user = userEvent.setup();
-  renderPage();
-
-  expect(await screen.findByRole("tab", { name: "Agents" })).toBeInTheDocument();
-  expect(screen.queryByRole("complementary", { name: "Initiative agents" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("tab", { name: "Agents" }));
-  expect(screen.getByRole("complementary", { name: "Initiative agents" })).toBeInTheDocument();
-});
-
-test("the agent panel switches to Baxter, who answers on a thread focused on this initiative", async () => {
-  mockApi.createBaxterChatSession.mockResolvedValue(baxterThread());
-  mockApi.sendBaxterChatMessage.mockResolvedValue(baxterThread({ run_status: "running", active_turn_id: "bt1" }));
-  mockApi.baxterChatSession.mockResolvedValue(baxterThread());
-  const user = userEvent.setup();
-  renderPage();
-
-  const panel = await screen.findByRole("complementary", { name: "Initiative agents" });
-  expect(within(panel).getByRole("tab", { name: "Planner" })).toHaveAttribute("aria-selected", "true");
-  expect(within(panel).getByRole("button", { name: "Draft schedule" })).toBeInTheDocument();
-
-  await user.click(within(panel).getByRole("tab", { name: "Baxter" }));
-  expect(within(panel).getByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
-  expect(within(panel).queryByRole("button", { name: "Draft schedule" })).not.toBeInTheDocument();
-  // A fresh thread: nothing to start over from yet, and it says what to ask.
-  expect(within(panel).getByRole("button", { name: "New chat" })).toBeDisabled();
-  expect(within(panel).getByText(/which tickets under this initiative are blocked/)).toBeInTheDocument();
-
-  await user.type(within(panel).getByRole("textbox"), "What is blocked?");
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => expect(mockApi.createBaxterChatSession).toHaveBeenCalledWith("@initiative:init1"));
-  await waitFor(() =>
-    expect(mockApi.sendBaxterChatMessage).toHaveBeenCalledWith("@initiative:init1", "bx1", "What is blocked?", "", []),
-  );
-  // The thread is this initiative's, not the chat page's.
-  expect(useInitiativeAgentStore.getState().baxterSessionByInitiative).toEqual({ init1: "bx1" });
-  expect(mockApi.sendPlannerMessage).not.toHaveBeenCalled();
-});
-
-test("the agent tabs are reachable by arrow keys, and the choice is remembered", async () => {
-  const user = userEvent.setup();
+test("the page draws no chat of its own: it opens the omnibar, docked on the right", async () => {
+  useUiStore.setState({ copilotOpen: false, utilityDockEdge: "bottom", screenDockEdge: null });
   const { unmount } = renderPage();
 
-  const planner = await screen.findByRole("tab", { name: "Planner" });
-  planner.focus();
-  await user.keyboard("{ArrowRight}");
-  expect(screen.getByRole("tab", { name: "Baxter" })).toHaveFocus();
-  expect(screen.getByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
-  unmount();
+  await screen.findByRole("table", { name: "Milestones in phase order" });
+  expect(screen.queryByRole("complementary", { name: "Initiative agents" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(useUiStore.getState().copilotOpen).toBe(true);
+  expect(useUiStore.getState().screenDockEdge).toBe("right");
+  // The operator's saved edge is untouched, and comes back on leaving.
+  expect(useUiStore.getState().utilityDockEdge).toBe("bottom");
 
-  renderPage();
-  expect(await screen.findByRole("tab", { name: "Baxter" })).toHaveAttribute("aria-selected", "true");
+  unmount();
+  expect(useUiStore.getState().screenDockEdge).toBeNull();
 });
 
-test("Baxter's questions end the thread as an ask to answer in place", async () => {
-  useInitiativeAgentStore.setState({ agent: "baxter", baxterSessionByInitiative: { init1: "bx1" } });
-  mockApi.baxterChatSession.mockResolvedValue(
-    baxterThread({
-      run_status: "awaiting_input",
-      pending_approvals: [
-        {
-          id: "ap1",
-          title: "Which milestone first?",
-          level: "low",
-          workspace_slug: "tinkercg",
-          stage_key: "home-chat",
-          stage_name: "Home chat",
-          impact: "",
-          ticket_id: "",
-          ticket_external_id: "",
-          kind: "cli_question",
-          status: "pending",
-          run_id: "r1",
-          tool_name: "AskUserQuestion",
-          tool_input_json: "{}",
-          cli_adapter: "claude",
-          questions: [
-            {
-              question: "Which milestone first?",
-              header: "Order",
-              options: [{ label: "Card slice" }, { label: "Private alpha" }],
-            },
-          ],
-        },
-      ],
-    }),
-  );
+test("on a narrow screen the omnibar opens where the operator keeps it", async () => {
+  setNarrow(true);
+  useUiStore.setState({ copilotOpen: false, utilityDockEdge: "bottom", screenDockEdge: null });
   renderPage();
 
-  const panel = await screen.findByRole("complementary", { name: "Initiative agents" });
-  expect((await within(panel).findAllByText("Which milestone first?")).length).toBeGreaterThan(0);
-  expect(within(panel).getByRole("button", { name: "Submit answers" })).toBeInTheDocument();
-  expect(mockApi.baxterChatSession).toHaveBeenCalledWith("@initiative:init1", "bx1");
+  await screen.findByRole("table", { name: "Milestones in phase order" });
+  expect(useUiStore.getState().copilotOpen).toBe(true);
+  expect(useUiStore.getState().screenDockEdge).toBeNull();
+  expect(screen.queryByRole("tab", { name: "Agents" })).not.toBeInTheDocument();
+});
+
+test("choosing a dock edge on the page overrides the page's", () => {
+  useUiStore.setState({ utilityDockEdge: "bottom", screenDockEdge: "right" });
+  useUiStore.getState().setUtilityDockEdge("bottom");
+  expect(useUiStore.getState().screenDockEdge).toBeNull();
 });
 
 test("with no milestones there is nothing to plan, and the page says how to get one", async () => {

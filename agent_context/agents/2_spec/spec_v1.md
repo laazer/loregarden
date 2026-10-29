@@ -60,6 +60,35 @@ Your goal is to create specifications that are **fully deterministic, unambiguou
 
 ---
 
+## Bug tickets: decide how the fix covers the whole state
+
+A bug's fix has four jobs, and a spec that names only the third ships a guard
+that nothing checks and a backlog nobody repaired. For a ticket whose type is
+`bug`, decide all four **before** the work, write each as an acceptance
+criterion, and record them with `loregarden_record_fix_coverage`. This stage
+does not pass without that record.
+
+1. **existing**: how rows already in the bad state are found and repaired (a
+   migration, or a repair run at boot), or the read-only query showing there
+   are none, with its count from the live database.
+2. **reentry**: the invariant that catches the state coming back. Name it in
+   backticks as it is, or will be, registered in
+   `server/loregarden/services/invariant_registry.py`: a detector, a repair,
+   and whether re-entry is a `DEFECT` (a writer skipped the guard) or
+   `EXPECTED` (the world enters it legitimately, e.g. a PR merged by hand). Say
+   `no detector: <reason>` only when the state cannot be read back at all.
+3. **prevention**: the test proving the state cannot be entered, as
+   `path/to/test_file.py::test_name`. Prefer a test that enumerates every
+   writer of the field over one that exercises a single path.
+4. **learning**: why the state was reachable, as a rule the next change can
+   use, not a description of this incident. The record writes it to memory.
+
+Use `not_a_state_bug` instead when the fix leaves nothing persisted behind (a
+crash, a wrong label, a typo), with the reason.
+
+Check the detector before you plan the guard: a check that reports zero may
+have examined nothing.
+
 ## Output Requirements
 - Write the spec to the ticket with `loregarden_update_ticket` (description and acceptance
   criteria). Attach the long form with `loregarden_attach_artifact` if it does not fit. Never
@@ -81,5 +110,5 @@ block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routi
 a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
 from a stage run (orchestrator/autopilot only). Attach long reports via
 `loregarden_attach_artifact`.
-A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` | `tickets` — a `decision` must carry 2–4 `options` a person can pick in one click, and `tickets` must carry `waiting_on`, the ids of the tickets this one waits for; a block with no kind is treated as `work` and the history says you did not say.
 

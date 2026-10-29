@@ -5,17 +5,15 @@ import { api } from "../api/client";
 import type { TicketDetail } from "../api/client";
 import type { MonitorFinding } from "../api/types";
 import { formatRelativeAge } from "../lib/timestamps";
-import { navigateToTicket, navigateToTicketTab } from "../lib/useAppNavigation";
+import { navigateToTicketTab } from "../lib/useAppNavigation";
 import { openReader } from "../state/readerStore";
-import { blockKindLabel, waitingOnLabel } from "../utils/blockKinds";
+import { blockKindLabel } from "../utils/blockKinds";
 import { Button } from "./ui/Button";
+import { TicketWaitingOn } from "./waiting/TicketWaitingOn";
 import "./TicketAttention.css";
 
 /** Past this, the one visible line is a teaser and the full text opens in the reader. */
 const TEASER_CHARS = 140;
-
-/** Blockers named as links before the rest become a count. */
-const WAITING_SHOWN = 5;
 
 function firstLine(markdown: string): string {
   const line = markdown.split("\n").find((text) => text.trim()) ?? "";
@@ -40,12 +38,23 @@ function findingLabel(finding: MonitorFinding): string {
  * workflow itself below the fold. Now each signal is one line with its next
  * step; the detail is in the Timeline, the reader, or one disclosure away.
  *
+ * `failureShown`: the page already leads with the block or the failed run in
+ * full (`TicketFailurePanel`), so the one-line teaser for it would repeat it.
+ *
  * Renders nothing when nothing needs attention. The monitor's findings stay
  * quiet while loading and on failure: they are advisory, the block and the
  * run errors above them come from the ticket itself, and an always-present
  * row would be noise on the many tickets that are fine.
  */
-export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail; hasRunErrors: boolean }) {
+export function TicketAttention({
+  ticket,
+  hasRunErrors,
+  failureShown = false,
+}: {
+  ticket: TicketDetail;
+  hasRunErrors: boolean;
+  failureShown?: boolean;
+}) {
   const findingsId = useId();
   const [showFindings, setShowFindings] = useState(false);
   const { data: findings = [] } = useQuery({
@@ -54,9 +63,12 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
     enabled: Boolean(ticket.id),
   });
 
-  const block = ticket.blocking_issues?.trim() ?? "";
-  const waiting = ticket.waiting_on ?? [];
-  if (!block && !hasRunErrors && findings.length === 0 && waiting.length === 0) return null;
+  const block = failureShown ? "" : (ticket.blocking_issues?.trim() ?? "");
+  const runFailed = hasRunErrors && !failureShown;
+  const waiting = (ticket.waiting_on?.length ?? 0) > 0 || (ticket.dependencies ?? []).some(
+    (dep) => dep.unmet_reason === "not_landed" && !dep.overridden,
+  );
+  if (!block && !runFailed && findings.length === 0 && !waiting) return null;
 
   const teaser = firstLine(block);
   const truncated = block.length > TEASER_CHARS || teaser !== block;
@@ -69,7 +81,8 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
   return (
     <section className="attn" aria-label="Needs attention">
       {block ? (
-        <div className="attn-row attn-row--bad">
+        // Waiting on other tickets is not this ticket's failure: the quiet tone.
+        <div className={`attn-row ${ticket.blocked_on === "tickets" ? "attn-row--wait" : "attn-row--bad"}`}>
           <span className="attn-label">{blockLabel}</span>
           <span className="attn-text" title={block}>
             {teaser}
@@ -87,7 +100,7 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
             Timeline
           </Button>
         </div>
-      ) : hasRunErrors ? (
+      ) : runFailed ? (
         <div className="attn-row attn-row--bad">
           <span className="attn-label">Run failed</span>
           <span className="attn-text">A run on this ticket failed; its output is on the timeline.</span>
@@ -97,29 +110,9 @@ export function TicketAttention({ ticket, hasRunErrors }: { ticket: TicketDetail
         </div>
       ) : null}
 
-      {waiting.length > 0 ? (
-        // The tickets to open instead of this one: a rolled-up parent has
-        // nothing of its own to fix, and a held one starts when these finish.
-        <div className="attn-row attn-row--wait">
-          <span className="attn-label">Waiting on</span>
-          <span className="attn-links">
-            {waiting.slice(0, WAITING_SHOWN).map((ref) => (
-              <Button
-                key={ref.id}
-                variant="plain"
-                className="attn-action"
-                title={`${ref.title} (${ref.reason === "prerequisite" ? "prerequisite" : "blocked below this one"})`}
-                onClick={() => navigateToTicket(ref.id)}
-              >
-                {waitingOnLabel(ref)}
-              </Button>
-            ))}
-            {waiting.length > WAITING_SHOWN ? (
-              <span className="attn-age">+{waiting.length - WAITING_SHOWN} more</span>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
+      {/* The tickets to open instead of this one: a rolled-up parent has nothing
+          of its own to fix, and a held one starts when these land. */}
+      <TicketWaitingOn ticket={ticket} />
 
       {findings.length > 0 ? (
         <>

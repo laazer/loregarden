@@ -49,6 +49,15 @@ MIN_AGENT_TIMEOUT_SECONDS = 30
 STREAM_READ_TIMEOUT_SECONDS = 0.5
 
 
+class CliTurnTimeout(TimeoutError):
+    """The turn ran out of time. ``output`` is the stdout the CLI wrote before it
+    was killed, so a caller can still record what the agent did and said."""
+
+    def __init__(self, message: str, output: str) -> None:
+        super().__init__(message)
+        self.output = output
+
+
 @dataclass(frozen=True)
 class CliAgentProfile:
     """The per-surface facts about driving one CLI agent."""
@@ -170,7 +179,7 @@ def _drain_to_sink(
     while True:
         if time.time() >= deadline:
             proc.kill()
-            raise TimeoutError(f"{assistant_label} timed out after {timeout}s")
+            raise CliTurnTimeout(f"{assistant_label} timed out after {timeout}s", "".join(lines))
         line = reader.readline(timeout=STREAM_READ_TIMEOUT_SECONDS)
         if line is None:
             if proc.poll() is not None:
@@ -300,8 +309,11 @@ def run_cli_agent_turn(
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                raise TimeoutError(
-                    f"{profile.assistant_label} timed out after {timeout}s"
+                # Collect what it wrote before the kill; the pipes close with the process.
+                stdout, _stderr = proc.communicate()
+                raise CliTurnTimeout(
+                    f"{profile.assistant_label} timed out after {timeout}s",
+                    stdout.decode("utf-8", errors="replace"),
                 ) from None
             stdout_text = stdout.decode("utf-8", errors="replace")
             stderr_text = stderr.decode("utf-8", errors="replace")

@@ -3,11 +3,9 @@ import type { StageStatus, WorkflowStageView } from "../api/client";
 export interface StageStatusMeta {
   label: string;
   dot: string;
-  dotFill: string;
   pillBg: string;
   pillFg: string;
   nameColor: string;
-  dotAnimation?: string;
   pillAnimation?: string;
 }
 
@@ -15,7 +13,6 @@ const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
   pending: {
     label: "Idle",
     dot: "#39424e",
-    dotFill: "var(--bg0)",
     pillBg: "rgba(255,255,255,0.04)",
     pillFg: "var(--txl)",
     nameColor: "var(--txm)",
@@ -23,17 +20,14 @@ const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
   running: {
     label: "Running",
     dot: "var(--blue)",
-    dotFill: "var(--blue)",
     pillBg: "rgba(75,155,255,0.15)",
     pillFg: "var(--bll)",
     nameColor: "var(--tx)",
-    dotAnimation: "workflow-ring 1.8s ease-out infinite",
     pillAnimation: "pulse 1.8s ease-in-out infinite",
   },
   blocked: {
     label: "Blocked",
     dot: "var(--red)",
-    dotFill: "var(--red)",
     pillBg: "rgba(255,106,84,0.15)",
     pillFg: "var(--rdl)",
     nameColor: "var(--tx)",
@@ -42,7 +36,6 @@ const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
   awaiting: {
     label: "Awaiting",
     dot: "var(--amb)",
-    dotFill: "var(--amb)",
     pillBg: "rgba(229,167,44,0.16)",
     pillFg: "var(--aml)",
     nameColor: "var(--tx)",
@@ -51,7 +44,6 @@ const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
   done: {
     label: "Done",
     dot: "var(--grn)",
-    dotFill: "var(--grn)",
     pillBg: "rgba(53,196,106,0.14)",
     pillFg: "var(--grl)",
     nameColor: "var(--txm)",
@@ -59,7 +51,6 @@ const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
   wont_do: {
     label: "Won't do",
     dot: "var(--amb)",
-    dotFill: "transparent",
     pillBg: "rgba(229,167,44,0.12)",
     pillFg: "var(--aml)",
     nameColor: "var(--txm)",
@@ -157,4 +148,21 @@ export function currentStageRunLabel(stage: WorkflowStageView | undefined, isRun
   }
   if (stage.status === "done") return "Re-run current stage";
   return "Run current stage";
+}
+
+/** Who runs a stage: its one agent and skill, or a fan-out's agents joined. */
+export function stageAgentMeta(stage: WorkflowStageView): { agent: string | null; skill: string | null } {
+  if (stage.agent_id?.trim()) {
+    return { agent: stage.agent_id, skill: stage.skill_name?.trim() || null };
+  }
+  if (stage.agents.length === 1) {
+    return {
+      agent: stage.agents[0].agent_id,
+      skill: stage.agents[0].skill_name?.trim() || null,
+    };
+  }
+  if (stage.agents.length > 1) {
+    return { agent: stage.agents.map((entry) => entry.agent_id).join(" · "), skill: null };
+  }
+  return { agent: null, skill: null };
 }

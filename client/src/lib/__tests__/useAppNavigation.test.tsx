@@ -33,15 +33,15 @@ function PageProbe() {
 describe("useAppNavigation", () => {
   it("derives the active page from the current route", () => {
     render(
-      <MemoryRouter initialEntries={["/queue"]}>
+      <MemoryRouter initialEntries={["/machine/lanes"]}>
         <Routes>
-          <Route path="/queue/*" element={<PageProbe />} />
+          <Route path="/machine/*" element={<PageProbe />} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(screen.getByTestId("page")).toHaveTextContent("queue");
-    expect(pageFromPath("/queue")).toBe("queue");
+    expect(screen.getByTestId("page")).toHaveTextContent("machine");
+    expect(pageFromPath("/queue")).toBe("machine");
   });
 
   it("reads artifact tab from ticket routes", () => {

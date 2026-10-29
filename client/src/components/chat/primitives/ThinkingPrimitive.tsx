@@ -1,27 +1,45 @@
+import { useState } from "react";
+
+import { summarizeTrace } from "../../../lib/thinkingTrace";
+import { Button } from "../../ui/Button";
 import type { ThinkingPart } from "./types";
-import { PrimitiveCard } from "./PrimitiveCard";
+
+import "./ThinkingPrimitive.css";
 
 /**
- * The reasoning behind a reply, folded above it.
+ * The reasoning behind a reply, folded above it to one line:
+ * "›_ Read runner.py and cli.py · 6 tool calls ▾".
  *
- * A glyph rather than Baxter's face: this is part of the reply under it, not a
- * second speaker. The avatar here read as someone else talking on surfaces
- * that draw none for replies, and as Baxter twice in one turn on those that do.
+ * Tool calls stay one line until opened. The line says what the turn spent
+ * its time on and how many calls it made; the full trace (prose and every
+ * call, flags and all) is there for the asking. Not Baxter's face: this is
+ * part of the reply under it, not a second speaker.
  */
 export function ThinkingPrimitive({ part }: { part: ThinkingPart }) {
+  const [open, setOpen] = useState(part.collapsed === false);
+  const { lead, toolCalls } = summarizeTrace(part.content);
   return (
-    <PrimitiveCard
-      title="Thinking"
-      icon={
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" />
-        </svg>
-      }
-      collapsible
-      defaultCollapsed={part.collapsed !== false}
-      tone="accent"
-    >
-      <div className="lg-primitive-thinking">{part.content}</div>
-    </PrimitiveCard>
+    <div className="lg-thinking-line">
+      <Button
+        variant="plain"
+        className="lg-thinking-line-head"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <code className="lg-thinking-line-glyph" aria-hidden>
+          ›_
+        </code>
+        <span className="lg-thinking-line-lead">{lead}</span>
+        {toolCalls > 0 ? (
+          <span className="lg-thinking-line-count">
+            · {toolCalls} tool {toolCalls === 1 ? "call" : "calls"}
+          </span>
+        ) : null}
+        <span className="lg-thinking-line-caret" aria-hidden>
+          {open ? "▴" : "▾"}
+        </span>
+      </Button>
+      {open ? <div className="lg-primitive-thinking lg-thinking-line-body">{part.content}</div> : null}
+    </div>
   );
 }

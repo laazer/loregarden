@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, SPEC_AGENT_ID
 from loregarden.config import settings
@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     ReworkStopReason,
     RunStatus,
+    StageReportStatus,
     StageStatus,
     StageVerdictChannel,
     Ticket,
@@ -52,6 +53,11 @@ from loregarden.services.autopilot_sign_off import (
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.block_repair import conflict_refusal, record_repair_outcome
 from loregarden.services.block_settlement import BlockSettlement, settle_block
+from loregarden.services.dependency_hold import (
+    holding_prerequisites,
+    link_reported_prerequisites,
+    record_hold,
+)
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
     record_design_plan_sign_off,
@@ -61,6 +67,7 @@ from loregarden.services.exit_action_ledger import (
     outstanding_exit_actions,
 )
 from loregarden.services.exit_actions import attest_assigned_actions
+from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.network_wait import (
@@ -729,12 +736,24 @@ def _pass_held(
     stderr: str,
 ) -> bool:
     """Whether a clean exit's pass was settled as something other than a pass."""
-    return _sent_back_for_ux_answers(
-        orch, ticket, run, report, instance, stages, stderr
-    ) or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
+    return (
+        _sent_back_for_missing_record(
+            orch, ticket, run, report, instance, stages, stderr, missing_ux_answers
+        )
+        or _sent_back_for_missing_record(
+            orch, ticket, run, report, instance, stages, stderr, missing_fix_coverage
+        )
+        or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
+    )
 
 
-def _sent_back_for_ux_answers(
+class MissingRecord(Protocol):
+    """Why a passing run of ``agent_id`` still owes ``ticket`` a record, or ""."""
+
+    def __call__(self, session: Session, ticket: Ticket, *, agent_id: str) -> str: ...
+
+
+def _sent_back_for_missing_record(
     orch: OrchestrationService,
     ticket: Ticket,
     run: AgentRun,
@@ -742,15 +761,18 @@ def _sent_back_for_ux_answers(
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
     stderr: str,
+    missing_record: MissingRecord,
 ) -> bool:
-    """A passing design stage that recorded no UX answers is rework, not a pass.
+    """A pass that left no record its stage owes is rework, not a pass.
 
-    Sent back to the same stage and agent with the reason, under the rework
-    loop cap like any other rework: after that, a person is asked.
+    The design stage owes UX answers (`ux_answers`); a bug's spec stage owes
+    its fix coverage (`fix_coverage`). Sent back to the same stage and agent
+    with the reason, under the rework loop cap like any other rework: after
+    that, a person is asked.
     """
     if report is None or report.status != "pass":
         return False
-    missing = missing_ux_answers(orch.session, ticket, agent_id=run.agent_id)
+    missing = missing_record(orch.session, ticket, agent_id=run.agent_id)
     if not missing:
         return False
     clear_transient_retries(orch.session, ticket.id, run.stage_key)
@@ -922,6 +944,100 @@ def _outside_the_workflow(ticket: Ticket, run: AgentRun, stages: list[WorkflowSt
     return True
 
 
+def _block_on_report(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    report: StageReport,
+    stderr: str,
+    *,
+    unlinked: str = "",
+) -> None:
+    """Block the stage on the agent's own `blocked` verdict.
+
+    Distinct from fail/needs_rework: the agent isn't reporting bad work to redo
+    upstream, it's reporting it cannot proceed at all (e.g. needs a human
+    decision) — reroute-for-rework would just waste a cycle, so this halts the
+    ticket directly instead. ``unlinked`` says why a `tickets` wait fell back here.
+    """
+    fallback = "Agent reported this stage as blocked"
+    message = report.reroute_context or stderr[:2000] or fallback
+    if unlinked:
+        message = f"{message}\n\n{unlinked}"
+    ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+    # Who can unblock it — the agent's own word, or the message's (749). A
+    # `decision` becomes an inbox question here rather than a dead ticket. A
+    # `tickets` wait that could not be held is classified from its message.
+    _settle_block(
+        orch,
+        ticket,
+        run,
+        instance,
+        stages,
+        message=message,
+        declared=None if unlinked else report.blocked_kind,
+        options=report.options,
+        kind_as_written="" if unlinked else report.kind_as_written,
+    )
+
+
+def _settle_reported_block(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    report: StageReport,
+    stderr: str,
+) -> None:
+    """A wait on other tickets is held; any other `blocked` verdict blocks."""
+    if report.blocked_kind is BlockKind.TICKETS:
+        _hold_on_reported_prerequisites(orch, ticket, run, instance, stages, report, stderr)
+    else:
+        _block_on_report(orch, ticket, run, instance, stages, report, stderr)
+
+
+def _hold_on_reported_prerequisites(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    report: StageReport,
+    stderr: str,
+) -> None:
+    """The agent says this ticket waits on others: link them and hold it.
+
+    The stage goes back to PENDING rather than BLOCKED. Nothing on this ticket
+    failed, no repair turn could shorten the wait, and `release_held_tickets`
+    re-runs the stage when they land. lg-milestone-that-1315's triage reported
+    the same wait as `work` twice and was given a repair turn to say it again.
+
+    Falls back to an ordinary block, saying why, when a named ticket cannot be
+    linked, or when nothing named still holds it: a wait on work already landed
+    would re-run the stage into the same report forever.
+    """
+    session = orch.session
+    problems = link_reported_prerequisites(session, ticket, report.waiting_on)
+    unmet = [] if problems else holding_prerequisites(session, ticket)
+    if not unmet:
+        unlinked = (
+            "It named prerequisites that could not be linked: " + "; ".join(problems)
+            if problems
+            else "It named prerequisites that are already done and landed: "
+            + ", ".join(report.waiting_on)
+        )
+        _block_on_report(orch, ticket, run, instance, stages, report, stderr, unlinked=unlinked)
+        return
+    ticket.blocking_issues = ""
+    ticket.block_kind = None
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.PENDING)
+    record_hold(session, ticket, unmet, stage_key=run.stage_key)
+
+
 def advance_stage_after_run(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -944,28 +1060,8 @@ def advance_stage_after_run(
     gate_approval: Approval | None = None
     if limit is not None:
         _block_for_usage_limit(orch, ticket, run, instance, stages, status, limit)
-    elif report and report.status == "blocked":
-        # Distinct from fail/needs_rework: the agent isn't reporting bad work to
-        # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
-        # human decision) — reroute-for-rework would just waste a cycle, so this
-        # halts the ticket directly instead.
-        fallback = "Agent reported this stage as blocked"
-        message = report.reroute_context or stderr[:2000] or fallback
-        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
-        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        # Who can unblock it — the agent's own word, or the message's (749). A
-        # `decision` becomes an inbox question here rather than a dead ticket.
-        _settle_block(
-            orch,
-            ticket,
-            run,
-            instance,
-            stages,
-            message=message,
-            declared=report.blocked_kind,
-            options=report.options,
-            kind_as_written=report.kind_as_written,
-        )
+    elif report and report.status == StageReportStatus.BLOCKED:
+        _settle_reported_block(orch, ticket, run, instance, stages, report, stderr)
     elif report and report.status in ("fail", "needs_rework"):
         clear_transient_retries(orch.session, ticket.id, run.stage_key)
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)

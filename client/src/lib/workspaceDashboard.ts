@@ -4,7 +4,7 @@
  * section components so each is testable without rendering.
  */
 
-import type { TicketState, TicketTreeNode } from "../api/types";
+import type { TicketState, TicketSummary, TicketTreeNode, WaitingOnRef } from "../api/types";
 import type {
   ActivityHighlight,
   ActivityHighlightKind,
@@ -176,4 +176,40 @@ export function indexTree(roots: TicketTreeNode[]): Map<string, TicketTreeNode> 
   };
   walk(roots);
   return index;
+}
+
+/** One ticket others wait on, and the tickets it holds. */
+export interface RootBlockerGroup {
+  root: WaitingOnRef;
+  held: TicketSummary[];
+}
+
+/**
+ * Tickets waiting on other tickets, grouped by what has to move first.
+ *
+ * Opening a held ticket tells you nothing to do; opening the root of its chain
+ * might. A root that needs a person comes first, then the roots holding the
+ * most. A rolled-up parent has no prerequisite chain, so it is grouped under
+ * the blocked tickets beneath it instead.
+ */
+export function groupByRootBlocker(tickets: TicketSummary[]): RootBlockerGroup[] {
+  const groups = new Map<string, RootBlockerGroup>();
+  for (const ticket of tickets) {
+    const roots = ticket.root_blockers?.length ? ticket.root_blockers : (ticket.waiting_on ?? []);
+    for (const root of roots) {
+      const group = groups.get(root.id) ?? { root, held: [] };
+      group.held.push(ticket);
+      groups.set(root.id, group);
+    }
+  }
+  const needsYou = (group: RootBlockerGroup) => (group.root.blocked_on === "person" ? 0 : 1);
+  return [...groups.values()].sort(
+    (a, b) => needsYou(a) - needsYou(b) || b.held.length - a.held.length,
+  );
+}
+
+/** Blocked tickets a person or an agent has to clear: not the ones only waiting on others. */
+export function blockedNeedingAction(stuck: TicketSummary[] | undefined): number | undefined {
+  return stuck?.filter((ticket) => ticket.state === "blocked" && ticket.blocked_on !== "tickets")
+    .length;
 }

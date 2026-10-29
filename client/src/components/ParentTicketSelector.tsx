@@ -228,7 +228,7 @@ export function ParentTicketSelector({
           </div>
 
           {pendingNode && (
-            <div className="state-card" style={{ fontSize: 12 }}>
+            <div className="state-card" style={{ fontSize: "var(--fs-small)" }}>
               <div className="state-label">Selected</div>
               <div>
                 {pendingNode.external_id} · {pendingNode.title}

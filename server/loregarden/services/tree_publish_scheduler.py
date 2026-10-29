@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from dataclasses import dataclass
 
 from loregarden.core.event_bus import event_bus
 from loregarden.db.session import engine
@@ -39,9 +40,10 @@ from loregarden.models.domain import (
 )
 from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.git_automation_config import resolve_git_automation
-from loregarden.services.git_merge_noco import is_ancestor, rev, superseding_commit
+from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.publish_tree import PublishOutcome, publish_tree, published_branch
+from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
@@ -266,8 +268,23 @@ def close_publish_card(session: Session, root: Ticket, *, reason: str = "") -> i
 
 
 def close_published_cards(session: Session) -> int:
-    """The reconcile step: close each pending publish card whose base already
-    holds its tree's work. Returns how many closed."""
+    """Close each pending publish card whose base already holds its tree's work.
+    Returns how many closed. The reconciler reaches this as the
+    `publish_cards_close_once_landed` invariant (`services.invariant_registry`)."""
+    return close_held_cards(session, published_cards_held(session))
+
+
+@dataclass(frozen=True)
+class HeldCard:
+    """A pending publish card, its root, and how the base already holds the work."""
+
+    card: Approval
+    root: Ticket
+    held: str
+
+
+def published_cards_held(session: Session) -> list[HeldCard]:
+    """Pending publish cards whose base already holds what they publish. Read-only."""
     cards = session.exec(
         select(Approval).where(
             Approval.kind == ApprovalKind.HUMAN_ACTION,
@@ -275,7 +292,7 @@ def close_published_cards(session: Session) -> int:
             col(Approval.title).startswith(PUBLISH_CARD_PREFIX),
         )
     ).all()
-    closed = 0
+    held_cards: list[HeldCard] = []
     for card in cards:
         root = session.get(Ticket, card.ticket_id) if card.ticket_id else None
         workspace = session.get(Workspace, root.workspace_id) if root else None
@@ -284,8 +301,16 @@ def close_published_cards(session: Session) -> int:
             continue
         held = _base_holds(root, workspace)
         if held:
-            logger.info("Closing %s's publish card: %s", root.external_id, held)
-            closed += close_publish_card(session, root, reason=held)
+            held_cards.append(HeldCard(card, root, held))
+    return held_cards
+
+
+def close_held_cards(session: Session, held_cards: list[HeldCard]) -> int:
+    """Close the publish card of each of ``held_cards``. Returns how many closed."""
+    closed = 0
+    for item in held_cards:
+        logger.info("Closing %s's publish card: %s", item.root.external_id, item.held)
+        closed += close_publish_card(session, item.root, reason=item.held)
     return closed
 
 
@@ -294,7 +319,7 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
 
     The remote's base first: a PR merged on GitHub is there as soon as anyone
     fetches, before the local base is pulled. A squash merge shares no commit
-    with the branch, so ancestry alone misses it; `superseding_commit` does not.
+    with the branch, so ancestry alone misses it; `landing_commit` does not.
     """
     repo_root = resolve_workspace_root(workspace)
     if not (repo_root / ".git").exists():
@@ -307,14 +332,14 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
         base_sha = rev(repo_root, ref)
         if not base_sha:
             continue
-        if is_ancestor(repo_root, tip, base_sha):
-            return f"{ref} contains {branch}"
         try:
-            holder = superseding_commit(repo_root, tip, base_sha)
+            holder = landing_commit(repo_root, tip, base_sha)
         except RuntimeError as exc:
             # silent-ok: retried on the next reconcile pass; the card stays open meanwhile
             logger.warning("Could not tell whether %s holds %s: %s", ref, branch, exc)
             continue
+        if holder == tip:
+            return f"{ref} contains {branch}"
         if holder:
             return f"{ref} holds everything {branch} adds, in {holder[:12]}"
     return ""

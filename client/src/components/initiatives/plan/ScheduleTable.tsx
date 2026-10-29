@@ -1,5 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
+import { Fragment, useMemo, useState } from "react";
+
+import { api } from "../../../api/client";
 import type { InitiativePlan, MilestoneSchedule, NodeStatus } from "../../../api/initiativeApi";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { boardQueryKey, childrenByParent } from "../../../lib/initiativeBoard";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import {
   SCHEDULE_STATUS_COLOR,
   formatDay,
@@ -11,7 +16,9 @@ import {
   todayIso,
   type TimelineRange,
 } from "../../../lib/scheduleFormat";
+import { describeError } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
+import { PhaseTree } from "./PhaseTree";
 import { StatusChip } from "./ScheduleSummary";
 import { TargetDateField } from "./TargetDateField";
 
@@ -43,9 +50,9 @@ function TimelineBar({ row, range, paced }: { row: MilestoneSchedule; range: Tim
   );
 }
 
-/** A phase that is not a milestone the initiative owns says what it is. */
-function phaseKind(row: MilestoneSchedule): string {
-  if (row.member) return `tracked ${row.work_item_type} · `;
+/** A phase that is not a milestone the initiative owns says what it is, and where it lives. */
+function phaseKind(row: MilestoneSchedule, home: string | undefined): string {
+  if (row.member) return `tracked ${row.work_item_type}${home ? ` in ${home}` : ""} · `;
   return row.work_item_type === "milestone" ? "" : `${row.work_item_type} · `;
 }
 
@@ -58,23 +65,37 @@ function workSummary(row: MilestoneSchedule): string {
 
 function MilestoneRow({
   row,
+  home,
+  childCount,
+  open,
+  onToggle,
   range,
   paced,
   first,
   last,
   busy,
+  untracking,
   onMove,
   onTarget,
+  onUntrack,
 }: {
   row: MilestoneSchedule;
+  /** The milestone a tracked ticket stays in. */
+  home: string | undefined;
+  /** Tickets directly under it; null until the tree has loaded. */
+  childCount: number | null;
+  open: boolean;
+  onToggle: () => void;
   range: TimelineRange | null;
   /** Pace mode: no targets in force, so no target column or marker. */
   paced: boolean;
   first: boolean;
   last: boolean;
   busy: boolean;
+  untracking: boolean;
   onMove: (direction: -1 | 1) => void;
   onTarget: (date: string | null) => Promise<unknown>;
+  onUntrack: () => void;
 }) {
   const done = row.status === "done";
   const drift = formatDrift(row.drift_days);
@@ -101,17 +122,47 @@ function MilestoneRow({
         </Button>
       </td>
       <th scope="row">
-        <Button
-          variant="plain"
-          className="plan-link"
-          title={`Open ${row.external_id}`}
-          onClick={() => navigateToTicket(row.id)}
-        >
-          <span className="plan-mono">{row.external_id}</span> {row.title}
-        </Button>
-        <div className="plan-muted">
-          {row.workspace_slug} · {phaseKind(row)}
-          {workSummary(row)}
+        <div className="plan-phase-name">
+          {childCount ? (
+            <Button
+              variant="plain"
+              className="plan-icon-btn plan-tree-toggle"
+              aria-expanded={open}
+              aria-controls={`plan-phase-tree-${row.id}`}
+              aria-label={`${open ? "Hide" : "Show"} the ${childCount} under ${row.external_id}`}
+              onClick={onToggle}
+            >
+              {open ? "▾" : "▸"}
+            </Button>
+          ) : (
+            <span className="plan-tree-spacer" aria-hidden />
+          )}
+          <div>
+            <Button
+              variant="plain"
+              className="plan-link"
+              title={`Open ${row.external_id}`}
+              onClick={() => peekTicket(row.id)}
+            >
+              <span className="plan-mono">{row.external_id}</span> {row.title}
+            </Button>
+            <div className="plan-muted">
+              {row.workspace_slug} · {phaseKind(row, home)}
+              {workSummary(row)}
+              {row.member ? (
+                <Button
+                  variant="plain"
+                  className="plan-inline-btn"
+                  aria-label={`Stop tracking ${row.external_id} in this initiative`}
+                  title="Leaves the ticket where it is; only drops it from this plan"
+                  disabled={busy || untracking}
+                  onClick={onUntrack}
+                >
+                  {untracking ? "Removing…" : "Stop tracking"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </th>
       <td className="plan-progress">
@@ -149,30 +200,52 @@ function MilestoneRow({
 }
 
 /**
- * Every milestone (phase) with its target, forecast and the state of its work,
- * in the order phases get free lanes. Reordering is a planning move: an earlier
- * phase's ready work is started first, and ↑/↓ make it.
+ * Every phase with its target, forecast and the state of its work, in the
+ * order phases get free lanes: the milestones the initiative owns and the
+ * tickets it tracks, one table. Reordering is a planning move: an earlier
+ * phase's ready work is started first, and ↑/↓ make it. A phase with work
+ * under it opens into that work's tree.
  */
 export function ScheduleTable({
   plan,
   busy,
+  homes,
+  untracking,
   onReorder,
   onTarget,
+  onUntrack,
 }: {
   plan: InitiativePlan;
   busy: boolean;
+  /** Tracked ticket id -> the milestone it stays in. */
+  homes: ReadonlyMap<string, string>;
+  /** The tracked ticket being removed, if any. */
+  untracking: string | null;
   /** The full new order, first phase first. */
   onReorder: (ordered: MilestoneSchedule[]) => void;
   onTarget: (row: MilestoneSchedule, date: string | null) => Promise<unknown>;
+  onUntrack: (row: MilestoneSchedule) => void;
 }) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  // The board's query: one fetch serves both tabs.
+  const tree = useQuery({
+    queryKey: boardQueryKey(plan.id),
+    queryFn: () => api.tickets({ ancestor_ticket_id: plan.id }),
+    staleTime: 10_000,
+    enabled: plan.milestones.length > 0,
+    // Rendered under the table, with a retry; the schedule itself still works.
+    meta: { suppressErrorToast: true },
+  });
+  const childrenOf = useMemo(() => childrenByParent(tree.data ?? []), [tree.data]);
+  const nodeById = useMemo(() => new Map(plan.nodes.map((n) => [n.id, n])), [plan.nodes]);
+
   const rows = plan.milestones;
   if (rows.length === 0) {
     return (
       <div className="plan-empty">
         <p>
-          This initiative has no milestones yet. Attach milestones from the Initiatives list, or add a ticket under
-          Tracked tickets — each one becomes a phase here, and its forecast follows from its tickets and how fast work
-          is closing.
+          This initiative has no milestones yet. Attach milestones from the Initiatives list, or track a ticket below —
+          each one becomes a phase here, and its forecast follows from its tickets and how fast work is closing.
         </p>
       </div>
     );
@@ -183,6 +256,8 @@ export function ScheduleTable({
   const drawn = paced ? rows.map((row) => ({ target_date: null, forecast_date: row.forecast_date })) : rows;
   const range = hasTimelineDates(drawn) ? timelineRange(drawn, todayIso(new Date(plan.generated_at))) : null;
   const assumed = rows.some((row) => row.assumed > 0 && row.status !== "done");
+  // Order, name, done, forecast, status — plus target and timeline when drawn.
+  const columns = 5 + (paced ? 0 : 1) + (range ? 1 : 0);
   return (
     <div className="plan-groups">
       {range || assumed ? (
@@ -219,26 +294,63 @@ export function ScheduleTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
-            <MilestoneRow
-              key={row.id}
-              row={row}
-              range={range}
-              paced={paced}
-              first={index === 0}
-              last={index === rows.length - 1}
-              busy={busy}
-              onTarget={(date) => onTarget(row, date)}
-              onMove={(direction) => {
-                const next = [...rows];
-                const [moved] = next.splice(index, 1);
-                next.splice(index + direction, 0, moved);
-                onReorder(next);
-              }}
-            />
-          ))}
+          {rows.map((row, index) => {
+            const expanded = open.has(row.id);
+            return (
+              <Fragment key={row.id}>
+                <MilestoneRow
+                  row={row}
+                  home={homes.get(row.id)}
+                  childCount={tree.isSuccess ? (childrenOf.get(row.id)?.length ?? 0) : null}
+                  open={expanded}
+                  onToggle={() =>
+                    setOpen((current) => {
+                      const next = new Set(current);
+                      if (next.has(row.id)) next.delete(row.id);
+                      else next.add(row.id);
+                      return next;
+                    })
+                  }
+                  range={range}
+                  paced={paced}
+                  first={index === 0}
+                  last={index === rows.length - 1}
+                  busy={busy}
+                  untracking={untracking === row.id}
+                  onTarget={(date) => onTarget(row, date)}
+                  onUntrack={() => onUntrack(row)}
+                  onMove={(direction) => {
+                    const next = [...rows];
+                    const [moved] = next.splice(index, 1);
+                    next.splice(index + direction, 0, moved);
+                    onReorder(next);
+                  }}
+                />
+                {expanded ? (
+                  <tr className="plan-tree-row">
+                    <td colSpan={columns}>
+                      <PhaseTree
+                        id={`plan-phase-tree-${row.id}`}
+                        root={row}
+                        childrenOf={childrenOf}
+                        nodeById={nodeById}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
+      {tree.isError ? (
+        <p className="plan-alert" role="alert">
+          The work under each phase could not be loaded: {describeError(tree.error)}{" "}
+          <Button variant="plain" className="plan-inline-btn" onClick={() => void tree.refetch()}>
+            Retry
+          </Button>
+        </p>
+      ) : null}
     </div>
   );
 }

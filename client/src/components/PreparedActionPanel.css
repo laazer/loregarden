@@ -12,7 +12,7 @@
 }
 
 .prepared-action-tier {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -28,7 +28,7 @@
 .prepared-action-row p,
 .prepared-action-row ul {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -37,7 +37,7 @@
 }
 
 .prepared-action-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   color: var(--txl);
 }
@@ -49,7 +49,7 @@
   border-radius: 4px;
   background: var(--bg3);
   color: var(--txt);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   /* Long capture commands and their output scroll inside the card rather than
      widening the approval rail. */
   overflow-x: auto;
@@ -64,7 +64,7 @@
 
 .prepared-action-error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--rdl);
 }
 
@@ -79,6 +79,6 @@
 .prepared-action-findings ul {
   margin: 0;
   padding-left: 16px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--aml);
 }

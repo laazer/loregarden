@@ -15,8 +15,10 @@ from loregarden.main import app
 from loregarden.models.domain import Workspace
 from loregarden.services import (
     codex_discovery,
+    discovery_cache,
     docker_capacity,
     git_subprocess,
+    lmstudio_discovery,
     local_instances,
     opencode_discovery,
     orchestration_profile,
@@ -196,6 +198,10 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv(
         "LOREGARDEN_INTEGRATION_MERGE_STUB_RESPONSE", "Stubbed merge turn: resolved nothing."
     )
+    # A chat reply whose card fails to parse gets a correction turn, which runs
+    # the surface agent's own CLI. An empty answer corrects nothing; a test that
+    # wants a correction sets its own.
+    monkeypatch.setenv("LOREGARDEN_CARD_CORRECTION_STUB_RESPONSE", "")
 
 
 @pytest.fixture(autouse=True)
@@ -210,18 +216,29 @@ def no_installed_model_clis(monkeypatch, tmp_path):
     empty directory so codex's cache fallback reads nothing.
 
     A test of discovery itself still patches `resolve_*_binary` or
-    `subprocess.run`, which takes precedence. The caches are cleared either side
-    so a catalog one test faked cannot reach the next.
+    `subprocess.run`, which takes precedence. All three caches are cleared
+    either side so a catalog one test faked cannot reach the next — lmstudio's
+    was missing here, and `lmstudio_discovery.reset_model_cache()` existed with
+    nothing autouse calling it.
+
+    The probe now runs on a background daemon thread, so the clear is not enough
+    on its own: a thread still in flight when the test ends reads a
+    `monkeypatch`ed binary that no longer exists, and leaks its subprocess into
+    whatever runs next. `join_probes` waits for them before the reset.
     """
     missing = tmp_path / "no-installed-cli"
     for adapter in ("opencode", "codex"):
         monkeypatch.setenv(ADAPTER_BINARIES[adapter][1], str(missing))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    discovery_cache.join_probes()
     opencode_discovery.reset_model_cache()
     codex_discovery.reset_model_cache()
+    lmstudio_discovery.reset_model_cache()
     yield
+    discovery_cache.join_probes()
     opencode_discovery.reset_model_cache()
     codex_discovery.reset_model_cache()
+    lmstudio_discovery.reset_model_cache()
 
 
 @pytest.fixture(name="gh_stub", scope="session")

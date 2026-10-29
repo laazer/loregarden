@@ -3,12 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { CodeEditor } from "../components/editor/CodeEditor";
-import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
+import { EditorFileTree } from "../components/editor/EditorFileTree";
+import { EditorStartPane } from "../components/editor/EditorStartPane";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
 import { PageTopbar } from "../components/TopbarPageSlot";
+import { Button } from "../components/ui/Button";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import { describeError } from "../state/toastStore";
-import { useUiStore } from "../state/uiStore";
+import { editorRecentKey, useUiStore } from "../state/uiStore";
 import { Select } from "../components/ui/Select";
 
 export function EditorPage() {
@@ -19,6 +21,8 @@ export function EditorPage() {
   const setEditorWorkspace = useUiStore((s) => s.setEditorWorkspace);
   const setEditorContextRoot = useUiStore((s) => s.setEditorContextRoot);
   const setEditorFilePath = useUiStore((s) => s.setEditorFilePath);
+  const rememberEditorFile = useUiStore((s) => s.rememberEditorFile);
+  const editorRecentFiles = useUiStore((s) => s.editorRecentFiles);
 
   const [draftContent, setDraftContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
@@ -34,6 +38,21 @@ export function EditorPage() {
   });
 
   const contextRoot = refs.data?.context_root ?? editorContextRoot ?? ".";
+
+  const activeWorkspace = workspaces.data?.find((ws) => ws.slug === workspaceSlug);
+  const repoReady = Boolean(workspaceSlug && activeWorkspace?.repo_exists);
+
+  const changesQuery = useQuery({
+    queryKey: ["editor-changes", workspaceSlug, contextRoot],
+    queryFn: () => api.editorChanges(workspaceSlug, contextRoot || undefined),
+    enabled: repoReady,
+  });
+  const changedPaths = useMemo(
+    () => new Map((changesQuery.data?.files ?? []).map((change) => [change.path, change.status])),
+    [changesQuery.data],
+  );
+  const recentKey = editorRecentKey(workspaceSlug, contextRoot);
+  const recentFiles = editorRecentFiles[recentKey] ?? [];
 
   const fileQuery = useQuery({
     queryKey: ["editor-file", workspaceSlug, contextRoot, editorFilePath],
@@ -57,8 +76,11 @@ export function EditorPage() {
     if (fileQuery.data) {
       setDraftContent(fileQuery.data.content);
       setSavedContent(fileQuery.data.content);
+      // Remembered once it has opened, so a path that no longer exists never
+      // lands in Recent.
+      rememberEditorFile(recentKey, fileQuery.data.path);
     }
-  }, [fileQuery.data]);
+  }, [fileQuery.data, recentKey, rememberEditorFile]);
 
   useEffect(() => {
     setDraftContent("");
@@ -78,6 +100,7 @@ export function EditorPage() {
       setSavedContent(draftContent);
       setSaveMessage("Saved");
       qc.invalidateQueries({ queryKey: ["editor-file", workspaceSlug, contextRoot, editorFilePath] });
+      qc.invalidateQueries({ queryKey: ["editor-changes", workspaceSlug, contextRoot] });
       window.setTimeout(() => setSaveMessage(null), 2000);
     },
     onError: (error) => {
@@ -90,11 +113,17 @@ export function EditorPage() {
     [draftContent, savedContent, editorFilePath],
   );
 
-  const activeWorkspace = workspaces.data?.find((ws) => ws.slug === workspaceSlug);
+  // Switching files drops the draft, so unsaved edits are only discarded when
+  // the operator says so.
+  const leaveFile = (next: string | null) => {
+    if (next === editorFilePath) return;
+    if (dirty && !window.confirm(`Discard unsaved changes to ${editorFilePath}?`)) return;
+    setEditorFilePath(next);
+  };
 
   return (
     <div className="screen-view">
-      <PageTopbar title="File Editor">
+      <PageTopbar title="Editor">
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
           <Select
@@ -135,12 +164,13 @@ export function EditorPage() {
               Workspace repo is missing. Check the repo path in workspace settings.
             </p>
           ) : (
-            <EditorFileExplorer
+            <EditorFileTree
+              key={`${workspaceSlug}::${contextRoot}`}
               workspaceSlug={workspaceSlug}
               contextRoot={contextRoot}
               selectedPath={editorFilePath}
-              onOpenFile={setEditorFilePath}
-              disabled={!workspaceSlug}
+              onOpenFile={leaveFile}
+              changes={changedPaths}
             />
           )}
         </aside>
@@ -150,8 +180,11 @@ export function EditorPage() {
             fileQuery.isLoading ? (
               <PaneSkeleton variant="code" label={`Loading ${editorFilePath}…`} />
             ) : fileQuery.error ? (
-              <div className="editor-empty editor-empty-error">
-                {describeError(fileQuery.error, "Failed to load file")}
+              <div className="editor-empty">
+                <p className="editor-empty-error">{describeError(fileQuery.error, `Couldn't open ${editorFilePath}`)}</p>
+                <Button variant="secondary" compact onClick={() => setEditorFilePath(null)}>
+                  Back to changed and recent files
+                </Button>
               </div>
             ) : (
               <CodeEditor
@@ -160,18 +193,25 @@ export function EditorPage() {
                 value={draftContent}
                 dirty={dirty}
                 onChange={setDraftContent}
+                onClose={() => leaveFile(null)}
                 onSave={() => {
                   if (!dirty || saveFile.isPending) return;
                   saveFile.mutate();
                 }}
               />
             )
+          ) : activeWorkspace?.repo_exists ? (
+            <EditorStartPane
+              changes={changesQuery.data}
+              changesLoading={changesQuery.isLoading}
+              changesError={changesQuery.error}
+              recent={recentFiles}
+              onOpenFile={leaveFile}
+            />
           ) : (
             <div className="editor-empty">
-              <div className="editor-empty-title">Select a file</div>
-              <p className="modal-hint">
-                Open a text file from the explorer, or switch branches and worktrees from the header.
-              </p>
+              <div className="editor-empty-title">No repository to edit</div>
+              <p className="modal-hint">Pick a workspace whose repo exists, or fix its repo path in workspace settings.</p>
             </div>
           )}
         </main>

@@ -40,6 +40,7 @@ from loregarden.services.pull_request_merge import MergeFailed, merge_and_clean_
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.stage_agent_pin import pin_stage_agent
+from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prerequisite
 from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
@@ -103,6 +104,7 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
             )
         if parent.id == ticket.id:
             raise ValueError("A ticket cannot be its own parent.")
+        refuse_reparent_onto_a_prerequisite(session, ticket.id, parent.id)
         ticket.parent_ticket_id = parent.id
     elif ticket.parent_ticket_id:
         if not detach_parent:

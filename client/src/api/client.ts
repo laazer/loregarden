@@ -3,6 +3,7 @@ import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
+import { referenceLibraryApi } from "./referenceLibraryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketPullRequestApi } from "./ticketPullRequestApi";
 import type { ApprovalHistoryItem, ApprovalResolutionAction } from "./chatTypes";
@@ -28,6 +29,7 @@ export type {
   SubtreeAutopilot,
 } from "./initiativeApi";
 export type * from "./memoryApi";
+export type * from "./referenceLibraryApi";
 import type {
   WorkflowReassignmentPreview,
   BlockedOn,
@@ -48,6 +50,7 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   EditorBrowseResponse,
+  EditorChangesResponse,
   EditorRefsResponse,
   EditorFileResponse,
   BrowseDirectoryResponse,
@@ -72,6 +75,8 @@ import type {
   StudioExitActionRequirementCatalog,
   StudioAgentPreview,
   StudioDefaults,
+  AgentRunStats,
+  WorkflowUsageStats,
   StudioGeneratedAgent,
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
@@ -219,8 +224,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  runs: (ticketId?: string) => {
-    const q = ticketId ? `?ticket_id=${ticketId}` : "";
+  /** The most recent runs, newest first; `limit` defaults to the server's 50 (max 200). */
+  runs: (ticketId?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (ticketId) params.set("ticket_id", ticketId);
+    if (limit !== undefined) params.set("limit", String(limit));
+    const query = params.toString();
+    const q = query ? `?${query}` : "";
     return request<
       {
         id: string;
@@ -238,6 +248,10 @@ export const api = {
         workspace_id?: string;
         stdout?: string;
         stderr?: string;
+        /** ISO UTC; a run that never started still has `created_at`. */
+        created_at?: string | null;
+        started_at?: string | null;
+        finished_at?: string | null;
       }[]
     >(`/api/runs${q}`);
   },
@@ -289,6 +303,8 @@ export const api = {
     ancestor_ticket_id?: string;
     roots_only?: boolean;
     search?: string;
+    /** Only tickets waiting on this: a person, other tickets, or an agent. */
+    blocked_on?: BlockedOn[];
     /** Opt-in page size. Unset returns the whole filtered set, as before. */
     limit?: number;
     /** Only meaningful with `limit`; the API rejects it on its own. */
@@ -412,6 +428,8 @@ export const api = {
       timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
+      /** Start it although it waits on prerequisites; recorded on its history. */
+      ignore_prerequisites?: boolean;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
@@ -422,6 +440,7 @@ export const api = {
         auto_approve: options?.auto_approve,
         timeout_seconds: options?.timeout_seconds,
         slot_number: options?.slot_number ?? null,
+        ignore_prerequisites: options?.ignore_prerequisites ?? false,
       }),
     }),
   buildTerminalHandoffCommand: (id: string, stageKey: string) =>
@@ -462,6 +481,8 @@ export const api = {
       timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
+      /** Start it although it waits on prerequisites; recorded on its history. */
+      ignore_prerequisites?: boolean;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/orchestrate`, {
@@ -472,6 +493,7 @@ export const api = {
   ...ticketPullRequestApi,
   ...initiativeApi,
   ...memoryApi,
+  ...referenceLibraryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",
@@ -647,6 +669,8 @@ export const api = {
       body: JSON.stringify({ description }),
     }),
   studioAgents: () => request<StudioAgent[]>("/api/studio/agents"),
+  studioAgentRunStats: () => request<AgentRunStats[]>("/api/studio/agent-run-stats"),
+  studioWorkflowUsage: () => request<WorkflowUsageStats[]>("/api/studio/workflow-usage"),
   studioAgent: (slug: string) => request<StudioAgent>(`/api/studio/agents/${slug}`),
   createStudioAgent: (body: Partial<StudioAgent> & { slug: string; name: string }) =>
     request<StudioAgent>("/api/studio/agents", { method: "POST", body: JSON.stringify(body) }),
@@ -841,6 +865,12 @@ export const api = {
     if (contextRoot) q.set("context_root", contextRoot);
     const suffix = q.toString() ? `?${q}` : "";
     return request<EditorBrowseResponse>(`/api/workspaces/${slug}/editor/browse${suffix}`);
+  },
+  editorChanges: (slug: string, contextRoot?: string) => {
+    const q = new URLSearchParams();
+    if (contextRoot) q.set("context_root", contextRoot);
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<EditorChangesResponse>(`/api/workspaces/${slug}/editor/changes${suffix}`);
   },
   editorReadFile: (slug: string, path: string, contextRoot?: string) => {
     const q = new URLSearchParams({ path });

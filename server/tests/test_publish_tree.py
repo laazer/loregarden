@@ -20,6 +20,7 @@ from loregarden.services import git_automation, tree_publish_scheduler
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session, select
@@ -68,11 +69,13 @@ def _remote_sha(repo, branch):
 
 
 def _published(repo, branch) -> str:
-    """The commit the remote holds as ``branch``, asserted to be one commit cut
-    from the base tip whose tree is the base and the branch merged (958)."""
-    head = _remote_sha(repo, branch)
+    """The commit the remote holds as ``publish/<branch>``, asserted to be one
+    commit cut from the base tip whose tree is the base and the branch merged
+    (958), and that nothing was pushed under the branch's own name."""
+    head = _remote_sha(repo, publish_ref_for(branch))
     assert head, f"{branch} was not published"
-    git(repo, "fetch", "-q", "origin", f"refs/heads/{branch}")
+    assert _remote_sha(repo, branch) == "", "the cut is never pushed as the branch itself"
+    git(repo, "fetch", "-q", "origin", f"refs/heads/{publish_ref_for(branch)}")
     parents = git(repo, "rev-list", "--parents", "-n1", head).stdout.split()[1:]
     assert parents == [_sha(repo, "main")], "one commit, on the base tip"
     merged = git(repo, "merge-tree", "--write-tree", "main", branch).stdout.split()[0]
@@ -174,7 +177,7 @@ def test_with_open_pr_on_a_single_pr_is_opened_from_the_integration_branch(
     assert outcome.ok
     assert outcome.pr_url == "https://github.com/example/repo/pull/1"
     create = next(c for c in calls if c[:2] == ["pr", "create"])
-    assert create[create.index("--head") + 1] == target
+    assert create[create.index("--head") + 1] == publish_ref_for(target)
     assert create[create.index("--base") + 1] == "main"
     assert "ms" in create[create.index("--title") + 1]
     assert not any(c[:2] == ["pr", "merge"] for c in calls), "auto_merge stays off"
@@ -232,7 +235,7 @@ def test_a_ticket_whose_branch_adds_nothing_publishes_nothing(session, workspace
 
     session.refresh(ticket)
     assert ticket.state == TicketState.DONE
-    assert _remote_sha(repo, ticket.branch) == ""
+    assert _remote_sha(repo, publish_ref_for(ticket.branch)) == ""
 
 
 # --- 958: publish after every landing, not when the root finishes -------------------
@@ -313,7 +316,7 @@ def test_tree_switches_open_and_auto_merge_the_trees_pr_and_leave_chat_push_only
 
     assert outcome.ok and outcome.pr_url.endswith("/pull/7")
     create = next(c for c in calls if c[:2] == ["pr", "create"])
-    assert create[create.index("--head") + 1] == target
+    assert create[create.index("--head") + 1] == publish_ref_for(target)
     merge = next(c for c in calls if c[:2] == ["pr", "merge"])
     assert "--auto" in merge and "--squash" in merge
     # The chain a chat turn runs is the plain one: no PR, no merge.
@@ -386,7 +389,7 @@ def test_a_branch_that_conflicts_with_the_base_is_not_published(session, workspa
 
     assert not outcome.ok
     assert "conflicts with main in c1.txt" in outcome.detail
-    assert _remote_sha(repo, target) == ""
+    assert _remote_sha(repo, publish_ref_for(target)) == ""
 
 
 def test_a_new_landing_republishes_over_the_last_cut(session, workspace, repo):
@@ -411,14 +414,16 @@ def test_a_push_that_races_the_publish_is_not_overwritten(session, workspace, re
         result = real(args, cwd)
         if args[:2] == ["ls-remote", "origin"]:
             # Someone pushes to the PR branch between the lease's read and the push.
-            git(repo, "push", "-q", "origin", f"main:refs/heads/{target}")
+            git(repo, "push", "-q", "origin", f"main:refs/heads/{publish_ref_for(target)}")
         return result
 
     with mock.patch.object(git_automation, "_git", side_effect=racing):
         outcome = publish_tree(session, ms, workspace)
 
     assert not outcome.ok and "push failed" in outcome.detail
-    assert _remote_sha(repo, target) == _sha(repo, "main"), "the racing push is kept"
+    assert _remote_sha(repo, publish_ref_for(target)) == _sha(repo, "main"), (
+        "the racing push is kept"
+    )
 
 
 def test_a_failed_publish_after_a_landing_files_a_card_and_a_later_one_closes_it(
@@ -474,7 +479,7 @@ def test_a_branch_whose_work_reached_the_base_by_a_squash_publishes_nothing(
     outcome = publish_tree(session, ms, workspace)
 
     assert outcome.ok and outcome.skipped
-    assert _remote_sha(repo, target) == ""
+    assert _remote_sha(repo, publish_ref_for(target)) == ""
 
 
 def test_a_merged_pr_on_the_branch_is_not_taken_for_an_open_one(session, workspace, repo):

@@ -14,6 +14,7 @@ from loregarden.agents.mcp_context import (
     resolve_api_base_url,
     resolve_mcp_url,
     supervised_run_env,
+    unverified_api_base_url,
 )
 from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
@@ -66,6 +67,13 @@ class CliInvocation:
     argv: list[str]
     stdin_prompt: str | None = None
     use_prompt_file: bool = False
+    #: A file the RENDERED command redirects stdin from (``< path``), for an
+    #: adapter that reads its prompt on stdin and has no flag to name a file.
+    #: A supervised run never needs it: ``agent_spawn`` writes ``stdin_prompt``
+    #: to the run's own prompt file and the wrapper redirects from there. A
+    #: terminal handoff has no such writer, so the path travels on the
+    #: invocation (see ``render_terminal_handoff_command``).
+    stdin_file: str = ""
     interactive: bool = False
     adapter: str = "local"
     cwd: str = ""
@@ -160,9 +168,33 @@ def stage_report_hook_settings() -> str:
     report is out (see ``agents/stage_report_stop_hook``). Run by this server's own
     interpreter, so the hook parses reports with the same code completion does.
     """
+    return json.dumps({"hooks": {"Stop": [_stage_report_stop_hook()]}})
+
+
+def _stage_report_stop_hook() -> dict[str, object]:
     command = f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook"
-    hook = {"type": "command", "command": command}
-    return json.dumps({"hooks": {"Stop": [{"hooks": [hook]}]}})
+    return {"hooks": [{"type": "command", "command": command}]}
+
+
+def _control_plane_http_hook() -> dict[str, object]:
+    command = (
+        f"{shlex.quote(sys.executable)} -m loregarden.agents.control_plane_http_hook "
+        f"{shlex.quote(unverified_api_base_url())}"
+    )
+    return {"matcher": "Bash", "hooks": [{"type": "command", "command": command}]}
+
+
+def stage_run_hook_settings(*, stage_report: bool) -> str:
+    """``--settings`` JSON for a run this control plane supervises.
+
+    Every supervised run gets the ``PreToolUse`` hook that keeps its Bash off
+    this control plane's HTTP API (``agents/control_plane_http_hook``); a stage
+    run also gets the stage-report ``Stop`` hook.
+    """
+    hooks: dict[str, list[dict[str, object]]] = {"PreToolUse": [_control_plane_http_hook()]}
+    if stage_report:
+        hooks["Stop"] = [_stage_report_stop_hook()]
+    return json.dumps({"hooks": hooks})
 
 
 def _append_model_flag(argv: list[str], model: str) -> None:
@@ -303,8 +335,8 @@ def build_interactive_invocation(
             argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        if require_stage_report:
-            argv.extend(["--settings", stage_report_hook_settings()])
+        if orchestrated or require_stage_report:
+            argv.extend(["--settings", stage_run_hook_settings(stage_report=require_stage_report)])
         argv.extend(
             claude_tool_flags(
                 tool_grants,
@@ -421,6 +453,7 @@ def resolve_terminal_handoff_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             cursor_model=apply_cursor_effort(model, effort),
+            prompt_file=prompt_file,
         )
 
     if selected == CliAdapter.CODEX:
@@ -492,6 +525,11 @@ def render_terminal_handoff_command(
         f"{key}={shlex.quote(value)} " for key, value in sorted(invocation.env.items())
     )
     command = prefix + " ".join(shlex.quote(token) for token in invocation.argv)
+    # Attached to the CLI itself, before the cleanup and the exit ping that
+    # follow it under `;` — a redirect appended after those would feed the
+    # prompt to `rm` and leave the agent waiting on a terminal's stdin.
+    if invocation.stdin_file:
+        command += f" < {shlex.quote(invocation.stdin_file)}"
     if run_id is not None:
         base = f"{resolve_api_base_url()}/api/runs/{run_id}"
         checkin = (
@@ -535,7 +573,7 @@ def _claude_print_invocation(
         argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
-    argv.extend(["--settings", stage_report_hook_settings()])
+    argv.extend(["--settings", stage_run_hook_settings(stage_report=True)])
     append_mcp_cli_args(argv, adapter="claude", orchestrated=True, run_id=run_id)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
@@ -546,6 +584,7 @@ def _cursor_print_invocation(
     workspace_root: Path,
     cursor_model: str = "",
     orchestrated: bool = False,
+    prompt_file: Path | None = None,
 ) -> CliInvocation:
     """Shared by every cursor stage run (`orchestrated=True`) and a human terminal
     handoff (`orchestrated=False`, the default) — see `resolve_cli_invocation` vs
@@ -557,6 +596,18 @@ def _cursor_print_invocation(
 
     Default ``stream-json`` (+ ``--stream-partial-output``) feeds the live run log
     as the agent thinks and tools fire; ``text`` only prints when the run ends.
+
+    **The prompt travels on stdin, never in argv.** `cursor-agent` takes a
+    positional prompt and has no flag naming a file, and a stage prompt runs tens
+    of KB — which is argv-length territory. It is worse than that on the live
+    path: a stage run is spawned in a tmux pane, and tmux refused the whole
+    `new-session` command past its imsg limit (measured 2026-10-24: 16 000 chars
+    accepted, 20 000 → `tmux said: command too long`). So every orchestrated
+    cursor run died at spawn with a 65 KB argv, and no stage ever started
+    (lg-external-harness-1488). The CLI reads the prompt on stdin when no
+    positional is given, which both transports can supply: `agent_spawn` writes
+    `stdin_prompt` to the run's prompt file and the wrapper redirects from it,
+    and a handoff gets `stdin_file` rendered into its pasteable command.
     """
     output_format = os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format)
     argv = [
@@ -567,7 +618,6 @@ def _cursor_print_invocation(
         output_format,
         "--workspace",
         str(workspace_root),
-        f"{os.environ.get('LOREGARDEN_CURSOR_USER_PROMPT', DEFAULT_CURSOR_USER_PROMPT)}{prompt}",
     ]
     # Partial deltas only apply with print + stream-json; skip when the operator
     # forces text (or another format) via LOREGARDEN_CURSOR_OUTPUT_FORMAT.
@@ -581,7 +631,27 @@ def _cursor_print_invocation(
     if extra:
         argv[2:2] = shlex.split(extra)
     append_mcp_cli_args(argv, adapter="cursor", orchestrated=orchestrated)
-    return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
+    user_prompt = os.environ.get("LOREGARDEN_CURSOR_USER_PROMPT", DEFAULT_CURSOR_USER_PROMPT)
+    stdin_prompt = f"{user_prompt}{prompt}"
+    if prompt_file is not None:
+        # Handoff: nothing supervises the pasted command, so `prompt_file` is
+        # the writer `agent_spawn` is on the live path. The text is identical on
+        # both paths — `stdin_prompt` says what travels, `stdin_file` where the
+        # rendered command reads it from.
+        return CliInvocation(
+            argv=argv,
+            stdin_prompt=stdin_prompt,
+            use_prompt_file=True,
+            stdin_file=str(prompt_file),
+            adapter="cursor",
+            cwd=str(workspace_root),
+        )
+    return CliInvocation(
+        argv=argv,
+        stdin_prompt=stdin_prompt,
+        adapter="cursor",
+        cwd=str(workspace_root),
+    )
 
 
 def cursor_resume_invocation(
@@ -590,15 +660,16 @@ def cursor_resume_invocation(
     """`invocation` again, continuing cursor session `session_id` with `prompt`.
 
     Every flag of the original stage run is kept (workspace, model, permission,
-    MCP), so the resumed turn runs under the same terms. Only the prompt — the
-    positional argument after `--workspace <root>` — changes, and `--resume`
-    names the session.
+    MCP), so the resumed turn runs under the same terms. Only the prompt — which
+    rides on stdin, so argv is untouched but for `--resume` — changes.
+
+    The resumed run gets its own prompt file (`report_resume` spawns it under a
+    `-resume` run code), so replacing `stdin_prompt` is the whole of it.
     """
     argv = list(invocation.argv)
-    argv[argv.index("--workspace") + 2] = prompt
     after_print = argv.index("-p") + 1
     argv[after_print:after_print] = ["--resume", session_id]
-    return replace(invocation, argv=argv, resume_session_id=session_id)
+    return replace(invocation, argv=argv, stdin_prompt=prompt, resume_session_id=session_id)
 
 
 DEFAULT_OPENCODE_USER_PROMPT = (

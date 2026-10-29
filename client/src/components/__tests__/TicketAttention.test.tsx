@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useTicketPeekStore } from "../../state/ticketPeekStore";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import type { TicketDetail } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
 import { formatRelativeAge } from "../../lib/timestamps";
-import { navigateToTicket, navigateToTicketTab } from "../../lib/useAppNavigation";
+import { navigateToTicketTab } from "../../lib/useAppNavigation";
 import { useReaderStore } from "../../state/readerStore";
 import { TicketAttention } from "../TicketAttention";
 
@@ -16,7 +17,6 @@ jest.mock("../../api/client", () => ({
 jest.mock("../../lib/useAppNavigation", () => ({
   ...jest.requireActual("../../lib/useAppNavigation"),
   navigateToTicketTab: jest.fn(),
-  navigateToTicket: jest.fn(),
 }));
 
 /** Far enough in the past that formatRelativeAge is day-stable across a test. */
@@ -96,6 +96,22 @@ describe("the block", () => {
 
     expect(await screen.findByRole("region", { name: "Needs attention" })).toHaveTextContent("Run failed");
   });
+
+  it("leaves the block and the failed run to the page when it already shows them in full", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TicketAttention
+          ticket={ticket({ state: "blocked", block_kind: "harness", blocking_issues: "Weekly usage limit reached." })}
+          hasRunErrors
+          failureShown
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(monitorFindings).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Needs attention" })).not.toBeInTheDocument();
+  });
 });
 
 describe("the monitor's findings", () => {
@@ -170,11 +186,11 @@ describe("waiting on other tickets", () => {
     const strip = await screen.findByRole("region", { name: "Needs attention" });
     expect(strip).toHaveTextContent("Waiting on");
     fireEvent.click(within(strip).getByRole("button", { name: "lg-x-22 · needs you" }));
-    expect(navigateToTicket).toHaveBeenCalledWith("c1");
+    expect(useTicketPeekStore.getState().peek).toEqual({ ticketId: "c1", tab: undefined });
     expect(within(strip).getByRole("button", { name: "lg-x-23" })).toBeInTheDocument();
   });
 
-  it("counts the blockers past the first five instead of listing them all", async () => {
+  it("names the first three and keeps the rest one disclosure away", async () => {
     const refs = Array.from({ length: 7 }, (_, i) => ({
       id: `p${i}`,
       external_id: `lg-p-${i}`,
@@ -186,7 +202,12 @@ describe("waiting on other tickets", () => {
     renderStrip(ticket({ state: "backlog", blocked_on: "tickets", waiting_on: refs }));
 
     const strip = await screen.findByRole("region", { name: "Needs attention" });
-    expect(within(strip).getAllByRole("button")).toHaveLength(5);
-    expect(strip).toHaveTextContent("+2 more");
+    expect(within(strip).getAllByRole("button", { name: /^lg-p-/ })).toHaveLength(3);
+    const more = within(strip).getByRole("button", { name: "+4 more" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(more);
+    expect(within(strip).getAllByRole("button", { name: /^lg-p-/ })).toHaveLength(7);
+    expect(within(strip).getByRole("button", { name: "fewer" })).toHaveAttribute("aria-expanded", "true");
   });
 });

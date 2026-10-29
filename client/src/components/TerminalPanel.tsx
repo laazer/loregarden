@@ -38,7 +38,7 @@ export function TerminalPanel({ workspaceSlug }: TerminalPanelProps) {
     const term = new Terminal({
       convertEol: true,
       cursorBlink: true,
-      fontSize: 12,
+      fontSize: 12, // type-ok: xterm takes a pixel number, not CSS; matches --fs-small
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
       theme: { background: "#0b0f14", foreground: "#c8d3df", cursor: "#7dd3fc" },
     });

@@ -5,6 +5,7 @@ import {
   fetchCommitSnapshot,
 } from "../../../lib/branchTriageApi";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { VineNode } from "../../vine/VineNode";
 import {
   OpenBranchTriageButton,
   OpenIdeButton,
@@ -33,8 +34,10 @@ export function BranchHistoryPrimitive({ part }: { part: BranchHistoryPart }) {
 
   return (
     <PrimitiveCard
+      kind="branch_history"
       title={part.title ?? part.branch}
-      subtitle={
+      copyRef={part.branch}
+      refLine={
         activity ? (activity.upstream ? `tracking ${activity.upstream}` : "No upstream") : part.branch
       }
       loading={query.isLoading}
@@ -45,41 +48,21 @@ export function BranchHistoryPrimitive({ part }: { part: BranchHistoryPart }) {
             : "Failed to load branch history"
           : null
       }
-      meta={
-        activity ? (
-          <>
-            <span>{commits.length} recent commits</span>
-            <span>{part.workspace_slug}</span>
-          </>
-        ) : null
-      }
-      resourceAction={
-        <OpenBranchTriageButton
-          workspaceSlug={part.workspace_slug}
-          branch={part.branch}
-        />
-      }
+      footerHint={activity ? `${commits.length} recent commit${commits.length === 1 ? "" : "s"} · ${part.workspace_slug}` : null}
+      actions={<OpenBranchTriageButton workspaceSlug={part.workspace_slug} branch={part.branch} />}
     >
       {commits.length ? (
+        // Newest first, on the vine: order matters here. A pushed commit is a
+        // leaf; one only on this machine is a held bud.
         <ol className="lg-primitive-commit-list">
-          {commits.map((commit) => (
+          {commits.map((commit, index) => (
             <li key={commit.sha}>
-              <span
-                className={[
-                  "lg-primitive-commit-dot",
-                  commit.pushed ? "is-pushed" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                aria-hidden
-              />
-              <div className="lg-primitive-commit-copy">
-                <strong>{commit.message}</strong>
-                <span>
-                  <code>{commit.short_sha}</code> · {commit.author} ·{" "}
-                  {commit.pushed ? "pushed" : "local only"}
-                </span>
-              </div>
+              <VineNode index={index} mark={commit.pushed ? "leaf" : "bud-held"} last={index === commits.length - 1} />
+              <code className="lg-primitive-commit-sha">{commit.short_sha}</code>
+              <span className="lg-primitive-commit-subject" title={`${commit.message} — ${commit.author}`}>
+                {commit.message}
+                {commit.pushed ? null : <span className="lg-primitive-commit-local"> · local only</span>}
+              </span>
               <time dateTime={commit.date}>{relativeTime(commit.date)}</time>
             </li>
           ))}
@@ -100,8 +83,12 @@ export function CommitPrimitive({ part }: { part: CommitPart }) {
 
   return (
     <PrimitiveCard
+      kind="commit"
       title={part.title ?? commit?.message ?? "Commit"}
-      subtitle={commit ? `${commit.short_sha} · ${commit.author}` : part.sha}
+      refLine={
+        commit ? [commit.short_sha, commit.author, part.branch].filter(Boolean).join(" · ") : part.sha
+      }
+      copyRef={commit?.sha ?? part.sha}
       loading={query.isLoading}
       error={
         query.error
@@ -110,17 +97,14 @@ export function CommitPrimitive({ part }: { part: CommitPart }) {
             : "Failed to load commit"
           : null
       }
-      tone={commit?.pushed ? "ok" : "default"}
-      meta={
-        commit ? (
-          <>
-            <span>{commit.pushed ? "pushed" : "local only"}</span>
-            <span>{relativeTime(commit.date)}</span>
-            {part.branch ? <span>{part.branch}</span> : null}
-          </>
-        ) : null
+      status={
+        commit
+          ? commit.pushed
+            ? { tone: "done", label: `Pushed ${relativeTime(commit.date)}` }
+            : { tone: "idle", label: "Local only" }
+          : null
       }
-      resourceAction={
+      actions={
         part.branch ? (
           <OpenBranchTriageButton
             workspaceSlug={part.workspace_slug}

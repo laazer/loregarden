@@ -19,7 +19,7 @@
 
 .gate-rail-explainer p {
   margin: 6px 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--txm);
 }
@@ -41,14 +41,14 @@
 
 .gate-title {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 20px;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
   font-weight: 600;
 }
 
 .gate-subtitle {
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -61,7 +61,7 @@
   border: 1px solid var(--bd);
   border-radius: 10px;
   background: var(--bg1);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .gate-status-dot {
@@ -74,7 +74,7 @@
 
 .gate-status-hint {
   color: var(--txm);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .gate-status--on {
@@ -94,7 +94,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .gate-flow--off {
@@ -149,7 +149,7 @@
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   cursor: pointer;
   user-select: none;
 }
@@ -240,18 +240,18 @@
 
 .gate-card-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .gate-card-meta {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
 .gate-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--txm);
 }
@@ -259,7 +259,7 @@
 .gate-hint code,
 .gate-resolve code {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .gate-field {
@@ -269,7 +269,7 @@
 }
 
 .gate-field-label {
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--txm);
 }
@@ -280,12 +280,12 @@
 
 .gate-mono {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .gate-resolve {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 .gate-resolve--ok {
@@ -307,7 +307,7 @@
 
 .gate-chips-label {
   margin-right: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -321,7 +321,7 @@
   border-radius: 6px;
   background: var(--bg2);
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   cursor: pointer;
 }
 
@@ -354,7 +354,6 @@
 .gate-list-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -365,7 +364,7 @@
   padding: 14px;
   border: 1px dashed var(--bd2);
   border-radius: 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
   text-align: center;
 }
@@ -374,18 +373,22 @@
   align-self: flex-start;
 }
 
+/* Commands are rows in the panel, split by rules: the panel is the one bordered
+   level, and a box per command put a second inside it. */
 .gate-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--bd);
-  border-radius: 10px;
-  background: var(--bg2);
+  padding: 10px 4px;
 }
 
+.gate-row + .gate-row {
+  border-top: 1px solid var(--bd);
+}
+
+/* The row being edited still says so, as a flat wash rather than a box. */
 .gate-row:focus-within {
-  border-color: var(--bd2);
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
 }
 
 .gate-row-head {
@@ -403,7 +406,7 @@
   height: 20px;
   border-radius: 50%;
   background: var(--bg4);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txm);
 }
@@ -414,7 +417,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
 }
 
@@ -432,7 +435,7 @@
   border-radius: 6px;
   background: transparent;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
   cursor: pointer;
 }
 
@@ -459,7 +462,7 @@
   background: var(--bg1);
   color: var(--tx);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   resize: vertical;
   outline: none;
@@ -472,7 +475,7 @@
 
 .gate-row-warn {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--aml);
 }
 
@@ -481,7 +484,7 @@
 }
 
 .gate-row-details summary {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   cursor: pointer;
 }
@@ -494,7 +497,7 @@
   border-radius: 8px;
   background: var(--bg0);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.5;
   color: var(--txm);
   white-space: pre-wrap;
@@ -510,7 +513,7 @@
   flex: none;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   background: var(--bg4);
   color: var(--txm);
@@ -546,7 +549,7 @@
 .gate-test-status {
   flex: 1;
   min-width: 200px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   overflow-wrap: anywhere;
 }
@@ -562,7 +565,7 @@
   border: 1px solid color-mix(in srgb, var(--amb) 50%, var(--bd));
   border-radius: 10px;
   background: color-mix(in srgb, var(--amb) 8%, var(--bg1));
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .gate-load-error {
@@ -594,7 +597,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
@@ -618,7 +621,7 @@
 
 .gate-savebar-status {
   flex: 1;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 

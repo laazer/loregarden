@@ -155,6 +155,24 @@ def test_a_real_failure_outranks_an_unavailable_gate(stubbed: Path):
     assert result.returncode == 1
 
 
+def test_no_node_on_path_is_unavailable_not_failed(stubbed: Path, tmp_path: Path):
+    """Without node, bash's 127 would read as a failure for an agent to chase."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("bash", "dirname", "basename"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    log = stubbed.parent / "gate.log"
+    result = subprocess.run(
+        ["bash", str(stubbed / _DISPATCHER.name), "b.ts"],
+        capture_output=True,
+        text=True,
+        env={"PATH": str(bin_dir), "HOME": str(tmp_path), "GATE_LOG": str(log)},
+        check=False,
+    )
+    assert result.returncode == _EX_UNAVAILABLE, result.stdout + result.stderr
+    assert "ts_ux_states_check.cjs — could not run (no node on PATH" in result.stdout
+
+
 def test_gate_output_reaches_stdout(stubbed: Path, tmp_path: Path):
     """The orchestration runner reports stderr *instead of* stdout when both
     exist, so one gate's warning on stderr would hide another's findings."""

@@ -63,6 +63,11 @@ The question from the step above picks the layout. Name the layout in the criter
 
 A table is a real `<table>`, never a CSS grid of `<div>`s styled as rows; a grid is one opaque blob to a screen reader and to an agent. At the volume you measured, say what groups the rows (over ~12 near-identical rows) and what filters them (over ~50).
 
+Forms and imports open in a modal (`ModalShell`), whatever the layout around them: the
+page shows records and holds the button that opens the form. Only a single field (search,
+filter, a composer, a rename in place) stays inline. Name the modal's title, its submit
+label, and where the result lands when it closes.
+
 ## The five states
 
 When a ticket does touch a surface, every one of these is a decision. A ticket that does not
@@ -143,4 +148,4 @@ block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routi
 a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
 from a stage run (orchestrator/autopilot only). Attach long reports via
 `loregarden_attach_artifact`.
-A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` — and a `decision` must carry 2–4 `options` a person can pick in one click; a block with no kind is treated as `work` and the history says you did not say.
+A `blocked` report **must carry `blocked_kind`** — `harness` | `work` | `decision` | `human_action` | `tickets` — a `decision` must carry 2–4 `options` a person can pick in one click, and `tickets` must carry `waiting_on`, the ids of the tickets this one waits for; a block with no kind is treated as `work` and the history says you did not say.

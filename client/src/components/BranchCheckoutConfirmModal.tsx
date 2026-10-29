@@ -44,7 +44,7 @@ export function BranchCheckoutConfirmModal({
       </div>
 
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           This switches your workspace's local git checkout to{" "}
           <strong style={{ color: "var(--tx)" }}>{branch.name}</strong>. Anything running against
           this workspace's files will start seeing that branch's contents.

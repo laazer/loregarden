@@ -35,7 +35,11 @@ describe("appNavigation", () => {
     expect(pageFromPath("/studio/agents")).toBe("studio");
     expect(pageFromPath("/studio/workflows")).toBe("studio");
     expect(pageFromPath("/editor")).toBe("editor");
-    expect(pageFromPath("/queue")).toBe("queue");
+    // The Queue is Machine's Lanes tab; its old path reads as Machine.
+    expect(pageFromPath("/queue")).toBe("machine");
+    expect(pageFromPath("/machine")).toBe("machine");
+    expect(pageFromPath("/machine/lanes")).toBe("machine");
+    expect(pageFromPath("/machine/disk")).toBe("machine");
     expect(pageFromPath("/branch-triage")).toBe("branch-triage");
     expect(pageFromPath("/tickets/abc-123/diff")).toBe("dashboard");
   });
@@ -63,7 +67,8 @@ describe("appNavigation", () => {
     expect(pathForPage("dashboard")).toBe("/console");
     expect(pathForPage("studio")).toBe("/studio/agents");
     expect(pathForPage("editor")).toBe("/editor");
-    expect(pathForPage("queue")).toBe("/queue");
+    expect(pathForPage("queue")).toBe("/machine/lanes");
+    expect(pathForPage("machine")).toBe("/machine");
     expect(pathForPage("branch-triage")).toBe("/branch-triage");
   });
 

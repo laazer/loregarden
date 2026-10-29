@@ -237,7 +237,7 @@ export function CreateWorkItemModal({
             <Select
               id={`${fieldId}-workspace`}
               className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
+              style={{ width: "100%", fontSize: "var(--fs-small)" }}
               value={workspaceSlug}
               disabled={isSaving || workspaces.length === 0}
               onChange={(e) => onWorkspaceSlugChange(e.target.value)}
@@ -276,7 +276,7 @@ export function CreateWorkItemModal({
           <Select
             id={`${fieldId}-type`}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={draft.work_item_type}
             disabled={isSaving || typeOptions.length === 0}
             onChange={(e) =>
@@ -314,7 +314,7 @@ export function CreateWorkItemModal({
             <div className="modal-field-label">Parent</div>
             <div
               className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12, boxSizing: "border-box", opacity: 0.85 }}
+              style={{ width: "100%", fontSize: "var(--fs-small)", boxSizing: "border-box", opacity: 0.85 }}
             >
               {parentTicketTitle || parentTicketId}
             </div>
@@ -326,7 +326,7 @@ export function CreateWorkItemModal({
           <Input
             id={`${fieldId}-title`}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={draft.title}
             disabled={isSaving}
             placeholder="What needs to be done?"
@@ -341,7 +341,7 @@ export function CreateWorkItemModal({
           <Textarea
             id={`${fieldId}-description`}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
+            style={{ width: "100%", fontSize: "var(--fs-small)", minHeight: 72, resize: "vertical" }}
             value={draft.description}
             disabled={isSaving}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
@@ -356,7 +356,7 @@ export function CreateWorkItemModal({
             <Textarea
               id={`${fieldId}-acceptance-criteria`}
               className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12, minHeight: 72, resize: "vertical" }}
+              style={{ width: "100%", fontSize: "var(--fs-small)", minHeight: 72, resize: "vertical" }}
               value={draft.acceptance_criteria}
               disabled={isSaving}
               placeholder="- Criterion one&#10;- Criterion two"
@@ -370,7 +370,7 @@ export function CreateWorkItemModal({
           <Select
             id={`${fieldId}-priority`}
             className="btn-secondary filter-select"
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: "var(--fs-small)" }}
             value={draft.priority}
             disabled={isSaving}
             onChange={(e) => setDraft((d) => ({ ...d, priority: Number(e.target.value) }))}

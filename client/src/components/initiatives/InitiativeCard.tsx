@@ -1,11 +1,13 @@
 import { useState } from "react";
 
 import type { InitiativeMilestone, InitiativeView } from "../../api/client";
-import { MarkdownContent } from "../chat/MarkdownContent";
-import { navigateToInitiative, navigateToTicket } from "../../lib/useAppNavigation";
+import { navigateToInitiative } from "../../lib/useAppNavigation";
 import { Button } from "../ui/Button";
-import { AddSprintWork, MoveToMilestone } from "./SprintWorkControls";
-import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../lib/ticketStates";
+import { InitiativeBrief } from "./InitiativeBrief";
+import { InitiativeRows } from "./InitiativeRows";
+import { AddSprintWork } from "./SprintWorkControls";
+import { ticketStateChip } from "../../lib/ticketStates";
+import { StatusChip } from "../ui/StatusChip";
 import { progressFillStyle } from "../../lib/progressFill";
 import { Select } from "../ui/Select";
 
@@ -24,18 +26,7 @@ interface InitiativeCardProps {
 }
 
 function StatePill({ state }: { state: InitiativeView["state"] }) {
-  return (
-    <span className="initiative-state" style={{ color: TICKET_STATE_COLORS[state] }}>
-      {TICKET_STATE_LABELS[state]}
-    </span>
-  );
-}
-
-/** Where a row lives; a member also names the milestone it stays under. */
-function placeLabel(m: InitiativeMilestone): string {
-  const kind = m.work_item_type === "milestone" && !m.member ? "" : `${m.work_item_type} · `;
-  const home = m.home_milestone ? `in ${m.home_milestone} · ` : "";
-  return `${kind}${home}${m.workspace_slug}`;
+  return <StatusChip {...ticketStateChip(state)} />;
 }
 
 function milestoneOptionLabel(m: InitiativeMilestone): string {
@@ -93,57 +84,6 @@ function AttachControl({
   );
 }
 
-function MilestoneRow({
-  milestone,
-  milestoneChoices,
-  busy,
-  onDetach,
-  onMoveTo,
-}: {
-  milestone: InitiativeMilestone;
-  milestoneChoices: InitiativeMilestone[];
-  busy: boolean;
-  onDetach: () => void;
-  onMoveTo: (milestoneId: string) => void;
-}) {
-  return (
-    <li className="initiative-milestone">
-      <span
-        className="tree-state-dot"
-        style={{ background: TICKET_STATE_COLORS[milestone.state] }}
-        aria-hidden
-      />
-      <button
-        type="button"
-        className="initiative-milestone-link"
-        title={`Open ${milestone.external_id}`}
-        onClick={() => navigateToTicket(milestone.id)}
-      >
-        <span className="initiative-mono">{milestone.external_id}</span> {milestone.title}
-      </button>
-      <span className="initiative-ws-pill">{placeLabel(milestone)}</span>
-      <span className="initiative-milestone-state">{TICKET_STATE_LABELS[milestone.state]}</span>
-      {milestone.member ? (
-        <span className="initiative-muted" title="Tracked without moving it: remove it from Plan & board">
-          Tracked
-        </span>
-      ) : milestone.work_item_type === "milestone" ? (
-        <Button
-          variant="secondary"
-          className="initiative-small-btn"
-          aria-label={`Detach ${milestone.title} from this initiative`}
-          disabled={busy}
-          onClick={onDetach}
-        >
-          {busy ? "Detaching…" : "Detach"}
-        </Button>
-      ) : (
-        <MoveToMilestone item={milestone} milestones={milestoneChoices} busy={busy} onMove={onMoveTo} />
-      )}
-    </li>
-  );
-}
-
 export function InitiativeCard({
   initiative,
   attachable,
@@ -176,14 +116,13 @@ export function InitiativeCard({
           </Button>
         </div>
       </header>
-      {initiative.description && (
-        <MarkdownContent
+      {initiative.description.trim() ? (
+        <InitiativeBrief
           content={initiative.description}
-          className="initiative-desc"
-          readerTitle={initiative.title}
-          readerSubtitle={initiative.external_id}
+          title={initiative.title}
+          subtitle={initiative.external_id}
         />
-      )}
+      ) : null}
 
       <div
         className="initiative-progress"
@@ -204,18 +143,11 @@ export function InitiativeCard({
       </div>
 
       {hasMilestones ? (
-        <ul className="initiative-milestones">
-          {initiative.milestones.map((m) => (
-            <MilestoneRow
-              key={m.id}
-              milestone={m}
-              milestoneChoices={milestoneChoices}
-              busy={busyId === m.id}
-              onDetach={() => onDetach(m.id)}
-              onMoveTo={(milestoneId) => onMoveWork(m.id, milestoneId)}
-            />
-          ))}
-        </ul>
+        <InitiativeRows
+          title={initiative.title}
+          rows={initiative.milestones}
+          actions={{ milestoneChoices, busyId, onDetach, onMoveWork }}
+        />
       ) : (
         <p className="initiative-hint">
           Attach a milestone below. Its progress, and every milestone after it, rolls up here.

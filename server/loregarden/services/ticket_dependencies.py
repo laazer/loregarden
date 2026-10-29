@@ -1,7 +1,8 @@
 """Ticket dependency edges: directed, best-effort "waits for" links.
 
 ``ticket_id`` depends on ``depends_on_ticket_id`` and should run after it. The
-edges are kept acyclic on insert.
+edges are kept acyclic on insert, and a ticket cannot wait on an ancestor:
+the parent is done only when its children are, so that edge deadlocks both.
 
 Two consumers, and they answer different questions. ``order_children_for_subtree``
 in subtree_auto_run asks *what order should these siblings run in*, and ignores
@@ -25,12 +26,147 @@ still override it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
 from loregarden.models.domain import Ticket, TicketDependency, TicketState
+from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from sqlmodel import Session, select
+
+#: Raised when an edge would wait on a parent (or further ancestor). Cycle
+#: detection only walks ``ticket_dependencies``; the parent→child wait is
+#: hierarchy, so this deadlock was invisible to it (lg-milestone-that-1604).
+ANCESTOR_WAIT_REFUSED = (
+    "A ticket cannot depend on an ancestor; a parent is done only when its children are"
+)
+REPARENT_ONTO_PREREQUISITE_REFUSED = (
+    "Cannot reparent under a ticket this subtree already depends on"
+)
 
 
 class DependencyCycleError(ValueError):
     """Adding an edge would create a cycle in the dependency graph."""
+
+
+def resolve_prerequisites(session: Session, refs: Iterable[str]) -> list[Ticket]:
+    """The tickets ``refs`` name (UUIDs or external ids), in order, deduplicated.
+
+    Raises `TicketNotFound` naming the first that resolves to nothing, so a
+    caller can refuse before writing anything.
+    """
+    found: dict[str, Ticket] = {}
+    for ref in refs:
+        value = ref.strip()
+        if not value:
+            continue
+        ticket = session.get(Ticket, value)
+        if ticket is None:
+            if looks_like_ticket_uuid(value):
+                raise TicketNotFound(value)
+            ticket = resolve_one(session, value)
+        found.setdefault(ticket.id, ticket)
+    return list(found.values())
+
+
+def ancestor_ids(session: Session, ticket_id: str) -> set[str]:
+    """Every parent walking up from ``ticket_id``, bounded by a seen-set so a
+    stored parent cycle cannot hang the writer that would report it."""
+    found: set[str] = set()
+    current = session.get(Ticket, ticket_id)
+    while current is not None and current.parent_ticket_id:
+        if current.parent_ticket_id in found:
+            break
+        found.add(current.parent_ticket_id)
+        current = session.get(Ticket, current.parent_ticket_id)
+    return found
+
+
+def refuse_wait_on_ancestor(session: Session, ticket_id: str, depends_on_ticket_id: str) -> None:
+    """Raise if ``depends_on_ticket_id`` sits above ``ticket_id`` in the tree."""
+    if depends_on_ticket_id in ancestor_ids(session, ticket_id):
+        raise ValueError(ANCESTOR_WAIT_REFUSED)
+
+
+def refuse_reparent_onto_a_prerequisite(
+    session: Session, ticket_id: str, new_parent_id: str
+) -> None:
+    """Raise if attaching ``ticket_id`` under ``new_parent_id`` would make any
+    ticket in that subtree wait on a new ancestor.
+
+    The other half of the conjunction ``add_dependency`` refuses: a parent link
+    completing an ancestor-wait. ``reparent_ticket`` and the workspace-move
+    parent rewrite both call this before writing ``parent_ticket_id``.
+    """
+    new_ancestors = {new_parent_id} | ancestor_ids(session, new_parent_id)
+    subtree = _subtree_ids(session, ticket_id)
+    rows = session.exec(
+        select(TicketDependency).where(TicketDependency.ticket_id.in_(subtree))
+    ).all()
+    if any(row.depends_on_ticket_id in new_ancestors for row in rows):
+        raise ValueError(REPARENT_ONTO_PREREQUISITE_REFUSED)
+
+
+def _subtree_ids(session: Session, root_id: str) -> set[str]:
+    found = {root_id}
+    frontier = [root_id]
+    while frontier:
+        children = session.exec(
+            select(Ticket.id).where(Ticket.parent_ticket_id.in_(frontier))
+        ).all()
+        frontier = [child_id for child_id in children if child_id not in found]
+        found.update(frontier)
+    return found
+
+
+@dataclass(frozen=True)
+class AncestorWait:
+    """One ``ticket_dependencies`` row whose far end is an ancestor."""
+
+    edge: TicketDependency
+    dependent: Ticket
+    ancestor: Ticket
+
+
+def ancestor_waits(session: Session) -> list[AncestorWait]:
+    """Edges from a ticket to a parent or further ancestor.
+
+    Loads the parent map once and walks it in Python: the tree is hundreds of
+    rows, and a recursive CTE would be the same walk with worse tests.
+    """
+    parent_of = dict(session.exec(select(Ticket.id, Ticket.parent_ticket_id)).all())
+    tickets = {row.id: row for row in session.exec(select(Ticket)).all()}
+    found: list[AncestorWait] = []
+    for edge in session.exec(select(TicketDependency)).all():
+        seen: set[str] = set()
+        cursor = parent_of.get(edge.ticket_id) or None
+        while cursor:
+            if cursor == edge.depends_on_ticket_id:
+                dependent = tickets.get(edge.ticket_id)
+                ancestor = tickets.get(edge.depends_on_ticket_id)
+                if dependent is not None and ancestor is not None:
+                    found.append(AncestorWait(edge=edge, dependent=dependent, ancestor=ancestor))
+                break
+            if cursor in seen:
+                break
+            seen.add(cursor)
+            cursor = parent_of.get(cursor) or None
+    return found
+
+
+def drop_ancestor_waits(session: Session, waits: Sequence[AncestorWait]) -> int:
+    """Delete the given ancestor-wait edges. Re-reads each row; the world may
+    have moved between detect and repair. Returns how many it deleted."""
+    deleted = 0
+    for wait in waits:
+        edge = session.get(TicketDependency, wait.edge.id)
+        if edge is None:
+            continue
+        session.delete(edge)
+        deleted += 1
+    if deleted:
+        session.commit()
+    return deleted
 
 
 class TicketDependencyService:
@@ -41,9 +177,10 @@ class TicketDependencyService:
         self, ticket_id: str, depends_on_ticket_id: str, *, created_by: str = ""
     ) -> TicketDependency:
         """Link ``ticket_id`` to wait for ``depends_on_ticket_id``. Idempotent;
-        rejects self-edges and any edge that would close a cycle."""
+        rejects self-edges, ancestor-waits, and any edge that would close a cycle."""
         if ticket_id == depends_on_ticket_id:
             raise ValueError("A ticket cannot depend on itself")
+        refuse_wait_on_ancestor(self.session, ticket_id, depends_on_ticket_id)
         existing = self.session.exec(
             select(TicketDependency).where(
                 TicketDependency.ticket_id == ticket_id,

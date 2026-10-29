@@ -60,6 +60,13 @@ NEEDS_A_MERGEABLE_PULL_REQUEST = "loregarden_merge_pull_request"
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
+#   loregarden_survey_{pass,record,write} -> act on a survey pass, which exists only
+#   after a person admits a source from the inbox and the feeder dispatches it. The
+#   seed has neither; test_reference_survey_tools.py drives all three over MCP
+#   against a dispatched pass.
+NEEDS_A_DISPATCHED_SURVEY_PASS = frozenset(
+    {"loregarden_survey_pass", "loregarden_survey_record", "loregarden_survey_write"}
+)
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -169,6 +176,7 @@ def _args_for(
     optional_stage_key: str,
     gate_stage_key: str,
     initiative_id: str,
+    chat_session_id: str = "",
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -183,12 +191,17 @@ def _args_for(
         # `reference_network_refused` fixture refuses. That is the point: a
         # structured `catalog_unavailable` payload, zero network, no isError.
         "loregarden_search_reference": {"query": "smoke"},
+        "loregarden_survey_queue": {"action": "list", "workspace_slug": ws},
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_land_ticket": {"ticket_id": ticket_id},
         "loregarden_record_ux_answers": {
             "ticket_id": ticket_id,
             "no_change_reason": "smoke: the ticket changes nothing a person can see",
+        },
+        "loregarden_record_fix_coverage": {
+            "ticket_id": ticket_id,
+            "not_a_state_bug": "smoke: the fix leaves nothing persisted behind",
         },
         "loregarden_pin_stage_agent": {
             "ticket_id": ticket_id,
@@ -291,6 +304,11 @@ def _args_for(
         # status only reads the link table; every other action shells out to gh.
         "loregarden_sync_github_issues": {"ticket_id": ticket_id, "action": "status"},
         "loregarden_get_initiative_plan": {"initiative_id": initiative_id},
+        # Files a proposal only; the operator accepting it is what reaches the ticket.
+        "loregarden_propose_feature_criteria": {
+            "chat_session_id": chat_session_id,
+            "criteria": ["Smoke criterion"],
+        },
         # No items, a mode only: files a pending proposal and writes no target.
         "loregarden_propose_initiative_schedule": {
             "initiative_id": initiative_id,
@@ -311,6 +329,8 @@ def _args_for(
             "initiative_id": initiative_id,
             "ticket_id": ticket_id,
         },
+        # No rescan: a smoke call reads the last scan (or says there is none).
+        "loregarden_disk_usage": {},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -363,6 +383,15 @@ def _memory_node_id(client, title: str) -> str:
     node_id = (payload.get("graph") or {}).get("id", "")
     assert node_id, f"could not resolve a memory node id from upsert_memory: {mem}"
     return node_id
+
+
+def _feature_loop_chat(client: TestClient) -> str:
+    """A chat thread running a feature loop, for the criteria proposal tool."""
+    chats = "/api/workspaces/loregarden/baxter-chat/sessions"
+    chat_session_id = client.post(chats, json={}).json()["id"]
+    looped = client.post(f"{chats}/{chat_session_id}/feature", json={"title": "Smoke feature"})
+    assert looped.status_code == 200, looped.text
+    return chat_session_id
 
 
 def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
@@ -423,6 +452,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     assert initiative.status_code in (200, 201), initiative.text
     initiative_id = initiative.json()["id"]
 
+    chat_session_id = _feature_loop_chat(client)
+
     ordered = [
         "loregarden_get_ticket",
         "loregarden_link_dependency",
@@ -440,14 +471,17 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
         "loregarden_record_ux_answers",
+        "loregarden_record_fix_coverage",
         "loregarden_write_document",
         "loregarden_list_artifacts",
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",
+        "loregarden_disk_usage",
         "loregarden_get_initiative_plan",
         "loregarden_propose_initiative_schedule",
+        "loregarden_propose_feature_criteria",
         "loregarden_set_initiative_autopilot",
         "loregarden_start_initiative_work",
         "loregarden_mark_needs_person",
@@ -469,6 +503,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_supersede_ticket",
         "loregarden_fetch_reference",
         "loregarden_search_reference",
+        "loregarden_survey_queue",
         "loregarden_reserve_docker_capacity",
         "loregarden_renew_docker_lease",
         "loregarden_release_docker_capacity",
@@ -489,6 +524,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         NEEDS_A_WRITTEN_ARTIFACT,
         NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
+        *NEEDS_A_DISPATCHED_SURVEY_PASS,
     }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"
@@ -510,6 +546,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
             optional_stage_key,
             gate_stage_key,
             initiative_id,
+            chat_session_id,
         )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")

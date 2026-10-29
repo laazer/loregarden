@@ -1,12 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { useId, useState } from "react";
 
 import { api } from "../../../api/client";
+import type { WorkflowStageView } from "../../../api/types";
+import { Button } from "../../ui/Button";
 import { WorkflowStageTimeline } from "../../WorkflowStageTimeline";
 import type { TicketWorkflowPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
-import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
+import { TicketPriorityBadge, stageProgressSegments } from "./TicketCardMeta";
+import { ticketStateChip } from "../../../lib/ticketStates";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
@@ -30,12 +34,18 @@ export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) 
 
   return (
     <PrimitiveCard
-      className="lg-primitive-ticket-card lg-primitive-ticket-card--workflow"
+      className="lg-primitive-ticket-card--workflow"
       title={title}
-      header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
+      kind="ticket_workflow"
+      lead={data ? <TicketPriorityBadge priority={data.priority} /> : null}
+      refLine={data ? `${data.external_id} · ${data.workspace_slug}` : part.ticket_id}
+      status={data ? ticketStateChip(data.state) : null}
+      copyRef={data?.external_id ?? part.ticket_id}
+      footerHint={
+        live ? (running ? "Stop pauses the running stage" : `${progress.done} of ${progress.total} stages done`) : null
+      }
       loading={isLoading}
       error={loadError}
-      tone={running ? "accent" : "default"}
       resourceAction={live ? <OpenTicketButton ticketId={part.ticket_id} compact /> : null}
       actions={
         live ? (
@@ -50,26 +60,39 @@ export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) 
         ) : null
       }
     >
-      {data ? (
-        <>
-          <TicketCardBody
-            title={title}
-            priority={data.priority}
-            state={data.state}
-            workspaceSlug={data.workspace_slug}
-            stageName={data.workflow_stage_name || undefined}
-            stageStatus={data.workflow_stage_status}
-            segments={progress.segments}
-            progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
-          />
-          <div className="lg-primitive-ticket-timeline">
-            <WorkflowStageTimeline
-              stages={data.stages}
-              currentStageKey={data.workflow_stage_key}
-            />
-          </div>
-        </>
-      ) : null}
+      {data ? <StageWindow stages={data.stages} currentStageKey={data.workflow_stage_key} /> : null}
     </PrimitiveCard>
+  );
+}
+
+/** Stages shown around the current one before the rest fold away. */
+const STAGE_WINDOW = 5;
+
+/**
+ * The ticket's stages on the vine, five at a time: the one before the current
+ * stage, the current one and what follows, with the rest a click away.
+ */
+function StageWindow({ stages, currentStageKey }: { stages: WorkflowStageView[]; currentStageKey: string }) {
+  const listId = useId();
+  const [all, setAll] = useState(false);
+  const current = Math.max(0, stages.findIndex((s) => s.key === currentStageKey));
+  const start = Math.max(0, Math.min(current - 1, stages.length - STAGE_WINDOW));
+  const folded = !all && stages.length > STAGE_WINDOW;
+  const shown = folded ? stages.slice(start, start + STAGE_WINDOW) : stages;
+  return (
+    <div className="lg-primitive-ticket-timeline" id={listId}>
+      <WorkflowStageTimeline stages={shown} currentStageKey={currentStageKey} />
+      {stages.length > STAGE_WINDOW ? (
+        <Button
+          variant="plain"
+          className="lg-primitive-stage-more"
+          aria-expanded={all}
+          aria-controls={listId}
+          onClick={() => setAll(!all)}
+        >
+          {all ? "Show fewer stages" : `Show all ${stages.length} stages`}
+        </Button>
+      ) : null}
+    </div>
   );
 }

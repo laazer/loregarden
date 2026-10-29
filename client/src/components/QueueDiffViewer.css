@@ -37,14 +37,14 @@
   background: var(--bg4);
   color: var(--bll);
   border-radius: 8px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .diff-description {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
@@ -58,7 +58,7 @@
   padding: 3px 9px;
   border-radius: 8px;
   background: var(--bg4);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 
@@ -99,13 +99,13 @@
   background: var(--bg2);
   border-left: 3px solid var(--bd2);
   border-radius: 9px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--tx);
 }
 
 .section-icon {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
@@ -166,7 +166,7 @@
 
 .run-id,
 .ticket-id {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-family: var(--mono);
   font-weight: 500;
 }
@@ -180,7 +180,7 @@
 }
 
 .position {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   padding: 2px 6px;
   background: var(--bg3);
   border-radius: 6px;
@@ -192,7 +192,7 @@
   position: absolute;
   top: 12px;
   right: 12px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txl);
   text-transform: uppercase;
@@ -217,7 +217,7 @@
 }
 
 .field-name {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txl);
   text-transform: uppercase;
@@ -228,7 +228,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .before-value,
@@ -260,7 +260,7 @@
 }
 
 .no-changes-text {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--txl);
 }
 
@@ -273,7 +273,7 @@
   padding: 11px 18px;
   background: var(--bg2);
   border-top: 1px solid var(--bd);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -289,18 +289,18 @@
   }
 
   .change-header {
-    font-size: 11px;
+    font-size: var(--fs-micro);
   }
 
   .field-changes {
-    font-size: 10px;
+    font-size: var(--fs-micro);
   }
 }
 
 /* Inline comments */
 .diff-comment-count {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--ac2);
 }
 
@@ -322,13 +322,13 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   margin-bottom: 4px;
 }
 
 .diff-change-comment-body {
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   white-space: pre-wrap;
   color: var(--tx);
@@ -348,7 +348,7 @@
   color: var(--tx);
   padding: 8px 10px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-small);
   resize: vertical;
 }
 

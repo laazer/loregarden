@@ -6,6 +6,7 @@ import { describeError } from "../../../state/toastStore";
 import { MarkdownContent } from "../MarkdownContent";
 import { Button } from "../../ui/Button";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { OverflowMenuItem } from "../../OverflowMenu";
 import type { BtwPart } from "./types";
 
 /**
@@ -82,85 +83,82 @@ export function BtwPrimitive({ part }: { part: BtwPart }) {
     ? `Read from ${observed}'s log by Baxter — not answered by that agent.`
     : "Answered from the record by Baxter.";
 
+  // One action at the foot (asking the running agent), with what it costs as
+  // the hint; deleting the card is secondary, in ⋯.
+  const canAsk = !escalated && !refusal;
+  const footerHint = escalated
+    ? "Also put to the running agent — its reply is in that run's log."
+    : refusal
+      ? refusal
+      : "Asking writes into its input and can change what it does next.";
+
   return (
     <PrimitiveCard
+      kind="btw"
       title={part.title ?? "Aside"}
-      subtitle={part.question}
-      tone={status === "failed" ? "warn" : "default"}
-      meta={
-        <span className="lg-btw-attribution">
-          {attribution}
-          {/* The card asserts what the log said; this is how that gets checked. */}
-          {interactive && observedRun && ticketId ? (
-            <>
-              {" "}
-              <Button
-                variant="plain"
-                className="lg-btw-log-link"
-                onClick={() => navigateToTicketTab(ticketId, "timeline")}
-              >
-                Open the run timeline
-              </Button>
-            </>
-          ) : null}
-        </span>
-      }
+      refLine={observed ? `from ${observed}` : null}
+      status={status === "failed" ? { tone: "bad", label: "Unanswered" } : null}
       error={status === "failed" ? live?.error || "This aside was never answered." : null}
+      footerHint={footerHint}
       actions={
-        <>
-          {escalated ? (
-            <span className="lg-primitive-card-sub">
-              Also put to the running agent — its reply is in that run's log.
-            </span>
-          ) : refusal ? (
-            <span className="lg-primitive-card-sub">{refusal}</span>
-          ) : (
-            // The cost lives beside the button, not inside its label: a control
-            // reads as a verb, and a caveat spliced into one is read as part of
-            // the name rather than as a warning.
-            <span className="lg-btw-escalate">
-              <button
-                type="button"
-                className="lg-primitive-run-btn"
-                disabled={escalate.isPending || dismiss.isPending}
-                title={
-                  "Writes this question into the running agent's input. It will enter " +
-                  "that agent's context and can change what it does next."
-                }
-                onClick={() => escalate.mutate()}
-              >
-                {escalate.isPending ? "Asking…" : "Ask the running agent"}
-              </button>
-              <span className="lg-primitive-card-sub">Affects its run</span>
-            </span>
-          )}
-          {/* Always offered, escalated or not. Dismissing is about this card, not
-              about the question: an aside that has already reached the run is
-              exactly the one an operator is most likely to be done with. */}
-          {interactive && ticketId ? (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-btw-dismiss"
-              disabled={dismiss.isPending}
-              title={
-                escalated
-                  ? "Takes the card off this thread. The running agent has already been " +
-                    "asked and that cannot be taken back."
-                  : "Takes the card off this thread."
-              }
-              onClick={() => dismiss.mutate()}
-            >
-              {dismiss.isPending ? "Deleting…" : "Delete"}
-            </button>
-          ) : null}
-        </>
+        canAsk ? (
+          <Button
+            variant="secondary"
+            compact
+            disabled={escalate.isPending || dismiss.isPending}
+            // The cost on the control itself too, for whoever reaches it first.
+            title={
+              "Writes this question into the running agent's input. It will enter " +
+              "that agent's context and can change what it does next."
+            }
+            onClick={() => escalate.mutate()}
+          >
+            {escalate.isPending ? "Asking…" : "Ask the running agent"}
+          </Button>
+        ) : null
+      }
+      menu={
+        // Always offered, escalated or not: dismissing is about this card, not
+        // the question, and an aside already put to the run is the one most
+        // likely to be done with.
+        interactive && ticketId ? (
+          <OverflowMenuItem
+            danger
+            disabled={dismiss.isPending}
+            title={
+              escalated
+                ? "Takes the card off this thread. The running agent has already been asked and that cannot be taken back."
+                : "Takes the card off this thread."
+            }
+            onSelect={() => dismiss.mutate()}
+          >
+            {dismiss.isPending ? "Deleting…" : "Delete this aside"}
+          </OverflowMenuItem>
+        ) : null
       }
     >
+      <blockquote className="lg-btw-question">{part.question}</blockquote>
       {status === "pending" ? (
         <p className="lg-primitive-card-sub">Reading the run's log…</p>
       ) : answer ? (
         <MarkdownContent content={answer} />
       ) : null}
+      <p className="lg-btw-attribution">
+        {attribution}
+        {/* The card asserts what the log said; this is how that gets checked. */}
+        {interactive && observedRun && ticketId ? (
+          <>
+            {" "}
+            <Button
+              variant="plain"
+              className="lg-btw-log-link"
+              onClick={() => navigateToTicketTab(ticketId, "timeline")}
+            >
+              Open the run timeline
+            </Button>
+          </>
+        ) : null}
+      </p>
     </PrimitiveCard>
   );
 }

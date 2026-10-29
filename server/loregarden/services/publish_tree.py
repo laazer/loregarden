@@ -20,6 +20,10 @@ on 2026-10-14, a PR with them can never merge under a signed-commits rule
 (PR #400, superseded by #402 for exactly that), and refusing the push, as this
 module did until then, held the tree's every later landing back with them.
 
+The commit is pushed as ``publish/<branch>``, never as the branch: a squash
+under the branch's own name was merged into a ticket branch as if it were the
+branch, and broke every later merge of the real one (`publish_ref`).
+
 A top-level ticket with no tree is its own root. Nothing lands on an
 integration branch for it, because its target is the base, so what it
 publishes is its own branch. Before this, it found no integration branch,
@@ -55,16 +59,19 @@ from loregarden.services.git_automation import (
 )
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_branch import resolve_ticket_branch
-from loregarden.services.git_merge_noco import MergeOutcome, adds_nothing, rev, squash_onto
+from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
+from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
 from loregarden.services.target_branch import integration_branch_for, subtree_root
+from loregarden.services.tree_fix_section import tree_fix_section
 from loregarden.services.tree_ux_section import (
     TreeUxSection,
     close_missing_ux_answers,
     report_missing_ux_answers,
     tree_ux_section,
 )
+from loregarden.services.work_landed import work_is_on
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -110,7 +117,7 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
     config = resolve_git_automation(workspace, ticket)
     base_sha = rev(repo_root, f"refs/heads/{config.base_branch}")
     try:
-        already_there = adds_nothing(repo_root, base_sha, tip)
+        already_there = work_is_on(repo_root, tip, base_sha)
     except RuntimeError as exc:
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
         _emit(session, ticket, config.base_branch, failed)
@@ -170,7 +177,7 @@ def _prepare(
     tip: str,
     config: GitAutomationConfig,
 ) -> _Prepared:
-    """Cut the commit to publish, and describe it, user-facing surfaces included."""
+    """Cut the commit to publish, and describe it, user-facing surfaces and fix coverage included."""
     subject = _subject(ticket, branch)
     if "push" not in enabled_steps(config):
         return _Prepared(subject)
@@ -185,9 +192,17 @@ def _prepare(
         return _Prepared(
             subject, failure=f"could not tell which user-facing files {branch} changes: {exc}"
         )
-    body = generated_body(subject.pr_body + section.text)
+    fixes = tree_fix_section(session, ticket, branch=branch)
+    body = generated_body(subject.pr_body + section.text + fixes)
     return _Prepared(
-        replace(subject, head=cut.sha, pr_body=body, refresh_body=True), section=section
+        replace(
+            subject,
+            branch=publish_ref_for(branch),
+            head=cut.sha,
+            pr_body=body,
+            refresh_body=True,
+        ),
+        section=section,
     )
 
 

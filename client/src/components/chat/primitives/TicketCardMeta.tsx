@@ -4,10 +4,11 @@ import type { BlockedOn, StageStatus, TicketState, WorkflowStageView } from "../
 import {
   priorityStyle,
   stageStatusColor,
-  stageStatusLabel,
+  stageStatusChip,
   ticketStateColor,
 } from "../../../lib/ticketStates";
 import { blockedOnStateLabel } from "../../../utils/blockKinds";
+import { StatusChip } from "../../ui/StatusChip";
 
 export type ProgressSegment = {
   color: string;
@@ -66,6 +67,55 @@ export function childProgressSegments(
   };
 }
 
+/**
+ * A ticket card's key facts, as one row under its head: the stage it is on and
+ * that stage's state, who is working it, and how far through its stages it is.
+ */
+export function TicketFacts({
+  stageName,
+  stageStatus,
+  agent,
+  progressLabel,
+}: {
+  stageName?: string;
+  stageStatus?: StageStatus;
+  agent?: string;
+  progressLabel?: string | null;
+}) {
+  return (
+    <>
+      {stageName ? (
+        <span className="lg-primitive-fact">
+          Stage <b>{stageName}</b> <StatusChip {...stageStatusChip(stageStatus)} />
+        </span>
+      ) : null}
+      {agent ? (
+        <span className="lg-primitive-fact">
+          Agent <b>{agent}</b>
+        </span>
+      ) : null}
+      {progressLabel ? (
+        <span className="lg-primitive-fact">
+          Progress <b>{progressLabel}</b>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/** A ticket's priority as its P-badge, as a card's head and its rows show it. */
+export function TicketPriorityBadge({ priority }: { priority: number }) {
+  const prio = priorityStyle(priority);
+  return (
+    <span
+      className="lg-primitive-ticket-prio"
+      style={{ color: prio.color, background: prio.background, borderColor: prio.border }}
+    >
+      {prio.code}
+    </span>
+  );
+}
+
 /** The v6 console ticket card body: P-badge, state, segmented progress, stage line. */
 export function TicketCardBody({
   title,
@@ -80,6 +130,7 @@ export function TicketCardBody({
   compact = false,
   underPriority,
   blockedOn,
+  headless = false,
 }: {
   title: string;
   /** Optional id shown ahead of the title (ticket lists). */
@@ -98,6 +149,8 @@ export function TicketCardBody({
   underPriority?: ReactNode;
   /** What a stuck ticket waits for; named beside the state so "Blocked" says whose move it is. */
   blockedOn?: BlockedOn | null;
+  /** The card's head already names the ticket and its state: draw the progress and stage only. */
+  headless?: boolean;
 }) {
   const prio = priorityStyle(priority);
   const stateColor = ticketStateColor(state);
@@ -105,12 +158,16 @@ export function TicketCardBody({
 
   return (
     <div
-      className={
-        compact
-          ? "lg-primitive-ticket-v6 lg-primitive-ticket-v6--compact"
-          : "lg-primitive-ticket-v6"
-      }
+      className={[
+        "lg-primitive-ticket-v6",
+        compact ? "lg-primitive-ticket-v6--compact" : null,
+        headless ? "lg-primitive-ticket-v6--headless" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
+{headless ? null : (
+        <>
       <div className="lg-primitive-ticket-v6-title-row">
         <div className="lg-primitive-ticket-prio-col">
           <span
@@ -158,6 +215,9 @@ export function TicketCardBody({
         ) : null}
       </div>
 
+        </>
+      )}
+
       {segments.length ? (
         <div
           className="lg-primitive-ticket-segs"
@@ -182,13 +242,14 @@ export function TicketCardBody({
               />
             ))}
           </div>
-          {progressLabel ? (
+          {/* Under a card's head the facts row carries the fraction. */}
+          {progressLabel && !headless ? (
             <span className="lg-primitive-ticket-segs-label">{progressLabel}</span>
           ) : null}
         </div>
       ) : null}
 
-      {stageName ? (
+      {stageName && !headless ? (
         <div className="lg-primitive-ticket-stage">
           <span
             className="lg-primitive-ticket-stage-dot"
@@ -198,9 +259,7 @@ export function TicketCardBody({
           <span className="lg-primitive-ticket-stage-name" style={{ color: stageColor }}>
             {stageName}
           </span>
-          <span className="lg-primitive-ticket-stage-status">
-            {stageStatusLabel(stageStatus)}
-          </span>
+          <StatusChip {...stageStatusChip(stageStatus)} />
         </div>
       ) : null}
     </div>

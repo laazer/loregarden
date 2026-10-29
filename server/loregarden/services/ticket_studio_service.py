@@ -29,7 +29,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
+from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
@@ -384,23 +384,6 @@ def _message_view(msg: TicketStudioMessage) -> dict:
         "parts": load_parts_json(msg.parts_json),
         "created_at": msg.created_at.isoformat(),
     }
-
-
-def _assistant_message(
-    session: Session, session_row: TicketStudioSession, reply: str
-) -> TicketStudioMessage:
-    """An assistant turn with its parts resolved at write time.
-
-    Every scoper path builds its assistant row through here so none of them can
-    forget the parts and leave that turn rendering as raw fenced JSON after a
-    reload.
-    """
-    return TicketStudioMessage(
-        session_id=session_row.id,
-        role="assistant",
-        content=reply,
-        parts_json=parts_json_for_reply(session, reply, workspace_id=session_row.workspace_id),
-    )
 
 
 def _load_draft(session_row: TicketStudioSession) -> list[TicketStudioDraftItem]:

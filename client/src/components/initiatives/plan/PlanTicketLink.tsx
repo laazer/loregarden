@@ -1,5 +1,5 @@
 import type { PlanNode } from "../../../api/initiativeApi";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 
 /** A plan ticket by its id and title, opening the ticket. */
@@ -9,7 +9,7 @@ export function PlanTicketLink({ node }: { node: PlanNode }) {
       variant="plain"
       className="plan-link"
       title={`Open ${node.external_id}`}
-      onClick={() => navigateToTicket(node.id)}
+      onClick={() => peekTicket(node.id)}
     >
       <span className="plan-mono">{node.external_id}</span> {node.title}
     </Button>

@@ -27,7 +27,7 @@
   align-items: center;
   gap: 8px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   min-width: 0;
 }
@@ -46,7 +46,7 @@
 
 .prp-badge {
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
@@ -70,10 +70,11 @@
 
 .prp-title {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   line-height: 1.35;
   overflow-wrap: anywhere;
+  font-weight: 600;
 }
 
 .prp-title a {
@@ -89,7 +90,7 @@
 
 .prp-size {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
   font-variant-numeric: tabular-nums;
 }
@@ -106,7 +107,7 @@
   margin: 0;
   padding: 10px 12px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   border-left: 3px solid currentcolor;
 }
 
@@ -152,8 +153,8 @@
 
 .prp-section-title {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--txl);
@@ -176,7 +177,7 @@
   flex-wrap: wrap;
   gap: 10px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
 }
 
@@ -214,7 +215,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   min-width: 0;
 }
 
@@ -242,7 +243,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   line-height: 1;
   color: var(--prp-tone);
@@ -269,7 +270,7 @@ a.prp-check-name:focus-visible {
 .prp-outcome {
   flex: 0 0 auto;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--prp-tone);
 }
 
@@ -282,7 +283,7 @@ a.prp-check-name:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .prp-fact {
@@ -312,14 +313,14 @@ a.prp-check-name:focus-visible {
 
 .prp-muted {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txl);
 }
 
 .prp-branch,
 .prp-error {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   overflow-wrap: anywhere;
 }
 
@@ -341,7 +342,7 @@ a.prp-check-name:focus-visible {
 
 .prp-merge-question {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--tx);
   overflow-wrap: anywhere;
@@ -363,7 +364,7 @@ a.prp-check-name:focus-visible {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--rdl);
   overflow-wrap: anywhere;
 }
@@ -401,13 +402,13 @@ a.prp-check-name:focus-visible {
 }
 
 .prp-attempt-reason {
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   overflow-wrap: anywhere;
 }
 
 .prp-attempt-when {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }

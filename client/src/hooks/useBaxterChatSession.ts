@@ -51,7 +51,7 @@ export function baxterChatSessionsKey(scope: string) {
   return ["baxter-chat-sessions", scope] as const;
 }
 
-function baxterChatSessionKey(scope: string, sessionId: string) {
+export function baxterChatSessionKey(scope: string, sessionId: string) {
   return ["baxter-chat-session", scope, sessionId] as const;
 }
 

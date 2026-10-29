@@ -38,9 +38,25 @@ describe("primitiveHistory", () => {
     expect(history.map((entry) => entry.key)).toEqual(["a2:0"]);
   });
 
+  it("leaves out a question card that asks nothing", () => {
+    const history = primitiveHistory([
+      turn("a1", "assistant", [
+        { primitive: "qa", items: [] },
+        { primitive: "qa", items: [{ id: "q", question: "Which branch?" }] },
+      ]),
+    ]);
+
+    expect(history.map((entry) => entry.key)).toEqual(["a1:1"]);
+  });
+
   it("names a card by its most specific field", () => {
     expect(primitiveLabel({ primitive: "kanban", title: "Board A" })).toBe("Board A");
     expect(primitiveLabel({ primitive: "ticket", ticket_id: "T-1" })).toBe("T-1");
     expect(primitiveLabel({ primitive: "calendar" })).toBe("Calendar");
+    // A question or an aside is named by what it asks, not the ticket it carries.
+    expect(primitiveLabel({ primitive: "qa", items: [{ id: "q", question: "Which branch?" }] })).toBe("Which branch?");
+    expect(
+      primitiveLabel({ primitive: "btw", exchange_id: "x", ticket_id: "8c1f-uuid", question: "Is it stuck?" }),
+    ).toBe("Is it stuck?");
   });
 });

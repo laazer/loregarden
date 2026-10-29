@@ -2,10 +2,11 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Background,
-  Controls,
   MarkerType,
   Position,
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
@@ -15,6 +16,7 @@ import { api } from "../../../api/client";
 import type { StudioWorkflowStage } from "../../../api/types";
 import type { WorkflowPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { Button } from "../../ui/Button";
 import { OpenWorkflowStudioButton } from "./ResourceActionButton";
 
 function stagesFromDraft(draft: Record<string, unknown> | null | undefined): StudioWorkflowStage[] {
@@ -140,7 +142,7 @@ function buildGraph(stages: StudioWorkflowStage[]): { nodes: Node[]; edges: Edge
       },
       labelStyle: {
         fill: entersGate || exitsGate ? "var(--red)" : "var(--txm)",
-        fontSize: 10,
+        fontSize: "var(--fs-micro)",
         fontWeight: 650,
       },
       labelBgStyle: {
@@ -175,9 +177,13 @@ export function WorkflowPrimitive({ part }: { part: WorkflowPart }) {
     "Workflow";
 
   return (
+    // The provider lifts the graph's controls out of the canvas and into the head.
+    <ReactFlowProvider>
     <PrimitiveCard
+      kind="workflow"
       title={title}
-      subtitle={slug ?? undefined}
+      refLine={slug}
+      copyRef={slug}
       loading={isLoading && !part.draft}
       error={
         !part.draft && error
@@ -186,7 +192,10 @@ export function WorkflowPrimitive({ part }: { part: WorkflowPart }) {
             : "Failed to load workflow"
           : null
       }
-      resourceAction={slug && !part.draft ? <OpenWorkflowStudioButton slug={slug} /> : null}
+      // Zoom and fit live in the head, beside Expand; the Studio link at the foot.
+      headerActions={<GraphZoom />}
+      footerHint={slug && !part.draft ? "Open in Workflow Studio to edit" : `${stages.length} stages`}
+      actions={slug && !part.draft ? <OpenWorkflowStudioButton slug={slug} /> : null}
     >
       <div className="lg-primitive-workflow-flow">
         <ReactFlow
@@ -201,9 +210,33 @@ export function WorkflowPrimitive({ part }: { part: WorkflowPart }) {
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={20} size={1} color="var(--bd)" />
-          <Controls showInteractive={false} />
         </ReactFlow>
       </div>
     </PrimitiveCard>
+    </ReactFlowProvider>
+  );
+}
+
+/** The graph's zoom and fit, as the card's head icons. */
+function GraphZoom() {
+  const flow = useReactFlow();
+  return (
+    <>
+      <Button variant="plain" className="lg-primitive-card-icon-btn" aria-label="Zoom out" title="Zoom out" onClick={() => void flow.zoomOut()}>
+        <span aria-hidden>−</span>
+      </Button>
+      <Button variant="plain" className="lg-primitive-card-icon-btn" aria-label="Zoom in" title="Zoom in" onClick={() => void flow.zoomIn()}>
+        <span aria-hidden>+</span>
+      </Button>
+      <Button
+        variant="plain"
+        className="lg-primitive-card-icon-btn"
+        aria-label="Fit to view"
+        title="Fit to view"
+        onClick={() => void flow.fitView({ padding: 0.16 })}
+      >
+        <span aria-hidden>⤢</span>
+      </Button>
+    </>
   );
 }

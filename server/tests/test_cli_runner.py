@@ -193,7 +193,9 @@ def test_resolve_cursor_adapter(tmp_path, monkeypatch):
     assert "--approve-mcps" in inv.argv
     assert "--workspace" in inv.argv
     assert str(workspace) in inv.argv
-    assert any(prompt in arg for arg in inv.argv)
+    # The prompt is on stdin, not in argv — see test_cursor_prompt_transport.py.
+    assert inv.stdin_prompt is not None and prompt in inv.stdin_prompt
+    assert not any(prompt in arg for arg in inv.argv)
 
 
 def test_resolve_codex_adapter(tmp_path, monkeypatch):
@@ -252,9 +254,11 @@ def test_resolve_cursor_adapter_text_skips_partial_stream(tmp_path, monkeypatch)
 
 
 def test_resolve_cursor_adapter_carries_prompt_without_bypass(tmp_path, monkeypatch):
-    """`cursor-agent -p` with no prompt exits immediately: "No prompt provided for
-    print mode". Cursor cannot use the permission bridge (no `--input-format`), so
-    a gated run must still be a fully-formed print-mode invocation."""
+    """`cursor-agent -p` with no prompt at all exits immediately: "No prompt
+    provided for print mode". Cursor cannot use the permission bridge (no
+    `--input-format`), so a gated run must still be a fully-formed print-mode
+    invocation — with its prompt on stdin, which print mode does read (verified
+    2026-10-24 against the real CLI with this argv and a file redirect)."""
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
     monkeypatch.delenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", raising=False)
     monkeypatch.setattr(settings, "allow_permission_bypass", False)
@@ -275,10 +279,10 @@ def test_resolve_cursor_adapter_carries_prompt_without_bypass(tmp_path, monkeypa
     )
 
     assert inv.adapter == "cursor"
-    assert [arg for arg in inv.argv if arg.endswith(prompt)]
-    # Print mode reads no stdin and the executor opens none, so the prompt has to
-    # be in argv — neither stdin nor the prompt file would reach the CLI.
-    assert inv.stdin_prompt is None
+    assert inv.stdin_prompt is not None and inv.stdin_prompt.endswith(prompt)
+    # argv carries no prompt: the whole command is wrapped into one `tmux
+    # new-session`, which a 65 KB stage prompt put past tmux's limit.
+    assert not [arg for arg in inv.argv if prompt in arg]
     assert inv.use_prompt_file is False
     assert inv.interactive is False
 

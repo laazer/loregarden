@@ -1,0 +1,994 @@
+/* The reference library (Memory → Reference library). A table of sources and,
+   when one is open, its detail beside it; below the width two panes can hold,
+   the open source replaces the list and "Back to sources" returns to it. */
+
+.screen-view--memory-library .memory-page-body {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.rl-page {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Inside the list pane, because the views and search narrow the list and
+   nothing else; it scrolls away so the table header can stick in its place. */
+.rl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px 0 10px;
+  margin-bottom: 4px;
+}
+
+.rl-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rl-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rl-view:hover,
+.rl-view:focus-visible {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.rl-view--active {
+  color: var(--ac2);
+  border-color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 8%, transparent);
+}
+
+.rl-search {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+.rl-count {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+}
+
+.rl-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rl-page--open .rl-body {
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr);
+}
+
+.rl-list,
+.rl-detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Its own size container: the table's columns give way by the width the list
+   actually has, which is about half the page while a source is open. */
+.rl-list {
+  container-type: inline-size;
+  padding: 0 18px 24px;
+}
+
+.rl-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 600px;
+  padding: 28px 0;
+  color: var(--txm);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+.rl-state p {
+  margin: 0;
+}
+
+/* ---- the table ---------------------------------------------------------- */
+
+.rl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rl-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg0);
+  border-bottom: 1px solid var(--bd2);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.rl-table th:has(.rl-sort) {
+  padding: 0;
+}
+
+.rl-sort {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.rl-num .rl-sort {
+  justify-content: flex-end;
+}
+
+.rl-sort:hover,
+.rl-sort:focus-visible {
+  color: var(--tx);
+}
+
+.rl-sort-mark {
+  min-width: 1ch;
+}
+
+.rl-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: top;
+  color: var(--txm);
+}
+
+.rl-table .rl-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rl-table .rl-col-state {
+  white-space: nowrap;
+}
+
+.rl-table .rl-col-passes,
+.rl-table .rl-col-tickets {
+  width: 88px;
+}
+
+.rl-row--selected td {
+  background: color-mix(in srgb, var(--ac) 7%, transparent);
+}
+
+.rl-name {
+  display: block;
+  color: var(--tx);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.rl-name:hover,
+.rl-name:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.rl-url {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+/* How far a repository has moved since review. "moved" is the one to notice;
+   the words carry the meaning, the colour only points at it. */
+.rl-change {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.rl-change--moved {
+  color: var(--amb);
+}
+
+.rl-change--same,
+.rl-change--unknown {
+  color: var(--txm);
+}
+
+.rl-upstream {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.rl-upstream .rl-change {
+  display: inline;
+}
+
+.rl-check {
+  font-size: var(--fs-micro);
+  color: var(--ac2);
+}
+
+.rl-check-error {
+  display: block;
+  font-size: var(--fs-micro);
+}
+
+.rl-table .rl-col-upstream,
+.rl-table .rl-col-since_review {
+  white-space: nowrap;
+}
+
+.rl-table td.rl-change--moved {
+  color: var(--amb);
+}
+
+.rl-also {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--blue);
+}
+
+/* The column header names the unit on a wide table; at phone width there is no
+   header, so each count carries its own. */
+.rl-unit {
+  display: none;
+}
+
+.rl-unresolved {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+/* State is said in words; the colour only reinforces it. */
+.rl-state-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--tx);
+  background: var(--bg3);
+}
+
+.rl-state-badge--awaiting_approval {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 16%, transparent);
+}
+
+.rl-state-badge--reading {
+  color: var(--vil);
+  background: color-mix(in srgb, var(--vio) 16%, transparent);
+}
+
+.rl-state-badge--queued {
+  color: var(--bll);
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+}
+
+.rl-state-badge--surveyed {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 16%, transparent);
+}
+
+.rl-state-badge--refused {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+}
+
+/* ---- the detail ---------------------------------------------------------- */
+
+.rl-detail {
+  border-left: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.rl-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 18px 10px;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--bd);
+}
+
+.rl-detail-head h2 {
+  margin: 4px 0 6px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  color: var(--tx);
+  font-weight: 600;
+}
+
+.rl-detail-head h2:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+.rl-back {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rl-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 4px;
+  font-size: var(--fs-small);
+}
+
+.rl-external {
+  color: var(--ac2);
+  overflow-wrap: anywhere;
+}
+
+.rl-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 14px 18px 32px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  line-height: 1.5;
+}
+
+.rl-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+
+.rl-next p {
+  margin: 0;
+  color: var(--tx);
+}
+
+.rl-next--quiet {
+  color: var(--txm);
+}
+
+.rl-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+}
+
+.rl-facts dt {
+  color: var(--txm);
+  font-size: var(--fs-micro);
+}
+
+.rl-facts dd {
+  margin: 0;
+  color: var(--tx);
+}
+
+.rl-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.rl-group + .rl-group {
+  margin-top: 10px;
+}
+
+.rl-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--txm);
+}
+
+.rl-ticket-search {
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 8px;
+}
+
+.rl-tickets,
+.rl-learnings,
+.rl-passes,
+.rl-plain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rl-passes {
+  border-left: 2px solid var(--bd2);
+  padding-left: 12px;
+}
+
+.rl-ticket-link,
+.rl-learning-link {
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.rl-ticket-link:hover,
+.rl-ticket-link:focus-visible,
+.rl-learning-link:hover,
+.rl-learning-link:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+.rl-ticket-id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.rl-tags,
+.rl-pass-outcome {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.rl-pass-title {
+  display: block;
+  color: var(--tx);
+  font-weight: 500;
+}
+
+.rl-more {
+  margin-top: 6px;
+  font-size: var(--fs-small);
+  color: var(--ac2);
+}
+
+.rl-muted {
+  color: var(--txm);
+  margin: 0;
+}
+
+.rl-warn {
+  margin: 0;
+  color: var(--amb);
+}
+
+.rl-details summary {
+  cursor: pointer;
+  color: var(--txm);
+}
+
+.rl-details summary:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+
+.rl-initiative {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.rl-initiative .rl-tags {
+  display: inline;
+}
+
+.rl-unlink {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.rl-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1 0 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+  color: var(--tx);
+}
+
+.rl-link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+}
+
+/* Initiative titles run long; the picker shrinks with the pane rather than
+   pushing the Link button out of it. */
+.rl-link-form select {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.rl-link-form label {
+  color: var(--txm);
+  font-size: var(--fs-micro);
+}
+
+.rl-result {
+  margin: 6px 0 0;
+  color: var(--grn);
+}
+
+/* Kept in the tree when empty: a live region that appears with its text is
+   not announced by every screen reader. */
+.rl-result:empty {
+  margin: 0;
+}
+
+.rl-findings li {
+  overflow-wrap: anywhere;
+}
+
+.rl-retracted {
+  text-decoration: line-through;
+  color: var(--txm);
+}
+
+.rl-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Licence and the two dates give way first; the name, state, counts and the
+   change since review stay. Measured on the list pane (`.rl-list`). */
+@container (max-width: 860px) {
+  .rl-table .rl-col-licence,
+  .rl-table .rl-col-last_read,
+  .rl-table .rl-col-upstream {
+    display: none;
+  }
+}
+
+/* One pane: an open source replaces the list. */
+@container (max-width: 860px) {
+  .rl-page--open .rl-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rl-page--open .rl-list {
+    display: none;
+  }
+
+  .rl-detail {
+    border-left: 0;
+  }
+}
+
+/* Phone width: each source becomes one block — name, then state and counts. */
+@container (max-width: 640px) {
+  .rl-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .rl-table,
+  .rl-table tbody,
+  .rl-table tr,
+  .rl-table td {
+    display: block;
+    width: auto;
+  }
+
+  .rl-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .rl-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .rl-table .rl-col-name {
+    flex: 1 0 100%;
+  }
+
+  .rl-table .rl-col-licence,
+  .rl-table .rl-col-last_read {
+    display: none;
+  }
+
+  .rl-table .rl-unit {
+    display: inline;
+  }
+
+  .rl-table .rl-unresolved {
+    display: none;
+  }
+}
+
+/* The record: what the survey said about this source, as it was written. */
+.rl-record {
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--tx);
+}
+
+.rl-pass-record {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.rl-summary {
+  margin: 6px 0 0;
+  font-size: var(--fs-body);
+  color: var(--tx);
+}
+
+/* ---- the review queue and adding a reference ---------------------------- */
+
+/* The count sits right, and the add control after it, at the toolbar's end. */
+.rl-add-toggle {
+  order: 2;
+}
+
+.rl-count {
+  order: 1;
+}
+
+.rl-queue-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+  font-size: var(--fs-body);
+  color: var(--tx);
+}
+
+.rl-queue-status p {
+  margin: 0;
+}
+
+.rl-queue-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.rl-queue-label {
+  font-weight: 600;
+}
+
+.rl-queue-held {
+  color: var(--aml);
+}
+
+/* The add, review and link forms are modals; their bodies stack fields. */
+.rl-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rl-modal-body > label {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rl-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.rl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rl-field--grow {
+  flex: 1 1 280px;
+}
+
+
+.rl-add-mode {
+  display: flex;
+  gap: 4px;
+}
+
+.rl-bulk-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.rl-bulk-url {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.rl-bulk-failed {
+  color: var(--aml);
+}
+
+/* A pasted list: one row per link found, its name and reason editable. */
+.rl-paste-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rl-paste-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--txm);
+  padding: 0 8px 6px 0;
+}
+
+.rl-paste-table td {
+  padding: 6px 8px 6px 0;
+  vertical-align: top;
+  border-top: 1px solid var(--bd);
+}
+
+.rl-paste-table td:nth-child(1) {
+  width: 22%;
+}
+
+.rl-paste-table td:nth-child(2) {
+  width: 26%;
+  padding-top: 12px;
+}
+
+.rl-paste-table td:last-child {
+  width: 1%;
+  padding-right: 0;
+}
+
+.rl-paste-table input,
+.rl-paste-table textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .rl-paste-table thead {
+    display: none;
+  }
+
+  .rl-paste-table tr,
+  .rl-paste-table td {
+    display: block;
+    width: auto;
+  }
+
+  .rl-paste-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--txm);
+  }
+}
+
+/* Who a review is for: workspaces to read for, initiatives to feed. */
+.rl-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.rl-target-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.rl-target-group legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+/* Scoped under .rl-targets: modal bodies style their direct labels as captions. */
+.rl-targets .rl-check-option {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-body);
+  color: var(--tx);
+}
+
+.rl-optional-note {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+/* The shared input style is full-width; a checkbox sits beside its label. */
+.rl-check-option input {
+  width: auto;
+  flex: none;
+  margin: 3px 0 0;
+}
+
+/* What a source is, under its name: in the table one line, in the detail in full. */
+.rl-description {
+  display: block;
+  max-width: 52ch;
+  overflow: hidden;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rl-about {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--tx);
+}
+
+.rl-about p {
+  margin: 0;
+}
+
+.rl-about--pending,
+.rl-about-facts {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rl-refusal {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--aml);
+}
+
+.rl-target-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* A handful of short workspace names read best across one line. */
+.rl-target-options--row {
+  flex-flow: row wrap;
+  gap: 8px 22px;
+}
+
+.rl-option-text {
+  line-height: 1.45;
+}
+
+.rl-option-id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+/* Quick-add topics: one chip per topic, pressed when chosen. */
+.rl-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rl-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.rl-chip--on {
+  border-color: color-mix(in srgb, var(--ac) 60%, transparent);
+  background: color-mix(in srgb, var(--ac) 16%, transparent);
+  color: var(--ac2);
+}
+
+.rl-keep-drop {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.rl-col-state .rl-keep-drop {
+  display: flex;
+}
+
+.rl-found-for {
+  display: block;
+  font-size: var(--fs-micro);
+  color: var(--vil);
+}

@@ -23,7 +23,7 @@
   border: 1px solid #27313b;
   border-radius: 4px;
   background: rgba(17, 24, 32, 0.92);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: #7f8c9b;
   pointer-events: none;
 }
@@ -48,7 +48,7 @@
   padding: 5px 10px;
   border-top: 1px solid #1b2530;
   background: #111820;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: #9fb0c0;
 }
 

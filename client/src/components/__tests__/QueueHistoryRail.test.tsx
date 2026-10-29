@@ -6,14 +6,10 @@
  * it would be worse than no card.
  */
 
+import { useTicketPeekStore } from '../../state/ticketPeekStore';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { QueueHistoryRail } from '../QueueHistoryRail';
-
-const navigateToTicket = jest.fn();
-jest.mock('../../lib/useAppNavigation', () => ({
-  navigateToTicket: (...args: unknown[]) => navigateToTicket(...args),
-}));
 
 const blockedEntry = {
   entry_id: 'entry-1',
@@ -50,7 +46,7 @@ function mockPage(entries: unknown[]) {
 
 describe('QueueHistoryRail', () => {
   beforeEach(() => {
-    navigateToTicket.mockClear();
+    useTicketPeekStore.getState().close();
     mockPage([blockedEntry]);
   });
 
@@ -73,12 +69,12 @@ describe('QueueHistoryRail', () => {
     ).toBeInTheDocument();
   });
 
-  it('navigates to the ticket a card names', async () => {
+  it('opens the details of the ticket a card names', async () => {
     render(<QueueHistoryRail />);
 
     fireEvent.click(await screen.findByText('Generate CHECKPOINTS.md'));
 
-    expect(navigateToTicket).toHaveBeenCalledWith('ticket-1');
+    expect(useTicketPeekStore.getState().peek).toEqual({ ticketId: 'ticket-1', tab: undefined });
   });
 
   it('refetches with the outcome filter the operator picked', async () => {

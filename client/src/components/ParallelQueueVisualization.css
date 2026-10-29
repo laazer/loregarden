@@ -5,10 +5,10 @@
  * dark theme and a light-mode branch renders a white card in a dark shell.
  */
 
+/* The board is the page's surface, not a card on it: one bordered level per
+   region, and here that level is the lane. A panel around the lanes put the
+   "stopped" rows three boxes deep. */
 .queue-panel {
-  background: var(--bg1);
-  border: 1px solid var(--bd);
-  border-radius: 16px;
   padding: 22px 24px;
   /* Squares off with the rail beside it. A definite height is what lets the
      lanes below size themselves against the panel rather than the other way
@@ -31,8 +31,8 @@
 
 .queue-panel-title {
   margin: 0;
-  font-family: var(--dp);
-  font-size: 17px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -42,7 +42,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--aml);
 }
@@ -64,22 +64,28 @@
 
 /* ---- stat tiles ---- */
 
+/* Four numbers read across one strip, split by rules rather than boxed: they
+   are summaries to glance at, not things to act on. */
 .queue-stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
   margin-bottom: 26px;
 }
 
 .queue-stat {
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 13px;
-  padding: 15px 16px;
+  padding: 4px 18px;
+}
+
+.queue-stat:first-child {
+  padding-left: 0;
+}
+
+.queue-stat + .queue-stat {
+  border-left: 1px solid var(--bd);
 }
 
 .queue-stat-label {
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -88,12 +94,13 @@
 }
 
 .queue-stat-value {
-  font-family: var(--dp);
-  font-size: 26px;
-  font-weight: 700;
+  font-family: var(--ui);
+  font-size: 26px; /* type-ok: hero stat number, read at a glance; above the scale on purpose */
+  font-weight: 600;
   color: var(--tx);
   letter-spacing: -0.01em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .queue-stat-bar {
@@ -115,7 +122,7 @@
 
 .queue-stat-sub {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -129,15 +136,15 @@
 }
 
 .queue-section-title {
-  font-family: var(--dp);
-  font-size: 14px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .queue-section-hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -157,7 +164,7 @@
   gap: 6px;
   width: 100%;
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);
   background: transparent;
@@ -187,7 +194,7 @@
 }
 
 .queue-lane-queue-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -218,7 +225,7 @@
   border-radius: 6px;
   background: var(--bg2);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -227,7 +234,7 @@
   min-width: 22px;
   height: 22px;
   padding-inline: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .queue-lane-item-copy {
@@ -238,7 +245,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -247,7 +254,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -255,7 +262,7 @@
   width: 100%;
   margin-bottom: 6px;
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   background: var(--bg3);
   border: 1px solid var(--bd2);
@@ -309,7 +316,7 @@
   background: transparent;
   color: var(--tx);
   font-family: var(--ui);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -329,7 +336,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -342,7 +349,7 @@
 
 .queue-dispatch-item-state {
   grid-area: state;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txm);
@@ -350,7 +357,7 @@
 
 .queue-dispatch-empty {
   padding: 16px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txl);
   text-align: center;
 }
@@ -361,7 +368,7 @@
   border-radius: 9px;
   background: var(--bg3);
   color: var(--rdl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* ---- execution slots ---- */
@@ -419,7 +426,7 @@
   min-width: 24px;
   height: 22px;
   padding-inline: 5px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .queue-slot--busy .queue-slot-dot {
@@ -429,15 +436,15 @@
 }
 
 .queue-slot-name {
-  font-family: var(--dp);
-  font-size: 13px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
 }
 
 .queue-slot-badge {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -452,42 +459,16 @@
   color: var(--bll);
 }
 
-/* A slot held by a run that has already ended is not a working lane, and the
-   badge must not borrow the live colour to imply it is. */
-.queue-slot-badge[data-run-status="succeeded"],
-.queue-slot-badge[data-run-status="failed"],
-.queue-slot-badge[data-run-status="cancelled"] {
-  color: var(--txl);
-}
-
-.queue-slot-badge[data-run-status="failed"] {
-  color: var(--rdl);
-}
-
-.queue-slot-badge[data-run-status="awaiting_permission"] {
-  color: var(--aml);
+/* A run slot's status is a StatusChip, toned by the run: a slot held by a run
+   that has already ended reads as done or failed, never as the live blue. */
+.queue-slot-status {
+  margin-left: auto;
 }
 
 .queue-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.queue-chip {
-  font-family: var(--mono);
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 1px 6px;
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  background: var(--bg2);
-  white-space: nowrap;
-}
-
-.queue-chip[data-activity="running"] {
-  border-color: rgba(111, 174, 143, 0.32);
-  background: rgba(111, 174, 143, 0.08);
 }
 
 .queue-slot-body {
@@ -528,7 +509,7 @@
 }
 
 .queue-slot-title {
-  font-size: 13.5px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   overflow: hidden;
@@ -547,7 +528,7 @@
 }
 
 .queue-hierarchy-node {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--txl);
   overflow: hidden;
@@ -556,7 +537,7 @@
 }
 
 .queue-hierarchy-node.is-leaf {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   white-space: normal;
@@ -568,12 +549,12 @@
 
 .queue-hierarchy-code {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .queue-hierarchy-node.is-leaf .queue-hierarchy-code {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--tx);
 }
 
@@ -586,13 +567,13 @@
 }
 
 .queue-lane-item-copy .queue-hierarchy-node.is-leaf {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .queue-slot-sub,
 .queue-slot-time {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -618,7 +599,7 @@
 .queue-slot-tree,
 .queue-lane-item-timing {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -712,7 +693,7 @@
   border-radius: 8px;
   background: var(--bg3);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
@@ -722,7 +703,7 @@
 }
 
 .queue-waiting-title {
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--tx);
   overflow: hidden;
@@ -732,7 +713,7 @@
 
 .queue-waiting-sub {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -745,7 +726,7 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -760,7 +741,7 @@
   background: var(--bg2);
   border: 1px solid var(--red);
   border-radius: 11px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--rdl);
 }
 
@@ -784,14 +765,21 @@
   background: var(--bg2);
   border: 1px solid var(--bd);
   text-align: center;
-  font-family: var(--dp);
-  font-size: 13.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
   color: var(--txm);
 }
 
 @media (max-width: 1100px) {
   .queue-stat-grid {
     grid-template-columns: repeat(2, 1fr);
+    row-gap: 14px;
+  }
+
+  /* Two to a row: the third starts a row, so it loses the rule and the indent. */
+  .queue-stat:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
   }
 
   .queue-slot-grid {
@@ -826,21 +814,30 @@
 }
 
 .queue-lane-attention-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--amb);
 }
 
+/* Rows in the lane, split by rules, not cards inside the lane's card. The amber
+   left rule stays: it is the mark, not a box. */
 .queue-lane-attention-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 9px;
-  background: var(--bg3);
   border-left: 2px solid var(--amb);
+}
+
+.queue-lane-attention-item + .queue-lane-attention-item {
+  border-top: 1px solid var(--bd);
+}
+
+/* Divided rows sit flush; the gap was spacing between cards. */
+.queue-lane-attention .queue-lane-scroller {
+  gap: 0;
 }
 
 .queue-lane-attention-item.is-busy {
@@ -852,7 +849,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid currentcolor;
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--amb);
@@ -866,7 +863,7 @@
   min-width: 22px;
   height: 22px;
   padding-inline: 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .queue-lane-attention-copy {
@@ -877,7 +874,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -886,7 +883,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -895,12 +892,12 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--txm);
 }
 
 .queue-lane-attention-more {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }

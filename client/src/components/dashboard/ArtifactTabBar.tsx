@@ -40,6 +40,8 @@ export function ArtifactTabBar({
   outputCount,
   approvalCount,
   hasPr,
+  primaryTabs = PRIMARY_ARTIFACT_TABS,
+  moreTabs = MORE_ARTIFACT_TABS,
 }: {
   artifactTab: ArtifactTab;
   selectedId: string | null;
@@ -47,6 +49,9 @@ export function ArtifactTabBar({
   outputCount: number;
   approvalCount: number;
   hasPr: boolean;
+  /** The tabs in the strip; the ticket page lifts Diff and Hive into its own view tabs. */
+  primaryTabs?: readonly ArtifactTab[];
+  moreTabs?: readonly ArtifactTab[];
 }) {
   const tabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
 
@@ -61,7 +66,7 @@ export function ArtifactTabBar({
   return (
     <>
       <div className="tab-bar-scroll ap-tabs" role="tablist" aria-label="Ticket views">
-        {PRIMARY_ARTIFACT_TABS.map((tab) => {
+        {primaryTabs.map((tab) => {
           const selected = artifactTab === tab;
           return (
             <Button
@@ -89,16 +94,20 @@ export function ArtifactTabBar({
           );
         })}
       </div>
-      <MoreTabs artifactTab={artifactTab} disabled={!selectedId} onSelect={go} />
+      {moreTabs.length > 0 ? (
+        <MoreTabs tabs={moreTabs} artifactTab={artifactTab} disabled={!selectedId} onSelect={go} />
+      ) : null}
     </>
   );
 }
 
 function MoreTabs({
+  tabs,
   artifactTab,
   disabled,
   onSelect,
 }: {
+  tabs: readonly ArtifactTab[];
   artifactTab: ArtifactTab;
   disabled: boolean;
   onSelect: (tab: ArtifactTab) => void;
@@ -107,7 +116,7 @@ function MoreTabs({
   const rootRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismissOnOutside(open, rootRef, close);
-  const current = MORE_ARTIFACT_TABS.includes(artifactTab) ? artifactTab : null;
+  const current = tabs.includes(artifactTab) ? artifactTab : null;
 
   return (
     <div className="ap-more" ref={rootRef}>
@@ -123,7 +132,7 @@ function MoreTabs({
       </Button>
       {open ? (
         <div className="ap-more-menu" role="menu" aria-label="More ticket views">
-          {MORE_ARTIFACT_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <Button
               key={tab}
               variant="plain"

@@ -148,7 +148,9 @@ AGENTS: dict[str, dict] = {
         "name": "Repair",
         "role_file": "agents/misc_agents/repair_v1.md",
         "adapter": "claude",
-        "timeout": 900,
+        # 20261021_repair_timeout_for_merges: a merge turn reads both sides'
+        # history and runs the covering tests; 900s cut off two that had resolved.
+        "timeout": 2400,
         "claude_model": "sonnet",
     },
     "security_reviewer": {
@@ -168,6 +170,12 @@ AGENTS: dict[str, dict] = {
         "role_file": "agents/10_blog_post/blog_post_v1.md",
         "adapter": "claude",
         "timeout": 600,
+    },
+    "reference_surveyor": {
+        "name": "Reference Surveyor",
+        "role_file": "agents/misc_agents/reference_surveyor_v1.md",
+        "adapter": "claude",
+        "timeout": 3600,
     },
     "retriever": {
         "name": "Research Librarian",

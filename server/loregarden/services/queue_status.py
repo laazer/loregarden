@@ -31,6 +31,7 @@ from loregarden.services.run_duration_stats import (
     project_lane_waits,
 )
 from loregarden.services.ticket_activity import classify_ticket_activity
+from loregarden.services.ticket_stage_progress import stage_progress
 from loregarden.services.ticket_tree_estimate import TicketTreeEstimator
 from sqlmodel import Session, col, select
 
@@ -112,6 +113,19 @@ def _live_work_ticket_ids(session: Session) -> set[str]:
         ).all()
     )
     return {ticket_id for ticket_id in live if ticket_id}
+
+
+def _attach_stage_progress(session: Session, active_runs: list[dict[str, Any]]) -> None:
+    """Each slot holder's stages settled out of total, for the sidebar's progress ring.
+
+    Active runs only: there are at most as many as the pool has slots, so a read
+    per run is a handful, where the queued list can run to dozens on a 5s timer.
+    """
+    for run in active_runs:
+        ticket = session.get(Ticket, run["ticket_id"]) if run.get("ticket_id") else None
+        progress = stage_progress(session, ticket) if ticket else None
+        run["stages_done"] = progress.done if progress else None
+        run["stages_total"] = progress.total if progress else None
 
 
 def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
@@ -329,6 +343,7 @@ def build_queue_status(session: Session) -> dict[str, Any]:
 
     _label_runs(session, active_runs)
     _label_runs(session, queued_runs)
+    _attach_stage_progress(session, active_runs)
 
     # Empty when nothing has ever completed, which makes every estimate below
     # None. The dashboard renders that as "unknown" rather than substituting a

@@ -47,44 +47,73 @@
 
 .initiative-title {
   margin: 2px 0 0;
-  font-size: 15px;
+  font-size: var(--fs-lead);
   color: var(--tx);
 }
 
 .initiative-desc {
   color: var(--txm);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
-/* Briefs run to pages of headings and tables. On a card they get a glance's
-   worth; MarkdownContent adds "Open ↗" for exactly these, which reads the rest
-   at full size. Short descriptions have no wrapper and are never cut. */
-.md-expandable > .initiative-desc {
-  max-height: 11em;
+/* Three lines of the brief on the card; "Read brief" opens the rest in the
+   reader. Clamped by height because a brief is several blocks of markdown,
+   which line-clamp (one block's lines) cannot cut. */
+.initiative-brief {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* The size is set here, not only on the markdown inside, so the clamp's `em`
+   is a line of the brief's own text and three means three. */
+.initiative-brief-text {
+  max-height: calc(3 * 1.5em);
   overflow: hidden;
-  mask-image: linear-gradient(180deg, var(--tx) 70%, transparent); /* only alpha matters in a mask */
+  font-size: var(--fs-small);
+  line-height: 1.5;
 }
 
-.initiative-state {
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
+.initiative-brief-text .initiative-desc > :first-child {
+  margin-top: 0;
+}
+
+/* The markdown sets its own, taller line height; inside the clamp every line
+   is one of the three. */
+.initiative-brief-text .markdown-preview,
+.initiative-brief-text .markdown-preview :is(p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote) {
+  line-height: inherit;
+}
+
+.initiative-brief-text.is-clamped {
+  mask-image: linear-gradient(180deg, var(--tx) 60%, transparent); /* only alpha matters in a mask */
+}
+
+.initiative-brief-more {
+  font-size: var(--fs-small);
+  color: var(--ac2);
+}
+
+.initiative-brief-more:hover,
+.initiative-brief-more:focus-visible {
+  text-decoration: underline;
 }
 
 .initiative-mono {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .initiative-muted {
   color: var(--txl);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .initiative-hint {
   margin: 0;
   color: var(--txl);
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-progress {
@@ -108,17 +137,20 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
+/* Rows in the card, split by rules: the card is the one bordered level, and a
+   filled box per milestone put a second inside it. */
 .initiative-milestone {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--bg2);
+  font-size: var(--fs-small);
+  padding: 5px 2px;
+}
+
+.initiative-milestone + .initiative-milestone {
+  border-top: 1px solid var(--bd);
 }
 
 .initiative-milestone-link {
@@ -142,17 +174,11 @@
 }
 
 .initiative-ws-pill {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   padding: 1px 6px;
   border-radius: 8px;
   border: 1px solid var(--bd2);
   color: var(--txm);
-  white-space: nowrap;
-}
-
-.initiative-milestone-state {
-  color: var(--txl);
-  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -164,11 +190,11 @@
 .initiative-attach select {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-small-btn {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   padding: 2px 8px;
 }
 
@@ -187,7 +213,7 @@
 
 .initiative-input {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-skeleton {
@@ -200,7 +226,7 @@
 .initiative-intro {
   margin: 0;
   max-width: 70ch;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.6;
   color: var(--txm);
 }
@@ -224,7 +250,7 @@
   gap: 4px;
   max-height: 160px;
   overflow: auto;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
 }
 
@@ -245,8 +271,8 @@
 
 .initiative-section-title {
   margin: 0 0 4px;
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
 }
@@ -261,7 +287,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   color: var(--txm);
   cursor: pointer;
 }
@@ -285,8 +311,8 @@
 
 .initiative-ws-title {
   margin: 0 0 8px;
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--ui);
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--txm);
 }
@@ -319,7 +345,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--tx);
   cursor: pointer;
   min-width: 0;
@@ -404,7 +430,7 @@
 
 .initiative-suggest-move {
   max-width: 220px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .initiative-suggest-alert {
@@ -413,7 +439,7 @@
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .initiative-suggest-alert p {
@@ -442,7 +468,7 @@
   margin: 0;
   padding-left: 18px;
   color: var(--tx);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 /* Narrow panes: the title gets its own line; the facts wrap beneath it. */
@@ -485,4 +511,89 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* A card past a dozen rows: one disclosure per home milestone, with counts. */
+.initiative-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.initiative-grouped-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.initiative-grouped-filter {
+  flex: 1;
+  min-width: 180px;
+  width: auto;
+}
+
+.initiative-group {
+  list-style: none;
+}
+
+.initiative-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+/* A flex summary loses the native marker, so the open state is drawn here. */
+.initiative-group-summary {
+  list-style: none;
+}
+
+.initiative-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.initiative-group-summary::before {
+  content: "▸";
+  width: 10px;
+  color: var(--txl);
+}
+
+details[open] > .initiative-group-summary::before {
+  content: "▾";
+}
+
+.initiative-group-summary:hover,
+.initiative-group-summary:focus-visible {
+  background: var(--bg2);
+}
+
+.initiative-group-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--txm);
+}
+
+.initiative-group-attention {
+  font-size: var(--fs-micro);
+  color: var(--ac);
+}
+
+.initiative-group-rows {
+  margin: 4px 0 6px 18px;
+}
+
+.initiative-link-btn {
+  color: var(--ac);
+  text-decoration: underline;
+  padding: 0;
+  font: inherit;
+}
+
+.initiative-grouped-more {
+  align-self: flex-start;
+  font-size: var(--fs-small);
 }

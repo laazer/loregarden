@@ -30,6 +30,7 @@ from precommit_git_diff import (  # noqa: E402 - path set above
     UnexaminableError,
     git_diff_cached,
     git_repo_root,
+    parse_python_source,
     parse_staged_additions,
     read_source_text,
     scrubbed_git_env,
@@ -64,8 +65,9 @@ def _function_span(py_file: Path, lineno: int, repo: Path | None) -> tuple[int, 
         print(f"note: could not read {py_file} to find its function span: {exc}", file=sys.stderr)
         return (lineno, lineno)
     try:
-        tree = ast.parse(source, filename=str(py_file))
-    except SyntaxError:
+        tree = parse_python_source(source, py_file)
+    except (SyntaxError, UnexaminableError) as exc:
+        print(f"note: could not parse {py_file} to find its function span: {exc}", file=sys.stderr)
         return (lineno, lineno)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno == lineno:

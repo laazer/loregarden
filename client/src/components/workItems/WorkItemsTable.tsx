@@ -1,7 +1,9 @@
-import { Link } from "react-router-dom";
 
-import { ticketPath } from "../../lib/appNavigation";
-import { TICKET_STATE_COLORS, stageStatusColor } from "../../lib/ticketStates";
+import type { Approval } from "../../api/chatTypes";
+import { duration } from "../../lib/duration";
+import type { ActiveRun } from "../../lib/queueSocket";
+import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
+import { TICKET_STATE_COLORS, runStatusLabel, stageStatusColor } from "../../lib/ticketStates";
 import {
   needsMeReason,
   stageText,
@@ -10,8 +12,10 @@ import {
   type WorkItemsSort,
   type WorkItemsSortKey,
 } from "../../lib/workItemsTable";
+import { hasParts, partsTag } from "../../lib/ticketParts";
 import { PrioBars } from "../PrioBars";
 import { Button } from "../ui/Button";
+import { TicketLink } from "../TicketLink";
 
 interface Column {
   key: WorkItemsSortKey;
@@ -31,18 +35,27 @@ const COLUMNS: Column[] = [
 /**
  * One row per ticket; the title opens it in the Console, the parent opens the
  * parent. `showWhy` adds the reason a ticket is the operator's, for the
- * "Needs me" view, where that reason is the point of the list.
+ * "Needs me" view, where that reason is the point of the list. A ticket holding
+ * an execution slot says so in its stage cell, with how long it has run.
  */
 export function WorkItemsTable({
   rows,
+  runs,
   sort,
   onSort,
   showWhy,
+  approvals,
+  onOpenApproval,
 }: {
   rows: WorkItemRow[];
+  runs: ReadonlyMap<string, ActiveRun>;
   sort: WorkItemsSort;
   onSort: (key: WorkItemsSortKey) => void;
   showWhy: boolean;
+  /** Each ticket's pending approval, by ticket id; names what an awaiting row is asked. */
+  approvals: ReadonlyMap<string, Approval>;
+  /** Opens the inbox on that ticket's approval. */
+  onOpenApproval: (ticketId: string) => void;
 }) {
   return (
     <table className="wi-table">
@@ -76,7 +89,10 @@ export function WorkItemsTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ node, parent }) => (
+        {rows.map(({ node, parent, partLabel }) => {
+          const run = runs.get(node.id);
+          const live = run ? LIVE_RUN_STATUSES.has(run.status) : false;
+          return (
           <tr key={node.id}>
             <td className="wi-col-priority" title={`Priority ${node.priority}`}>
               <PrioBars priority={node.priority} />
@@ -84,9 +100,11 @@ export function WorkItemsTable({
             </td>
             <td className="wi-col-id">{node.external_id}</td>
             <td className="wi-col-title">
-              <Link className="wi-title" to={ticketPath(node.id)} title={node.title}>
+              <TicketLink className="wi-title" ticketId={node.id} title={node.title}>
                 {node.title}
-              </Link>
+              </TicketLink>
+              {node.children.length > 0 && hasParts(node) ? <span className="wi-parts">{partsTag(node.children)}</span> : null}
+              {partLabel ? <span className="wi-parts wi-parts--of">{partLabel}</span> : null}
             </td>
             <td className="wi-col-state">
               <span className="wi-dot" style={{ background: TICKET_STATE_COLORS[node.state] }} aria-hidden />
@@ -94,18 +112,40 @@ export function WorkItemsTable({
             </td>
             <td className="wi-col-stage" style={{ color: stageStatusColor(node.workflow_stage_status) }}>
               {stageText(node)}
+              {run ? (
+                <span className="wi-run" title={`Slot ${run.slot_number}`}>
+                  <span className={`wi-run-dot${live ? " is-live" : ""}`} aria-hidden />
+                  {live ? `running ${duration(run.elapsed_seconds)}` : runStatusLabel(run.status)}
+                </span>
+              ) : null}
             </td>
             <td className="wi-col-workspace">{node.workspace_slug ?? ""}</td>
             <td className="wi-col-parent">
               {parent ? (
-                <Link className="wi-parent" to={ticketPath(parent.id)} title={`${parent.external_id} · ${parent.title}`}>
+                <TicketLink className="wi-parent" ticketId={parent.id} title={`${parent.external_id} · ${parent.title}`}>
                   {parent.title}
-                </Link>
+                </TicketLink>
               ) : null}
             </td>
-            {showWhy ? <td className="wi-col-why">{needsMeReason(node)}</td> : null}
+            {showWhy ? (
+              <td className="wi-col-why">
+                {approvals.has(node.id) && node.workflow_stage_status === "awaiting" ? (
+                  <Button
+                    variant="plain"
+                    className="wi-why-link"
+                    title="Open this approval in the inbox"
+                    onClick={() => onOpenApproval(node.id)}
+                  >
+                    {needsMeReason(node, approvals.get(node.id))}
+                  </Button>
+                ) : (
+                  needsMeReason(node)
+                )}
+              </td>
+            ) : null}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );

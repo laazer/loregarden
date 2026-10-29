@@ -51,7 +51,7 @@ export function BranchWorktreesModal({
 
       <div className="modal-body">
         {worktrees.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 13, color: "var(--txm)" }}>
+          <p style={{ margin: 0, fontSize: "var(--fs-body)", color: "var(--txm)" }}>
             No worktrees are checked out for this branch.
           </p>
         ) : (

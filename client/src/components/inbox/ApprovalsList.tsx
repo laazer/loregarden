@@ -143,7 +143,7 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
       {resolveApproval.isError && (
         <div
           style={{
-            fontSize: 11.5,
+            fontSize: "var(--fs-micro)",
             color: "var(--rdl)",
             marginBottom: 12,
             padding: "8px 10px",

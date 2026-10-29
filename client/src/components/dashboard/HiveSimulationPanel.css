@@ -17,9 +17,9 @@
 }
 
 .hive-panel__title {
-  font-family: var(--dp);
+  font-family: var(--ui);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--txm);
@@ -29,7 +29,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--grl);
 }
 
@@ -46,7 +46,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -76,15 +76,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 .hive-panel__skin-label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-family: var(--dp);
-  font-size: 10px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
 }
 
 .hive-panel__skin-select {
@@ -93,11 +94,11 @@
   border: 1px solid var(--bd);
   border-radius: 6px;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 
 .hive-panel__skin-value {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--tx);
 }
 
@@ -107,11 +108,12 @@
   border: 1px solid var(--bd);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 11px;
-  font-family: var(--dp);
+  font-size: var(--fs-micro);
+  font-family: var(--ui);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   cursor: pointer;
+  font-weight: 600;
 }
 
 .hive-panel__replay:hover:not(:disabled) {
@@ -142,7 +144,7 @@
   border-radius: 4px;
   background: transparent;
   color: var(--tx);
-  font-size: 15px;
+  font-size: var(--fs-lead);
   line-height: 1;
   cursor: pointer;
 }
@@ -161,7 +163,7 @@
   min-width: 30px;
   text-align: center;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--txm);
 }
@@ -298,14 +300,15 @@
 }
 
 .hive-panel__idle-title {
-  font-family: var(--dp);
-  font-size: 14px;
+  font-family: var(--ui);
+  font-size: var(--fs-body);
   color: var(--txm);
   margin-bottom: 5px;
+  font-weight: 600;
 }
 
 .hive-panel__idle-copy {
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 /* ── CSS floor (no Pixi) ── */
@@ -612,8 +615,8 @@
 .hive-css__nameplate {
   position: relative;
   z-index: 2;
-  font-family: var(--dp);
-  font-size: 11px;
+  font-family: var(--dp); /* type-ok: a character nameplate inside the Hive simulation */
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.03em;
   color: #f3f6fa;
@@ -650,17 +653,17 @@
 }
 
 .hive-css--has-floor .hive-css__nameplate {
-  font-size: 12px;
+  font-size: var(--fs-small);
   max-width: 140px;
 }
 
 .hive-css--scenery .hive-css__nameplate {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   max-width: 128px;
 }
 
 .hive-css__nameplate--muted {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: rgba(220, 228, 236, 0.82);
   background: rgba(6, 10, 14, 0.55);
@@ -822,7 +825,7 @@
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
-  font-size: 9px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -889,7 +892,7 @@
   border-radius: 5px;
   background: rgba(40, 8, 6, 0.88);
   border: 1px solid rgba(255, 106, 84, 0.35);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   color: #ffc4ba;
   font-family: var(--mono);
   font-weight: 600;
@@ -907,8 +910,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-family: var(--dp);
-  font-size: 11px;
+  font-family: var(--dp); /* type-ok: an agent's initials inside the Hive simulation */
+  font-size: var(--fs-micro);
   font-weight: 700;
   color: #04140f;
   background: var(--blue);
@@ -960,7 +963,7 @@
 }
 
 .hive-css__agent-name {
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 700;
   color: #f3f6fa;
   white-space: nowrap;
@@ -975,12 +978,12 @@
 }
 
 .hive-css--has-floor .hive-css__agent-name {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
 }
 
 .hive-css__agent-status {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   color: rgba(230, 236, 244, 0.92);
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.85);
@@ -1009,13 +1012,13 @@
 }
 
 .hive-css--has-floor .hive-css__agent-status {
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
 }
 
 .hive-css__agent-skill {
   margin-top: 5px;
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-micro);
   color: var(--bll);
 }
 
@@ -1139,7 +1142,7 @@
   left: 6px;
   top: -7px;
   white-space: nowrap;
-  font-size: 8px;
+  font-size: var(--fs-micro);
   line-height: 1;
   padding: 1px 3px;
   border-radius: 3px;
@@ -1171,7 +1174,7 @@
   align-items: center;
   gap: 8px;
   width: fit-content;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: #f2f4f8;
   background: rgba(14, 18, 24, 0.82);
   padding: 3px 7px;

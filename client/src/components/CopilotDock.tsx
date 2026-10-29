@@ -1,11 +1,16 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { CopilotDockHeader } from "./CopilotDockHeader";
 import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
+import { ChatArtifactsList } from "./chat/ChatArtifactsList";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
+import { primitiveHistory } from "./chat/primitiveHistory";
+import { Button } from "./ui/Button";
+import { showChatMessage } from "../lib/chatJump";
 import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
@@ -26,7 +31,20 @@ export function CopilotDock() {
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useLayoutDockEdge();
   const setDockPanelsVisible = useUiStore((s) => s.setDockPanelsVisible);
-  const { session, ticketId, pendingApprovals, branch, archive } = useActiveChatSession();
+  const {
+    session,
+    label,
+    ticketId,
+    pendingApprovals,
+    branch,
+    archive,
+    agents,
+    assistantLabel,
+    maximisePath,
+    promptKind,
+    composerBlocked,
+  } = useActiveChatSession();
+  const titleId = useId();
   const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
@@ -58,6 +76,16 @@ export function CopilotDock() {
     }
   }, [terminalOpen, terminal.workspaceSlug, keptSlug]);
 
+  // Which tab the panel shows, remembered per conversation: moving to another
+  // ticket opens its chat, not the artifacts of the last one.
+  const conversation = archive?.sessionId ?? ticketId ?? label;
+  const [tabFor, setTabFor] = useState<{ conversation: string; tab: DockTab }>({ conversation, tab: "chat" });
+  const tab: DockTab = tabFor.conversation === conversation ? tabFor.tab : "chat";
+  const setTab = (next: DockTab) => setTabFor({ conversation, tab: next });
+  const chatRef = useRef<HTMLDivElement>(null);
+  const messages = session?.messages;
+  const artifacts = useMemo(() => primitiveHistory(messages ?? []), [messages]);
+
   const showTerminal = terminalOpen && Boolean(keptSlug);
   const mountTerminal = Boolean(keptSlug);
   const showChat = open && Boolean(session);
@@ -79,11 +107,11 @@ export function CopilotDock() {
   // The rail holds one thing at a time, and the archive is the thing that was
   // asked for: openers are always a click away again once a thread is picked.
   const showHistory = Boolean(archive) && historyOpen;
-  const openers = session ? promptsFor(session.kind, branch) : [];
+  const openers = session && !composerBlocked ? promptsFor(promptKind, branch) : [];
   const showOpeners = !showHistory && session?.messages.length === 0 && openers.length > 0;
 
   const sendQuick = (content: string) => {
-    if (!session || session.isBusy || session.loadError) return;
+    if (!session || session.isBusy || session.loadError || composerBlocked) return;
     void session.send(content, { autoApprove: false }).catch(() => {
       // silent-ok: send is a mutation carrying meta.errorTitle, so the global
       // MutationCache toast reports the failure and session.error renders it.
@@ -101,15 +129,57 @@ export function CopilotDock() {
       {panelsVisible ? <DockResizeHandle edge={edge} /> : null}
       <div className={`copilot-dock-body${showTerminal && !showChat ? " copilot-dock-body--bleed" : ""}`}>
         {showChat && session && (
-          <div className="copilot-dock-chat">
+          <section className="copilot-dock-chat" aria-labelledby={titleId}>
+            <CopilotDockHeader
+              titleId={titleId}
+              context={label}
+              agents={agents}
+              busy={session.isBusy}
+              archive={archive}
+              maximisePath={maximisePath}
+            />
+            <DockTabs
+              idPrefix={titleId}
+              tab={tab}
+              artifactCount={artifacts.length}
+              onSelect={setTab}
+            />
+            <div
+              className="copilot-dock-tab-panel copilot-dock-artifacts"
+              role="tabpanel"
+              id={`${titleId}-panel-artifacts`}
+              aria-labelledby={`${titleId}-tab-artifacts`}
+              hidden={tab !== "artifacts"}
+            >
+              {tab === "artifacts" ? (
+                <ChatArtifactsList
+                  entries={artifacts}
+                  onSubmit={sendQuick}
+                  onShowInChat={(messageId) => {
+                    setTab("chat");
+                    // After the chat panel is shown again: a hidden turn cannot scroll into view.
+                    requestAnimationFrame(() => showChatMessage(messageId, chatRef.current ?? document));
+                  }}
+                />
+              ) : null}
+            </div>
+            <div
+              ref={chatRef}
+              className="copilot-dock-chat-row copilot-dock-tab-panel"
+              role="tabpanel"
+              id={`${titleId}-panel-chat`}
+              aria-labelledby={`${titleId}-tab-chat`}
+              hidden={tab !== "chat"}
+            >
             <div className="copilot-dock-chat-main">
               <StudioChatMessages
                 messages={session.messages}
-                emptyMessage="No messages yet."
+                emptyMessage={composerBlocked ?? "No messages yet."}
                 isThinking={session.isBusy && pendingApprovals.length === 0}
+                thinkingMessage="Baxter is looking…"
                 activeTurnId={session.activeTurnId}
-                assistantLabel="Baxter"
-                // The action bar already shows Baxter beside the composer; a
+                assistantLabel={assistantLabel}
+                // The action bar already shows the agent beside the composer; a
                 // head on every reply only spent the thread's width.
                 showAssistantAvatar={false}
                 className="copilot-dock-messages"
@@ -197,7 +267,8 @@ export function CopilotDock() {
                 )}
               </aside>
             )}
-          </div>
+            </div>
+          </section>
         )}
 
         {mountTerminal && keptSlug && (
@@ -216,6 +287,55 @@ export function CopilotDock() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+type DockTab = "chat" | "artifacts";
+
+const DOCK_TABS: readonly DockTab[] = ["chat", "artifacts"];
+
+/**
+ * The conversation, or everything it has made. Arrow keys move between the
+ * two as a tablist's do; the panels stay mounted so the thread keeps its
+ * scroll position across a switch.
+ */
+function DockTabs({
+  idPrefix,
+  tab,
+  artifactCount,
+  onSelect,
+}: {
+  idPrefix: string;
+  tab: DockTab;
+  artifactCount: number;
+  onSelect: (tab: DockTab) => void;
+}) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const next = DOCK_TABS[(DOCK_TABS.indexOf(tab) + 1) % DOCK_TABS.length];
+    onSelect(next);
+    document.getElementById(`${idPrefix}-tab-${next}`)?.focus();
+  };
+  return (
+    <div className="copilot-dock-tabs" role="tablist" aria-label="Baxter" onKeyDown={onKeyDown}>
+      {DOCK_TABS.map((id) => (
+        <Button
+          key={id}
+          variant="plain"
+          role="tab"
+          id={`${idPrefix}-tab-${id}`}
+          aria-selected={tab === id}
+          aria-controls={`${idPrefix}-panel-${id}`}
+          tabIndex={tab === id ? 0 : -1}
+          className={`copilot-dock-tab${tab === id ? " is-on" : ""}`}
+          onClick={() => onSelect(id)}
+        >
+          {id === "chat" ? "Chat" : "Artifacts"}
+          {id === "artifacts" && artifactCount > 0 ? <span className="copilot-dock-tab-count">{artifactCount}</span> : null}
+        </Button>
+      ))}
     </div>
   );
 }

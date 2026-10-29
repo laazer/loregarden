@@ -52,13 +52,25 @@ from loregarden.services import btw_service
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.block_classification import block_message_for
-from loregarden.services.blocked_on import blocked_on_clause, blocked_on_map, waiting_on_map
+from loregarden.services.blocked_on import (
+    blocked_on_clause,
+    blocked_on_map,
+    prerequisite_refs_map,
+    root_blockers_map,
+    waiting_on_map,
+)
 from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     set_ticket_orchestration_runtime,
 )
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.dependency_hold import (
+    DependencyHold,
+    admit_named_start,
+    holding_prerequisites,
+    unmet_prerequisites,
+)
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
 from loregarden.services.log_storage import read_log_lines
@@ -68,7 +80,7 @@ from loregarden.services.path_browser import read_import_files
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.run_cancellation import request_cancel, request_orchestration_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
-from loregarden.services.run_ledger import ledger_payload
+from loregarden.services.run_ledger import failed_run_error_tails, ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.stage_retry_budget import (
     StageRetryBudgetExceeded,
@@ -82,11 +94,15 @@ from loregarden.services.ticket_activity import (
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,
+    resolve_prerequisites,
 )
+from loregarden.services.ticket_ids import TicketNotFound
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_split_view import ticket_split
+from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.triage_run_service import (
     TriageConflictError,
@@ -156,10 +172,15 @@ class _Stuck:
 
     blocked_on: dict[str, BlockedOn]
     waiting_on: dict[str, list[WaitingOnRef]]
+    root_blockers: dict[str, list[WaitingOnRef]]
 
     @classmethod
     def of(cls, session: Session, tickets: list[Ticket]) -> "_Stuck":
-        return cls(blocked_on_map(session, tickets), waiting_on_map(session, tickets))
+        return cls(
+            blocked_on_map(session, tickets),
+            waiting_on_map(session, tickets),
+            root_blockers_map(session, tickets),
+        )
 
 
 def _ticket_summary(
@@ -208,6 +229,7 @@ def _ticket_summary(
         block_kind=ticket.block_kind,
         blocked_on=stuck.blocked_on.get(ticket.id),
         waiting_on=stuck.waiting_on.get(ticket.id, []),
+        root_blockers=stuck.root_blockers.get(ticket.id, []),
     )
 
 
@@ -550,6 +572,7 @@ def ticket_tree(
         stage_names=stage_names,
         members=members,
         blocked_on=blocked_on_map(session, all_tickets),
+        waiting_on=prerequisite_refs_map(session, all_tickets),
     )
 
 
@@ -650,6 +673,12 @@ def ticket_status_summary(
 def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -> TicketDetail:
     svc = TicketService(session)
     try:
+        prerequisites = resolve_prerequisites(session, body.depends_on)
+    except TicketNotFound as exc:
+        raise HTTPException(404, f"Prerequisite: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(400, f"Prerequisite: {exc}") from exc
+    try:
         ticket = svc.create_ticket(
             workspace_slug=body.workspace_slug,
             title=body.title,
@@ -660,6 +689,7 @@ def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -
             priority=body.priority,
             milestone=body.milestone,
             external_id=body.external_id,
+            depends_on=prerequisites,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -899,7 +929,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         description=ticket.description,
         acceptance_criteria=criteria,
         checked_acceptance_criteria=load_checked(ticket.checked_criteria_json, criteria),
-        dependencies=_dependency_refs(session, prereq_ids),
+        dependencies=_prerequisite_refs(session, ticket, prereq_ids),
         dependents=_dependency_refs(session, dependent_ids),
         related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),
         revision=ticket.revision,
@@ -916,6 +946,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         compatibility_posture=ticket.compatibility_posture,
         resolved_compatibility_posture=posture.posture.value,
         compatibility_posture_source=posture.source,
+        split=ticket_split(session, ticket),
     )
 
 
@@ -930,6 +961,7 @@ def _dependency_refs(session: Session, ticket_ids: list[str]) -> list[TicketDepe
         dep = session.get(Ticket, tid)
         if dep is None:
             continue
+        ws = workspace_for(session, dep.workspace_id)
         refs.append(
             TicketDependencyRef(
                 id=dep.id,
@@ -938,8 +970,32 @@ def _dependency_refs(session: Session, ticket_ids: list[str]) -> list[TicketDepe
                 state=dep.state,
                 work_item_type=dep.work_item_type,
                 is_integration_review=dep.is_integration_review,
+                workspace_slug=ws.slug if ws else "",
             )
         )
+    return refs
+
+
+def _prerequisite_refs(
+    session: Session, ticket: Ticket, ticket_ids: list[str]
+) -> list[TicketDependencyRef]:
+    """The prerequisites, each saying whether and why it still holds the ticket.
+
+    Judged the way a dispatch judges them (`dependency_hold`), git included, so
+    "done, not landed" reads here as it holds there.
+    """
+    refs = _dependency_refs(session, ticket_ids)
+    if not refs or ticket.state in RESOLVED_STATES:
+        return refs
+    unmet = {entry.ticket.id: entry for entry in unmet_prerequisites(session, ticket)}
+    holding = {entry.ticket.id for entry in holding_prerequisites(session, ticket)}
+    for ref in refs:
+        entry = unmet.get(ref.id)
+        if entry is None:
+            continue
+        ref.unmet_reason = entry.reason.value
+        ref.landing_target = entry.target
+        ref.overridden = ref.id not in holding
     return refs
 
 
@@ -1053,7 +1109,7 @@ def get_ticket_ledger(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     runs = RunService(session).list_runs(ticket_id=ticket_id, limit=limit)
-    return ledger_payload(runs)
+    return ledger_payload(runs, failed_run_error_tails(session, runs))
 
 
 @router.get("/{ticket_id}/artifacts", response_model=dict)
@@ -1102,6 +1158,27 @@ def delete_ticket(ticket_id: str, session: Session = Depends(get_session)) -> di
     return {"ok": True}
 
 
+def _admit_named_start(
+    session: Session, ticket: Ticket, stage_key: str | None, ignore_prerequisites: bool
+) -> None:
+    """409 when the ticket waits on prerequisites and nobody said to start it anyway.
+
+    Checked before admission, so a held start never takes a slot or a queue place.
+    """
+    try:
+        admit_named_start(
+            session,
+            ticket,
+            stage_key=stage_key or ticket.workflow_stage_key,
+            ignore_prerequisites=ignore_prerequisites,
+            actor="operator",
+        )
+    except DependencyHold as hold:
+        # 409, as for the retry budget: the identical request with
+        # ignore_prerequisites=true starts it.
+        raise HTTPException(409, str(hold)) from hold
+
+
 @router.post("/{ticket_id}/orchestrate", response_model=TicketDetail)
 def orchestrate_ticket(
     ticket_id: str,
@@ -1114,6 +1191,7 @@ def orchestrate_ticket(
     active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
     if active:
         raise HTTPException(400, f"Orchestration already running: {active.run_code}")
+    _admit_named_start(session, ticket, body.stop_at_stage_key, body.ignore_prerequisites)
     # Through the same slot pool as the queue board. Started directly, this
     # oversubscribed the machine — the board would show idle lanes while every
     # agent the box could run was already busy.
@@ -1219,6 +1297,7 @@ def start_run(
             400,
             "Use POST /orchestrate for default orchestration. Pass manual=true for single-stage debug runs.",
         )
+    _admit_named_start(session, ticket, body.stage_key, body.ignore_prerequisites)
     # A debug stage run still costs an agent, so it waits its turn like anything
     # else. Parked as a stage, not an orchestration.
     reservation = QueueAdmissionService(session).reserve_stage(

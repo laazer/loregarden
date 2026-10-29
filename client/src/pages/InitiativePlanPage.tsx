@@ -1,42 +1,47 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
 import { InitiativeAutopilot } from "../components/initiatives/plan/InitiativeAutopilot";
-import { InitiativeAgentPanel } from "../components/initiatives/plan/InitiativeAgentPanel";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
+import { InitiativeGantt } from "../components/initiatives/plan/InitiativeGantt";
 import { ProposalReview } from "../components/initiatives/plan/ProposalReview";
+import { RedraftConfirmModal } from "../components/initiatives/plan/RedraftConfirmModal";
 import { ScheduleSummary } from "../components/initiatives/plan/ScheduleSummary";
 import { ScheduleTable } from "../components/initiatives/plan/ScheduleTable";
-import { TrackedTickets } from "../components/initiatives/plan/TrackedTickets";
+import { TrackTicketSearch } from "../components/initiatives/plan/TrackTicketSearch";
 import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { TicketRouteResolver } from "../components/TicketRouteResolver";
 import { Button } from "../components/ui/Button";
-import { planQueryKey } from "../hooks/useInitiativePlanner";
+import { planQueryKey, useInitiativePlanner } from "../hooks/useInitiativePlanner";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { boardQueryKey } from "../lib/initiativeBoard";
 import { navigateToPage, ticketUuidForRef } from "../lib/useAppNavigation";
 import { scheduleToReplace } from "../lib/scheduleFormat";
 import { useTicketRefStore } from "../state/ticketRefStore";
 import { describeError } from "../state/toastStore";
+import { useUiStore } from "../state/uiStore";
 import "../components/initiatives/plan/InitiativePlan.css";
 
-type PlanTab = "schedule" | "board" | "agents";
+type PlanTab = "schedule" | "gantt" | "board";
 
 /** Past roughly three lines the brief is clamped, with a toggle to read it all. */
 const BRIEF_PREVIEW_CHARS = 240;
 
-/** Below this the agent panel stops being docked and becomes a tab — the same breakpoint as the layout. */
+/** Below this the omnibar stays where the operator put it: a right column would leave the plan no room. */
 const NARROW = "(max-width: 1100px)";
 
 const TAB_LABEL: Record<PlanTab, string> = {
   schedule: "Schedule",
+  gantt: "Gantt",
   board: "Board",
-  agents: "Agents",
 };
+
+const TABS: PlanTab[] = ["schedule", "gantt", "board"];
 
 /**
  * `/initiatives/:initiativeId`, addressed by the initiative's shareable id
@@ -64,14 +69,33 @@ export function InitiativePlanRoute() {
  * moves it?" Every action here is also an MCP tool, so the planner agent can do
  * what the page does: set targets and order, accept proposals, mark work for a
  * person, start ready work, run the autopilot.
+ *
+ * Its agents (the planner, and Baxter on the work underneath) talk in the
+ * omnibar, which this page opens docked on the right: one chat surface, not a
+ * second one beside the schedule.
  */
 export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
   const qc = useQueryClient();
   const narrow = useMediaQuery(NARROW);
   const [tab, setTab] = useState<PlanTab>("schedule");
   const [showBrief, setShowBrief] = useState(false);
-  const tabs: PlanTab[] = narrow ? ["schedule", "board", "agents"] : ["schedule", "board"];
-  const activeTab = tabs.includes(tab) ? tab : "schedule";
+  const [confirmingDraft, setConfirmingDraft] = useState(false);
+  // Same query key the omnibar binds, so the Draft button costs no request.
+  const planner = useInitiativePlanner(initiativeId);
+
+  // The omnibar is this page's agent panel: open it on arrival, on the right
+  // where the panel was. The edge is the screen's, not the operator's saved
+  // one, so leaving gives theirs back; choosing an edge here overrides it.
+  const setCopilotOpen = useUiStore((s) => s.setCopilotOpen);
+  const setScreenDockEdge = useUiStore((s) => s.setScreenDockEdge);
+  useEffect(() => {
+    setCopilotOpen(true);
+  }, [initiativeId, setCopilotOpen]);
+  useEffect(() => {
+    if (narrow) return undefined;
+    setScreenDockEdge("right");
+    return () => setScreenDockEdge(null);
+  }, [narrow, setScreenDockEdge]);
 
   const plan = useQuery({
     queryKey: planQueryKey(initiativeId),
@@ -79,6 +103,31 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
     // Forecasts and readiness move whenever a ticket closes anywhere under it.
     refetchInterval: 30_000,
     enabled: Boolean(initiativeId),
+  });
+
+  // Where each tracked ticket stays: the schedule names it on the ticket's row.
+  const view = useQuery({
+    queryKey: ["initiatives", initiativeId, "view"],
+    queryFn: () => api.initiative(initiativeId),
+    enabled: Boolean(initiativeId),
+  });
+  const homes = useMemo(
+    () => new Map((view.data?.milestones ?? []).filter((m) => m.home_milestone).map((m) => [m.id, m.home_milestone])),
+    [view.data],
+  );
+
+  /** Tracking changed: the phases, the tree under them and the list counts all move. */
+  const membershipChanged = () => {
+    void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
+    void qc.invalidateQueries({ queryKey: ["initiatives", initiativeId, "view"] });
+    void qc.invalidateQueries({ queryKey: boardQueryKey(initiativeId) });
+    void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
+  };
+
+  const untrack = useMutation({
+    meta: { errorTitle: "Remove a ticket from this initiative" },
+    mutationFn: (ticketId: string) => api.removeInitiativeMember(initiativeId, ticketId),
+    onSuccess: membershipChanged,
   });
 
   const applyPlan = (next: InitiativePlan) => {
@@ -121,8 +170,16 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
     onSettled: () => void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) }),
   });
 
-  const busy = edit.isPending || resolve.isPending || autopilot.isPending || needsPerson.isPending;
+  const busy = edit.isPending || resolve.isPending || autopilot.isPending || needsPerson.isPending || untrack.isPending;
   const data = plan.data;
+
+  const draftSchedule = () => {
+    if (!data) return;
+    // Open the thread too: the planner's reply explains the proposal it drafts.
+    setCopilotOpen(true);
+    if (scheduleToReplace(data)) setConfirmingDraft(true);
+    else planner.draft();
+  };
 
   const setTarget = (row: MilestoneSchedule, date: string | null) =>
     edit.mutateAsync({ targets: [{ ticket_id: row.id, target_date: date }] });
@@ -143,11 +200,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
             {data ? data.title : "Initiative"}
           </span>
         }
-      >
-        <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
-          ← All initiatives
-        </Button>
-      </PageTopbar>
+      />
 
       {plan.isPending ? (
         <div className="plan-main" aria-busy="true" aria-label="Loading the plan">
@@ -177,7 +230,22 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
         <>
           <main className="plan-main">
             <div className="plan-heading">
-              <span className="plan-mono plan-muted">{data.external_id}</span>
+              <div className="plan-heading-row">
+                <span className="plan-mono plan-muted">{data.external_id}</span>
+                <Button
+                  variant="primary"
+                  compact
+                  disabled={!data.milestones.length || planner.isBusy}
+                  title={
+                    data.milestones.length
+                      ? "Ask Baxter to propose a schedule"
+                      : "Attach a milestone to this initiative first"
+                  }
+                  onClick={draftSchedule}
+                >
+                  {planner.isBusy ? "Planning…" : "Draft schedule"}
+                </Button>
+              </div>
               {data.description ? (
                 <>
                   <div id="plan-description" className={`plan-description${showBrief ? "" : " clamped"}`}>
@@ -214,15 +282,15 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
 
             <div className="tab-bar">
               <div className="tab-bar-scroll" role="tablist" aria-label="Plan views">
-                {tabs.map((key) => (
+                {TABS.map((key) => (
                   <Button
                     key={key}
                     variant="plain"
                     role="tab"
                     id={`plan-tab-${key}`}
-                    aria-selected={activeTab === key}
+                    aria-selected={tab === key}
                     aria-controls={`plan-panel-${key}`}
-                    className={`tab-btn${activeTab === key ? " active" : ""}`}
+                    className={`tab-btn${tab === key ? " active" : ""}`}
                     onClick={() => setTab(key)}
                   >
                     {TAB_LABEL[key]}
@@ -233,8 +301,8 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                 ))}
               </div>
             </div>
-            <div role="tabpanel" id={`plan-panel-${activeTab}`} aria-labelledby={`plan-tab-${activeTab}`}>
-              {activeTab === "schedule" ? (
+            <div role="tabpanel" id={`plan-panel-${tab}`} aria-labelledby={`plan-tab-${tab}`}>
+              {tab === "schedule" ? (
                 <div className="plan-schedule-panel">
                   {data.pending_proposal ? (
                     <ProposalReview
@@ -250,15 +318,17 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                     />
                   ) : null}
 
-                  <ScheduleTable plan={data} busy={busy} onReorder={reorder} onTarget={setTarget} />
-
-                  <TrackedTickets
-                    initiativeId={data.id}
-                    onChanged={() => {
-                      void qc.invalidateQueries({ queryKey: planQueryKey(initiativeId) });
-                      void qc.invalidateQueries({ queryKey: ["initiatives"], exact: true });
-                    }}
+                  <ScheduleTable
+                    plan={data}
+                    busy={busy}
+                    homes={homes}
+                    untracking={untrack.isPending ? (untrack.variables ?? null) : null}
+                    onReorder={reorder}
+                    onTarget={setTarget}
+                    onUntrack={(row) => untrack.mutate(row.id)}
                   />
+
+                  <TrackTicketSearch initiativeId={data.id} onChanged={membershipChanged} />
 
                   {data.notes ? (
                     <details className="plan-notes">
@@ -267,7 +337,9 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                     </details>
                   ) : null}
                 </div>
-              ) : activeTab === "board" ? (
+              ) : tab === "gantt" ? (
+                <InitiativeGantt plan={data} />
+              ) : (
                 <InitiativeBoard
                   initiativeId={data.id}
                   milestones={data.milestones}
@@ -275,23 +347,17 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
                   onNeedsPerson={(ids, value) => needsPerson.mutateAsync({ ids, value })}
                   onStart={(ids) => startWork.mutateAsync(ids)}
                 />
-              ) : (
-                <InitiativeAgentPanel
-                  initiativeId={data.id}
-                  canPlan={data.milestones.length > 0}
-                  replaces={scheduleToReplace(data)}
-                  inTab
-                />
               )}
             </div>
           </main>
-          {narrow ? null : (
-            <InitiativeAgentPanel
-              initiativeId={data.id}
-              canPlan={data.milestones.length > 0}
-              replaces={scheduleToReplace(data)}
-            />
-          )}
+          <RedraftConfirmModal
+            replaces={confirmingDraft ? scheduleToReplace(data) : null}
+            onClose={() => setConfirmingDraft(false)}
+            onConfirm={() => {
+              setConfirmingDraft(false);
+              planner.draft();
+            }}
+          />
         </>
       ) : null}
     </div>

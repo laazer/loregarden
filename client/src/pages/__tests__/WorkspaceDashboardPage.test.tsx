@@ -142,13 +142,26 @@ beforeEach(() => {
     queued: 0,
     idle: 23,
   });
+  const waits = ticket("blob-waits-2", {
+    state: "blocked",
+    blocked_on: "tickets",
+    root_blockers: [
+      {
+        id: "blob-root-9",
+        external_id: "blob-root-9",
+        title: "Title of blob-root-9",
+        state: "blocked",
+        reason: "prerequisite",
+        blocked_on: "person",
+      },
+    ],
+  });
   mockApi.tickets.mockImplementation(async (params) =>
-    Array.isArray(params?.state)
-      ? [
-          ticket("blob-waits-2", { state: "blocked", blocked_on: "tickets" }),
-          ticket("blob-person-1", { state: "blocked", blocked_on: "person" }),
-        ]
-      : [ticket("blob-idle-1", { activity: "idle" }), ticket("blob-run-1", { activity: "running" })],
+    params?.blocked_on?.includes("tickets")
+      ? [waits]
+      : Array.isArray(params?.state)
+        ? [waits, ticket("blob-person-1", { state: "blocked", blocked_on: "person" })]
+        : [ticket("blob-idle-1", { activity: "idle" }), ticket("blob-run-1", { activity: "running" })],
   );
   mockApi.ticketTree.mockResolvedValue([
     {
@@ -175,7 +188,7 @@ beforeEach(() => {
   });
   mockDashboard.pullRequests.mockResolvedValue({
     workspace_slug: "blobert",
-    truncated: false,
+    listing_state: "complete",
     pull_requests: [
       pullRequest(103, {
         review_rank: 1,
@@ -237,13 +250,17 @@ describe("WorkspaceDashboardPage", () => {
     ).toHaveAttribute("href", "/tickets/t-136/approvals");
     expect(within(approvalCards).getByRole("link", { name: /^blob-core-138/ })).toBeInTheDocument();
     expect(within(needs).queryByRole("link", { name: /lg-9/ })).not.toBeInTheDocument();
-    // A person-blocked ticket comes before one waiting on other tickets.
+    // Only what a person or an agent must clear; a ticket waiting on others is
+    // filed under what it waits on, which is the one to open.
     const blocked = within(within(needs).getByRole("list", { name: "Blocked or parked tickets" })).getAllByRole("link");
     expect(blocked.map((link) => link.querySelector(".wsd-card-title")?.textContent)).toEqual([
       "Title of blob-person-1",
-      "Title of blob-waits-2",
     ]);
     expect(blocked[0]).toHaveTextContent("Needs a person");
+    expect(within(needs).getByRole("heading", { name: /Waiting on other tickets/ })).toHaveTextContent(
+      "1 held by 1",
+    );
+    expect(within(needs).getByRole("button", { name: "blob-root-9 · needs you" })).toBeInTheDocument();
   });
 
   it("keeps the rest of the page usable when GitHub cannot be asked, and retries on request", async () => {
@@ -264,7 +281,7 @@ describe("WorkspaceDashboardPage", () => {
   it("says when there is nothing to review, without looking like an error", async () => {
     mockDashboard.pullRequests.mockResolvedValue({
       workspace_slug: "blobert",
-      truncated: false,
+      listing_state: "complete",
       pull_requests: [],
     });
     renderDashboard();

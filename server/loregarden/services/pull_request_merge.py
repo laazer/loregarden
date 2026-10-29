@@ -34,6 +34,7 @@ from loregarden.services.branch_triage_service import (
 )
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import PullRequestStatus, ticket_pull_request
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel
@@ -75,11 +76,14 @@ def merge_and_clean_up(
 
     base = resolve_orchestration_profile(workspace).git.base_branch
     steps: list[MergeStep] = []
-    if pr.head in (base, pr.base):
-        steps.append(MergeStep(step="branch", ok=False, detail=f"{pr.head} is a base; kept"))
+    # The PR's head is the remote name; a tree's is ``publish/<branch>``, and
+    # what is checked out and held locally is the branch it publishes.
+    branch = branch_for_pr_head(pr.head)
+    if branch in (base, pr.base):
+        steps.append(MergeStep(step="branch", ok=False, detail=f"{branch} is a base; kept"))
         return MergeAndCleanUp(number=pr.number, merge_commit=merge_commit, steps=steps)
-    steps.extend(_remove_worktrees(session, workspace, repo_root, pr.head))
-    steps.append(_delete_local_branch(workspace, pr.head))
+    steps.extend(_remove_worktrees(session, workspace, repo_root, branch))
+    steps.append(_delete_local_branch(workspace, branch))
     steps.append(_delete_remote_branch(repo_root, pr.head))
     for step in steps:
         if not step.ok:

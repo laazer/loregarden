@@ -13,32 +13,42 @@ beforeEach(() => {
 });
 
 describe("LiveThinkingStream", () => {
-  it("shows the activity line and the reasoning behind it", () => {
-    render(<LiveThinkingStream content="Checking the fixture." activity="Read · a.py" />);
+  it("is one line saying what Baxter is doing, with the trace folded behind it", () => {
+    render(
+      <LiveThinkingStream
+        content={"Checking the fixture.\n· Read · src/a.py\n· Read · src/b.py"}
+        activity="Read · src/b.py"
+      />,
+    );
 
-    expect(screen.getByText("Read · a.py")).toBeInTheDocument();
-    expect(screen.getByText("Checking the fixture.")).toBeInTheDocument();
+    const head = screen.getByRole("button", { name: /Reading a\.py and b\.py · 2 steps/ });
+    expect(head).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Checking the fixture.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Read · src/a.py")).not.toBeInTheDocument();
   });
 
-  it("renders tool steps apart from reasoning prose", () => {
+  it("opens the raw trace on request and folds it again", () => {
+    render(<LiveThinkingStream content="Deep thoughts." activity="Thinking" />);
+
+    const head = screen.getByRole("button", { name: /Thinking/ });
+    fireEvent.click(head);
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Deep thoughts.")).toBeInTheDocument();
+
+    fireEvent.click(head);
+    expect(screen.queryByText("Deep thoughts.")).not.toBeInTheDocument();
+  });
+
+  it("renders tool steps apart from reasoning prose in the trace", () => {
     // The transcript is one string; the steps have to survive the round trip
     // as steps, or a tool call reads as something the model said.
     render(<LiveThinkingStream content={"Look here.\n\n· Bash · pytest -q\n\nThat failed."} activity="" />);
+    fireEvent.click(screen.getByRole("button", { name: /Running pytest · 1 step/ }));
 
     const step = screen.getByText("Bash · pytest -q");
     expect(step.className).toContain("lg-thinking-stream-step");
     expect(screen.getByText("Look here.").className).toContain("lg-thinking-stream-prose");
     expect(screen.getByText("That failed.")).toBeInTheDocument();
-  });
-
-  it("collapses on request and brings the reasoning back", () => {
-    render(<LiveThinkingStream content="Deep thoughts." activity="Thinking" />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Thinking/ }));
-    expect(screen.queryByText("Deep thoughts.")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Thinking/ }));
-    expect(screen.getByText("Deep thoughts.")).toBeInTheDocument();
   });
 
   it("renders nothing at all when the turn has said nothing", () => {
@@ -75,7 +85,7 @@ describe("StudioChatMessages live thinking", () => {
       />,
     );
 
-    expect(screen.getByText("Reading the runner.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reading runner\.py/ })).toBeInTheDocument();
     expect(screen.queryByText("Fetching a reply")).not.toBeInTheDocument();
   });
 

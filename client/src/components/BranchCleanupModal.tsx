@@ -6,6 +6,7 @@ import {
   candidateReason,
   cleanupCandidates,
   defaultCleanupSelection,
+  holdsOnlyCopy,
   type CleanupCandidate,
 } from "../lib/branchCleanup";
 import { deleteBranchTriage, type BranchTriageEntry } from "../lib/branchTriageApi";
@@ -62,6 +63,8 @@ interface BranchCleanupModalProps {
   workspaceSlug: string;
   baseBranch: string;
   branches: BranchTriageEntry[];
+  /** Set while PR status is loading, partial or unavailable: "PR merged" may be undercounted. */
+  prStatusNote?: string | null;
   onClose: () => void;
   onBranchesDeleted?: (branches: string[]) => void;
 }
@@ -99,6 +102,7 @@ function BranchCleanupModalBody({
   workspaceSlug,
   baseBranch,
   branches,
+  prStatusNote,
   onClose,
   onBranchesDeleted,
   onBusyChange,
@@ -134,7 +138,9 @@ function BranchCleanupModalBody({
       setProgress({ done: 0, total: names.length });
       for (const name of names) {
         try {
-          await deleteBranchTriage(workspaceSlug, name, true, (byName.get(name)?.worktreeCount ?? 0) > 0);
+          // Never discards commits: a branch holding the only copy is refused
+          // and listed below with the reason. Discarding is a per-branch choice.
+          await deleteBranchTriage(workspaceSlug, name, false, (byName.get(name)?.worktreeCount ?? 0) > 0);
           deleted.push(name);
         } catch (error) {
           // silent-ok: not swallowed — the failure is recorded per branch and
@@ -187,6 +193,7 @@ function BranchCleanupModalBody({
 
   const selectedCandidates = candidates.filter((item) => selected.has(item.entry.name));
   const selectedDirty = selectedCandidates.filter((item) => item.dirty);
+  const selectedOnlyCopy = selectedCandidates.filter(holdsOnlyCopy);
   const selectedWorktrees = selectedCandidates.reduce((sum, item) => sum + item.worktreeCount, 0);
 
   return (
@@ -200,6 +207,11 @@ function BranchCleanupModalBody({
           <p className="modal-subtitle">
             Deleting a branch also removes the worktrees checked out on it.
           </p>
+          {prStatusNote ? (
+            <p className="modal-subtitle" role="status">
+              {prStatusNote} Branches with a merged PR may not be listed under it yet.
+            </p>
+          ) : null}
         </div>
         <IconCloseButton disabled={isDeleting} onClick={onClose} />
       </div>
@@ -265,6 +277,13 @@ function BranchCleanupModalBody({
                           {item.dirty ? (
                             <span className="branch-cleanup-flag">uncommitted work</span>
                           ) : null}
+                          {holdsOnlyCopy(item) ? (
+                            <span className="branch-cleanup-flag">
+                              {item.commitsOnlyHere === null
+                                ? "may hold unpushed commits"
+                                : `${item.commitsOnlyHere} commit${item.commitsOnlyHere === 1 ? "" : "s"} only here`}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="branch-cleanup-branch-reason">
                           {candidateReason(item, baseBranch)}
@@ -281,8 +300,17 @@ function BranchCleanupModalBody({
         {selectedDirty.length ? (
           <p className="branch-cleanup-warning">
             {selectedDirty.length} selected branch{selectedDirty.length === 1 ? " has" : "es have"}{" "}
-            uncommitted changes. Deleting {selectedDirty.length === 1 ? "it" : "them"} discards
-            that work permanently.
+            uncommitted changes in a worktree, so {selectedDirty.length === 1 ? "it" : "they"} will be
+            kept. Commit or discard those changes first.
+          </p>
+        ) : null}
+
+        {selectedOnlyCopy.length ? (
+          <p className="branch-cleanup-warning">
+            {selectedOnlyCopy.length} selected branch{selectedOnlyCopy.length === 1 ? " holds" : "es hold"}{" "}
+            commits that exist nowhere else, so {selectedOnlyCopy.length === 1 ? "it" : "they"} will be
+            kept. Push {selectedOnlyCopy.length === 1 ? "it" : "them"}, or delete{" "}
+            {selectedOnlyCopy.length === 1 ? "it" : "each"} from its row to choose to discard the commits.
           </p>
         ) : null}
 

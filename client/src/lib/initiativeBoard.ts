@@ -16,7 +16,8 @@ const OPTIONAL_COLUMNS: BoardColumnKey[] = ["parked", "wont_do"];
 /** Which column a ticket sits in. A server that predates `blocked_on` leaves it in its state's. */
 export function columnFor(ticket: TicketSummary): BoardColumnKey {
   if (ticket.state === "blocked" && ticket.blocked_on === "person") return "needs_you";
-  if (ticket.blocked_on === "tickets" && (ticket.state === "blocked" || ticket.state === "backlog")) {
+  if (ticket.blocked_on === "tickets" && ticket.state !== "parked") {
+    // In progress too: every dispatch holds it until its prerequisites land.
     return "waiting";
   }
   return ticket.state;
@@ -43,6 +44,18 @@ export function milestoneOf(tickets: TicketSummary[], milestoneIds: Set<string>)
     if (cursor && milestoneIds.has(cursor)) owner.set(ticket.id, cursor);
   }
   return owner;
+}
+
+/** Each ticket's children, in the order the API sent them. */
+export function childrenByParent(tickets: TicketSummary[]): Map<string, TicketSummary[]> {
+  const out = new Map<string, TicketSummary[]>();
+  for (const ticket of tickets) {
+    if (!ticket.parent_ticket_id) continue;
+    const siblings = out.get(ticket.parent_ticket_id);
+    if (siblings) siblings.push(ticket);
+    else out.set(ticket.parent_ticket_id, [ticket]);
+  }
+  return out;
 }
 
 /**

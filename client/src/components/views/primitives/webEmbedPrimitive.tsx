@@ -57,7 +57,7 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
     // the operator can see which URL the setting actually holds.
     if (src === null) {
       return (
-        <div style={{ padding: 16, color: "var(--txl)", fontSize: 12.5 }}>
+        <div style={{ padding: 16, color: "var(--txl)", fontSize: "var(--fs-small)" }}>
           <p style={{ margin: "0 0 6px" }}>
             This URL cannot be embedded — https is allowed from any host, http only from
             localhost.
@@ -69,7 +69,7 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
 
     if (isAppItself(src)) {
       return (
-        <div style={{ padding: 16, color: "var(--txl)", fontSize: 12.5 }}>
+        <div style={{ padding: 16, color: "var(--txl)", fontSize: "var(--fs-small)" }}>
           <p style={{ margin: "0 0 6px" }}>
             This is Loregarden itself, which cannot run inside its own sandboxed embed.
           </p>

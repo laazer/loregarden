@@ -315,6 +315,11 @@ BLOCK_WRITERS: dict[str, str] = {
     ),
     "services/landing.py:_block": "delegates: artifact_service.block_ticket_for_unresolved_blocker",
     "services/orchestration_callbacks.py:block_ticket": "settles",
+    "services/gate_recovery.py:_block_after_gate_failure": (
+        "delegates: orchestration_callbacks.block_ticket"
+    ),
+    "services/gate_parked_sweep.py:block_parked": "settles",
+    "services/unasked_awaits.py:block_unasked_awaits": "settles",
     "services/orchestration_callbacks.py:pause_for_rework_decision": (
         "delegates: orchestration_callbacks.block_ticket"
     ),
@@ -328,6 +333,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:_held_for_operation_criteria": "settles",
     "services/run_completion.py:_rearmed_for_transient_retry": "settles",
     "services/run_completion.py:advance_stage_after_run": "settles",
+    "services/run_completion.py:_block_on_report": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",
     "services/stage_retry_budget.py:enforce_stage_retry_budget": (
         "delegates: orchestration_callbacks.block_ticket"

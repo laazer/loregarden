@@ -230,7 +230,7 @@ export class OfficeFloor {
     sprite.y = world.y;
     const text = new Text({
       text: label,
-      style: new TextStyle({ fontFamily: "monospace", fontSize: 8, fill: 0xffd27a }),
+      style: new TextStyle({ fontFamily: "monospace", fontSize: 8, fill: 0xffd27a }), // type-ok: Pixi TextStyle on the Hive canvas, in world pixels; CSS tokens cannot reach it
     });
     text.anchor.set(0.5, 0);
     text.x = world.x;
@@ -247,7 +247,7 @@ export class OfficeFloor {
         text: "",
         style: new TextStyle({
           fontFamily: "monospace",
-          fontSize: 10,
+          fontSize: 10, // type-ok: Pixi TextStyle on the Hive canvas, in world pixels; CSS tokens cannot reach it
           fill: 0x6fae8f,
           fontWeight: "bold",
         }),

@@ -2,29 +2,38 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import PrListingState, Ticket, Workspace
 from loregarden.services.artifact_service import (
     _resolve_upstream_ref,
     branch_diff_manifest,
     capture_branch_file_diff,
     git_base_ref,
 )
+from loregarden.services.branch_landed import branch_work_has_landed, landed_branches
+from loregarden.services.checkout_guard import checkout_removal_refusal
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
-from loregarden.services.git_subprocess import run_gh, run_git
+from loregarden.services.git_subprocess import run_git
+from loregarden.services.github_pr_listing import (
+    GhPage,
+    GitHubReadError,
+    PullRequestStates,
+    list_pull_requests,
+)
+from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
+from pydantic import BaseModel, Field, TypeAdapter
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -33,15 +42,22 @@ STALE_DAYS = 30
 RECENT_COMMIT_LIMIT = 8
 COMMIT_SHA_RE = re.compile(r"^(?:HEAD|[0-9a-fA-F]{7,40})$")
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
-PR_STATUS_TTL_SECONDS = 120
-PR_STATUS_TERMINAL_TTL_SECONDS = 600
-PR_STATUS_TERMINAL_STATES = ("closed", "merged")
-PR_STATUS_MAX_WORKERS = 6
-PR_LIST_LIMIT = 500
 BRANCH_SCAN_MAX_WORKERS = 8
 REF_FIELD_SEP = "\x1f"
+#: The branch snapshot reads local git only. On 2026-10-21, at 223 branches and
+#: 47 worktrees, it took 4.8s in-process (3.6s of it the squash-merge check over
+#: 212 ahead branches) and 7-10s through the API. The budget is half a browser's
+#: 30s navigation timeout; a test holds the snapshot to it with no remote call.
+SNAPSHOT_BUDGET_SECONDS = 15.0
+#: The whole listing, every page, in one `gh` process. 674 PRs read in
+#: 3.2-4.6s on 2026-10-21; past this GitHub is stalling, and the page says
+#: PR status is unavailable rather than waiting on it.
+PR_LISTING_TIMEOUT_SECONDS = 25.0
+PR_LISTING_TTL_SECONDS = 120
 
-_pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
+_PR_FIELDS = "number headRefName state isDraft url title"
+
+_pr_listing_cache: dict[str, tuple[float, PrListing]] = {}
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
@@ -190,42 +206,6 @@ def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, 
     return ahead, behind
 
 
-def _branch_squash_merged(repo_root: Path, base: str, branch: str) -> bool:
-    """Detect a branch whose commits were squashed and merged into base.
-
-    Commit counts compare by SHA, so a branch that was squashed into a single
-    commit on `base` still looks "ahead" even though its changes already landed
-    — the squash commit has a different SHA than the branch's original commits.
-    Treat the branch as merged if every file it touched since the merge-base is
-    byte-identical between the branch tip and `base`. `base...branch` already
-    diffs from the merge-base, so no separate merge-base lookup is needed.
-    """
-    files_proc = _git(repo_root, "diff", "--name-only", f"{base}...{branch}")
-    if files_proc.returncode != 0:
-        return False
-    changed_files = [line for line in (files_proc.stdout or "").splitlines() if line.strip()]
-    if not changed_files:
-        return True
-
-    diff_proc = _git(repo_root, "diff", "--quiet", base, branch, "--", *changed_files)
-    if diff_proc.returncode not in (0, 1):
-        return False
-    return diff_proc.returncode == 0
-
-
-def branch_work_has_landed(repo_root: Path, base: str, branch: str) -> bool:
-    """Public name for :func:`_branch_squash_merged`, for callers that delete.
-
-    The same predicate the cleanup dialog pre-selects on, and the only bar at
-    which removing a ref destroys nothing: the branch's content is already in
-    `base`, so what the ref was keeping reachable is reachable without it.
-    Exported because `chat_branch_sweep` deletes on it unattended, and a sweep
-    reaching into another module's underscore is how a safety bar gets changed
-    by someone who never saw the caller.
-    """
-    return _branch_squash_merged(repo_root, base, branch)
-
-
 def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:
     proc = _git(repo_root, "log", "-1", "--format=%cI|%s", branch)
     if proc.returncode != 0 or not (proc.stdout or "").strip():
@@ -243,170 +223,140 @@ def _worktree_dirty(worktree_path: str) -> bool:
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
 
 
-def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None:
-    """Look up the PR associated with a branch via the `gh` CLI (network call)."""
-    try:
-        proc = run_gh(
-            ["pr", "view", branch, "--json", "state,url,number,isDraft,title"],
-            cwd=repo_root,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        data = json.loads(proc.stdout or "{}")
-    except ValueError:
-        return None
-    if not data:
-        return None
-    return _serialize_pr_row(data)
+class _GhPullRequest(BaseModel):
+    number: int
+    head_ref_name: str = Field(alias="headRefName")
+    state: str
+    is_draft: bool = Field(alias="isDraft")
+    url: str
+    title: str
 
 
-def _serialize_pr_row(row: dict[str, Any]) -> dict[str, Any]:
+_PR_PAGES = TypeAdapter(list[GhPage[_GhPullRequest]])
+
+
+@dataclass(frozen=True)
+class PrListing:
+    """A repository's pull requests keyed by head branch, and whether that is all of them.
+
+    ``state`` comes from GitHub's ``pageInfo.hasNextPage`` on the last page read,
+    not from comparing a row count with the number asked for: a page holding
+    exactly ``first`` rows says nothing about whether more remain.
+    """
+
+    state: PrListingState
+    by_head: dict[str, dict[str, Any]]
+    listed_count: int
+    #: GitHub's own count, from the first page; None when no page was read.
+    total_count: int | None
+    reason: str = ""
+
+
+def _serialize_pr(pr: _GhPullRequest) -> dict[str, Any]:
     return {
-        "state": str(row.get("state", "")).lower(),
-        "is_draft": bool(row.get("isDraft")),
-        "url": row.get("url", ""),
-        "number": row.get("number"),
-        "title": row.get("title", ""),
+        "state": pr.state.lower(),
+        "is_draft": pr.is_draft,
+        "url": pr.url,
+        "number": pr.number,
+        "title": pr.title,
     }
 
 
-def _pr_row_rank(row: dict[str, Any]) -> tuple[int, int]:
+def _pr_rank(pr: _GhPullRequest) -> tuple[int, int]:
     """Rank PRs sharing a head branch the way `gh pr view` picks one: open, then newest."""
-    state = str(row.get("state", "")).lower()
-    try:
-        number = int(row.get("number") or 0)
-    except (TypeError, ValueError):
-        # silent-ok: sort key only; a gh row with no numeric number ranks last
-        number = 0
-    return (0 if state == "open" else 1, -number)
+    return (0 if pr.state.lower() == "open" else 1, -pr.number)
 
 
-def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
-    """Every PR in one `gh` call, keyed by head branch.
+def _fetch_pr_listing(repo_root: Path) -> PrListing:
+    """Every PR in the repository, and whether GitHub said that is all of them.
 
-    Returns the mapping plus whether the listing is exhaustive. A truncated page
-    (or a failed call) means a branch missing from the mapping may still have a
-    PR, so the caller falls back to a per-branch lookup for those rather than
-    reporting "no PR".
+    Completeness is the last page's `hasNextPage`, which GitHub sets, and never
+    the number of rows: a page holding exactly as many rows as were asked for
+    says nothing about whether more remain.
     """
     try:
-        proc = run_gh(
-            [
-                "pr",
-                "list",
-                "--state",
-                "all",
-                "--limit",
-                str(PR_LIST_LIMIT),
-                "--json",
-                "headRefName,state,url,number,isDraft,title",
-            ],
-            cwd=repo_root,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        logger.warning(
-            "`gh pr list` failed in %s; falling back to per-branch lookups",
+        listing = list_pull_requests(
             repo_root,
-            exc_info=True,
+            _PR_FIELDS,
+            _PR_PAGES,
+            states=PullRequestStates.ALL,
+            timeout_seconds=PR_LISTING_TIMEOUT_SECONDS,
         )
-        return {}, False
-    if proc.returncode != 0:
-        logger.warning(
-            "`gh pr list` exited %s in %s; falling back to per-branch lookups: %s",
-            proc.returncode,
-            repo_root,
-            (proc.stderr or "").strip(),
-        )
-        return {}, False
-    try:
-        rows = json.loads(proc.stdout or "[]")
-    except ValueError:
-        logger.warning(
-            "Unparseable `gh pr list` JSON in %s; falling back to per-branch lookups",
-            repo_root,
-            exc_info=True,
-        )
-        return {}, False
-    if not isinstance(rows, list):
-        logger.warning("`gh pr list` returned %s, not a list; falling back", type(rows).__name__)
-        return {}, False
-
-    best: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        head = str(row.get("headRefName") or "")
-        if not head:
-            continue
+    except GitHubReadError as exc:
+        return PrListing(PrListingState.UNAVAILABLE, {}, 0, None, str(exc))
+    best: dict[str, _GhPullRequest] = {}
+    for pr in listing.pull_requests:
+        head = branch_for_pr_head(pr.head_ref_name)
         current = best.get(head)
-        if current is None or _pr_row_rank(row) < _pr_row_rank(current):
-            best[head] = row
-    return {head: _serialize_pr_row(row) for head, row in best.items()}, len(rows) < PR_LIST_LIMIT
+        if head and (current is None or _pr_rank(pr) < _pr_rank(current)):
+            best[head] = pr
+    listed = len(listing.pull_requests)
+    if listing.state is PrListingState.INCOMPLETE:
+        return PrListing(
+            PrListingState.INCOMPLETE,
+            _serialize_heads(best),
+            listed,
+            listing.total_count,
+            "GitHub reported more pages after the last one returned",
+        )
+    return PrListing(PrListingState.COMPLETE, _serialize_heads(best), listed, listing.total_count)
 
 
-def _pr_status_ttl(value: dict[str, Any] | None) -> int:
-    """Closed/merged PRs are done changing, so cache them far longer than open ones."""
-    if value and value.get("state") in PR_STATUS_TERMINAL_STATES:
-        return PR_STATUS_TERMINAL_TTL_SECONDS
-    return PR_STATUS_TTL_SECONDS
+def _serialize_heads(best: dict[str, _GhPullRequest]) -> dict[str, dict[str, Any]]:
+    return {head: _serialize_pr(pr) for head, pr in best.items()}
 
 
-def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[str, Any] | None]:
-    """Resolve PR status for each branch, serving from a TTL cache where possible."""
+def _pr_listing(repo_root: Path) -> PrListing:
+    """`_fetch_pr_listing`, served from a TTL cache when the cached read was complete.
+
+    Only a complete listing is cached: a partial one is a failure to report,
+    and the next request should try again rather than repeat it.
+    """
+    key = str(repo_root)
     now = time.monotonic()
-    results: dict[str, dict[str, Any] | None] = {}
-    stale: list[str] = []
+    cached = _pr_listing_cache.get(key)
+    if cached and now - cached[0] < PR_LISTING_TTL_SECONDS:
+        return cached[1]
+    listing = _fetch_pr_listing(repo_root)
+    if listing.state is PrListingState.COMPLETE:
+        _pr_listing_cache[key] = (now, listing)
+    else:
+        logger.warning(
+            "PR listing for %s is %s: read %d of %s PRs (%s); branches outside it show PR "
+            "status unknown",
+            repo_root,
+            listing.state.value,
+            listing.listed_count,
+            "unknown" if listing.total_count is None else listing.total_count,
+            listing.reason,
+        )
+    return listing
 
-    for name in branches:
-        cached = _pr_status_cache.get((str(repo_root), name))
-        if cached and now - cached[0] < _pr_status_ttl(cached[1]):
-            results[name] = cached[1]
-        else:
-            stale.append(name)
 
-    if not stale:
-        return results
+def branch_pull_requests(workspace: Workspace) -> dict[str, Any]:
+    """PR status for the workspace's local branches, and whether it is all of it.
 
-    listed, exhaustive = _fetch_pr_list(repo_root)
-    unresolved: list[str] = []
-    for name in stale:
-        if name in listed:
-            value = listed[name]
-        elif exhaustive:
-            value = None
-        else:
-            unresolved.append(name)
-            continue
-        _pr_status_cache[(str(repo_root), name)] = (now, value)
-        results[name] = value
-
-    if not unresolved:
-        return results
-
-    with ThreadPoolExecutor(max_workers=min(PR_STATUS_MAX_WORKERS, len(unresolved))) as pool:
-        future_map = {
-            pool.submit(_fetch_pr_status_live, repo_root, name): name for name in unresolved
-        }
-        for future in as_completed(future_map):
-            name = future_map[future]
-            try:
-                value = future.result()
-            except Exception:  # noqa: BLE001 - future.result() re-raises whatever the worker raised
-                logger.warning(
-                    "PR status lookup failed for branch %s; reporting unknown",
-                    name,
-                    exc_info=True,
-                )
-                value = None
-            _pr_status_cache[(str(repo_root), name)] = (now, value)
-            results[name] = value
-
-    return results
+    Separate from `branch_triage_snapshot` so the page paints from local git
+    without waiting on GitHub. When ``state`` is ``complete``, a branch absent
+    from ``pull_requests`` has no PR; otherwise its status is unknown.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    if not _is_git_repo(repo_root):
+        listing = PrListing(PrListingState.UNAVAILABLE, {}, 0, None, "not a git repository")
+        branch_names: list[str] = []
+    else:
+        listing = _pr_listing(repo_root)
+        branch_names = _list_branches(repo_root)
+    return {
+        "workspace_slug": workspace.slug,
+        "state": listing.state.value,
+        "listed_count": listing.listed_count,
+        "total_count": listing.total_count,
+        "reason": listing.reason,
+        "pull_requests": {
+            name: listing.by_head[name] for name in branch_names if name in listing.by_head
+        },
+    }
 
 
 def _ticket_branch_map(session: Session, workspace_id: str) -> dict[str, list[dict[str, str]]]:
@@ -597,18 +547,20 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         read_refs = _branch_refs_per_branch(repo_root, base, branch_names)
     branch_refs = {name: read_refs.get(name) or _unknown_branch_ref() for name in branch_names}
 
-    # Only branches that still look ahead can be squash-merged, and the check is
-    # two git calls each — so it runs on the pool, over that subset alone.
-    squash_merged = {
-        name
-        for name, merged in _map_parallel(
-            lambda name: (name, _branch_squash_merged(repo_root, base, name)),
-            [name for name in branch_names if branch_refs[name].ahead > 0],
-        )
-        if merged
-    }
+    # Only branches that still look ahead can be squash-merged; `landed_branches`
+    # recomputes only those whose answer the base or tip can have changed.
+    squash_merged = landed_branches(
+        repo_root, base, [name for name in branch_names if branch_refs[name].ahead > 0]
+    )
 
-    pr_statuses = _branch_pr_statuses(repo_root, [name for name in branch_names if name != base])
+    # What deleting each branch would lose. Asked only where something could be:
+    # a branch at its base, or squash-merged into it, loses nothing.
+    only_here = dict(
+        _map_parallel(
+            lambda name: (name, commits_only_here(repo_root, name)),
+            [n for n in branch_names if branch_refs[n].ahead > 0 and n not in squash_merged],
+        )
+    )
 
     branches: list[dict[str, Any]] = []
     issue_count = 0
@@ -660,6 +612,8 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "is_current": is_current,
                 "is_base": name == base,
                 "squash_merged": name in squash_merged,
+                # None: git could not say, which the dialogs treat as "would lose some".
+                "commits_only_here": only_here.get(name, 0),
                 "ahead": ahead,
                 "behind": behind,
                 "dirty": dirty,
@@ -669,7 +623,6 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "linked_tickets": linked,
                 "last_commit": last,
                 "issues": issues,
-                "pr": pr_statuses.get(name),
             }
         )
 
@@ -853,8 +806,24 @@ def _format_worktree_block_message(branch: str, worktree_paths: list[str]) -> st
     )
 
 
+def _refuse_unsafe_removal(worktree_path: str) -> None:
+    """Raise when removing the checkout would lose work (`checkout_guard`)."""
+    refusal = checkout_removal_refusal(Path(worktree_path))
+    if refusal:
+        raise ValueError(f"Kept {worktree_path}: {refusal}")
+
+
 def _remove_git_worktree(repo_root: Path, worktree_path: str) -> None:
-    proc = _git(repo_root, "worktree", "remove", "--force", worktree_path)
+    """Remove a checkout `_refuse_unsafe_removal` has cleared.
+
+    Without `--force`: git then refuses a tree that changed since the check
+    (or a locked one) on its own, a second guard rather than an override. A
+    directory already gone is pruned, since `worktree remove` cannot find it.
+    """
+    if not Path(worktree_path).exists():
+        proc = _git(repo_root, "worktree", "prune")
+    else:
+        proc = _git(repo_root, "worktree", "remove", worktree_path)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "worktree remove failed").strip()
         raise ValueError(detail)
@@ -875,6 +844,7 @@ def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None
     if path == main_repo_path:
         raise ValueError("Cannot remove the primary repository checkout")
 
+    _refuse_unsafe_removal(path)
     _remove_git_worktree(repo_root, path)
 
 
@@ -885,7 +855,15 @@ def delete_branch(
     force: bool = False,
     remove_worktrees: bool = False,
 ) -> bool:
-    """Delete a local branch. Returns True if the branch was removed, False if already gone."""
+    """Delete a local branch. Returns True if the branch was removed, False if already gone.
+
+    `force` means one thing: discard commits that exist only on this branch.
+    Without it the branch goes only when its commits survive it, on another
+    branch, a tag or a remote, or squash-merged into the base, and the refusal
+    says how many would be lost. Git's own `-d` asks a different question
+    (merged into HEAD?), which refused every squash-merged branch and so taught
+    every caller to pass `force`, discarding unpushed work along with it.
+    """
     validate_branch_name(branch)
     repo_root = resolve_workspace_root(workspace)
     if not _is_git_repo(repo_root):
@@ -894,39 +872,109 @@ def delete_branch(
     if not _branch_exists(repo_root, branch):
         return False
 
-    current = _current_branch(repo_root)
-    main_repo_path = str(repo_root.resolve())
     worktree_paths = worktree_paths_for_branch(repo_root, branch)
+    _refuse_branch_delete(
+        repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees, force=force
+    )
+    for path in worktree_paths:
+        _remove_git_worktree(repo_root, path)
+    return _git_delete_branch(repo_root, branch, worktree_paths)
 
-    if branch == current and main_repo_path in worktree_paths:
-        raise ValueError(
-            "Cannot delete the currently checked-out branch. Checkout another branch first."
+
+def commits_only_here(repo_root: Path, branch: str) -> int | None:
+    """How many of `branch`'s commits no other branch, tag or remote ref reaches.
+
+    Zero means deleting the ref loses no commit. None means git could not say,
+    which callers treat as "would lose some". Squash-merged work is not counted
+    out here: its commits really are unreachable, and `branch_work_has_landed`
+    is the separate question of whether their content survives in the base.
+    """
+    proc = _git(
+        repo_root,
+        "rev-list",
+        "--count",
+        f"refs/heads/{branch}",
+        "--not",
+        # The pattern for `--branches` is the short name: git documents that it
+        # must not start with refs/heads/, and one that does excludes nothing.
+        # A refname cannot hold `*?[`, so the glob matches this branch alone.
+        f"--exclude={branch}",
+        "--branches",
+        "--tags",
+        "--remotes",
+    )
+    count = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not count.isdigit():
+        logger.warning(
+            "Could not count commits only on %s in %s: %s",
+            branch,
+            repo_root,
+            (proc.stderr or "").strip(),
         )
+        return None
+    return int(count)
 
-    if worktree_paths and not remove_worktrees:
-        raise ValueError(_format_worktree_block_message(branch, worktree_paths))
 
-    if worktree_paths and remove_worktrees:
-        for path in worktree_paths:
-            if path == main_repo_path and branch == current:
-                raise ValueError(
-                    "Cannot delete the currently checked-out branch. Checkout another branch first."
-                )
-            _remove_git_worktree(repo_root, path)
+def _refuse_lost_commits(repo_root: Path, branch: str, base: str | None) -> None:
+    only_here = commits_only_here(repo_root, branch)
+    if only_here == 0:
+        return
+    if base and branch_work_has_landed(repo_root, base, branch):
+        return
+    if only_here is None:
+        raise ValueError(
+            f"Could not tell whether {branch} holds commits that exist nowhere else, so it was kept."
+        )
+    plural = "commit" if only_here == 1 else "commits"
+    raise ValueError(
+        f"{branch} has {only_here} {plural} that no other branch, tag or remote has, and its "
+        f"changes are not in {base or 'the base branch'}. Push it first, or delete it choosing "
+        "to discard those commits."
+    )
 
+
+_CHECKED_OUT = "Cannot delete the currently checked-out branch. Checkout another branch first."
+
+
+def _refuse_branch_delete(
+    repo_root: Path,
+    branch: str,
+    worktree_paths: list[str],
+    *,
+    remove_worktrees: bool,
+    force: bool,
+) -> None:
+    """Every reason `delete_branch` would stop, raised before the first removal.
+
+    A delete that stops halfway has already destroyed checkouts for a branch
+    it then keeps, so nothing is removed until every worktree has passed.
+    """
+    main_repo_path = str(repo_root.resolve())
+    if main_repo_path in worktree_paths:
+        # The primary checkout has this branch out, which makes it the current one.
+        raise ValueError(_CHECKED_OUT)
     base = git_base_ref(repo_root)
     if base and branch == base:
         raise ValueError("Cannot delete the base branch")
+    if not force:
+        _refuse_lost_commits(repo_root, branch, base)
+    if worktree_paths and not remove_worktrees:
+        raise ValueError(_format_worktree_block_message(branch, worktree_paths))
+    for path in worktree_paths:
+        _refuse_unsafe_removal(path)
 
-    args = ["branch", "-D" if force else "-d", branch]
-    proc = _git(repo_root, *args)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "delete failed").strip()
-        if "not found" in detail.lower():
-            return False
-        if "used by worktree" in detail.lower():
-            match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
-            if match_paths:
-                raise ValueError(_format_worktree_block_message(branch, match_paths))
-        raise ValueError(detail)
-    return True
+
+def _git_delete_branch(repo_root: Path, branch: str, worktree_paths: list[str]) -> bool:
+    # `-D` because `_refuse_lost_commits` (or the caller's `force`) has already
+    # decided: git's `-d` would re-ask "merged into HEAD?", the wrong question.
+    proc = _git(repo_root, "branch", "-D", branch)
+    if proc.returncode == 0:
+        return True
+    detail = (proc.stderr or proc.stdout or "delete failed").strip()
+    if "not found" in detail.lower():
+        return False
+    if "used by worktree" in detail.lower():
+        match_paths = worktree_paths or worktree_paths_for_branch(repo_root, branch)
+        if match_paths:
+            raise ValueError(_format_worktree_block_message(branch, match_paths))
+    raise ValueError(detail)

@@ -42,7 +42,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--txm);
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.01em;
   padding-left: 3px;
@@ -97,15 +97,15 @@
 }
 
 .pane-empty-eyebrow {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--txl);
 }
 
 .pane-empty-hint {
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--txm);
   max-width: 34ch;
@@ -128,8 +128,8 @@
 }
 
 .primitive-picker-legend {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--txl);
@@ -175,7 +175,7 @@
   background: var(--bg3);
   color: var(--ac2);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-small);
 }
 
 .primitive-option-text {
@@ -187,7 +187,7 @@
 }
 
 .primitive-option-name {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -195,8 +195,8 @@
 }
 
 .primitive-option-category {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--txl);
@@ -241,15 +241,15 @@
 }
 
 .canvas-empty-title {
-  font-family: var(--dp);
-  font-size: 15px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
   font-weight: 600;
   color: var(--tx);
   margin: 0;
 }
 
 .canvas-empty-hint {
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.55;
   color: var(--txm);
   margin: 0;
@@ -257,7 +257,7 @@
 
 .canvas-empty-hint kbd {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--tx);
   background: var(--bg3);
   border: 1px solid var(--bd2);
@@ -330,7 +330,7 @@
 
 .pane-settings-help {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.45;
   color: var(--txl);
 }
@@ -338,7 +338,7 @@
 /* A refusal is not a hint, and must not read as one. */
 .pane-settings-error {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-micro);
   line-height: 1.45;
   color: var(--red);
 }
@@ -374,12 +374,12 @@
 }
 
 .pane-unconfigured-lead {
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   color: var(--txm);
 }
 
 .pane-unconfigured-hint {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 

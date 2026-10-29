@@ -131,7 +131,7 @@ export function ToolAccessSection({
                   checked={grants.allowed_tools.includes(tool)}
                   onChange={() => toggle("allowed_tools", tool)}
                 />
-                <span style={{ fontSize: 12.5, color: "var(--txm)" }}>{tool}</span>
+                <span style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>{tool}</span>
               </label>
             ))}
           </div>
@@ -154,7 +154,7 @@ export function ToolAccessSection({
                     checked={grants.mcp_servers.includes(server)}
                     onChange={() => toggle("mcp_servers", server)}
                   />
-                  <span style={{ fontSize: 12.5, color: "var(--txm)" }}>{server}</span>
+                  <span style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>{server}</span>
                 </label>
               ))}
             </div>

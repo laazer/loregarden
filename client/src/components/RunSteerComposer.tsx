@@ -165,10 +165,10 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           {messages.map((message) => (
             <li
               key={message.id}
-              style={{ fontSize: 12, color: "var(--txl)", padding: "3px 0", lineHeight: 1.5 }}
+              style={{ fontSize: "var(--fs-small)", color: "var(--txl)", padding: "3px 0", lineHeight: 1.5 }}
             >
               <span style={{ color: "var(--tx)" }}>{message.content}</span>{" "}
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10 }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)" }}>
                 {message.delivered_at ? "· delivered" : "· queued"}
               </span>
             </li>
@@ -191,14 +191,17 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           <Input
             aria-label="Message to this run"
             className="btn-secondary filter-select"
-            style={{ flex: 1, fontSize: 12.5 }}
+            style={{ flex: 1, fontSize: "var(--fs-small)" }}
             placeholder="e.g. use the existing helper in services/"
             value={draft}
             disabled={send.isPending || stopRequested}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <Button type="submit" variant="primary" disabled={!canSend}>
+          <Button type="submit" variant="primary" className="send-leaf run-steer-send" disabled={!canSend}>
             {send.isPending ? "Sending…" : "Send"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+              <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+            </svg>
           </Button>
         </form>
       )}

@@ -41,7 +41,7 @@
   gap: 6px;
   margin-bottom: 12px;
   color: var(--txl);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .gate-studio-link--inline {
@@ -69,7 +69,7 @@
 
 .gate-studio-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-title);
   color: var(--tx);
 }
 
@@ -77,7 +77,7 @@
   flex: none;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 
 .gate-studio-tone--blocking {
@@ -120,20 +120,20 @@
 .gate-studio-value {
   padding: 0 8px 4px;
   color: var(--txl);
-  font-size: 12px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
 .gate-studio-detail h2 {
   margin: 2px 0 0;
-  font-size: 17px;
+  font-size: var(--fs-lead);
   color: var(--tx);
   overflow-wrap: anywhere;
 }
 
 .gate-studio-kind {
   color: var(--txl);
-  font-size: 12px;
+  font-size: var(--fs-small);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

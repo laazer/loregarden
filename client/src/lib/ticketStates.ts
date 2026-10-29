@@ -1,15 +1,30 @@
 import type { StageStatus, TicketActivity, TicketState } from "../api/types";
 
-export const TICKET_STATE_COLORS: Record<TicketState, string> = {
-  backlog: "var(--txm)",
-  in_progress: "var(--blue)",
-  blocked: "var(--red)",
+import { STATUS_TONE_COLORS, type ChipStatus, type StatusTone } from "./statusTone";
+
+// Every vocabulary below maps onto the six tones in statusTone.ts, and its
+// colours are derived from them, so a hue means the same thing on every surface.
+function toneColors<K extends string>(tones: Record<K, StatusTone>): Record<K, string> {
+  const colors = {} as Record<K, string>;
+  for (const key of Object.keys(tones) as K[]) colors[key] = STATUS_TONE_COLORS[tones[key]];
+  return colors;
+}
+
+const TICKET_STATE_TONES: Record<TicketState, StatusTone> = {
+  backlog: "idle",
+  // Blue, so a tree or work-items dot (colour only, no word) still tells
+  // started work from backlog. Activity says whether anything is executing.
+  in_progress: "run",
+  blocked: "bad",
   // Violet, not red: parked work is owed, not stuck, and colouring it like
   // blocked would undo the distinction (lg-workflow-integrity-449).
-  parked: "var(--vio)",
-  done: "var(--grn)",
-  wont_do: "var(--amb)",
+  parked: "you",
+  done: "done",
+  // Closed without doing it: quiet like done, but no tick, since nothing was done.
+  wont_do: "idle",
 };
+
+export const TICKET_STATE_COLORS: Record<TicketState, string> = toneColors(TICKET_STATE_TONES);
 
 export const TICKET_STATE_LABELS: Record<TicketState, string> = {
   backlog: "Backlog",
@@ -24,13 +39,16 @@ export const TICKET_STATE_LABELS: Record<TicketState, string> = {
  * Activity is the axis `state` does not cover: "in progress" says the work is
  * open, not that anything is executing. Idle is deliberately the quiet colour —
  * it is the majority of the board, and shouting about it helps nobody.
+ * Awaiting is a run held for a person's approval, so it takes needs-you.
  */
-export const TICKET_ACTIVITY_COLORS: Record<TicketActivity, string> = {
-  running: "var(--grn)",
-  awaiting: "var(--amb)",
-  queued: "var(--blue)",
-  idle: "var(--txl)",
+const TICKET_ACTIVITY_TONES: Record<TicketActivity, StatusTone> = {
+  running: "run",
+  awaiting: "you",
+  queued: "wait",
+  idle: "idle",
 };
+
+export const TICKET_ACTIVITY_COLORS: Record<TicketActivity, string> = toneColors(TICKET_ACTIVITY_TONES);
 
 export const TICKET_ACTIVITY_LABELS: Record<TicketActivity, string> = {
   running: "Running",
@@ -45,6 +63,10 @@ export function ticketActivityColor(activity: string | undefined): string {
 
 export function ticketActivityLabel(activity: string | undefined): string {
   return fromMap(TICKET_ACTIVITY_LABELS, activity, "Idle");
+}
+
+export function ticketActivityChip(activity: string | undefined): ChipStatus {
+  return { tone: toneOf(TICKET_ACTIVITY_TONES, activity), label: ticketActivityLabel(activity) };
 }
 
 /**
@@ -63,6 +85,17 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   // A lane keeping its slot while a block that may still resolve is repaired.
   // Distinct from "Blocked": the lane has not finished with the ticket.
   repairing: "Repairing",
+};
+
+const RUN_STATUS_TONES: Record<string, StatusTone> = {
+  queued: "wait",
+  running: "run",
+  awaiting_permission: "you",
+  succeeded: "done",
+  failed: "bad",
+  cancelled: "idle",
+  blocked: "bad",
+  repairing: "wait",
 };
 
 /**
@@ -85,12 +118,29 @@ export function runStatusLabel(status: string | undefined): string {
   return fromMap(RUN_STATUS_LABELS, status, status || "Unknown");
 }
 
-/** Segment / stage dots in the v6 ticket card — done stages go quiet, the live one glows. */
+export function runStatusChip(status: string | undefined): ChipStatus {
+  return { tone: toneOf(RUN_STATUS_TONES, status), label: runStatusLabel(status) };
+}
+
+const STAGE_STATUS_TONES: Record<StageStatus, StatusTone> = {
+  pending: "idle",
+  running: "run",
+  awaiting: "you",
+  blocked: "bad",
+  done: "done",
+  wont_do: "idle",
+};
+
+/**
+ * Segment / stage dots in the v6 ticket card — done stages go quiet, the live
+ * one glows. Quieter than the tones for the settled states: a strip of
+ * segments is mostly done and pending, and only the live one should stand out.
+ */
 const STAGE_STATUS_COLORS: Record<StageStatus, string> = {
   pending: "var(--bd2)",
-  running: "var(--blue)",
-  awaiting: "var(--amb)",
-  blocked: "var(--red)",
+  running: STATUS_TONE_COLORS.run,
+  awaiting: STATUS_TONE_COLORS.you,
+  blocked: STATUS_TONE_COLORS.bad,
   done: "var(--bd2)",
   wont_do: "var(--bd2)",
 };
@@ -137,6 +187,12 @@ function fromMap(map: Record<string, string>, key: string | undefined, fallback:
   return hit ?? fallback;
 }
 
+// An unrecognised value reads as idle: quiet, and its label still says what it is.
+function toneOf(map: Record<string, StatusTone>, key: string | undefined): StatusTone {
+  const hit = key === undefined ? undefined : map[key];
+  return hit ?? "idle";
+}
+
 export function ticketStateColor(state: string | undefined): string {
   return fromMap(TICKET_STATE_COLORS, state, "var(--txm)");
 }
@@ -145,12 +201,20 @@ export function ticketStateLabel(state: string | undefined): string {
   return fromMap(TICKET_STATE_LABELS, state, "Unknown");
 }
 
+export function ticketStateChip(state: string | undefined): ChipStatus {
+  return { tone: toneOf(TICKET_STATE_TONES, state), label: ticketStateLabel(state) };
+}
+
 export function stageStatusColor(status: string | undefined): string {
   return fromMap(STAGE_STATUS_COLORS, status, "var(--bd)");
 }
 
 export function stageStatusLabel(status: string | undefined): string {
   return fromMap(STAGE_STATUS_LABELS, status, "Idle");
+}
+
+export function stageStatusChip(status: string | undefined): ChipStatus {
+  return { tone: toneOf(STAGE_STATUS_TONES, status), label: stageStatusLabel(status) };
 }
 
 export function priorityStyle(priority: number | undefined): PriorityStyle {
@@ -164,10 +228,12 @@ export function priorityStyle(priority: number | undefined): PriorityStyle {
  */
 export type BoardColumnKey = TicketState | "needs_you" | "waiting";
 
-const BOARD_SPLIT_COLORS: Record<"needs_you" | "waiting", string> = {
-  needs_you: "var(--rdl)",
-  waiting: "var(--txl)",
+const BOARD_SPLIT_TONES: Record<"needs_you" | "waiting", StatusTone> = {
+  needs_you: "you",
+  waiting: "wait",
 };
+
+const BOARD_SPLIT_COLORS = toneColors(BOARD_SPLIT_TONES);
 
 const BOARD_SPLIT_LABELS: Record<"needs_you" | "waiting", string> = {
   needs_you: "Needs you",

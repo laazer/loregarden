@@ -34,11 +34,15 @@ export const API_BASE = resolveApiBase(VITE_API_BASE, globalThis.location?.origi
 
 export class ApiError extends Error {
   status: number;
+  /** The server's `detail` when it is structured (`{message, ...}`), for a caller
+   * that acts on more than the words; undefined for a plain string detail. */
+  detail: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -56,15 +60,20 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     let message = text || res.statusText;
+    let detail: unknown;
     try {
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed.detail === "string") message = parsed.detail;
+      else if (parsed?.detail && typeof parsed.detail.message === "string") {
+        message = parsed.detail.message;
+        detail = parsed.detail;
+      }
     } catch {
       // silent-ok: the body is not JSON, so the raw text already read into
       // `message` is the best description there is; the ApiError below still
       // throws and still carries the status.
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, detail);
   }
   // No Content has no body to parse; `res.json()` would throw on success.
   if (res.status === 204) return undefined as T;

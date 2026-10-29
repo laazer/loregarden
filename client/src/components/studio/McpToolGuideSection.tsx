@@ -44,7 +44,7 @@ export function McpToolGuideSection({
             onChange={(e) => onToggleEnabled(e.target.checked)}
             style={{ accentColor: "var(--ac)" }}
           />
-          <span style={{ fontSize: 12.5, color: "var(--txm)" }}>Enable MCP tool access</span>
+          <span style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>Enable MCP tool access</span>
         </label>
         {enabled && (
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -154,11 +154,11 @@ function McpToolCard({
       <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "flex-start", gap: 8 }}>
         <Input type="checkbox" aria-label={guide.name} checked={checked} onChange={onToggle} onClick={(e) => e.stopPropagation()} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, fontWeight: 600 }}>{guide.name}</div>
-          <div style={{ fontSize: 11.5, color: "var(--txl)", marginTop: 2 }}>{guide.description}</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-micro)", fontWeight: 600 }}>{guide.name}</div>
+          <div style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", marginTop: 2 }}>{guide.description}</div>
         </div>
       </summary>
-      <div style={{ marginTop: 10, paddingLeft: 24, fontSize: 11.5, lineHeight: 1.5 }}>
+      <div style={{ marginTop: 10, paddingLeft: 24, fontSize: "var(--fs-micro)", lineHeight: 1.5 }}>
         <div style={{ marginBottom: 6 }}>
           <span className="state-label">When to use</span>
           <div>{guide.when_to_use}</div>
@@ -171,7 +171,7 @@ function McpToolCard({
               padding: 8,
               background: "var(--bg0)",
               borderRadius: 4,
-              fontSize: 10.5,
+              fontSize: "var(--fs-micro)",
               overflow: "auto",
               whiteSpace: "pre-wrap",
             }}

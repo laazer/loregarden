@@ -31,6 +31,7 @@ from loregarden.api import (
     initiatives,
     instance_templates,
     local_instances,
+    machine_disk,
     mcp,
     mcp_servers,
     memory,
@@ -40,6 +41,7 @@ from loregarden.api import (
     queue_lanes,
     queue_management,
     queue_review,
+    reference_library,
     reference_repos,
     runs,
     stage_fanout,
@@ -79,6 +81,7 @@ from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
 from loregarden.services.reconciliation import reconcile_once
+from loregarden.services.reference_survey.feeder import start_survey_loop
 from loregarden.services.run_reattach import reattach_surviving_runs
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
@@ -183,6 +186,7 @@ def _start_background_loops() -> list[asyncio.Task]:
         start_push_worker(),
         start_autopilot_loop(),
         start_ci_poll_loop(),
+        start_survey_loop(),
     ]
     return [task for task in started if task is not None]
 
@@ -309,6 +313,7 @@ app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(docker_capacity.router, prefix="/api")
+app.include_router(machine_disk.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")
@@ -324,6 +329,7 @@ app.include_router(studio.router, prefix="/api")
 app.include_router(ticket_studio.router, prefix="/api")
 app.include_router(reference_repos.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
+app.include_router(reference_library.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(github_issues.router, prefix="/api")

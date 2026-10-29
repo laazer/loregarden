@@ -93,7 +93,7 @@ const mockDeleteView = deleteView as jest.MockedFunction<typeof deleteView>;
 
 const SLUG = "loregarden";
 
-/** The built-in pages, in the order the fixed rail drew them. */
+/** The built-in pages, in rail order: Work, then Build, then System. */
 const TOOL_LABELS = [
   "Home",
   "Chat",
@@ -102,12 +102,32 @@ const TOOL_LABELS = [
   "Initiatives",
   "Editor",
   "Studios",
-  "Parallel Execution",
+  "Branch Triage",
+  "Machine",
   "MCP Gateway",
   "Workspaces",
   "Memory",
-  "Branch Triage",
 ];
+
+/** The three lists the built-in pages are drawn in, one per group. */
+const GROUP_NAMES = ["Work", "Build", "System"];
+
+/** Each built-in page's name, in the order the rail draws them across its groups. */
+function toolNames(): string[] {
+  return GROUP_NAMES.flatMap((name) =>
+    Array.from(
+      screen.getByRole("list", { name }).querySelectorAll("li .app-sidebar-name"),
+      (el) => el.textContent ?? "",
+    ),
+  );
+}
+
+/** Every built-in page's row, across the three group lists. */
+function toolRows(): HTMLElement[] {
+  return GROUP_NAMES.flatMap((name) =>
+    Array.from(screen.getByRole("list", { name }).querySelectorAll<HTMLElement>("li")),
+  );
+}
 
 /**
  * An entry left over from before Tools became static.
@@ -304,14 +324,14 @@ test("the names revealed by expansion stay inside the rail's own subtree", async
   await user.hover(nav);
   await waitFor(() => expect(nav).toHaveAttribute("data-expanded", "true"));
 
-  for (const name of ["Home", "Parallel Execution", "Build Board", "Sketch Surface"]) {
+  for (const name of ["Home", "Machine", "Build Board", "Sketch Surface"]) {
     expect(nav).toContainElement(screen.getByRole("link", { name }));
   }
   // A React portal lands as a new direct child of `document.body`, which is
   // exactly where an expanded panel would sit beside the screen area rather
   // than over the rail.
   expect(document.body.childElementCount).toBe(bodyChildrenBefore);
-  for (const heading of ["Tools", "Pinned Tabs", "Tabs"]) {
+  for (const heading of [...GROUP_NAMES, "Pinned Tabs", "Tabs"]) {
     expect(nav).toContainElement(screen.getByText(heading, { exact: true }));
   }
 });
@@ -406,7 +426,7 @@ test("entry names resolve as accessible names while collapsed", async () => {
 
   expect(nav).toHaveAttribute("data-expanded", "false");
   expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Parallel Execution" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Machine" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Build Board" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
 });
@@ -419,7 +439,7 @@ test("the same names are still exposed once expanded", async () => {
   await waitFor(() => expect(nav).toHaveAttribute("data-expanded", "true"));
 
   expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Parallel Execution" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Machine" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Build Board" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
 });
@@ -432,7 +452,7 @@ test("entry names are text in the row, not a tooltip, in both states", async () 
   // drop the name out of the accessibility tree the moment the pointer leaves.
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
-  const names = ["Home", "Parallel Execution", "Build Board", "Sketch Surface"];
+  const names = ["Home", "Machine", "Build Board", "Sketch Surface"];
 
   expect(nav).toHaveAttribute("data-expanded", "false");
   for (const name of names) {
@@ -450,10 +470,10 @@ test("entry names are text in the row, not a tooltip, in both states", async () 
 
 // 472 AC1 — three labelled sections in order: Tools, Pinned Tabs, Tabs.
 
-test("renders Tools, Pinned Tabs and Tabs as distinct labelled lists", async () => {
+test("renders the page groups, Pinned Tabs and Tabs as distinct labelled lists", async () => {
   await renderLoadedSidebar();
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
+  const tools = await screen.findByRole("list", { name: "Work" });
   const pinned = screen.getByRole("list", { name: "Pinned Tabs" });
   const tabs = screen.getByRole("list", { name: "Tabs" });
 
@@ -486,11 +506,8 @@ test("every built-in page is in Tools when the store is empty", async () => {
   mockFetchViews.mockResolvedValue([]);
   renderSidebar();
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
-  for (const label of TOOL_LABELS) {
-    expect(within(tools).getByRole("link", { name: label })).toBeInTheDocument();
-  }
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  await screen.findByRole("list", { name: "Work" });
+  expect(toolNames()).toEqual(TOOL_LABELS);
 });
 
 test("Tools does not come from sidebar_entries", async () => {
@@ -498,8 +515,7 @@ test("Tools does not come from sidebar_entries", async () => {
   // from the store would draw one row; a derived one draws seven regardless.
   await renderLoadedSidebar();
 
-  const tools = screen.getByRole("list", { name: "Tools" });
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  expect(toolRows()).toHaveLength(TOOL_LABELS.length);
 });
 
 test("a leftover page entry is drawn in no section", async () => {
@@ -519,12 +535,12 @@ test("no Tools row offers a way to remove or move it", async () => {
   const { nav } = await renderLoadedSidebar();
   await user.hover(nav);
 
-  const tools = screen.getByRole("list", { name: "Tools" });
-  // Both halves matter: that the section really drew its seven rows, and that
-  // none of them carries a control. "No buttons" alone would also pass on a
+  // Both halves matter: that the groups really drew every row, and that none
+  // of them carries a control. "No buttons" alone would also pass on a
   // section that rendered nothing.
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
-  expect(within(tools).queryAllByRole("button")).toHaveLength(0);
+  const rows = toolRows();
+  expect(rows).toHaveLength(TOOL_LABELS.length);
+  for (const row of rows) expect(within(row).queryAllByRole("button")).toHaveLength(0);
 });
 
 test("no request is issued that could remove a built-in page", async () => {
@@ -533,7 +549,7 @@ test("no request is issued that could remove a built-in page", async () => {
   mockFetchViews.mockResolvedValue([]);
   renderSidebar();
 
-  await screen.findByRole("list", { name: "Tools" });
+  await screen.findByRole("list", { name: "Work" });
   await waitFor(() => expect(mockFetchEntries).toHaveBeenCalledWith(SLUG));
   await settle();
   expect(mockSetPinned).not.toHaveBeenCalled();
@@ -560,7 +576,7 @@ test("an empty workspace is left empty, however many times its list is re-read",
     }),
   );
 
-  await screen.findByRole("list", { name: "Tools" });
+  await screen.findByRole("list", { name: "Work" });
   await settle();
   expect(mockSetPinned).not.toHaveBeenCalled();
   expect(mockReorder).not.toHaveBeenCalled();
@@ -575,9 +591,9 @@ test("an entries request that fails leaves Tools intact and writes nothing", asy
   mockFetchEntries.mockRejectedValue(new ApiError(503, "sidebar unavailable"));
   renderSidebar("/", appClient());
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
+  await screen.findByRole("list", { name: "Work" });
   await settle();
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  expect(toolRows()).toHaveLength(TOOL_LABELS.length);
   expect(mockSetPinned).not.toHaveBeenCalled();
 });
 
@@ -595,8 +611,8 @@ test("an unresolved workspace slug issues no request, and still draws Tools", as
     </QueryClientProvider>,
   );
 
-  const tools = await screen.findByRole("list", { name: "Tools" });
-  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  await screen.findByRole("list", { name: "Work" });
+  expect(toolRows()).toHaveLength(TOOL_LABELS.length);
   expect(mockFetchEntries).not.toHaveBeenCalled();
   expect(mockFetchViews).not.toHaveBeenCalled();
 });
@@ -916,9 +932,10 @@ test("closing a view tab deletes the view, never its sidebar entry", async () =>
 // 472 AC4 — the current route marks its Tools entry, and no entry elsewhere.
 
 test("the built-in page for the current route carries aria-current", async () => {
-  await renderLoadedSidebar("/queue");
+  // Lanes is a tab of Machine (the Queue page it replaced has no rail entry).
+  await renderLoadedSidebar("/machine/lanes");
 
-  expect(screen.getByRole("link", { name: "Parallel Execution" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Machine" })).toHaveAttribute(
     "aria-current",
     "page",
   );

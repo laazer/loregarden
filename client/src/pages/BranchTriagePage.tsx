@@ -7,10 +7,17 @@ import { BranchTriageOverviewPanel } from "../components/BranchTriageOverviewPan
 import { BranchTriageList } from "../components/BranchTriageList";
 import { BranchCleanupModal } from "../components/BranchCleanupModal";
 import { PageTopbar } from "../components/TopbarPageSlot";
-import { fetchBranchTriage } from "../lib/branchTriageApi";
+import {
+  fetchBranchPullRequests,
+  fetchBranchTriage,
+  pullRequestStatusNote,
+  withPullRequests,
+} from "../lib/branchTriageApi";
+import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import "../components/BranchTriagePanel.css";
 import { AddToTabMenu } from "../components/AddToTabMenu";
+import { Button } from "../components/ui/Button";
 import { Select } from "../components/ui/Select";
 
 type BranchTriageTab = "triage" | "diff";
@@ -59,9 +66,29 @@ export function BranchTriagePage() {
     refetchOnWindowFocus: false,
   });
 
+  // Its own query, so the branch list paints from local git while GitHub
+  // answers; the server bounds the wait and says when the answer is partial.
+  const pullRequests = useQuery({
+    queryKey: ["branch-triage", activeSlug, "pull-requests"],
+    queryFn: () => fetchBranchPullRequests(activeSlug),
+    enabled: Boolean(activeSlug),
+    staleTime: BRANCH_TRIAGE_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
+
+  const branches = useMemo(
+    () => withPullRequests(triage.data?.branches ?? [], pullRequests.data),
+    [triage.data?.branches, pullRequests.data],
+  );
+
+  const prStatusNote = pullRequestStatusNote(pullRequests.data, {
+    loading: pullRequests.isLoading,
+    error: pullRequests.error ? describeError(pullRequests.error, "request failed") : null,
+  });
+
   const selectedBranchEntry = useMemo(
-    () => triage.data?.branches.find((item) => item.name === selectedBranch) ?? null,
-    [triage.data?.branches, selectedBranch],
+    () => branches.find((item) => item.name === selectedBranch) ?? null,
+    [branches, selectedBranch],
   );
 
   useEffect(() => {
@@ -95,33 +122,27 @@ export function BranchTriagePage() {
 
   return (
     <div className="screen-view">
-      <PageTopbar title="Branch cleanup">
+      <PageTopbar title="Branch Triage">
         {triage.data ? (
           <span className="topbar-page-note">
             {triage.data.issue_count} branch(es) need attention
           </span>
         ) : null}
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => triage.refetch()}
+        {triage.data && prStatusNote ? (
+          <span className="topbar-page-note" role="status" title={prStatusNote}>
+            {prStatusNote}
+          </span>
+        ) : null}
+        <Button
+          variant="secondary"
+          onClick={() => {
+            void triage.refetch();
+            void pullRequests.refetch();
+          }}
           disabled={!activeSlug || triage.isFetching}
         >
           {triage.isFetching ? "Scanning…" : "Rescan"}
-        </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => setCleanupOpen(true)}
-          disabled={!triage.data?.branches.length}
-          title={
-            triage.data?.branches.length
-              ? undefined
-              : "Scan a workspace repo before cleaning up branches"
-          }
-        >
-          Clean up merged
-        </button>
+        </Button>
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
           <Select
@@ -192,10 +213,11 @@ export function BranchTriagePage() {
             <div className="branch-triage-layout">
               <BranchTriageList
                 workspaceSlug={activeSlug}
-                branches={triage.data?.branches ?? []}
+                branches={branches}
                 selectedBranch={selectedBranch}
                 onSelectBranch={setSelectedBranch}
                 onReviewBranch={handleReviewBranch}
+                onCleanUp={() => setCleanupOpen(true)}
                 onBranchDeleted={(branch) => {
                   if (selectedBranch === branch) setSelectedBranch("");
                 }}
@@ -230,7 +252,8 @@ export function BranchTriagePage() {
         open={cleanupOpen}
         workspaceSlug={activeSlug}
         baseBranch={triage.data?.base_branch ?? "main"}
-        branches={triage.data?.branches ?? []}
+        branches={branches}
+        prStatusNote={prStatusNote}
         onClose={() => setCleanupOpen(false)}
         onBranchesDeleted={(deleted) => {
           if (selectedBranch && deleted.includes(selectedBranch)) setSelectedBranch("");

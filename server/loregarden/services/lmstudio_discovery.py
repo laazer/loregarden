@@ -1,4 +1,10 @@
-"""Discover chat models from a running LM Studio OpenAI-compatible server."""
+"""Discover chat models from a running LM Studio OpenAI-compatible server.
+
+An unreachable server is the normal case on a machine with no LM Studio, and it
+is also the one state whose copy has to name the URL that was asked — which the
+client cannot reconstruct from a workspace row. So the probe classifies what it
+caught rather than collapsing every failure into an empty list.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,12 @@ from dataclasses import dataclass
 
 import httpx
 from loregarden.config import settings
-from loregarden.services.discovery_cache import ProbeCache
+from loregarden.services.discovery_cache import (
+    ProbeAnswer,
+    ProbeCache,
+    ProbeOutcome,
+    clamp_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +43,7 @@ class LmStudioChatModel:
 
 
 _CACHE: ProbeCache[LmStudioChatModel] = ProbeCache(
+    label="lmstudio",
     probe_budget_seconds=PROBE_BUDGET_SECONDS,
     success_ttl_seconds=CACHE_TTL_SECONDS,
     failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
@@ -113,62 +125,93 @@ def reset_model_cache() -> None:
     _CACHE.reset()
 
 
-def list_lmstudio_chat_models(base_url: str = "") -> list[LmStudioChatModel]:
-    """Return chat models from LM Studio (prefer native API with load state).
+def list_lmstudio_chat_models(base_url: str = "") -> ProbeAnswer[LmStudioChatModel]:
+    """Chat models from LM Studio (native API first, for load state), and their state.
 
-    Memoized per server, and single-flighted: one caller probes while the rest
-    are served the last known list. This runs inside a request holding a
-    database connection, and an unreachable LM Studio costs both timeouts.
+    Memoized per server, single-flighted, and probed on a background thread: no
+    caller waits for the server, and an unreachable one costs both attempts.
     """
-    return _CACHE.get(
-        normalize_lmstudio_base_url(base_url),
-        lambda: _probe(base_url),
+    # A cold key has no outcome to read a target from, and the empty-state copy
+    # names the base URL, so the module answers for it.
+    target = normalize_lmstudio_base_url(base_url)
+    return _CACHE.get(target, lambda: _probe(base_url), target=target)
+
+
+def _fetch_models(base_url: str, target: str) -> ProbeOutcome[LmStudioChatModel]:
+    """One reachable-server answer, native API first so load state is known."""
+    native_url = _native_models_url(base_url)
+    openai_url = _openai_models_url(base_url)
+    with httpx.Client(timeout=DISCOVERY_TIMEOUT_SECONDS) as client:
+        try:
+            response = client.get(native_url)
+            response.raise_for_status()
+            return ProbeOutcome(found=_parse_native_models(response.json()), ok=True, target=target)
+        except Exception as native_exc:  # noqa: BLE001 — try OpenAI fallback
+            # silent-ok: /api/v0 is absent on older LM Studio builds; the
+            # OpenAI-compat fallback runs on the next line and `_probe`'s
+            # handlers classify and report it when that one fails too
+            logger.debug(
+                "LM Studio native discovery failed at %s: %s; trying %s",
+                native_url,
+                native_exc,
+                openai_url,
+            )
+            response = client.get(openai_url)
+            response.raise_for_status()
+            return ProbeOutcome(found=_parse_openai_models(response.json()), ok=True, target=target)
+
+
+def _probe(base_url: str) -> ProbeOutcome[LmStudioChatModel]:
+    """Ask LM Studio, and say which way it failed if it did.
+
+    The failure classes are separate `except` clauses rather than one handler
+    that inspects what it caught: the reason reaches the operator's field hint
+    verbatim, so "connection refused" and "timed out after 2s" are different
+    answers and only the fallthrough interpolates an exception at all.
+    """
+    target = normalize_lmstudio_base_url(base_url)
+    try:
+        return _fetch_models(base_url, target)
+    except httpx.TimeoutException as exc:
+        failure, reason = exc, f"timed out after {DISCOVERY_TIMEOUT_SECONDS:g}s"
+    except httpx.ConnectError as exc:
+        failure, reason = exc, "connection refused"
+    except httpx.HTTPStatusError as exc:
+        failure, reason = exc, f"HTTP {exc.response.status_code}"
+    except Exception as exc:  # noqa: BLE001 — reported below, never discarded
+        # An exception whose `str()` is empty still has to read as a sentence:
+        # `RuntimeError()` would otherwise render "… — ." as the whole
+        # explanation, in the one state that exists to explain itself.
+        failure, reason = exc, " ".join(str(exc).split()) or type(exc).__name__
+
+    logger.warning(
+        "LM Studio model discovery failed at %s; the picker falls back to "
+        "'Auto (first loaded chat model)': %s",
+        _openai_models_url(base_url),
+        failure,
+    )
+    return ProbeOutcome(
+        found=[],
+        ok=False,
+        detail=clamp_detail(f"Could not reach LM Studio at {target} — {reason}."),
+        target=target,
     )
 
 
-def _probe(base_url: str) -> list[LmStudioChatModel]:
-    native_url = _native_models_url(base_url)
-    openai_url = _openai_models_url(base_url)
-    try:
-        with httpx.Client(timeout=DISCOVERY_TIMEOUT_SECONDS) as client:
-            try:
-                response = client.get(native_url)
-                response.raise_for_status()
-                return _parse_native_models(response.json())
-            except Exception as native_exc:  # noqa: BLE001 — try OpenAI fallback
-                # silent-ok: /api/v0 is absent on older LM Studio builds; the
-                # OpenAI-compat fallback runs on the next line and the outer
-                # handler warns when that one fails too
-                logger.debug(
-                    "LM Studio native discovery failed at %s: %s; trying %s",
-                    native_url,
-                    native_exc,
-                    openai_url,
-                )
-                response = client.get(openai_url)
-                response.raise_for_status()
-                return _parse_openai_models(response.json())
-    except Exception as exc:  # noqa: BLE001 — discovery must never break Settings
-        logger.warning(
-            "LM Studio model discovery failed at %s; the picker falls back to "
-            "'Auto (first loaded chat model)': %s",
-            openai_url,
-            exc,
-        )
-        return []
-
-
 def list_lmstudio_chat_model_ids(base_url: str = "") -> list[str]:
-    """Return chat model ids from LM Studio, or [] if unreachable."""
-    return [model.id for model in list_lmstudio_chat_models(base_url)]
+    """Chat model ids from LM Studio, or [] if it had nothing or was unreachable."""
+    return [model.id for model in list_lmstudio_chat_models(base_url).found]
 
 
-def lmstudio_model_options(base_url: str = "") -> list[dict[str, str]]:
-    """Runtime-options shaped list for the LM Studio model picker."""
+def lmstudio_model_options(
+    base_url: str = "",
+) -> tuple[list[dict[str, str]], dict[str, object]]:
+    """Runtime-options shaped list for the LM Studio model picker, and its state."""
+    answer = list_lmstudio_chat_models(base_url)
     options: list[dict[str, str]] = [
         {"id": "", "label": "Auto (first loaded chat model)"},
     ]
-    for model in list_lmstudio_chat_models(base_url):
+    for model in answer.found:
         suffix = "loaded" if model.loaded else "not loaded"
         options.append({"id": model.id, "label": f"{model.id} · {suffix}"})
-    return options
+    return options, answer.as_discovery_block()

@@ -1,12 +1,17 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { Approval } from "../../api/chatTypes";
 import type { TicketStatusSummary } from "../../api/types";
 import type { WorkspacePullRequests, WorkspaceRemote } from "../../api/workspaceDashboardApi";
 import { pathForPage } from "../../lib/appNavigation";
-import { fetchBranchTriage } from "../../lib/branchTriageApi";
+import {
+  fetchBranchPullRequests,
+  fetchBranchTriage,
+  pullRequestStatusNote,
+  withPullRequests,
+} from "../../lib/branchTriageApi";
 import { standingSentence } from "../../lib/workspaceDashboard";
 import { describeError } from "../../state/toastStore";
 import { useUiStore } from "../../state/uiStore";
@@ -19,6 +24,8 @@ interface WorkspaceHeaderProps {
   remote: UseQueryResult<WorkspaceRemote>;
   summary: UseQueryResult<TicketStatusSummary>;
   approvals: UseQueryResult<Approval[]>;
+  /** Blocked tickets a person or an agent has to clear; undefined while loading. */
+  blockedNeedingAction: number | undefined;
   pullRequests: UseQueryResult<WorkspacePullRequests>;
 }
 
@@ -44,6 +51,7 @@ export function WorkspaceHeader({
   remote,
   summary,
   approvals,
+  blockedNeedingAction,
   pullRequests,
 }: WorkspaceHeaderProps) {
   const navigate = useNavigate();
@@ -57,6 +65,21 @@ export function WorkspaceHeader({
     enabled: cleanupRequested,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
+  });
+  const branchPrs = useQuery({
+    queryKey: ["branch-triage", workspaceSlug, "pull-requests"],
+    queryFn: () => fetchBranchPullRequests(workspaceSlug),
+    enabled: cleanupRequested,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const cleanupBranches = useMemo(
+    () => withPullRequests(triage.data?.branches ?? [], branchPrs.data),
+    [triage.data?.branches, branchPrs.data],
+  );
+  const cleanupPrNote = pullRequestStatusNote(branchPrs.data, {
+    loading: branchPrs.isLoading,
+    error: branchPrs.error ? describeError(branchPrs.error, "request failed") : null,
   });
   const cleanupOpen = cleanupRequested && triage.isSuccess;
   const scanning = cleanupRequested && triage.isFetching && !triage.isSuccess;
@@ -107,7 +130,7 @@ export function WorkspaceHeader({
           <p className="wsd-standing">
             {standingSentence({
               approvals: approvals.data?.length,
-              blocked: counts?.blocked,
+              blocked: blockedNeedingAction,
               pullRequests: prs,
             })}
           </p>
@@ -188,7 +211,8 @@ export function WorkspaceHeader({
         open={cleanupOpen}
         workspaceSlug={workspaceSlug}
         baseBranch={triage.data?.base_branch ?? "main"}
-        branches={triage.data?.branches ?? []}
+        branches={cleanupBranches}
+        prStatusNote={cleanupPrNote}
         onClose={() => setCleanupRequested(false)}
       />
     </>

@@ -1,0 +1,153 @@
+/* Linked tickets: how each is tied to this one, and where it stands. */
+.tlk {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  padding: 12px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tlk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 6px;
+}
+
+.tlk-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.tlk-count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.tlk-holding {
+  font-size: var(--fs-micro);
+  color: var(--amb);
+}
+
+.tlk-add {
+  margin-left: auto;
+}
+
+.tlk-empty {
+  margin: 0;
+  padding: 0 6px 6px;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.tlk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tlk-row {
+  display: grid;
+  /* The title reads first; the id gets a line of its own, since its tail
+     (the number) is what tells two tickets of one feature apart. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "rel name name"
+    "id id chip";
+  align-items: center;
+  gap: 3px 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.tlk-row:hover {
+  background: var(--bg2);
+}
+
+.tlk-row:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.tlk-rel {
+  grid-area: rel;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--txm);
+  background: var(--bg2);
+}
+
+.tlk-rel--waiting {
+  color: var(--amb);
+  background: color-mix(in srgb, var(--amb) 14%, transparent);
+}
+
+.tlk-rel--blocks {
+  color: var(--vil);
+  background: color-mix(in srgb, var(--vil) 14%, transparent);
+}
+
+.tlk-rel--parent {
+  color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+}
+
+.tlk-rel--depends,
+.tlk-rel--related {
+  color: var(--txm);
+}
+
+.tlk-id {
+  grid-area: id;
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.tlk-id-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tlk-id-tail {
+  flex: none;
+}
+
+.tlk-chip {
+  grid-area: chip;
+}
+
+.tlk-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+}
+
+.tlk-more {
+  align-self: flex-start;
+  margin: 2px 8px 4px;
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}

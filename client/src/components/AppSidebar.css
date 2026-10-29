@@ -5,7 +5,7 @@
  * `.app-sidebar` itself a width that expansion changes.
  *
  * **The sections scroll, the panel does not.** Each of the three lists is its
- * own scroll container, so a long Tabs list cannot push Pinned Tabs or Tools out
+ * own scroll container, so a long Tabs list cannot push Pinned Tabs or the pages out
  * of view, and none of them can push the footer off the bottom — the footer
  * holds the controls a user would reach for to fix exactly that. Giving the
  * panel `overflow-y: auto` instead puts all three lists *and* the footer in one
@@ -131,7 +131,7 @@
 
 /*
  * As tall as the topbar less its border, with the panel's 4px gap cancelled,
- * so the Tools separator below lands on the same line as the topbar's bottom
+ * so the first group's separator below lands on the same line as the topbar's bottom
  * border.
  */
 .app-sidebar-brand {
@@ -144,7 +144,8 @@
   margin-bottom: -4px;
 }
 
-.app-sidebar-brand + .app-sidebar-section > .app-sidebar-section-head {
+.app-sidebar-brand + .app-sidebar-section > .app-sidebar-section-head,
+.app-sidebar-brand + .app-sidebar-pages > .app-sidebar-section:first-child > .app-sidebar-section-head {
   margin-top: 0;
 }
 
@@ -190,7 +191,7 @@
 
 /* Collapsed, the border above is the whole section header. */
 .app-sidebar-section-title {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -305,6 +306,7 @@
 }
 
 .app-sidebar-icon {
+  position: relative;
   flex: none;
   width: 30px;
   display: flex;
@@ -315,7 +317,7 @@
 .app-sidebar-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,7 +325,7 @@
 
 .app-sidebar-kind {
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txl);
@@ -421,7 +423,7 @@
   background: var(--bg0);
   color: var(--tx);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .app-sidebar-spacer {
@@ -502,7 +504,7 @@
   border-radius: 7px;
   background: transparent;
   color: var(--txm);
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -571,17 +573,33 @@
  * Running: a status dot where the other sections draw an icon, so a collapsed
  * rail still shows how many slots are busy and whether each is moving.
  */
-.app-sidebar-run-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+/* A running ticket's stage ring: the track, the stages settled, and while the
+   run is live a short arc turning around it. */
+.app-sidebar-ring {
+  flex: none;
+  display: block;
 }
 
-.app-sidebar-run-dot.is-live {
-  animation: app-sidebar-run-pulse 1.8s ease-in-out infinite;
+.app-sidebar-ring-track {
+  stroke: var(--bd2);
 }
 
-@keyframes app-sidebar-run-pulse {
+/* The settled share of the stages, drawn from twelve o'clock. */
+.app-sidebar-ring-progress {
+  fill: none;
+}
+
+.app-sidebar-ring-track.is-unknown {
+  stroke-dasharray: 2 2.4;
+}
+
+/* A live run's dot breathes; the ring itself stays still, since how closed it
+   is is the progress. */
+.app-sidebar-ring-live {
+  animation: app-sidebar-ring-breathe 2s ease-in-out infinite;
+}
+
+@keyframes app-sidebar-ring-breathe {
   0%,
   100% {
     opacity: 1;
@@ -592,21 +610,175 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-sidebar-run-dot.is-live {
+  .app-sidebar-ring-live {
     animation: none;
   }
 }
 
+.app-sidebar-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .app-sidebar-count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
 /* Empty and error lines: words, not a control, so no row hover. */
 .app-sidebar-note {
   padding: 6px 6px 4px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   color: var(--txl);
+}
+
+/*
+ * **Docked: the labelled rail.** The rail's own box takes the panel's width, so
+ * the page sits beside it rather than under it, and the panel stops being an
+ * overlay: no cut-outs around the bars (nothing of it overlaps them), and no
+ * lift shadow (it is not lying over anything). Rows tighten to 32px, because a
+ * labelled row does not need the 42px target an icon-only one does, and
+ * thirteen pages plus the tab sections have to share one window height.
+ *
+ * The width changes in one step when the operator folds or opens it: the page
+ * beside it has to reflow either way, and animating a layout width is what the
+ * motion rules forbid.
+ */
+.app-sidebar[data-docked="true"] {
+  width: 196px;
+  filter: none;
+}
+
+.app-sidebar[data-docked="true"] .app-sidebar-panel {
+  width: 196px;
+  clip-path: none;
+  transition: none;
+}
+
+.app-sidebar[data-docked="true"] .app-sidebar-link {
+  height: 32px;
+  border-radius: 8px;
+}
+
+.app-sidebar[data-docked="true"] .app-sidebar-row {
+  border-radius: 8px;
+}
+
+.app-sidebar[data-docked="true"] .app-sidebar-bar {
+  top: 7px;
+  bottom: 7px;
+}
+
+.app-sidebar[data-docked="true"] .app-sidebar-footer-btn {
+  height: 32px;
+  border-radius: 8px;
+}
+
+/*
+ * Folded, the rule above each group is all that marks where one ends. Open, the
+ * group names do that, so only the line above the first group (under the brand)
+ * and above the tab sections stays.
+ */
+.app-sidebar[data-docked="true"] .app-sidebar-section--group + .app-sidebar-section--group > .app-sidebar-section-head {
+  border-top-color: transparent;
+  margin-top: 2px;
+}
+
+/*
+ * **The pages give up height last.** The three groups sit in one scroll window
+ * (`.app-sidebar-pages`) and keep their full height inside it, and the tab
+ * sections below shrink a thousand times faster, so a crowded rail squeezes
+ * the user's tab lists (which scroll) long before it touches the app's own
+ * navigation. Only a window too short for the pages alone scrolls them, and
+ * then as one list. Left to share the squeeze in proportion, each group
+ * clipped into a scroll window of its own, hiding Initiatives and Memory
+ * behind a scroll on a 900px screen.
+ *
+ * The gutter trick is `.app-sidebar-list`'s: pulled out and padded back in, so
+ * the active-route bar at `left: -8px` is inside the scroller, not clipped by it.
+ */
+.app-sidebar-pages {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.app-sidebar-section--group {
+  flex: none;
+}
+
+.app-sidebar-panel > .app-sidebar-section {
+  flex-shrink: 1000;
+  /* Never squeezed out of sight: the heading always shows, and a section with
+     rows keeps the top of its first one, which is also the cue that it scrolls. */
+  min-height: 26px;
+}
+
+.app-sidebar-panel > .app-sidebar-section:has(li) {
+  min-height: 52px;
+}
+
+
+/*
+ * Pin tab and New tab share 180px open, so the icon box tightens to its glyph
+ * and both names fit whole rather than as "Pin t…" and "New t…".
+ */
+.app-sidebar[data-docked="true"] .app-sidebar-footer-controls .app-sidebar-icon {
+  width: 18px;
+}
+
+/*
+ * The dock toggle is an icon beside Settings. Open, it keeps its own 32px and
+ * Settings takes the rest of the row; folded, the pair rule above halves the
+ * 44px column between the two icons, as it does for Pin and New tab.
+ */
+.app-sidebar[data-docked="true"] .app-sidebar-footer-controls .app-sidebar-dock-toggle {
+  flex: none;
+  width: 32px;
+  justify-content: center;
+}
+
+/* A page's live count: data, so mono and tabular; violet when it is people waiting on you. */
+/* A badge on the icon's top-right corner, drawn whether the rail is folded or not. */
+.app-sidebar-page-count {
+  position: absolute;
+  top: -5px;
+  right: -2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--bg1);
+  border-radius: 8px;
+  background: var(--bg4);
+  color: var(--tx);
+  font: 600 var(--fs-micro) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.app-sidebar-page-count--you {
+  background: color-mix(in srgb, var(--vio) 55%, var(--bg1));
+  color: var(--tx);
+}
+
+.app-sidebar-page-count--warn {
+  background: var(--amb);
+  color: var(--bg0);
 }

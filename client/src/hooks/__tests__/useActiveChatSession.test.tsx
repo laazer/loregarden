@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
-import { useActiveChatSession } from "../useActiveChatSession";
+import { ticketContext, useActiveChatSession } from "../useActiveChatSession";
 import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../../lib/dockChatPrompts";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
 import { useTicketRefStore } from "../../state/ticketRefStore";
@@ -17,6 +17,14 @@ jest.mock("../../api/client", () => ({
   api: {
     triage: jest.fn().mockResolvedValue({ messages: [], run_status: "idle" }),
     approvals: jest.fn().mockResolvedValue([]),
+    ticket: jest.fn().mockResolvedValue({
+      external_id: "lg-external-harness-1413",
+      workflow_stage_key: "test-design",
+      branch: "",
+    }),
+    initiatives: jest.fn().mockResolvedValue([
+      { id: "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb", external_id: "init-tinkercg-build-1" },
+    ]),
     sendTriageMessage: jest.fn().mockResolvedValue({}),
     workspaces: jest.fn().mockResolvedValue([{ slug: "loregarden", name: "Loregarden" }]),
     baxterChatSession: jest.fn().mockResolvedValue({
@@ -86,14 +94,34 @@ beforeEach(() => {
   });
 });
 
-it("binds to the ticket named in the path", () => {
+it("binds to the ticket named in the path, and names its id and stage", async () => {
   const { result } = renderHook(() => useActiveChatSession(), {
     wrapper: wrapperFor("/tickets/41aac2d7-26a6-4f0b-988a-fc220d8dfa6c/diff"),
   });
 
   expect(result.current.session?.kind).toBe("ticket-triage");
   expect(result.current.session?.id).toBe("41aac2d7-26a6-4f0b-988a-fc220d8dfa6c");
-  expect(result.current.label).toBe("Ticket triage");
+  // Baxter answers here too; the context line says which run he is reading.
+  expect(result.current.assistantLabel).toBe("Baxter");
+  await waitFor(() => expect(result.current.label).toBe("lg-external-harness-1413 · test-design"));
+  // A ticket's thread has no page of its own to open full-size.
+  expect(result.current.maximisePath).toBeNull();
+});
+
+describe("ticketContext", () => {
+  it("is the id and the stage", () => {
+    expect(ticketContext({ external_id: "lg-a-1", workflow_stage_key: "implement" })).toBe(
+      "lg-a-1 · implement",
+    );
+  });
+
+  it("is the id alone on a ticket with no stage", () => {
+    expect(ticketContext({ external_id: "lg-a-1", workflow_stage_key: "" })).toBe("lg-a-1");
+  });
+
+  it("is empty until the ticket loads", () => {
+    expect(ticketContext(undefined)).toBe("");
+  });
 });
 
 it("reads the ticket from the path, not from route params", () => {
@@ -125,7 +153,7 @@ it("binds to the branch conversation on the branch-triage screen", () => {
   });
 
   expect(result.current.session?.kind).toBe("branch-triage");
-  expect(result.current.label).toBe("Branch · feat/x");
+  expect(result.current.label).toBe("loregarden · feat/x");
 });
 
 it("binds to nothing when the branch screen has no branch selected", () => {
@@ -144,7 +172,9 @@ it("falls back to the workspace Baxter thread on a screen that owns no conversat
   });
 
   expect(result.current.session?.kind).toBe("baxter-home");
-  expect(result.current.label).toBe("Baxter · loregarden");
+  expect(result.current.label).toBe("loregarden");
+  // The same thread `/chat` shows, so the dock can open it full-page.
+  expect(result.current.maximisePath).toBe("/chat");
 });
 
 it("falls back to Baxter on the queue screen too", () => {
@@ -175,18 +205,7 @@ it("binds to nothing on Home, whose hero is the way into the same thread", () =>
   expect(result.current.composedOnScreen).toBe(true);
 });
 
-it("binds to nothing on an initiative plan page, whose planner chat composes for itself", () => {
-  const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
-  });
-
-  expect(result.current.session).toBeNull();
-  expect(result.current.composedOnScreen).toBe(true);
-  // No Baxter archive: the conversation on that page is the planner's.
-  expect(result.current.archive).toBeNull();
-});
-
-it("binds the planner's model, not Baxter's, on an initiative plan page", async () => {
+it("binds the planner as Baxter's plan mode on an initiative plan page, and offers the switch", async () => {
   const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
   useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
   try {
@@ -194,22 +213,35 @@ it("binds the planner's model, not Baxter's, on an initiative plan page", async 
       wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
     });
 
+    // The bar composes for the planner: the page no longer draws a chat.
+    expect(result.current.composedOnScreen).toBe(false);
+    expect(result.current.session?.kind).toBe("initiative-planner");
+    // One assistant: the planner is a mode of Baxter, not a second name.
+    expect(result.current.assistantLabel).toBe("Baxter");
+    expect(result.current.agents?.options.map((o) => o.label)).toEqual(["Plan", "Triage"]);
+    expect(result.current.maximisePath).toBeNull();
+    expect(result.current.promptKind).toBe(INITIATIVE_PLANNING);
+    expect(result.current.agents?.active).toBe("planner");
+    expect(result.current.agents?.options.map((o) => o.id)).toEqual(["planner", "baxter"]);
+    // No archive: the planner keeps one conversation per initiative.
+    expect(result.current.archive).toBeNull();
+
     await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
-    expect(result.current.model?.scopeLabel).toBe("Initiative planner");
+    expect(result.current.model?.scopeLabel).toBe("Baxter · plan");
+    await waitFor(() => expect(result.current.label).toBe("init-tinkercg-build-1"));
     // Options come from the workspace the planner runs in, not the chat workspace.
     expect(result.current.model?.workspaceSlug).toBe("tinkercg");
     // By the UUID the page uses: the planner endpoint 404s on the shareable ref.
     expect(api.plannerChat).toHaveBeenCalledWith(uuid);
-    // The bar suggests planning questions, sendable once the plan has a milestone.
-    expect(result.current.screenPrompts?.kind).toBe(INITIATIVE_PLANNING);
-    await waitFor(() => expect(result.current.screenPrompts?.unavailable).toBe(false));
     expect(api.plannerChat).not.toHaveBeenCalledWith("init-tinkercg-build-1");
+    await waitFor(() => expect(api.initiativePlan).toHaveBeenCalledWith(uuid));
+    expect(result.current.composerBlocked).toBeNull();
   } finally {
     useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
   }
 });
 
-it("holds the planner's suggestions while the initiative has no milestone to schedule", async () => {
+it("blocks the planner's composer, saying why, while the initiative has no milestone", async () => {
   const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
   useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
   (api.initiativePlan as jest.Mock).mockResolvedValueOnce({ milestones: [] });
@@ -218,28 +250,31 @@ it("holds the planner's suggestions while the initiative has no milestone to sch
       wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
     });
 
-    await waitFor(() => expect(api.initiativePlan).toHaveBeenCalledWith(uuid));
-    await waitFor(() => expect(result.current.model?.runtime.claude_model).toBe("opus"));
-    expect(result.current.screenPrompts?.unavailable).toBe(true);
+    await waitFor(() => expect(result.current.composerBlocked).toMatch(/milestone/));
   } finally {
     useTicketRefStore.setState({ uuidByRef: {}, refByUuid: {} });
   }
 });
 
-it("binds Baxter's model on an initiative plan page when the panel shows Baxter", async () => {
+it("binds Baxter's initiative thread when the operator switches to Baxter", async () => {
   const uuid = "6402cb6c-1d41-459f-af5e-8ad1c4dab5fb";
   useTicketRefStore.setState({ uuidByRef: { "init-tinkercg-build-1": uuid }, refByUuid: {} });
-  useInitiativeAgentStore.setState({ agent: "baxter", baxterSessionByInitiative: { [uuid]: "bx1" } });
+  useInitiativeAgentStore.setState({ agent: "planner", baxterSessionByInitiative: { [uuid]: "bx1" } });
   try {
     const { result } = renderHook(() => useActiveChatSession(), {
       wrapper: wrapperFor("/initiatives/init-tinkercg-build-1"),
     });
 
-    expect(result.current.composedOnScreen).toBe(true);
-    expect(result.current.session).toBeNull();
-    expect(result.current.model?.scopeLabel).toBe("Baxter · initiative");
-    expect(result.current.screenPrompts?.kind).toBe(INITIATIVE_TRIAGE);
-    // The thread the panel shows: filed under the UUID, read in the initiative's scope.
+    act(() => result.current.agents?.select("baxter"));
+
+    expect(useInitiativeAgentStore.getState().agent).toBe("baxter");
+    expect(result.current.session?.kind).toBe("baxter-home");
+    expect(result.current.assistantLabel).toBe("Baxter");
+    expect(result.current.model?.scopeLabel).toBe("Baxter · initiative triage");
+    expect(result.current.promptKind).toBe(INITIATIVE_TRIAGE);
+    // Its own archive, in the initiative's scope rather than the workspace's.
+    expect(result.current.archive?.scope).toBe(`@initiative:${uuid}`);
+    // The thread filed under the UUID, read in the initiative's scope.
     await waitFor(() => expect(api.baxterChatSession).toHaveBeenCalledWith(`@initiative:${uuid}`, "bx1"));
   } finally {
     useInitiativeAgentStore.setState({ agent: "planner", baxterSessionByInitiative: {} });
@@ -254,10 +289,10 @@ it("asks for no planner conversation until the initiative's shareable id resolve
     wrapper: wrapperFor("/initiatives/init-pre-tinkercg-3"),
   });
 
-  // Still the planner's page: Baxter's composer stays off it.
-  expect(result.current.composedOnScreen).toBe(true);
-  // Nothing to send to until the id resolves.
-  expect(result.current.screenPrompts?.unavailable).toBe(true);
+  // Still the planner's page: the workspace Baxter thread stays off it, and
+  // there is nothing to send to until the id resolves.
+  expect(result.current.session).toBeNull();
+  expect(result.current.agents?.active).toBe("planner");
   expect(api.plannerChat).not.toHaveBeenCalled();
 });
 

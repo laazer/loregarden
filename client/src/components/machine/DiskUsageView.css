@@ -1,0 +1,652 @@
+.disk-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 22px 24px;
+}
+
+.disk-view--message {
+  align-items: flex-start;
+  padding-top: 12px;
+}
+
+.disk-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- head: the volume and the scan ------------------------------------------ */
+
+.disk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.disk-volume {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.disk-volume-free {
+  margin: 4px 0 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.disk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.disk-scan-state {
+  margin: 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.disk-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg1);
+  color: var(--txm);
+  font-size: var(--fs-small);
+  list-style: none;
+}
+
+.disk-notice.is-error {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd));
+  color: var(--tx);
+}
+
+.disk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 560px;
+  padding: 28px 0;
+}
+
+.disk-empty h2 {
+  margin: 0;
+  font-size: var(--fs-lead);
+}
+
+.disk-empty p {
+  margin: 0;
+  color: var(--txm);
+  line-height: 1.5;
+}
+
+/* --- breadcrumbs ---------------------------------------------------------- */
+
+.disk-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-body);
+}
+
+.disk-crumbs li + li::before {
+  content: "/";
+  margin-right: 6px;
+  color: var(--txl);
+}
+
+.disk-crumbs [aria-current] {
+  font-weight: 600;
+}
+
+.disk-crumb {
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  cursor: pointer;
+}
+
+.disk-crumb:hover,
+.disk-crumb:focus-visible {
+  text-decoration: underline;
+}
+
+/* --- map and table side by side ------------------------------------------------ */
+
+.disk-main {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
+  .disk-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.disk-map-pane,
+.disk-table-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.disk-treemap {
+  position: relative;
+  height: clamp(280px, 52vh, 560px);
+  overflow: hidden;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg1);
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.disk-treemap.is-dimmed {
+  opacity: 0.55;
+}
+
+.disk-tile {
+  --kind: var(--txl);
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--kind) 55%, var(--bg0));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--kind) 28%, var(--bg1));
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+
+.disk-tile.is-group {
+  background: color-mix(in srgb, var(--kind) 12%, var(--bg1));
+}
+
+.disk-tile.is-leaf {
+  cursor: default;
+}
+
+.disk-tile:hover {
+  background: color-mix(in srgb, var(--kind) 42%, var(--bg1));
+}
+
+.disk-tile.is-group:hover {
+  background: color-mix(in srgb, var(--kind) 20%, var(--bg1));
+}
+
+.disk-tile:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.disk-tile.is-selected {
+  border: 2px solid var(--ac);
+  box-shadow: inset 0 0 0 1px var(--bg0);
+}
+
+.disk-tile-label {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.disk-tile:not(.is-group) .disk-tile-label {
+  flex-direction: column;
+  gap: 0;
+}
+
+.disk-tile-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-tile-size {
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* One hue per kind: the tile, the legend swatch and the table tag share it. */
+.disk-tile--worktree {
+  --kind: var(--grn);
+}
+
+.disk-tile--dependencies {
+  --kind: var(--blue);
+}
+
+.disk-tile--build_output {
+  --kind: var(--vio);
+}
+
+.disk-tile--cache {
+  --kind: var(--amb);
+}
+
+.disk-tile--git_store {
+  --kind: var(--red);
+}
+
+.disk-tile--loregarden_data {
+  --kind: var(--ac);
+}
+
+.disk-tile--workspace,
+.disk-tile--directory {
+  --kind: var(--txl);
+}
+
+.disk-tile--file {
+  --kind: var(--bd2);
+}
+
+.disk-tile--other {
+  --kind: var(--bd);
+}
+
+.disk-readout {
+  min-height: 1.4em;
+  margin: 0;
+  overflow: hidden;
+  color: var(--txm);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  color: var(--txm);
+  font-size: var(--fs-micro);
+  list-style: none;
+}
+
+.disk-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.disk-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--kind) 55%, var(--bg0));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--kind) 45%, var(--bg1));
+}
+
+/* --- entries table ------------------------------------------------------------ */
+
+.disk-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.disk-entries-scroll {
+  max-height: clamp(280px, 58vh, 620px);
+  overflow: auto;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+}
+
+.disk-entries-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.disk-entries-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg2);
+  color: var(--txm);
+  font-weight: 500;
+  text-align: left;
+}
+
+.disk-entries-table th,
+.disk-entries-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+.disk-entries-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--ac) 10%, transparent);
+}
+
+.disk-entries-table tbody th {
+  font-weight: 400;
+  text-align: left;
+}
+
+.disk-col-select {
+  width: 28px;
+}
+
+.disk-col-name {
+  max-width: 0;
+  width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.disk-entries-table thead .disk-col-num {
+  text-align: right;
+}
+
+.disk-sort {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.disk-open {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.disk-open:hover,
+.disk-open:focus-visible {
+  text-decoration: underline;
+}
+
+.disk-kind {
+  --kind: var(--txl);
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kind) 22%, transparent);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.disk-kind--worktree {
+  --kind: var(--grn);
+}
+
+.disk-kind--dependencies {
+  --kind: var(--blue);
+}
+
+.disk-kind--build_output {
+  --kind: var(--vio);
+}
+
+.disk-kind--cache {
+  --kind: var(--amb);
+}
+
+.disk-kind--git_store {
+  --kind: var(--red);
+}
+
+.disk-kind--loregarden_data {
+  --kind: var(--ac);
+}
+
+.disk-candidate {
+  margin-left: 6px;
+  color: var(--grn);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.disk-entries-empty,
+.disk-entries-none,
+.disk-history-empty {
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+/* --- marked-for-cleanup bar -------------------------------------------------------- */
+
+.disk-selection {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: auto;
+  padding: 10px 14px;
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  background: var(--bg2);
+  box-shadow: var(--shadow);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.disk-selection > span {
+  margin-right: auto;
+}
+
+/* --- history ------------------------------------------------------------------------- */
+
+.disk-history > summary {
+  color: var(--txm);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.disk-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+}
+
+.disk-history-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.disk-outcome.is-trashed {
+  color: var(--grn);
+}
+
+.disk-outcome.is-refused {
+  color: var(--amb);
+}
+
+.disk-outcome.is-failed {
+  color: var(--red);
+}
+
+/* --- modals -------------------------------------------------------------------------- */
+
+.disk-cleanup-body section + section {
+  margin-top: 14px;
+}
+
+.disk-cleanup-body h3,
+.disk-folders-body h3 {
+  margin: 0 0 6px;
+  font-size: var(--fs-body);
+}
+
+.disk-cleanup-list,
+.disk-folders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.disk-cleanup-item {
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+}
+
+.disk-cleanup-item.is-refused,
+.disk-cleanup-item.is-failed {
+  border-color: color-mix(in srgb, var(--amb) 40%, var(--bd));
+}
+
+.disk-cleanup-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-small);
+}
+
+.disk-cleanup-path,
+.disk-folders-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.disk-cleanup-size {
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.disk-cleanup-note {
+  margin: 4px 0 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.disk-cleanup-checking,
+.disk-cleanup-summary {
+  margin: 0 0 10px;
+  font-size: var(--fs-body);
+}
+
+.disk-cleanup-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.disk-folders-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.disk-folders-body section + section {
+  margin-top: 16px;
+}
+
+.disk-folders-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.disk-folders-field {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-small);
+}
+
+.disk-folders-empty {
+  margin: 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.disk-folders-error {
+  margin: 6px 0 0;
+  color: var(--red);
+  font-size: var(--fs-small);
+}
+
+.disk-treemap-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.disk-browse {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.disk-find {
+  max-width: 320px;
+}
+
+.disk-tile.is-unmatched {
+  opacity: 0.25;
+}
+
+.disk-leaf-name {
+  color: var(--tx);
+}

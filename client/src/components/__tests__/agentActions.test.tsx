@@ -66,7 +66,7 @@ beforeEach(() => {
 });
 
 it("offers navigation everywhere, and ticket writes only on a ticket route", async () => {
-  const { unmount } = renderAt("/queue");
+  const { unmount } = renderAt("/machine/lanes");
   expect(uiActionRegistry.available()).toEqual(["navigate.page", "ticket.open", "workspace.set_runtime"]);
   unmount();
 
@@ -78,8 +78,9 @@ it("offers navigation everywhere, and ticket writes only on a ticket route", asy
 
 it("navigates to a page and to a ticket", async () => {
   const view = renderAt("/");
+  // `queue` stays a page an agent can name; it opens Machine's Lanes tab.
   await act(() => uiActionRegistry.run("navigate.page", { page: "queue" }));
-  await waitFor(() => expect(location).toBe("/queue"));
+  await waitFor(() => expect(location).toBe("/machine/lanes"));
   await act(() => uiActionRegistry.run("ticket.open", { ticket_id: "lg-open-1" }));
   await waitFor(() => expect(location).toBe("/tickets/lg-open-1/timeline"));
   view.unmount();

@@ -757,3 +757,72 @@ def test_a_canvas_waiver_naming_its_dom_controls_clears_it(repo: Path):
     )
     result = _run(repo)
     assert result.returncode == 0, _findings(result)
+
+
+# --------------------------------------------------------------------------- #
+# 9. forms and import flows open in a modal
+# --------------------------------------------------------------------------- #
+
+_TWO_FIELD_FORM = (
+    '<form onSubmit={save}><label htmlFor="a">A</label><Input id="a" />'
+    '<label htmlFor="b">B</label><Textarea id="b" /><Button type="submit" variant="primary">Save</Button></form>'
+)
+
+
+def test_a_multi_field_form_on_the_page_is_reported(repo: Path):
+    _write(repo, "A.tsx", f"export const A = () => {_TWO_FIELD_FORM};\n")
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "a form with 2 fields is laid out on the page" in _findings(result)
+
+
+def test_the_same_form_in_a_modal_passes(repo: Path):
+    body = (
+        'import { ModalShell } from "./ui/ModalShell";\n'
+        'export const A = () => <ModalShell open onDismiss={close} labelledBy="t">'
+        f'<h2 id="t">Edit</h2>{_TWO_FIELD_FORM}</ModalShell>;\n'
+    )
+    _write(repo, "A.tsx", body)
+    assert _run(repo).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        '<form onSubmit={send}><label htmlFor="m">Message</label><Textarea id="m" /></form>',
+        '<form role="search"><label htmlFor="q">Q</label><Input id="q" /><label htmlFor="w">W</label><Select id="w" /></form>',
+        '<form onSubmit={go}><Input type="hidden" name="x" /><label htmlFor="q">Q</label><Input id="q" /></form>',
+    ],
+    ids=["single-field-composer", "role-search", "hidden-is-not-a-field"],
+)
+def test_a_single_field_or_search_form_stays_inline(repo: Path, form: str):
+    _write(repo, "A.tsx", f"export const A = () => {form};\n")
+    assert _run(repo).returncode == 0
+
+
+_PICKER = (
+    'export const A = () => <><label htmlFor="f">File</label><Input id="f" type="file" /></>;\n'
+)
+
+
+def test_a_file_picker_in_an_import_component_is_an_import_flow_to_move_into_a_modal(repo: Path):
+    _write(repo, "ImportTickets.tsx", _PICKER)
+    result = _run(repo)
+    assert result.returncode == 1
+    assert "a file picker (an import flow)" in _findings(result)
+
+
+def test_an_attachment_picker_elsewhere_is_not_an_import_flow(repo: Path):
+    """A composer's attach button is the drop zone's keyboard way in (check 7)."""
+    _write(repo, "Composer.tsx", _PICKER)
+    assert _run(repo).returncode == 0
+
+
+def test_an_inline_form_can_be_waived_with_a_reason(repo: Path):
+    _write(
+        repo,
+        "A.tsx",
+        "export const A = () => (\n  // ux-ok: the settings pane is itself the editor; a modal over it would hide what it edits\n"
+        f"  {_TWO_FIELD_FORM}\n);\n",
+    )
+    assert _run(repo).returncode == 0

@@ -1,18 +1,53 @@
+import type { ReactNode } from "react";
+
+import type {
+  ChatBranch,
+  ChatFocus,
+  FeatureLoop,
+  FeatureLoopStartRequest,
+} from "../../api/chatWorkbenchTypes";
 import { useDialogDismiss } from "../../hooks/useDialogDismiss";
 import { Button } from "../ui/Button";
 import { ChatPromptRow } from "./ChatPromptRow";
 import { primitiveKindLabel, type PrimitiveHistoryEntry } from "./primitiveHistory";
+import { ChangesCard } from "./workbench/ChangesCard";
+import { FeatureCard } from "./workbench/FeatureCard";
+import { ScopeCard } from "./workbench/ScopeCard";
+import { WorkbenchCard } from "./workbench/WorkbenchCard";
 import "./ChatSideCard.css";
 
+/** The workbench's view of the thread: what each side card reads. */
+export interface ChatWorkbenchState {
+  focus: ChatFocus;
+  isGlobal: boolean;
+  /** The checkout turns run in; null until the thread exists. */
+  hostSlug: string | null;
+  feature: FeatureLoop | null;
+  chatBranch: ChatBranch | null;
+  /** Where a new feature ticket may live, and the one picked by default. */
+  loopWorkspaces: string[];
+  defaultLoopWorkspace: string;
+  savingFocus: boolean;
+  startingLoop: boolean;
+  /** A criterion decision or add is in flight. */
+  decidingCriteria: boolean;
+  onSaveFocus: (body: { workspace_slugs: string[]; initiative_ids: string[] }) => Promise<unknown>;
+  onStartLoop: (body: FeatureLoopStartRequest) => Promise<unknown>;
+  onDecideCriteria: (ids: string[], accept: boolean) => void;
+  onAddCriterion: (text: string) => Promise<unknown>;
+}
+
 /**
- * The chat page's right-hand card: what to ask next, and an index of the cards
- * the thread has produced so far, which were otherwise only findable by
- * scrolling back.
+ * The chat page's workbench: a column of cards beside the thread.
  *
- * The prompts live here only while the card is open; the page draws them under
- * the composer when it is closed. Cards are an index, not a second copy: a
- * card drawn again at this width wrapped a word or two to a line, and the copy
- * in the thread is one click away.
+ * Scope says what the chat is about and where it runs; Feature holds the
+ * feature loop's criteria and what waits on the operator; Changes & runs is
+ * the branch and the loop's agent runs; Suggestions is what to ask next; and
+ * Cards indexes what the thread has produced, which was otherwise only
+ * findable by scrolling back.
+ *
+ * The prompts live here only while the workbench is open; the page draws them
+ * under the composer when it is closed.
  */
 export function ChatSideCard({
   overlay,
@@ -23,8 +58,10 @@ export function ChatSideCard({
   onJumpTo,
   onOpenGallery,
   onCollapse,
+  controls,
+  workbench,
 }: {
-  /** A narrow window: the card covers the thread, so Escape and the scrim close it. */
+  /** A narrow window: the workbench covers the thread, so Escape and the scrim close it. */
   overlay: boolean;
   prompts: readonly string[];
   /** A turn is in flight, or no workspace answers yet. */
@@ -34,6 +71,9 @@ export function ChatSideCard({
   onJumpTo: (messageId: string) => void;
   onOpenGallery: () => void;
   onCollapse: () => void;
+  /** History, New chat and the toggle that hides this card (ChatPanelControls). */
+  controls: ReactNode;
+  workbench: ChatWorkbenchState;
 }) {
   useDialogDismiss(overlay ? onCollapse : null);
   // Picking a card or a prompt closes the overlay, or what it leads to lands behind it.
@@ -59,38 +99,54 @@ export function ChatSideCard({
       <aside className="chat-side-card" aria-label="Workbench">
         <header className="chat-side-card-head">
           <h2>Workbench</h2>
-          <Button
-            variant="plain"
-            className="chat-side-card-icon-btn"
-            aria-label="Hide the workbench"
-            title="Hide the workbench"
-            onClick={onCollapse}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-          </Button>
+          {controls}
         </header>
 
+        <ScopeCard
+          focus={workbench.focus}
+          isGlobal={workbench.isGlobal}
+          hostSlug={workbench.hostSlug}
+          saving={workbench.savingFocus}
+          onSave={workbench.onSaveFocus}
+        />
+
+        <FeatureCard
+          feature={workbench.feature}
+          workspaces={workbench.loopWorkspaces}
+          defaultWorkspace={workbench.defaultLoopWorkspace}
+          busy={workbench.decidingCriteria}
+          starting={workbench.startingLoop}
+          onStart={workbench.onStartLoop}
+          onDecide={workbench.onDecideCriteria}
+          onAdd={workbench.onAddCriterion}
+        />
+
+        <ChangesCard
+          branch={workbench.chatBranch}
+          runs={workbench.feature?.runs ?? []}
+          hasLoop={workbench.feature !== null}
+        />
+
         {prompts.length ? (
-          <section className="chat-side-card-section" aria-labelledby="chat-side-prompts">
-            <h3 id="chat-side-prompts">Suggestions</h3>
+          <WorkbenchCard title="Suggestions">
             <ChatPromptRow
               prompts={prompts}
               disabled={promptsDisabled}
               onPick={pickPrompt}
               stacked
             />
-          </section>
+          </WorkbenchCard>
         ) : null}
 
-        <section className="chat-side-card-section" aria-labelledby="chat-side-primitives">
-          <div className="chat-side-card-row">
-            <h3 id="chat-side-primitives">Cards</h3>
+        <WorkbenchCard
+          title="Cards"
+          meta={primitives.length ? String(primitives.length) : undefined}
+          action={
             <Button variant="plain" className="chat-side-card-link" onClick={onOpenGallery}>
               Gallery
             </Button>
-          </div>
+          }
+        >
           {primitives.length ? (
             // Newest first; each entry takes you to its card in the thread.
             <ol className="chat-side-history" aria-label={`${primitives.length} cards in this chat`}>
@@ -114,7 +170,7 @@ export function ChatSideCard({
               gallery to see every kind.
             </p>
           )}
-        </section>
+        </WorkbenchCard>
       </aside>
     </>
   );

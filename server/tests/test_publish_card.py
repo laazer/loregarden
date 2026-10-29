@@ -15,7 +15,8 @@ from unittest import mock
 
 import pytest
 from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, WorkItemType, Workspace
-from loregarden.services import git_automation, tree_publish_scheduler
+from loregarden.services import git_automation
+from loregarden.services.invariant_registry import PUBLISH_CARDS_CLOSE
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.publish_tree import PublishOutcome
 from loregarden.services.reconciliation import PERIODIC_STEPS
@@ -179,4 +180,4 @@ def test_the_sweep_leaves_a_card_whose_work_is_not_on_the_base(session, workspac
 
 
 def test_the_sweep_is_a_reconcile_step():
-    assert tree_publish_scheduler.close_published_cards in [step.run for step in PERIODIC_STEPS]
+    assert PUBLISH_CARDS_CLOSE.name in [step.name for step in PERIODIC_STEPS]

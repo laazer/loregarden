@@ -39,6 +39,7 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.exit_actions import resolve_exit_actions
+from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 
 # Where a workspace points when the test never said. Absolute and deliberately
@@ -138,6 +139,30 @@ def make_workspace_ticket(
         external_id=external_id,
         title=external_id,
         state=state,
+    )
+
+
+def make_task_in_tree(session: Session, title: str, *, slug: str = "loregarden") -> Ticket:
+    """A task under a fresh milestone -> feature -> capability chain, built by `TicketService`.
+
+    So it carries the workflow instance a real ticket has: a bare `Ticket()`
+    has none, and an assertion about its stages passes without exercising
+    anything. The hierarchy rules admit a task only under a capability.
+    """
+    svc = TicketService(session)
+    parent = None
+    for kind in (WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.CAPABILITY):
+        parent = svc.create_ticket(
+            workspace_slug=slug,
+            title=f"{title} — {kind.value}",
+            work_item_type=kind,
+            parent_ticket_id=parent.id if parent else None,
+        )
+    return svc.create_ticket(
+        workspace_slug=slug,
+        title=title,
+        work_item_type=WorkItemType.TASK,
+        parent_ticket_id=parent.id,
     )
 
 

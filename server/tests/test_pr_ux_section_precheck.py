@@ -140,3 +140,49 @@ def test_the_script_speaks_the_hook_protocol(ui_repo):
     decision = json.loads(out.stdout)["hookSpecificOutput"]
     assert decision["hookEventName"] == "PreToolUse"
     assert decision["permissionDecision"] == "deny"
+
+
+# ---- the fix coverage check, run by the same hook ---------------------------
+
+FIX_FILLED = """## Summary
+x
+
+## Fix coverage
+- **Existing:** 0 rows: `select count(*) from tickets where block_kind is null` on live
+- **Re-entry:** `every_block_is_settled` reports any block written around settle_block
+- **Prevention:** server/tests/test_x.py::test_no_writer_skips_the_guard
+- **Learning:** a block written outside settle_block is indistinguishable from a handled one
+"""
+
+
+@pytest.fixture(name="fix_repo")
+def fix_repo_fixture(tmp_path: Path) -> Path:
+    repo = _repo(tmp_path, "server/tests/test_x.py")
+    (repo / "server" / "tests" / "test_x.py").write_text(
+        "def test_no_writer_skips_the_guard():\n    pass\n"
+    )
+    shutil.copy(
+        _ROOT / ".github" / "scripts" / "pr_fix_coverage_check.py", repo / ".github" / "scripts"
+    )
+    registry = repo / "server" / "loregarden" / "services" / "invariant_registry.py"
+    registry.parent.mkdir(parents=True)
+    registry.write_text('X = Invariant(name="every_block_is_settled")\n')
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "fix check"], repo)
+    return repo
+
+
+def test_a_fix_titled_create_without_fix_coverage_is_denied(fix_repo):
+    decision, reason = _decide(f"gh pr create --title 'fix(x): y' --body '{BARE}'", fix_repo)
+    assert decision == "deny"
+    assert "'PR fix coverage'" in reason
+    assert "no '## Fix coverage' section" in reason
+
+
+def test_a_fix_titled_create_with_fix_coverage_runs(fix_repo):
+    (fix_repo / "body.md").write_text(FIX_FILLED)
+    assert _decide("gh pr create --title 'fix(x): y' --body-file body.md", fix_repo) is None
+
+
+def test_a_feature_title_needs_no_fix_coverage(fix_repo):
+    assert _decide(f"gh pr create --title 'feat: y' --body '{BARE}'", fix_repo) is None

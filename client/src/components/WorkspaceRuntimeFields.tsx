@@ -8,8 +8,26 @@ import type {
   WorkspaceRuntimeSettings,
   WorkspaceSummary,
 } from "../api/client";
+import { modelDiscoveryState } from "./modelDiscoveryHint";
+import type { ProbedProvider } from "./modelDiscoveryHint";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
+
+/** The one line of discovery state beneath a model field.
+ *
+ *  `role="status"` and not `role="alert"`: runtime-options itself returned 200,
+ *  the operator may be pinning a different provider entirely, and an
+ *  interruption for a machine-level fact would fire once per mounted call site.
+ *  There is always another way to pin a model, so this is a surfaced failure
+ *  with a real alternate path rather than a silent one. */
+function DiscoveryHint({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <p className="modal-hint" role="status" style={{ margin: 0 }}>
+      {text}
+    </p>
+  );
+}
 
 export function claudeModelEnabled(cliAdapter: string): boolean {
   return ["default", "claude"].includes(cliAdapter || "default");
@@ -150,7 +168,7 @@ export function WorkspaceRuntimeFields({
   const fieldId = useId();
   const adapter = runtime.cli_adapter || "default";
   const gap = compact ? 8 : 12;
-  const selectStyle = { width: "100%", fontSize: 12 };
+  const selectStyle = { width: "100%", fontSize: "var(--fs-small)" };
 
   const handleProviderChange = (nextAdapter: string) => {
     onChange({
@@ -158,6 +176,9 @@ export function WorkspaceRuntimeFields({
       cli_adapter: nextAdapter,
     });
   };
+
+  const discoveryFor = (provider: ProbedProvider, optionCount: number) =>
+    modelDiscoveryState(provider, options.model_discovery, optionCount);
 
   let modelStep: ReactNode = null;
 
@@ -206,66 +227,73 @@ export function WorkspaceRuntimeFields({
       </Select>
     );
   } else if (adapter === "codex") {
-    modelStep = (
-      <Select
-        className="btn-secondary filter-select"
-        style={selectStyle}
-        aria-label="Codex model"
-        value={runtime.codex_model ?? ""}
-        disabled={disabled}
-        onChange={(e) =>
-          onChange({
-            ...runtime,
-            codex_model: e.target.value,
-          })
-        }
-      >
-        {(options.codex_models ?? [{ id: "", label: "Default (Codex profile)" }]).map((opt) => (
-          <option key={opt.id || "default"} value={opt.id}>
-            {opt.label}
-          </option>
-        ))}
-      </Select>
-    );
-  } else if (adapter === "lmstudio") {
-    const lmOptions = options.lmstudio_models ?? [];
+    const codexOptions = options.codex_models ?? [{ id: "", label: "Default (Codex profile)" }];
+    const codexDiscovery = discoveryFor("codex", codexOptions.length);
     modelStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {lmOptions.length > 1 ? (
-          <Select
-            className="btn-secondary filter-select"
-            style={selectStyle}
-            aria-label="LM Studio model"
-            value={
-              lmOptions.some((opt) => opt.id === (runtime.lmstudio_model ?? ""))
-                ? (runtime.lmstudio_model ?? "")
-                : ""
-            }
-            disabled={disabled}
-            onChange={(e) =>
-              onChange({
-                ...runtime,
-                lmstudio_model: e.target.value,
-              })
-            }
-          >
-            {lmOptions.map((opt) => (
-              <option key={opt.id || "auto"} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-        ) : null}
+        <Select
+          className="btn-secondary filter-select"
+          style={selectStyle}
+          aria-label="Codex model"
+          value={runtime.codex_model ?? ""}
+          disabled={disabled || codexDiscovery.selectDisabled}
+          onChange={(e) =>
+            onChange({
+              ...runtime,
+              codex_model: e.target.value,
+            })
+          }
+        >
+          {codexOptions.map((opt) => (
+            <option key={opt.id || "default"} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        {/* Codex grows no free-text id: its probe is 0.48s and its slug set is
+            closed, so the status line is the whole change here. */}
+        <DiscoveryHint text={codexDiscovery.hint} />
+      </div>
+    );
+  } else if (adapter === "lmstudio") {
+    const lmOptions = options.lmstudio_models ?? [{ id: "", label: "Auto (first loaded chat model)" }];
+    const lmDiscovery = discoveryFor("lmstudio", lmOptions.length);
+    modelStep = (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* Rendered unconditionally: mounting it only when the catalogue has
+            arrived remounts it across the probing -> fresh transition a refetch
+            produces, which takes the focus with it. */}
+        <Select
+          className="btn-secondary filter-select"
+          style={selectStyle}
+          aria-label="LM Studio model"
+          value={
+            lmOptions.some((opt) => opt.id === (runtime.lmstudio_model ?? ""))
+              ? (runtime.lmstudio_model ?? "")
+              : ""
+          }
+          disabled={disabled || lmDiscovery.selectDisabled}
+          onChange={(e) =>
+            onChange({
+              ...runtime,
+              lmstudio_model: e.target.value,
+            })
+          }
+        >
+          {lmOptions.map((opt) => (
+            <option key={opt.id || "auto"} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        {/* Enabled in every discovery state, probing included: somebody who
+            knows their model id is never made to wait for a probe to agree. */}
         <Input
           className="btn-secondary"
           style={{ ...selectStyle, boxSizing: "border-box" }}
           aria-label="LM Studio model id"
           value={runtime.lmstudio_model ?? ""}
-          placeholder={
-            lmOptions.length > 1
-              ? "Or type a model id"
-              : "Loaded model id (start LM Studio to discover)"
-          }
+          placeholder={lmOptions.length > 1 ? "Or type a model id" : "Loaded model id"}
           disabled={disabled}
           onChange={(e) =>
             onChange({
@@ -274,6 +302,7 @@ export function WorkspaceRuntimeFields({
             })
           }
         />
+        <DiscoveryHint text={lmDiscovery.hint} />
         <div className="modal-field" style={{ margin: 0 }}>
           <label htmlFor={`${fieldId}-lmstudio-base-url`} className="modal-field-label">
             Server URL
@@ -296,46 +325,46 @@ export function WorkspaceRuntimeFields({
       </div>
     );
   } else if (adapter === "opencode") {
-    const ocOptions = options.opencode_models ?? [];
+    const ocOptions = options.opencode_models ?? [{ id: "", label: "Default (OpenCode profile)" }];
+    const ocDiscovery = discoveryFor("opencode", ocOptions.length);
     modelStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {ocOptions.length > 1 ? (
-          <Select
-            className="btn-secondary filter-select"
-            style={selectStyle}
-            aria-label="OpenCode model"
-            value={
-              ocOptions.some((opt) => opt.id === (runtime.opencode_model ?? ""))
-                ? (runtime.opencode_model ?? "")
-                : ""
-            }
-            disabled={disabled}
-            onChange={(e) =>
-              onChange({
-                ...runtime,
-                opencode_model: e.target.value,
-              })
-            }
-          >
-            {ocOptions.map((opt) => (
-              <option key={opt.id || "default"} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-        ) : null}
+        {/* Rendered unconditionally, and keyed on the option id, so a refetch
+            that turns one sentinel into 95 options neither remounts the control
+            nor reorders what is already there. 95 options stay a native select:
+            browser typeahead plus the id Input beside it are the filter. */}
+        <Select
+          className="btn-secondary filter-select"
+          style={selectStyle}
+          aria-label="OpenCode model"
+          value={
+            ocOptions.some((opt) => opt.id === (runtime.opencode_model ?? ""))
+              ? (runtime.opencode_model ?? "")
+              : ""
+          }
+          disabled={disabled || ocDiscovery.selectDisabled}
+          onChange={(e) =>
+            onChange({
+              ...runtime,
+              opencode_model: e.target.value,
+            })
+          }
+        >
+          {ocOptions.map((opt) => (
+            <option key={opt.id || "default"} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
         {/* The catalogue depends on which providers OpenCode is authenticated
-            to, so a model the picker has not discovered is still valid to pin. */}
+            to, so a model the picker has not discovered is still valid to pin —
+            and that stays true while a probe is running. */}
         <Input
           className="btn-secondary"
           style={{ ...selectStyle, boxSizing: "border-box" }}
           aria-label="OpenCode model id"
           value={runtime.opencode_model ?? ""}
-          placeholder={
-            ocOptions.length > 1
-              ? "Or type a provider/model id"
-              : "provider/model id (install OpenCode to discover)"
-          }
+          placeholder={ocOptions.length > 1 ? "Or type a provider/model id" : "provider/model id"}
           disabled={disabled}
           onChange={(e) =>
             onChange({
@@ -344,6 +373,7 @@ export function WorkspaceRuntimeFields({
             })
           }
         />
+        <DiscoveryHint text={ocDiscovery.hint} />
       </div>
     );
   } else if (adapter === "default") {

@@ -25,10 +25,18 @@ checkout reports good code as broken and you will file the wrong ticket.
 
 Resolve what the user means before working. Never substitute a different project.
 
+## The record is the database
+
+Queue sources with `loregarden_survey_queue`; passes run from the queue, each
+with a slice of the map. Record with `loregarden_survey_record` and
+`loregarden_survey_pass`; land findings with `loregarden_survey_write`. An
+absence needs a corpus recorded complete; "not found in X" is another claim.
+
 ## Work in four passes
 
-1. **Prior work.** `loregarden_search_prior_work` on the project's domain. If a
-   survey already covered it, extend that record rather than starting over.
+1. **Prior work.** `loregarden_survey_queue action=status`, then
+   `loregarden_search_prior_work`. If a survey covered it, request a continuation
+   or scoped pass on that source rather than starting over.
 2. **Map the whole tree before reading any of it** — every top-level directory
    with a file count. Pick where to go deep from that map and keep it: it is what
    you report coverage against, and the first interesting file is not the survey.

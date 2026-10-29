@@ -4,11 +4,39 @@ import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { TicketState, TicketTreeNode } from "../../api/types";
+import type { ActiveRun } from "../../lib/queueSocket";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
+import { useQueueStatus, type QueueStatusValue } from "../../state/QueueStatusContext";
+import { useUiStore } from "../../state/uiStore";
+import type { Approval } from "../../api/chatTypes";
 import { WorkItemsPage } from "../WorkItemsPage";
 
 jest.mock("../../api/client");
 const mockApi = api as jest.Mocked<typeof api>;
+
+jest.mock("../../state/QueueStatusContext", () => ({
+  ...jest.requireActual("../../state/QueueStatusContext"),
+  useQueueStatus: jest.fn(),
+}));
+const mockQueueStatus = useQueueStatus as jest.MockedFunction<typeof useQueueStatus>;
+
+function running(...runs: Partial<ActiveRun>[]) {
+  mockQueueStatus.mockReturnValue({
+    activeRuns: runs.map(
+      (r, i) =>
+        ({
+          run_id: `run-${i}`,
+          slot_number: i + 1,
+          elapsed_seconds: 125,
+          status: "running",
+          agent_id: "implementer",
+          ...r,
+        }) as ActiveRun,
+    ),
+    error: null,
+    loading: false,
+  } as QueueStatusValue);
+}
 
 function node(id: string, overrides: Partial<TicketTreeNode> = {}): TicketTreeNode {
   return {
@@ -94,6 +122,8 @@ function bodyRows() {
 describe("WorkItemsPage", () => {
   beforeEach(() => {
     mockApi.ticketTree.mockReset();
+    mockApi.approvals.mockReset().mockResolvedValue([]);
+    running();
   });
 
   it("opens on the tickets that need the operator, each with its reason", async () => {
@@ -162,9 +192,57 @@ describe("WorkItemsPage", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Search work items" }), {
       target: { value: "no such ticket" },
     });
-    expect(screen.getByText("No work items match this search.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByText("No work items match these filters.")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByText("No work items match these filters.").parentElement!).getByRole("button", { name: "Clear filters" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
+  });
+
+  it("shows what is running, as the Console does, and lists those tickets in the Running view", async () => {
+    mockApi.ticketTree.mockResolvedValue([
+      node("a", { state: "in_progress", title: "Alpha" }),
+      node("b", { state: "in_progress", title: "Beta" }),
+      node("c", { title: "Gamma" }),
+    ]);
+    running(
+      { ticket_id: "a", ticket_title: "Alpha", ticket_code: "lg-a" },
+      { ticket_id: "b", ticket_title: "Beta", ticket_code: "lg-b", status: "succeeded" },
+    );
+    renderPage("/work-items?view=running");
+
+    const strip = await screen.findByRole("region", { name: "Tickets running now" });
+    expect(within(strip).getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /Running/ })).toHaveAttribute("aria-pressed", "true");
+    await screen.findByRole("table");
+    expect(bodyRows()).toHaveLength(2);
+    expect(within(bodyRows()[0]).getByText("running 2m 5s")).toBeInTheDocument();
+  });
+
+  it("says plainly when nothing is running", async () => {
+    mockApi.ticketTree.mockResolvedValue([node("a")]);
+    renderPage("/work-items?view=running");
+
+    expect(await screen.findByText(/Nothing is running/)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Tickets running now" })).toBeNull();
+  });
+
+  it("narrows by a filter menu, reads filters from the URL, and clears them", async () => {
+    mockApi.ticketTree.mockResolvedValue(prodShapedTree());
+    renderPage("/work-items?view=all&prio=1&ws=blobert");
+    await screen.findByRole("table");
+
+    // 1,665 tickets; priority 1 is every third leaf, blobert every fifth.
+    const count = () => Number(screen.getByText(/\d+ tickets?$/).textContent!.split(" ")[0]);
+    const narrowed = count();
+    expect(narrowed).toBeGreaterThan(0);
+    expect(bodyRows().every((row) => within(row).queryByText("P1") !== null)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Type/ }));
+    fireEvent.click(screen.getByRole("option", { name: /Milestones/ }));
+    expect(screen.getByText("No work items match these filters.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Clear filters/ })[0]);
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(count()).toBe(1665);
   });
 
   it("says nothing needs the operator, distinctly from an error, and points at open work", async () => {
@@ -202,5 +280,26 @@ describe("WorkItemsPage", () => {
       </ul>,
     );
     expect(findUsabilityProblems(container).map((p) => p.kind)).toContain("tabular-list");
+  });
+
+  it("names what an awaiting ticket is asked, and opens that approval in the inbox", async () => {
+    // The first fifteen in-progress leaves await a person: t1043 to t1057.
+    const approval = (ticket: string, title: string): Approval =>
+      ({ id: `a-${ticket}`, title, kind: "workflow_gate", ticket_id: ticket, status: "pending" }) as Approval;
+    mockApi.approvals.mockResolvedValue([
+      approval("t1043", "Resolve Playtest exit actions"),
+      approval("t1044", "Merge conflict: integration cannot take main"),
+    ]);
+    mockApi.ticketTree.mockResolvedValue(prodShapedTree());
+    useUiStore.setState({ inboxOpen: false });
+    renderPage();
+
+    const named = await screen.findByRole("button", { name: "Resolve Playtest exit actions" });
+    expect(screen.getByRole("button", { name: "Merge conflict: integration cannot take main" })).toBeInTheDocument();
+    // An awaiting ticket with no pending approval still says it waits on you.
+    expect(screen.getAllByText("Your approval or answer")).toHaveLength(13);
+
+    fireEvent.click(named);
+    expect(useUiStore.getState().inboxOpen).toBe(true);
   });
 });

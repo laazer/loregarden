@@ -10,6 +10,7 @@
   { "name": "workspaces-instances", "path": "/workspaces/instances" },
   { "name": "memory-map", "path": "/memory/map" },
   { "name": "memory-records", "path": "/memory/records" },
+  { "name": "memory-library", "path": "/memory/library" },
   { "name": "memory-health", "path": "/memory/health" },
   { "name": "chat", "path": "/chat" },
   { "name": "mcp", "path": "/mcp" },
@@ -17,7 +18,9 @@
   { "name": "studio-workflows", "path": "/studio/workflows" },
   { "name": "studio-tickets", "path": "/studio/tickets" },
   { "name": "studio-gates", "path": "/studio/gates" },
-  { "name": "queue", "path": "/queue" },
+  { "name": "machine", "path": "/machine" },
+  { "name": "machine-lanes", "path": "/machine/lanes" },
+  { "name": "machine-disk", "path": "/machine/disk" },
   { "name": "branch-triage", "path": "/branch-triage" },
   { "name": "editor", "path": "/editor" }
 ]

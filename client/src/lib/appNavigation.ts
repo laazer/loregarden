@@ -9,7 +9,14 @@ export type AppPage =
   | "initiatives"
   | "studio"
   | "editor"
+  /**
+   * Machine's Lanes tab, kept as a page key so `navigate.page queue` (agents,
+   * links, the server's UI-action catalog) still lands on the lanes. No path
+   * resolves to it: `/machine/lanes` is the `machine` page, and the old
+   * `/queue` redirects there.
+   */
   | "queue"
+  | "machine"
   | "branch-triage"
   | "mcp"
   | "memory"
@@ -71,7 +78,8 @@ const PAGE_PATHS: Record<AppPage, string> = {
   initiatives: "/initiatives",
   studio: "/studio/agents",
   editor: "/editor",
-  queue: "/queue",
+  queue: "/machine/lanes",
+  machine: "/machine",
   "branch-triage": "/branch-triage",
   mcp: "/mcp",
   memory: "/memory",
@@ -287,16 +295,21 @@ export function viewIdFromPath(pathname: string): string | null {
 }
 
 /** The Memory page's tabs, in the order they are drawn. The map is the default. */
-export const MEMORY_TABS = ["map", "records", "health"] as const;
+export const MEMORY_TABS = ["map", "records", "library", "health"] as const;
 export type MemoryTab = (typeof MEMORY_TABS)[number];
 
-const MEMORY_TAB_PATH_RE = /^\/memory\/(records|health)(?:\/|$)/;
+const MEMORY_TAB_PATH_RE = /^\/memory\/(records|library|health)(?:\/|$)/;
 const MEMORY_NODE_PATH_RE = /^\/memory\/map\/([^/]+)/;
+const MEMORY_LIBRARY_SOURCE_PATH_RE = /^\/memory\/library\/([^/]+)/;
 /** The browser's old home, kept so links and bookmarks into it still land. */
 const LEGACY_KNOWLEDGE_PATH_RE = /^\/knowledge(?:\/([^/]+))?\/?$/;
 
-/** A Memory tab's URL; on the map, optionally with one record selected. */
+/**
+ * A Memory tab's URL; on the map, optionally with one record selected, and in
+ * the reference library, optionally with one source open.
+ */
 export function memoryPath(tab: MemoryTab, nodeId?: string): string {
+  if (tab === "library" && nodeId) return `/memory/library/${encodeURIComponent(nodeId)}`;
   if (tab !== "map") return `/memory/${tab}`;
   return nodeId ? `/memory/map/${encodeURIComponent(nodeId)}` : "/memory";
 }
@@ -316,10 +329,34 @@ export function memoryNodeIdFromPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]) : null;
 }
 
+/** The reference source a `/memory/library/:sourceId` URL opens, or null. */
+export function memoryLibrarySourceFromPath(pathname: string): string | null {
+  const match = pathname.match(MEMORY_LIBRARY_SOURCE_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
+}
+
 /** Where an old `/knowledge[/:nodeId]` URL now lives. */
 export function memoryPathForLegacyKnowledge(pathname: string): string {
   const match = pathname.match(LEGACY_KNOWLEDGE_PATH_RE);
   return memoryPath("map", match?.[1] ? decodeSegment(match[1]) : undefined);
+}
+
+/**
+ * The Machine page's tabs: what the machine's CPU and memory are rationed to,
+ * and what its disk holds. Capacity is the page's own root.
+ */
+export const MACHINE_TABS = ["capacity", "lanes", "disk"] as const;
+export type MachineTab = (typeof MACHINE_TABS)[number];
+
+const MACHINE_TAB_PATH_RE = /^\/machine\/(lanes|disk)(?:\/|$)/;
+
+export function machinePath(tab: MachineTab): string {
+  return tab === "capacity" ? "/machine" : `/machine/${tab}`;
+}
+
+export function machineTabFromPath(pathname: string): MachineTab {
+  const match = pathname.match(MACHINE_TAB_PATH_RE);
+  return match ? (match[1] as MachineTab) : "capacity";
 }
 
 export const WORKSPACES_TABS = ["workspaces", "instances"] as const;
@@ -364,7 +401,10 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/initiatives" || pathname.startsWith("/initiatives/")) return "initiatives";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
-  if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
+  // The Queue became Machine's Lanes tab; `/queue` redirects, and reads as
+  // Machine for the moment before it does.
+  if (pathname === "/queue" || pathname.startsWith("/queue/")) return "machine";
+  if (pathname === "/machine" || pathname.startsWith("/machine/")) return "machine";
   if (pathname === "/branch-triage" || pathname.startsWith("/branch-triage/")) {
     return "branch-triage";
   }

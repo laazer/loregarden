@@ -23,6 +23,7 @@ from loregarden.services.git_branch import (
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
+from loregarden.services.publish_ref import comparison_ref
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -423,9 +424,9 @@ class WorktreeService:
                 )
 
             # Try dry-run merge to detect conflicts
-            # git merge --no-commit --no-ff origin/target_branch
+            # git merge --no-commit --no-ff <target as comparison_ref names it>
             result = run_git(
-                ["merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
+                ["merge", "--no-commit", "--no-ff", comparison_ref(target_branch)],
                 cwd=str(worktree_path),
                 capture_output=True,
                 text=True,
@@ -662,8 +663,9 @@ class WorktreeService:
         try:
             worktree_path = Path(worktree.worktree_path)
 
-            # Verify path is within worktree base directory
-            if not str(worktree_path).startswith(str(self.worktree_base)):
+            # Verify path is within worktree base directory. Resolved and compared
+            # by path parts: a string prefix let a sibling like `.worktrees-x` pass.
+            if not worktree_path.resolve().is_relative_to(self.worktree_base.resolve()):
                 logger.error(f"Worktree path outside base: {worktree_path}")
                 return False
 

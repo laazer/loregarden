@@ -1,13 +1,18 @@
 import type { TicketTreeNode } from "../../api/types";
 import {
+  NO_WORK_ITEMS_FILTERS,
+  activeFilterCount,
   flattenWorkItems,
   inView,
+  matchesFilters,
   matchesSearch,
+  parseWorkItemsFilters,
   needsMeReason,
   parseWorkItemsView,
   sortWorkItems,
   viewCounts,
   workspaceOptions,
+  writeWorkItemsFilters,
 } from "../workItemsTable";
 
 function node(id: string, overrides: Partial<TicketTreeNode> = {}): TicketTreeNode {
@@ -80,14 +85,31 @@ describe("views", () => {
     node("shipped", { state: "done" }),
   ]);
 
+  const none = new Set<string>();
+
   it("counts each view over the same rows", () => {
-    expect(viewCounts(rows)).toEqual({ needs_me: 1, in_flight: 2, blocked: 1, open: 4, all: 5 });
+    expect(viewCounts(rows, new Set(["run"]))).toEqual({
+      needs_me: 1,
+      running: 1,
+      in_flight: 2,
+      blocked: 1,
+      open: 4,
+      all: 5,
+    });
   });
 
   it("puts a ticket in every view whose filter it meets", () => {
     const awaiting = rows[0].node;
-    expect(inView("needs_me", awaiting) && inView("in_flight", awaiting) && inView("open", awaiting)).toBe(true);
-    expect(inView("blocked", awaiting)).toBe(false);
+    expect(inView("needs_me", awaiting, none) && inView("in_flight", awaiting, none) && inView("open", awaiting, none)).toBe(
+      true,
+    );
+    expect(inView("blocked", awaiting, none)).toBe(false);
+  });
+
+  it("calls a ticket running only while the queue holds a slot for it, whatever its stage says", () => {
+    const idle = rows[1].node;
+    expect(inView("running", idle, none)).toBe(false);
+    expect(inView("running", idle, new Set(["run"]))).toBe(true);
   });
 
   it("defaults an unknown or missing view to needs_me", () => {
@@ -141,5 +163,76 @@ describe("workspaceOptions", () => {
       ["loregarden", 2],
       ["blobert", 1],
     ]);
+  });
+});
+
+describe("filters", () => {
+  const rows = flattenWorkItems([
+    node("ms", {
+      work_item_type: "milestone",
+      priority: 1,
+      children: [
+        node("bug", { work_item_type: "bug", state: "blocked", blocked_on: "person", priority: 1 }),
+        node("impl", { state: "in_progress", workflow_stage_name: "Implement", workflow_stage_status: "running", priority: 3 }),
+      ],
+    }),
+  ]);
+  const ids = (f: typeof NO_WORK_ITEMS_FILTERS) => rows.filter((r) => matchesFilters(r, f)).map((r) => r.node.id);
+
+  it("keeps everything with no filter set", () => {
+    expect(ids(NO_WORK_ITEMS_FILTERS)).toEqual(["ms", "bug", "impl"]);
+    expect(activeFilterCount(NO_WORK_ITEMS_FILTERS)).toBe(0);
+  });
+
+  it("narrows by each field, any-of within one and all-of across them", () => {
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, types: ["bug", "milestone"] })).toEqual(["ms", "bug"]);
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, types: ["bug", "milestone"], priorities: [1], states: ["blocked"] })).toEqual([
+      "bug",
+    ]);
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, blockedOn: ["person"] })).toEqual(["bug"]);
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, topLevelOnly: true })).toEqual(["ms"]);
+  });
+
+  it("matches a stage status only on a ticket that has a stage", () => {
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, stageStatuses: ["pending"] })).toEqual([]);
+    expect(ids({ ...NO_WORK_ITEMS_FILTERS, stageStatuses: ["running"] })).toEqual(["impl"]);
+  });
+
+  it("round-trips through the URL, leaving defaults and other params alone", () => {
+    const filters = { ...NO_WORK_ITEMS_FILTERS, workspace: "blobert", states: ["parked" as const], priorities: [1, 2], topLevelOnly: true };
+    const params = writeWorkItemsFilters(new URLSearchParams("view=all"), filters);
+    expect(params.toString()).toBe("view=all&ws=blobert&state=parked&prio=1%2C2&top=1");
+    expect(parseWorkItemsFilters(params)).toEqual(filters);
+    expect(activeFilterCount(filters)).toBe(4);
+    expect(writeWorkItemsFilters(params, NO_WORK_ITEMS_FILTERS).toString()).toBe("view=all");
+  });
+
+  it("drops values a stale link names that no longer exist", () => {
+    expect(parseWorkItemsFilters(new URLSearchParams("state=parked,bogus&prio=9")).states).toEqual(["parked"]);
+    expect(parseWorkItemsFilters(new URLSearchParams("prio=9")).priorities).toEqual([]);
+  });
+});
+
+describe("needsMeReason with the ticket's approval", () => {
+  const awaiting = {
+    id: "t1",
+    external_id: "lg-1",
+    title: "T",
+    state: "in_progress",
+    priority: 2,
+    work_item_type: "bug",
+    workspace_slug: "loregarden",
+    workflow_stage_name: "Implement",
+    workflow_stage_status: "awaiting",
+    child_count: 0,
+    children: [],
+  } as unknown as Parameters<typeof needsMeReason>[0];
+
+  it("names what the approval asks, falling back to its kind, then to the generic reason", () => {
+    expect(needsMeReason(awaiting, { title: "Resolve Playtest exit actions", kind: "workflow_gate" } as never)).toBe(
+      "Resolve Playtest exit actions",
+    );
+    expect(needsMeReason(awaiting, { title: "", kind: "cli_question" } as never)).toBe("Question");
+    expect(needsMeReason(awaiting)).toBe("Your approval or answer");
   });
 });

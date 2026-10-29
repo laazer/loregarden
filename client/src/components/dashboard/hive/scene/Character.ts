@@ -6,7 +6,7 @@ import { findPathTiles, tileToWorld, type TilePoint, type WalkGrid } from "./pat
 
 const NAME_STYLE = new TextStyle({
   fontFamily: "monospace",
-  fontSize: 8,
+  fontSize: 8, // type-ok: Pixi TextStyle on the Hive canvas, in world pixels; CSS tokens cannot reach it
   fill: 0xd7dee8,
   align: "center",
 });
@@ -45,7 +45,7 @@ export class CharacterView extends Container {
 
     this.toolBubble = new Text({
       text: "",
-      style: new TextStyle({ fontFamily: "monospace", fontSize: 8, fill: 0x4b9bff }),
+      style: new TextStyle({ fontFamily: "monospace", fontSize: 8, fill: 0x4b9bff }), // type-ok: Pixi TextStyle on the Hive canvas, in world pixels; CSS tokens cannot reach it
     });
     this.toolBubble.anchor.set(0.5, 1);
     this.toolBubble.y = -22;

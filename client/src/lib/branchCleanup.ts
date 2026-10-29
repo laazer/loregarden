@@ -66,9 +66,16 @@ export const CLEANUP_CATEGORIES: readonly CleanupCategory[] = [
 export interface CleanupCandidate {
   entry: BranchTriageEntry;
   categories: CleanupCategoryId[];
-  /** Uncommitted work in one of the branch's worktrees — deleting loses it. */
+  /** Uncommitted work in one of the branch's worktrees; the server keeps those. */
   dirty: boolean;
   worktreeCount: number;
+  /** Commits only this branch has (null: unknown). Nonzero means the server keeps it. */
+  commitsOnlyHere: number | null;
+}
+
+/** Whether deleting the branch would lose commits, or might: the server refuses it. */
+export function holdsOnlyCopy(item: CleanupCandidate): boolean {
+  return item.commitsOnlyHere !== 0;
 }
 
 /**
@@ -88,17 +95,18 @@ export function cleanupCandidates(branches: BranchTriageEntry[]): CleanupCandida
       ),
       dirty: entry.dirty,
       worktreeCount: entry.worktrees.length,
+      commitsOnlyHere: entry.commits_only_here,
     }))
     .sort((a, b) => b.categories.length - a.categories.length || a.entry.name.localeCompare(b.entry.name));
 }
 
 /**
  * The selection the modal opens with: branches that are provably merged, minus
- * any with uncommitted work.
+ * any with uncommitted work or with commits that exist nowhere else.
  *
- * Dirty branches stay in the list — an operator may well want them gone — but
- * nothing this modal ticks on their behalf may destroy work they never
- * committed. That has to be a deliberate click.
+ * Those stay in the list, since an operator may want them gone, but the server
+ * keeps them either way; ticking them for the operator would only produce
+ * failures.
  */
 export function defaultCleanupSelection(candidates: CleanupCandidate[]): Set<string> {
   const auto = new Set(
@@ -106,7 +114,9 @@ export function defaultCleanupSelection(candidates: CleanupCandidate[]): Set<str
   );
   return new Set(
     candidates
-      .filter((item) => !item.dirty && item.categories.some((id) => auto.has(id)))
+      .filter(
+        (item) => !item.dirty && !holdsOnlyCopy(item) && item.categories.some((id) => auto.has(id)),
+      )
       .map((item) => item.entry.name),
   );
 }

@@ -40,6 +40,24 @@ const DRAFT = "computes or drafts; nothing is saved";
 export const API_WRITE_COVERAGE = {
   // Tickets
   createTicket: { kind: "mcp_tool", tool: "loregarden_create_ticket" },
+  // Reference library: an agent links or unlinks with loregarden_survey_queue
+  // (action link_initiative / unlink_initiative), the same service write.
+  linkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  unlinkSourceInitiative: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // A read of GitHub stored on the source (action check_upstream); the
+  // background refresh does the same daily.
+  checkSourceUpstream: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  addReferenceSource: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  addReferenceSources: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  reviewSourceNow: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  linkSourceTargets: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // Keeping or dropping a proposal decides the admission card an agent's find waits on.
+  keepSource: { kind: "human_only", reason: GATE },
+  dropSource: { kind: "human_only", reason: GATE },
+  startDiscovery: {
+    kind: "not_agent_driven",
+    reason: "starts an agent to search and enqueue; an agent searches and enqueues with loregarden_survey_queue itself",
+  },
   updateTicket: { kind: "agent_action", action: "ticket.update" },
   deleteTicket: { kind: "human_only", reason: `${DELETES}; an agent retires a ticket with loregarden_supersede_ticket` },
   // The bulk form of the same write: an agent creates the tickets directly,

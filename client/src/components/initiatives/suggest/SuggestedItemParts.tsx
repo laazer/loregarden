@@ -1,6 +1,7 @@
 import type { SuggestedItem } from "../../../api/client";
-import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../../../lib/ticketStates";
-import { navigateToTicket } from "../../../lib/useAppNavigation";
+import { TICKET_STATE_COLORS, ticketStateChip } from "../../../lib/ticketStates";
+import { StatusChip } from "../../ui/StatusChip";
+import { peekTicket } from "../../../state/ticketPeekStore";
 import { Button } from "../../ui/Button";
 
 /** What one row says about an item: where it lives, where it would leave, and how much is open. */
@@ -13,7 +14,7 @@ export function SuggestedItemText({ item }: { item: SuggestedItem }) {
       <span className="initiative-muted">
         {item.from_milestone ? `leaves ${item.from_milestone}` : ""}
       </span>
-      <span className="initiative-milestone-state">{TICKET_STATE_LABELS[item.state]}</span>
+      <StatusChip {...ticketStateChip(item.state)} />
       <span className="initiative-muted initiative-suggest-cost">{item.cost} open</span>
     </>
   );
@@ -26,7 +27,7 @@ export function OpenItemButton({ item }: { item: SuggestedItem }) {
       className="initiative-open-btn"
       aria-label={`Open ${item.external_id}`}
       title={`Open ${item.external_id}`}
-      onClick={() => navigateToTicket(item.id)}
+      onClick={() => peekTicket(item.id)}
     >
       ↗
     </Button>

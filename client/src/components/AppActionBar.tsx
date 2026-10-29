@@ -1,21 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useId, useState } from "react";
 
 import { api } from "../api/client";
-import { useActiveChatSession, type ScreenPrompts } from "../hooks/useActiveChatSession";
+import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useTicketAsides } from "../hooks/useTicketAsides";
-import {
-  COMPOSER_PLACEHOLDER,
-  DOCK_QUICK_PROMPT_LIMIT,
-  followUpPrompts,
-} from "../lib/dockChatPrompts";
-import { useAgentPresence } from "../state/QueueStatusContext";
-import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
+import { COMPOSER_PLACEHOLDER, followUpPrompts } from "../lib/dockChatPrompts";
+import { useUiStore, useUtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
 import { describeError } from "../state/toastStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
@@ -28,6 +22,14 @@ import { ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerNotes } from "./chat/ComposerNotes";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
+import {
+  ActionBarQuickPrompts,
+  ActionBarStatus,
+  ScreenQuickPrompts,
+} from "./actionBar/ActionBarParts";
+import { ActionBarScreenControls } from "./actionBar/ActionBarScreenControls";
+import { ActionBarSheet } from "./actionBar/ActionBarSheet";
 
 const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
 
@@ -50,6 +52,9 @@ export function AppActionBar() {
     model,
     composedOnScreen,
     screenPrompts,
+    assistantLabel,
+    promptKind,
+    composerBlocked,
   } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
@@ -57,9 +62,8 @@ export function AppActionBar() {
   const setChatOpen = useUiStore((s) => s.setCopilotOpen);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
-  const utilityDockEdge = useUiStore((s) => s.utilityDockEdge);
+  const utilityDockEdge = useUtilityDockEdge();
   const setUtilityDockEdge = useUiStore((s) => s.setUtilityDockEdge);
-  const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
 
   const [draft, setDraft] = useState("");
@@ -69,6 +73,8 @@ export function AppActionBar() {
   const qc = useQueryClient();
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetId = useId();
 
   // The badge only offers a fix for causes the server marked remediable, so
   // each branch here has something real to do. Anything else is reported, not
@@ -103,9 +109,9 @@ export function AppActionBar() {
     enabled: Boolean(ticketId),
   });
   const modelWorkspace = model?.workspaceSlug ?? "";
-  const runtimeOptions = useQuery({
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", modelWorkspace],
-    queryFn: () => api.runtimeOptions(modelWorkspace ? { workspace: modelWorkspace } : undefined),
+    params: modelWorkspace ? { workspace: modelWorkspace } : undefined,
     enabled: Boolean(model),
   });
 
@@ -141,7 +147,10 @@ export function AppActionBar() {
     (ticket?.activity === "running" || ticket?.activity === "awaiting" || session.isBusy);
 
   const expanded = chatOpen && Boolean(session);
-  const sendable = Boolean(session) && !session?.loadError;
+  // With no conversation and no model to set, the sheet would open empty; the
+  // composer then just says what to do instead.
+  const hasSheet = Boolean(session || model);
+  const sendable = Boolean(session) && !session?.loadError && !composerBlocked;
   // Every surface exposes stop now, so the only question left is whether this
   // one is busy — and aside mode, which routes a busy composer to a read-only
   // question instead of a turn to stop.
@@ -238,6 +247,24 @@ export function AppActionBar() {
     send(content);
   };
 
+  // ⌘J (Ctrl+J) reaches the composer from anywhere, the way ⌘K reaches search.
+  // Left to the code editor and the terminal while they have focus, which bind
+  // their own chords.
+  const composerRef = commands.inputRef;
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "j" || !(event.metaKey || event.ctrlKey)) return;
+      if (event.altKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest(".monaco-editor, .xterm")) return;
+      const input = composerRef.current;
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [composerRef]);
+
   const screenControls = (
     <ActionBarScreenControls
       terminalSlug={terminal.workspaceSlug}
@@ -292,12 +319,12 @@ export function AppActionBar() {
 
   return (
     <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
-      <button
-        type="button"
+      <Button
+        variant="plain"
         className="app-action-bar-baxter"
         aria-expanded={expanded}
-        aria-label={expanded ? "Collapse Baxter" : "Expand Baxter"}
-        title="Baxter"
+        aria-label={expanded ? `Collapse ${assistantLabel}` : `Expand ${assistantLabel}`}
+        title={assistantLabel}
         disabled={!session}
         onClick={() => setChatOpen(!chatOpen)}
       >
@@ -307,75 +334,176 @@ export function AppActionBar() {
           variant="head"
           state={session?.isBusy ? "responding" : "idle"}
           size={26}
-          label="Baxter"
+          label={assistantLabel}
         />
-      </button>
+      </Button>
 
       <div className="app-action-bar-notes">
         <ComposerNotes commands={commands} />
-        {canAttach ? (
-          <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />
-        ) : null}
       </div>
 
-      {canAttach ? (
-        <ComposerAttachButton onFiles={attachments.add} disabled={!sendable} />
-      ) : null}
-
-      <div className="lg-composer-commands lg-composer-commands--bar">
-        <ComposerCommandMenu
-          items={commands.items}
-          activeIndex={commands.activeIndex}
-          triggerKind={commands.triggerKind}
-          anchorRef={commands.inputRef}
-          onHover={commands.setActiveIndex}
-          onPick={commands.accept}
-        />
-        <Input
-          ref={commands.inputRef as React.Ref<HTMLInputElement>}
-          className="app-action-bar-input"
-          value={draft}
-          disabled={!sendable}
-          placeholder={
-            asideMode
-              ? "btw — ask about the run without interrupting it"
-              : session
-                ? (COMPOSER_PLACEHOLDER[session.kind] ??
-                  "Ask anything, or tell an agent what to do — without leaving this screen")
-                : NO_SESSION_PLACEHOLDER
+      {/* The composer and its sheet are one focus group: focus anywhere in it
+          keeps the sheet open, and leaving it (or Escape) closes it. */}
+      <div
+        className="app-action-bar-compose"
+        onFocus={() => setSheetOpen(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setSheetOpen(false);
+        }}
+        onKeyDown={(event) => {
+          // The `/` menu takes Escape first, and marks it handled.
+          if (event.key === "Escape" && sheetOpen && !event.defaultPrevented) {
+            event.preventDefault();
+            setSheetOpen(false);
           }
-          aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
-          onChange={(e) => commands.handleChange(e.target.value, e.target)}
-          onFocus={() => session && setChatOpen(true)}
-          onBlur={() => commands.close()}
-          onPaste={(e) => {
-            if (!canAttach) return;
-            const pasted = Array.from(e.clipboardData.files);
-            if (!pasted.length) return;
-            e.preventDefault();
-            attachments.add(pasted);
-          }}
-          onKeyDown={(e) => {
-            // While the menu is open it owns Enter, Tab and the arrows.
-            if (commands.handleKeyDown(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit(draft);
+        }}
+      >
+        <div className="lg-composer-commands lg-composer-commands--bar">
+          <ComposerCommandMenu
+            items={commands.items}
+            activeIndex={commands.activeIndex}
+            triggerKind={commands.triggerKind}
+            anchorRef={commands.inputRef}
+            onHover={commands.setActiveIndex}
+            onPick={commands.accept}
+          />
+          <Input
+            ref={commands.inputRef as React.Ref<HTMLInputElement>}
+            className="app-action-bar-input"
+            value={draft}
+            disabled={!sendable}
+            placeholder={
+              asideMode
+                ? "btw — ask about the run without interrupting it"
+                : composerBlocked
+                  ? composerBlocked
+                : session
+                  ? (COMPOSER_PLACEHOLDER[promptKind] ??
+                    "Ask anything, or tell an agent what to do — without leaving this screen")
+                  : NO_SESSION_PLACEHOLDER
             }
+            aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
+            onChange={(e) => commands.handleChange(e.target.value, e.target)}
+            onFocus={() => session && setChatOpen(true)}
+            onBlur={() => commands.close()}
+            onPaste={(e) => {
+              if (!canAttach) return;
+              const pasted = Array.from(e.clipboardData.files);
+              if (!pasted.length) return;
+              e.preventDefault();
+              attachments.add(pasted);
+            }}
+            onKeyDown={(e) => {
+              // While the menu is open it owns Enter, Tab and the arrows.
+              if (commands.handleKeyDown(e)) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit(draft);
+              }
+            }}
+          />
+        </div>
+        <kbd className="app-action-bar-kbd" aria-hidden="true">
+          ⌘J
+        </kbd>
+        <Button
+          variant="plain"
+          className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : " send-leaf"}`}
+          aria-label={
+            canStop
+              ? session?.isStopping
+                ? "Stopping…"
+                : "Stop"
+              : asideMode
+                ? "Ask aside"
+                : "Send"
+          }
+          disabled={
+            canStop
+              ? Boolean(session?.isStopping)
+              : !sendable || (!draft.trim() && !files.length) || asides.isAsking
+          }
+          onClick={() => {
+            // `stop` is required on ChatSession now, so the only question left
+            // is whether there is a session at all.
+            if (canStop && session) {
+              void session.stop().catch(() => {
+                // silent-ok: stop is a mutation with meta.errorTitle, so the
+                // global MutationCache toast reports a stop that did not take.
+              });
+              return;
+            }
+            submit(draft);
           }}
+        >
+          {canStop ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <rect x="6" y="6" width="12" height="12" rx="1.5" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+            </svg>
+          )}
+        </Button>
+        <ActionBarSheet
+          id={sheetId}
+          open={sheetOpen && hasSheet}
+          controls={
+            <>
+              {canAttach ? (
+                <ComposerAttachButton onFiles={attachments.add} disabled={!sendable} />
+              ) : null}
+              {modelControl}
+              {/* An aside runs read-only, so there is nothing for this to approve. */}
+              {session && !asideMode ? (
+                <Button
+                  variant="plain"
+                  className={`app-action-bar-auto${autoApprove ? " is-on" : ""}`}
+                  aria-pressed={autoApprove}
+                  title="Approve this turn's tool calls without asking"
+                  onClick={() => setAutoApprove(!autoApprove)}
+                >
+                  Auto-approve
+                </Button>
+              ) : null}
+              {/* Redundant in aside mode: the observer is given the log tail server-side. */}
+              {ticketId && !asideMode ? (
+                <Button
+                  variant="plain"
+                  className={`app-action-bar-logs${attachLogs ? " is-on" : ""}`}
+                  aria-pressed={attachLogs}
+                  disabled={!hasLogs}
+                  title={
+                    hasLogs
+                      ? "Send the tail of this ticket's run log with your question"
+                      : "No run log output on this ticket yet"
+                  }
+                  onClick={() => setAttachLogs(!attachLogs)}
+                >
+                  Run logs
+                </Button>
+              ) : null}
+            </>
+          }
+          prompts={
+            // The quickest reply to the turn on screen, so they follow the
+            // conversation whether its thread is open or not.
+            session ? (
+              <ActionBarQuickPrompts
+                prompts={followUpPrompts(promptKind, branch, session.messages)}
+                disabled={!sendable || session.isBusy}
+                onPick={(prompt) => submit(prompt)}
+              />
+            ) : null
+          }
+          tray={
+            canAttach ? (
+              <ComposerAttachmentTray items={attachments.items} onRemove={attachments.remove} />
+            ) : null
+          }
         />
       </div>
-
-      {/* Kept whether the thread is open or not: they are the quickest reply
-          to the turn on screen, so they follow the conversation rather than
-          only opening it. */}
-      {session ? (
-        <ActionBarQuickPrompts
-          prompts={followUpPrompts(session.kind, branch, session.messages)}
-          disabled={!sendable || session.isBusy}
-          onPick={(prompt) => submit(prompt)}
-        />
-      ) : null}
 
       <ActionBarStatus
         label={label}
@@ -414,318 +542,7 @@ export function AppActionBar() {
           checkout failed
         </span>
       ) : null}
-
-      {/* Redundant in aside mode: the observer is given the log tail server-side. */}
-      {ticketId && !asideMode ? (
-        <button
-          type="button"
-          className={`app-action-bar-logs${attachLogs ? " is-on" : ""}`}
-          aria-pressed={attachLogs}
-          disabled={!hasLogs}
-          title={
-            hasLogs
-              ? "Send the tail of this ticket's run log with your question"
-              : "No run log output on this ticket yet"
-          }
-          onClick={() => setAttachLogs(!attachLogs)}
-        >
-          Run logs
-        </button>
-      ) : null}
-
-      {/* Only the Baxter thread keeps past conversations — a ticket's triage
-          chat is the ticket's, and there is no other one to open — so these
-          appear with the archive rather than as controls that do nothing. */}
-      {modelControl}
-      {archive ? (
-        <>
-          <button
-            type="button"
-            className="app-action-bar-chat-new"
-            title="Start a new conversation with Baxter"
-            onClick={() => {
-              archive.startNewChat();
-              setHistoryOpen(false);
-              // Open the thread on the way out, so the new one is visible
-              // rather than started behind a collapsed dock.
-              setChatOpen(true);
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            New chat
-          </button>
-          <button
-            type="button"
-            className={`app-action-bar-chat-history${historyOpen ? " is-on" : ""}`}
-            aria-pressed={historyOpen}
-            title="Open a past conversation"
-            onClick={() => {
-              const next = !historyOpen;
-              setHistoryOpen(next);
-              // The archive lists in the dock's rail, so opening it while the
-              // dock is collapsed would show nothing.
-              if (next) setChatOpen(true);
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-              <path d="M3 3v5h5M12 7v5l3 2" />
-            </svg>
-            History
-          </button>
-        </>
-      ) : null}
-
-      {/* An aside runs read-only, so there is nothing for this to approve. */}
-      {session && !asideMode ? (
-        <button
-          type="button"
-          className={`app-action-bar-auto${autoApprove ? " is-on" : ""}`}
-          aria-pressed={autoApprove}
-          title="Approve this turn's tool calls without asking"
-          onClick={() => setAutoApprove(!autoApprove)}
-        >
-          Auto-approve
-        </button>
-      ) : null}
-
-      <Button
-        variant="plain"
-        className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : ""}`}
-        aria-label={
-          canStop
-            ? session?.isStopping
-              ? "Stopping…"
-              : "Stop"
-            : asideMode
-              ? "Ask aside"
-              : "Send"
-        }
-        disabled={
-          canStop
-            ? Boolean(session?.isStopping)
-            : !sendable || (!draft.trim() && !files.length) || asides.isAsking
-        }
-        onClick={() => {
-          // `stop` is required on ChatSession now, so the only question left
-          // is whether there is a session at all.
-          if (canStop && session) {
-            void session.stop().catch(() => {
-              // silent-ok: stop is a mutation with meta.errorTitle, so the
-              // global MutationCache toast reports a stop that did not take.
-            });
-            return;
-          }
-          submit(draft);
-        }}
-      >
-        {canStop ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <rect x="6" y="6" width="12" height="12" rx="1.5" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
-          </svg>
-        )}
-      </Button>
       {screenControls}
     </footer>
-  );
-}
-
-/** The bar's one-click replies, capped to what fits beside the composer. */
-function ActionBarQuickPrompts({
-  prompts,
-  disabled,
-  onPick,
-}: {
-  prompts: readonly string[];
-  disabled: boolean;
-  onPick: (prompt: string) => void;
-}) {
-  const shown = prompts.slice(0, DOCK_QUICK_PROMPT_LIMIT);
-  if (shown.length === 0) return null;
-  return (
-    <div className="app-action-bar-quick">
-      {shown.map((prompt) => (
-        <Button
-          key={prompt}
-          variant="plain"
-          className="app-action-bar-quick-btn"
-          title={prompt}
-          disabled={disabled}
-          onClick={() => onPick(prompt)}
-        >
-          {prompt}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Suggestions for the thread a page composes for: Home's Baxter thread, or the
- * planner or Baxter in an initiative's agent panel.
- *
- * The page owns the composer, so the bar offers only the one-click replies.
- * Where another page draws the reply, a pick sends and lands there: from Home,
- * the answer would otherwise arrive somewhere nothing shows it. That page
- * draws its own row under its composer, so the bar draws none on it.
- */
-function ScreenQuickPrompts({ target }: { target: ScreenPrompts }) {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  if (target.replyPath !== null && pathname === target.replyPath) return null;
-  const disabled = target.isBusy || target.unavailable;
-  const pick = (prompt: string) => {
-    if (disabled) return;
-    if (target.replyPath !== null) navigate(target.replyPath);
-    target.send(prompt);
-  };
-  return (
-    <ActionBarQuickPrompts
-      prompts={followUpPrompts(target.kind, null, target.messages)}
-      disabled={disabled}
-      onPick={pick}
-    />
-  );
-}
-
-/**
- * The half of the bar that belongs to the screen rather than to a conversation:
- * the shell switch and where the utility dock sits.
- *
- * Kept apart because it is the only half Home and the chat page draw — those
- * screens compose for their own thread, and the bar must not offer a second
- * composer for it.
- */
-function ActionBarScreenControls({
-  terminalSlug,
-  terminalOpen,
-  setTerminalOpen,
-  utilityDockEdge,
-  setUtilityDockEdge,
-}: {
-  terminalSlug: string;
-  terminalOpen: boolean;
-  setTerminalOpen: (open: boolean) => void;
-  utilityDockEdge: UtilityDockEdge;
-  setUtilityDockEdge: (edge: UtilityDockEdge) => void;
-}) {
-  const nextEdge: UtilityDockEdge = utilityDockEdge === "bottom" ? "right" : "bottom";
-  const presence = useAgentPresence();
-
-  return (
-    <>
-      <span className="app-action-bar-divider" aria-hidden />
-
-      <span
-        className="app-action-bar-live"
-        role="img"
-        aria-label={presence.label}
-        title={presence.label}
-        data-presence={presence.state}
-      >
-        <span
-          className={`app-action-bar-live-dot is-${presence.state}`}
-          aria-hidden
-        />
-      </span>
-
-      <button
-        type="button"
-        className={`app-action-bar-terminal${terminalOpen ? " is-on" : ""}`}
-        aria-pressed={terminalOpen}
-        disabled={!terminalSlug}
-        title={terminalSlug ? `Shell in ${terminalSlug}` : "Pick a workspace to open a shell in"}
-        onClick={() => setTerminalOpen(!terminalOpen)}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <path d="m4 17 6-6-6-6M12 19h8" />
-        </svg>
-        Terminal
-        <svg
-          className={`app-action-bar-chevron${terminalOpen ? " is-open" : ""}`}
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden
-        >
-          <path d="m18 15-6-6-6 6" />
-        </svg>
-      </button>
-
-      <button
-        type="button"
-        className="app-action-bar-dock-edge"
-        aria-label={
-          utilityDockEdge === "bottom"
-            ? "Dock utility panel to the right"
-            : "Dock utility panel to the bottom"
-        }
-        title={utilityDockEdge === "bottom" ? "Dock right" : "Dock bottom"}
-        onClick={() => setUtilityDockEdge(nextEdge)}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          {utilityDockEdge === "bottom" ? <path d="M3 15h18" /> : <path d="M15 3v18" />}
-        </svg>
-      </button>
-    </>
-  );
-}
-
-/**
- * What the bar says about the bound conversation.
- *
- * A decision waiting on the operator outranks everything: an agent question
- * arrives as an approval rather than a message, so a bar showing only "working…"
- * would sit there with something unanswered.
- */
-function ActionBarStatus({
-  label,
-  waiting,
-  loadError,
-  sendError,
-  busy,
-}: {
-  label: string;
-  waiting: number;
-  loadError: boolean;
-  sendError: string | null;
-  busy: boolean;
-}) {
-  if (waiting > 0) {
-    return (
-      <span className="app-action-bar-pill app-action-bar-pill--waiting">
-        {waiting} waiting on you
-      </span>
-    );
-  }
-  if (loadError) {
-    return (
-      <span className="app-action-bar-pill app-action-bar-pill--error">
-        conversation unavailable
-      </span>
-    );
-  }
-  if (sendError) {
-    return <span className="app-action-bar-pill app-action-bar-pill--error">{sendError}</span>;
-  }
-  if (busy) {
-    return <span className="app-action-bar-pill">working…</span>;
-  }
-  if (!label) return null;
-  return (
-    <span className="app-action-bar-pill app-action-bar-pill--context">
-      <span className="app-action-bar-pill-dot" aria-hidden />
-      On {label}
-    </span>
   );
 }

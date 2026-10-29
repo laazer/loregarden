@@ -6,6 +6,10 @@ a 400. Prefer the live catalog Codex itself ships:
 
 1. ``codex debug models`` (refreshes against the signed-in account)
 2. ``~/.codex/models_cache.json`` if the CLI is missing or times out
+
+Only when both are unavailable is this a failure, and then the reason travels
+with the empty catalogue: "Codex is still being asked" and "Codex is not
+installed" are different answers.
 """
 
 from __future__ import annotations
@@ -18,7 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES
-from loregarden.services.discovery_cache import ProbeCache
+from loregarden.services.discovery_cache import (
+    MAX_DETAIL_CHARS,
+    ProbeAnswer,
+    ProbeCache,
+    ProbeOutcome,
+    clamp_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +54,7 @@ class CodexModel:
 
 
 _CACHE: ProbeCache[CodexModel] = ProbeCache(
+    label="codex",
     probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
     success_ttl_seconds=CACHE_TTL_SECONDS,
     failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
@@ -69,6 +80,20 @@ def codex_home() -> Path:
     if override:
         return Path(override)
     return Path.home() / ".codex"
+
+
+def _models_cache_path() -> Path:
+    return codex_home() / "models_cache.json"
+
+
+def discovery_target() -> str:
+    """What discovery is (or would be) reading — resolvable without probing.
+
+    A cold key has no outcome to read a target from, and the picker names the
+    thing it is waiting on, so the module answers for it: the CLI if there is
+    one, otherwise the on-disk catalogue it would fall back to.
+    """
+    return resolve_codex_binary() or str(_models_cache_path())
 
 
 def _parse_models_payload(payload: object) -> list[CodexModel]:
@@ -115,10 +140,8 @@ def _json_object_from_cli_output(raw: str) -> object | None:
         return None
 
 
-def _list_from_cli() -> list[CodexModel]:
-    binary = resolve_codex_binary()
-    if not binary:
-        return []
+def _list_from_cli(binary: str) -> tuple[list[CodexModel], str]:
+    """The CLI's catalogue, plus why it could not produce one (empty if it did)."""
     try:
         completed = subprocess.run(
             [binary, "debug", "models"],
@@ -127,28 +150,34 @@ def _list_from_cli() -> list[CodexModel]:
             text=True,
             timeout=DISCOVERY_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired:
         logger.warning(
-            "Codex model discovery failed running %s; falling back to the on-disk models cache: %s",
+            "Codex model discovery timed out running %s; falling back to the on-disk cache",
+            binary,
+        )
+        return [], f"`codex debug models` did not answer within {DISCOVERY_TIMEOUT_SECONDS:g}s."
+    except OSError as exc:
+        logger.warning(
+            "Codex model discovery could not run %s; falling back to the on-disk cache: %s",
             binary,
             exc,
         )
-        return []
+        return [], clamp_detail(f"`codex debug models` could not be run: {exc}.")
 
     payload = _json_object_from_cli_output(completed.stdout) or _json_object_from_cli_output(
         completed.stderr
     )
     if payload is None:
-        logger.debug(
+        logger.warning(
             "Codex model discovery returned no JSON (exit %s)",
             completed.returncode,
         )
-        return []
-    return _parse_models_payload(payload)
+        return [], "`codex debug models` printed no model catalog."
+    return _parse_models_payload(payload), ""
 
 
 def _list_from_cache() -> list[CodexModel]:
-    path = codex_home() / "models_cache.json"
+    path = _models_cache_path()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -162,11 +191,48 @@ def _list_from_cache() -> list[CodexModel]:
     return _parse_models_payload(payload)
 
 
-def _discover() -> list[CodexModel]:
-    models = _list_from_cli()
-    if models:
-        return models
-    return _list_from_cache()
+def _missing_everything_detail(cache_path: Path) -> str:
+    """Both sources gone, in one sentence that still fits a field hint.
+
+    ``$CODEX_HOME`` can be arbitrarily deep, and a hint is rendered verbatim
+    beneath the model field, so an over-long path is elided from the front
+    rather than allowed to truncate the instruction at the end.
+    """
+    tail = "is unreadable. Install Codex, or set LOREGARDEN_CODEX_BIN."
+    shown = str(cache_path)
+    overflow = len(f"Codex CLI not found and {shown} {tail}") - MAX_DETAIL_CHARS
+    if overflow > 0:
+        shown = "…" + shown[overflow + 1 :]
+    return f"Codex CLI not found and {shown} {tail}"
+
+
+def _discover() -> ProbeOutcome[CodexModel]:
+    binary = resolve_codex_binary()
+    cache_path = _models_cache_path()
+    cli_detail = ""
+    if binary:
+        models, cli_detail = _list_from_cli(binary)
+        if models:
+            return ProbeOutcome(found=models, ok=True, target=binary)
+
+    cached = _list_from_cache()
+    if cached:
+        # The fallback is the point of having it: a catalogue was produced, so
+        # there is nothing for the operator to fix and nothing to tell them.
+        return ProbeOutcome(found=cached, ok=True, target=binary or str(cache_path))
+
+    if not binary:
+        return ProbeOutcome(
+            found=[],
+            ok=False,
+            detail=_missing_everything_detail(cache_path),
+            target=str(cache_path),
+        )
+    if cli_detail:
+        return ProbeOutcome(found=[], ok=False, detail=cli_detail, target=binary)
+    # The CLI ran and parsed, and listed nothing: a Codex account with only a
+    # profile default is a nameable state, not an error.
+    return ProbeOutcome(found=[], ok=True, target=binary)
 
 
 def reset_model_cache() -> None:
@@ -174,19 +240,20 @@ def reset_model_cache() -> None:
     _CACHE.reset()
 
 
-def list_codex_models() -> list[CodexModel]:
-    """Return listable Codex models for the signed-in account, or [].
+def list_codex_models() -> ProbeAnswer[CodexModel]:
+    """Listable Codex models for the signed-in account, and their discovery state.
 
-    Memoized, and single-flighted: one caller probes while the rest are served
-    the last known catalog. A queue of callers behind a 12s subprocess is a
-    queue of held database connections.
+    Memoized, single-flighted, and probed on a background thread: no caller
+    waits for the CLI, and one caller per key probes while the rest are served
+    the last known catalogue.
     """
-    return _CACHE.get(_CACHE_KEY, _discover)
+    return _CACHE.get(_CACHE_KEY, _discover, target=discovery_target())
 
 
-def codex_model_options() -> list[dict[str, str]]:
-    """Runtime-options shaped list for the Codex model picker."""
+def codex_model_options() -> tuple[list[dict[str, str]], dict[str, object]]:
+    """Runtime-options shaped list for the Codex model picker, and its state."""
+    answer = list_codex_models()
     options: list[dict[str, str]] = [dict(DEFAULT_OPTION)]
-    for model in list_codex_models():
+    for model in answer.found:
         options.append({"id": model.slug, "label": model.display_name})
-    return options
+    return options, answer.as_discovery_block()

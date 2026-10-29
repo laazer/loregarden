@@ -190,6 +190,9 @@ class WaitingOnRef(SQLModel):
     state: TicketState
     reason: WaitingReason
     blocked_on: BlockedOn | None = None
+    #: Its workspace. A prerequisite in another workspace is not on the board
+    #: you are looking at, so its id alone does not say where to find it.
+    workspace_slug: str = ""
 
 
 class TicketSummary(SQLModel):
@@ -229,6 +232,10 @@ class TicketSummary(SQLModel):
     blocked_on: BlockedOn | None = None
     #: The tickets it waits for: its blocked descendants, or unmet prerequisites.
     waiting_on: list[WaitingOnRef] = []
+    #: The bottom of each unmet-prerequisite chain under it: what has to move
+    #: first (`services.blocked_on.root_blockers_map`). Equal to the direct
+    #: prerequisites when no chain is deeper than one.
+    root_blockers: list[WaitingOnRef] = []
 
 
 class TicketStatusSummary(SQLModel):
@@ -269,8 +276,12 @@ class TicketTreeNode(SQLModel):
     workflow_stage_name: str = ""
     workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
+    #: The orchestrator split it into parts (`ticket_split_view`); its children are those parts.
+    was_split: bool = False
     #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
     blocked_on: BlockedOn | None = None
+    #: Its unfinished prerequisites — the waits the tree cannot draw.
+    waiting_on: list[WaitingOnRef] = []
     children: list["TicketTreeNode"] = []
     #: A copy of a ticket listed under an initiative that tracks it as a member
     #: (`initiative_members`). The ticket also sits under its real parent; the
@@ -289,6 +300,15 @@ class TicketDependencyRef(SQLModel):
     state: TicketState
     work_item_type: WorkItemType
     is_integration_review: bool = False
+    workspace_slug: str = ""
+    #: On a prerequisite: why it still holds this ticket — "not_done", or
+    #: "not_landed" when it is done but its work is not on this ticket's target.
+    #: None when it is met. Read from git, so only the detail view carries it.
+    unmet_reason: str | None = None
+    #: The branch a not-landed prerequisite has to land on.
+    landing_target: str = ""
+    #: Unmet, but a person started this ticket past it, so it no longer holds it.
+    overridden: bool = False
 
 
 class TicketDependencyRequest(SQLModel):
@@ -302,6 +322,16 @@ class TicketRelationRequest(SQLModel):
     external_id."""
 
     related_to: str
+
+
+class TicketSplit(SQLModel):
+    """The orchestrator split this ticket into parts, before its own stages could run on."""
+
+    stage_key: str
+    split_at: datetime
+    #: Each limit the ticket is over, as a phrase ("23,749-character description,
+    #: over the 15,000 limit"). Empty when it has since been edited under both.
+    over_limits: list[str] = Field(default_factory=list)
 
 
 class TicketDetail(TicketSummary):
@@ -339,6 +369,9 @@ class TicketDetail(TicketSummary):
     #: an inherited value is meaningless to the operator without its origin.
     resolved_compatibility_posture: str = ""
     compatibility_posture_source: str = ""
+    #: Set when the orchestrator split this ticket into parts; None otherwise,
+    #: including for a ticket given sub-items by hand.
+    split: TicketSplit | None = None
 
 
 class WorkspaceSummary(SQLModel):
@@ -413,6 +446,9 @@ class StartRunRequest(SQLModel):
     #: breaker exists to stop a stage redispatching itself, not to stop a human
     #: deliberately re-running one; the override is recorded.
     force: bool = False
+    #: Start it although it waits on prerequisites that are not done and
+    #: landed. Recorded on its history; an edge linked later holds it again.
+    ignore_prerequisites: bool = False
 
 
 class HandoffCheckinRequest(SQLModel):
@@ -439,6 +475,9 @@ class StartOrchestrationRequest(SQLModel):
     #: The lane to run in. None means any — the pool picks the quietest free
     #: one, and a full pool parks the request in the shortest queue.
     slot_number: int | None = None
+    #: Start it although it waits on prerequisites that are not done and
+    #: landed. Recorded on its history; an edge linked later holds it again.
+    ignore_prerequisites: bool = False
 
 
 class ExternalHarnessPromptRequest(SQLModel):
@@ -814,6 +853,9 @@ class TicketCreate(SQLModel):
     priority: int = 3
     milestone: str = ""
     external_id: str = ""
+    #: Prerequisites it waits for, as UUIDs or external ids — written with the
+    #: ticket, so nothing can dispatch it before they are recorded.
+    depends_on: list[str] = []
 
 
 class TicketImportFile(SQLModel):

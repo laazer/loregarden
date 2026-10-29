@@ -35,11 +35,14 @@ from loregarden.services.git_merge_noco import (
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.target_branch import (
     ensure_integration_branch,
     target_branch_name,
 )
+from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -94,10 +97,19 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
     if not rev(repo_root, f"refs/heads/{branch}"):
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
+    # Before either leg (local merge or the base's publish chain): both carry
+    # commits only, so work left in the tree would be left behind (1237).
+    left_behind = _uncommitted(session, ticket, workspace)
+    if left_behind is not None:
+        return LandResult(ok=False, branch=branch, target=target, detail=left_behind)
     if target == base:
         return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
 
     ensure_integration_branch(repo_root, target, base)
+
+    held = _held_without_shared_history(session, ticket, repo_root, branch, target)
+    if held is not None:
+        return held
 
     failed = _refresh_branch(repo_root, branch, target)
     if failed is not None:
@@ -155,7 +167,23 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     target_sha = rev(repo_root, f"refs/heads/{target}")
     if not source_sha or not target_sha:
         return False
+    if _uncommitted(session, ticket, workspace) is not None:
+        # `land_ticket` would refuse it, so a sweep retrying on this answer
+        # would re-block the ticket on every pass.
+        return False
     return merge_preview(repo_root, target_sha, source_sha).ok
+
+
+def _uncommitted(session: Session, ticket: Ticket, workspace: Workspace) -> str | None:
+    """Why the ticket's tree holds work a landing would leave behind, or None."""
+    try:
+        paths = uncommitted_at_landing(session, ticket, workspace)
+    except RuntimeError as exc:
+        return f"Not landed: could not tell whether the ticket's tree holds uncommitted work: {exc}"
+    if not paths:
+        return None
+    root = resolve_ticket_root(session, ticket, workspace)
+    return describe_uncommitted(paths, str(root))
 
 
 def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> bool:
@@ -171,6 +199,41 @@ def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha:
         and ticket.landed_branch == target
         and is_ancestor(repo_root, branch_sha, ticket.landed_sha)
         and is_ancestor(repo_root, ticket.landed_sha, f"refs/heads/{target}")
+    )
+
+
+def _held_without_shared_history(
+    session: Session, ticket: Ticket, repo_root: Path, branch: str, target: str
+) -> LandResult | None:
+    """An already-landed result when the target holds the branch by a squash.
+
+    The integration branch is moved onto the base after its tree publishes as
+    one squash (#621), so a ticket landed again afterwards shares no commit
+    with its target. Ancestry misses that: the refresh below merged the target
+    into a branch that already held all of it, and could conflict on work that
+    was already there. `None` lets the ancestry path (and its merge-commit
+    record, 928) run as before.
+    """
+    branch_sha = rev(repo_root, f"refs/heads/{branch}")
+    try:
+        holder = landing_commit(repo_root, branch_sha, rev(repo_root, f"refs/heads/{target}"))
+    except RuntimeError as exc:
+        return LandResult(
+            ok=False,
+            branch=branch,
+            target=target,
+            detail=f"could not tell whether {target} already holds {branch}: {exc}",
+        )
+    if not holder or holder == branch_sha:
+        return None
+    if not (ticket.landed_branch == target and ticket.landed_sha == holder):
+        _record(session, ticket, holder, target)
+    return LandResult(
+        ok=True,
+        branch=branch,
+        target=target,
+        landed_sha=holder,
+        skipped=LandSkip.ALREADY_LANDED,
     )
 
 

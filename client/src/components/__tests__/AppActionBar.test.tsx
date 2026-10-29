@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -7,6 +7,7 @@ import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
 import {
   useActiveChatSession,
+  type ChatAgents,
   type ChatModelBinding,
   type ScreenPrompts,
 } from "../../hooks/useActiveChatSession";
@@ -34,6 +35,12 @@ function renderBar(ui: ReactElement = <AppActionBar />) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
+/** The sheet opens when the composer takes focus, as it does for a person. */
+function openSheet() {
+  const composer = screen.getByRole("textbox");
+  act(() => composer.focus());
+}
+
 function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
   return {
     session: null,
@@ -44,7 +51,12 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     archive: null,
     composedOnScreen: false,
     screenPrompts: null,
+    agents: null,
+    assistantLabel: "Baxter",
+    composerBlocked: null,
     ...overrides,
+    // As the real hook does: the openers follow the bound conversation's kind.
+    promptKind: overrides.promptKind ?? overrides.session?.kind ?? "",
   } as ReturnType<typeof useActiveChatSession>;
 }
 
@@ -155,6 +167,7 @@ it("carries the auto-approve choice into the turn it was set for", () => {
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Auto-approve" }));
   fireEvent.change(screen.getByPlaceholderText("Message about this ticket…"), {
     target: { value: "run the tests" },
@@ -174,6 +187,7 @@ it("sends a quick opener while collapsed", () => {
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(
     screen.getByRole("button", { name: "What is blocking this ticket?" }),
   );
@@ -191,6 +205,7 @@ it("offers shipping the work when the conversation sits on its own branch", () =
   );
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Commit, push, and open a PR" }));
 
   expect(bound.send).toHaveBeenCalledWith("Commit, push, and open a PR", {
@@ -218,6 +233,7 @@ it("keeps the quick prompts once the thread is open", () => {
   useUiStore.setState({ copilotOpen: true });
 
   renderBar();
+  openSheet();
 
   expect(
     screen.getByRole("button", { name: "What is blocking this ticket?" }),
@@ -235,6 +251,7 @@ it("answers the reply on screen rather than repeating the openers", () => {
   useUiStore.setState({ copilotOpen: true });
 
   renderBar();
+  openSheet();
   fireEvent.click(screen.getByRole("button", { name: "Yes, go ahead" }));
 
   expect(bound.send).toHaveBeenCalledWith("Yes, go ahead", { autoApprove: false, skill: "" });
@@ -384,6 +401,7 @@ describe("the run-logs toggle", () => {
     );
 
     renderBar();
+    openSheet();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Run logs" })).toBeEnabled(),
     );
@@ -434,6 +452,7 @@ describe("the run-logs toggle", () => {
     );
 
     renderBar();
+    openSheet();
 
     await waitFor(() => expect(mockApi.ticket).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Run logs" })).toBeDisabled();
@@ -562,6 +581,7 @@ describe("the chat options", () => {
     );
 
     renderBar();
+    openSheet();
 
     expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeInTheDocument();
   });
@@ -610,63 +630,6 @@ describe("the chat options", () => {
     renderBar();
 
     expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeDisabled();
-  });
-
-  it("starts a fresh thread and shows it", () => {
-    const bound = archive();
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: bound,
-      }),
-    );
-    useUiStore.setState({ copilotHistoryOpen: true });
-
-    renderBar();
-    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-
-    expect(bound.startNewChat).toHaveBeenCalled();
-    // Started behind a collapsed dock, the new thread is invisible; and the
-    // archive rail would sit over it.
-    expect(useUiStore.getState().copilotOpen).toBe(true);
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
-  });
-
-  it("opens the archive in the dock rather than behind it", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: archive(),
-      }),
-    );
-
-    renderBar();
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
-
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
-    expect(useUiStore.getState().copilotOpen).toBe(true);
-  });
-
-  it("closes the archive again without collapsing the thread", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        session: session({ kind: "baxter-home" }),
-        label: "Baxter · loregarden",
-        ticketId: null,
-        archive: archive(),
-      }),
-    );
-    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
-
-    renderBar();
-    fireEvent.click(screen.getByRole("button", { name: "History" }));
-
-    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
-    expect(useUiStore.getState().copilotOpen).toBe(true);
   });
 });
 
@@ -800,60 +763,89 @@ describe("suggestions on a screen that composes for its own thread", () => {
     expect(screen.getByRole("button", { name: "What should I work on next?" })).toBeDisabled();
   });
 
-  it("offers the planner's questions on an initiative plan page, and stays there", () => {
-    const send = jest.fn();
-    mockResolver.mockReturnValue(
-      bind({
-        composedOnScreen: true,
-        ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, send }),
-      }),
-    );
-
-    renderAt("/initiatives/init-x-1");
-    const [first] = TRY_ASKING[INITIATIVE_PLANNING];
-    fireEvent.click(screen.getByRole("button", { name: first }));
-
-    expect(send).toHaveBeenCalledWith(first);
-    expect(screen.getByTestId("location")).toHaveTextContent("/initiatives/init-x-1");
-    expect(
-      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("offers triage questions instead when the panel shows Baxter", () => {
-    mockResolver.mockReturnValue(
-      bind({
-        composedOnScreen: true,
-        ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_TRIAGE, replyPath: null }),
-      }),
-    );
-
-    renderAt("/initiatives/init-x-1");
-
-    expect(screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] })).toBeEnabled();
-    expect(
-      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
-    ).not.toBeInTheDocument();
-  });
-
   it("disables them when the conversation cannot take a message", () => {
     const send = jest.fn();
     mockResolver.mockReturnValue(
       bind({
         composedOnScreen: true,
         ticketId: null,
-        screenPrompts: prompts({ kind: INITIATIVE_PLANNING, replyPath: null, unavailable: true, send }),
+        screenPrompts: prompts({ unavailable: true, send }),
       }),
     );
 
-    renderAt("/initiatives/init-x-1");
-    const button = screen.getByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] });
+    renderAt("/");
+    const button = screen.getByRole("button", { name: "What should I work on next?" });
     fireEvent.click(button);
 
     expect(button).toBeDisabled();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("Baxter's modes, seen from the bar", () => {
+  function agents(overrides: Partial<ChatAgents> = {}): ChatAgents {
+    return {
+      options: [
+        { id: "planner", label: "Plan", description: "Dates and pace" },
+        { id: "baxter", label: "Triage", description: "The tickets underneath" },
+      ],
+      active: "planner",
+      select: jest.fn(),
+      ...overrides,
+    };
+  }
+
+  function bindPlanner(overrides: Partial<ReturnType<typeof useActiveChatSession>> = {}) {
+    return bind({
+      session: session({ kind: "initiative-planner", id: "init1" }),
+      label: "init-tinkercg-build-1",
+      ticketId: null,
+      agents: agents(),
+      assistantLabel: "Baxter",
+      promptKind: INITIATIVE_PLANNING,
+      ...overrides,
+    });
+  }
+
+  it("leaves the mode switch to the dock's head", () => {
+    // The bar is one line on every page; the mode belongs with the thread it
+    // switches, which the dock head carries.
+    mockResolver.mockReturnValue(bindPlanner());
+    renderBar();
+
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("composes for the bound mode, with its openers, and names Baxter", () => {
+    const bound = session({ kind: "initiative-planner", id: "init1" });
+    mockResolver.mockReturnValue(bindPlanner({ session: bound }));
+    renderBar();
+
+    expect(screen.getByRole("button", { name: "Expand Baxter" })).toBeInTheDocument();
+    openSheet();
+    const [opener] = TRY_ASKING[INITIATIVE_PLANNING];
+    fireEvent.click(screen.getByRole("button", { name: opener }));
+    expect(bound.send).toHaveBeenCalledWith(opener, expect.objectContaining({ autoApprove: false }));
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_TRIAGE][0] }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says why the agent cannot take a message rather than offering a dead composer", () => {
+    mockResolver.mockReturnValue(
+      bindPlanner({ composerBlocked: "Attach a milestone to this initiative, then the planner can schedule it" }),
+    );
+    renderBar();
+
+    const input = screen.getByPlaceholderText(/Attach a milestone/);
+    expect(input).toBeDisabled();
+    // A disabled composer takes no focus, so its sheet of one-click replies
+    // never opens: no dead buttons. Baxter still opens, so the dock head's mode
+    // switch stays reachable.
+    expect(
+      screen.queryByRole("button", { name: TRY_ASKING[INITIATIVE_PLANNING][0] }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Baxter" })).toBeEnabled();
   });
 });
 

@@ -130,7 +130,15 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "dispatched_ci_fix" ||
     decision === "finished_cleared_landing" ||
     decision === "repaired" ||
-    decision === "requeued"
+    decision === "requeued" ||
+    // Waiting on another ticket is not this one failing, and the two ways out
+    // of it — landing, or a person starting it anyway — are not either.
+    decision === "held_on_prerequisites" ||
+    decision === "prerequisites_overridden" ||
+    decision === "released_on_prerequisites" ||
+    // Splitting is the orchestrator shrinking the work, not trouble; running
+    // oversized and unsplit is trouble and stays the "failed" default.
+    decision === "split_oversized_ticket"
     ? "normal"
     : "failed";
   }

@@ -1,8 +1,10 @@
 import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
 import type { LogLine } from "./runLogTypes";
+import type { BlockedOn, BlockKind, WaitingOnRef } from "./waitingTypes";
 
 export type { TicketDependencyRef };
+export type { BlockedOn, BlockKind, WaitingOnRef };
 
 // Shared API type definitions for the Loregarden client.
 // Split out of client.ts so the module boundary separates data shapes from calls.
@@ -60,19 +62,9 @@ export interface TicketSummary {
   blocked_on?: BlockedOn | null;
   /** The tickets it waits for: blocked descendants, or unmet prerequisites. */
   waiting_on?: WaitingOnRef[];
-}
-
-/** What a stuck ticket waits for — mirrors `BlockedOn` in `models.domain.block_kinds`. */
-export type BlockedOn = "person" | "tickets" | "agent";
-
-/** A ticket another one waits on, and what it waits on in turn. */
-export interface WaitingOnRef {
-  id: string;
-  external_id: string;
-  title: string;
-  state: TicketState;
-  reason: "blocked_child" | "prerequisite";
-  blocked_on: BlockedOn | null;
+  /** The bottom of each unmet-prerequisite chain under it: what has to move
+   *  first. Equal to the direct prerequisites when no chain is deeper than one. */
+  root_blockers?: WaitingOnRef[];
 }
 
 /** Board-wide counts: tickets per state, and how many are actually moving. */
@@ -80,6 +72,8 @@ export interface TicketStatusSummary {
   backlog: number;
   in_progress: number;
   blocked: number;
+  /** Owed by a person; the rest of the subtree carries on without it. */
+  parked?: number;
   done: number;
   wont_do: number;
   running: number;
@@ -99,6 +93,13 @@ export interface CalendarEventView {
   description: string | null;
 }
 
+/** The orchestrator split a ticket into parts: at which stage, when, and the limits it was over. */
+export interface TicketSplit {
+  stage_key: string;
+  split_at: string;
+  over_limits: string[];
+}
+
 export interface TicketTreeNode {
   id: string;
   external_id: string;
@@ -110,8 +111,12 @@ export interface TicketTreeNode {
   workflow_stage_name: string;
   workflow_stage_status: StageStatus;
   child_count: number;
+  /** The orchestrator split it into parts; its children are those parts. */
+  was_split?: boolean;
   /** What it waits for, derived server-side; absent or null when it is not stuck. */
   blocked_on?: BlockedOn | null;
+  /** Its unfinished prerequisites — the waits the tree cannot draw. */
+  waiting_on?: WaitingOnRef[];
   children: TicketTreeNode[];
   /** A leaf copy under an initiative that tracks this ticket as a member; the real row sits under its parent. */
   member_link?: boolean;
@@ -152,8 +157,6 @@ export interface ExternalHarnessPrompt {
   prompt: string;
 }
 
-/** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
-export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
 
 export interface TicketDetail extends TicketSummary {
   /**
@@ -193,6 +196,8 @@ export interface TicketDetail extends TicketSummary {
   /** What applies after inheritance, and where it came from. */
   resolved_compatibility_posture?: string;
   compatibility_posture_source?: string;
+  /** Set when the orchestrator split this ticket into parts. */
+  split?: TicketSplit | null;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -306,6 +311,8 @@ export interface LedgerAttempt {
   started_at: string | null;
   finished_at: string | null;
   duration_seconds: number | null;
+  /** The end of a failed run's stderr, where its error is; "" for any other run. */
+  error_tail: string;
 }
 
 /** One contiguous stretch of work on a stage. */
@@ -516,7 +523,11 @@ export interface RuntimeOptions {
   /** Cursor model ids that accept an `[effort=...]` bracket override. */
   cursor_effort_models?: string[];
   effective?: RuntimeEffective;
+  /** Per-provider discovery state. `claude`/`cursor` are static catalogs and never appear. Optional: a cached 200 from a pre-deploy server has no block, and a missing one reads as `fresh`. `detail` is non-empty only for `unavailable`; `target` is the binary or base URL probed, which the client cannot reconstruct. */
+  model_discovery?: Record<"codex" | "lmstudio" | "opencode", { status: DiscoveryStatus; detail: string; target: string }>;
 }
+
+export type DiscoveryStatus = "probing" | "fresh" | "stale" | "unavailable";
 
 export interface StudioExitActionRequirementCatalog {
   requirement_kinds: StudioExitActionRequirement["kind"][];
@@ -570,47 +581,6 @@ export interface BrowseDirectoryEntry {
 
 export interface BrowseImportEntry extends BrowseDirectoryEntry {
   kind: "directory" | "file";
-}
-
-export interface EditorBrowseEntry extends BrowseImportEntry {}
-
-export interface EditorBrowseResponse {
-  current_path: string;
-  repo_path: string;
-  parent_path: string | null;
-  parent_repo_path: string | null;
-  context_root: string;
-  context_path: string;
-  entries: EditorBrowseEntry[];
-}
-
-export interface EditorBranchRef {
-  name: string;
-  current: boolean;
-}
-
-export interface EditorWorktreeRef {
-  path: string;
-  branch: string;
-  label: string;
-  current: boolean;
-  repo_path: string;
-}
-
-export interface EditorRefsResponse {
-  workspace_root: string;
-  context_root: string;
-  context_path: string;
-  current_branch: string;
-  branches: EditorBranchRef[];
-  worktrees: EditorWorktreeRef[];
-}
-
-export interface EditorFileResponse {
-  path: string;
-  content: string;
-  language: string;
-  size: number;
 }
 
 export interface BrowseDirectoryResponse {
@@ -824,6 +794,26 @@ export interface StudioDefaults {
   handoff_checks: StudioHandoffCheck[];
   /** Allowed `skip_when` values, served so the client never mirrors the vocabulary. */
   skip_conditions?: string[];
+}
+
+/** How many tickets run on one template, from `GET /api/studio/workflow-usage`. */
+export interface WorkflowUsageStats {
+  template_slug: string;
+  tickets: number;
+  /** Of those, not yet done or won't do. */
+  open: number;
+  /** When a ticket last started on it; naive UTC. */
+  last_used_at: string | null;
+}
+
+/** One agent's run record, from `GET /api/studio/agent-run-stats`. */
+export interface AgentRunStats {
+  agent_id: string;
+  /** Finished runs: succeeded, failed or cancelled. */
+  runs: number;
+  failed: number;
+  /** When its latest run of any status was created; naive UTC. */
+  last_run_at: string | null;
 }
 
 export interface StudioGeneratedAgent {
@@ -1191,3 +1181,4 @@ export interface WorkflowReassignmentPreview {
 }
 
 export type * from "./gateTypes";
+export type * from "./editorTypes";

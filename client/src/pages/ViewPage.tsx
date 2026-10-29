@@ -140,7 +140,7 @@ export function ViewPage() {
         <p
           data-testid="view-refresh-failed"
           role="status"
-          style={{ margin: 0, padding: "6px 12px", color: "var(--txl)", fontSize: 12.5 }}
+          style={{ margin: 0, padding: "6px 12px", color: "var(--txl)", fontSize: "var(--fs-small)" }}
         >
           {describeError(view.error, "This view could not be refreshed")}
         </p>

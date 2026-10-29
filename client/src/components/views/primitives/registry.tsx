@@ -209,7 +209,7 @@ function Placeholder({
 }) {
   return (
     <div data-container-id={containerId} data-primitive-unknown={reason} style={HOST_STYLE}>
-      <p style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: 12.5 }}>{children}</p>
+      <p style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: "var(--fs-small)" }}>{children}</p>
     </div>
   );
 }

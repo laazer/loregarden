@@ -10,17 +10,20 @@ import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
 import { QueueNotificationsHost } from "./QueueNotificationsHost";
+import { TicketPeekHost } from "./TicketPeekHost";
 import { ToastHost } from "./ToastHost";
 import { ReaderHost } from "./reader/ReaderHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 import { ViewAgentActions } from "./ViewAgentActions";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
+import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
+import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const appPage = useAppPage();
   const workspace = useUiStore((s) => s.workspace);
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
-  const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
   const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
   const utilityDockEdge = useLayoutDockEdge();
 
@@ -28,9 +31,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const runtimeOptions = useQuery({
+  const ticketSummary = useTicketStatusSummary();
+  const usage = useUsageSnapshot();
+  const runtimeOptions = useRuntimeOptionsQuery({
     queryKey: ["runtime-options", workspace],
-    queryFn: () => api.runtimeOptions({ workspace }),
+    params: { workspace },
   });
 
   const setRuntime = useMutation({
@@ -74,7 +79,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const resolvedWorkspaceSlug = useMemo(() => {
     if (workspaceChosen) return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
-    if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
     if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
     return workspaces.data?.[0]?.slug ?? "";
   }, [
@@ -82,7 +86,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     workspaceChosen,
     appPage,
     editorWorkspace,
-    queueWorkspaceSlug,
     branchTriageWorkspaceSlug,
     workspaces.data,
   ]);
@@ -118,7 +121,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
       <div className="app-frame">
         <div className="app-ambient" aria-hidden />
-        <AppSidebar workspaceSlug={sidebarWorkspaceSlug} onOpenSettings={openSettings} />
+        <AppSidebar
+          workspaceSlug={sidebarWorkspaceSlug}
+          onOpenSettings={openSettings}
+          ticketSummary={ticketSummary.data}
+          usageNearLimit={Boolean(usage.query.data?.near_limit)}
+        />
         <TopbarPageSlotProvider>
           <div className="app-main">
             <AppTopbar />
@@ -147,6 +155,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         />
 
         <ReaderHost />
+        <TicketPeekHost />
         <ViewAgentActions />
         <ToastHost />
         <QueueNotificationsHost />

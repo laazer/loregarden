@@ -72,7 +72,11 @@ class UiActionEffect(StrEnum):
 
 
 class UiPage(StrEnum):
-    """Top-level pages, as `client/src/lib/appNavigation.ts` names them."""
+    """Top-level pages, as `client/src/lib/appNavigation.ts` names them.
+
+    ``QUEUE`` opens Machine's Lanes tab (``/machine/lanes``); the Queue page it
+    names became that tab, and the name stays so agents keep a way there.
+    """
 
     HOME = "home"
     CHAT = "chat"
@@ -82,6 +86,7 @@ class UiPage(StrEnum):
     STUDIO = "studio"
     EDITOR = "editor"
     QUEUE = "queue"
+    MACHINE = "machine"
     BRANCH_TRIAGE = "branch-triage"
     MCP = "mcp"
     MEMORY = "memory"
@@ -416,14 +421,14 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             UiActionEffect.WRITE,
             "Move a queued run to the front of the queue.",
             RunArgs,
-            offered="on the Queue page, for a run it lists (navigate.page queue)",
+            offered="on Machine's Lanes tab, for a run it lists (navigate.page queue)",
         ),
         UiActionSpec(
             UiAction.QUEUE_CANCEL,
             UiActionEffect.WRITE,
             "Remove a queued run from the queue.",
             RunArgs,
-            offered="on the Queue page, for a run it lists (navigate.page queue)",
+            offered="on Machine's Lanes tab, for a run it lists (navigate.page queue)",
         ),
         UiActionSpec(
             UiAction.CAPACITY_RELEASE,
@@ -432,7 +437,7 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "from the line. Its process is not stopped — a holder keeps running "
             "unaccounted, and a live waiter queues again at the back.",
             CapacityReleaseArgs,
-            offered="on the Queue page's Machine view, for a lease it lists (navigate.page queue)",
+            offered="on the Machine page, for a lease it lists (navigate.page machine)",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,

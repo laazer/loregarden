@@ -12,8 +12,12 @@ import {
   type StudioWorkflowStage,
   type WorkflowTransition,
 } from "../api/client";
+import { AgentIndex } from "../components/studio/AgentIndex";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
+import { NewAgentDialog } from "../components/studio/NewAgentDialog";
+import { NewWorkflowDialog } from "../components/studio/NewWorkflowDialog";
+import { WorkflowIndex } from "../components/studio/WorkflowIndex";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
@@ -34,6 +38,7 @@ import { AddToTabMenu } from "../components/AddToTabMenu";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
+import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -117,10 +122,24 @@ export function StudioPage() {
   // separately when a stored grant names one that is gone.
   const mcpServers = useQuery({ queryKey: ["mcp-servers"], queryFn: api.mcpServers });
   const agents = useQuery({ queryKey: ["studio-agents"], queryFn: api.studioAgents });
+  const showAgentIndex = tab === "agents" && studioResourceId === null;
+  const agentRunStats = useQuery({
+    queryKey: ["studio-agent-run-stats"],
+    queryFn: api.studioAgentRunStats,
+    enabled: showAgentIndex,
+  });
+  const [newAgentOpen, setNewAgentOpen] = useState(false);
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
+  const showWorkflowIndex = tab === "workflows" && studioResourceId === null;
+  const workflowUsage = useQuery({
+    queryKey: ["studio-workflow-usage"],
+    queryFn: api.studioWorkflowUsage,
+    enabled: showWorkflowIndex,
+  });
+  const [newWorkflowOpen, setNewWorkflowOpen] = useState(false);
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: () => api.runtimeOptions() });
+  const runtimeOptions = useRuntimeOptionsQuery({ queryKey: ["runtime-options"] });
 
   // Inherit the app-wide active workspace so Ticket Studio (and its Smart import)
   // opens on the workspace the user is already working in, not the first in the list.
@@ -398,18 +417,6 @@ export function StudioPage() {
   }, [isNewWorkflow]);
 
   useEffect(() => {
-    if (tab === "agents" && studioResourceId === null) {
-      navigateToStudioAgentNew(true);
-    }
-  }, [tab, studioResourceId]);
-
-  useEffect(() => {
-    if (tab === "workflows" && studioResourceId === null) {
-      navigateToStudioWorkflowNew(true);
-    }
-  }, [tab, studioResourceId]);
-
-  useEffect(() => {
     if (tab !== "agents" || !selectedAgentSlug || !agents.data) return;
     if (!agents.data.some((agent) => agent.slug === selectedAgentSlug)) {
       navigateToStudio("agents", true);
@@ -424,7 +431,7 @@ export function StudioPage() {
   }, [tab, selectedWorkflowSlug, workflows.data]);
 
   const startNewAgent = () => {
-    navigateToStudioAgentNew();
+    setNewAgentOpen(true);
   };
 
   const duplicateAgent = (agent: StudioAgent) => {
@@ -463,7 +470,7 @@ export function StudioPage() {
   };
 
   const startNewWorkflow = () => {
-    navigateToStudioWorkflowNew();
+    setNewWorkflowOpen(true);
   };
 
   const toggleMcpTool = (tool: string) => {
@@ -488,7 +495,7 @@ export function StudioPage() {
                 : "Ticket Studio"
         }
       >
-        {(tab === "agents" || tab === "workflows") && (
+        {((tab === "agents" && !showAgentIndex) || (tab === "workflows" && !showWorkflowIndex)) && (
           <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
             <button
               type="button"
@@ -554,6 +561,20 @@ export function StudioPage() {
             workspacesError={workspaces.isError ? workspaces.error : null}
             onRetryWorkspaces={() => workspaces.refetch()}
             activeWorkspaceSlug={activeWorkspaceSlug}
+          />
+        ) : showAgentIndex ? (
+          <AgentIndex
+            agents={agents}
+            stats={agentRunStats}
+            onNewAgent={startNewAgent}
+            newAgentOpen={newAgentOpen}
+          />
+        ) : showWorkflowIndex ? (
+          <WorkflowIndex
+            workflows={workflows}
+            usage={workflowUsage}
+            onNewWorkflow={startNewWorkflow}
+            newWorkflowOpen={newWorkflowOpen}
           />
         ) : tab === "agents" ? (
           <div className="studio-shell">
@@ -641,7 +662,7 @@ export function StudioPage() {
                     Duplicate to custom
                   </button>
                   {selectedAgent.role_file && (
-                    <span style={{ fontSize: 11, color: "var(--txl)", fontFamily: "var(--mono)" }}>
+                    <span style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedAgent.role_file}
                     </span>
                   )}
@@ -1012,7 +1033,7 @@ export function StudioPage() {
                     Duplicate to custom
                   </button>
                   {selectedWorkflow.source_path && (
-                    <span style={{ fontSize: 11, color: "var(--txl)", fontFamily: "var(--mono)" }}>
+                    <span style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedWorkflow.source_path}
                     </span>
                   )}
@@ -1156,6 +1177,23 @@ export function StudioPage() {
           </div>
         )}
       </div>
+      <NewAgentDialog
+        open={newAgentOpen}
+        onClose={() => setNewAgentOpen(false)}
+        onCreated={(slug) => {
+          setNewAgentOpen(false);
+          navigateToStudioAgent(slug);
+        }}
+      />
+      <NewWorkflowDialog
+        open={newWorkflowOpen}
+        onClose={() => setNewWorkflowOpen(false)}
+        onCreated={(slug) => {
+          setNewWorkflowOpen(false);
+          navigateToStudioWorkflow(slug);
+        }}
+        workflows={workflows.data ?? []}
+      />
     </div>
   );
 }

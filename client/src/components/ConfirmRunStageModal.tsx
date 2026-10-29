@@ -109,7 +109,7 @@ export function ConfirmRunStageModal({
       </div>
 
       <div className="modal-body">
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
+        <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           {doneStage ? (
             <>
               Mark <strong style={{ color: "var(--tx)" }}>{ticket.title}</strong> complete? This
@@ -164,7 +164,7 @@ export function ConfirmRunStageModal({
         {(stageAgentSubtitle(stage) || stage.agent_id || stage.skill_name) && (
           <div className="state-card" style={{ marginTop: 4 }}>
             <div className="state-label">{parallelStage ? "Reviewers" : classifyStage ? "Routes" : "Agent"}</div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: "var(--fs-small)" }}>
               {stageAgentSubtitle(stage) || `${stage.agent_id}${stage.skill_name ? ` · ${stage.skill_name}` : ""}`}
             </div>
           </div>
@@ -198,7 +198,7 @@ export function ConfirmRunStageModal({
               type="number"
               min={30}
               className="btn-secondary"
-              style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+              style={{ width: 140, fontSize: "var(--fs-small)", boxSizing: "border-box" }}
               value={timeoutSeconds}
               disabled={busy}
               onChange={(e) => setTimeoutSeconds(e.target.value)}
@@ -226,7 +226,7 @@ export function ConfirmRunStageModal({
               display: "flex",
               alignItems: "center",
               gap: 8,
-              fontSize: 13,
+              fontSize: "var(--fs-body)",
               color: "var(--txm)",
               cursor: "pointer",
               marginTop: 12,

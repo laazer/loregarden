@@ -10,7 +10,8 @@ import {
 import { DEFAULT_HIVE_SKIN, normalizeHiveSkinId, resolveHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";
 
-export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
+/** The Console's panes. A ticket's workflow and outputs moved to its own page. */
+export type PaneId = "workspaces" | "tickets";
 
 export type PaneVisibility = Record<PaneId, boolean>;
 
@@ -33,6 +34,14 @@ export const MAX_COPILOT_WIDTH = 640;
  * Change both or neither.
  */
 export const MAX_COPILOT_HEIGHT_VIEWPORT_FRACTION = 0.44;
+
+/** How many recently opened files the Editor remembers per workspace and worktree. */
+export const EDITOR_RECENT_LIMIT = 10;
+
+/** One list of recent files per workspace and worktree: a path means nothing in another. */
+export function editorRecentKey(workspaceSlug: string, contextRoot: string): string {
+  return `${workspaceSlug}::${contextRoot}`;
+}
 
 /** Keep a restored or dragged height usable, whatever is in storage. */
 export function clampCopilotHeight(value: unknown): number {
@@ -57,6 +66,18 @@ export function normalizeTicketDensity(value: unknown): TicketDensity {
   return value === "cards" ? "cards" : "compact";
 }
 
+/**
+ * The Console's two panes from a persisted value that may still carry the
+ * retired workflow and artifact panes. Someone who had hidden both of these to
+ * read a ticket wide gets the tree back: it is what the Console is for now.
+ */
+export function consolePaneVisibility(value: unknown): PaneVisibility {
+  const persisted = (value ?? {}) as Partial<Record<string, unknown>>;
+  const workspaces = persisted.workspaces !== false;
+  const tickets = persisted.tickets !== false;
+  return { workspaces, tickets: tickets || !workspaces };
+}
+
 interface UiState {
   stateFilters: TicketState[];
   /** What a stuck ticket waits for: a person, other tickets, or an agent. */
@@ -75,7 +96,8 @@ interface UiState {
   editorWorkspace: string;
   editorContextRoot: string;
   editorFilePath: string | null;
-  queueWorkspaceSlug: string;
+  /** Files opened in the Editor, newest first, keyed by `editorRecentKey`. */
+  editorRecentFiles: Record<string, string[]>;
   branchTriageWorkspaceSlug: string;
   /**
    * Which archive Baxter chat is on: a workspace slug, or a global scope
@@ -97,6 +119,12 @@ interface UiState {
    */
   utilityDockEdge: UtilityDockEdge;
   /**
+   * Whether the left rail stays open at its labelled width (the default) or
+   * folds to icons that widen on hover and focus. Persisted: it is a standing
+   * preference about the window, not about any one page.
+   */
+  railDocked: boolean;
+  /**
    * Whether the dock is also showing a shell.
    *
    * Off by default and remembered. Opening the first time spawns a real login
@@ -113,13 +141,23 @@ interface UiState {
    */
   dockPanelsVisible: boolean;
   /**
+   * An edge the screen on display prefers for the dock, over the operator's
+   * `utilityDockEdge`, or null for none.
+   *
+   * The initiative plan page sets "right": its agents' conversation is the
+   * page's side panel. Not persisted, and set by that screen alone, so leaving
+   * it gives the operator's own edge back. Choosing an edge clears it, so the
+   * dock-edge control is never overridden on the screen it was pressed on.
+   */
+  screenDockEdge: UtilityDockEdge | null;
+  /**
    * Which branch the branch-triage screen is reviewing. Lifted out of that
    * page so the dock can bind to its conversation — the dock mounts above the
    * routes and cannot see a page's local state.
    */
   branchTriageBranch: string;
   /**
-   * Bumped by the global topbar "New chat" action so BaxterChatPage can clear
+   * Bumped by the chat page's "New chat" control so BaxterChatPage can clear
    * its local thread without owning the chrome.
    */
   baxterChatResetNonce: number;
@@ -178,7 +216,7 @@ interface UiState {
   setEditorWorkspace: (slug: string) => void;
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
-  setQueueWorkspaceSlug: (slug: string) => void;
+  rememberEditorFile: (key: string, path: string) => void;
   setChatScope: (scope: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
@@ -192,10 +230,12 @@ interface UiState {
   setCopilotOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   setDockPanelsVisible: (visible: boolean) => void;
+  setScreenDockEdge: (edge: UtilityDockEdge | null) => void;
   toggleCopilot: () => void;
   setCopilotHeight: (height: number) => void;
   setCopilotWidth: (width: number) => void;
   setUtilityDockEdge: (edge: UtilityDockEdge) => void;
+  setRailDocked: (docked: boolean) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
@@ -213,7 +253,7 @@ type PersistedUiState = Pick<
   | "paneVisibility"
   | "editorWorkspace"
   | "editorContextRoot"
-  | "queueWorkspaceSlug"
+  | "editorRecentFiles"
   | "branchTriageWorkspaceSlug"
   | "chatScope"
   | "hiveSkin"
@@ -222,6 +262,7 @@ type PersistedUiState = Pick<
   | "copilotHeight"
   | "copilotWidth"
   | "utilityDockEdge"
+  | "railDocked"
   | "terminalOpen"
 >;
 
@@ -239,13 +280,11 @@ export const useUiStore = create<UiState>()(
       paneVisibility: {
         workspaces: true,
         tickets: true,
-        workflow: true,
-        artifacts: true,
       },
       editorWorkspace: "",
       editorContextRoot: ".",
       editorFilePath: null,
-      queueWorkspaceSlug: "",
+      editorRecentFiles: {},
       branchTriageWorkspaceSlug: "",
       chatScope: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
@@ -254,8 +293,10 @@ export const useUiStore = create<UiState>()(
       copilotHeight: DEFAULT_COPILOT_HEIGHT,
       copilotWidth: DEFAULT_COPILOT_WIDTH,
       utilityDockEdge: "bottom",
+      railDocked: true,
       terminalOpen: false,
       dockPanelsVisible: false,
+      screenDockEdge: null,
       // Not persisted: which branch is under review is a property of this
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
@@ -331,7 +372,12 @@ export const useUiStore = create<UiState>()(
       setEditorWorkspace: (editorWorkspace) => set({ editorWorkspace }),
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
-      setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
+      rememberEditorFile: (key, path) =>
+        set((state) => {
+          const was = state.editorRecentFiles[key] ?? [];
+          const next = [path, ...was.filter((item) => item !== path)].slice(0, EDITOR_RECENT_LIMIT);
+          return { editorRecentFiles: { ...state.editorRecentFiles, [key]: next } };
+        }),
       // Each scope is its own archive, and a global thread reads by id under any
       // focus, so a thread left open across a switch would show under the wrong
       // name. Leave it open only when the scope is first pinned.
@@ -364,11 +410,13 @@ export const useUiStore = create<UiState>()(
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
       setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
       setDockPanelsVisible: (dockPanelsVisible) => set({ dockPanelsVisible }),
+      setScreenDockEdge: (screenDockEdge) => set({ screenDockEdge }),
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
       setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
+      setRailDocked: (railDocked) => set({ railDocked }),
       setUtilityDockEdge: (utilityDockEdge) =>
-        set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge) }),
+        set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge), screenDockEdge: null }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
@@ -387,9 +435,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 14,
+      version: 15,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 15) {
+          state.paneVisibility = consolePaneVisibility(state.paneVisibility);
+        }
         if (version < 14) {
           state.ticketDensity = normalizeTicketDensity(state.ticketDensity);
         }
@@ -468,7 +519,7 @@ export const useUiStore = create<UiState>()(
         paneVisibility: s.paneVisibility,
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
-        queueWorkspaceSlug: s.queueWorkspaceSlug,
+        editorRecentFiles: s.editorRecentFiles,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         chatScope: s.chatScope,
         baxterChatSessionId: s.baxterChatSessionId,
@@ -476,6 +527,7 @@ export const useUiStore = create<UiState>()(
         copilotHeight: s.copilotHeight,
         copilotWidth: s.copilotWidth,
         utilityDockEdge: s.utilityDockEdge,
+        railDocked: s.railDocked,
         terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,
@@ -494,6 +546,15 @@ export const useUiStore = create<UiState>()(
  */
 export function useLayoutDockEdge(): UtilityDockEdge {
   return useUiStore((s) =>
-    s.utilityDockEdge === "right" && s.dockPanelsVisible ? "right" : "bottom",
+    preferredDockEdge(s) === "right" && s.dockPanelsVisible ? "right" : "bottom",
   );
+}
+
+/** The edge the dock goes to when a panel opens: the screen's, else the operator's. */
+export function useUtilityDockEdge(): UtilityDockEdge {
+  return useUiStore(preferredDockEdge);
+}
+
+function preferredDockEdge(s: Pick<UiState, "screenDockEdge" | "utilityDockEdge">): UtilityDockEdge {
+  return s.screenDockEdge ?? s.utilityDockEdge;
 }

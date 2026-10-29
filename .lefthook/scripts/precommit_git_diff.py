@@ -247,15 +247,24 @@ def read_source_text(path: Path, *, repo: Path | None) -> str:
 def parse_python_source(source: str, path: Path) -> ast.Module:
     """``ast.parse``, with its non-syntax failures routed to the one channel.
 
-    A NUL byte in a ``.py`` makes ``ast.parse`` raise ``ValueError``, which is
-    not a ``SyntaxError`` — so every gate's ``except SyntaxError`` missed it and
-    the run died with a traceback out of the middle of the walk. That exits
-    non-zero, so it was never a false pass, but it printed a stack trace instead
-    of naming the file, and it bypassed the `UnexaminableError` channel that is
-    supposed to be the single place a gate decides what to do about a file it
-    could not examine. ``SyntaxError`` still propagates: each gate already has
-    an answer for it.
+    A NUL byte is refused before parsing, because what ``ast.parse`` makes of
+    one depends on the interpreter: ``ValueError`` on CPython <= 3.10, which
+    every gate's ``except SyntaxError`` missed (a traceback instead of the
+    file's name), and ``SyntaxError`` from 3.11, which each gate answers its
+    own way — the organization gate as a "syntax error" finding, the others as
+    a refusal. A file holding a NUL is not text a gate can grade, and all three
+    say so in the same words.
+
+    No other ``ValueError`` from ``ast.parse`` is known on an interpreter the
+    gates accept; one that appears takes the same channel, the single place a
+    gate decides what to do about a file it could not examine. ``SyntaxError``
+    still propagates: each gate already has an answer for it.
     """
+    if "\x00" in source:
+        raise UnexaminableFileError(
+            f"{path}: holds a NUL byte, so it is not source this run can parse "
+            "and it cannot be reported clean"
+        )
     try:
         return ast.parse(source, filename=str(path))
     except ValueError as exc:

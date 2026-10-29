@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.ticket_service import TicketService
@@ -51,6 +52,35 @@ def test_add_and_remove_dependency_via_api(client, db_session):
     removed = client.delete(f"/api/tickets/{a.id}/dependencies/{b.id}")
     assert removed.status_code == 200
     assert removed.json()["dependencies"] == []
+
+
+def test_api_rejects_dependency_on_parent_with_400(client, db_session):
+    parent = _feature(db_session, "Parent Feature")
+    child = TicketService(db_session).create_ticket(
+        workspace_slug="loregarden",
+        title="Child cap",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    resp = client.post(f"/api/tickets/{child.id}/dependencies", json={"depends_on": parent.id})
+    assert resp.status_code == 400, resp.text
+    assert "ancestor" in resp.json()["detail"]
+
+
+def test_mcp_link_dependency_rejects_parent(client, db_session):
+    parent = _feature(db_session, "MCP Parent")
+    child = TicketService(db_session).create_ticket(
+        workspace_slug="loregarden",
+        title="MCP Child",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    with pytest.raises(ValueError, match="ancestor"):
+        _call(
+            db_session,
+            "loregarden_link_dependency",
+            {"ticket_id": child.id, "depends_on": parent.id},
+        )
 
 
 def test_api_rejects_dependency_cycle_with_409(client, db_session):
@@ -102,8 +132,6 @@ def test_mcp_link_and_unlink_dependency(client, db_session):
 
 
 def test_mcp_link_dependency_rejects_cycle(client, db_session):
-    import pytest
-
     a = _feature(db_session, "MCP Cycle A")
     b = _feature(db_session, "MCP Cycle B")
     _call(db_session, "loregarden_link_dependency", {"ticket_id": a.id, "depends_on": b.id})

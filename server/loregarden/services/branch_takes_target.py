@@ -9,14 +9,21 @@ only commits were 801's from before 491's tree reached main (so their work was
 already on the target, and only history conflicted), and 954, with seven
 commits of real work against a `chat_branch_sweep.py` main had rewritten.
 
-Two answers, tried in order, before a person is asked:
+Three answers, tried in order, before a person is asked:
 
-1. **The branch adds nothing the target lacks** (`superseding_commit`: some
+1. **The branch adds nothing the target lacks** (`work_landed.landing_commit`: some
    commit in the target's history already holds all of it, which a squash
    merge leaves invisible to ancestry). The branch is moved to the target by
    compare-and-swap. Its commits stay in the reflog, and their content is on
    the target. 918 and 920.
-2. **It has work of its own**: the agent's merge turn
+2. **It holds a squash of the target, not the target** (`squash_twin`: a
+   branch commit and a target commit with the same tree, neither side's
+   ancestor). The target commit is recorded as merged with the branch's own
+   tree, which changes no file, and the merge is previewed again. On
+   2026-10-20 lg-external-harness-1026 had merged `publish_tree`'s squash of
+   its integration branch; two checkout merges then conflicted in seven test
+   files it already held, each costing a 900s merge turn.
+3. **It has work of its own**: the agent's merge turn
    (`integration_merge_agent.merge_base_by_agent`) merges the target in, in a
    throwaway worktree. Loregarden writes the commit, the workspace gates grade
    what the merge adds, and the branch moves only when it passes. Under the
@@ -30,9 +37,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.git_merge_noco import merge_preview, rev, superseding_commit
+from loregarden.services.git_merge_noco import (
+    SquashTwin,
+    merge_preview,
+    record_merged,
+    rev,
+    squash_twin,
+)
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_merge_agent import merge_base_by_agent
+from loregarden.services.work_landed import landing_commit
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -76,13 +90,12 @@ def take_target(
         return TakeTarget(True)
     if not preview.conflicted_files:
         return TakeTarget(False, preview.detail)
-    try:
-        superseded = superseding_commit(repo_root, branch_sha, target_sha)
-    except RuntimeError as exc:
-        return TakeTarget(False, f"could not tell whether {target!r} holds {branch!r}: {exc}")
-    if superseded:
-        return _move(repo_root, branch, branch_sha, target_sha, holds=superseded)
-    files = ", ".join(preview.conflicted_files)
+    original = branch_sha
+    settled = _without_a_turn(repo_root, branch, target, branch_sha, target_sha)
+    if settled.answer is not None:
+        return settled.answer
+    conflicted = settled.conflicted_files or preview.conflicted_files
+    files = ", ".join(conflicted)
     if seat is None:
         return TakeTarget(False, f"conflicts in {files}, and no merge turn can run on this path")
     resolution = merge_base_by_agent(
@@ -92,12 +105,55 @@ def take_target(
         repo_root=repo_root,
         branch=branch,
         base=target,
-        files=preview.conflicted_files,
+        files=conflicted,
         about=ticket_branch_brief(seat.ticket, branch=branch, target=target),
     )
     if not resolution.ok:
         return TakeTarget(False, f"conflicts in {files}; {resolution.detail}")
-    return TakeTarget(True, moved_from=branch_sha, moved_to=rev(repo_root, f"refs/heads/{branch}"))
+    return TakeTarget(True, moved_from=original, moved_to=rev(repo_root, f"refs/heads/{branch}"))
+
+
+@dataclass(frozen=True)
+class _Settled:
+    """What the git-only answers decided: a final ``answer``, or None when only a
+    merge turn can go on, with the files still conflicting if a twin moved the
+    branch (empty when the first preview's files still stand)."""
+
+    answer: TakeTarget | None = None
+    conflicted_files: tuple[str, ...] = ()
+
+
+def _without_a_turn(
+    repo_root: Path, branch: str, target: str, branch_sha: str, target_sha: str
+) -> _Settled:
+    """Answers 1 and 2 of the module docstring: history alone, no agent."""
+    try:
+        superseded = landing_commit(repo_root, branch_sha, target_sha)
+    except RuntimeError as exc:
+        return _Settled(
+            TakeTarget(False, f"could not tell whether {target!r} holds {branch!r}: {exc}")
+        )
+    if superseded:
+        return _Settled(_move(repo_root, branch, branch_sha, target_sha, holds=superseded))
+    try:
+        twin = squash_twin(repo_root, branch_sha, target_sha)
+    except RuntimeError as exc:
+        return _Settled(
+            TakeTarget(
+                False, f"could not tell whether {branch!r} holds a squash of {target!r}: {exc}"
+            )
+        )
+    if twin is None:
+        return _Settled()
+    healed = record_twin(repo_root, branch, branch_sha, twin)
+    if not healed.ok:
+        return _Settled(healed)
+    preview = merge_preview(repo_root, healed.moved_to, target_sha)
+    if preview.ok:
+        return _Settled(healed)
+    if not preview.conflicted_files:
+        return _Settled(TakeTarget(False, preview.detail))
+    return _Settled(conflicted_files=preview.conflicted_files)
 
 
 def ticket_branch_brief(ticket: Ticket, *, branch: str, target: str) -> str:
@@ -140,6 +196,39 @@ def _move(repo_root: Path, branch: str, old: str, new: str, *, holds: str) -> Ta
         holds[:12],
     )
     return TakeTarget(True, moved_from=old, moved_to=new)
+
+
+def record_twin(repo_root: Path, branch: str, branch_sha: str, twin: SquashTwin) -> TakeTarget:
+    """Give ``branch`` the history its squash of the target left out.
+
+    ``twin.on_branch`` is a snapshot the target also holds, as
+    ``twin.on_target``, so recording that commit as merged changes no file
+    and is true: from there on the branch has everything it had. Later merges
+    of the target then compare from it, not from the base the two diverged at.
+    """
+    subject = (
+        f"Record {twin.on_target[:12]} as merged into {branch}; tree unchanged\n\n"
+        f"{twin.on_branch[:12]} on {branch} is the same snapshot as {twin.on_target[:12]} "
+        "on its target, with none of its history (a squash of the target, merged in)."
+    )
+    recorded = record_merged(
+        repo_root, branch=branch, branch_sha=branch_sha, merged_sha=twin.on_target, subject=subject
+    )
+    if not recorded.ok:
+        return TakeTarget(
+            False,
+            f"{branch} holds {twin.on_branch[:12]}, a copy of {twin.on_target[:12]} with no "
+            f"shared history, and recording the merge failed: {recorded.detail}",
+        )
+    logger.warning(
+        "Recorded %s as merged into %s (%s, tree unchanged): %s on the branch is the same "
+        "snapshot with none of its history",
+        twin.on_target[:12],
+        branch,
+        recorded.sha[:12],
+        twin.on_branch[:12],
+    )
+    return TakeTarget(True, moved_from=branch_sha, moved_to=recorded.sha)
 
 
 def bring_tree_along(tree: Path, moved: TakeTarget) -> None:

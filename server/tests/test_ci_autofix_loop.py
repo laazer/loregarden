@@ -11,6 +11,7 @@ history rail.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from unittest import mock
 
@@ -21,15 +22,23 @@ from loregarden.models.domain import (
     AutoFixStatus,
     CIRunResult,
     CIStatus,
+    PrListingState,
     StageStatus,
     TicketState,
     Workspace,
 )
-from loregarden.services import ci_autofix_dispatch, ci_checks, ci_poll_scheduler, git_automation
+from loregarden.services import (
+    ci_autofix_dispatch,
+    ci_checks,
+    ci_poll_scheduler,
+    git_automation,
+    github_pr_listing,
+)
 from loregarden.services import publish_tree as publish_tree_module
-from loregarden.services.ci_checks import GitHubReadError, OpenPullRequest, rollup
+from loregarden.services.ci_checks import OpenPullRequest, rollup
 from loregarden.services.ci_poll_scheduler import poll_workspace
 from loregarden.services.ci_service import AutoFixRefusal, CIService
+from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.ticket_pull_request import GhCheck
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import set_stage_status
@@ -94,7 +103,7 @@ def done_ticket_fixture(session, workspace, repo):
 def gh_logs_fixture():
     """`gh run view --log-failed` answers with a pytest failure."""
     done = subprocess.CompletedProcess(["gh"], 0, stdout=LOG, stderr="")
-    with mock.patch.object(ci_checks, "run_gh", return_value=done) as run_gh:
+    with mock.patch.object(github_pr_listing, "run_gh", return_value=done) as run_gh:
         yield run_gh
 
 
@@ -114,16 +123,36 @@ def _tip(repo, branch: str) -> str:
     return git(repo, "rev-parse", branch).stdout.strip()
 
 
+def _node(branch: str, sha: str, *checks: dict, number: int = 7) -> dict:
+    """One open PR as GitHub's GraphQL listing returns it."""
+    rollup_ = {"contexts": {"nodes": list(checks)}} if checks else None
+    return {
+        "number": number,
+        "url": f"https://github.com/o/r/pull/{number}",
+        "headRefName": branch,
+        "headRefOid": sha,
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": rollup_}}]},
+    }
+
+
 def _pr(branch: str, sha: str, *checks: dict) -> OpenPullRequest:
-    return OpenPullRequest.model_validate(
-        {
-            "number": 7,
-            "url": "https://github.com/o/r/pull/7",
-            "headRefName": branch,
-            "headRefOid": sha,
-            "statusCheckRollup": list(checks),
+    return OpenPullRequest.model_validate(_node(branch, sha, *checks))
+
+
+def _listing(nodes: list[dict], *, has_next_page: bool) -> subprocess.CompletedProcess:
+    """`gh api graphql --paginate --slurp` answering with one page."""
+    page = {
+        "data": {
+            "repository": {
+                "pullRequests": {
+                    "totalCount": len(nodes),
+                    "pageInfo": {"hasNextPage": has_next_page, "endCursor": "c"},
+                    "nodes": nodes,
+                }
+            }
         }
-    )
+    }
+    return subprocess.CompletedProcess(["gh"], 0, stdout=json.dumps([page]), stderr="")
 
 
 def _observe(session, ticket, workspace, pr):
@@ -163,6 +192,34 @@ def test_a_failed_pr_listing_raises_rather_than_reading_as_no_prs(tmp_path, gh_l
     gh_logs.return_value = subprocess.CompletedProcess(["gh"], 1, stdout="", stderr="HTTP 401")
     with pytest.raises(GitHubReadError, match="HTTP 401"):
         ci_checks.list_open_pull_requests(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("has_next_page", "expected"),
+    [(True, PrListingState.INCOMPLETE), (False, PrListingState.COMPLETE)],
+)
+def test_a_full_page_is_complete_only_when_github_says_no_page_follows(
+    tmp_path, gh_logs, has_next_page, expected
+):
+    nodes = [_node(f"b{n}", f"sha{n}", PASSING, number=n) for n in range(PR_PAGE_SIZE)]
+    gh_logs.return_value = _listing(nodes, has_next_page=has_next_page)
+    listing = ci_checks.list_open_pull_requests(tmp_path)
+    assert len(listing.pull_requests) == PR_PAGE_SIZE
+    assert listing.state is expected
+
+
+def test_the_poller_lists_only_open_prs(tmp_path, gh_logs):
+    gh_logs.return_value = _listing([], has_next_page=False)
+    ci_checks.list_open_pull_requests(tmp_path)
+    (query,) = [arg for arg in gh_logs.call_args.args[0] if arg.startswith("query=")]
+    assert "pullRequests(states: OPEN," in query
+
+
+def test_a_commit_nothing_has_reported_on_has_no_checks(tmp_path, gh_logs):
+    gh_logs.return_value = _listing([_node("b", "sha")], has_next_page=False)
+    (pr,) = ci_checks.list_open_pull_requests(tmp_path).pull_requests
+    assert pr.checks == []
+    assert rollup(pr.checks) is CIStatus.PENDING
 
 
 def test_a_check_with_no_actions_job_is_named_not_dropped(tmp_path):
@@ -522,6 +579,25 @@ def test_a_workspace_whose_prs_cannot_be_listed_reports_it(session, workspace, g
     with mock.patch.dict(ci_poll_scheduler._last_list_error, clear=True):
         poll = poll_workspace(session, workspace)
     assert poll.errors and "no auth" in poll.errors[0]
+
+
+@pytest.mark.parametrize("has_next_page", [True, False])
+def test_a_full_page_observes_what_it_read_and_reports_only_a_page_left_unread(
+    session, workspace, repo, done_ticket, gh_logs, has_next_page
+):
+    branch = done_ticket.branch
+    nodes = [_node(branch, _tip(repo, branch), PASSING)] + [
+        _node(f"other/{n}", f"sha{n}", PASSING, number=100 + n) for n in range(PR_PAGE_SIZE - 1)
+    ]
+    gh_logs.return_value = _listing(nodes, has_next_page=has_next_page)
+    with mock.patch.dict(ci_poll_scheduler._last_list_error, clear=True):
+        poll = poll_workspace(session, workspace)
+
+    assert poll.observed == [done_ticket.external_id]
+    if has_next_page:
+        assert poll.errors and "more open pull requests" in poll.errors[0]
+    else:
+        assert poll.errors == []
 
 
 def test_a_repeating_listing_failure_warns_once_not_every_tick(session, workspace, gh_logs, caplog):

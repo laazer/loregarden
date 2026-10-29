@@ -2,19 +2,24 @@ import React, { useEffect, useState } from 'react';
 import * as apiClient from '../api/client';
 import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
-import { TICKET_STATE_COLORS } from '../lib/ticketStates';
+import { ticketStateChip } from '../lib/ticketStates';
 import { IconCloseButton } from './IconCloseButton';
 import { TicketDependencies } from './TicketDependencies';
 import { TicketGithubIssue } from './TicketGithubIssue';
 import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
+import { useDialogDismiss } from '../hooks/useDialogDismiss';
+import { TicketModalApprovals } from './TicketModalApprovals';
 import { AddToTabMenu } from './AddToTabMenu';
 import { MarkdownContent } from './chat/MarkdownContent';
 import { CopyValueButton } from './CopyValueButton';
 import { TicketCriteriaEditor, TicketCriteriaView } from './TicketCriteriaChecklist';
 import { criteriaDrafts, draftChecked, draftCriteria, type CriterionDraft } from '../lib/criterionDrafts';
 import './TicketDetailsModal.css';
+import { Button } from "./ui/Button";
+import { StatusChip } from "./ui/StatusChip";
+import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
 
 const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
@@ -60,6 +65,8 @@ export interface TicketDetailsModalProps {
   /** Saves which criteria are checked off, from read mode. Rejects when it failed. */
   onSaveChecks?: (checked: string[]) => Promise<void>;
   isSavingChecks?: boolean;
+  /** Leaves the modal for the ticket's own page. Omitted where the modal is opened from that page. */
+  onOpenTicket?: () => void;
 }
 
 type ModalMode = 'view' | 'edit';
@@ -126,6 +133,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   onSave,
   onSaveChecks,
   isSavingChecks = false,
+  onOpenTicket,
 }) => {
   const [mode, setMode] = useState<ModalMode>('view');
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -151,22 +159,22 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 
   const editing = mode === 'edit' && draft !== null && ticket !== null;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      // Escape backs out one level: out of the editor first, then out of the modal.
-      if (editing) {
-        if (isSaving) return;
-        setMode('view');
-        setDraft(null);
-        return;
-      }
-      onClose?.();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, editing, isSaving]);
+  // Escape backs out one level: out of the editor first, then out of the modal.
+  // Through the dismiss stack, so a Reject or Ignore dialog opened from an
+  // approval card above this one takes the press instead of closing both.
+  useDialogDismiss(
+    isOpen
+      ? () => {
+          if (editing) {
+            if (isSaving) return;
+            setMode('view');
+            setDraft(null);
+            return;
+          }
+          onClose?.();
+        }
+      : null,
+  );
 
   if (!isOpen) {
     return null;
@@ -276,11 +284,11 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               )}
             </div>
             {editing ? (
-              <input
+              <Input
                 id="modal-title"
                 aria-label="Ticket title"
                 className="btn-secondary filter-select modal-title"
-                style={{ width: '100%', fontSize: 16, fontWeight: 600, marginTop: 4 }}
+                style={{ width: '100%', fontSize: "var(--fs-lead)", fontWeight: 600, marginTop: 4 }}
                 value={draft.title}
                 disabled={isSaving}
                 placeholder="Ticket title"
@@ -342,12 +350,12 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               <div className="state-card">
                 <div className="state-label">Status</div>
                 <div className="ticket-modal-status-row">
-                  <span className="ticket-modal-state" style={{ color: TICKET_STATE_COLORS[ticket.state] ?? 'var(--tx)' }}>
-                    {STATE_LABELS[ticket.state] ?? asDisplayString(ticket.state)}
-                  </span>
+                  <StatusChip {...ticketStateChip(ticket.state)} />
                   <span className="ticket-modal-priority">Priority: {priorityLabel(ticket.priority)}</span>
                 </div>
               </div>
+
+              <TicketModalApprovals ticket={ticket} criteria={criteria} />
 
               <div className="state-card">
                 <div className="state-label">Description</div>
@@ -411,9 +419,16 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               </button>
             </>
           ) : (
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>
-              Close
-            </button>
+            <>
+              <Button variant="secondary" onClick={onClose} disabled={busy}>
+                Close
+              </Button>
+              {onOpenTicket ? (
+                <Button variant="primary" onClick={onOpenTicket} disabled={busy || !ticket}>
+                  Open ticket
+                </Button>
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -440,11 +455,11 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
         <div className="state-label">Status</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
-            <div style={{ fontSize: 11, color: 'var(--txm)' }}>State</div>
+            <div style={{ fontSize: "var(--fs-micro)", color: 'var(--txm)' }}>State</div>
             <Select
               aria-label="State"
               className="btn-secondary filter-select"
-              style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+              style={{ width: '100%', fontSize: "var(--fs-body)", marginTop: 4 }}
               value={draft.state}
               disabled={disabled}
               onChange={(e) => onChange({ state: e.target.value as TicketState })}
@@ -455,11 +470,11 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
             </Select>
           </label>
           <label>
-            <div style={{ fontSize: 11, color: 'var(--txm)' }}>Priority</div>
+            <div style={{ fontSize: "var(--fs-micro)", color: 'var(--txm)' }}>Priority</div>
             <Select
               aria-label="Priority"
               className="btn-secondary filter-select"
-              style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+              style={{ width: '100%', fontSize: "var(--fs-body)", marginTop: 4 }}
               value={draft.priority}
               disabled={disabled}
               onChange={(e) => onChange({ priority: Number(e.target.value) })}
@@ -493,11 +508,11 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
 
       <div className="state-card">
         <div className="state-label">Tags</div>
-        <input
+        <Input
           type="text"
           aria-label="Tags, comma separated"
           className="btn-secondary filter-select"
-          style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+          style={{ width: '100%', fontSize: "var(--fs-body)", marginTop: 4 }}
           value={draft.tagsText}
           disabled={disabled}
           placeholder="backend, needs-design…"
@@ -539,7 +554,7 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
       {asDisplayString(ticket.block_message || ticket.blocking_issues) && (
         <div className="state-card">
           <div className="state-label">Blocking Issues</div>
-          <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{asDisplayString(ticket.block_message || ticket.blocking_issues)}</p>
+          <p style={{ fontSize: "var(--fs-body)", color: 'var(--red)', margin: 0 }}>{asDisplayString(ticket.block_message || ticket.blocking_issues)}</p>
         </div>
       )}
 
@@ -548,7 +563,7 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
           <div className="state-label">Workflow Stages</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {ticket.stages.map((stage) => (
-              <div key={stage.key} style={{ fontSize: 12, color: 'var(--txm)' }}>
+              <div key={stage.key} style={{ fontSize: "var(--fs-small)", color: 'var(--txm)' }}>
                 <div style={{ color: 'var(--tx)' }}>{asDisplayString(stage.name)}</div>
                 <div>Agent: {asDisplayString(stage.agent_id, 'N/A')} · Status: {asDisplayString(stage.status)}</div>
               </div>
@@ -558,14 +573,14 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
       ) : asDisplayString(ticket.workflow_stage_name) ? (
         <div className="state-card">
           <div className="state-label">Workflow Stage</div>
-          <div style={{ fontSize: 13, color: 'var(--tx)' }}>{asDisplayString(ticket.workflow_stage_name)}</div>
+          <div style={{ fontSize: "var(--fs-body)", color: 'var(--tx)' }}>{asDisplayString(ticket.workflow_stage_name)}</div>
         </div>
       ) : null}
 
       {ticket.artifacts && hasArtifactContent(ticket.artifacts) && (
         <div className="state-card">
           <div className="state-label">Artifacts</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--txm)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: "var(--fs-small)", color: 'var(--txm)' }}>
             {diffArtifact && (
               <div><strong>Code Diff:</strong> {diffSummary}</div>
             )}
@@ -587,10 +602,10 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
 
       <div className="state-card">
         <div className="state-label">Metadata</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: "var(--fs-small)" }}>
           <div>
             <div style={{ color: 'var(--txm)' }}>ID</div>
-            <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--tx)', wordBreak: 'break-all' }}>{asDisplayString(ticket.id)}</div>
+            <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: "var(--fs-micro)", color: 'var(--tx)', wordBreak: 'break-all' }}>{asDisplayString(ticket.id)}</div>
           </div>
           <div>
             <div style={{ color: 'var(--txm)' }}>Revision</div>

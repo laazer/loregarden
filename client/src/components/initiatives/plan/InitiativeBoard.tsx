@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { api } from "../../../api/client";
 import type { MilestoneSchedule, PlanNode } from "../../../api/initiativeApi";
-import type { TicketState, TicketSummary } from "../../../api/types";
+import type { TicketState, TicketSummary, WaitingOnRef } from "../../../api/types";
 import { planQueryKey } from "../../../hooks/useInitiativePlanner";
 import { boardQueryKey, buildColumns, milestoneOf } from "../../../lib/initiativeBoard";
 import { TICKET_STATE_LABELS, type BoardColumnKey } from "../../../lib/ticketStates";
@@ -12,18 +12,47 @@ import { KanbanColumns } from "../../chat/primitives/KanbanPrimitive";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { WaitingOnLinks } from "../../waiting/WaitingOnLinks";
 
 /** Where an operator may move cards. The server's state machine has the last word. */
 const MOVE_TARGETS: TicketState[] = ["backlog", "in_progress", "blocked", "parked", "done", "wont_do"];
 
-function tileHint(node: PlanNode | undefined, ticket: TicketSummary): string {
-  if (!node) return "";
+function tileHint(
+  node: PlanNode | undefined,
+  ticket: TicketSummary,
+  byId: Map<string, TicketSummary>,
+): ReactNode {
+  if (!node) return null;
   if (node.status === "needs_person") return "For a person";
   if (node.status === "ready") return "Ready";
-  // The tile already names what it waits on; the count is for the graph's
-  // git-judged holds (a done prerequisite not landed) the list cannot see.
-  if (node.status === "waiting" && !ticket.waiting_on?.length) return `Waiting on ${node.waiting_on.length}`;
-  return "";
+  // The tile already names what it waits on when the list can see it. The graph
+  // also holds on a done prerequisite not landed, which the list reads as met:
+  // name those too, rather than a count nothing on the board explains.
+  if (node.status === "waiting" && !ticket.waiting_on?.length) {
+    const refs: WaitingOnRef[] = node.waiting_on.flatMap((id) => {
+      const prereq = byId.get(id);
+      return prereq
+        ? [
+            {
+              id,
+              external_id: prereq.external_id,
+              title: `${prereq.title} — done, not landed`,
+              state: prereq.state,
+              reason: "prerequisite" as const,
+              blocked_on: null,
+              workspace_slug: prereq.workspace_slug,
+            },
+          ]
+        : [];
+    });
+    if (refs.length === 0) return `Waiting on ${node.waiting_on.length}`;
+    return (
+      <>
+        Not landed: <WaitingOnLinks refs={refs} here={ticket.workspace_slug} shown={2} />
+      </>
+    );
+  }
+  return null;
 }
 
 /**
@@ -84,6 +113,7 @@ export function InitiativeBoard({
   });
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const ticketsById = useMemo(() => new Map((board.data ?? []).map((t) => [t.id, t])), [board.data]);
   const milestoneIds = useMemo(() => new Set(milestones.map((m) => m.id)), [milestones]);
   const workspaces = useMemo(() => [...new Set(milestones.map((m) => m.workspace_slug))].sort(), [milestones]);
 
@@ -242,7 +272,7 @@ export function InitiativeBoard({
           columns={buildColumns(workItems, expanded)}
           onShowAll={(status) => setExpanded((current) => new Set(current).add(status))}
           tileAction={(ticket) => {
-            const hint = tileHint(nodeById.get(ticket.id), ticket);
+            const hint = tileHint(nodeById.get(ticket.id), ticket, ticketsById);
             return (
               <div className="plan-tile-foot">
                 <label className="plan-tile-select">
