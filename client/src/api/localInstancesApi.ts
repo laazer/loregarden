@@ -13,6 +13,7 @@ import type {
   LocalInstanceTemplate,
   TemplateSpec,
   WorkspaceInstaller,
+  InstallPullRequest,
   WorkspaceIntegration,
   WorkspaceTemplates,
 } from "./localInstancesTypes";
@@ -53,4 +54,9 @@ export const localInstancesApi = {
     request<WorkspaceIntegration>(`${INTEGRATION}/${encodeURIComponent(slug)}`),
   install: (slug: string, installer: WorkspaceInstaller): Promise<WorkspaceIntegration> =>
     request<WorkspaceIntegration>(`${INTEGRATION}/${encodeURIComponent(slug)}/${installer}`, { method: "POST" }),
+  /** The same block, landed as a pull request in the workspace's repository instead of its checkout. */
+  installPullRequest: (slug: string, installer: WorkspaceInstaller): Promise<InstallPullRequest> =>
+    request<InstallPullRequest>(`${INTEGRATION}/${encodeURIComponent(slug)}/${installer}/pull-request`, {
+      method: "POST",
+    }),
 };

@@ -108,7 +108,7 @@ const probeAs = (state: RepositoryState, detail = "") =>
   mockClient.probeRepository.mockImplementation((path) => Promise.resolve({ repo_root: path, state, detail }));
 
 const openAddDialog = async (path: string) => {
-  fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add workspace…" }));
   const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
   fireEvent.change(within(dialog).getByLabelText("Repo path"), { target: { value: path } });
@@ -252,7 +252,21 @@ const SPEC: TemplateSpec = {
   target: null,
 };
 
+/** A row's ⋯ menu item. */
+async function rowAction(workspace: string, item: string) {
+  fireEvent.click(await screen.findByRole("button", { name: `${workspace} actions` }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: item }));
+}
+
+/** A workspace's setup lives behind its row's ⋯ → Set up…, in a dialog. */
+async function openSetup(name = "Shop"): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole("button", { name: `${name} actions` }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Set up…" }));
+  return screen.findByRole("dialog");
+}
+
 async function setupPanel(name = "Shop"): Promise<HTMLElement> {
+  if (!screen.queryByRole("dialog")) await openSetup(name);
   return (await screen.findByRole("heading", { name: `${name} setup` })).closest("section") as HTMLElement;
 }
 
@@ -299,6 +313,7 @@ it("reports a broken repo file on its workspace", async () => {
   mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
   mockApi.workspaceTemplates.mockResolvedValue([workspace({ file_error: "templates.0.name: lowercase only" })]);
   renderPage();
+  await openSetup();
   expect(await screen.findByText(/The repo file cannot be used: templates.0.name/)).toBeInTheDocument();
 });
 
@@ -313,6 +328,7 @@ it("explains why a shadowed template will not launch", async () => {
     }),
   ]);
   renderPage();
+  await openSetup();
   expect(await screen.findByText(/Not used: the repo file defines api too/)).toBeInTheDocument();
 });
 
@@ -320,6 +336,7 @@ it("creates a template from the editor, command as argv", async () => {
   mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
   mockApi.createTemplate.mockResolvedValue(workspace());
   renderPage();
+  await openSetup();
   const panel = (await screen.findByRole("heading", { name: "Shop templates" })).closest("section") as HTMLElement;
   fireEvent.click(within(panel).getByRole("button", { name: "New template" }));
   const form = within(panel).getByRole("form", { name: "New template" });
@@ -351,6 +368,7 @@ it("shows the server's refusal inside the editor", async () => {
   mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
   mockApi.createTemplate.mockRejectedValue(new Error("cwd must be relative to the worktree"));
   renderPage();
+  await openSetup();
   const panel = (await screen.findByRole("heading", { name: "Shop templates" })).closest("section") as HTMLElement;
   fireEvent.click(within(panel).getByRole("button", { name: "New template" }));
   const form = within(panel).getByRole("form", { name: "New template" });
@@ -390,6 +408,7 @@ it("edits and deletes only templates saved here", async () => {
     }),
   ]);
   renderPage();
+  await openSetup();
   const docsRow = (await screen.findByText("docs")).closest("tr") as HTMLElement;
   const apiRow = screen.getByText("api").closest("tr") as HTMLElement;
   expect(within(apiRow).queryByRole("button")).not.toBeInTheDocument();
@@ -403,14 +422,13 @@ describe("workspace setup", () => {
     useToastStore.setState({ toasts: [] });
   });
 
-  it("opens a workspace's dashboard straight from its card, without opening setup", async () => {
+  it("opens a workspace's dashboard from its name, without opening setup", async () => {
     renderPage();
-    const link = await screen.findByRole("link", { name: "Open Shop dashboard" });
-    const card = link.closest("details") as HTMLDetailsElement;
-    expect(card.open).toBe(false);
+    const link = await screen.findByRole("link", { name: "Shop" });
 
     fireEvent.click(link);
 
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("status", { name: "location" })).toHaveTextContent(/^\/workspaces\/shop$/);
   });
 
@@ -478,8 +496,9 @@ describe("workspace setup", () => {
       expect(within(row).queryByRole("button")).not.toBeInTheDocument();
       expect(within(row).getByText("Built in").closest("td")).not.toHaveClass("instances-warning");
     }
-    const chips = screen.getAllByText((_, el) => el?.classList.contains("instances-chip") === true && el.textContent === "gates built in");
-    for (const chip of chips) expect(chip).toHaveClass("instances-chip--ok");
+    // The table's row says so too, and asks nothing of it.
+    expect(screen.getAllByText("Gates: Built in").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /AGENTS.md in Shop/ })).not.toBeInTheDocument();
   });
 
   it("says when the check itself failed, instead of showing nothing installed", async () => {
@@ -510,7 +529,7 @@ describe("workspace setup", () => {
   });
 });
 
-describe("toolchain gates on the card", () => {
+describe("toolchain gates in setup", () => {
   beforeEach(() => {
     mockApi.list.mockResolvedValue({ instances: [], unreadable: [] });
     useToastStore.setState({ toasts: [] });
@@ -519,13 +538,13 @@ describe("toolchain gates on the card", () => {
   });
 
   const gatesPanel = async () => {
-    fireEvent.click(await screen.findByText("Shop", { selector: ".instances-setup-name" }));
+    await openSetup();
     return (await screen.findByRole("heading", { name: "Shop toolchain gates" })).closest("section") as HTMLElement;
   };
 
-  it("loads nothing for a card's gates until the card is opened", async () => {
+  it("loads nothing for a workspace's gates until its setup is opened", async () => {
     renderPage();
-    await screen.findByText("Shop", { selector: ".instances-setup-name" });
+    await screen.findByRole("link", { name: "Shop" });
     expect(mockClient.gatePresetsForWorkspace).not.toHaveBeenCalled();
     await gatesPanel();
     expect(mockClient.gatePresetsForWorkspace).toHaveBeenCalledWith("shop");
@@ -676,40 +695,42 @@ describe("workspace list", () => {
     useToastStore.setState({ toasts: [] });
   });
 
-  it("summarises each workspace's tickets and a missing repo on its card", async () => {
+  it("lists each workspace's tickets and a missing repo on its row", async () => {
     mockClient.workspaces.mockResolvedValue([
       summary("shop", "Shop", { ticket_count: 5, blocked_count: 2 }),
       summary("blog", "Blog", { ticket_count: 1, repo_exists: false, repo_state: "missing" }),
     ]);
     renderPage();
-    expect(await screen.findByText("5 tickets, 2 blocked")).toBeInTheDocument();
-    expect(screen.getByText("1 ticket")).toBeInTheDocument();
-    expect(screen.getByText("repo missing")).toBeInTheDocument();
+    const shop = (await screen.findByRole("link", { name: "Shop" })).closest("tr") as HTMLElement;
+    expect(within(shop).getByText("5", { selector: "td" })).toBeInTheDocument();
+    expect(within(shop).getByText("2", { selector: "td" })).toBeInTheDocument();
+    const blog = screen.getByRole("link", { name: "Blog" }).closest("tr") as HTMLElement;
+    expect(within(blog).getByText("1", { selector: "td" })).toBeInTheDocument();
+    expect(within(blog).getByText("Repo missing")).toBeInTheDocument();
   });
 
   it("archives after confirming, then lists it under Archived and can restore it", async () => {
     mockClient.archiveWorkspace.mockResolvedValue(summary("blog", "Blog", { archived_at: "2026-09-30T00:00:00Z" }));
     mockClient.restoreWorkspace.mockResolvedValue(summary("blog", "Blog"));
     renderPage();
-    const archive = await screen.findByRole("button", { name: "Archive Blog" });
 
     (window.confirm as jest.Mock).mockReturnValueOnce(false);
-    fireEvent.click(archive);
+    await rowAction("Blog", "Archive Blog…");
     expect(mockClient.archiveWorkspace).not.toHaveBeenCalled();
 
     mockClient.workspaces.mockResolvedValue([
       summary("shop", "Shop"),
       summary("blog", "Blog", { archived_at: "2026-09-30T00:00:00Z" }),
     ]);
-    fireEvent.click(archive);
+    await rowAction("Blog", "Archive Blog…");
     await waitFor(() => expect(mockClient.archiveWorkspace).toHaveBeenCalledWith("blog"));
 
     const archived = (await screen.findByText("Archived")).closest("details") as HTMLElement;
-    const restore = await within(archived).findByRole("button", { name: "Restore Blog" });
+    await within(archived).findByRole("link", { name: "Blog" });
     expect(screen.getByRole("heading", { name: /Active workspaces/ })).toHaveTextContent("1");
 
     mockClient.workspaces.mockResolvedValue([summary("shop", "Shop"), summary("blog", "Blog")]);
-    fireEvent.click(restore);
+    await rowAction("Blog", "Restore Blog");
     await waitFor(() => expect(mockClient.restoreWorkspace).toHaveBeenCalledWith("blog"));
     await waitFor(() => expect(screen.queryByText("Archived")).not.toBeInTheDocument());
   });
@@ -717,13 +738,14 @@ describe("workspace list", () => {
   it("reports a failed archive and leaves the workspace active", async () => {
     mockClient.archiveWorkspace.mockRejectedValue(new Error("database is locked"));
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Archive Blog" }));
+    await rowAction("Blog", "Archive Blog…");
     await waitFor(() =>
       expect(useToastStore.getState().toasts).toContainEqual(
         expect.objectContaining({ tone: "error", title: "Archive workspace failed", message: "database is locked" }),
       ),
     );
-    expect(screen.getByRole("button", { name: "Archive Blog" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Blog actions" }));
+    expect(screen.getByRole("menuitem", { name: "Archive Blog…" })).toBeEnabled();
     expect(screen.queryByText("Archived")).not.toBeInTheDocument();
   });
 
@@ -741,7 +763,7 @@ describe("workspace list", () => {
     mockClient.workspaces.mockResolvedValue([]);
     renderPage();
     expect(await screen.findByText(/No workspaces yet/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add workspace" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add workspace…" })).toBeEnabled();
   });
 
   it("says the list failed to load, and retries", async () => {
@@ -764,7 +786,7 @@ describe("workspace list", () => {
       workflow_template_slug: "loregarden-tdd",
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Add workspace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add workspace…" }));
     const dialog = await screen.findByRole("dialog", { name: "Add workspace" });
     await waitFor(() => expect(within(dialog).getByLabelText("Workflow template")).toBeEnabled());
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Docs" } });
@@ -780,7 +802,7 @@ describe("workspace list", () => {
       ),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(await screen.findByRole("heading", { name: "Docs setup" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Docs" })).toBeInTheDocument();
   });
 
   it("keeps the dialog open with the server's refusal", async () => {
@@ -843,7 +865,7 @@ describe("workspace list", () => {
     );
   });
 
-  it("offers to create a missing repository from the card, after confirming", async () => {
+  it("offers to create a missing repository from its row, after confirming", async () => {
     mockClient.workspaces.mockResolvedValue([
       summary("shop", "Shop"),
       summary("blog", "Blog", { repo_exists: false, repo_state: "missing" }),
@@ -853,12 +875,13 @@ describe("workspace list", () => {
       () => new Promise((resolve) => (finish = () => resolve({ ...summary("blog", "Blog"), follow_up: "" }))),
     );
     renderPage();
-    const create = await screen.findByRole("button", { name: "Create repository" });
-    (window.confirm as jest.Mock).mockReturnValueOnce(false);
+    const create = await screen.findByRole("button", { name: "Create repository in Blog…" });
     fireEvent.click(create);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Create Blog's repository?");
     expect(mockClient.createWorkspaceRepository).not.toHaveBeenCalled();
-    fireEvent.click(create);
-    expect(await screen.findByRole("button", { name: "Creating repository…" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create repository" }));
+    expect(await within(dialog).findByRole("button", { name: "Creating…" })).toBeDisabled();
     expect(mockClient.createWorkspaceRepository).toHaveBeenCalledTimes(1);
     expect(mockClient.createWorkspaceRepository).toHaveBeenCalledWith("blog");
     finish();
@@ -912,7 +935,8 @@ describe("workspace list", () => {
       summary("blog", "Blog", { repo_state: "not_a_repository" }),
     ]);
     renderPage();
-    expect(await screen.findByText("not a git repo")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Create repository" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Not a git repo")).toBeInTheDocument();
+    expect(screen.getByText(/Run `git init` there yourself/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Create repository/ })).not.toBeInTheDocument();
   });
 });
