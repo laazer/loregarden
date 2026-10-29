@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  container-type: inline-size;
 }
 
 .csb-head {
@@ -378,4 +379,65 @@
 .csb-none {
   color: var(--txm);
   font-size: var(--fs-small);
+}
+
+
+/* A narrow pane (the Timeline beside the parts column and Baxter): a column per
+   stage would be a few pixels wide, so each row becomes its name with a strip of
+   stage marks under it. The marks keep their words; the column names do not fit. */
+@container (max-width: 620px) {
+  .csb-grid {
+    display: block;
+    min-width: 0;
+  }
+
+  .csb-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  /* after .csb-row, which would otherwise show the head row again */
+  .csb-counts,
+  .csb-row--head {
+    display: none;
+  }
+
+  .csb-name,
+  .csb-cell,
+  .csb-parts {
+    border-bottom: 0;
+  }
+
+  .csb-name {
+    flex: 1 1 100%;
+    padding-bottom: 2px;
+  }
+
+  .csb-cell {
+    flex: 1;
+    height: 14px;
+    margin-bottom: 8px;
+  }
+
+  .csb-parts {
+    flex: 1 1 100%;
+    padding: 0 0 8px;
+  }
+
+  .csb-mark {
+    width: 10px;
+    height: 10px;
+    border-width: 1.5px;
+  }
+
+  .csb-mark--pending {
+    width: 6px;
+    height: 6px;
+  }
+
+  .csb-log {
+    padding-left: 0;
+  }
 }

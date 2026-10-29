@@ -145,7 +145,7 @@ export function ChildStageBoard({
               );
             })}
           </div>
-          <div className="csb-row" role="row">
+          <div className="csb-row csb-row--head" role="row">
             <span className="csb-hd csb-hd--name" role="columnheader">
               Ticket
             </span>
