@@ -3,7 +3,12 @@
 from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
-from loregarden.services.run_ledger import build_ledger, ledger_payload
+from loregarden.services.run_ledger import (
+    ERROR_TAIL_LINES,
+    build_ledger,
+    error_tail,
+    ledger_payload,
+)
 from sqlmodel import Session, select
 
 _BASE = datetime(2026, 7, 20, 9, 0, tzinfo=timezone.utc)
@@ -170,3 +175,30 @@ def test_the_endpoint_serves_a_tickets_ledger(client, db_session: Session):
 
 def test_an_unknown_ticket_ledger_is_404(client):
     assert client.get("/api/tickets/nope/ledger").status_code == 404
+
+
+def test_an_error_tail_keeps_the_end_of_stderr():
+    stderr = "\n".join(f"line {n}" for n in range(1, 41)) + "\n\n"
+    tail = error_tail(stderr)
+    assert tail.splitlines() == [f"line {n}" for n in range(41 - ERROR_TAIL_LINES, 41)]
+
+
+def test_the_endpoint_carries_each_failed_attempts_error_and_nothing_else(
+    client, db_session: Session
+):
+    ticket = db_session.exec(select(Ticket)).first()
+    first = _run("test_design", minute=0, agent="test_designer", status=RunStatus.FAILED)
+    first.stderr = "Agent launch failed\ntmux: command too long\n"
+    second = _run("test_design", minute=1, agent="test_designer", status=RunStatus.FAILED)
+    second.stderr = ""
+    passed = _run("test_design", minute=2, agent="test_designer")
+    passed.stderr = "a warning on a run that succeeded"
+    for run in (first, second, passed):
+        run.ticket_id = ticket.id
+        run.workspace_id = ticket.workspace_id
+        db_session.add(run)
+    db_session.commit()
+
+    body = client.get(f"/api/tickets/{ticket.id}/ledger").json()
+    tails = [a["error_tail"] for a in body["visits"][0]["attempts"]]
+    assert tails == ["Agent launch failed\ntmux: command too long", "", ""]

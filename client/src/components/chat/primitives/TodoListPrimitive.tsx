@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import { AGENT_PLAN_EXECUTE_PREFIX, DEFAULT_AGENT_PLAN_TITLE } from "./agentPlan";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { VineNode } from "../../vine/VineNode";
+import { Input } from "../../ui/Input";
 import { PlayButton } from "./RunControlButton";
 import type { TodoItem, TodoListPart } from "./types";
 
@@ -64,7 +66,6 @@ export function TodoListPrimitive({
     setState((current) => ({ ...current, items: next(current.items) }));
 
   const completed = items.filter((item) => item.checked).length;
-  const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
   const userOwned = owner === "user";
   const remaining = items.some((item) => !item.checked);
   const canRun =
@@ -79,51 +80,56 @@ export function TodoListPrimitive({
 
   return (
     <PrimitiveCard
+      kind="todo_list"
+      tint={userOwned ? "work" : "run"}
       title={part.title ?? (userOwned ? "Your checklist" : "Agent todo list")}
-      subtitle={
-        state.started
-          ? "Execution requested"
-          : userOwned
-            ? "You control this checklist"
-            : canRun
-              ? "Press Run to execute this plan in chat"
-              : allDone
-                ? "All steps complete"
-                : "Updated by the agent as work completes"
+      // Whose list it is; the chip carries progress and the footer what Run does.
+      subtitle={userOwned ? "You tick these off" : "Baxter runs this in chat"}
+      status={
+        allDone
+          ? { tone: "done", label: "Complete" }
+          : state.started
+            ? { tone: "run", label: "Running" }
+            : { tone: "idle", label: `${completed}/${items.length}` }
       }
-      tone={allDone ? "ok" : canRun || state.started ? "accent" : "default"}
-      meta={
-        <>
-          <span>
-            {completed}/{items.length} complete
-          </span>
-          <span>{owner} owned</span>
-        </>
-      }
+      footerHint={canRun ? (completed ? `Run continues from step ${completed + 1}` : "Runs this plan in chat") : null}
+      meta={<span className="lg-primitive-owner">{userOwned ? "You own this" : "Agent owned"}</span>}
       actions={canRun ? <PlayButton onClick={run} /> : null}
     >
-      <div className="lg-primitive-progress" aria-label={`Progress ${percent}%`}>
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      {items.length ? (
+      {items.length && !userOwned ? (
+        // The agent's steps grow on the vine: who ticks them is the agent.
+        <ol className="lg-primitive-todo-list lg-primitive-todo-list--agent">
+          {items.map((item, index) => {
+            const current = state.started && index === completed;
+            return (
+              <li key={item.id} className={item.checked ? "is-checked" : undefined}>
+                <VineNode
+                  index={index}
+                  mark={item.checked ? "leaf" : current ? "bud-open" : "bud-closed"}
+                  last={index === items.length - 1}
+                />
+                <span>{item.text}</span>
+                <span className="lg-sr-only">{item.checked ? ", done" : current ? ", running" : ", to do"}</span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : items.length ? (
+        // Yours are boxes to tick.
         <ul className="lg-primitive-todo-list">
           {items.map((item) => (
             <li key={item.id} className={item.checked ? "is-checked" : undefined}>
               <label>
-                <input
+                <Input
                   type="checkbox"
                   checked={item.checked}
-                  disabled={!userOwned}
-                  onChange={() => {
-                    if (!userOwned) return;
+                  onChange={() =>
                     setItems((current) =>
                       current.map((candidate) =>
-                        candidate.id === item.id
-                          ? { ...candidate, checked: !candidate.checked }
-                          : candidate,
+                        candidate.id === item.id ? { ...candidate, checked: !candidate.checked } : candidate,
                       ),
-                    );
-                  }}
+                    )
+                  }
                 />
                 <span>{item.text}</span>
               </label>

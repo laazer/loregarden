@@ -848,24 +848,3 @@
   align-items: flex-end;
 }
 
-/* "Show in thread" from the workbench: a brief ring on the turn it landed on. */
-.lg-chat-turn--flash {
-  animation: baxter-turn-flash 1.4s ease-out;
-  border-radius: 12px;
-}
-
-@keyframes baxter-turn-flash {
-  from {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
-  }
-  to {
-    box-shadow: 0 0 0 2px transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lg-chat-turn--flash {
-    animation: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 70%, transparent);
-  }
-}

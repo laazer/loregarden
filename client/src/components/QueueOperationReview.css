@@ -217,12 +217,16 @@
 .btn {
   padding: 7px 14px;
   border: 1px solid transparent;
-  border-radius: 9px;
   font-family: var(--ui);
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
   transition: border-color var(--t-med) ease;
+}
+
+.btn:not(.btn-primary) {
+  /* A primary keeps its leaf (index.css). */
+  border-radius: 9px;
 }
 
 .btn:disabled {

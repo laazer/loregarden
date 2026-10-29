@@ -8,6 +8,7 @@ import {
 } from "../../../lib/textDiff";
 import type { EditPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { Button } from "../../ui/Button";
 import { OpenEditorFileButton, OpenIdeButton } from "./ResourceActionButton";
 
 export function EditPrimitive({
@@ -45,47 +46,31 @@ export function EditPrimitive({
     <OpenIdeButton workspaceSlug={part.workspace_slug ?? undefined} />
   );
 
-  const reviewActions =
-    hasDiff ? (
-      <div className="lg-primitive-edit-mode-toggle" role="group" aria-label="Edit view">
-        <button
-          type="button"
-          className={
-            mode === "review"
-              ? "lg-primitive-run-btn lg-primitive-run-btn--confirm"
-              : "lg-primitive-run-btn"
-          }
-          aria-pressed={mode === "review"}
-          onClick={() => setMode("review")}
+  // Review comments on the diff, or edit the text itself: one two-way toggle.
+  const viewToggle = hasDiff ? (
+    <span className="lg-primitive-seg" role="group" aria-label="Edit view">
+      {(["review", "edit"] as const).map((key) => (
+        <Button
+          key={key}
+          variant="plain"
+          aria-pressed={mode === key}
+          className={mode === key ? "is-on" : undefined}
+          onClick={() => setMode(key)}
         >
-          Review
-        </button>
-        <button
-          type="button"
-          className={
-            mode === "edit" ? "lg-primitive-run-btn lg-primitive-run-btn--confirm" : "lg-primitive-run-btn"
-          }
-          aria-pressed={mode === "edit"}
-          onClick={() => setMode("edit")}
-        >
-          Edit
-        </button>
-      </div>
-    ) : null;
+          {key === "review" ? "Review" : "Edit"}
+        </Button>
+      ))}
+    </span>
+  ) : null;
 
   const saveActions = (
     <>
-      <button
-        type="button"
-        className="lg-primitive-run-btn"
-        disabled={!dirty || saving}
-        onClick={() => setDraft(part.content ?? "")}
-      >
+      <Button variant="secondary" compact disabled={!dirty || saving} onClick={() => setDraft(part.content ?? "")}>
         Discard
-      </button>
-      <button
-        type="button"
-        className="lg-primitive-run-btn lg-primitive-run-btn--confirm"
+      </Button>
+      <Button
+        variant="primary"
+        compact
         disabled={!dirty || saving || !onSave}
         onClick={() => {
           if (!onSave) return;
@@ -94,25 +79,42 @@ export function EditPrimitive({
         }}
       >
         {saving ? "Saving…" : "Save"}
-      </button>
+      </Button>
     </>
   );
 
+  // The review pane heads itself with the same summary; the editor does not.
+  const changed =
+    diff && mode === "edit" ? (
+      <span className="lg-primitive-fact">
+        {diff.files}
+        <b className="lg-primitive-add">{diff.add}</b>
+        <b className="lg-primitive-del">{diff.del}</b>
+      </span>
+    ) : null;
+
   return (
     <PrimitiveCard
+      kind="edit"
       title={title}
-      subtitle={part.path ?? part.target_id ?? part.language ?? undefined}
-      resourceAction={resourceAction}
-      tone={sent ? "ok" : hasDiff ? "accent" : "default"}
+      refLine={part.path ?? part.target_id ?? part.language}
+      copyRef={part.path}
+      status={sent ? { tone: "done", label: "Comments sent" } : hasDiff ? { tone: "you", label: "Proposed" } : null}
       meta={
         hasDiff ? (
-          <span>{sent ? "Comments sent" : "Proposed edit — comment a line to chat"}</span>
+          <>
+            {changed}
+            {viewToggle}
+          </>
         ) : null
+      }
+      footerHint={
+        mode === "edit" ? (dirty ? "Save writes your edit" : "Edit the text, then save it") : sent ? "Comments sent to chat" : "Comment a line to send it to chat"
       }
       actions={
         <>
-          {reviewActions}
           {mode === "edit" ? saveActions : null}
+          {resourceAction}
         </>
       }
     >

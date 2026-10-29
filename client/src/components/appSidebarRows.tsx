@@ -167,16 +167,16 @@ export function ToolRow({
         onClick={blurOnClick}
       >
         {active ? <span className="app-sidebar-bar" aria-hidden /> : null}
-        <span className="app-sidebar-icon">{page.icon}</span>
+        {/* The count sits on the icon's corner, so a folded rail still shows it. */}
+        <span className="app-sidebar-icon">
+          {page.icon}
+          {count ? (
+            <span className={`app-sidebar-page-count app-sidebar-page-count--${count.tone}`} aria-hidden>
+              {count.text}
+            </span>
+          ) : null}
+        </span>
         <span className="app-sidebar-name app-sidebar-reveal">{page.label}</span>
-        {count ? (
-          <span
-            className={`app-sidebar-page-count app-sidebar-reveal app-sidebar-page-count--${count.tone}`}
-            aria-hidden
-          >
-            {count.text}
-          </span>
-        ) : null}
       </NavLink>
       {count ? (
         <span id={countId} hidden>

@@ -1,0 +1,46 @@
+/* Studio's create dialog (New agent…, New workflow…). */
+
+.studio-create-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.studio-create-describe {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.studio-create-describe .studio-create-field {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.studio-create-field {
+  margin-top: 4px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-create-slug {
+  font-family: var(--mono);
+}
+
+.studio-create-note {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.studio-create-error {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--rdl);
+}

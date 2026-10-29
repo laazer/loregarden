@@ -232,9 +232,9 @@ describe("the aside card", () => {
     const button = await screen.findByRole("button", { name: /^ask the running agent$/i });
     // The cost is stated on the control itself, not left to be discovered.
     expect(button.getAttribute("title")).toMatch(/can change what it does next/i);
-    // …but beside the label rather than spliced into it: a control reads as a
-    // verb, and a caveat inside its name is read as part of the name.
-    expect(screen.getByText("Affects its run")).toBeTruthy();
+    // …and as the footer's line beside it rather than spliced into its label: a
+    // control reads as a verb, and a caveat inside its name is read as the name.
+    expect(screen.getByText(/can change what it does next\./i)).toBeTruthy();
   });
 
   it("states the reason instead of offering a button that would be refused", async () => {
@@ -297,7 +297,9 @@ describe("the aside card", () => {
     mockApi.deleteAside.mockResolvedValue({ id: "bx1", deleted: true });
 
     renderWithClient(<BtwPrimitive part={part()} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    // Secondary to the card's one action, so it lives in ⋯.
+    fireEvent.click(await screen.findByRole("button", { name: "More for Aside" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete this aside" }));
 
     await waitFor(() => expect(mockApi.deleteAside).toHaveBeenCalledWith("t1", "bx1"));
   });
@@ -309,8 +311,9 @@ describe("the aside card", () => {
 
     renderWithClient(<BtwPrimitive part={part({ escalated: true })} />);
 
-    const button = await screen.findByRole("button", { name: "Delete" });
-    expect(button.getAttribute("title")).toMatch(/cannot be taken back/i);
+    fireEvent.click(await screen.findByRole("button", { name: "More for Aside" }));
+    const item = screen.getByRole("menuitem", { name: "Delete this aside" });
+    expect(item.getAttribute("title")).toMatch(/cannot be taken back/i);
   });
 
   it("offers the delete on a failed aside, which has nothing else to offer", async () => {
@@ -320,7 +323,8 @@ describe("the aside card", () => {
 
     renderWithClient(<BtwPrimitive part={part()} />);
 
-    expect(await screen.findByRole("button", { name: "Delete" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Aside" }));
+    expect(screen.getByRole("menuitem", { name: "Delete this aside" })).toBeTruthy();
   });
 
   it("links to the log the answer was read from, so the claim can be checked", async () => {
@@ -336,7 +340,7 @@ describe("the aside card", () => {
     renderWithClient(<BtwPrimitive part={part({ interactive: false })} />);
 
     expect(await screen.findByText(/preview — this card is not bound/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More for Aside" })).toBeNull();
     expect(screen.queryByRole("button", { name: /open the run timeline/i })).toBeNull();
   });
 });

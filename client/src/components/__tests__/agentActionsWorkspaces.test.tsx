@@ -11,8 +11,8 @@ import { MemoryRouter } from "react-router-dom";
 
 import { uiActionRegistry } from "../../lib/agentActions/registry";
 import { BranchTriageOverviewPanel } from "../BranchTriageOverviewPanel";
-import { WorkspaceSetupCard } from "../instances/WorkspaceSetupCard";
 import { WorkspacesTab } from "../workspaces/WorkspacesTab";
+import { WorkspacesTable } from "../workspaces/WorkspacesTable";
 
 const api = {
   workspaces: jest.fn(),
@@ -27,9 +27,12 @@ jest.mock("../../api/client", () => ({
   api: new Proxy({}, { get: (_t, name: string) => (...args: unknown[]) => api[name as keyof typeof api](...args) }),
 }));
 jest.mock("../../api/localInstancesApi", () => ({
-  localInstancesApi: { workspaceTemplates: async () => [{ slug: "alpha", name: "Alpha", entries: [] }] },
+  localInstancesApi: {
+    workspaceTemplates: async () => [{ slug: "alpha", name: "Alpha", entries: [] }],
+    integration: async (slug: string) => ({ slug, repo_root: `/repos/${slug}`, installers: [] }),
+  },
 }));
-// The card's panels are not under test; its repository action is.
+// The setup dialog's panels are not under test; the table's repository action is.
 jest.mock("../instances/WorkspaceTemplatesPanel", () => ({ WorkspaceTemplatesPanel: () => null }));
 jest.mock("../instances/WorkspaceIntegrationPanel", () => ({ WorkspaceIntegrationPanel: () => null }));
 jest.mock("../workspaces/WorkspaceGatePresetsPanel", () => ({ WorkspaceGatePresetsPanel: () => null }));
@@ -64,19 +67,21 @@ function wrap(children: ReactNode) {
   );
 }
 
-const card = (slug: string, repoState: string) => (
-  <WorkspaceSetupCard
-    key={slug}
-    workspace={{ slug, name: slug, entries: [] } as never}
-    summary={{ slug, name: slug, repo_state: repoState, archived_at: null } as never}
-    archiving={false}
+const table = (...rows: [slug: string, repoState: string][]) => (
+  <WorkspacesTable
+    workspaces={rows.map(([slug]) => ({ slug, name: slug, repo_root: `/repos/${slug}`, entries: [] }) as never)}
+    summaries={new Map(rows.map(([slug, repoState]) => [slug, { slug, name: slug, repo_state: repoState, archived_at: null, ticket_count: 0, blocked_count: 0 } as never]))}
     onArchive={() => {}}
+    archivingSlug={null}
+    caption="Workspaces"
   />
 );
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
-  api.workspaces.mockResolvedValue([{ id: "w1", slug: "alpha", name: "Alpha", archived_at: null }]);
+  api.workspaces.mockResolvedValue([
+    { id: "w1", slug: "alpha", name: "Alpha", archived_at: null, repo_state: "repository", ticket_count: 0, blocked_count: 0 },
+  ]);
   api.createWorkspace.mockImplementation(async (body: { slug: string; name: string }) => ({ ...body, id: "w2" }));
   api.createWorkspaceRepository.mockImplementation(async (slug: string) => ({
     slug,
@@ -114,23 +119,18 @@ describe("workspace.create", () => {
 });
 
 describe("workspace.create_repository", () => {
-  it("reaches the card for the workspace it names, among several", async () => {
-    const view = wrap(
-      <ul>
-        {card("alpha", "missing")}
-        {card("beta", "missing")}
-      </ul>,
-    );
+  it("reaches the row for the workspace it names, among several", async () => {
+    const view = wrap(table(["alpha", "missing"], ["beta", "missing"]));
     await act(() => uiActionRegistry.run("workspace.create_repository", { workspace_slug: "alpha" }));
     expect(api.createWorkspaceRepository).toHaveBeenCalledWith("alpha");
     await expect(uiActionRegistry.run("workspace.create_repository", { workspace_slug: "gamma" })).rejects.toThrow(
-      "no card for gamma is on screen",
+      "no workspace named gamma is on this table",
     );
     view.unmount();
   });
 
-  it("refuses a workspace whose card would not offer the button", async () => {
-    const view = wrap(<ul>{card("alpha", "repository")}</ul>);
+  it("refuses a workspace whose row would not offer the button", async () => {
+    const view = wrap(table(["alpha", "repository"]));
     await expect(uiActionRegistry.run("workspace.create_repository", { workspace_slug: "alpha" })).rejects.toThrow(
       "alpha's repository is repository; there is nothing to create",
     );

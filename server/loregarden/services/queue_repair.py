@@ -182,6 +182,25 @@ def _held_for(entry: QueuedRun, *, now: datetime | None) -> timedelta | None:
     return (now or datetime.now(timezone.utc)) - since
 
 
+def hold_for_repair(session: Session, entry: QueuedRun, ticket: Ticket, route: RepairRoute) -> str:
+    """Hold the entry's lane and re-arm its blocked stage now; why it cannot be, or "".
+
+    The re-dispatch waits for the next reconcile sweep, but the decision to
+    retry is made here. Leaving the stage BLOCKED until the sweep (up to
+    `reconcile_interval_seconds`) made every surface read the ticket as blocked
+    while its lane was held for the retry: a failed stage looked like a final
+    one for half a minute. Re-armed, it reads in progress from the moment it is
+    held. An interrupted stage is left as it is (`prepare_rerun` says why).
+    """
+    refused = prepare_rerun(session, ticket)
+    if refused:
+        return refused
+    begin_repair(entry, route)
+    session.add(entry)
+    session.commit()
+    return ""
+
+
 def begin_repair(entry: QueuedRun, route: RepairRoute, *, now: datetime | None = None) -> None:
     """Put an entry into a hold. The caller keeps the slot it already claimed."""
     entry.status = QueuePosition.REPAIRING
@@ -215,7 +234,7 @@ def unblock_for_rerun(session: Session, ticket: Ticket) -> None:
     _, stages = resolve_ticket_stages(session, ticket)
     instance = workflow_instance_for(session, ticket.id)
     if instance is None or not stages:
-        raise ValueError(f"{ticket.external_id} has no workflow to re-run '{stage_key}' in")
+        raise ValueError(_no_workflow(ticket))
     set_stage_status(ticket, instance, stages, stage_key, StageStatus.PENDING)
     session.add(instance)
     session.add(ticket)
@@ -223,6 +242,25 @@ def unblock_for_rerun(session: Session, ticket: Ticket) -> None:
     # A parent the rollup blocked only because this ticket was blocked reads
     # blocked until something pushes the rollup, and nothing else here does.
     reconcile_ancestors(session, ticket)
+
+
+def _no_workflow(ticket: Ticket) -> str:
+    return f"{ticket.external_id} has no workflow to re-run '{ticket.workflow_stage_key}' in"
+
+
+def rerun_refusal(session: Session, ticket: Ticket) -> str:
+    """Why a held ticket's re-dispatch would run nothing, or "".
+
+    Asked at every attempt, not only when the stage is re-armed: the hold re-arms
+    it at once (`hold_for_repair`), and a workflow disabled or removed while the
+    lane waits would otherwise be dispatched into, spending attempts on nothing.
+    Only a workflow that was there and is gone counts: a ticket that never had
+    one is dispatched as it is, as it always was.
+    """
+    if blocked_by_interruption(ticket) or workflow_instance_for(session, ticket.id) is None:
+        return ""
+    _, stages = resolve_ticket_stages(session, ticket)
+    return "" if stages else f"the block cannot be re-run: {_no_workflow(ticket)}"
 
 
 def prepare_rerun(session: Session, ticket: Ticket) -> str:
@@ -238,3 +276,28 @@ def prepare_rerun(session: Session, ticket: Ticket) -> str:
     except ValueError as exc:
         return f"the block cannot be re-run: {exc}"
     return ""
+
+
+def held_but_blocked(session: Session) -> list[tuple[QueuedRun, Ticket]]:
+    """Lane holds whose ticket still reads blocked, though the hold re-arms it.
+
+    Interruption holds are left out: their stage stays BLOCKED on purpose until
+    the orchestrator recovers it (`prepare_rerun`).
+    """
+    rows = session.exec(
+        select(QueuedRun, Ticket)
+        .join(Ticket, col(Ticket.id) == col(QueuedRun.ticket_id))
+        .where(QueuedRun.status == QueuePosition.REPAIRING)
+        .where(col(QueuedRun.repair_route) != RepairRoute.INTERRUPTION)
+        .where(Ticket.state == TicketState.BLOCKED)
+    ).all()
+    return [(entry, ticket) for entry, ticket in rows if not blocked_by_interruption(ticket)]
+
+
+def rearm_held(session: Session, tickets: list[Ticket]) -> int:
+    """Re-arm each held ticket's blocked stage; how many were."""
+    return sum(
+        1
+        for ticket in tickets
+        if ticket.state == TicketState.BLOCKED and not prepare_rerun(session, ticket)
+    )

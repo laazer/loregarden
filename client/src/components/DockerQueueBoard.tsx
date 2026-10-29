@@ -403,21 +403,37 @@ function useLeaseRelease(status: DockerCapacityStatus | null, onChanged: () => v
   return { confirming, setConfirming, pendingId, confirm };
 }
 
+/** What a slot above the board gets: the board's own confirm-and-release. */
+export interface LeaseEnding {
+  onEnd: (row: DockerLeaseRow) => void;
+  pendingId: string | null;
+}
+
 export function DockerQueueBoard({
   status,
   error,
   loading,
   headerSlot,
+  attention,
+  meters,
   onChanged,
 }: {
   status: DockerCapacityStatus | null;
   error: string;
   loading: boolean;
   headerSlot?: ReactNode;
+  /**
+   * Drawn above the meters in every state, and handed the board's release, so
+   * a lease ended from there goes through the same confirm as its card.
+   */
+  attention?: (ending: LeaseEnding) => ReactNode;
+  /** More meters after the two pools' (the disk's, on the Machine page). */
+  meters?: ReactNode;
   /** Re-read the ledger after the board changed it. */
   onChanged: () => void;
 }) {
   const { confirming, setConfirming, pendingId, confirm } = useLeaseRelease(status, onChanged);
+  const attentionBand = attention?.({ onEnd: setConfirming, pendingId }) ?? null;
 
   // The board owns the main area now, so it owns the states the rail used to
   // cover: a first read still in flight, a read that failed, and a ledger that
@@ -430,6 +446,8 @@ export function DockerQueueBoard({
           <div className="queue-panel-title">Machine capacity</div>
           {headerSlot}
         </div>
+        {attentionBand}
+        {meters}
         <div className="queue-idle" role={loading ? "status" : undefined}>
           {loading ? "Reading the ledger…" : error || "Capacity is unavailable."}
         </div>
@@ -444,6 +462,8 @@ export function DockerQueueBoard({
           <div className="queue-panel-title">Machine capacity</div>
           {headerSlot}
         </div>
+        {attentionBand}
+        {meters}
         <div className="queue-idle">
           The capacity ledger is switched off. Nothing is being tracked or limited.
         </div>
@@ -478,8 +498,11 @@ export function DockerQueueBoard({
         </div>
       </div>
 
+      {attentionBand}
+
       <PoolMeters title="Machine" summary={host} leasesLabel="slots" />
       <PoolMeters title="Docker" summary={status} leasesLabel="leases" />
+      {meters}
 
       {holders.length > 0 ? (
         <div className="queue-slot-grid docker-holder-grid" data-testid="docker-slot-grid">

@@ -75,6 +75,8 @@ import type {
   StudioExitActionRequirementCatalog,
   StudioAgentPreview,
   StudioDefaults,
+  AgentRunStats,
+  WorkflowUsageStats,
   StudioGeneratedAgent,
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
@@ -667,6 +669,8 @@ export const api = {
       body: JSON.stringify({ description }),
     }),
   studioAgents: () => request<StudioAgent[]>("/api/studio/agents"),
+  studioAgentRunStats: () => request<AgentRunStats[]>("/api/studio/agent-run-stats"),
+  studioWorkflowUsage: () => request<WorkflowUsageStats[]>("/api/studio/workflow-usage"),
   studioAgent: (slug: string) => request<StudioAgent>(`/api/studio/agents/${slug}`),
   createStudioAgent: (body: Partial<StudioAgent> & { slug: string; name: string }) =>
     request<StudioAgent>("/api/studio/agents", { method: "POST", body: JSON.stringify(body) }),

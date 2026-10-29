@@ -192,6 +192,13 @@ def _derive_ticket_state(
     ):
         return TicketState.DONE
 
+    # A stage re-armed with the note of what went wrong on it (a retry after a
+    # failed run, a rework brief) is work already started, even when it is the
+    # first stage and nothing before it is DONE. Without this a ticket whose
+    # first stage failed and is about to run again read `backlog`.
+    if blocking_issues and workflow_stage_status == StageStatus.PENDING:
+        return TicketState.IN_PROGRESS
+
     if any(
         s
         in (

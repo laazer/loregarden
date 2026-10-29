@@ -149,3 +149,20 @@ export function currentStageRunLabel(stage: WorkflowStageView | undefined, isRun
   if (stage.status === "done") return "Re-run current stage";
   return "Run current stage";
 }
+
+/** Who runs a stage: its one agent and skill, or a fan-out's agents joined. */
+export function stageAgentMeta(stage: WorkflowStageView): { agent: string | null; skill: string | null } {
+  if (stage.agent_id?.trim()) {
+    return { agent: stage.agent_id, skill: stage.skill_name?.trim() || null };
+  }
+  if (stage.agents.length === 1) {
+    return {
+      agent: stage.agents[0].agent_id,
+      skill: stage.agents[0].skill_name?.trim() || null,
+    };
+  }
+  if (stage.agents.length > 1) {
+    return { agent: stage.agents.map((entry) => entry.agent_id).join(" · "), skill: null };
+  }
+  return { agent: null, skill: null };
+}

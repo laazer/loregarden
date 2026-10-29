@@ -5,6 +5,7 @@ import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatComposerMenu } from "../components/chat/ChatComposerMenu";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
+import { ChatPanelControls } from "../components/chat/ChatPanelControls";
 import { ChatPromptRow } from "../components/chat/ChatPromptRow";
 import { ChatScopeNote } from "../components/chat/ChatScopeNote";
 import { ChatSideCard } from "../components/chat/ChatSideCard";
@@ -35,9 +36,12 @@ import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
 import { withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
-import { pushToast } from "../state/toastStore";
+import { showChatMessage } from "../lib/chatJump";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { GardenSky } from "../components/chat/GardenSky";
+import { useScrollbarGutterVar } from "../hooks/useScrollbarGutterVar";
 import "./BaxterChatPage.css";
+import "./BaxterChatGarden.css";
 
 /**
  * Everything a composer needs for `/` and `@` except its own draft.
@@ -283,6 +287,8 @@ export function BaxterChatPage() {
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
   const initialFilesRef = useRef(takeHomeBaxterFiles());
   const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
+  const requestChatReset = useUiStore((s) => s.requestBaxterChatReset);
+  const toggleHistory = useUiStore((s) => s.toggleBaxterHistory);
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
@@ -328,6 +334,11 @@ export function BaxterChatPage() {
   // A turn waiting on the operator still owns the thread chrome — don't drop
   // back to the welcome hero while the approval card is the thing to answer.
   const isEmpty = !hasThread && !busy && turnApprovals.length === 0;
+  // The garden's vines and composer sit on the thread's column edge, which the
+  // thread's scrollbar gutter moves by a platform-dependent amount.
+  const chatRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  useScrollbarGutterVar(threadRef, chatRef, "--garden-sb");
 
   const summaryLine = useMemo(() => {
     const parts: string[] = [];
@@ -533,24 +544,17 @@ export function BaxterChatPage() {
     setOpen: setWorkbenchOpen,
   } = useChatWorkbench();
 
-  const jumpToMessage = useCallback((messageId: string) => {
-    const node = document.querySelector<HTMLElement>(
-      `[data-message-id="${CSS.escape(messageId)}"]`,
-    );
-    if (!node) {
-      pushToast({
-        tone: "warning",
-        title: "Card not in view",
-        message: "That turn isn't loaded in this thread any more.",
-      });
-      return;
-    }
-    node.scrollIntoView({ behavior: "smooth", block: "start" });
-    node.classList.remove("lg-chat-turn--flash");
-    // Restarts the highlight when the same card is picked twice in a row.
-    void node.offsetWidth;
-    node.classList.add("lg-chat-turn--flash");
-  }, []);
+  const panelControls = (
+    <ChatPanelControls
+      workbenchOpen={workbenchOpen}
+      historyOpen={historyOpen}
+      onToggleWorkbench={() => setWorkbenchOpen(!workbenchOpen)}
+      onToggleHistory={toggleHistory}
+      onNewChat={requestChatReset}
+    />
+  );
+
+  const jumpToMessage = useCallback((messageId: string) => showChatMessage(messageId), []);
 
   const composerMenu = (
     <ChatComposerMenu
@@ -586,7 +590,7 @@ export function BaxterChatPage() {
 
   return (
     <div className="baxter-chat-layout">
-      <div className="baxter-chat lg-chat-surface">
+      <div ref={chatRef} className={`baxter-chat lg-chat-surface${isEmpty ? "" : " baxter-chat--garden"}`}>
         {isEmpty ? (
           <div className="baxter-chat-welcome">
             <header className="baxter-chat-intro">
@@ -614,7 +618,12 @@ export function BaxterChatPage() {
           </div>
         ) : (
           <>
-            <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
+            {/* Baxter's garden (Mock 4): the vines and stars hang on this frame,
+                which does not scroll, so they stay put while the thread moves
+                under them. Decoration only; see BaxterChatGarden.css. */}
+            <div className="baxter-chat-garden">
+            <GardenSky />
+            <div ref={threadRef} className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
               <StudioChatMessages
                 messages={threadMessages}
                 isThinking={busy && !awaitingInput && turnApprovals.length === 0}
@@ -680,6 +689,7 @@ export function BaxterChatPage() {
                 }
               />
             </div>
+            </div>
 
             {sendError}
             <BaxterReplyDock
@@ -695,6 +705,7 @@ export function BaxterChatPage() {
           </>
         )}
       </div>
+      {workbenchOpen ? null : <div className="baxter-chat-panel-controls">{panelControls}</div>}
       {workbenchOpen ? (
         <ChatSideCard
           overlay={workbenchOverlays}
@@ -705,6 +716,7 @@ export function BaxterChatPage() {
           onJumpTo={jumpToMessage}
           onOpenGallery={openPrimitiveGallery}
           onCollapse={() => setWorkbenchOpen(false)}
+          controls={panelControls}
           workbench={workbench}
           sessionId={chat.sessionId}
         />

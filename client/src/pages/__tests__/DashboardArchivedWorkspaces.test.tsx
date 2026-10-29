@@ -58,7 +58,7 @@ describe("Dashboard — archived workspaces", () => {
       search: "",
       expandedTicketIds: [],
       workspace: "all",
-      paneVisibility: { workspaces: true, tickets: true, workflow: true, artifacts: true },
+      paneVisibility: { workspaces: true, tickets: true },
     });
     jest.clearAllMocks();
     jest
@@ -81,7 +81,7 @@ describe("Dashboard — archived workspaces", () => {
           <RouterBridgeSync />
           <Routes>
             <Route path="/console" element={<Dashboard />} />
-            <Route path="/tickets/:ticketId/*" element={<Dashboard />} />
+            <Route path="/tickets/:ticketId/*" element={<div>Ticket page for {"route"}</div>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -105,6 +105,19 @@ describe("Dashboard — archived workspaces", () => {
     useUiStore.setState({ workspace: "attic" });
     renderDashboard();
     await waitFor(() => expect(useUiStore.getState().workspace).toBe("all"));
+  });
+
+  it("opens a ticket on its own page from the tree", async () => {
+    renderDashboard();
+    fireEvent.click(await screen.findByText("Shop task"));
+    expect(await screen.findByText(/Ticket page for/)).toBeInTheDocument();
+    expect(screen.queryByText("Every repo")).not.toBeInTheDocument();
+  });
+
+  it("keeps the tree on screen when an older layout had hidden both Console panes", async () => {
+    useUiStore.setState({ paneVisibility: { workspaces: false, tickets: false } });
+    renderDashboard();
+    expect(await screen.findByText("Shop task")).toBeInTheDocument();
   });
 
   it("offers only active workspaces for new work", async () => {

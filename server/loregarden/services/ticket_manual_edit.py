@@ -40,6 +40,7 @@ from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.ticket_rollup import reconcile_ancestors, reconcile_lineage
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
+from loregarden.services.unasked_awaits import refuse_unasked_awaits
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.services.workflow_state import (
     parse_stage_map,
@@ -226,6 +227,8 @@ def _apply_state_edit(
 def update_ticket_manual(
     orch: OrchestrationService, ticket: Ticket, body: UpdateTicketRequest
 ) -> Ticket:
+    # Before any field moves: a refusal must leave nothing half-applied.
+    refuse_unasked_awaits(orch.session, ticket, _awaiting_targets(ticket, body))
     _apply_operator_edits(ticket, body)
 
     _apply_workflow_template(orch, ticket, body)
@@ -257,6 +260,17 @@ def update_ticket_manual(
         reconcile_lineage(orch.session, old_parent_id)
         reconcile_lineage(orch.session, ticket.parent_ticket_id)
     return ticket
+
+
+def _awaiting_targets(ticket: Ticket, body: UpdateTicketRequest) -> list[str]:
+    """The stages this edit would set `awaiting`, in `_apply_manual_stage_edits`'s precedence."""
+    if body.stage_updates:
+        return [key for key, status in body.stage_updates.items() if status == StageStatus.AWAITING]
+    if body.stage_key and body.stage_status:
+        return [body.stage_key] if body.stage_status == StageStatus.AWAITING else []
+    if body.workflow_stage_status == StageStatus.AWAITING:
+        return [body.workflow_stage_key or ticket.workflow_stage_key]
+    return []
 
 
 def _apply_manual_stage_edits(

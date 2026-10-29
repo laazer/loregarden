@@ -1,0 +1,74 @@
+/* Workspaces → the workspaces table: needs and their fixes, on StudioIndex.css's table. */
+
+.workspaces-table {
+  margin-top: 4px;
+}
+
+.workspaces-gates {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.workspaces-needs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workspaces-need {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.workspaces-need-label {
+  font-size: var(--fs-small);
+  color: var(--aml);
+}
+
+.workspaces-need-explain {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.workspaces-need-link {
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
+.workspaces-row-menu {
+  width: 1%;
+  text-align: right;
+}
+
+.workspace-fix-effect,
+.workspace-fix-note {
+  margin: 0 0 10px;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.workspace-fix-error {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--rdl);
+}
+
+.workspace-setup-dialog {
+  width: min(880px, calc(100vw - 32px));
+}
+
+.workspace-setup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+}

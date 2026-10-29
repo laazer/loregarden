@@ -48,10 +48,28 @@ function stringField(part: ChatPart | UnknownPart, field: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** The most specific name a card carries, falling back to its kind. */
+function isEmptyQuestion(part: ChatPart | UnknownPart): boolean {
+  return part.primitive === "qa" && !((part as { items?: unknown[] }).items ?? []).length;
+}
+
+/** What a question card asks: its prompt, else its first question. */
+function firstQuestion(part: ChatPart | UnknownPart): string {
+  if (part.primitive !== "qa") return "";
+  const items = (part as { items?: { question?: unknown }[] }).items ?? [];
+  const question = items[0]?.question;
+  return typeof question === "string" ? question.trim() : "";
+}
+
+/**
+ * The most specific name a card carries, falling back to its kind. A question
+ * or an aside is named by what it asks, never by the ticket id it carries.
+ */
 export function primitiveLabel(part: ChatPart | UnknownPart): string {
   return (
     stringField(part, "title") ||
+    stringField(part, "question") ||
+    stringField(part, "prompt") ||
+    firstQuestion(part) ||
     stringField(part, "ticket_id") ||
     stringField(part, "slug") ||
     stringField(part, "workflow_slug") ||
@@ -65,6 +83,8 @@ export function primitiveLabel(part: ChatPart | UnknownPart): string {
  *
  * A plan re-emitted later replaces its earlier card in the thread, so the
  * replaced copies are left out here too — the list names what the thread shows.
+ * So is a question card that asks nothing: the server has rejected those since
+ * September 2026, and the rows stored before then made nothing to list.
  */
 export function primitiveHistory(messages: ChatMessageView[]): PrimitiveHistoryEntry[] {
   const superseded = supersededAgentPlanKeys(messages);
@@ -74,6 +94,7 @@ export function primitiveHistory(messages: ChatMessageView[]): PrimitiveHistoryE
     (message.parts ?? []).forEach((part, index) => {
       if (NOT_A_CARD.has(part.primitive)) return;
       if (superseded.has(agentPlanPartKey(message.id, index))) return;
+      if (isEmptyQuestion(part)) return;
       entries.push({
         key: `${message.id}:${index}`,
         messageId: message.id,

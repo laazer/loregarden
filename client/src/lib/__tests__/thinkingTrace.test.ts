@@ -1,4 +1,4 @@
-import { parseThinkingBlocks, summarizeThinking } from "../thinkingTrace";
+import { parseThinkingBlocks, summarizeThinking, summarizeTrace } from "../thinkingTrace";
 
 const trace = (...steps: string[]) => steps.map((step) => `· ${step}`).join("\n");
 
@@ -85,5 +85,24 @@ describe("summarizeThinking", () => {
   it("drops targets for tools whose argument says nothing to the operator", () => {
     expect(summarizeThinking(trace("ToolSearch · select:a__b,c__d"), "")).toBe("Loading tools · 1 step");
     expect(summarizeThinking(trace("AskUserQuestion"), "")).toBe("Asking you a question · 1 step");
+  });
+});
+
+describe("summarizeTrace", () => {
+  it("names the longest run of like steps, in the past tense, with the tool call count", () => {
+    const content = trace("Read · a.py", "Read · b.py", "Read · c.py", "Bash · git status");
+    expect(summarizeTrace(content)).toEqual({ lead: "Read b.py, c.py and 1 more", toolCalls: 4 });
+  });
+
+  it("gives a tie to the later run", () => {
+    expect(summarizeTrace(trace("Read · a.py", "Grep · spawn")).lead).toBe("Searched for “spawn”");
+  });
+
+  it("says a turn with no tool calls thought it through", () => {
+    expect(summarizeTrace("Just reasoning, no tools.")).toEqual({ lead: "Thought it through", toolCalls: 0 });
+  });
+
+  it("puts loregarden's own tools in the past tense too", () => {
+    expect(summarizeTrace(trace("mcp__loregarden__loregarden_get_ticket · lg-x-1")).lead).toBe("Called get ticket lg-x-1");
   });
 });

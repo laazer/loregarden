@@ -34,7 +34,8 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  /* Wide enough for the branch table's four columns beside the detail pane. */
+  grid-template-columns: minmax(340px, 480px) minmax(0, 1fr);
   gap: 16px;
   padding-top: 16px;
 }
@@ -47,37 +48,161 @@
   gap: 8px;
 }
 
-.branch-triage-card {
-  text-align: left;
-  border: 1px solid var(--bd);
-  border-radius: 12px;
-  background: var(--bg1);
-  padding: 12px 14px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.branch-triage-filter {
+  flex: none;
+  height: 28px;
+  font-size: var(--fs-small);
 }
 
-.branch-triage-card.selected {
-  border-color: var(--ac);
-  background: rgba(111, 174, 143, 0.06);
-}
-
-.branch-triage-card-header {
+/* What to do next, then the branches it narrows to, as a table: every branch
+   shares the same fields and the reader compares across them. */
+.branch-triage-moves {
+  flex: none;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.branch-triage-card-name {
-  flex: 1;
+.branch-triage-seg {
+  display: inline-flex;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.branch-triage-seg > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-right: 1px solid var(--bd2);
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.branch-triage-seg > button:last-child {
+  border-right: 0;
+}
+
+.branch-triage-seg > button.is-on {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.branch-triage-seg > button:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.branch-triage-seg-count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.branch-triage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.branch-triage-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg0);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+.branch-triage-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: top;
+  color: var(--txm);
+}
+
+.branch-triage-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.branch-triage-table tr.is-selected td {
+  background: color-mix(in srgb, var(--ac) 7%, transparent);
+}
+
+.branch-triage-table tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--ac);
+}
+
+.branch-triage-cell-name {
   min-width: 0;
+  max-width: 0;
+  width: 100%;
+}
+
+.branch-triage-name {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  /* A branch's tail is what tells it apart, so the name wraps instead of cutting off. */
+  overflow-wrap: anywhere;
+  text-align: left;
   font-family: var(--mono);
   font-size: var(--fs-small);
   color: var(--tx);
-  word-break: break-all;
+}
+
+.branch-triage-name:hover,
+.branch-triage-name:focus-visible {
+  text-decoration: underline;
+}
+
+.branch-triage-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 3px;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.branch-triage-row-ticket {
+  font-family: var(--mono);
+}
+
+.branch-triage-none {
+  color: var(--txl);
+}
+
+.branch-triage-cell-more {
+  width: 1%;
+}
+
+.branch-triage-cell-more .overflow-menu-trigger {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--txl);
+}
+
+.branch-triage-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .branch-triage-tag {
@@ -729,4 +854,36 @@ a.branch-triage-badge:hover {
   margin-right: auto;
   font-size: var(--fs-small);
   color: var(--txm);
+}
+
+/* A family of branches folded into one row: its stem, how many, how many are done. */
+.branch-triage-family td {
+  padding: 4px 8px;
+  background: var(--bg1);
+}
+
+.branch-triage-family-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  text-align: left;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.branch-triage-family-name {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.branch-triage-family-note {
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.branch-triage-table tr.is-nested td:first-child {
+  padding-left: 22px;
 }

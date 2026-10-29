@@ -195,6 +195,13 @@
   margin-top: 6px;
 }
 
+.tl-own-heading {
+  margin: 18px 0 6px;
+  color: var(--txm);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
 .tl-summary {
   display: flex;
   flex-wrap: wrap;
@@ -218,82 +225,6 @@
   align-items: center;
   gap: 6px 12px;
   font-size: var(--fs-small);
-  color: var(--txl);
-}
-
-/* A parent's timeline: the tickets under it, grouped by state. */
-.tl-children {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.tl-children-group > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: var(--fs-small);
-  font-weight: 600;
-}
-
-.tl-children-count {
-  color: var(--txl);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-.tl-children-list {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tl-children-list > li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.tl-children-link {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-  padding: 4px 6px;
-  border-radius: 6px;
-  text-align: left;
-  font-size: var(--fs-small);
-  color: var(--tx);
-}
-
-.tl-children-link:hover,
-.tl-children-link:focus-visible {
-  background: var(--bg2);
-}
-
-.tl-children-id {
-  flex: none;
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  color: var(--txl);
-}
-
-.tl-children-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tl-children-stage {
-  flex: none;
-  font-size: var(--fs-micro);
   color: var(--txl);
 }
 
@@ -481,6 +412,23 @@
   padding: 3px calc(var(--tl-head-pad-right) + var(--tl-chevron-width) + var(--tl-head-gap)) 3px 0;
   font-family: var(--mono);
   font-size: var(--fs-micro);
+}
+
+/* Failures in a row, folded: the same grid as an attempt, as one disclosure. */
+.tl-failed-run {
+  width: 100%;
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tl-failed-run:hover {
+  background: color-mix(in srgb, var(--red) 6%, transparent);
+}
+
+.tl-attempts--nested {
+  padding-left: 12px;
+  border-left: 1px solid var(--bd);
 }
 
 .tl-agent {

@@ -1,4 +1,4 @@
-import { EDITOR_RECENT_LIMIT, editorRecentKey, useUiStore } from "../uiStore";
+import { consolePaneVisibility, EDITOR_RECENT_LIMIT, editorRecentKey, useUiStore } from "../uiStore";
 
 // Requirement 5 — a keyed, non-persisted auto-follow map. Component-local
 // state was explicitly rejected because it would not survive the per-lane
@@ -86,5 +86,25 @@ describe("the Editor's recent files", () => {
     useUiStore.getState().rememberEditorFile(editorRecentKey("loregarden", "."), "a.ts");
     const persisted = useUiStore.persist.getOptions().partialize!(useUiStore.getState()) as Record<string, unknown>;
     expect(persisted.editorRecentFiles).toEqual({ "loregarden::.": ["a.ts"] });
+  });
+});
+
+describe("consolePaneVisibility", () => {
+  it("drops the retired workflow and artifact panes", () => {
+    expect(consolePaneVisibility({ workspaces: true, tickets: false, workflow: true, artifacts: true })).toEqual({
+      workspaces: true,
+      tickets: false,
+    });
+  });
+
+  it("brings the tree back when an older layout had hidden both Console panes", () => {
+    expect(consolePaneVisibility({ workspaces: false, tickets: false, workflow: true, artifacts: false })).toEqual({
+      workspaces: false,
+      tickets: true,
+    });
+  });
+
+  it("shows both panes when nothing was persisted", () => {
+    expect(consolePaneVisibility(undefined)).toEqual({ workspaces: true, tickets: true });
   });
 });

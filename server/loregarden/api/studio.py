@@ -12,6 +12,7 @@ from loregarden.models.domain import (
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
+from loregarden.services.agent_run_stats import AgentRunStats, agent_run_stats
 from loregarden.services.exit_actions import requirement_catalog
 from loregarden.services.studio_drift import (
     StageRemovalNeedsConfirmation,
@@ -19,6 +20,7 @@ from loregarden.services.studio_drift import (
     detect_drift,
 )
 from loregarden.services.studio_service import StudioService
+from loregarden.services.workflow_usage_stats import WorkflowUsageStats, workflow_usage_stats
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -68,6 +70,13 @@ def generate_studio_agent(
 @router.get("/agents")
 def list_studio_agents(session: Session = Depends(get_session)) -> list[dict]:
     return [item.model_dump() for item in StudioService(session).list_agents()]
+
+
+@router.get("/agent-run-stats")
+def list_agent_run_stats(session: Session = Depends(get_session)) -> list[AgentRunStats]:
+    """Runs and failures per agent id, for Agent Studio's index. Its own path
+    rather than `/agents/run-stats`, which `/agents/{slug}` would also match."""
+    return agent_run_stats(session)
 
 
 @router.get("/agents/{slug}")
@@ -220,6 +229,13 @@ def generate_studio_workflow(
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/workflow-usage")
+def list_workflow_usage(session: Session = Depends(get_session)) -> list[WorkflowUsageStats]:
+    """Tickets per workflow template, for Workflow Studio's index. Its own path
+    for the same reason as `/agent-run-stats`: `/workflows/{slug}` would match."""
+    return workflow_usage_stats(session)
 
 
 @router.get("/workflows/{slug}")

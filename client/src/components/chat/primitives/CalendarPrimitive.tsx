@@ -5,6 +5,7 @@ import { api } from "../../../api/client";
 import { useUiStore } from "../../../state/uiStore";
 import type { CalendarEventItem, CalendarEventPart, CalendarPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
+import { Button } from "../../ui/Button";
 import { OpenTicketButton } from "./ResourceActionButton";
 
 function startOfMonth(date: Date): Date {
@@ -77,20 +78,26 @@ function sortEvents(events: CalendarEventItem[]): CalendarEventItem[] {
   });
 }
 
+/**
+ * One event as a live ref: what it is, when, and the ticket it books, opened
+ * from the head. Its description, when it has one, is the only body.
+ */
 export function CalendarEventPrimitive({ part }: { part: CalendarEventPart }) {
   const event = part.event;
   const starts = parseDate(event.starts_at);
   return (
     <PrimitiveCard
+      kind="calendar_event"
       title={event.title}
-      subtitle={[
+      refLine={[
         event.kind ?? "one_time",
         starts ? formatTime(starts) : event.starts_at,
-      ].join(" · ")}
-      meta={event.ticket_id ? <span>{event.ticket_id.slice(0, 8)}…</span> : null}
-      resourceAction={
-        event.ticket_id ? <OpenTicketButton ticketId={event.ticket_id} /> : null
-      }
+        event.ticket_id ? event.ticket_id.slice(0, 8) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+      copyRef={event.ticket_id}
+      resourceAction={event.ticket_id ? <OpenTicketButton ticketId={event.ticket_id} compact /> : null}
     >
       {event.description ? <p className="lg-primitive-card-sub">{event.description}</p> : null}
     </PrimitiveCard>
@@ -373,6 +380,18 @@ export function CalendarPrimitive({ part }: { part: CalendarPart }) {
     });
   }, [cursor, events, view]);
 
+  // The head counts what the view shows, not every event the card carries.
+  const shownCount = useMemo(() => {
+    if (view === "day") return dayEvents.length;
+    const from = new Date(days[0]);
+    from.setHours(0, 0, 0, 0);
+    const to = addDays(from, days.length);
+    return events.filter((e) => {
+      const starts = parseDate(e.starts_at);
+      return starts ? starts >= from && starts < to : false;
+    }).length;
+  }, [view, dayEvents, days, events]);
+
   const subtitle =
     view === "day"
       ? cursor.toLocaleDateString(undefined, {
@@ -394,8 +413,8 @@ export function CalendarPrimitive({ part }: { part: CalendarPart }) {
 
   return (
     <PrimitiveCard
+      kind="calendar"
       title={part.title ?? "Calendar"}
-      subtitle={subtitle}
       loading={remote.isLoading && !part.events?.length}
       error={
         remote.error && !part.events?.length
@@ -404,20 +423,22 @@ export function CalendarPrimitive({ part }: { part: CalendarPart }) {
             : "Failed to load events"
           : null
       }
-      actions={
-        <>
+      subtitle={`${subtitle} · ${shownCount} event${shownCount === 1 ? "" : "s"}`}
+      // Month, Week, Day: one segmented toggle in the head, beside Expand.
+      headerActions={
+        <span className="lg-primitive-seg lg-primitive-seg--head" role="group" aria-label="Calendar view">
           {(["month", "week", "day"] as const).map((v) => (
-            <button
+            <Button
               key={v}
-              type="button"
-              className="lg-primitive-run-btn"
+              variant="plain"
               aria-pressed={view === v}
+              className={view === v ? "is-on" : undefined}
               onClick={() => setView(v)}
             >
-              {v}
-            </button>
+              {v === "month" ? "Month" : v === "week" ? "Week" : "Day"}
+            </Button>
           ))}
-        </>
+        </span>
       }
     >
       {view === "day" ? (

@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { StudioAgentPreview } from "../../../api/types";
-import { AgentPreviewContent } from "../../studio/AgentPreviewContent";
 import type { AgentPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenAgentStudioButton } from "./ResourceActionButton";
@@ -24,6 +23,9 @@ function draftPreview(part: AgentPart): StudioAgentPreview {
   };
 }
 
+/** Lines of the role shown on the card. */
+const ROLE_LINES = 8;
+
 export function AgentPrimitive({ part }: { part: AgentPart }) {
   const slug = part.slug ?? part.agent_id ?? undefined;
   const { data, isLoading, error } = useQuery({
@@ -36,11 +38,19 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
   });
 
   const preview = part.draft ? draftPreview(part) : data;
+  // The role's opening, enough to know which agent this is; the rest is in Studio.
+  const firstLines = (preview?.markdown ?? "")
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(0, ROLE_LINES);
+  const profile = preview?.profile;
 
   return (
     <PrimitiveCard
+      kind="agent"
       title={part.title ?? preview?.name ?? slug ?? "Agent"}
-      subtitle={slug ?? undefined}
+      refLine={slug}
+      copyRef={slug}
       loading={isLoading && !part.draft}
       error={
         !part.draft && error
@@ -49,9 +59,35 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
             : "Failed to load agent"
           : null
       }
-      resourceAction={slug && !part.draft ? <OpenAgentStudioButton slug={slug} /> : null}
+      meta={
+        profile ? (
+          <>
+            {profile.provider ? (
+              <span className="lg-primitive-fact">
+                Provider <b>{profile.provider}</b>
+              </span>
+            ) : null}
+            {profile.model ? (
+              <span className="lg-primitive-fact">
+                Model <b>{profile.model}</b>
+              </span>
+            ) : null}
+            <span className="lg-primitive-fact">
+              Timeout <b>{profile.timeout}s</b>
+            </span>
+          </>
+        ) : null
+      }
+      footerHint={part.draft ? "A draft, not saved to Agent Studio" : "Role file, first lines"}
+      actions={slug && !part.draft ? <OpenAgentStudioButton slug={slug} /> : null}
     >
-      <AgentPreviewContent preview={preview} loading={false} slug={slug} compact showMeta={false} />
+      {firstLines.length ? (
+        <div className="lg-primitive-terminal">
+          <pre className="lg-primitive-terminal-body">{firstLines.join("\n")}</pre>
+        </div>
+      ) : (
+        <p className="lg-primitive-card-sub">This agent has no role text yet.</p>
+      )}
     </PrimitiveCard>
   );
 }

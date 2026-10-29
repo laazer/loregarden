@@ -49,41 +49,45 @@ test("GitHub, Instances and Usage are no longer header actions", () => {
   expect(screen.queryByRole("button", { name: /More actions/ })).not.toBeInTheDocument();
 });
 
-describe("the inbox badge keeps one meaning per hue", () => {
+describe("the inbox splits its count into one chip per kind", () => {
   type Approvals = Awaited<ReturnType<typeof api.approvals>>;
 
-  async function badgeFor(name: string) {
+  async function chipsFor(name: string) {
     renderActions();
     const button = await screen.findByRole("button", { name });
-    return button.querySelector(".approvals-badge");
+    return [...button.querySelectorAll(".approvals-badge")].map((chip) => ({
+      tone: chip.getAttribute("data-tone"),
+      text: chip.textContent,
+    }));
   }
 
-  test("with nothing waiting it is a neutral zero, not a green light", async () => {
-    const badge = await badgeFor("Open approvals and notifications inbox");
-    expect(badge).toHaveTextContent("0");
-    expect(badge).toHaveAttribute("data-tone", "neutral");
+  test("with nothing waiting it shows no chip at all, not a green light", async () => {
+    expect(await chipsFor("Open approvals and notifications inbox")).toEqual([]);
   });
 
-  test("informational notifications alone stay neutral and do not pulse", async () => {
+  test("informational notifications alone are one neutral chip and do not pulse", async () => {
     useNotificationStore.getState().push({ tone: "success", title: "Merged" });
     useNotificationStore.getState().push({ tone: "info", title: "Queued" });
-    const badge = await badgeFor("Open approvals and notifications inbox");
-    expect(badge).toHaveTextContent("2");
-    expect(badge).toHaveAttribute("data-tone", "neutral");
-    expect(badge?.closest("button")).not.toHaveClass("approvals-btn-pending");
+    expect(await chipsFor("Open approvals and notifications inbox — 2 other notifications")).toEqual([
+      { tone: "neutral", text: "2" },
+    ]);
+    expect(screen.getByRole("button", { name: /inbox/ })).not.toHaveClass("approvals-btn-pending");
   });
 
-  test("a pending approval is violet and named as waiting on you", async () => {
-    mockedApi.approvals.mockResolvedValue([{ id: "a1" }] as unknown as Approvals);
-    const badge = await badgeFor("Open approvals and notifications inbox — 1 waiting on you");
-    expect(badge).toHaveAttribute("data-tone", "you");
-  });
-
-  test("red is kept for failure, even beside a pending approval", async () => {
+  test("failed, waiting on you and the rest each get their own chip, in that order", async () => {
     mockedApi.approvals.mockResolvedValue([{ id: "a1" }] as unknown as Approvals);
     useNotificationStore.getState().push({ tone: "error", title: "Run failed" });
-    const badge = await badgeFor("Open approvals and notifications inbox — 1 failed — 1 waiting on you");
-    expect(badge).toHaveTextContent("2");
-    expect(badge).toHaveAttribute("data-tone", "bad");
+    useNotificationStore.getState().push({ tone: "success", title: "Run complete" });
+    useNotificationStore.getState().push({ tone: "success", title: "Run complete" });
+
+    expect(
+      await chipsFor(
+        "Open approvals and notifications inbox — 1 failed — 1 waiting on you — 2 other notifications",
+      ),
+    ).toEqual([
+      { tone: "bad", text: "■1" },
+      { tone: "you", text: "◆1" },
+      { tone: "neutral", text: "2" },
+    ]);
   });
 });

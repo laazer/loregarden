@@ -53,10 +53,11 @@ from loregarden.services.parallel_queue import (
 )
 from loregarden.services.queue_repair import (
     REPAIR_ATTEMPT_CAP,
-    begin_repair,
     end_repair,
+    hold_for_repair,
     prepare_rerun,
     repair_exhausted,
+    rerun_refusal,
     resolve_repair_route,
 )
 from loregarden.services.queue_slot_claims import (
@@ -858,9 +859,12 @@ class QueueLaneService:
         if route is None:
             return False
 
-        begin_repair(entry, route)
-        self.session.add(entry)
-        self.session.commit()
+        refused = hold_for_repair(self.session, entry, ticket, route)
+        if refused:
+            logger.warning(
+                "Lane %d not held for ticket %s: %s", entry.slot_number, entry.ticket_id, refused
+            )
+            return False
         logger.info(
             "Lane %d held for repair of ticket %s via %s (attempt %d of %d)",
             entry.slot_number,
@@ -931,7 +935,7 @@ class QueueLaneService:
 
         # A dispatch into a still-BLOCKED ticket runs nothing: the orchestration
         # stops before its first stage, and the hold would spend every attempt so.
-        refused = prepare_rerun(self.session, ticket)
+        refused = prepare_rerun(self.session, ticket) or rerun_refusal(self.session, ticket)
         if refused:
             self._settle_repair(entry, refused)
             return True

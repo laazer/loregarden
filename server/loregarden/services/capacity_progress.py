@@ -27,6 +27,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from loregarden.dot_line import Dot
 from loregarden.models.domain import DockerLease
 from loregarden.models.domain.enums import utcnow
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -93,9 +94,15 @@ def describe_progress(step: str, done: int | None, total: int | None) -> str:
         return ""
     if done is None:
         return step
+    if total == 0 and done == 0:
+        # A RECORDED zero is an absence of tests, not a run that has just begun.
+        # The two were byte-identical here, so a waiter reading the board could
+        # not tell a suite that collected nothing from one still collecting —
+        # and the pre-push judge now calls the first of those a failure.
+        return str(Dot(step) / "collected nothing")
     if total:
-        return f"{step} · {done}/{total} ({min(100, done * 100 // total)}%)"
-    return f"{step} · {done} done"
+        return str(Dot(step) / f"{done}/{total} ({min(100, done * 100 // total)}%)")
+    return str(Dot(step) / f"{done} done")
 
 
 def format_seconds(seconds: float) -> str:

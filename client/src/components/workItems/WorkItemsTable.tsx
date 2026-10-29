@@ -1,4 +1,5 @@
 
+import type { Approval } from "../../api/chatTypes";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
@@ -11,6 +12,7 @@ import {
   type WorkItemsSort,
   type WorkItemsSortKey,
 } from "../../lib/workItemsTable";
+import { hasParts, partsTag } from "../../lib/ticketParts";
 import { PrioBars } from "../PrioBars";
 import { Button } from "../ui/Button";
 import { TicketLink } from "../TicketLink";
@@ -42,12 +44,18 @@ export function WorkItemsTable({
   sort,
   onSort,
   showWhy,
+  approvals,
+  onOpenApproval,
 }: {
   rows: WorkItemRow[];
   runs: ReadonlyMap<string, ActiveRun>;
   sort: WorkItemsSort;
   onSort: (key: WorkItemsSortKey) => void;
   showWhy: boolean;
+  /** Each ticket's pending approval, by ticket id; names what an awaiting row is asked. */
+  approvals: ReadonlyMap<string, Approval>;
+  /** Opens the inbox on that ticket's approval. */
+  onOpenApproval: (ticketId: string) => void;
 }) {
   return (
     <table className="wi-table">
@@ -81,7 +89,7 @@ export function WorkItemsTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ node, parent }) => {
+        {rows.map(({ node, parent, partLabel }) => {
           const run = runs.get(node.id);
           const live = run ? LIVE_RUN_STATUSES.has(run.status) : false;
           return (
@@ -95,6 +103,8 @@ export function WorkItemsTable({
               <TicketLink className="wi-title" ticketId={node.id} title={node.title}>
                 {node.title}
               </TicketLink>
+              {node.children.length > 0 && hasParts(node) ? <span className="wi-parts">{partsTag(node.children)}</span> : null}
+              {partLabel ? <span className="wi-parts wi-parts--of">{partLabel}</span> : null}
             </td>
             <td className="wi-col-state">
               <span className="wi-dot" style={{ background: TICKET_STATE_COLORS[node.state] }} aria-hidden />
@@ -117,7 +127,22 @@ export function WorkItemsTable({
                 </TicketLink>
               ) : null}
             </td>
-            {showWhy ? <td className="wi-col-why">{needsMeReason(node)}</td> : null}
+            {showWhy ? (
+              <td className="wi-col-why">
+                {approvals.has(node.id) && node.workflow_stage_status === "awaiting" ? (
+                  <Button
+                    variant="plain"
+                    className="wi-why-link"
+                    title="Open this approval in the inbox"
+                    onClick={() => onOpenApproval(node.id)}
+                  >
+                    {needsMeReason(node, approvals.get(node.id))}
+                  </Button>
+                ) : (
+                  needsMeReason(node)
+                )}
+              </td>
+            ) : null}
           </tr>
           );
         })}
