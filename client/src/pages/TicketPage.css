@@ -406,6 +406,16 @@
   color: var(--ac2);
 }
 
+/* Parent titles run long; the full title is the link's tooltip and the breadcrumb's. */
+.ticket-part-of-parent {
+  display: inline-block;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 /* Parts on the vine: a leaf when done, a ringed bud while running, a closed bud for the rest. */
 .ticket-parts {
   margin-bottom: 14px;

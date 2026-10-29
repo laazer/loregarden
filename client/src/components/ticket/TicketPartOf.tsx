@@ -24,7 +24,7 @@ export function TicketPartOf({ ticketId, parent, siblings, tab }: TicketPartOfPr
     <div className="ticket-part-of">
       <span>
         Part {at + 1} of {siblings.length} of{" "}
-        <Link to={ticketPath(parent.id, tab)} className="ticket-part-of-parent">
+        <Link to={ticketPath(parent.id, tab)} className="ticket-part-of-parent" title={parent.title}>
           {parent.title}
         </Link>
       </span>
