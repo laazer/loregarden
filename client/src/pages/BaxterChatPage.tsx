@@ -724,6 +724,7 @@ export function BaxterChatPage() {
           onCollapse={() => setWorkbenchOpen(false)}
           controls={panelControls}
           workbench={workbench}
+          sessionId={chat.sessionId}
         />
       ) : null}
       <ChatHistorySidebar

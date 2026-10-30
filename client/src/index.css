@@ -114,6 +114,19 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* An anchor with no class of its own is painted by the browser: link blue,
+   visited purple, neither readable on the dark ground. Give every one the
+   accent token; a component class still wins where it sets its own colour. */
+a {
+  color: var(--ac2);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus-visible {
+  text-decoration: underline;
+}
+
 ::selection {
   background: rgba(111, 174, 143, 0.26);
 }

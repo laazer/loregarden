@@ -26,7 +26,9 @@ export type VineMark =
   /** Not reached yet. */
   | "bud-closed"
   /** Pruned: the run decided the step was not needed. */
-  | "pruned";
+  | "pruned"
+  /** Where a topic branches off: the living map's tendrils start here. */
+  | "fork";
 
 export function vineMark(status: StageStatus, isCurrent: boolean): VineMark {
   switch (status) {

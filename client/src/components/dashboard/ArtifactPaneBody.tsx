@@ -1,6 +1,7 @@
 import type { TicketDetail } from "../../api/client";
 import type { TicketTreeNode } from "../../api/types";
 import type { ArtifactTab } from "../../lib/appNavigation";
+import { LivingMap } from "../livingMap/LivingMap";
 import { ApprovalsView } from "./ApprovalsView";
 import { ArtifactView } from "./ArtifactView";
 import { HiveSimulationPanel } from "./HiveSimulationPanel";
@@ -57,6 +58,14 @@ export function ArtifactPaneBody({
   if (artifactTab === "monitor") return <WorkflowMonitorView ticketId={selectedId} />;
 
   const isActive = hasActiveRun || ticket?.workflow_stage_status === "running";
+
+  if (artifactTab === "map" && ticket) {
+    return (
+      <div className="artifact-map-pane">
+        <LivingMap scope="ticket" scopeRef={ticket.id} />
+      </div>
+    );
+  }
 
   if (artifactTab === "timeline" && ticket) {
     return (

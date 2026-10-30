@@ -1,0 +1,249 @@
+.living-map {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.living-map-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.living-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.living-map-lenses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.living-map-lens {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.living-map-lens.is-on {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.living-map-lens-count {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--txl);
+}
+
+.living-map-filter {
+  flex: 1;
+  min-width: 140px;
+}
+
+/* The vine and its rows: every row one height, so a row's place is its index. */
+.living-map-vine {
+  position: relative;
+  padding-right: 16px;
+}
+
+.living-map-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.living-map-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The node is 14px tall and the row 32px: centre it, and start its stem from
+   the node's centre down to the next row's. */
+.living-map-row .vine-node {
+  align-self: stretch;
+  padding-top: 9px;
+}
+
+.living-map-row .vine-stem {
+  top: 16px;
+}
+
+.living-map-row.is-dim {
+  opacity: 0.35;
+}
+
+.living-map-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.living-map-title.is-topic {
+  font-weight: 600;
+  color: var(--ac2);
+}
+
+.living-map-row.is-settled .living-map-title,
+.living-map-row.is-dropped .living-map-title {
+  color: var(--txm);
+}
+
+.living-map-row.is-dropped .living-map-title {
+  text-decoration: line-through;
+}
+
+.living-map-row.is-waiting .living-map-title {
+  color: var(--aml);
+}
+
+.living-map-row.is-selected .living-map-title {
+  text-decoration: underline;
+}
+
+.living-map-topic {
+  flex: none;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.living-map-topic.is-on {
+  border-color: var(--ac2);
+  color: var(--ac2);
+}
+
+.living-map-age {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A topic's tendril: in the gutter right of the rows, curling into each row
+   that hangs off the topic. */
+.living-map-tendril {
+  position: absolute;
+  top: 0;
+  right: 0;
+  overflow: visible;
+}
+
+.living-map-tendril path {
+  fill: none;
+  stroke: var(--ac2);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+/* Opens just under its row, over the rows below it, so it is read where it was
+   clicked and no row moves. Left of it the vine stays visible (node 14px +
+   gap 8px); right of it, the tendril gutter. */
+.living-map-detail {
+  position: absolute;
+  left: 22px;
+  right: 16px;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 60%, transparent);
+  font-size: var(--fs-small);
+}
+
+.living-map-detail-close {
+  margin-top: 6px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+/* A run repeated back to back, folded into its first row. */
+.living-map-times {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+}
+
+.living-map-detail dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+  margin: 0;
+}
+
+.living-map-detail dt {
+  color: var(--txl);
+}
+
+.living-map-detail dd {
+  margin: 0;
+  color: var(--tx);
+}
+
+.living-map-detail-text {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  color: var(--txm);
+  max-height: 180px;
+  overflow: auto;
+}
+
+.living-map-empty {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.living-map-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-small);
+  color: var(--rdl);
+}
+
+.living-map-failed p {
+  margin: 0;
+}
+
+.living-map-problems {
+  margin: 0;
+  padding: 6px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--bd);
+  font-size: var(--fs-micro);
+  color: var(--aml);
+}

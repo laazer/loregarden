@@ -19,7 +19,6 @@ before anything is persisted, and its telemetry row is written by
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -29,12 +28,11 @@ from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
 from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
 from loregarden.services import term_overlap
+from loregarden.services.checkpoint_logs import ticket_checkpoint_logs
 from loregarden.services.learning_confidence import UNOBSERVED, LearningConfidence, describe
 from loregarden.services.memory_store import (
-    CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
     MemoryStoreReadError,
-    slugify,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,8 +61,6 @@ _MAX_MEMORY_HITS = 5
 MAX_RELATED_PER_LEARNING = 3
 MAX_RELATED_CHARS = 1200
 _MAX_RELATED_TITLE = 120
-_FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
-_LOG_HEADING = re.compile(r"^# Checkpoint log —.*$", re.M)
 
 #: The stores `store_readiness` reports on — every kind except the factory.
 _READY_STORES = (MemoryStoreKind.CHECKPOINTS, MemoryStoreKind.VAULT, MemoryStoreKind.GRAPH)
@@ -134,58 +130,12 @@ def _checkpoint_entries(
     store = memory.obsidian
     if not store:
         return []
-
-    base = store.checkpoints_dir(workspace_slug)
-    # append_checkpoint slugs whatever identifier the caller passed, and the MCP
-    # tool accepts either form, so look under both.
-    # The legacy id is in the set because checkpoints written before the id
-    # restructure live under a directory named for the id of that day, and the
-    # vault is outside anything a migration could rename.
-    candidates = {
-        slugify(ticket.id),
-        slugify(ticket.external_id or ""),
-        slugify(ticket.legacy_external_id or ""),
-    } - {""}
-    # One mtime ordering across every candidate directory, not one per directory.
-    # Iterating the candidate set filled the cap from whichever directory the set
-    # happened to yield first, so on the 23 tickets whose checkpoints live under
-    # more than one slug — an id dir and an external-id dir, from either side of
-    # the id restructure — which run reached the prompt depended on set ordering.
-    logs = sorted(
-        (path for slug in candidates for path in (base / slug).glob("*.md")),
-        # Path breaks an mtime tie, so two logs written in the same instant still
-        # order the same way on every read rather than by glob order.
-        key=lambda p: (p.stat().st_mtime, str(p)),
-        reverse=True,
-    )
     entries: list[str] = []
-    for path in logs:
-        body = _LOG_HEADING.sub("", _FRONTMATTER.sub("", path.read_text(encoding="utf-8")))
-        entries.extend(_split_entries(body))
+    for log in ticket_checkpoint_logs(store, ticket, workspace_slug):
+        entries.extend(log.entries)
         if len(entries) >= _MAX_CHECKPOINTS:
-            return entries[:_MAX_CHECKPOINTS]
+            break
     return entries[:_MAX_CHECKPOINTS]
-
-
-def _split_entries(body: str) -> list[str]:
-    """One log body's checkpoint entries, newest-written last.
-
-    `append_checkpoint` introduces each entry with `CHECKPOINT_ENTRY_DELIMITER`,
-    so everything after one marker and before the next is exactly one entry,
-    however many paragraphs it spans. Logs written before it did have no boundary
-    but a blank line, which splits a multi-paragraph entry into fragments — so
-    the blank line stays the fallback for the text ahead of the first marker, and
-    only for that.
-
-    In a log open across the change that text is the earlier stages of the run
-    being briefed — the most valuable part — so it is split the old way rather
-    than dropped or returned as one blob. In a log written entirely after the
-    change it is the frontmatter remnant and the heading, and empty.
-    """
-    legacy_prefix, *delimited = body.split(CHECKPOINT_ENTRY_DELIMITER)
-    entries = [para.strip() for para in legacy_prefix.split("\n\n") if para.strip()]
-    entries.extend(chunk.strip() for chunk in delimited if chunk.strip())
-    return entries
 
 
 def _recall_query(ticket: Ticket) -> str:
