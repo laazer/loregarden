@@ -8,12 +8,14 @@ import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatArtifactsList } from "./chat/ChatArtifactsList";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
+import { showsChatWalker } from "../lib/chatSession";
 import { primitiveHistory } from "./chat/primitiveHistory";
 import { Button } from "./ui/Button";
 import { showChatMessage } from "../lib/chatJump";
 import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useLayoutDockEdge, useUiStore } from "../state/uiStore";
+import { ChatWaitStatus } from "./chat/ChatWaitStatus";
 import { StudioChatMessages } from "./studio/StudioChat";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import "./CopilotDock.css";
@@ -175,7 +177,15 @@ export function CopilotDock() {
               <StudioChatMessages
                 messages={session.messages}
                 emptyMessage={composerBlocked ?? "No messages yet."}
-                isThinking={session.isBusy && pendingApprovals.length === 0}
+                isThinking={
+                  showsChatWalker(session.isBusy, session.runStatus) &&
+                  pendingApprovals.length === 0
+                }
+                trailingStatus={
+                  session.runStatus === "waiting" && session.wait ? (
+                    <ChatWaitStatus wait={session.wait} />
+                  ) : null
+                }
                 thinkingMessage="Baxter is looking…"
                 activeTurnId={session.activeTurnId}
                 assistantLabel={assistantLabel}

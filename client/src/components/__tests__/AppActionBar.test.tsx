@@ -351,6 +351,152 @@ it("turns Send into Stop while a Baxter turn is in flight", () => {
   expect(stop).toHaveBeenCalled();
 });
 
+const CHAT_WAIT = {
+  command: "git push origin HEAD",
+  log_path: "/tmp/lg-wait/push.log",
+  registered_at: "2026-10-27T21:00:00Z",
+  deadline: "2026-10-27T23:00:00Z",
+};
+
+function waitingSession(overrides = {}) {
+  return session({
+    isBusy: true,
+    activeTurnId: null,
+    runStatus: "waiting",
+    wait: CHAT_WAIT,
+    ...overrides,
+  });
+}
+
+it("keeps Stop on a ticket-triage wait instead of entering aside-ask", () => {
+  const stop = jest.fn().mockResolvedValue({});
+  mockApi.ticket.mockResolvedValue({
+    id: "t1",
+    external_id: "LG-1",
+    activity: "idle",
+    artifacts: { logs: [], live: null },
+  });
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "ticket-triage", stop }),
+      label: "Ticket triage",
+    }),
+  );
+
+  renderBar();
+
+  const stopBtn = screen.getByRole("button", { name: "Stop" });
+  expect(stopBtn).toBeEnabled();
+  expect(screen.getByLabelText("Message this conversation")).toBeInTheDocument();
+  expect(screen.queryByLabelText(/ask an aside/i)).not.toBeInTheDocument();
+  expect(
+    screen.queryByPlaceholderText("btw — ask about the run without interrupting it"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText("waiting…")).toBeInTheDocument();
+  expect(screen.queryByText("working…")).not.toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Baxter" })).toHaveAttribute(
+    "data-baxter-state",
+    "idle",
+  );
+});
+
+it("still uses aside while a pipeline run is working, even if a wait exists", async () => {
+  mockApi.ticket.mockResolvedValue({
+    id: "t1",
+    external_id: "LG-1",
+    activity: "running",
+    artifacts: { logs: [], live: null },
+  });
+  mockResolver.mockReturnValue(
+    bind({ session: waitingSession({ kind: "ticket-triage" }), label: "Ticket triage" }),
+  );
+
+  renderBar();
+
+  expect(await screen.findByLabelText(/ask an aside/i)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+});
+
+it("stops a wait on empty Enter the way StudioChat stops an in-flight turn", () => {
+  const stop = jest.fn().mockResolvedValue({});
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "baxter-home", stop }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+    }),
+  );
+
+  renderBar();
+  fireEvent.keyDown(screen.getByLabelText("Message this conversation"), {
+    key: "Enter",
+    shiftKey: false,
+  });
+
+  expect(stop).toHaveBeenCalledTimes(1);
+});
+
+it("does not cancel a wait on Escape", () => {
+  const stop = jest.fn().mockResolvedValue({});
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "baxter-home", stop }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+    }),
+  );
+
+  renderBar();
+  openSheet();
+  fireEvent.keyDown(screen.getByLabelText("Message this conversation"), { key: "Escape" });
+
+  expect(stop).not.toHaveBeenCalled();
+});
+
+it("shows Stopping… and refuses a second click", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "baxter-home", isStopping: true }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+    }),
+  );
+
+  renderBar();
+
+  const stopBtn = screen.getByRole("button", { name: "Stopping…" });
+  expect(stopBtn).toBeDisabled();
+});
+
+it("keeps the composer typeable so /stop, /queue, and /note still work", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "baxter-home" }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+    }),
+  );
+
+  renderBar();
+  const input = screen.getByLabelText("Message this conversation");
+  expect(input).toBeEnabled();
+  fireEvent.change(input, { target: { value: "/stop" } });
+  expect(input).toHaveValue("/stop");
+});
+
+it("disables suggested prompts while waiting", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: waitingSession({ kind: "ticket-triage" }),
+      label: "Ticket triage",
+    }),
+  );
+
+  renderBar();
+  openSheet();
+  expect(screen.getByRole("button", { name: "What is blocking this ticket?" })).toBeDisabled();
+});
+
 it("shows a send failure without claiming the chat is gone", () => {
   mockResolver.mockReturnValue(
     bind({

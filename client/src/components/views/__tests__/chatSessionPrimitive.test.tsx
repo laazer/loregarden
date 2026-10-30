@@ -156,6 +156,33 @@ describe("a configured pane", () => {
 
     expect(mockApi.sendBaxterChatMessage).not.toHaveBeenCalled();
   });
+
+  it("shows a wait as a trailing status, not thinking", async () => {
+    mockApi.baxterChatSession.mockResolvedValue({
+      id: "s-1",
+      title: "Thread s-1",
+      messages: [{ id: "m-1", role: "assistant", content: "pushing" }],
+      run_status: "waiting",
+      pending_approvals: [],
+      active_turn_id: null,
+      wait: {
+        command: "git push origin HEAD",
+        log_path: "/tmp/lg-wait/push.log",
+        registered_at: "2026-10-27T21:00:00Z",
+        deadline: "2026-10-27T23:00:00Z",
+      },
+    } as never);
+
+    renderPane({ workspace_slug: "loregarden", session_id: "s-1" });
+    await screen.findByText("pushing");
+
+    expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
+    expect(document.querySelector(".lg-chat-loading-walker")).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("git push origin HEAD");
+    expect(status).toHaveTextContent("/tmp/lg-wait/push.log");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  });
 });
 
 describe("a short pane", () => {

@@ -309,6 +309,14 @@ def _args_for(
             "chat_session_id": chat_session_id,
             "criteria": ["Smoke criterion"],
         },
+        # Named refuse payload (ok: false), not a spawn. pid 1 is not ALIVE as
+        # this wait's child, so the tool answers without starting a process.
+        "loregarden_register_chat_wait": {
+            "pid": 1,
+            "command": "true",
+            "log_path": "/tmp/loregarden-smoke-chat-wait.log",
+            "ticket_id": ticket_id,
+        },
         # No items, a mode only: files a pending proposal and writes no target.
         "loregarden_propose_initiative_schedule": {
             "initiative_id": initiative_id,
@@ -482,6 +490,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_get_initiative_plan",
         "loregarden_propose_initiative_schedule",
         "loregarden_propose_feature_criteria",
+        "loregarden_register_chat_wait",
         "loregarden_set_initiative_autopilot",
         "loregarden_start_initiative_work",
         "loregarden_mark_needs_person",

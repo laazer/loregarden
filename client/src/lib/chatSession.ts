@@ -1,5 +1,6 @@
 import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatMode } from "../api/client";
+import type { ChatWait } from "./chatWait";
 
 export type ChatSessionKind =
   | "ticket-triage"
@@ -85,6 +86,13 @@ export interface ChatSession {
    */
   stop: () => Promise<unknown>;
   isStopping: boolean;
+  /**
+   * Snapshot `run_status`. `waiting` is busy (composer locked, Stop stays) but
+   * is not an in-flight turn — see `isChatThinking`.
+   */
+  runStatus?: string | null;
+  /** Outstanding background wait, when `runStatus` is `waiting`. */
+  wait?: ChatWait | null;
 }
 
 export interface ChatSendOptions {
@@ -112,4 +120,28 @@ export interface ChatSendOptions {
  */
 export function isRunStatusBusy(runStatus: string | undefined | null): boolean {
   return runStatus ? runStatus !== "idle" : false;
+}
+
+/**
+ * Whether a run status means the agent is in an in-flight turn.
+ *
+ * Waiting and awaiting_input are busy, but they are not thinking: no walker,
+ * no "looking…" line, no rocking Baxter head.
+ */
+export function isChatThinking(runStatus: string | undefined | null): boolean {
+  return runStatus === "running";
+}
+
+/**
+ * Walker / "working…" chrome: a busy thread that is not a wait or an operator ask.
+ *
+ * `isBusy` covers the POST gap before `run_status` flips to `running`; waiting
+ * and awaiting_input stay excluded the way Home already excluded the latter.
+ */
+export function showsChatWalker(
+  isBusy: boolean,
+  runStatus: string | undefined | null,
+): boolean {
+  if (isChatThinking(runStatus)) return true;
+  return isBusy && runStatus !== "waiting" && runStatus !== "awaiting_input";
 }

@@ -114,6 +114,11 @@ def chat_posture_blocks(
         "the Loregarden MCP tools where the runtime supports them.",
         "Investigate before answering: read code, run tests, reproduce failures.",
         "When you find an actionable fix, make it directly rather than only describing it.",
+        "If you start work in the background and cannot register it with "
+        "loregarden_register_chat_wait, the whole reply constraint for that work is: "
+        "I started X in the background; it will not report back here — "
+        "ask me again, or watch `<log path>`. "
+        "Never promise that this turn will resume on its own.",
     ]
     if surface is ChatSurface.HOME:
         sections.extend(
@@ -126,6 +131,16 @@ def chat_posture_blocks(
                 "branch) still goes through the approval inbox.",
                 "This channel is not scoped to a work item, so no ticket is implied — name the "
                 "ticket explicitly on any MCP call that needs one.",
+            ]
+        )
+    if surface is ChatSurface.BRANCH_TRIAGE:
+        sections.extend(
+            [
+                "When the operator requests git work (commit, push, checkout, merge, rebase, "
+                "delete, etc.), run it and report exact outcomes.",
+                "Use safe defaults: avoid force-push or branch deletion unless the operator "
+                "clearly asks; confirm when intent is ambiguous.",
+                "High-risk actions route through Loregarden's approval inbox automatically.",
             ]
         )
     if approval_bridge:

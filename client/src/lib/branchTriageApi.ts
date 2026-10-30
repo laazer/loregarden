@@ -1,5 +1,5 @@
 import type { AdapterCapabilities,
-  ChatMode, ChatIntent, DiffArtifact } from "../api/client";
+  ChatMode, ChatIntent, ChatWait, DiffArtifact } from "../api/client";
 import type { ChatPart } from "../components/chat/primitives/types";
 import { VITE_API_BASE } from "../api/viteEnv";
 
@@ -154,8 +154,9 @@ export interface BranchTriageChatSnapshot {
   adapter_capabilities?: AdapterCapabilities;
   chat_mode?: ChatMode;
   chat_intent?: ChatIntent;
-  run_status: "idle" | "running";
+  run_status: "idle" | "running" | "awaiting_input" | "waiting";
   active_turn_id: string | null;
+  wait?: ChatWait | null;
 }
 
 async function branchTriageRequest<T>(path: string, init?: RequestInit): Promise<T> {

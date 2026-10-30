@@ -19,6 +19,8 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
     BranchTriageMessage,
+    ChatSurface,
+    ChatWait,
     RunStatus,
     Workspace,
 )
@@ -30,6 +32,14 @@ from loregarden.services.branch_triage_chat_service import (
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corrector, settle_reply
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
+from loregarden.services.chat_wait import (
+    attach_continuation_run,
+    cancel_wait,
+    continuation_blocks,
+    outstanding_for,
+    take_continuation,
+    thread_key,
+)
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_concurrency import new_run_code
@@ -65,6 +75,12 @@ def start_branch_triage_run(
             f"{TRIAGE_AGENT_NAME} is still working on this branch — wait for the current "
             "turn to finish."
         )
+    wait_key = thread_key(ChatSurface.BRANCH_TRIAGE, workspace_slug=workspace.slug, branch=branch)
+    if outstanding_for(session, ChatSurface.BRANCH_TRIAGE, wait_key) is not None:
+        raise BranchTriageConflictError(
+            f"{TRIAGE_AGENT_NAME} is still working on this branch — wait for the current "
+            "turn to finish."
+        )
 
     user_message = BranchTriageMessage(
         workspace_id=workspace.id,
@@ -96,6 +112,39 @@ def start_branch_triage_run(
     session.refresh(user_message)
     session.refresh(assistant_message)
     return user_message, assistant_message
+
+
+def start_branch_triage_continuation(
+    session: Session, workspace: Workspace, branch: str, *, origin: AgentRun, wait: ChatWait
+) -> AgentRun:
+    """Mint a branch continuation run and pending assistant. No user row."""
+    run = AgentRun(
+        run_code=new_run_code(),
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id=TRIAGE_AGENT_ID,
+        stage_key=BRANCH_TRIAGE_STAGE_KEY,
+        status=RunStatus.QUEUED,
+        auto_approve=origin.auto_approve,
+        worktree_id=origin.worktree_id,
+    )
+    assistant = BranchTriageMessage(
+        workspace_id=workspace.id,
+        branch=branch,
+        role="assistant",
+        content="",
+        status="pending",
+        run_id=run.id,
+    )
+    session.add(run)
+    session.add(assistant)
+    session.commit()
+    session.refresh(run)
+    session.refresh(assistant)
+    attach_continuation_run(session, wait, run.id)
+    if os.environ.get("LOREGARDEN_SYNC_RUNS") != "1":
+        schedule_branch_triage_turn(assistant.id)
+    return run
 
 
 def _settle(
@@ -159,6 +208,17 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
                         run.started_at = datetime.now(timezone.utc)
                         session.add(run)
                         session.commit()
+                payload = take_continuation(session, assistant.run_id) if assistant.run_id else None
+                extra = (
+                    continuation_blocks(
+                        payload.exit_code,
+                        payload.log_tail,
+                        payload.command,
+                        payload.log_path,
+                    )
+                    if payload is not None
+                    else None
+                )
                 reply = invoke_branch_triage_model(
                     session,
                     workspace,
@@ -166,6 +226,7 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
                     latest_user_message,
                     run_id=assistant.run_id or "",
                     turn_id=assistant_id,
+                    extra_sections=extra,
                 )
                 settled = settle_reply(
                     session,
@@ -281,6 +342,11 @@ def cancel_branch_triage_turn(
 
     pending = latest_pending_turn(session, workspace.id, branch)
     if not pending:
+        cancel_wait(
+            session,
+            ChatSurface.BRANCH_TRIAGE,
+            thread_key(ChatSurface.BRANCH_TRIAGE, workspace_slug=workspace.slug, branch=branch),
+        )
         return None
 
     return _settle(session, pending.id, content=message, status="failed")

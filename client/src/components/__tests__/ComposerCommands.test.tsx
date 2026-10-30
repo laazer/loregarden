@@ -226,6 +226,53 @@ describe("/queue", () => {
     expect(screen.getByText("run the tests")).toBeInTheDocument();
   });
 
+  it("does not drain while a chat wait is outstanding", async () => {
+    const waiting = session({
+      kind: "branch-triage",
+      isBusy: true,
+      runStatus: "waiting",
+    });
+    mockResolver.mockReturnValue(bind({ session: waiting, label: "Branch", ticketId: null }));
+    const { rerender } = renderBar();
+    fireEvent.keyDown(type("/q run the tests", BRANCH_PLACEHOLDER), { key: "Enter" });
+    expect(waiting.send).not.toHaveBeenCalled();
+
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "branch-triage",
+          isBusy: true,
+          runStatus: "waiting",
+          send: waiting.send,
+        }),
+        label: "Branch",
+        ticketId: null,
+      }),
+    );
+    const qcWait = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={qcWait}>
+        <AppActionBar />
+      </QueryClientProvider>,
+    );
+    expect(waiting.send).not.toHaveBeenCalled();
+
+    const idle = session({ kind: "branch-triage", isBusy: false, send: waiting.send });
+    mockResolver.mockReturnValue(bind({ session: idle, label: "Branch", ticketId: null }));
+    const qcIdle = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={qcIdle}>
+        <AppActionBar />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(idle.send).toHaveBeenCalledWith("run the tests", {
+        autoApprove: false,
+        skill: "",
+      }),
+    );
+  });
+
   it("sends the held message once the conversation goes idle", async () => {
     const busy = session({ kind: "branch-triage", isBusy: true });
     mockResolver.mockReturnValue(bind({ session: busy, label: "Branch", ticketId: null }));

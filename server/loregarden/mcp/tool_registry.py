@@ -18,6 +18,10 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.chat_wait_tool import HANDLERS as CHAT_WAIT_HANDLERS
+from loregarden.mcp.chat_wait_tool import (
+    TOOL_DEFINITIONS as CHAT_WAIT_TOOL_DEFINITIONS,  # noqa: F401 — re-export for tools.py
+)
 from loregarden.mcp.devdocs_tool import search_reference_tool
 from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
@@ -82,6 +86,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **INITIATIVE_PLAN_HANDLERS,
     **INITIATIVE_MEMBERSHIP_HANDLERS,
     **FEATURE_LOOP_HANDLERS,
+    **CHAT_WAIT_HANDLERS,
     **UI_ACTION_HANDLERS,
     McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
     **DOCUMENT_HANDLERS,

@@ -1238,6 +1238,10 @@ class BaxterChatMessage(SQLModel, table=True):
     skill_name: str = ""
     # Files uploaded with a user turn (see services.chat_attachments), as JSON.
     attachments_json: str = "[]"
+    # Set on assistant turns so a continuation can bind the Home row to the
+    # AgentRun the control plane minted for it. Origin acting turns stamp it
+    # in `_start_run` when that run is minted, before the CLI can register.
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)
 
 

@@ -25,6 +25,7 @@ from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.tool_grants import agent_tool_grants
 from loregarden.models.domain import (
     AgentRun,
+    BaxterChatMessage,
     BaxterChatSession,
     ChatSurface,
     RunStatus,
@@ -298,7 +299,20 @@ def _start_run(request: AgentTurnRequest) -> AgentRun:
     request.session.add(run)
     request.session.commit()
     request.session.refresh(run)
+    _bind_home_turn_run(request, run)
     return run
+
+
+def _bind_home_turn_run(request: AgentTurnRequest, run: AgentRun) -> None:
+    """Stamp the pending Home assistant with this run before the CLI can register."""
+    if not request.turn_id:
+        return
+    message = request.session.get(BaxterChatMessage, request.turn_id)
+    if message is None or message.run_id:
+        return
+    message.run_id = run.id
+    request.session.add(message)
+    request.session.commit()
 
 
 def _resolve_turn_root(request: AgentTurnRequest, run: AgentRun | None) -> Path:
