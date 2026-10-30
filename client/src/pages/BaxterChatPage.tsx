@@ -17,6 +17,7 @@ import {
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { primitiveHistory } from "../components/chat/primitiveHistory";
 import { PendingApprovalsSection } from "../components/PendingApprovalsSection";
+import { ChatWaitStatus } from "../components/chat/ChatWaitStatus";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import type { ChatArchive } from "../hooks/useActiveChatSession";
@@ -33,6 +34,7 @@ import { useChatWorkbenchState } from "../hooks/useChatWorkbenchActions";
 import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatScope } from "../hooks/useChatScope";
 import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
+import { showsChatWalker } from "../lib/chatSession";
 import { withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -329,7 +331,8 @@ export function BaxterChatPage() {
   const inGallery = galleryTurns !== null;
   const turnApprovals = inGallery ? [] : chat.pendingApprovals;
   const busy = !inGallery && chat.isBusy;
-  const awaitingInput = !inGallery && chat.snapshot?.run_status === "awaiting_input";
+  const wait =
+    !inGallery && chat.snapshot?.run_status === "waiting" ? chat.snapshot.wait ?? null : null;
   const hasThread = inGallery ? galleryTurns.length > 0 : chat.messages.length > 0;
   // A turn waiting on the operator still owns the thread chrome — don't drop
   // back to the welcome hero while the approval card is the thing to answer.
@@ -626,7 +629,10 @@ export function BaxterChatPage() {
             <div ref={threadRef} className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
               <StudioChatMessages
                 messages={threadMessages}
-                isThinking={busy && !awaitingInput && turnApprovals.length === 0}
+                isThinking={
+                  showsChatWalker(busy, chat.snapshot?.run_status) && turnApprovals.length === 0
+                }
+                trailingStatus={wait ? <ChatWaitStatus wait={wait} /> : null}
                 activeTurnId={inGallery ? null : chat.activeTurnId}
                 thinkingMessage="Baxter is looking…"
                 thinkingSub="Fetching a reply from your workspace model"

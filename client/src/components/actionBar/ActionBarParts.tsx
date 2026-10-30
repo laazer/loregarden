@@ -79,12 +79,14 @@ export function ActionBarStatus({
   loadError,
   sendError,
   busy,
+  runStatus,
 }: {
   label: string;
   waiting: number;
   loadError: boolean;
   sendError: string | null;
   busy: boolean;
+  runStatus?: string | null;
 }) {
   if (waiting > 0) {
     return (
@@ -104,7 +106,11 @@ export function ActionBarStatus({
     return <span className="app-action-bar-pill app-action-bar-pill--error">{sendError}</span>;
   }
   if (busy) {
-    return <span className="app-action-bar-pill">working…</span>;
+    return (
+      <span className="app-action-bar-pill">
+        {runStatus === "waiting" ? "waiting…" : "working…"}
+      </span>
+    );
   }
   if (!label) return null;
   return (

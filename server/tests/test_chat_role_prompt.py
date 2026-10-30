@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from pathlib import Path
 
 from loregarden.agents.chat_role_prompt import (
     chat_posture_blocks,
@@ -18,6 +19,11 @@ from loregarden.agents.chat_role_prompt import (
 from loregarden.agents.prompt_blocks import AGENT_ROLE_HEADING, ROLE_BODY_CAP
 from loregarden.models.domain.enums import ChatSurface
 from loregarden.services.chat_primitives import parse_primitive_parts
+
+HONEST_BACKGROUND_SENTENCE = (
+    "I started X in the background; it will not report back here — "
+    "ask me again, or watch `<log path>`."
+)
 
 
 class TestRoleBlocks:
@@ -85,6 +91,28 @@ class TestPostureParityAcrossRails:
         )
         assert bridged != direct
 
+    def test_honest_background_sentence_is_on_all_three_interactive_surfaces(self):
+        """R1.1 / R1.4. The sentence lives once in chat_posture_blocks."""
+        for surface in (ChatSurface.HOME, ChatSurface.TICKET_TRIAGE, ChatSurface.BRANCH_TRIAGE):
+            blocks = chat_posture_blocks(surface=surface, interactive=True)
+            joined = "\n".join(blocks)
+            assert HONEST_BACKGROUND_SENTENCE in joined
+            assert "waiter will wake me" not in joined.lower()
+            assert "waiter will wake" not in joined.lower()
+
+    def test_advisory_turns_do_not_carry_the_background_sentence(self):
+        for surface in (ChatSurface.HOME, ChatSurface.TICKET_TRIAGE, ChatSurface.BRANCH_TRIAGE):
+            joined = "\n".join(chat_posture_blocks(surface=surface, interactive=False))
+            assert HONEST_BACKGROUND_SENTENCE not in joined
+
+    def test_branch_triage_interactive_keeps_git_guidance(self):
+        """R1.2. Unification must not drop branch git rules."""
+        blocks = chat_posture_blocks(surface=ChatSurface.BRANCH_TRIAGE, interactive=True)
+        joined = "\n".join(blocks)
+        assert "force-push" in joined.lower() or "force push" in joined.lower()
+        assert "delete" in joined.lower()
+        assert HONEST_BACKGROUND_SENTENCE in joined
+
 
 class TestUiPrimitives:
     def test_contract_names_the_execute_prefix_the_client_posts(self):
@@ -109,3 +137,51 @@ class TestUiPrimitives:
     def test_plan_id_stability_rule_is_present(self):
         rendered = "\n".join(chat_ui_primitives_blocks())
         assert "plan_id" in rendered
+
+
+class TestPromptBuildersUseSharedPosture:
+    def test_branch_triage_prompt_calls_shared_blocks_and_keeps_git_guidance(self, db_session):
+        """R1.2. Local interactive/advisory copy is gone; git guidance remains."""
+        from loregarden.models.domain import Workspace
+        from loregarden.services.branch_triage_chat_service import build_branch_triage_prompt
+        from sqlmodel import select
+
+        workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+        src = Path(
+            __import__("loregarden.services.branch_triage_chat_service", fromlist=["x"]).__file__
+        ).read_text(encoding="utf-8")
+        assert "chat_posture_blocks" in src
+        assert "You have real file, shell, git" not in src
+
+        prompt = build_branch_triage_prompt(
+            workspace,
+            "main",
+            None,
+            [],
+            "push this",
+            ticket=None,
+            interactive=True,
+        )
+        assert HONEST_BACKGROUND_SENTENCE in prompt
+        assert "force-push" in prompt.lower() or "force push" in prompt.lower()
+        assert "waiter will wake" not in prompt.lower()
+
+    def test_home_acting_prompt_names_this_sessions_chat_session_id(self, db_session):
+        """R1.3. Every acting turn, not only a feature loop."""
+        from loregarden.models.domain import Workspace
+        from loregarden.services.baxter_chat_service import build_baxter_chat_prompt
+        from sqlmodel import select
+
+        workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+        prompt = build_baxter_chat_prompt(
+            workspace=workspace,
+            history=[],
+            latest_user_message="push it",
+            approvals=[],
+            tickets=[],
+            interactive=True,
+            chat_session_id="sess-wait-home",
+        )
+        assert "sess-wait-home" in prompt
+        assert "chat_session_id" in prompt
+        assert HONEST_BACKGROUND_SENTENCE in prompt

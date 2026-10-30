@@ -8,6 +8,7 @@ import { composerQueueKey, useComposerCommands } from "../hooks/useComposerComma
 import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useTicketAsides } from "../hooks/useTicketAsides";
+import { isChatThinking } from "../lib/chatSession";
 import { COMPOSER_PLACEHOLDER, followUpPrompts } from "../lib/dockChatPrompts";
 import { useUiStore, useUtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
@@ -141,10 +142,16 @@ export function AppActionBar() {
   // `isBusy` is still read, because it turns true the moment a chat turn is
   // POSTed while `activity` waits on the next poll. Without it, a second message
   // sent into that gap goes to the chat and comes back a 409.
+  //
+  // A chat wait is a finished turn's child, not an in-flight agent or pipeline
+  // turn: Stop stays the composer control, and aside-ask is not entered.
+  const chatWaiting = session?.runStatus === "waiting";
   const asideMode =
     Boolean(ticketId) &&
     session?.kind === "ticket-triage" &&
-    (ticket?.activity === "running" || ticket?.activity === "awaiting" || session.isBusy);
+    (ticket?.activity === "running" ||
+      ticket?.activity === "awaiting" ||
+      (session.isBusy && !chatWaiting));
 
   const expanded = chatOpen && Boolean(session);
   // With no conversation and no model to set, the sheet would open empty; the
@@ -332,7 +339,12 @@ export function AppActionBar() {
             the triage chat now that the thread drops its per-reply avatar. */}
         <BaxterAvatar
           variant="head"
-          state={session?.isBusy ? "responding" : "idle"}
+          state={
+            isChatThinking(session?.runStatus) ||
+            (Boolean(session?.isBusy) && session?.runStatus !== "waiting")
+              ? "responding"
+              : "idle"
+          }
           size={26}
           label={assistantLabel}
         />
@@ -398,6 +410,17 @@ export function AppActionBar() {
               if (commands.handleKeyDown(e)) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                // Empty Enter while Stop is showing aborts, matching StudioChat.
+                // Escape does not — it only closes the sheet.
+                if (canStop && session && !draft.trim() && !files.length) {
+                  if (!session.isStopping) {
+                    void session.stop().catch(() => {
+                      // silent-ok: stop is a mutation with meta.errorTitle, so the
+                      // global MutationCache toast reports a stop that did not take.
+                    });
+                  }
+                  return;
+                }
                 submit(draft);
               }
             }}
@@ -511,6 +534,7 @@ export function AppActionBar() {
         loadError={Boolean(session?.loadError)}
         sendError={asides.askError ?? session?.error ?? null}
         busy={Boolean(session?.isBusy)}
+        runStatus={session?.runStatus}
       />
 
       {asideMode ? (

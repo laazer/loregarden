@@ -98,6 +98,7 @@ from loregarden.services.chat_primitives import (
     parse_primitive_parts,
     reply_preview,
 )
+from loregarden.services.chat_wait import outstanding_for, wait_payload
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
@@ -565,14 +566,16 @@ def baxter_chat_run_status(
 ) -> tuple[str, str | None]:
     """Return (run_status, active_turn_id) for the thread's latest turn."""
     pending = latest_pending_turn(session, chat_session.id)
-    if not pending:
-        return "idle", None
-    active = find_active_workspace_chat_run(
-        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
-    )
-    if active is not None and active.status == RunStatus.AWAITING_PERMISSION:
-        return "awaiting_input", pending.id
-    return "running", pending.id
+    if pending:
+        active = find_active_workspace_chat_run(
+            session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
+        )
+        if active is not None and active.status == RunStatus.AWAITING_PERMISSION:
+            return "awaiting_input", pending.id
+        return "running", pending.id
+    if outstanding_for(session, ChatSurface.HOME, chat_session.id) is not None:
+        return "waiting", None
+    return "idle", None
 
 
 def _message_view(message: BaxterChatMessage) -> dict:
@@ -607,6 +610,7 @@ def chat_session_summary(session: Session, chat_session: BaxterChatSession) -> d
 def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> dict:
     messages = list_chat_messages(session, chat_session.id)
     run_status, active_turn_id = baxter_chat_run_status(session, chat_session)
+    wait = outstanding_for(session, ChatSurface.HOME, chat_session.id)
     workspace = session.get(Workspace, chat_session.workspace_id)
     caps = {
         "adapter": "claude",
@@ -634,6 +638,7 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "chat_mode": resolve_chat_mode(str(caps.get("adapter", "claude"))).as_dict(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
+        "wait": wait_payload(wait) if wait is not None else None,
         "focus": focus_view(session, chat_session),
         "feature": feature_loop_view(session, chat_session),
         "chat_branch": chat_branch_view(session, chat_session),
@@ -783,6 +788,7 @@ def build_baxter_chat_prompt(
     skill_name: str = "",
     global_context: GlobalChatContext | None = None,
     extra_sections: Sequence[str] = (),
+    chat_session_id: str = "",
 ) -> str:
     """Assemble one Home chat turn's system prompt.
 
@@ -817,6 +823,11 @@ def build_baxter_chat_prompt(
             approval_bridge=approval_bridge,
         )
     )
+    if interactive and chat_session_id:
+        sections.append(
+            f"This thread's chat_session_id is {chat_session_id}. Pass it as "
+            "chat_session_id when calling loregarden_register_chat_wait."
+        )
     if not interactive:
         sections.append(
             "Every id in the operator's message has already been resolved for you under "
@@ -933,6 +944,8 @@ def invoke_baxter_chat_model(
     turn_id: str = "",
     skill_name: str = "",
     attachments: Sequence[ChatAttachment] = (),
+    extra_sections: Sequence[str] = (),
+    run_id: str = "",
 ) -> ChatTurnOutcome:
     """Run one Home chat turn against the workspace's current CLI/model runtime.
 
@@ -995,7 +1008,8 @@ def invoke_baxter_chat_model(
         approvals=_pending_approvals(session, snapshot_workspace_ids),
         tickets=_active_tickets(session, snapshot_workspace_ids),
         global_context=global_context,
-        extra_sections=feature_prompt_lines(session, chat_session),
+        extra_sections=[*feature_prompt_lines(session, chat_session), *extra_sections],
+        chat_session_id=chat_session.id if chat_session else "",
         agent=agent,
         references=resolve_references(session, message),
         interactive=interactive,
@@ -1014,6 +1028,7 @@ def invoke_baxter_chat_model(
         turn_id=turn_id,
         stage_key=HOME_CHAT_STAGE_KEY,
         agent_id=TRIAGE_AGENT_ID,
+        run_id=run_id,
         manage_run=interactive,
         workspace_stage_key=HOME_CHAT_STAGE_KEY,
         claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",

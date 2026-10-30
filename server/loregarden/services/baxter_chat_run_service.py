@@ -1,11 +1,9 @@
 """Background execution for Home Baxter chat turns.
 
-Mirrors ``branch_triage_run_service.py``. Home chat cannot reuse ``AgentRun``
-either — it is ticket-scoped through a non-nullable FK, and a Home conversation
-has no ticket — so the turn's lifecycle lives on the assistant
-``BaxterChatMessage`` row itself (``status``). That keeps it durable: an
-interrupted turn is settled at startup instead of leaving the composer stuck
-behind a promise that will never resolve.
+Mirrors ``branch_triage_run_service.py``. Origin turns still key the composer
+on the pending assistant row; acting turns mint a workspace-scoped ``AgentRun``
+(null ``ticket_id``, ``stage_key=home-chat``) through the turn runner. A wait
+continuation mints that run up front and binds ``BaxterChatMessage.run_id``.
 """
 
 from __future__ import annotations
@@ -14,13 +12,18 @@ import logging
 import os
 import threading
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.db.session import engine
 from loregarden.models.domain import (
+    AgentRun,
     BaxterChatMessage,
     BaxterChatScope,
     BaxterChatSession,
+    ChatSurface,
+    ChatWait,
+    RunStatus,
     Workspace,
 )
 from loregarden.services.baxter_chat_service import (
@@ -42,10 +45,18 @@ from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corre
 from loregarden.services.chat_publish import publish_chat_turn
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
+from loregarden.services.chat_wait import (
+    attach_continuation_run,
+    cancel_wait,
+    continuation_blocks,
+    outstanding_for,
+    take_continuation,
+)
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import apply_runtime_overrides
 from loregarden.services.interruption_messages import restart_interruption_message
-from loregarden.services.triage_service import TRIAGE_AGENT_NAME
+from loregarden.services.run_concurrency import new_run_code
+from loregarden.services.triage_service import TRIAGE_AGENT_ID, TRIAGE_AGENT_NAME
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, col, select
 
@@ -87,6 +98,11 @@ def start_baxter_chat_turn(
             f"{TRIAGE_AGENT_NAME} is still working on this conversation — wait for the "
             "current turn to finish."
         )
+    if outstanding_for(session, ChatSurface.HOME, chat_session.id) is not None:
+        raise BaxterChatConflictError(
+            f"{TRIAGE_AGENT_NAME} is still working on this conversation — wait for the "
+            "current turn to finish."
+        )
 
     user_message = BaxterChatMessage(
         session_id=chat_session.id,
@@ -116,6 +132,38 @@ def start_baxter_chat_turn(
     return user_message, assistant_message
 
 
+def start_baxter_chat_continuation(
+    session: Session, chat_session: BaxterChatSession, *, origin: AgentRun, wait: ChatWait
+) -> AgentRun:
+    """Mint a Home continuation run and pending assistant. No user row."""
+    run = AgentRun(
+        run_code=new_run_code(),
+        ticket_id=None,
+        workspace_id=chat_session.workspace_id,
+        agent_id=TRIAGE_AGENT_ID,
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=RunStatus.QUEUED,
+        auto_approve=origin.auto_approve,
+        worktree_id=origin.worktree_id,
+    )
+    assistant = BaxterChatMessage(
+        session_id=chat_session.id,
+        role="assistant",
+        content="",
+        status="pending",
+        run_id=run.id,
+    )
+    session.add(run)
+    session.add(assistant)
+    session.commit()
+    session.refresh(run)
+    session.refresh(assistant)
+    attach_continuation_run(session, wait, run.id)
+    if os.environ.get("LOREGARDEN_SYNC_RUNS") != "1":
+        schedule_baxter_chat_turn(assistant.id)
+    return run
+
+
 def _settle(
     session: Session,
     assistant_id: str,
@@ -139,6 +187,15 @@ def _settle(
     assistant.status = status
     assistant.parts_json = with_thinking_part(parts_json, thinking)
     session.add(assistant)
+    if assistant.run_id:
+        run = session.get(AgentRun, assistant.run_id)
+        if run:
+            failed = status != "complete"
+            run.status = RunStatus.FAILED if failed else RunStatus.SUCCEEDED
+            if failed:
+                run.stderr = content[:4000]
+            run.finished_at = datetime.now(timezone.utc)
+            session.add(run)
     session.commit()
     chat_session = session.get(BaxterChatSession, assistant.session_id)
     if chat_session:
@@ -182,6 +239,24 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
             # Settled rows only, so the pending assistant row is not fed back as history.
             history = list_chat_messages(session, chat_session.id)
             try:
+                if assistant.run_id:
+                    run = session.get(AgentRun, assistant.run_id)
+                    if run:
+                        run.status = RunStatus.RUNNING
+                        run.started_at = datetime.now(timezone.utc)
+                        session.add(run)
+                        session.commit()
+                payload = take_continuation(session, assistant.run_id) if assistant.run_id else None
+                extra = (
+                    continuation_blocks(
+                        payload.exit_code,
+                        payload.log_tail,
+                        payload.command,
+                        payload.log_path,
+                    )
+                    if payload is not None
+                    else ()
+                )
                 outcome = invoke_baxter_chat_model(
                     session,
                     effective_workspace,
@@ -193,6 +268,8 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                     attachments=(
                         load_attachments_json(latest_user.attachments_json) if latest_user else []
                     ),
+                    extra_sections=extra,
+                    run_id=assistant.run_id or "",
                 )
             except Exception as exc:
                 logger.exception("Baxter chat turn failed: %s", assistant_id)
@@ -268,6 +345,13 @@ def fail_interrupted_baxter_chat_turns(
         assistant.content = message
         assistant.status = "failed"
         session.add(assistant)
+        if assistant.run_id:
+            run = session.get(AgentRun, assistant.run_id)
+            if run:
+                run.status = RunStatus.FAILED
+                run.stderr = message[:4000]
+                run.finished_at = datetime.now(timezone.utc)
+                session.add(run)
         settled.append(assistant)
     if settled:
         session.commit()
@@ -290,6 +374,7 @@ def cancel_baxter_chat_turn(
 
     pending = latest_pending_turn(session, chat_session.id)
     if not pending:
+        cancel_wait(session, ChatSurface.HOME, chat_session.id)
         return None
 
     settled = _settle(session, pending.id, content=message, status="failed")

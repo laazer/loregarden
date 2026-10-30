@@ -200,6 +200,8 @@ export interface BaxterChatSnapshot {
   chat_mode?: ChatMode;
   run_status: TriageRunStatus;
   active_turn_id: string | null;
+  /** Outstanding background wait, when `run_status` is `waiting`. */
+  wait?: ChatWait | null;
   /** The workspaces and initiatives the thread works across. */
   focus: ChatFocus;
   /** The thread's feature loop, or null when it runs none. */
@@ -210,7 +212,17 @@ export interface BaxterChatSnapshot {
   updated_at: string;
 }
 
-export type TriageRunStatus = "idle" | "running" | "awaiting_input";
+export type TriageRunStatus = "idle" | "running" | "awaiting_input" | "waiting";
+
+/**
+ * A registered chat wait, as snapshots publish it. Not an AgentRun status.
+ */
+export interface ChatWait {
+  command: string;
+  log_path: string;
+  registered_at: string;
+  deadline: string;
+}
 
 /** What the resolved adapter can do. One matrix, shared by every chat surface. */
 export interface AdapterCapabilities {
@@ -275,6 +287,8 @@ export interface TriageSnapshot {
   chat_mode?: ChatMode;
   run_status: TriageRunStatus;
   active_run_id: string | null;
+  /** Outstanding background wait, when `run_status` is `waiting`. */
+  wait?: ChatWait | null;
 }
 
 export interface TriageSendResult {

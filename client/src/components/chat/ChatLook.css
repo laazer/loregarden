@@ -469,6 +469,39 @@
   box-shadow: inset 2px 0 0 var(--ac);
 }
 
+/* Outstanding background wait: a trailing status, not a thinking card. No motion. */
+.lg-chat-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(620px, 100%);
+  font-size: var(--fs-small);
+  color: var(--txm);
+  line-height: 1.4;
+}
+
+.lg-chat-wait-command {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--tx);
+}
+
+/* The face stays inline (CopilotDock pins it); this lets a long path wrap. */
+.lg-chat-wait-log {
+  overflow-wrap: anywhere;
+}
+
+.lg-chat-wait-remaining {
+  font-size: var(--fs-micro);
+}
+
+.lg-chat-role {
+  margin: 0 0 4px;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
 /* A `/oneshot` turn: the chip saying what was asked for, above the task itself.
    The turn is a flex row aligned right, so the two need their own column. */
 /* The operator's turn and its Copy row, both against the right edge. */

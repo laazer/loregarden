@@ -32,6 +32,8 @@
 import { useState } from "react";
 
 import { useBaxterChatSessionAt } from "../../../hooks/useBaxterChatSession";
+import { showsChatWalker } from "../../../lib/chatSession";
+import { ChatWaitStatus } from "../../chat/ChatWaitStatus";
 import { useComposerAttachments } from "../../../hooks/useComposerAttachments";
 import { ComposerAttachButton, ComposerAttachmentTray } from "../../chat/ComposerAttachments";
 import { StudioChatComposer, StudioChatMessages } from "../../studio/StudioChat";
@@ -78,7 +80,12 @@ function ChatSessionPane({ workspaceSlug, sessionId }: ChatSessionSettings) {
       <div className="chat-session-thread">
         <StudioChatMessages
           messages={chat.messages}
-          isThinking={chat.isBusy}
+          isThinking={showsChatWalker(chat.isBusy, chat.runStatus)}
+          trailingStatus={
+            chat.runStatus === "waiting" && chat.wait ? (
+              <ChatWaitStatus wait={chat.wait} />
+            ) : null
+          }
           activeTurnId={chat.activeTurnId}
           assistantLabel="Baxter"
           showAssistantAvatar={false}

@@ -47,6 +47,8 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
     messages: mergeByCreatedAt(triage.data?.messages ?? [], asideMessages),
     // Include the in-flight POST so the walker shows before run_status flips.
     isBusy: isBusy || sendMessage.isPending,
+    runStatus: triage.data?.run_status,
+    wait: triage.data?.wait ?? null,
     // Ticket triage has no pending message row: the run is the turn.
     activeTurnId: triage.data?.active_run_id ?? null,
     // Assume it can until the snapshot says otherwise — a first paint that

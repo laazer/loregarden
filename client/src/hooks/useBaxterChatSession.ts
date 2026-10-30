@@ -283,6 +283,8 @@ export function useBaxterChatSessionAt(
     pendingApprovals: snapshot.data?.pending_approvals ?? [],
     // The in-flight POST covers the gap before the first poll reports "running".
     isBusy: isRunStatusBusy(snapshot.data?.run_status) || sendMessage.isPending,
+    runStatus: snapshot.data?.run_status,
+    wait: snapshot.data?.wait ?? null,
     activeTurnId: snapshot.data?.active_turn_id ?? null,
     canAct,
     chatMode: snapshot.data?.chat_mode,

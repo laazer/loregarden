@@ -22,7 +22,12 @@ import {
 } from "../chat/primitives/agentPlan";
 import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
-import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
+import {
+  chatMessageBody,
+  chatRoleLabel,
+  isUserChatRole,
+  type ChatMessageView,
+} from "../chat/chatUtils";
 import { useStickToBottom } from "../chat/useStickToBottom";
 import { Textarea } from "../ui/Textarea";
 import "../chat/ChatLook.css";
@@ -78,6 +83,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   messageActions,
   renderAfterMessage,
   trailingAsk,
+  trailingStatus,
   showAssistantAvatar = true,
   onPrimitiveSubmit,
 }: {
@@ -110,6 +116,11 @@ export const StudioChatMessages = memo(function StudioChatMessages({
    * layered above it.
    */
   trailingAsk?: ReactNode;
+  /**
+   * A wait (or similar) after the last message: not thinking, not an ask.
+   * Rendered as the host's own status row.
+   */
+  trailingStatus?: ReactNode;
   /** When false, assistant turns are bubble-only (Baxter main chat look). */
   showAssistantAvatar?: boolean;
   /** Lets interactive primitives, such as Q&A, send a user reply. */
@@ -126,6 +137,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   // empty box reads as broken. There has to be something to actually read.
   const hasLiveThinking = Boolean(thinking.content.trim() || thinking.answer.trim());
   const hasTrailingAsk = Boolean(trailingAsk);
+  const hasTrailingStatus = Boolean(trailingStatus);
   // A re-emitted execution plan replaces its earlier card rather than stacking
   // another one, so only the newest copy stays live in the thread.
   const supersededPlans = useMemo(() => supersededAgentPlanKeys(messages), [messages]);
@@ -138,12 +150,13 @@ export const StudioChatMessages = memo(function StudioChatMessages({
     messages.length,
     isThinking,
     hasTrailingAsk,
+    hasTrailingStatus,
   ]);
 
   const busyState: BaxterAvatarState = thinkingActivity === "typing" ? "typing" : "thinking";
   const activeState: BaxterAvatarState = isThinking ? busyState : responding ? "responding" : "idle";
 
-  if (messages.length === 0 && !isThinking && !hasTrailingAsk) {
+  if (messages.length === 0 && !isThinking && !hasTrailingAsk && !hasTrailingStatus) {
     return (
       <div
         ref={listRef}
@@ -264,8 +277,13 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             handlers={messageActions ?? NO_MESSAGE_HANDLERS}
           />
         );
+        const roleLabel =
+          message.role === "system" ? (
+            <p className="lg-chat-role">{chatRoleLabel(message.role, assistantLabel)}</p>
+          ) : null;
         const reply = (
           <>
+            {roleLabel}
             {leadingReasoning}
             {textBody ? (
               <div className="lg-chat-reply">
@@ -291,6 +309,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           >
             {showAssistantAvatar ? (
               <div className="lg-chat-assistant-col lg-chat-assistant-col--avatar">
+                {roleLabel}
                 {leadingReasoning}
                 <div className="lg-chat-assistant-row ticket-studio-msg-row">
                   <BaxterAvatar variant="head" state={state} label={assistantLabel} />
@@ -322,7 +341,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         );
       })}
       {hasTrailingAsk ? (
-        <div className="lg-chat-turn lg-chat-turn--assistant lg-chat-turn--ask">
+        <div key="lg-chat-trailing-ask" className="lg-chat-turn lg-chat-turn--assistant lg-chat-turn--ask">
           <div
             className={`lg-chat-assistant-col${showAssistantAvatar ? " lg-chat-assistant-col--avatar" : ""}`}
           >
@@ -335,8 +354,16 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           </div>
         </div>
       ) : null}
+      {hasTrailingStatus ? (
+        <div key="lg-chat-trailing-status">{trailingStatus}</div>
+      ) : null}
       {isThinking ? (
-        <div className="lg-chat-turn lg-chat-turn--assistant" role="status" aria-live="polite">
+        <div
+          key="lg-chat-thinking"
+          className="lg-chat-turn lg-chat-turn--assistant"
+          role="status"
+          aria-live="polite"
+        >
           <div className="lg-chat-loading">
             {showAssistantAvatar ? (
               <div className="lg-chat-loading-header ticket-studio-msg-row ticket-studio-thinking-row">

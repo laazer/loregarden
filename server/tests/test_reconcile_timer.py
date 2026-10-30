@@ -47,6 +47,7 @@ _RESTART_ONLY = (
     "fail_interrupted_asides",
     "resume_interrupted_orchestrations",
     "reconcile_worktrees",
+    "resume_chat_waits",
 )
 
 

@@ -693,7 +693,8 @@ def test_branch_chat_uses_permission_bridge_for_checked_out_branch(
     bridge_kwargs = captured["bridge"]
     assert bridge_kwargs["workspace"] is triage_workspace
     assert bridge_kwargs["workspace_stage_key"] == BRANCH_TRIAGE_STAGE_KEY
-    assert "real file, shell, git" in bridge_kwargs["prompt"]
+    # The acting posture, from the shared `chat_posture_blocks`.
+    assert "You have real tool access in this workspace" in bridge_kwargs["prompt"]
 
 
 def test_branch_chat_stays_advisory_without_a_checkout(
@@ -776,7 +777,8 @@ def test_branch_chat_codex_executes_on_checked_out_branch(
     assert captured["intent"] == "execute"
     assert captured["workspace_root"] == triage_repo.resolve()
     prompt = str(captured["prompt"])
-    assert "real file, shell, git" in prompt
+    # The acting posture, from the shared `chat_posture_blocks`.
+    assert "You have real tool access in this workspace" in prompt
     assert "advisory only" not in prompt
 
 

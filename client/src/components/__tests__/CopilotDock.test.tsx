@@ -7,6 +7,7 @@ import { api } from "../../api/client";
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession, type ChatAgents } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
+import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useUiStore } from "../../state/uiStore";
 import { installPointerEvents } from "../../test/pointerEvents";
 
@@ -730,6 +731,112 @@ describe("resizing the dock", () => {
     renderDock();
 
     expect(screen.queryByRole("separator")).toBeNull();
+  });
+});
+
+describe("a chat wait", () => {
+  const wait = {
+    command: "git push origin HEAD",
+    log_path: "/tmp/lg-wait/push.log",
+    registered_at: "2026-10-27T21:00:00Z",
+    deadline: "2026-10-27T23:00:00Z",
+  };
+
+  beforeEach(() => {
+    useUiStore.setState({ copilotOpen: true });
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-10-27T21:30:00Z"));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("is a trailing status row, not thinking", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "ticket-triage",
+          isBusy: true,
+          activeTurnId: null,
+          runStatus: "waiting",
+          wait,
+          messages: [
+            {
+              id: "m1",
+              role: "assistant",
+              content: "Pushing now.",
+              created_at: "2026-10-27T21:00:00Z",
+            },
+          ],
+        }),
+        label: "Ticket triage",
+      }),
+    );
+
+    renderDock();
+
+    expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
+    expect(document.querySelector(".lg-chat-loading-walker")).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("git push origin HEAD");
+    expect(status).toHaveTextContent("/tmp/lg-wait/push.log");
+    expect(status).toHaveTextContent("1h 30m left");
+    expect(screen.getByTitle("git push origin HEAD")).toBeInTheDocument();
+    const thread = document.querySelector(".copilot-dock-messages, .lg-chat-messages");
+    expect(thread).toContainElement(status);
+  });
+
+  it("is a polite live region with no skeleton, spinner, or progress bar", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "ticket-triage",
+          isBusy: true,
+          activeTurnId: null,
+          runStatus: "waiting",
+          wait,
+        }),
+        label: "Ticket triage",
+      }),
+    );
+
+    renderDock();
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(document.querySelector("[class*='skeleton']")).toBeNull();
+    expect(document.querySelector(".lg-chat-loading-walker")).toBeNull();
+    expect(status.innerHTML).toMatch(/--mono/);
+    expect(findUsabilityProblems(status).map((problem) => problem.kind)).not.toContain(
+      "tabular-list",
+    );
+  });
+
+  it("keeps a multiline command to one line and puts the full command in title", () => {
+    const command = "git push origin HEAD &&\npytest -q &&\necho done";
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "ticket-triage",
+          isBusy: true,
+          activeTurnId: null,
+          runStatus: "waiting",
+          wait: { ...wait, command },
+        }),
+        label: "Ticket triage",
+      }),
+    );
+
+    renderDock();
+
+    // getByTitle exact-matches a whitespace-collapsed title, so a command with
+    // newlines has to be read off the attribute the spec names.
+    const titled = screen.getByRole("status").querySelector("[title]");
+    expect(titled).not.toBeNull();
+    expect(titled?.textContent ?? "").not.toMatch(/\n/);
+    expect(titled).toHaveAttribute("title", command);
   });
 });
 

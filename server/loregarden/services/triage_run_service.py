@@ -19,6 +19,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
     ChatSurface,
+    ChatWait,
     RunStatus,
     Ticket,
     TriageMessage,
@@ -37,13 +38,20 @@ from loregarden.services.chat_thinking import (
     finish_chat_turn_thinking,
     with_thinking_part,
 )
+from loregarden.services.chat_wait import (
+    attach_continuation_run,
+    cancel_wait,
+    continuation_blocks,
+    outstanding_for,
+    take_continuation,
+)
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import resolve_chat_adapter
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_cancellation import request_cancel
 from loregarden.services.run_capacity import host_capacity_for_run
-from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run
+from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run, new_run_code
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
@@ -95,6 +103,10 @@ def start_triage_run(
         raise TriageConflictError(
             "Another run is already active for this ticket — wait for it to finish."
         )
+    if outstanding_for(session, ChatSurface.TICKET_TRIAGE, ticket.id) is not None:
+        raise TriageConflictError(
+            "Another run is already active for this ticket — wait for it to finish."
+        )
 
     user_message = TriageMessage(ticket_id=ticket.id, role="user", content=text)
     session.add(user_message)
@@ -122,6 +134,29 @@ def start_triage_run(
     session.refresh(user_message)
 
     return user_message, run
+
+
+def start_triage_continuation(
+    session: Session, ticket: Ticket, *, origin: AgentRun, wait: ChatWait
+) -> AgentRun:
+    """Mint a new triage AgentRun for a finished wait. No user row."""
+    run = AgentRun(
+        run_code=new_run_code(),
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id=TRIAGE_AGENT_ID,
+        stage_key=TRIAGE_STAGE_KEY,
+        status=RunStatus.QUEUED,
+        auto_approve=origin.auto_approve,
+        worktree_id=origin.worktree_id,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    attach_continuation_run(session, wait, run.id)
+    if os.environ.get("LOREGARDEN_SYNC_RUNS") != "1":
+        schedule_triage_turn(run.id)
+    return run
 
 
 class TriageTurnExecutor:
@@ -159,6 +194,14 @@ class TriageTurnExecutor:
         # enough for the string-vocabulary gate to call it an untyped vocabulary
         # — which it is, until `TurnIntent` stops being a Literal alias.
         acting = intent == "execute"
+        payload = take_continuation(self.session, run.id)
+        extra = (
+            continuation_blocks(
+                payload.exit_code, payload.log_tail, payload.command, payload.log_path
+            )
+            if payload is not None
+            else None
+        )
         prompt = build_triage_prompt(
             ticket,
             history,
@@ -167,6 +210,7 @@ class TriageTurnExecutor:
             agent=agent,
             interactive=acting,
             advisory_reason=chat_advisory_reason(selected),
+            extra_sections=extra,
         )
         try:
             turn = run_agent_turn(
@@ -394,6 +438,7 @@ def cancel_triage_turn(
     """
     run = find_active_run(session, ticket_id, only_agent_id=TRIAGE_AGENT_ID)
     if not run:
+        cancel_wait(session, ChatSurface.TICKET_TRIAGE, ticket_id)
         return None
 
     try:

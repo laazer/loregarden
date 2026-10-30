@@ -71,6 +71,7 @@ from loregarden.services.branch_triage_run_service import fail_interrupted_branc
 from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
+from loregarden.services.chat_wait_watch import resume_chat_waits
 from loregarden.services.ci_poll_scheduler import start_ci_poll_loop
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.github_push_on_edit import start_push_worker
@@ -118,6 +119,10 @@ def _recover_previous_boot(session: Session) -> None:
     fail_interrupted_planner_turns(session)
     # An aside has no run row of its own, so nothing above would ever reach it.
     fail_interrupted_asides(session)
+    # After the chat reapers: origin turns that were RUNNING are now settled, so
+    # a GONE child can continue without double-inflight. UNKNOWN at boot writes
+    # the Boot UNKNOWN system message; ALIVE keeps watching.
+    resume_chat_waits(session)
     # The turns those four just settled are exactly the ones whose live
     # thinking rows outlived them; nothing is left watching for that text.
     clear_orphaned_chat_turn_thinking(session)

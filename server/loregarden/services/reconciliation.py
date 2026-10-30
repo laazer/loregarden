@@ -43,6 +43,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from loregarden.services.chat_feature_loop import advance_feature_loops
+from loregarden.services.chat_wait_watch import poll_chat_waits
 from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
@@ -148,6 +149,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # lease it could not verify, so a sweep during a docker restart is a no-op
     # rather than a mass reclaim.
     SweepStep("reap_docker_leases", reap_docker_leases),
+    # Same liveness rule as docker reaping: identify() is a predicate, UNKNOWN
+    # is never GONE, and a sweep during a pid-lookup failure is a skip rather
+    # than a drop. resume_chat_waits stays boot-only.
+    SweepStep("poll_chat_waits", poll_chat_waits),
     # Report-only: this one observes and writes findings, it repairs nothing.
     # It rides the existing timer rather than adding a loop, and the wrapper
     # above means a bad scan cannot take the repair sweeps down with it.

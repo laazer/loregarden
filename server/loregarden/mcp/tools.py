@@ -69,7 +69,7 @@ from loregarden.mcp.tool_args import coerce_string_list as _coerce_string_list
 from loregarden.mcp.tool_args import coerce_tag_list as _coerce_tag_list
 from loregarden.mcp.tool_args import reject_truncated_call as _reject_truncated_call
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_registry import EXTENDED_TOOLS
+from loregarden.mcp.tool_registry import CHAT_WAIT_TOOL_DEFINITIONS, EXTENDED_TOOLS
 from loregarden.mcp.tool_schemas import boolean_prop as _boolean_prop
 from loregarden.mcp.tool_schemas import enum_string_prop as _enum_string_prop
 from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
@@ -1177,7 +1177,7 @@ TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(LOCAL_INSTANCE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_PLAN_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
-TOOL_DEFINITIONS.extend(FEATURE_LOOP_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(FEATURE_LOOP_TOOL_DEFINITIONS + CHAT_WAIT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(SURVEY_TOOL_DEFINITIONS)
 

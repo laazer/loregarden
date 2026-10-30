@@ -84,6 +84,7 @@ class McpTool(StrEnum):
     ADD_INITIATIVE_MEMBER = "loregarden_add_initiative_member"
     REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
     PROPOSE_FEATURE_CRITERIA = "loregarden_propose_feature_criteria"
+    REGISTER_CHAT_WAIT = "loregarden_register_chat_wait"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -346,12 +347,18 @@ NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {McpTool.FETCH_REFERENCE, McpTool.SEARCH_REFERENCE}
 )
 
+#: A wait row for a child the chat turn already spawned. Auto-approved because
+#: an inbox click would expire the originating turn; denied to orchestrated
+#: pipeline agents the same way triage ops are.
+CHAT_WAIT_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.REGISTER_CHAT_WAIT})
+
 AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
     READ_ONLY_MCP_TOOLS
     | CONTROL_PLANE_WRITE_MCP_TOOLS
     | NETWORK_EGRESS_MCP_TOOLS
     | CAPACITY_LEASE_MCP_TOOLS
     | LOCAL_INSTANCE_WRITE_MCP_TOOLS
+    | CHAT_WAIT_MCP_TOOLS
 )
 
 #: Tools whose safety depends on *which* action was asked for, not just the tool
@@ -437,6 +444,9 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.START_ORCHESTRATION,
         #: None of them may rehome, re-route or retire the ticket they run.
         *TRIAGE_OPS_MCP_TOOLS,
+        # Chat-only: a pipeline stage has no wait table to write, and granting
+        # it here would be the TRIAGE_OPS pattern inverted.
+        McpTool.REGISTER_CHAT_WAIT,
     }
 )
 

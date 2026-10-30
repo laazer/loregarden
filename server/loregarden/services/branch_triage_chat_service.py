@@ -5,11 +5,13 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 
+from loregarden.agents.chat_role_prompt import chat_posture_blocks
 from loregarden.agents.cli_adapters import DEFAULT_BRANCH_TRIAGE_USER_PROMPT
 from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     BranchTriageMessage,
+    ChatSurface,
     Ticket,
     Workspace,
     WorkspaceRuntimeSettings,
@@ -25,6 +27,7 @@ from loregarden.services.branch_triage_service import (
 )
 from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json
+from loregarden.services.chat_wait import outstanding_for, thread_key, wait_payload
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import resolve_effective_adapter
 from loregarden.services.triage_service import (
@@ -102,6 +105,11 @@ def branch_triage_run_status(
     pending = latest_pending_turn(session, workspace_id, branch)
     if pending:
         return "running", pending.id
+    workspace = session.get(Workspace, workspace_id)
+    if workspace is not None:
+        key = thread_key(ChatSurface.BRANCH_TRIAGE, workspace_slug=workspace.slug, branch=branch)
+        if outstanding_for(session, ChatSurface.BRANCH_TRIAGE, key) is not None:
+            return "waiting", None
     return "idle", None
 
 
@@ -137,6 +145,11 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
         ),
         branch_checked_out=resolve_branch_checkout(workspace, branch) is not None,
     )
+    wait = outstanding_for(
+        session,
+        ChatSurface.BRANCH_TRIAGE,
+        thread_key(ChatSurface.BRANCH_TRIAGE, workspace_slug=workspace.slug, branch=branch),
+    )
     return {
         "workspace_id": workspace.id,
         "branch": branch,
@@ -161,6 +174,7 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
         "chat_mode": mode.as_dict(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
+        "wait": wait_payload(wait) if wait is not None else None,
     }
 
 
@@ -174,30 +188,20 @@ def build_branch_triage_prompt(
     ticket: Ticket | None,
     interactive: bool = False,
     advisory_reason: str = "",
+    extra_sections: list[str] | None = None,
 ) -> str:
     sections = [
         "# Loregarden branch triage",
         "You are Baxter, the operator's triage assistant for cleaning up git branches.",
     ]
-    if interactive:
-        sections.extend(
-            [
-                "You have real file, shell, git, and Loregarden MCP access in the selected "
-                "branch's checkout.",
-                "When the operator requests git work (commit, push, checkout, merge, rebase, "
-                "delete, etc.), run it and report exact outcomes.",
-                "Use safe defaults: avoid force-push or branch deletion unless the operator "
-                "clearly asks; confirm when intent is ambiguous.",
-                "High-risk actions route through Loregarden's approval inbox automatically.",
-            ]
+    sections.extend(
+        chat_posture_blocks(
+            surface=ChatSurface.BRANCH_TRIAGE,
+            interactive=interactive,
+            approval_bridge=interactive,
+            advisory_reason=advisory_reason,
         )
-    else:
-        sections.append(
-            "You are advisory only in this turn — do not claim to have run commands or changed "
-            "the repository."
-        )
-        if advisory_reason:
-            sections.append(f"Reason: {advisory_reason}")
+    )
     sections.extend(
         [
             "",
@@ -246,6 +250,8 @@ def build_branch_triage_prompt(
             sections.append(f"{speaker}: {body}")
 
     sections.extend(["", "## Latest operator message", latest_user_message, "", "Reply concisely."])
+    if extra_sections:
+        sections.extend(["", *extra_sections])
     return "\n".join(sections)
 
 
@@ -257,6 +263,7 @@ def invoke_branch_triage_model(
     *,
     run_id: str = "",
     turn_id: str = "",
+    extra_sections: list[str] | None = None,
 ) -> str:
     """Run one branch triage turn.
 
@@ -296,6 +303,7 @@ def invoke_branch_triage_model(
         ticket=ticket,
         interactive=intent == "execute",
         advisory_reason=advisory_reason,
+        extra_sections=extra_sections,
     )
     turn = run_agent_turn(
         AgentTurnRequest(

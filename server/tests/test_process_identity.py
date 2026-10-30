@@ -23,6 +23,7 @@ from loregarden.services.process_identity import (
     identify,
     liveness,
     record_process_identity,
+    session_of,
 )
 from loregarden.services.ticket_service import TicketService
 
@@ -160,3 +161,48 @@ def test_recording_never_fails_the_run(db_session, run):
 
 def test_recording_against_a_missing_run_is_a_no_op(db_session):
     record_process_identity("no-such-run", os.getpid())  # must not raise
+
+
+def test_session_of_a_live_process_is_its_sid():
+    """R2.6. Sibling of identify(); does not change identify()'s fingerprint."""
+    assert session_of(os.getpid()) == os.getsid(os.getpid())
+
+
+def test_session_of_a_dead_pid_is_none():
+    assert session_of(2147483000) is None
+
+
+def test_a_detached_child_has_a_different_session_than_the_server():
+    child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        assert session_of(child.pid) != os.getsid(os.getpid())
+        assert session_of(child.pid) == os.getsid(child.pid)
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_a_same_session_child_shares_the_server_sid():
+    child = subprocess.Popen(["sleep", "30"], start_new_session=False)
+    try:
+        assert session_of(child.pid) == os.getsid(os.getpid())
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_session_of_does_not_change_identify_fingerprint():
+    before = identify(os.getpid())
+    session_of(os.getpid())
+    assert identify(os.getpid()) == before
+
+
+def test_session_of_timeout_is_none_not_a_guessed_sid():
+    """R2.6. Same 5s timeout as identify(); an unanswered ps cannot prove detach."""
+
+    def times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 5))
+
+    with patch("loregarden.services.process_identity.subprocess.run", times_out):
+        assert session_of(os.getpid()) is None
+    assert identify(os.getpid()).state is ProcessState.ALIVE

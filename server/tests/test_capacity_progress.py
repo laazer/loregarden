@@ -46,6 +46,11 @@ from sqlmodel import Session, select
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 
+#: This module spawns pytest with the pre-push plugin loaded. Under
+#: server-tests.sh this names the OUTER run's count file, so every nested run
+#: here drops it rather than recording its own count over the push's.
+COUNT_ENV = "LOREGARDEN_TEST_COUNT_FILE"
+
 
 @pytest.fixture(name="session")
 def session_fixture(isolated_db):
@@ -182,12 +187,49 @@ def test_a_report_with_no_step_is_rejected() -> None:
         ("tsc -b (2/3)", None, None, "tsc -b (2/3)"),
         ("pytest", 412, 1830, "pytest · 412/1830 (22%)"),
         ("pytest", 7, None, "pytest · 7 done"),
+        # B-1: a RECORDED zero is an absence of collected tests, not progress. One
+        # live lease holds (done=0, total=0) and reads today as
+        # "jest, changed since push base (3/3) · 0 done" — the same shape as a run
+        # that has only just begun.
+        (
+            "jest, changed since push base (3/3)",
+            0,
+            0,
+            "jest, changed since push base (3/3) · collected nothing",
+        ),
+        # The two neighbours that must NOT change with it (R-6): work done against
+        # a late or absent total, and a run that has not finished collecting yet.
         ("pytest", 9, 0, "pytest · 9 done"),
+        ("pytest", 0, None, "pytest · 0 done"),
         ("pytest", 5, 4, "pytest · 5/4 (100%)"),  # a late collection never reads over 100
     ],
 )
 def test_describe_progress(step, done, total, expected) -> None:
     assert describe_progress(step, done, total) == expected
+
+
+def test_a_recorded_zero_is_not_rendered_as_progress_on_the_board(session, host) -> None:
+    """B-1 on the surface a waiter reads: the board's summary for the measured
+    lease says the run collected nothing, instead of looking freshly started."""
+    holder = docker_leases.reserve(
+        session,
+        holder_label="pre-push client-tests · b",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=512,
+        pool=CapacityPool.HOST,
+    )
+    row = session.get(DockerLease, holder.lease_id)
+    row.progress_step = "jest, changed since push base (3/3)"
+    row.progress_done, row.progress_total = 0, 0
+    row.progress_at = utcnow()
+    session.add(row)
+    session.commit()
+
+    (payload,) = capacity_status(session, measure_if_unknown=False)["holders"]
+
+    assert payload["progress"]["summary"].endswith("collected nothing")
+    assert "0 done" not in payload["progress"]["summary"]
 
 
 @pytest.mark.parametrize(
@@ -312,7 +354,11 @@ def test_the_pytest_plugin_counts_every_test(tiny_suite, tmp_path, workers) -> N
         "PUSH_PROGRESS_STEP": "pytest on 1 file(s) (5/5)",
         "PYTHONPATH": str(SCRIPTS),
     }
-    env.pop("PYTEST_XDIST_WORKER", None)
+    # This nested run loads the same plugin, and the suite that spawns it may
+    # itself be a pre-push run whose count file it would otherwise write over —
+    # or a run narrowed by a `-k` that would deselect the whole inner suite.
+    for inherited in ("PYTEST_XDIST_WORKER", "PYTEST_ADDOPTS", COUNT_ENV):
+        env.pop(inherited, None)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "pytest_push_progress", "-n", workers,
          "-p", "no:cacheprovider", str(tiny_suite)],
@@ -328,7 +374,9 @@ def test_the_pytest_plugin_counts_every_test(tiny_suite, tmp_path, workers) -> N
 
 
 def test_the_pytest_plugin_is_inert_without_a_progress_file(tiny_suite, tmp_path) -> None:
-    env = {k: v for k, v in os.environ.items() if k != PROGRESS_ENV}
+    env = {
+        k: v for k, v in os.environ.items() if k not in (PROGRESS_ENV, COUNT_ENV, "PYTEST_ADDOPTS")
+    }
     env["PYTHONPATH"] = str(SCRIPTS)
     with mock.patch.dict(os.environ, env, clear=True):
         result = subprocess.run(

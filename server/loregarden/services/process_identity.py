@@ -23,6 +23,7 @@ lstart=` answers on both platforms.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -88,6 +89,37 @@ def identify(pid: int) -> IdentityReading:
     if stat.startswith("Z"):
         return IdentityReading(ProcessState.GONE)
     return IdentityReading(ProcessState.ALIVE, stamp)
+
+
+def session_of(pid: int) -> int | None:
+    """The session id of `pid`, or None when the OS could not prove one.
+
+    Sibling of `identify`, not a change to it. Register uses this to refuse a
+    child that still shares the agent's or the server's session — a restart
+    must not take the child with the CLI. A `ps` probe with the same 5s timeout
+    as `identify` proves the pid is still listable; `os.getsid` is the sid
+    itself (`ps -o sid=` is not a keyword on macOS, and `sess=` is not POSIX
+    sid). An unanswered `ps` cannot prove detach, so the caller refuses rather
+    than guessing.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "pid="],
+            capture_output=True,
+            text=True,
+            timeout=_PS_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        logger.warning("Could not prove pid %s is listable for a session id", pid, exc_info=True)
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return os.getsid(pid)
+    except OSError:
+        logger.warning("Could not read session id for pid %s", pid, exc_info=True)
+        return None
 
 
 def liveness(pid: int | None, identity: str | None) -> ProcessState:

@@ -688,6 +688,7 @@ export type {
   ChatIntent,
   ChatMode,
   ChatModeName,
+  ChatWait,
   TriageMessage,
   TriageRunStatus,
   TriageSendResult,

@@ -35,6 +35,7 @@ from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import cli_card_corrector, load_parts_json, settle_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
+from loregarden.services.chat_wait import outstanding_for, wait_payload
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -142,12 +143,12 @@ def triage_run_status(session: Session, ticket_id: str) -> tuple[str, str | None
         .order_by(AgentRun.created_at.desc())
         .limit(1)
     ).first()
-    if not latest_run:
-        return "idle", None
-    if latest_run.status == RunStatus.AWAITING_PERMISSION:
+    if latest_run is not None and latest_run.status == RunStatus.AWAITING_PERMISSION:
         return "awaiting_input", latest_run.id
-    if latest_run.status in (RunStatus.QUEUED, RunStatus.RUNNING):
+    if latest_run is not None and latest_run.status in (RunStatus.QUEUED, RunStatus.RUNNING):
         return "running", latest_run.id
+    if outstanding_for(session, ChatSurface.TICKET_TRIAGE, ticket_id) is not None:
+        return "waiting", None
     return "idle", None
 
 
@@ -173,6 +174,7 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
     messages = list_triage_messages(session, ticket.id)
     run_status, active_run_id = triage_run_status(session, ticket.id)
     capabilities, intent = resolve_chat_capabilities(ticket.triage_runtime_json)
+    wait = outstanding_for(session, ChatSurface.TICKET_TRIAGE, ticket.id)
     return {
         "pending_approvals": pending,
         "recent_approvals": recent,
@@ -192,6 +194,7 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
         "runtime": get_triage_runtime(ticket).model_dump(),
         "run_status": run_status,
         "active_run_id": active_run_id,
+        "wait": wait_payload(wait) if wait is not None else None,
     }
 
 
@@ -351,6 +354,41 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
     return sections
 
 
+def _append_triage_ticket_card(
+    sections: list[str],
+    ticket: Ticket,
+    ac: list[str],
+    runs: list[AgentRun],
+) -> None:
+    description = (ticket.description or "—")[:MAX_TRIAGE_DESCRIPTION_CHARS]
+    if ticket.description and len(ticket.description) > MAX_TRIAGE_DESCRIPTION_CHARS:
+        description += "…"
+    sections.extend(
+        [
+            f"Ticket: {ticket.external_id} — {ticket.title}",
+            f"State: {ticket.state.value}",
+            f"Workflow stage: {ticket.workflow_stage_key} ({ticket.workflow_stage_status.value})",
+            f"Blocking issues: {ticket.blocking_issues or 'None'}",
+            "",
+            "## Description",
+            description,
+            "",
+            "## Acceptance criteria",
+            *([f"- {item}" for item in ac] if ac else ["- None"]),
+        ]
+    )
+    if ticket.blocking_issues:
+        sections.extend(["", "## Blocking issues", ticket.blocking_issues])
+    if runs:
+        sections.extend(["", "## Recent runs"])
+        for run in reversed(runs):
+            sections.append(
+                f"- {run.run_code} · {run.stage_key} · {run.agent_id} · {run.status.value}"
+            )
+            if run.stderr:
+                sections.append(f"  stderr: {run.stderr[:400]}")
+
+
 def build_triage_prompt(
     ticket: Ticket,
     history: list[TriageMessage],
@@ -360,6 +398,7 @@ def build_triage_prompt(
     agent: dict | None = None,
     interactive: bool = False,
     advisory_reason: str = "",
+    extra_sections: list[str] | None = None,
 ) -> str:
     """Assemble one ticket-triage turn's system prompt.
 
@@ -402,35 +441,7 @@ def build_triage_prompt(
                 "",
             ]
         )
-    description = (ticket.description or "—")[:MAX_TRIAGE_DESCRIPTION_CHARS]
-    if ticket.description and len(ticket.description) > MAX_TRIAGE_DESCRIPTION_CHARS:
-        description += "…"
-    sections.extend(
-        [
-            f"Ticket: {ticket.external_id} — {ticket.title}",
-            f"State: {ticket.state.value}",
-            f"Workflow stage: {ticket.workflow_stage_key} ({ticket.workflow_stage_status.value})",
-            f"Blocking issues: {ticket.blocking_issues or 'None'}",
-            "",
-            "## Description",
-            description,
-            "",
-            "## Acceptance criteria",
-            *([f"- {item}" for item in ac] if ac else ["- None"]),
-        ]
-    )
-
-    if ticket.blocking_issues:
-        sections.extend(["", "## Blocking issues", ticket.blocking_issues])
-
-    if runs:
-        sections.extend(["", "## Recent runs"])
-        for run in reversed(runs):
-            sections.append(
-                f"- {run.run_code} · {run.stage_key} · {run.agent_id} · {run.status.value}"
-            )
-            if run.stderr:
-                sections.append(f"  stderr: {run.stderr[:400]}")
+    _append_triage_ticket_card(sections, ticket, ac, list(runs))
 
     if history:
         sections.extend(["", "## Triage conversation so far"])
@@ -442,5 +453,7 @@ def build_triage_prompt(
             sections.append(f"{speaker}: {content}")
 
     sections.extend(["", "## Latest operator message", latest_user_message])
+    if extra_sections:
+        sections.extend(["", *extra_sections])
     sections.extend(chat_ui_primitives_blocks())
     return "\n".join(sections)

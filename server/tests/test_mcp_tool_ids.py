@@ -34,3 +34,10 @@ def test_str_enum_membership_accepts_bare_tool_names():
     assert "loregarden_start_orchestration" in ORCHESTRATED_DENIED_MCP_TOOLS
     assert "loregarden_create_ticket" not in AUTO_APPROVED_MCP_TOOLS
     assert "loregarden_attach_evidence" in AUTO_APPROVED_MCP_TOOLS
+
+
+def test_register_chat_wait_is_auto_approved_orchestrated_denied_not_stage_default():
+    """R2.5. Inbox click would expire the turn; orchestrated must not get it."""
+    assert McpTool.REGISTER_CHAT_WAIT in AUTO_APPROVED_MCP_TOOLS
+    assert McpTool.REGISTER_CHAT_WAIT in ORCHESTRATED_DENIED_MCP_TOOLS
+    assert McpTool.REGISTER_CHAT_WAIT not in STAGE_DEFAULT_MCP_TOOLS
