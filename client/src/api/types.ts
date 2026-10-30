@@ -688,6 +688,8 @@ export type {
   TriageSnapshot,
 } from "./chatTypes";
 
+export type * from "./studioTypes";
+
 /**
  * One thing the workflow monitor noticed, with the numbers that evidence it.
  *

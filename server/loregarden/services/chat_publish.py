@@ -16,9 +16,10 @@ So this does two things, and the second matters as much as the first:
 
 The two surfaces differ on the first point only. A Home chat thread owns its
 branch and nothing else will ever publish it, so it publishes its own work. A
-ticket triage turn writes into the ticket's worktree, where the ticket's next
-stage commits it along with everything else on that branch — publishing there
-would open a pull request out of a conversation. It gets the note alone.
+ticket triage turn writes into the ticket's worktree — publishing there would
+open a pull request out of a conversation — so it commits through the same
+helper a writing stage uses, without pushing, and reports what happened. It
+never claims a later stage will commit the files.
 """
 
 from __future__ import annotations
@@ -36,11 +37,17 @@ from loregarden.models.domain import (
 )
 from loregarden.services.git_automation import (
     AutomationResult,
+    StepResult,
     publish_run,
     subject_for_chat_session,
 )
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.run_worktree_commit import (
+    RunWorktreeCommit,
+    WorktreeCommitSkip,
+    commit_succeeded_run_worktree,
+)
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session
 
@@ -213,21 +220,40 @@ def report_ticket_turn(
     ticket: Ticket,
     workspace: Workspace,
 ) -> TurnPublishOutcome | None:
-    """Report where a ticket triage turn's work landed, without publishing it.
+    """Commit a ticket triage turn's dirty worktree, or report why it was not.
 
-    The ticket's pipeline owns that branch: its next stage commits everything on
-    the worktree, so committing here would race it and opening a pull request
-    would turn a conversation into one. The operator still has to be told the
-    work exists and where — a triage turn that quietly leaves edits for a stage
-    that may never run is the stranded-work failure in a different costume.
+    The ticket's pipeline owns that branch, so this path must not push or open a
+    PR. It calls `commit_succeeded_run_worktree` with the still-RUNNING triage
+    run so a live sibling writer is the only `live_writer` skip. `deferred_to`
+    stays empty: no later stage is going to commit this for the operator.
     """
     checkout = _inspect(session, run_id, workspace)
     if checkout is None:
         return None
+    if not checkout.dirty:
+        return TurnPublishOutcome(
+            repo_root=checkout.repo_root,
+            branch=checkout.branch,
+            dirty=False,
+            automation=None,
+        )
+    result = commit_succeeded_run_worktree(session, ticket, checkout.run)
     return TurnPublishOutcome(
         repo_root=checkout.repo_root,
         branch=checkout.branch,
-        dirty=checkout.dirty,
-        automation=None,
-        deferred_to=f"ticket `{ticket.external_id}`'s next stage",
+        dirty=True,
+        automation=_ticket_turn_automation(result),
     )
+
+
+def _ticket_turn_automation(result: RunWorktreeCommit) -> AutomationResult | None:
+    """Map the helper onto existing Home-rail copy. Never sets deferred_to."""
+    if result.committed:
+        return AutomationResult(steps=[StepResult("commit", True)])
+    if result.skipped is WorktreeCommitSkip.LIVE_WRITER:
+        return AutomationResult(
+            steps=[StepResult("commit", False, "another agent run is still writing this worktree")]
+        )
+    if result.error:
+        return AutomationResult(steps=[StepResult("commit", False, result.error)])
+    return None

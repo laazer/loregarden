@@ -15,10 +15,11 @@ from sqlmodel import Session
 
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import string_prop, tool_schema
-from loregarden.models.domain import ArtifactKind, Workspace
+from loregarden.models.domain import ArtifactKind
 from loregarden.services.fix_coverage import parse_fix_coverage
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 
 _ANSWER_FIELDS = ("existing", "reentry", "prevention", "learning", "not_a_state_bug")
 
@@ -70,7 +71,7 @@ def _record_fix_coverage(session: Session, arguments: dict[str, Any]) -> str:
         raise ValueError(f"Fix coverage for {ticket.external_id} not recorded: {exc}") from exc
     learning: dict[str, Any] = {}
     if coverage.learning:
-        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(session, ticket)
         if workspace is None:
             raise ValueError(f"{ticket.external_id} has no workspace to record its learning in")
         learning = AgentMemoryService.from_settings().append_learning(

@@ -16,6 +16,7 @@ from loregarden.services.pull_request_merge import (
 )
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_pull_request import TicketPullRequest, ticket_pull_request
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -33,7 +34,7 @@ def _ticket_and_workspace(session: Session, ticket_id: str) -> tuple[Ticket, Wor
     ticket = session.get(Ticket, ticket_id) or resolve_external_id(session, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise HTTPException(404, "Workspace not found")
     return ticket, workspace

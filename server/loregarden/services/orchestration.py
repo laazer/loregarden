@@ -79,6 +79,7 @@ from loregarden.services.studio_routing import (
 )
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
@@ -201,7 +202,7 @@ class OrchestrationService:
         if ticket.workflow_disabled:
             return None, False
 
-        ws = self.session.get(Workspace, ticket.workspace_id)
+        ws = workspace_for_ticket(self.session, ticket)
         if not ws:
             return None, False
         template, stages = resolve_ticket_stages(self.session, ticket)

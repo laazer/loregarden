@@ -36,7 +36,6 @@ from loregarden.models.domain import (
     OrchestratorDecision,
     Ticket,
     TicketDependency,
-    Workspace,
 )
 from loregarden.services.dependency_readiness import (
     UnmetPrerequisite,
@@ -48,6 +47,7 @@ from loregarden.services.ticket_dependencies import (
     TicketDependencyService,
     resolve_prerequisites,
 )
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 
@@ -139,7 +139,7 @@ def _edge_times(session: Session, ticket_id: str) -> dict[str, datetime]:
 def unmet_prerequisites(session: Session, ticket: Ticket) -> list[UnmetPrerequisite]:
     """What holds ``ticket``, before any override: landed-readiness where there is
     a repository to ask, state alone where there is not (an initiative)."""
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is not None:
         return unmet_prerequisites_for_start(session, ticket, workspace)
     return [

@@ -2,16 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import {
-  api,
-  type StudioAgent,
-  type StudioAgentToolGrants,
-  type StudioGateCheck,
-  type StudioHandoffCheck,
-  type StudioWorkflow,
-  type StudioWorkflowStage,
-  type WorkflowTransition,
-} from "../api/client";
+import { api, type StudioAgent, type StudioWorkflow } from "../api/client";
+import { AgentDeleteConfirm } from "../components/studio/AgentDeleteConfirm";
+import { AgentDeleteRefusalNotice } from "../components/studio/AgentDeleteRefusalNotice";
+import { readAgentDeleteRefusal, resolveWorkflowDestination, type AgentDeleteRefusal } from "../components/studio/agentDeleteRefusal";
+import { agentUpdateBody, draftFromAgent, EMPTY_AGENT } from "../components/studio/agentDraft";
+import { emptyWorkflowDraft, useStudioDraftGeneration, type WorkflowDraft } from "../components/studio/useStudioDraftGeneration";
 import { AgentIndex } from "../components/studio/AgentIndex";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
@@ -33,52 +29,14 @@ import { isStudioNewResource, studioPath } from "../lib/appNavigation";
 import { errorStatus } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import { StudioStagesCard } from "../components/studio/StudioStagesCard";
+import { ADAPTERS, agentCategory } from "../components/studio/studioAgentMeta";
 import { emptyStage, modelOptionsForAdapter } from "../components/studio/studioWorkflowHelpers";
 import { AddToTabMenu } from "../components/AddToTabMenu";
+import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
 import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
-
-const ADAPTERS = [
-  { id: "claude", label: "Claude Code" },
-  { id: "cursor", label: "Cursor Agent" },
-  { id: "lmstudio", label: "LM Studio" },
-  { id: "local", label: "Local runner" },
-];
-
-const EMPTY_AGENT = {
-  slug: "",
-  name: "",
-  description: "",
-  role_body: "",
-  adapter: "claude",
-  default_model: "",
-  timeout: 600,
-  default_skill: "",
-  mcp_enabled: true,
-  mcp_tools: [] as string[],
-  gate_checks: [] as StudioGateCheck[],
-  handoff_checks: [] as StudioHandoffCheck[],
-  tool_grants: {
-    posture: "inherit",
-    allowed_tools: [],
-    disallowed_tools: [],
-    mcp_servers: [],
-  } as StudioAgentToolGrants,
-};
-
-function agentCategory(agent: StudioAgent): { label: string; className: string } {
-  if (!agent.built_in) return { label: "Custom", className: "custom" };
-  const slug = agent.slug.toLowerCase();
-  if (slug.includes("plan")) return { label: "Planning", className: "planning" };
-  if (slug.includes("review")) return { label: "Review", className: "review" };
-  if (slug.includes("implement") || slug.includes("coder") || slug.includes("backend") || slug.includes("frontend")) {
-    return { label: "Implementation", className: "implementation" };
-  }
-  if (slug.includes("test") || slug.includes("qa")) return { label: "Testing", className: "testing" };
-  return { label: "Agent", className: "default" };
-}
 
 export function StudioPage() {
   const fieldId = useId();
@@ -100,17 +58,17 @@ export function StudioPage() {
   const [layoutMode, setLayoutMode] = useState<"workbench" | "focus">("workbench");
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
   const [agentDescribePrompt, setAgentDescribePrompt] = useState("");
+  const [confirmDeleteAgent, setConfirmDeleteAgent] = useState(false);
+  // Set the moment the operator confirms, not when the mutation reports itself
+  // pending: react-query flips `isPending` a microtask later, and an Escape
+  // landing in that window would dismiss a dialog whose request is already away.
+  const [deleteRequested, setDeleteRequested] = useState(false);
+  // What the last delete refused over, or null when the last delete did not
+  // refuse. It arrives on the rejection itself (`ApiError.payload`), so reporting
+  // it costs no second request and needs no loading state.
+  const [deleteRefusal, setDeleteRefusal] = useState<AgentDeleteRefusal | null>(null);
   const [workflowDescribePrompt, setWorkflowDescribePrompt] = useState("");
-  // `transitions` round-trips through the editor untouched: the editor cannot author
-  // routes yet, but dropping them here made every save regenerate a bare linear chain
-  // server-side, silently destroying `when: reject` edges.
-  const [workflowDraft, setWorkflowDraft] = useState<{
-    slug: string;
-    name: string;
-    description: string;
-    stages: StudioWorkflowStage[];
-    transitions: WorkflowTransition[];
-  }>({ slug: "", name: "", description: "", stages: [emptyStage(1)], transitions: [] });
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft>(emptyWorkflowDraft());
 
   const mcpGuides = useQuery({ queryKey: ["studio-mcp-tool-guides"], queryFn: api.studioMcpToolGuides });
   const exitActionRequirements = useQuery({
@@ -181,6 +139,10 @@ export function StudioPage() {
   const isAgentReadOnly = Boolean(selectedAgent?.read_only);
   const isWorkflowReadOnly = Boolean(selectedWorkflow?.read_only || selectedWorkflow?.built_in);
   const isEditingCustomAgent = Boolean(selectedAgentSlug && !isAgentReadOnly);
+  // An existing agent's slug cannot be changed: it is named by string in
+  // workflow templates, drafts, ticket pins and the run ledger, with no FK and
+  // no single owner, so a rename either rewrites run history or orphans it.
+  const isSlugFixed = Boolean(selectedAgent);
 
   const agentOptions = useMemo(() => (agents.data ?? []).map((a) => ({ id: a.slug, label: a.name })), [agents.data]);
 
@@ -188,6 +150,8 @@ export function StudioPage() {
   const prevIsNewAgentRef = useRef(false);
   const prevIsNewWorkflowRef = useRef(false);
   const skipAgentDraftResetRef = useRef(false);
+  /** The draft as it stood when the delete was refused, so an edit clears the notice. */
+  const refusalDraftRef = useRef(EMPTY_AGENT as typeof agentDraft);
   const skipWorkflowDraftResetRef = useRef(false);
 
   useEffect(() => {
@@ -231,17 +195,16 @@ export function StudioPage() {
   const saveAgent = useMutation({
     meta: { errorTitle: "Save agent" },
     mutationFn: async () => {
-      const payload = {
-        ...agentDraft,
-        slug: agentDraft.slug || agentDraft.name,
-        mcp_tools: agentDraft.mcp_enabled ? agentDraft.mcp_tools : [],
-      };
       // Editing any existing agent (built-in or custom) updates it in place and
-      // records a new version; only a brand-new slug creates.
+      // records a new version; only a brand-new slug creates. The update body
+      // carries no `slug`: it is fixed after creation, and the schema forbids
+      // extra keys, so sending it would 422 every save.
+      const writable = agentUpdateBody(agentDraft);
       if (selectedAgentSlug && agents.data?.find((a) => a.slug === selectedAgentSlug)) {
-        return api.updateStudioAgent(selectedAgentSlug, payload);
+        return api.updateStudioAgent(selectedAgentSlug, writable);
       }
-      return api.createStudioAgent(payload);
+      const name = agentDraft.name;
+      return api.createStudioAgent({ ...writable, name, slug: agentDraft.slug || name });
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
@@ -253,42 +216,43 @@ export function StudioPage() {
     meta: { errorTitle: "Delete agent" },
     mutationFn: (slug: string) => api.deleteStudioAgent(slug),
     onSuccess: () => {
+      setConfirmDeleteAgent(false);
+      setDeleteRequested(false);
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
       navigateToStudio("agents", true);
       setAgentDraft({ ...EMPTY_AGENT });
     },
-  });
-
-  const generateAgentDraft = useMutation({
-    meta: { errorTitle: "Generate agent draft" },
-    mutationFn: () => api.generateStudioAgent(agentDescribePrompt),
-    onSuccess: (generated) => {
-      setAgentDraft((draft) => ({
-        ...draft,
-        slug: generated.slug || draft.slug,
-        name: generated.name,
-        description: generated.description,
-        role_body: generated.role_body,
-        adapter: generated.adapter || draft.adapter,
-        default_skill: generated.default_skill || draft.default_skill,
-        mcp_tools: generated.mcp_tools.length ? generated.mcp_tools : draft.mcp_tools,
-        mcp_enabled: generated.mcp_tools.length ? true : draft.mcp_enabled,
-      }));
+    onError: (error) => {
+      // The dialog comes down so the notice under it can be read, and the
+      // agent stays in the list: a refusal that had already removed the row is
+      // a row that vanishes and comes back. The toast still fires from
+      // `meta.errorTitle` — it is no longer the only report.
+      setConfirmDeleteAgent(false);
+      setDeleteRequested(false);
+      refusalDraftRef.current = agentDraft;
+      setDeleteRefusal(readAgentDeleteRefusal(error));
     },
   });
 
-  const generateWorkflowDraft = useMutation({
-    meta: { errorTitle: "Generate workflow draft" },
-    mutationFn: () => api.generateStudioWorkflow(workflowDescribePrompt),
-    onSuccess: (generated) => {
-      setWorkflowDraft({
-        slug: generated.slug,
-        name: generated.name,
-        description: generated.description,
-        stages: generated.stages.length ? generated.stages : [emptyStage(1)],
-        transitions: [],
-      });
-    },
+  // The refusal stands until the operator acts: an edit to the draft, or
+  // another agent. Keyed on the draft's identity rather than a flag per field,
+  // so a field added to the editor later cannot forget to clear it.
+  useEffect(() => {
+    if (deleteRefusal && agentDraft !== refusalDraftRef.current) setDeleteRefusal(null);
+  }, [agentDraft, deleteRefusal]);
+
+  useEffect(() => {
+    setDeleteRefusal(null);
+    setConfirmDeleteAgent(false);
+  }, [selectedAgentSlug]);
+
+  const { generateAgentDraft, generateWorkflowDraft } = useStudioDraftGeneration({
+    agentPrompt: agentDescribePrompt,
+    workflowPrompt: workflowDescribePrompt,
+    setAgentDraft,
+    setWorkflowDraft,
+    generateAgent: api.generateStudioAgent,
+    generateWorkflow: api.generateStudioWorkflow,
   });
 
   const saveWorkflow = useMutation({
@@ -342,7 +306,7 @@ export function StudioPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
       navigateToStudio("workflows", true);
-      setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)], transitions: [] });
+      setWorkflowDraft(emptyWorkflowDraft());
     },
   });
 
@@ -350,21 +314,7 @@ export function StudioPage() {
     if (!selectedAgentSlug || isAgentReadOnly) return;
     const agent = agents.data?.find((item) => item.slug === selectedAgentSlug);
     if (!agent) return;
-    setAgentDraft({
-      slug: agent.slug,
-      name: agent.name,
-      description: agent.description,
-      role_body: agent.role_body,
-      adapter: agent.adapter,
-      default_model: agent.default_model,
-      timeout: agent.timeout,
-      default_skill: agent.default_skill,
-      mcp_enabled: agent.mcp_enabled,
-      mcp_tools: agent.mcp_tools,
-      gate_checks: agent.gate_checks,
-      handoff_checks: agent.handoff_checks,
-      tool_grants: agent.tool_grants,
-    });
+    setAgentDraft(draftFromAgent(agent));
   }, [selectedAgentSlug, agents.data, isAgentReadOnly]);
 
   useEffect(() => {
@@ -438,19 +388,9 @@ export function StudioPage() {
     skipAgentDraftResetRef.current = true;
     navigateToStudioAgentNew();
     setAgentDraft({
+      ...draftFromAgent(agent),
       slug: `${agent.slug}-copy`,
       name: `${agent.name} (copy)`,
-      description: agent.description,
-      role_body: agent.role_body,
-      adapter: agent.adapter,
-      default_model: agent.default_model,
-      timeout: agent.timeout,
-      default_skill: agent.default_skill,
-      mcp_enabled: agent.mcp_enabled,
-      mcp_tools: agent.mcp_tools,
-      gate_checks: agent.gate_checks,
-      handoff_checks: agent.handoff_checks,
-      tool_grants: agent.tool_grants,
     });
   };
 
@@ -656,11 +596,16 @@ export function StudioPage() {
                 </div>
               )}
 
-              {isAgentReadOnly && selectedAgent && (
+              {/* Offered for any selected existing agent, not only a read-only
+                  one: `read_only` is hardcoded false for every DB row, so the
+                  old condition rendered this for none of the installed agents
+                  — and the Slug field's help text names it as the way to get a
+                  different id. */}
+              {selectedAgent && (
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button type="button" className="btn-secondary" onClick={() => duplicateAgent(selectedAgent)}>
+                  <Button variant="secondary" onClick={() => duplicateAgent(selectedAgent)}>
                     Duplicate to custom
-                  </button>
+                  </Button>
                   {selectedAgent.role_file && (
                     <span style={{ fontSize: "var(--fs-micro)", color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedAgent.role_file}
@@ -720,14 +665,23 @@ export function StudioPage() {
                   </div>
                   <div className="studio-field">
                     <label htmlFor={`${fieldId}-agent-slug`} className="studio-field-label">Slug</label>
+                    {/* readOnly, not disabled: the slug is the id every
+                        workflow stage names, so it has to stay focusable and
+                        selectable to copy. */}
                     <Input
                       id={`${fieldId}-agent-slug`}
                       className="studio-input mono"
                       value={isAgentReadOnly ? selectedAgent?.slug ?? "" : agentDraft.slug}
                       placeholder="auto from name"
-                      readOnly={isAgentReadOnly}
+                      readOnly={isAgentReadOnly || isSlugFixed}
+                      aria-describedby={isSlugFixed ? `${fieldId}-agent-slug-help` : undefined}
                       onChange={(e) => setAgentDraft({ ...agentDraft, slug: e.target.value })}
                     />
+                    {isSlugFixed && (
+                      <div id={`${fieldId}-agent-slug-help`} className="studio-field-help">
+                        Fixed after creation — use Duplicate to custom for a new id.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="studio-field">
@@ -909,26 +863,55 @@ export function StudioPage() {
               )}
 
               {!isAgentReadOnly && (
-                <div className="studio-card-actions">
-                  {isEditingCustomAgent && !selectedAgent?.built_in && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={deleteAgent.isPending}
-                      onClick={() => deleteAgent.mutate(selectedAgentSlug!)}
+                <>
+                  <AgentDeleteRefusalNotice
+                    refusal={deleteRefusal}
+                    onOpenWorkflow={(slug) => navigateToStudioWorkflow(slug)}
+                    // A template id is not a Workflow Studio address; the draft
+                    // that published it is.
+                    resolveWorkflowSlug={(kind, id) =>
+                      resolveWorkflowDestination(kind, id, workflows.data ?? [])
+                    }
+                  />
+                  <div className="studio-card-actions">
+                    {isEditingCustomAgent && !selectedAgent?.built_in && (
+                      <Button
+                        variant="secondary"
+                        disabled={deleteAgent.isPending}
+                        onClick={(event) => {
+                          // Focused here so the confirm's focus trap has an
+                          // opener to hand focus back to when it is cancelled.
+                          event.currentTarget.focus();
+                          setDeleteRequested(false);
+                          setConfirmDeleteAgent(true);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                    <Button
+                      variant="primary"
+                      className="btn-cta"
+                      disabled={!agentDraft.name.trim() || saveAgent.isPending}
+                      onClick={() => saveAgent.mutate()}
                     >
-                      Delete
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn-primary btn-cta"
-                    disabled={!agentDraft.name.trim() || saveAgent.isPending}
-                    onClick={() => saveAgent.mutate()}
-                  >
-                    {saveAgent.isPending ? "Saving…" : isEditingCustomAgent ? "Save agent" : "Create agent"}
-                  </button>
-                </div>
+                      {saveAgent.isPending ? "Saving…" : isEditingCustomAgent ? "Save agent" : "Create agent"}
+                    </Button>
+                  </div>
+                </>
+              )}
+              {selectedAgent && (
+                <AgentDeleteConfirm
+                  open={confirmDeleteAgent}
+                  slug={selectedAgent.slug}
+                  versionCount={selectedAgent.version ?? 0}
+                  pending={deleteAgent.isPending || deleteRequested}
+                  onConfirm={() => {
+                    setDeleteRequested(true);
+                    deleteAgent.mutate(selectedAgent.slug);
+                  }}
+                  onCancel={() => setConfirmDeleteAgent(false)}
+                />
               )}
               {selectedAgentSlug && selectedAgent && (
                 <AgentVersionHistory

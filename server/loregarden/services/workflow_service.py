@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.ticket_rollup import has_children
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from sqlmodel import Session, col, select
 
@@ -328,7 +329,7 @@ class WorkflowService:
         if not template:
             raise ValueError(f"Unknown workflow template: {template_slug}")
 
-        ws = self.session.get(Workspace, ticket.workspace_id)
+        ws = workspace_for_ticket(self.session, ticket)
         if not ws:
             raise ValueError("Workspace not found")
 

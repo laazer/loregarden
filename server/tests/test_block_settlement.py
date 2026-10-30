@@ -327,6 +327,7 @@ BLOCK_WRITERS: dict[str, str] = {
     ),
     "services/parallel_stage.py:_block_on_checkout_failure": "settles",
     "services/parallel_stage.py:_route_parallel_stage_failures": "settles",
+    "services/parallel_stage.py:reconcile_parallel_stage": "settles",
     "services/run_completion.py:_reroute_or_block_for_rework": "settles",
     "services/run_completion.py:settle_stage_after_failed_completion": "settles",
     "services/run_completion.py:_block_for_usage_limit": "settles",

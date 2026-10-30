@@ -33,9 +33,10 @@ from enum import StrEnum
 from pathlib import Path, PurePath
 
 from loregarden.core.timestamps import as_utc
-from loregarden.models.domain import AgentRun, CliAdapter, OrchestrationRun, Ticket, Workspace
+from loregarden.models.domain import AgentRun, CliAdapter, OrchestrationRun, Ticket
 from loregarden.services.gate_eval_classify import canonical_stage
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
@@ -231,7 +232,7 @@ def gate_producer_payload(
 
 
 def _snapshot_for(session: Session, ticket: Ticket) -> WorktreeSnapshot:
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return WorktreeSnapshot(error="ticket has no workspace")
     repo_root = resolve_ticket_root(session, ticket, workspace)

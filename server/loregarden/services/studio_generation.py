@@ -13,9 +13,10 @@ from loregarden.models.domain import (
     StudioWorkflowStage,
     Workspace,
 )
+from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.cli_agent_runner import CliAgentProfile, run_cli_agent_turn, stub_response
 from loregarden.services.ticket_studio_service import extract_json_block
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +95,31 @@ def slugify(value: str) -> str:
     return slug or "agent"
 
 
+#: The `detail` a 400 from either studio generate route carries when there is no
+#: workspace to generate into. The old message ("No workspace available for
+#: studio generation") named neither the cause nor the remedy, and it is rendered
+#: inline, verbatim, by `StudioDescribeBar`.
+NO_ACTIVE_WORKSPACE_MESSAGE = (
+    "No active workspace for studio generation: every workspace is archived, or none "
+    "exists. Restore one or add one on the Workspaces page, then generate again."
+)
+
+
 def _default_studio_workspace(session: Session) -> Workspace:
-    workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
-    if not workspace:
-        workspace = session.exec(select(Workspace).order_by(Workspace.slug)).first()
-    if not workspace:
-        raise ValueError("No workspace available for studio generation")
-    return workspace
+    """The workspace studio generation runs in: `loregarden` if it is active, else the first.
+
+    Both arms come from `active_workspaces`, which is the single home for the
+    unarchived predicate. An archived row used to win the slug lookup here, so
+    generation ran in a workspace a person had finished with and the failure arm
+    below was unreachable.
+    """
+    active = active_workspaces(session)
+    for workspace in active:
+        if workspace.slug == "loregarden":
+            return workspace
+    if not active:
+        raise ValueError(NO_ACTIVE_WORKSPACE_MESSAGE)
+    return active[0]
 
 
 def build_agent_generate_prompt(

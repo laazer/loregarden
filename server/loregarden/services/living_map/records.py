@@ -24,7 +24,6 @@ from loregarden.models.domain import (
     MapItemState,
     RunStatus,
     Ticket,
-    Workspace,
 )
 from loregarden.models.domain.chat_enums import ChatMessageRole
 from loregarden.models.domain.chat_primitives import (
@@ -39,6 +38,7 @@ from loregarden.services.chat_primitives.storage import load_parts_json
 from loregarden.services.checkpoint_logs import ticket_checkpoint_logs
 from loregarden.services.memory_store import ObsidianMemoryStore, slugify
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlmodel import Session, select
 
@@ -331,7 +331,7 @@ def _checkpoint_records(session: Session, ticket: Ticket, run_stage: dict[str, s
                 )
             ],
         )
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     try:
         logs = ticket_checkpoint_logs(store, ticket, workspace.slug if workspace else "")
     except OSError as exc:
