@@ -1,5 +1,11 @@
 import { api, type TicketDetail, type WorkflowStageView } from "../api/client";
-import { dismissToast, pushToast, toastActionFailed, toastWarning } from "../state/toastStore";
+import {
+  pushClaimedToast,
+  pushToast,
+  releaseToast,
+  toastActionFailed,
+  toastWarning,
+} from "../state/toastStore";
 import { copyText } from "./clipboard";
 
 export function isAgentWorkflowTicket(ticket: TicketDetail): boolean {
@@ -70,7 +76,10 @@ export async function copyStageTerminalHandoffCommand(
   // the clause names the tree generically rather than rendering a gap where a
   // branch name was promised.
   const movingTree = ticket.branch?.trim() || "its worktree";
-  const preparing = pushToast({
+  // The tree's ONE claimed push: this is the single site that binds what a push
+  // returns and releases it in the `finally` below. Every other push site in
+  // `client/src` discards the return value, and so mints nothing.
+  const preparing = pushClaimedToast({
     tone: "info",
     title: "Preparing terminal command",
     message:
@@ -116,6 +125,6 @@ export async function copyStageTerminalHandoffCommand(
     // In a `finally`, not at the end of either branch: the request can succeed
     // and the clipboard still refuse, and a sticky toast left there stays on
     // screen forever.
-    dismissToast(preparing);
+    releaseToast(preparing);
   }
 }

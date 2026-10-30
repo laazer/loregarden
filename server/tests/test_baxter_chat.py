@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 from loregarden.agents.executors.permission_bridge import (
     HOME_CHAT_STAGE_KEY,
@@ -11,6 +12,7 @@ from loregarden.agents.executors.permission_bridge import (
 )
 from loregarden.models.domain import (
     AgentRun,
+    BaxterChatSession,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -19,7 +21,9 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.baxter_chat_service import (
+    ChatSessionHasUnpublishedWork,
     build_baxter_chat_prompt,
+    delete_chat_session,
     resolve_references,
 )
 from sqlmodel import Session, select
@@ -1061,8 +1065,14 @@ def test_advisory_prompt_forbids_inventing_a_lookup(db_session: Session):
 
 
 def _acting_thread_tree(client: TestClient, db: Session, *, commit: bool) -> tuple[str, Path]:
-    """A thread with a real checkout of its own, committed or not."""
-    from loregarden.models.domain import BaxterChatSession
+    """A thread with a real checkout of its own, committed or not.
+
+    A commit is landed into the base as a squash merge would, because
+    lg-external-harness-1026 made the receipt the FIRST premise: without it
+    every caller here refuses on `NO_RECEIPT` and never reaches the seam the
+    test is about. `commit=False` is the premise refusal and stays unlanded.
+    """
+    from loregarden.services.branch_names import chat_session_branch
     from loregarden.services.chat_worktree import resolve_chat_execution_root
     from tests.worktree_helpers import git
 
@@ -1086,6 +1096,9 @@ def _acting_thread_tree(client: TestClient, db: Session, *, commit: bool) -> tup
     if commit:
         git(root, "add", "-A")
         git(root, "commit", "-q", "-m", "committed by the turn")
+        branch = chat_session_branch(chat)
+        git(Path(workspace.repo_path), "merge", "-q", "--squash", branch)
+        git(Path(workspace.repo_path), "commit", "-q", "-m", f"squash: {branch}")
     return session_id, root
 
 
@@ -1101,11 +1114,22 @@ def test_a_checkout_that_will_not_go_is_a_409_that_does_not_blame_the_operator(
     """
     from unittest.mock import patch
 
-    from loregarden.services.worktree_service import WorktreeService
+    from loregarden.services.directory_release import DirectoryReleaseFailed, ReleaseDisposition
+    from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 
     session_id, root = _acting_thread_tree(client, db_session, commit=True)
 
-    with patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+    with patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=f"{root}.parked",
+        ),
+    ):
         res = client.delete(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}")
 
     assert res.status_code == 409
@@ -1126,6 +1150,62 @@ def test_a_checkout_that_will_not_go_is_a_409_that_does_not_blame_the_operator(
     assert root.is_dir()
 
 
+def test_an_out_of_base_checkout_is_the_same_409_with_the_never_retryable_words(
+    client: TestClient, db_session: Session
+):
+    """AC11/AC4 — both causes keep the 409, and only the words differ.
+
+    The status is state, not a server fault, for either cause: the single
+    existing `except ChatSessionHasUnpublishedWork` handler answers both and
+    nothing downstream branches on the code. What must differ is the sentence —
+    "Clear the path, then delete again" is an instruction that cannot work when
+    the checkout is outside the worktrees folder, and an operator who follows it
+    learns nothing. The exact string is pinned against the measured clamp in
+    `test_chat_worktree_sandbox.py`; here it is the status, the difference and
+    the surviving row.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services.directory_release import DirectoryOutsideBase, ReleaseDisposition
+    from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
+
+    session_id, root = _acting_thread_tree(client, db_session, commit=True)
+
+    with patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryOutsideBase(
+            "outside the worktrees folder",
+            disposition=ReleaseDisposition.INTACT,
+            # The seam stamps its own vocabulary on the way past
+            # (lg-external-harness-1026 AC14, AC18 migration):
+            # `directory_release` cannot name a `CleanupRefusal` without
+            # importing the module that imports it, and the gate's clause
+            # lookup is unguarded by design — a cause with no clause must fail
+            # loudly rather than inherit the other one's sentence.
+            refusal=CleanupRefusal.OUTSIDE_BASE,
+            uncleaned_path=str(root),
+            parked_path="",
+        ),
+    ):
+        res = client.delete(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}")
+
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert str(root) in detail
+    # The other two messages' clauses, none of which belong here.
+    assert "Clear the path" not in detail
+    assert "unpublished work" not in detail
+    assert "Commit or discard" not in detail
+    # The row survives, as it does for every hold — the directory still needs
+    # an owner even though no retry on this row will ever clear it.
+    assert (
+        client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").status_code
+        == 200
+    )
+    assert root.is_dir()
+
+
 def test_a_thread_holding_uncommitted_work_is_the_same_409_with_the_other_reason(
     client: TestClient, db_session: Session
 ):
@@ -1141,3 +1221,24 @@ def test_a_thread_holding_uncommitted_work_is_the_same_409_with_the_other_reason
     assert "unpublished work" in detail
     assert str(root) in detail
     assert "Could not remove" not in detail
+    # AC22 (lg-external-harness-1167) — the string the clamp was measured
+    # against is the string the operator sees. The measurement in
+    # `client/scripts/measure-toast-clamp.mjs` is run on the service's own
+    # f-string, so it is only valid while the four hops between it and
+    # `.toast__message` leave it alone: `baxter_chat.py` raises
+    # `HTTPException(409, detail=str(exc))`, `http.ts` sets
+    # `ApiError.message = parsed.detail`, `describeError` returns it unchanged
+    # and `ToastHost` renders it as the sole child. Asserting that here rather
+    # than re-reading those lines: the refusal keeps every row and the
+    # directory, so raising it again directly answers the same sentence, and
+    # any prefix, wrapper or truncation the API hop adds shows up as a
+    # difference. Deliberately NOT a copy of the literal — a re-wording
+    # (AC10 leaves the wording open) must not have to be edited in two files.
+    chat = db_session.get(BaxterChatSession, session_id)
+    assert chat is not None
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(db_session, chat)
+    assert detail == str(caught.value)
+    # And the path is last on the wire too, not only in the service's own
+    # string — this is the assertion that would catch a hop appending to it.
+    assert detail.endswith(str(root)), detail

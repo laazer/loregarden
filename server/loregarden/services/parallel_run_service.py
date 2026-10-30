@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from sqlmodel import Session
 
@@ -136,7 +137,6 @@ class ParallelRunService:
         other's working tree.
         """
         from loregarden.services.git_automation_config import resolve_git_automation
-        from loregarden.services.git_branch import resolve_ticket_branch
         from loregarden.services.target_branch import resolve_target_branch
         from loregarden.services.worktree_service import (
             WorktreeService,

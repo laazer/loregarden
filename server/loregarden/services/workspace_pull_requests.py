@@ -34,13 +34,13 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.ci_checks import (
     GH_TIMEOUT_SECONDS,
     HEAD_CHECKS_FIELDS,
     GhHeadCommit,
     rollup,
 )
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.github_pr_listing import GhPage, PullRequestStates, list_pull_requests
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.ticket_pull_request import (

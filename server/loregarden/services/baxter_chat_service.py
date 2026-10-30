@@ -115,7 +115,8 @@ from loregarden.services.triage_service import (
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
-from loregarden.services.worktree_lifecycle import release_chat_worktree
+from loregarden.services.worktree_lifecycle import RemovalFailure, release_chat_worktree
+from loregarden.services.worktree_service import CleanupRefusal
 from loregarden.skills.registry import get_skill, skill_prompt_block
 from sqlmodel import Session, col, or_, select
 
@@ -464,23 +465,54 @@ def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> No
     Silently detaching the row instead would leave a checkout on disk that
     nothing owns and no sweeper reaps.
 
-    Two holds, two messages. The refusal reaches the operator verbatim as the
-    409 detail in an error toast, and a removal that was *attempted* and failed
-    must not borrow the wording written for work the server chose to keep:
-    there may be no uncommitted work at all behind a permission error or a busy
-    file, and "commit or discard it" cannot clear either. Both keep the row, so
-    the operator can retry the delete on the same thread.
+    Three holds, three messages, chosen from the hold's own members — never
+    from the operator prose a `Retirement` also carries, so a wording tweak
+    cannot silently change which sentence an operator meets. A removal that was
+    *attempted* and failed must not borrow the wording written for work the
+    server chose to keep: there may be no uncommitted work at all behind a
+    permission error or a busy file, and "commit or discard it" cannot clear
+    either. A checkout outside the worktrees folder must not borrow the
+    retryable wording either: clearing the path is not the remedy, and no retry
+    on this row can work, so the message says so instead of pointing at a
+    control. A checkout the gate PARKED is the loud one: the directory is
+    neither where its row says it is nor deleted, and the parked path is the
+    only thing that knows where it went. All four keep the row, which is the
+    only thing that owns the directory.
     """
     held = release_chat_worktree(session, chat_session)
-    if held is not None and held.removal_failed:
+    if held is not None and held.cause is CleanupRefusal.OUTSIDE_BASE:
+        # The path is LAST: the toast clamps at four lines with no ellipsis and
+        # an out-of-base path has no bounded length, so the clause saying a
+        # retry cannot work must survive the cut. Measured, not counted
+        # (lg-external-harness-1165 AC9) — tightening is allowed, lengthening
+        # or moving the path forward re-runs that measurement.
         raise ChatSessionHasUnpublishedWork(
-            f"Could not remove this chat's checkout at {held.worktree.worktree_path}. "
-            "Chat kept on purpose. Clear the path, then delete again."
+            "Chat kept. Its checkout is outside the worktrees folder, so no retry "
+            f"can remove it: {held.worktree.worktree_path}"
+        )
+    if held is not None and held.outcome.refusal is RemovalFailure.CLEANUP_FAILED:
+        # One sentence for a failed removal whether or not the gate managed to
+        # park a copy, and the path it names is the one the ROW points at. A
+        # second path in this string is room the four-line clamp does not have
+        # (measured by lg-external-harness-954 and re-measured by -1208, which
+        # this ticket's AC17 defers to), and the one the operator needs here is
+        # the one they can act on. The parked name is not lost: it is on
+        # `Retirement.parked_path`, in the `parked_at` column, and in the
+        # sweep's and the branch-triage endpoints' own reports.
+        raise ChatSessionHasUnpublishedWork(
+            "Could not remove this chat's checkout. Chat kept. Clear the path, then "
+            f"delete again. It is at: {held.worktree.worktree_path}"
         )
     if held is not None:
+        # The path is LAST: the toast clamps at four lines with no ellipsis and
+        # the path has no bounded length, so the instruction saying what to do
+        # must survive the cut. Measured, not counted
+        # (lg-external-harness-1167 AC8/AC9) — tightening is allowed, while
+        # lengthening the literal prefix or moving the path forward re-runs
+        # that measurement. The branch is gone: it is recoverable from the
+        # path, and the path is not recoverable from the branch.
         raise ChatSessionHasUnpublishedWork(
-            f"This chat still has unpublished work on `{held.worktree.branch}` at "
-            f"{held.worktree.worktree_path}. Commit or discard it, then delete the chat."
+            f"Commit or discard this chat's unpublished work, then delete the chat. It is at: {held.worktree.worktree_path}"
         )
 
     for message in session.exec(

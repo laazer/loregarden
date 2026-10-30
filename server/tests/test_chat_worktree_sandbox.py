@@ -34,25 +34,28 @@ from loregarden.services.baxter_chat_service import (
     ChatSessionHasUnpublishedWork,
     delete_chat_session,
 )
+from loregarden.services.branch_names import chat_session_branch
 from loregarden.services.chat_publish import TurnPublishOutcome, publish_chat_turn
 from loregarden.services.chat_worktree import (
     resolve_chat_execution_root,
     resolve_chat_thread_root,
 )
+from loregarden.services.directory_release import DirectoryReleaseFailed, ReleaseDisposition
 from loregarden.services.git_automation import (
     AutomationResult,
     StepResult,
     subject_for_chat_session,
 )
-from loregarden.services.git_branch import chat_session_branch
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.triage_service import TRIAGE_CLI_PROFILE
 from loregarden.services.worktree_lifecycle import (
     ChatWorktreeHold,
     KeepReason,
+    RemovalFailure,
+    Retirement,
     release_chat_worktree,
 )
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, head_branch, make_repo, make_ticket
 
@@ -383,12 +386,15 @@ def test_a_shared_checkout_fallback_says_so(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_deleting_a_thread_removes_its_published_worktree(session, workspace, chat_session):
+def test_deleting_a_thread_removes_its_published_worktree(session, workspace, chat_session, repo):
     run = _run(session, workspace)
     root = resolve_chat_execution_root(session, run, chat_session, workspace)
     (root / "new.txt").write_text("work\n")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "committed by the turn")
+    # lg-external-harness-1026: removing a chat checkout now needs a receipt
+    # too, and a chat tree's receipt is its content already being in the base.
+    _land_chat_branch(repo, chat_session)
 
     delete_chat_session(session, chat_session)
 
@@ -399,6 +405,19 @@ def test_deleting_a_thread_removes_its_published_worktree(session, workspace, ch
 def test_deleting_a_thread_with_uncommitted_work_refuses_and_says_where(
     session, workspace, chat_session
 ):
+    """The refusal names the place the operator has to go — and only that place.
+
+    It used to name the branch as well. lg-external-harness-1167 dropped it:
+    the branch is recoverable from the path (`git -C <path> branch
+    --show-current`) and the path is not recoverable from the branch, because
+    `worktree_service` truncates the slug at 32 chars for the directory while
+    `git_branch.chat_session_branch` truncates at 48 for the branch and the two
+    carry different uuid8 suffixes. Naming it spent up to 62 characters of a
+    four-line clamp ahead of an unbounded path to answer a question the path
+    already answers, and the clamp ate the tail. So there is no branch
+    assertion here, and keeping the branch in the message to satisfy one would
+    re-open the defect.
+    """
     run = _run(session, workspace)
     root = resolve_chat_execution_root(session, run, chat_session, workspace)
     (root / "new.txt").write_text("work nobody has seen\n")
@@ -406,15 +425,15 @@ def test_deleting_a_thread_with_uncommitted_work_refuses_and_says_where(
     with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
         delete_chat_session(session, chat_session)
 
-    assert chat_session_branch(chat_session) in str(caught.value)
     assert str(root) in str(caught.value)
+    assert chat_session_branch(chat_session) not in str(caught.value)
     # And the thread survives, so the operator can still open it and publish.
     assert session.get(BaxterChatSession, chat_session.id) is not None
     assert root.is_dir()
 
 
 def test_deleting_a_thread_whose_head_strands_a_commit_refuses_too(
-    session, workspace, chat_session
+    session, workspace, chat_session, repo
 ):
     """The refusal a thread's operator meets, for the other kind of unseen work.
 
@@ -429,6 +448,7 @@ def test_deleting_a_thread_whose_head_strands_a_commit_refuses_too(
     (root / "published.txt").write_text("committed on the branch\n")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
     git(root, "checkout", "-q", "--detach")
     (root / "interrupted.txt").write_text("committed where no ref reaches\n")
     git(root, "add", "-A")
@@ -438,7 +458,16 @@ def test_deleting_a_thread_whose_head_strands_a_commit_refuses_too(
     with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
         delete_chat_session(session, chat_session)
 
-    assert str(root) in str(caught.value)
+    detail = str(caught.value)
+    # AC12(b) — the OTHER cause that reaches the premise branch. The branch is
+    # one f-string today, but nothing above pins that: this cause's refusal was
+    # asserted only with `in`, which passes for a path sitting in the middle of
+    # the sentence. So it carries the same two structural assertions the
+    # uncommitted cause carries, and a cause-dependent wording cannot slip in
+    # under them (lg-external-harness-1167 AC6/AC7).
+    assert detail.endswith(str(root)), detail
+    assert chat_session_branch(chat_session) not in detail
+    assert "Commit or discard" in detail
     assert session.get(BaxterChatSession, chat_session.id) is not None
     assert root.is_dir()
     assert (root / "interrupted.txt").exists()
@@ -505,7 +534,9 @@ def test_an_unresolvable_workspace_reports_the_tree_it_leaves_behind(
     # Nothing was attempted here — there was no service to attempt it with — so
     # this is a hold, not a failed removal, and the operator gets today's
     # wording rather than advice about clearing a path.
-    assert held.removal_failed is False
+    assert held.outcome.refusal is not RemovalFailure.CLEANUP_FAILED
+    assert held.outcome.deleted_nothing is True
+    assert held.cause is None
 
 
 # --------------------------------------------------------------------------
@@ -521,34 +552,199 @@ def test_an_unresolvable_workspace_reports_the_tree_it_leaves_behind(
 # --------------------------------------------------------------------------
 
 
-def _committed_thread_tree(session, workspace, chat_session) -> Path:
-    """A thread whose work is committed on its branch — every premise satisfied,
-    so the only thing left to refuse the removal is the removal itself."""
-    run = _run(session, workspace)
+def _land_chat_branch(repo: Path, chat_session) -> None:
+    """Put the thread branch's content into the base, as a squash merge would.
+
+    That is a chat tree's receipt: `branch_work_has_landed` asks whether every
+    file the branch touched is byte-identical in the base, which is the only
+    bar at which removing the checkout destroys nothing.
+    """
+    git(repo, "merge", "-q", "--squash", chat_session_branch(chat_session))
+    git(repo, "commit", "-q", "-m", f"squash: {chat_session_branch(chat_session)}")
+
+
+def _seam_failure(root, refusal: CleanupRefusal) -> DirectoryReleaseFailed:
+    """What `remove_checkout` raises, for either cause it can raise for.
+
+    lg-external-harness-1026 answers both with the one `RemovalFailure` member,
+    so the cause travels on the exception rather than in the gate's vocabulary
+    — the one channel that preserves both. A containment refusal parks nothing,
+    because nothing was renamed, so it carries no parked path.
+    """
+    parked = f"{root}.parked" if refusal is CleanupRefusal.REMOVE_RAISED else ""
+    return DirectoryReleaseFailed(
+        "the removal failed",
+        disposition=ReleaseDisposition.STILL_PARKED if parked else ReleaseDisposition.INTACT,
+        refusal=refusal,
+        uncleaned_path=str(root),
+        parked_path=parked,
+    )
+
+
+def _committed_thread_tree(session, workspace, chat_session, repo, code="r1") -> Path:
+    """A thread whose work is committed on its branch *and* landed in the base —
+    every premise satisfied, so the only thing left to refuse the removal is the
+    removal itself.
+
+    lg-external-harness-1026 added the receipt premise, and a commit on the
+    thread branch is not one: without the squash below every test reached from
+    here refuses on NO_RECEIPT and never reaches the removal it is about.
+
+    `code` names the run, so a test can build a second committed thread without
+    colliding on `run_code`.
+    """
+    run = _run(session, workspace, code=code)
     root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    # `published.txt` is read back by a test below, so its name and contents
+    # stay; the file beside it is per-thread (lg-external-harness-1026
+    # implement, AC18). Landing one thread's branch puts `published.txt` into
+    # `main`, after which a second thread committing only that file has
+    # "nothing to commit" — the FIXTURE fails rather than the assertion — and a
+    # thread whose own file differed from main's would stop reading as landed
+    # the moment the next thread landed a different version of it.
     (root / "published.txt").write_text("committed by the turn\n")
+    (root / f"published-{code}.txt").write_text(f"committed by the turn ({code})\n")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
     return root
 
 
 def test_a_checkout_that_will_not_go_is_held_and_says_the_removal_failed(
-    session, workspace, chat_session
+    session, workspace, chat_session, repo
 ):
     """AC17 — the hold carries the reason, because a bare worktree cannot.
 
     Returning the `Worktree` alone satisfies "the row survives" and loses the
     only fact the caller needs to pick its words: whether anything was tried.
     """
-    root = _committed_thread_tree(session, workspace, chat_session)
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
 
-    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=f"{root}.parked",
+        ),
+    ):
         held = release_chat_worktree(session, chat_session)
 
     assert held is not None
     assert held.worktree.worktree_path == str(root)
-    assert held.removal_failed is True
+    assert held.outcome.refusal is RemovalFailure.CLEANUP_FAILED
+    assert held.outcome.deleted_nothing is True
+    assert held.cause is CleanupRefusal.REMOVE_RAISED
     assert root.is_dir()
+
+
+def test_an_out_of_base_checkout_is_held_with_the_never_retryable_member(
+    session, workspace, chat_session, tmp_path
+):
+    """AC16 — the hold carries the member, so the caller can pick a sentence.
+
+    Forced with the real service: the recorded path is outside the base and is
+    absent from disk, so `_keep_reason` finds no premise to refuse with and the
+    row reaches the seam. The hold must carry OUTSIDE_BASE and not merely "a
+    removal failed" — a bool here is what made the two causes share one
+    message, and "clear the path, then delete again" is not the remedy for a
+    path the service will never touch.
+    """
+    row = session.exec(select(Worktree).where(Worktree.chat_session_id == chat_session.id)).first()
+    assert row is None, "fixture: the thread must not already own a tree"
+    outside = tmp_path / "somewhere-else" / "thread"
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=_run(session, workspace, code="r-outside").id,
+            chat_session_id=chat_session.id,
+            worktree_path=str(outside),
+            branch=chat_session_branch(chat_session),
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.commit()
+
+    held = release_chat_worktree(session, chat_session)
+
+    assert held is not None
+    # `cause`, not `refusal`: lg-external-harness-1026 replaced the hold's one
+    # field with two carrying two different facts (AC18 migration) — `outcome`
+    # is the gate's answer and `cause` is the seam's member, which the gate
+    # collapses into CLEANUP_FAILED. Same claim, same member, read off the
+    # field that now carries it.
+    assert held.cause is CleanupRefusal.OUTSIDE_BASE
+    assert held.worktree.worktree_path == str(outside)
+
+
+def test_the_hold_no_longer_carries_a_bare_removal_failed_bool():
+    """AC17 — `removal_failed` is REPLACED, not joined by what replaced it.
+
+    Two fields encoding ONE fact is how a caller ends up reading the one that
+    lost the distinction, and the bool was that: it answered "was anything
+    attempted" and nothing else. What replaces it is two fields encoding two
+    DIFFERENT facts. `outcome` is the gate's own answer — a premise refusal, a
+    failed removal, a park — which AC17 needs three values for and a bool
+    cannot carry. `cause` is the seam's `CleanupRefusal`, which the gate
+    deliberately collapses into the single `RemovalFailure.CLEANUP_FAILED`
+    member (AC11/AC12), so without it `delete_chat_session` could not tell a
+    path outside the base from an `rmtree` that raised without parsing the
+    prose — the thing the test above forbids.
+    """
+    fields = {field.name for field in dataclasses.fields(ChatWorktreeHold)}
+    assert "removal_failed" not in fields
+    assert fields == {"worktree", "outcome", "cause"}
+    hold = ChatWorktreeHold(
+        worktree=mock.Mock(),
+        outcome=Retirement(
+            refusal=KeepReason.UNCOMMITTED,
+            deleted_nothing=True,
+            parked_path="",
+            detail="nothing was deleted",
+        ),
+    )
+    # The seam cause defaults to absent, because a premise refusal never
+    # reached the seam. The gate's answer does NOT default: a hold with no
+    # outcome is the bool again, one field along.
+    assert hold.cause is None
+    with pytest.raises(TypeError):
+        ChatWorktreeHold(worktree=mock.Mock())  # type: ignore[call-arg]
+
+
+def test_no_branch_picks_its_sentence_by_reading_operator_prose():
+    """AC16 — control flow reads the member, never `Retirement.failure`.
+
+    The rejected alternatives were branching on the failure prose and a reverse
+    `str -> CleanupRefusal` lookup. Both make a wording tweak — the kind AC9's
+    measurement invites — silently change which sentence an operator meets.
+    Asserted on the source of the two functions that pair them, because the
+    defect is invisible in behaviour until someone edits a string.
+    """
+    import inspect
+    import re
+
+    from loregarden.services import baxter_chat_service, worktree_lifecycle
+
+    for function in (
+        worktree_lifecycle.release_chat_worktree,
+        baxter_chat_service.delete_chat_session,
+    ):
+        source = inspect.getsource(function)
+        # 954's `.failure` field is gone; the prose now lives on
+        # `Retirement.detail`, so the rule is the same one one name further on:
+        # the detail may be PRINTED, never compared. A branch reads
+        # `outcome.refusal` or the seam's `cause`.
+        assert ".failure" not in source, f"{function.__name__} branches on operator prose"
+        compared = [
+            line.strip()
+            for line in source.splitlines()
+            if ".detail" in line
+            and re.search(r"\.detail\s*(==|!=|in |\.startswith|\.endswith)", line)
+        ]
+        assert compared == [], f"{function.__name__} branches on operator prose: {compared}"
 
 
 def test_a_premise_that_refuses_is_held_without_claiming_a_removal_failed(
@@ -564,14 +760,16 @@ def test_a_premise_that_refuses_is_held_without_claiming_a_removal_failed(
 
     assert held is not None
     assert held.worktree.worktree_path == str(root)
-    assert held.removal_failed is False
+    assert held.outcome.refusal is not RemovalFailure.CLEANUP_FAILED
+    assert held.outcome.deleted_nothing is True
+    assert held.cause is None
 
 
-def test_a_thread_whose_checkout_went_is_released_outright(session, workspace, chat_session):
+def test_a_thread_whose_checkout_went_is_released_outright(session, workspace, chat_session, repo):
     """AC17 — the success case still answers None, so `delete_chat_session`
     proceeds. Pinned beside the holds because "no hold" is the one answer that
     drops the row, and a wrong field read reaches it from the failure above."""
-    _committed_thread_tree(session, workspace, chat_session)
+    _committed_thread_tree(session, workspace, chat_session, repo)
 
     assert release_chat_worktree(session, chat_session) is None
 
@@ -599,44 +797,69 @@ def test_a_thread_with_no_active_worktree_is_released_outright(session, chat_ses
 
 
 def test_a_failed_removal_refuses_the_delete_without_blaming_the_operators_work(
-    session, workspace, chat_session
+    session, workspace, chat_session, repo
 ):
-    """AC8/AC18 — the words a person actually meets, and the two they must not.
+    """AC8/AC18, and lg-external-harness-1208 AC1/AC6 — the words a person
+    actually meets, in the order the clamp cannot take from them.
 
     This reaches the operator verbatim as a 409 detail in an error toast. The
     premise wording says the thread "still has unpublished work" and to "commit
     or discard it": for a busy file or a permission error there may be no
     uncommitted work at all, and that instruction cannot clear the condition. So
-    the failed-removal detail names the three things the operator can act on —
-    the removal failed, the path, and that the row was kept on purpose — then the
-    one action that clears it.
+    the failed-removal detail names what was not removed, that the row was kept,
+    the one action that clears it — and only then where it is.
 
-    The string is exact because its length is load-bearing: `.toast__message`
-    clamps at 5.8em / 69.6px, four visible lines at 12px/1.45, with no ellipsis
-    and no scrollbar (ToastHost.css). AC18's wording renders 4.02 lines against
-    that clamp with the real 86-char chat path, measured in headless Chromium
-    with IBM Plex Sans loaded; the wording it replaces rendered 5.98 and lost its
-    instruction mid-phrase at "Clear the". Lengthening this message silently cuts
-    its tail, so any change re-runs AC22's measurement rather than counting
-    characters. The log pointer is gone for the same reason: it was the least
-    actionable clause and the most expensive, and `cleanup_worktree` keeps the
-    cause in its own `logger.error` either way.
+    The ORDERING is the assertion, not a length. `.toast__message` clamps at four
+    visible lines with no ellipsis and no scrollbar (ToastHost.css), and the
+    worktrees base is operator-dependent — `worktree_service` caps the directory
+    NAME but not the base — so a wording that merely fits this machine's paths is
+    one `--worktrees-dir` away from clipping its own instruction. With the whole
+    action clause complete before the first interpolated character, the only
+    thing the clamp can ever eat is the tail of the path, which is why
+    `detail.endswith(str(root))` is pinned separately below. This follows the
+    precedent the `OUTSIDE_BASE` branch and the premise branch already set
+    (lg-external-harness-1165 AC9, lg-external-harness-1167 AC6).
+
+    Deliberately NOT a character count: `overflow-wrap: anywhere` makes line
+    count non-linear in length, so the clamp is MEASURED in
+    `client/scripts/measure-toast-clamp.mjs` (lg-external-harness-1208 AC2/AC13,
+    against real `worktrees` rows) rather than counted here. Tightening the
+    wording is allowed; lengthening the literal prefix, or moving the path
+    forward, re-runs that measurement. `on purpose` and `at` are gone because
+    the reorder has to be paid for — restoring either without re-measuring is
+    the regression this pin exists to catch. The log pointer is gone for the
+    same reason: `remove_checkout` keeps the cause in its own `logger.error`.
     """
-    root = _committed_thread_tree(session, workspace, chat_session)
+    # No park: the rename itself failed, so there is no second path to name
+    # and this is the sentence 954 measured against the toast clamp. The
+    # parked variant adds a clause and is pinned separately below.
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
     session.add(BaxterChatMessage(session_id=chat_session.id, role="user", content="do a thing"))
     session.commit()
 
     with (
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            side_effect=DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.RESTORED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(root),
+                parked_path="",
+            ),
+        ),
         pytest.raises(ChatSessionHasUnpublishedWork) as caught,
     ):
         delete_chat_session(session, chat_session)
 
     detail = str(caught.value)
     assert detail == (
-        f"Could not remove this chat's checkout at {root}. Chat kept on purpose. "
-        "Clear the path, then delete again."
+        f"Could not remove this chat's checkout. Chat kept. Clear the path, then delete again. It is at: {root}"
     )
+    # The ordering, as an assertion and not as a comment: nothing follows the
+    # path, so nothing the clamp cuts is an instruction.
+    assert detail.endswith(str(root)), detail
     assert "unpublished work" not in detail
     assert "Commit or discard" not in detail
     # The point of refusing: the row that owns this directory, and the thread
@@ -651,6 +874,129 @@ def test_a_failed_removal_refuses_the_delete_without_blaming_the_operators_work(
     )
     assert root.is_dir()
     assert (root / "published.txt").exists()
+
+
+def test_an_out_of_base_checkout_refuses_the_delete_without_an_instruction_that_cannot_work(
+    session, workspace, chat_session, tmp_path
+):
+    """AC4/AC7/AC9 — the never-retryable 409, word for word.
+
+    This is the defect: the operator met "Clear the path, then delete again"
+    for a condition clearing the path cannot fix. The question the toast
+    answers is "why will this chat not delete, and is there anything I can do
+    about it?", and here the honest answer to the second half is "nothing on
+    this row" — so the message SAYS so rather than leaving it to be inferred
+    from the absence of an instruction, and points at no control, because
+    there is no editor for a workspace's `repo_path` anywhere in `client/**`.
+
+    The string is exact because its length is load-bearing: `.toast__message`
+    clamps at 5.8em / 69.6px — four visible lines at 12px/1.45, no ellipsis, no
+    scrollbar (ToastHost.css). Measured in headless Chromium with the real
+    stylesheet and IBM Plex Sans loaded (lg-external-harness-954 AC22's method,
+    re-run for lg-external-harness-1165; artifact 3b30171a): 4.02 lines at
+    message widths 272, 296 and 336px. The path is LAST because an out-of-base
+    path has no bounded length and the clamp cuts the tail, so the explanation
+    must precede it. Tightening is allowed; lengthening it, or moving the path
+    forward, re-runs that measurement rather than counting characters.
+    """
+    outside = tmp_path / "somewhere-else" / "thread"
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=_run(session, workspace, code="r-outside").id,
+            chat_session_id=chat_session.id,
+            worktree_path=str(outside),
+            branch=chat_session_branch(chat_session),
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.add(BaxterChatMessage(session_id=chat_session.id, role="user", content="do a thing"))
+    session.commit()
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    assert detail == (
+        "Chat kept. Its checkout is outside the worktrees folder, so no retry "
+        f"can remove it: {outside}"
+    )
+    # The three clauses that belong to the other two messages (AC9/AC10).
+    assert "Clear the path" not in detail
+    assert "unpublished work" not in detail
+    assert "Commit or discard" not in detail
+    # The row that owns the directory survives, as it does for every hold.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert (
+        session.exec(select(Worktree).where(Worktree.chat_session_id == chat_session.id))
+        .one()
+        .state
+        == WorktreeState.ACTIVE
+    )
+
+
+def test_the_three_delete_refusals_are_three_different_sentences(
+    session, workspace, chat_session, repo, tmp_path
+):
+    """AC9/AC10 — one message per cause, and none of them borrowed.
+
+    Each of the three is pinned on its own above, and each of those tests
+    passes against an implementation that answers the same sentence for all
+    three. Running them side by side is what catches a branch that fell
+    through, which is the shape this whole ticket is about.
+    """
+    messages = set()
+
+    outside_chat = BaxterChatSession(workspace_id=workspace.id, title="Outside")
+    session.add(outside_chat)
+    session.commit()
+    session.refresh(outside_chat)
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=_run(session, workspace, code="r-outside").id,
+            chat_session_id=outside_chat.id,
+            worktree_path=str(tmp_path / "elsewhere" / "thread"),
+            branch=chat_session_branch(outside_chat),
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.commit()
+    with pytest.raises(ChatSessionHasUnpublishedWork) as outside_caught:
+        delete_chat_session(session, outside_chat)
+    messages.add(str(outside_caught.value))
+
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
+    with (
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            side_effect=DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.STILL_PARKED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(root),
+                parked_path=f"{root}.parked",
+            ),
+        ),
+        pytest.raises(ChatSessionHasUnpublishedWork) as raised_caught,
+    ):
+        delete_chat_session(session, chat_session)
+    messages.add(str(raised_caught.value))
+
+    premise_chat = BaxterChatSession(workspace_id=workspace.id, title="Premise")
+    session.add(premise_chat)
+    session.commit()
+    session.refresh(premise_chat)
+    premise_root = resolve_chat_execution_root(
+        session, _run(session, workspace, code="r-premise"), premise_chat, workspace
+    )
+    (premise_root / "new.txt").write_text("work nobody has seen\n")
+    with pytest.raises(ChatSessionHasUnpublishedWork) as premise_caught:
+        delete_chat_session(session, premise_chat)
+    messages.add(str(premise_caught.value))
+
+    assert len(messages) == 3, messages
 
 
 def test_a_premise_hold_still_names_the_work_and_what_to_do_with_it(
@@ -676,6 +1022,328 @@ def test_a_premise_hold_still_names_the_work_and_what_to_do_with_it(
     assert KeepReason.UNCOMMITTED.value not in detail
 
 
+def test_a_premise_hold_refuses_with_the_action_first_and_the_path_last(
+    session, workspace, chat_session
+):
+    """lg-external-harness-1167 AC6/AC7/AC8/AC13 — the premise 409, word for word.
+
+    The third of the three refusals, pinned exactly as the other two are
+    (`:691-695`, `:753-756`), because its length is load-bearing in the same
+    way: `.toast__message` clamps at 5.8em / 69.6px — four visible lines at
+    12px/1.45, no ellipsis, no scrollbar (ToastHost.css), `overflow-wrap:
+    anywhere`. The wording it replaced interpolated the branch AND the path and
+    rendered past that clamp, so what the operator lost was "Commit or discard
+    it, then delete the chat" — the instruction, which is the only half the
+    clamped lines exist to carry (the unclamped toast title already says the
+    delete failed).
+
+    Two assertions, and the second is the one that matters:
+
+    * the exact string, so a re-wording cannot drift silently;
+    * `detail.endswith(str(root))`, which pins the ORDERING rather than a
+      length. The worktrees base is operator-dependent — `worktree_service`
+      caps the directory NAME at 46 chars but not the base — so a wording that
+      merely fits this machine's 86-char path is one `--worktrees-dir` away
+      from clipping the instruction again. With the whole action clause
+      complete before the first interpolated character, the only thing the
+      clamp can ever eat is the tail of the path. This follows the precedent
+      the `OUTSIDE_BASE` branch set 12 lines above it
+      (lg-external-harness-1165).
+
+    Tightening the wording is allowed; lengthening the literal prefix, or
+    moving the path forward, re-runs the AC1 measurement
+    (`client/scripts/measure-toast-clamp.mjs`) rather than counting characters.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work nobody has seen\n")
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    assert detail == (
+        f"Commit or discard this chat's unpublished work, then delete the chat. It is at: {root}"
+    )
+    # The ordering, as an assertion and not as a comment: nothing follows the
+    # path, so nothing the clamp cuts is an instruction.
+    assert detail.endswith(str(root))
+    # The branch is not in it at all (AC7) — the path answers what it answered.
+    assert chat_session_branch(chat_session) not in detail
+    assert "`" not in detail
+    # The other two messages' clauses, none of which belong here.
+    assert "Could not remove" not in detail
+    assert "Clear the path" not in detail
+    assert "outside the worktrees folder" not in detail
+    # And the refusal still keeps what it exists to keep.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+    assert (root / "new.txt").exists()
+
+
+def test_the_premise_refusals_literal_prefix_holds_no_interpolated_value(
+    session, workspace, chat_session
+):
+    """lg-external-harness-1167 AC6, as a measurement instead of a reading.
+
+    AC6 is stronger than "the path is last": NO interpolated value may appear
+    between the start of the message and the end of the action clause. The pin
+    above asserts `endswith(path)`, which proves only that the path is last —
+    it passes for a wording that opens with some OTHER unbounded per-session
+    value and still pushes the instruction off the clamp. The chat title is the
+    obvious one (operator-authored, no cap anywhere between the sidebar and
+    this message), and the branch is the one this ticket just removed.
+
+    So this asserts the property rather than a wording: two threads whose
+    title, branch and worktree path all differ produce a detail with a
+    BYTE-IDENTICAL literal prefix, and the only thing that differs between the
+    two messages is the trailing path. Any value interpolated ahead of the
+    action clause makes the two prefixes diverge, whatever the wording is, and
+    the test does not have to be re-written when the wording is tightened.
+
+    Deliberately NOT a character count — `overflow-wrap: anywhere` makes line
+    count non-linear in length, so the clamp is measured in
+    `client/scripts/measure-toast-clamp.mjs` and pinned here as ordering.
+    """
+    first_root = resolve_chat_execution_root(
+        session, _run(session, workspace, code="r-prefix-a"), chat_session, workspace
+    )
+    (first_root / "new.txt").write_text("work nobody has seen\n")
+
+    # A second thread, differing in every value the message could reach for:
+    # a much longer title (so a different slug, a different branch, and a
+    # different directory name).
+    other_chat = BaxterChatSession(
+        workspace_id=workspace.id,
+        title="A deliberately much longer thread title than the other one has",
+    )
+    session.add(other_chat)
+    session.commit()
+    session.refresh(other_chat)
+    other_root = resolve_chat_execution_root(
+        session, _run(session, workspace, code="r-prefix-b"), other_chat, workspace
+    )
+    (other_root / "new.txt").write_text("work nobody has seen\n")
+
+    assert str(first_root) != str(other_root)
+    assert chat_session_branch(chat_session) != chat_session_branch(other_chat)
+
+    details = []
+    for thread, root in ((chat_session, first_root), (other_chat, other_root)):
+        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+            delete_chat_session(session, thread)
+        detail = str(caught.value)
+        # The path is last (AC6's weaker half), which is what makes the rest of
+        # the string a literal prefix at all.
+        assert detail.endswith(str(root)), detail
+        details.append(detail[: -len(str(root))])
+
+    prefix, other_prefix = details
+    assert prefix == other_prefix, (prefix, other_prefix)
+    # Not vacuous: there IS a prefix, and it carries the action.
+    assert "Commit or discard" in prefix
+
+
+# --------------------------------------------------------------------------
+# Adversarial: the failed-removal branch's ordering as a property, not as prose
+# — lg-external-harness-1208, test-break
+#
+# Measured, not argued: with the exact prose pin relaxed the way a tightening
+# relaxes it (AC7 invites one), three mutants of the AC1 wording survive the
+# whole module — the path re-interpolated mid-sentence and also kept last, the
+# chat title interpolated ahead of the action clause, and the instruction
+# dropped. Each is killed below by a property instead, so a later tightening
+# cannot take the ordering with it.
+# --------------------------------------------------------------------------
+
+
+def test_the_failed_removals_literal_prefix_holds_no_interpolated_value(
+    session, workspace, chat_session, repo
+):
+    """lg-external-harness-1208 AC1, as a measurement instead of a reading.
+
+    The sibling of the premise test directly above, for the branch this ticket
+    re-words. AC1 is stronger than "the path is last": NO interpolated value
+    may appear between the start of the message and the end of the action
+    clause. The pin asserts the exact prose, which catches everything — but
+    AC7 explicitly INVITES tightening, and a tightening re-writes that pin, so
+    after one the only ordering assertion left on this branch would be
+    `endswith(path)`. That passes for a wording that names the path twice, and
+    for one that opens with some other unbounded per-session value; the chat
+    title is the obvious one, operator-authored with no cap anywhere between
+    the sidebar and this message.
+
+    So this asserts the property rather than a wording: two threads whose
+    title, branch and worktree path all differ produce a detail with a
+    BYTE-IDENTICAL literal prefix, and the only thing that differs between the
+    two messages is the trailing path. Any value interpolated ahead of the
+    action clause makes the two prefixes diverge, whatever the wording is, and
+    the test does not have to be re-written when the wording is tightened.
+
+    Deliberately NOT a character count — `overflow-wrap: anywhere` makes line
+    count non-linear in length, so the clamp is measured in
+    `client/scripts/measure-toast-clamp.mjs` and pinned here as ordering.
+    """
+    first_root = _committed_thread_tree(session, workspace, chat_session, repo, code="r-raised-a")
+
+    # A second thread, differing in every value the message could reach for:
+    # a much longer title (so a different slug, a different branch, and a
+    # different directory name).
+    other_chat = BaxterChatSession(
+        workspace_id=workspace.id,
+        title="A deliberately much longer thread title than the other one has",
+    )
+    session.add(other_chat)
+    session.commit()
+    session.refresh(other_chat)
+    other_root = _committed_thread_tree(session, workspace, other_chat, repo, code="r-raised-b")
+
+    assert str(first_root) != str(other_root)
+    assert chat_session_branch(chat_session) != chat_session_branch(other_chat)
+
+    details = []
+    for thread, root in ((chat_session, first_root), (other_chat, other_root)):
+        with (
+            mock.patch.object(
+                WorktreeService,
+                "remove_checkout",
+                side_effect=DirectoryReleaseFailed(
+                    "rmtree failed",
+                    disposition=ReleaseDisposition.STILL_PARKED,
+                    refusal=CleanupRefusal.REMOVE_RAISED,
+                    uncleaned_path=str(root),
+                    parked_path=f"{root}.parked",
+                ),
+            ),
+            pytest.raises(ChatSessionHasUnpublishedWork) as caught,
+        ):
+            delete_chat_session(session, thread)
+        detail = str(caught.value)
+        # The path is last (AC1's weaker half), which is what makes the rest of
+        # the string a literal prefix at all.
+        assert detail.endswith(str(root)), detail
+        details.append(detail[: -len(str(root))])
+
+    prefix, other_prefix = details
+    assert prefix == other_prefix, (prefix, other_prefix)
+    # Not vacuous: there IS a prefix, and it carries the action.
+    assert "Clear the path" in prefix
+    # And the path appears once, at the end — not also inside the prefix, which
+    # is the defect this ticket exists to remove.
+    for root in (first_root, other_root):
+        assert str(root) not in prefix
+
+
+def test_the_failed_removal_carries_the_clauses_the_other_two_refusals_assert_absent(
+    session, workspace, chat_session, repo
+):
+    """lg-external-harness-1208 AC5/AC12 — the non-vacuity of four assertions.
+
+    `"Could not remove" not in detail` and `"Clear the path" not in detail`
+    hold five times across the other two branches' tests
+    (`:780`, `:922`, `:923`, `:1083`, and `test_baxter_chat.py:1120,1146`), and
+    every one of them passes vacuously if THIS branch stops saying either. The
+    exact pin above would catch that today, but it is the assertion a
+    tightening re-writes (AC7 invites one), and dropping `Clear the path, then
+    delete again` is the cheapest clamp room there is to buy — it is also
+    AC12's only action, and the whole reason the re-ordering was worth paying
+    two words for.
+
+    So the two clauses are required HERE, positively and separately from the
+    prose pin, and so is the locator: AC12 rules out dropping the path to buy
+    room, because it is the only thing that tells the operator which directory
+    to clear.
+    """
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
+
+    with (
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            side_effect=DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.STILL_PARKED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(root),
+                parked_path=f"{root}.parked",
+            ),
+        ),
+        pytest.raises(ChatSessionHasUnpublishedWork) as caught,
+    ):
+        delete_chat_session(session, chat_session)
+
+    detail = str(caught.value)
+    # What the other two branches assert they are not.
+    assert "Could not remove" in detail
+    assert "Clear the path" in detail
+    # AC12's retry instruction, and AC12's locator.
+    assert "delete again" in detail
+    assert str(root) in detail
+
+
+def test_every_refusal_member_keeps_the_row_and_still_ends_with_the_path(
+    session, workspace, chat_session, repo
+):
+    """lg-external-harness-1208 A2, as a guard instead of an assumption.
+
+    The spec assumes `held.refusal is not None` covers `REMOVE_RAISED` "and any
+    future non-`OUTSIDE_BASE` member", which is what lets this branch be
+    written once for a family. Nothing executes that assumption: the pins above
+    name the two members this enum has today, so narrowing the branch to
+    `is CleanupRefusal.REMOVE_RAISED` changes no test — and the day a third
+    member lands, the narrowed form drops a chat row whose checkout is still on
+    disk, which is the orphan the whole refusal exists to prevent.
+
+    Measured, not argued. Narrowing the branch and adding a third member does
+    NOT drop the row — the `held is not None` branch below catches everything,
+    and `_FAILURE_CLAUSE` is an unguarded lookup that fails loudly by design.
+    What the narrowed form does is hand the new member the PREMISE sentence:
+    "commit or discard this chat's unpublished work" for a cause where there
+    may be no uncommitted work at all, which is the collapse
+    lg-external-harness-954 and -1165 were filed to split apart. Nothing in the
+    module noticed that until this test; the premise wording also ends with the
+    path, so ordering alone does not catch it.
+
+    Enumerated over the enum rather than over a list of members. Three
+    invariants per member, none of them a wording: the delete REFUSES (row,
+    directory and `worktrees` row all survive), the detail ends with the path,
+    and the detail is not the premise sentence. Which words a new member gets
+    is the author's call; that it gets its own, and keeps the ordering, is not.
+    """
+    for index, refusal in enumerate(CleanupRefusal):
+        thread = BaxterChatSession(workspace_id=workspace.id, title=f"Thread {refusal.name}")
+        session.add(thread)
+        session.commit()
+        session.refresh(thread)
+        root = _committed_thread_tree(session, workspace, thread, repo, code=f"r-member-{index}")
+
+        with (
+            mock.patch.object(
+                WorktreeService,
+                "remove_checkout",
+                side_effect=_seam_failure(root, refusal),
+            ),
+            pytest.raises(ChatSessionHasUnpublishedWork) as caught,
+        ):
+            delete_chat_session(session, thread)
+
+        detail = str(caught.value)
+        assert detail.endswith(str(root)), (refusal, detail)
+        # And not the premise branch's words: every member of this enum means a
+        # removal was attempted or refused, so "commit or discard it" is advice
+        # about a condition that may not exist — the collapse
+        # lg-external-harness-954 and -1165 split apart. This is what a member
+        # narrowed out of the branch above falls through to.
+        assert "Commit or discard" not in detail, (refusal, detail)
+        assert "unpublished work" not in detail, (refusal, detail)
+        assert session.get(BaxterChatSession, thread.id) is not None, refusal
+        assert root.is_dir(), refusal
+        assert (
+            session.exec(select(Worktree).where(Worktree.chat_session_id == thread.id)).one().state
+            == WorktreeState.ACTIVE
+        ), refusal
+
+
 # --------------------------------------------------------------------------
 # The hold itself, and the two holds nothing above routes through the delete
 # — lg-external-harness-954
@@ -686,7 +1354,7 @@ def test_a_hold_cannot_be_rewritten_after_the_fact(session, workspace, chat_sess
     """AC17 — frozen, for the same reason `Retirement` is.
 
     This answer decides whether a row that owns a directory on disk gets
-    dropped. A mutable one is a `hold.removal_failed = False` away from an
+    dropped. A mutable one is a `hold.outcome = ...` away from an
     intermediate layer turning a permission error back into the advice written
     for uncommitted work, and nothing else in this module would notice.
     """
@@ -698,11 +1366,19 @@ def test_a_hold_cannot_be_rewritten_after_the_fact(session, workspace, chat_sess
             branch="loregarden/chat",
             state=WorktreeState.ACTIVE,
         ),
-        removal_failed=True,
+        outcome=Retirement(
+            refusal=RemovalFailure.CLEANUP_FAILED,
+            deleted_nothing=True,
+            parked_path="/nowhere/.worktrees-releasing/deadbeef",
+            detail="nothing was deleted",
+        ),
+        cause=CleanupRefusal.REMOVE_RAISED,
     )
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        hold.removal_failed = False  # type: ignore[misc]
+        hold.outcome = None  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        hold.cause = None  # type: ignore[misc]
 
 
 def test_an_unresolvable_workspace_still_says_which_tree_it_left(
@@ -710,7 +1386,7 @@ def test_an_unresolvable_workspace_still_says_which_tree_it_left(
 ):
     """AC17 — the hold that attempted nothing keeps the warning it already has.
 
-    The hold's `removal_failed=False` tells `delete_chat_session` which words to
+    The hold's outcome tells `delete_chat_session` which words to
     use; it tells nobody that a checkout was abandoned. Only this record does,
     and it is the one place a workspace that cannot be resolved is reported at
     all — the caller raises about the thread, not about the configuration.
@@ -727,7 +1403,9 @@ def test_an_unresolvable_workspace_still_says_which_tree_it_left(
         held = release_chat_worktree(session, chat_session)
 
     assert held is not None
-    assert held.removal_failed is False
+    assert held.outcome.refusal is not RemovalFailure.CLEANUP_FAILED
+    assert held.outcome.deleted_nothing is True
+    assert held.cause is None
     warnings = [
         record
         for record in caplog.records
@@ -746,7 +1424,7 @@ def test_an_unresolvable_workspace_refuses_the_delete_in_todays_words(
     Nothing was attempted, so "clear the path, then delete the chat again" would
     be advice about a condition the operator cannot see and did not cause: the
     workspace row is unresolvable, and clearing the directory would strand the
-    branch instead. The two-message branch has to key on `removal_failed`, not
+    branch instead. The two-message branch has to key on the outcome's refusal, not
     on "the hold came back", which is the shape that passes both failure tests
     above by routing every hold to the new wording.
     """
@@ -783,7 +1461,7 @@ def test_an_unresolvable_workspace_refuses_the_delete_in_todays_words(
 
 
 def test_the_refused_delete_leaves_the_worktree_row_owning_its_directory(
-    session, workspace, chat_session
+    session, workspace, chat_session, repo
 ):
     """AC3/AC17 — the row stays ACTIVE and still points at the thread.
 
@@ -793,10 +1471,20 @@ def test_the_refused_delete_leaves_the_worktree_row_owning_its_directory(
     session, it is a directory no query reaches — the orphan this ticket's whole
     argument is about — and every assertion in the test above still passes.
     """
-    root = _committed_thread_tree(session, workspace, chat_session)
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
 
     with (
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            side_effect=DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.STILL_PARKED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(root),
+                parked_path=f"{root}.parked",
+            ),
+        ),
         pytest.raises(ChatSessionHasUnpublishedWork),
     ):
         delete_chat_session(session, chat_session)
@@ -809,7 +1497,7 @@ def test_the_refused_delete_leaves_the_worktree_row_owning_its_directory(
 
 
 def test_the_retry_the_message_asks_for_completes_once_the_path_is_removable(
-    session, workspace, chat_session
+    session, workspace, chat_session, repo
 ):
     """AC9/AC18 — "Clear the path, then delete again" has to be true.
 
@@ -820,12 +1508,22 @@ def test_the_retry_the_message_asks_for_completes_once_the_path_is_removable(
     the module that exercises the failure and the recovery in one order, which
     is the only way a leftover from the first attempt is observable at all.
     """
-    root = _committed_thread_tree(session, workspace, chat_session)
+    root = _committed_thread_tree(session, workspace, chat_session, repo)
     session.add(BaxterChatMessage(session_id=chat_session.id, role="user", content="do a thing"))
     session.commit()
 
     with (
-        mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False),
+        mock.patch.object(
+            WorktreeService,
+            "remove_checkout",
+            side_effect=DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.STILL_PARKED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(root),
+                parked_path=f"{root}.parked",
+            ),
+        ),
         pytest.raises(ChatSessionHasUnpublishedWork),
     ):
         delete_chat_session(session, chat_session)
@@ -849,3 +1547,200 @@ def test_the_retry_the_message_asks_for_completes_once_the_path_is_removable(
         session.exec(select(Worktree).where(Worktree.chat_session_id == chat_session.id)).all()
         == []
     )
+
+
+# ===========================================================================
+# lg-external-harness-1026 / AC17 — the chat refusal stops saying something
+# false.
+# ===========================================================================
+
+
+def test_a_failed_removal_does_not_claim_the_thread_has_unpublished_work(
+    session, workspace, chat_session, repo
+):
+    """The sentence this criterion exists to delete.
+
+    "This chat still has unpublished work … Commit or discard it" was raised on
+    *every* hold, including one where the work was published, the tree was
+    clean, and the only thing that went wrong was the delete. An operator told
+    that goes looking for edits that are not there and never learns that a
+    directory is sitting half-removed on their disk.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed and landed\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
+
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=f"{root}.parked",
+        ),
+    ):
+        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+            delete_chat_session(session, chat_session)
+
+    message = str(caught.value)
+    assert "unpublished work" not in message
+    assert "Commit or discard" not in message
+    assert str(root) in message
+
+    # And nothing was lost on the way out.
+    assert session.get(BaxterChatSession, chat_session.id) is not None
+    assert root.is_dir()
+
+
+def test_a_parked_outcome_carries_the_exact_parked_path_without_spending_the_clamp(
+    session, workspace, chat_session, repo
+):
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed and landed\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
+    parked = f"{root}.parked-0ddba11"
+
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED if parked else ReleaseDisposition.INTACT,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=parked,
+        ),
+    ):
+        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+            delete_chat_session(session, chat_session)
+
+    message = str(caught.value)
+    # MIGRATED by lg-external-harness-1026 implement (AC18), and the reason is
+    # a contradiction between two of this module's own tests rather than a
+    # preference. Four tests here pin the failed-removal toast as the measured
+    # string ENDING with the worktree path, with a parked path supplied
+    # (`:1181`, `:1233`, `:574`, `:1546`); a message that also names the parked
+    # path cannot end with the worktree path, and cannot keep the literal
+    # prefix those tests compare across two threads. The clamp measurement is
+    # 954's and 1208's, and AC17 defers to it explicitly.
+    #
+    # So the parked path is carried where a caller can read it and no clamp
+    # truncates it — on the gate's answer, on the row, and in the sweep's and
+    # the branch-triage endpoints' reports — and the toast keeps the one path
+    # the operator can act on. What this test still pins is the half that was
+    # the point: a parked outcome is NOT reported as unpublished work.
+    assert "unpublished work" not in message
+    assert "Commit or discard" not in message
+    del parked
+
+
+def test_a_genuine_premise_refusal_still_says_commit_or_discard(session, workspace, chat_session):
+    """The other half, so the fix does not become "say less to everybody".
+
+    Uncommitted work really is unpublished work, and "commit or discard it" is
+    exactly what the operator should do. That message is right and stays; what
+    changes is that it is no longer said about things it is false about.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "new.txt").write_text("work nobody has seen\n")
+
+    with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+        delete_chat_session(session, chat_session)
+
+    message = str(caught.value)
+    assert "unpublished work" in message
+    assert "Commit or discard" in message
+    assert root.is_dir()
+
+
+def test_each_refusal_is_one_sentence_of_reason_a_path_and_one_instruction(
+    session, workspace, chat_session, repo
+):
+    """AC17's shape rule, and the clamp it is sized for.
+
+    The toast these reach is four lines. A refusal that runs past that is a
+    refusal whose path is clipped off the bottom — and the path is the only
+    part the operator cannot reconstruct. The measured fit belongs to
+    lg-external-harness-954; what is pinned here is that no message grows a
+    second instruction or a "the server log names what failed" clause.
+    """
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "published.txt").write_text("committed and landed\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
+
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=f"{root}.parked",
+        ),
+    ):
+        with pytest.raises(ChatSessionHasUnpublishedWork) as caught:
+            delete_chat_session(session, chat_session)
+
+    message = str(caught.value)
+    assert "the server log" not in message.lower()
+    # Counted with the PATH taken out (lg-external-harness-1026 implement,
+    # AC18). The path contains a `.` of its own — every worktree lives under
+    # `.worktrees` — so counting full stops across the whole string counts one
+    # that is not a sentence, and the measured string
+    # `test_a_failed_removal_refuses_the_delete_without_blaming_the_operators_work`
+    # pins by exact equality cannot satisfy both readings. The claim is
+    # unchanged: a reason, a path and one instruction, and no more.
+    sentences = message.replace(str(root), "")
+    assert sentences.count(".") <= 3, f"more than a reason, a path and an instruction: {message!r}"
+
+
+def test_release_chat_worktree_distinguishes_a_premise_from_a_failure_from_a_park(
+    session, workspace, chat_session, repo
+):
+    """A bare `Worktree` cannot tell the three apart, which is why the caller
+    had to guess — and guessed "unpublished work" every time."""
+    from loregarden.services import worktree_lifecycle
+
+    run = _run(session, workspace)
+    root = resolve_chat_execution_root(session, run, chat_session, workspace)
+    (root / "unsaved.txt").write_text("not committed\n")
+
+    premise = worktree_lifecycle.release_chat_worktree(session, chat_session)
+    assert premise is not None
+    assert premise.outcome.refusal in set(worktree_lifecycle.KeepReason)
+    assert premise.outcome.parked_path == ""
+    assert premise.worktree.worktree_path == str(root)
+
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "committed by the turn")
+    _land_chat_branch(repo, chat_session)
+    parked = f"{root}.parked-b0a710ad"
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED if parked else ReleaseDisposition.INTACT,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=parked,
+        ),
+    ):
+        failed = worktree_lifecycle.release_chat_worktree(session, chat_session)
+
+    assert failed is not None
+    assert failed.outcome.refusal is worktree_lifecycle.RemovalFailure.CLEANUP_FAILED
+    assert failed.outcome.parked_path == parked

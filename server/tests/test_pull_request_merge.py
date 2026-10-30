@@ -25,7 +25,7 @@ from loregarden.services import pull_request_merge, ticket_pull_request
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.pull_request_merge import MergeFailed, MergeRefused, merge_and_clean_up
 from sqlmodel import Session, select
-from tests.worktree_helpers import git, make_repo
+from tests.worktree_helpers import git, grant_receipt, make_repo
 
 BRANCH = "loregarden/lg-1"
 SHA = "a" * 40
@@ -123,7 +123,13 @@ def github_fixture():
 def test_merges_pinned_to_the_head_it_was_shown_then_cleans_up(
     session, workspace, ticket, repo, github
 ):
-    tree = repo.parent / "lg-1-tree"
+    # Under `worktree_base` (`<repo parent>/.worktrees`), which is where
+    # `worktree_service` actually creates checkouts — and the only place the
+    # release will remove one from (lg-external-harness-1026 AC9: containment
+    # is a strict descendant of the base, not a string prefix of it). The
+    # assertion below is unchanged; the fixture just stops describing a layout
+    # production never produces.
+    tree = repo.parent / ".worktrees" / "lg-1-tree"
     git(repo, "worktree", "add", "-q", str(tree), BRANCH)
     run = AgentRun(
         run_code="r1",
@@ -145,6 +151,14 @@ def test_merges_pinned_to_the_head_it_was_shown_then_cleans_up(
         )
     )
     session.commit()
+    # The receipt the gate now requires (lg-external-harness-1026 AC14/AC18).
+    # A PR merge happens on GitHub; what releases the checkout is the record
+    # that the work landed, which `land_ticket` / `publish_tree` write. A tree
+    # with no such record is kept — the refusal is the case below this one.
+    (tree / "merged.txt").write_text("the work this PR carried\n")
+    git(tree, "add", "-A")
+    git(tree, "commit", "-q", "-m", "the work this PR carried")
+    grant_receipt(session, ticket, repo, branch=BRANCH)
     fake = github(FakeGitHub(_pr()))
 
     result = merge_and_clean_up(session, ticket, workspace, number=7, head_sha=SHA)
@@ -198,6 +212,35 @@ def test_a_worktree_with_uncommitted_work_is_kept_and_said_so(
 ):
     tree = repo.parent / "lg-1-tree"
     git(repo, "worktree", "add", "-q", str(tree), BRANCH)
+    # A row and a receipt (lg-external-harness-1026 AC18), so the premise this
+    # test is named for is the one that fires. Without a `worktrees` row there
+    # is no owner to resolve a receipt for and the gate refuses on that
+    # instead; without a receipt it refuses on that. The uncommitted file is
+    # what the assertion is about, so it has to be what decides.
+    (tree / "committed.txt").write_text("the work this PR carried\n")
+    git(tree, "add", "-A")
+    git(tree, "commit", "-q", "-m", "the work this PR carried")
+    grant_receipt(session, ticket, repo, branch=BRANCH)
+    run = AgentRun(
+        run_code="r-dirty",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        status=RunStatus.SUCCEEDED,
+    )
+    session.add(run)
+    session.commit()
+    session.add(
+        Worktree(
+            agent_run_id=run.id,
+            workspace_id=workspace.id,
+            ticket_id=ticket.id,
+            branch=BRANCH,
+            worktree_path=str(tree),
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.commit()
     (tree / "unsaved.txt").write_text("work in progress\n")
     github(FakeGitHub(_pr()))
 

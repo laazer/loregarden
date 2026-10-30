@@ -78,9 +78,15 @@ from tests.worktree_helpers import git, make_repo
 #: `status --porcelain=v2` snapshot, the one ancestry question, and the single
 #: resolution.
 #:
+#: 12.6 after the diff capture moved onto the live merge-base (`parent_ref`, 63
+#: git processes over 5 stage runs, 58 before it). Each completed run now names
+#: its parent (`rev-parse --verify`) and asks `merge-base HEAD` once, and diffs
+#: once against that SHA instead of trying `main` and falling back, so it trades
+#: one `diff --stat` for those two questions: one call more per stage, by design.
+#:
 #: Kept one call above the measured figure so it is still a ceiling, never a
 #: waiver.
-GIT_CALLS_PER_STAGE = 12
+GIT_CALLS_PER_STAGE = 13
 
 _CORE_BARE = ["git", "config", "--local", "--get", "core.bare"]
 _GIT_DIR = ["git", "rev-parse", "--git-dir"]

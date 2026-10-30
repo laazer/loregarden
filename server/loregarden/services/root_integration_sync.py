@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import Ticket
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
     MergeOutcome,
     advance_tips,

@@ -1383,3 +1383,23 @@ class ClassifyBasis(StrEnum):
     #: The ticket's text argues for a specialty no route in this stage owns. A
     #: template defect, not a routing outcome — nothing here can be dispatched.
     UNROUTEABLE = "unrouteable"
+
+
+class RemovalOutcome(StrEnum):
+    """What a branch-triage removal actually did, as a field rather than a silence.
+
+    The three surfaces that reach a destructive act branch on this. Before it
+    existed they inferred "deleted" from "the request did not throw", so a
+    receipt-gated refusal — a 200 whose body said nothing — was counted as a
+    deletion and reported to the operator as one (lg-external-harness-1026
+    AC22). A refusal is not a transport error: the gate worked and nothing was
+    lost, which is why it is a 200 carrying this value and not a 4xx.
+    """
+
+    #: The branch, or the checkout, is gone.
+    DELETED = "deleted"
+    #: A premise refused. Nothing was deleted and nothing moved.
+    REFUSED = "refused"
+    #: Every premise held, the removal failed, and the checkout is now under an
+    #: unguessable name that only the reported path knows.
+    PARKED = "parked"

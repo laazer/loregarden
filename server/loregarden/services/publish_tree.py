@@ -51,6 +51,7 @@ from pathlib import Path
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import EventType, Ticket, Workspace
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_automation import (
     AutomationResult,
     PublishSubject,
@@ -58,7 +59,6 @@ from loregarden.services.git_automation import (
     publish_branch,
 )
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_ref import publish_ref_for

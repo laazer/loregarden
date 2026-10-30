@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, PrimaryCheckoutUse, Ticket, Workspace
@@ -35,6 +36,34 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class TicketCheckout:
+    """The directory a ticket's run lives in, and the parent it was cut from.
+
+    ``parent_branch`` empty means unset: callers omit the live-base path rather
+    than treating the shared checkout as cut from main.
+    """
+
+    path: Path
+    parent_branch: str = ""
+
+
+def resolve_ticket_checkout(
+    session: Session, ticket: Ticket, workspace: Workspace
+) -> TicketCheckout:
+    """The checkout a ticket's run lives in, plus the parent it was cut from.
+
+    One active-worktree lookup. A missing directory is the workspace root with
+    parent unset: merge-base must not run against the shared checkout.
+    """
+    workspace_root = resolve_workspace_root(workspace)
+    service = WorktreeService(session, repo_path=str(workspace_root))
+    worktree = service.active_worktree_for_ticket(ticket.id)
+    if worktree and worktree.worktree_path and Path(worktree.worktree_path).is_dir():
+        return TicketCheckout(Path(worktree.worktree_path), worktree.parent_branch)
+    return TicketCheckout(workspace_root)
+
+
 def resolve_ticket_root(session: Session, ticket: Ticket, workspace: Workspace) -> Path:
     """Where this ticket's branch and work live on disk right now.
 
@@ -42,12 +71,7 @@ def resolve_ticket_root(session: Session, ticket: Ticket, workspace: Workspace) 
     (commit, push, open a PR) have to reach the tree the stages actually wrote
     to, but must not conjure a worktree for a ticket that never ran.
     """
-    workspace_root = resolve_workspace_root(workspace)
-    service = WorktreeService(session, repo_path=str(workspace_root))
-    worktree = service.active_worktree_for_ticket(ticket.id)
-    if worktree and worktree.worktree_path and Path(worktree.worktree_path).is_dir():
-        return Path(worktree.worktree_path)
-    return workspace_root
+    return resolve_ticket_checkout(session, ticket, workspace).path
 
 
 def resolve_execution_root(

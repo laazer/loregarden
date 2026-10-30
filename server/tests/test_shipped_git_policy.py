@@ -122,9 +122,9 @@ def test_a_chat_turns_work_is_committed_and_pushed_under_the_shipped_policy(tmp_
     the way a live turn does, against a real remote, and asserts the branch
     actually arrives there.
     """
+    from loregarden.services.branch_names import chat_session_branch
     from loregarden.services.chat_publish import publish_chat_turn
     from loregarden.services.chat_worktree import resolve_chat_execution_root
-    from loregarden.services.git_branch import chat_session_branch
     from sqlmodel import Session
     from tests.worktree_helpers import git, make_repo
 

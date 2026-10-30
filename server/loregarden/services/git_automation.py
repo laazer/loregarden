@@ -30,11 +30,11 @@ from loregarden.models.domain import (
     Workspace,
     Worktree,
 )
-from loregarden.services.git_automation_config import enabled_steps
-from loregarden.services.git_branch import (
+from loregarden.services.branch_names import (
     chat_session_branch,
     validate_branch_name,
 )
+from loregarden.services.git_automation_config import enabled_steps
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root

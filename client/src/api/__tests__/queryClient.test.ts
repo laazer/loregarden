@@ -79,3 +79,22 @@ it("stays quiet for a query that renders its own failure", async () => {
 
   expect(useToastStore.getState().toasts).toHaveLength(0);
 });
+
+describe("S2.4 — which failures are allowed to expire", () => {
+  it("bounds a failed cold-cache load at 9 seconds", async () => {
+    // A background load failure carries no value to copy and re-reports itself
+    // on the next poll. Left sticky, a server outage would park four permanent
+    // toasts in the corner of every screen.
+    const client = createQueryClient();
+
+    await fetchFailingQuery(client, ["tickets"], { errorTitle: "Load tickets" });
+
+    expect(useToastStore.getState().toasts[0].duration).toBe(9000);
+  });
+
+  it("leaves an operator-triggered mutation failure sticky", async () => {
+    await runFailingMutation({ errorTitle: "Delete session" });
+
+    expect(useToastStore.getState().toasts[0].duration).toBe(0);
+  });
+});

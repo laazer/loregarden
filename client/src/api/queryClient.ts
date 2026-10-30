@@ -28,7 +28,12 @@ export function createQueryClient(): QueryClient {
       onError: (error, query) => {
         if (query.meta?.suppressErrorToast) return;
         if (query.state.data !== undefined) return;
-        toastActionFailed(query.meta?.errorTitle ?? "Load", error);
+        // The one caller that bounds an error toast. A cold-cache load failure
+        // carries no value for the operator to copy and re-reports itself on
+        // the next poll; left sticky, an outage would park four permanent
+        // toasts in the corner of every screen. A mutation failure — something
+        // a person pressed — stays sticky.
+        toastActionFailed(query.meta?.errorTitle ?? "Load", error, { duration: 9000 });
       },
     }),
   });

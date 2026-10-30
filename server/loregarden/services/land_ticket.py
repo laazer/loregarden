@@ -26,7 +26,7 @@ from enum import Enum
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
     describe_signing,
     is_ancestor,
@@ -44,6 +44,7 @@ from loregarden.services.target_branch import (
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_receipt import landing_on_record
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         )
 
     if not (
-        outcome.already_contained and _landing_on_record(repo_root, ticket, target, outcome.sha)
+        outcome.already_contained and landing_on_record(repo_root, ticket, target, outcome.sha)
     ):
         _record(session, ticket, outcome.sha, target)
     if outcome.already_contained:
@@ -184,22 +185,6 @@ def _uncommitted(session: Session, ticket: Ticket, workspace: Workspace) -> str 
         return None
     root = resolve_ticket_root(session, ticket, workspace)
     return describe_uncommitted(paths, str(root))
-
-
-def _landing_on_record(repo_root: Path, ticket: Ticket, target: str, branch_sha: str) -> bool:
-    """Whether the ticket already records the commit that landed this branch.
-
-    `landed_sha` is the commit on the target that first contained the branch:
-    the merge commit when a landing merged it. Re-landing an already-contained
-    branch used to overwrite that with the branch tip, so the same ticket
-    named two different commits depending on how often it was landed (928).
-    """
-    return (
-        bool(ticket.landed_sha)
-        and ticket.landed_branch == target
-        and is_ancestor(repo_root, branch_sha, ticket.landed_sha)
-        and is_ancestor(repo_root, ticket.landed_sha, f"refs/heads/{target}")
-    )
 
 
 def _held_without_shared_history(

@@ -157,7 +157,7 @@ def test_a_conflicting_refresh_fails_loudly_and_leaves_no_half_cut_tree(
     assert service.active_worktree_for_ticket(child.id) is None
 
 
-def test_the_shared_checkout_cuts_from_and_refreshes_onto_the_start_point(repo, tmp_path):
+def test_the_shared_checkout_cuts_from_and_refreshes_onto_the_start_point(repo, tmp_path, session):
     ticket = Ticket(
         external_id="lg-a-5",
         branch="loregarden/lg-a-5",
@@ -168,7 +168,7 @@ def test_the_shared_checkout_cuts_from_and_refreshes_onto_the_start_point(repo, 
     git(repo, "branch", "integration/x", "main")
     git(repo, "checkout", "-q", "-b", "somewhere-else")
 
-    ensure_ticket_branch(repo, ticket, start_point="integration/x")
+    ensure_ticket_branch(repo, ticket, start_point="integration/x", session=session)
     assert _sha(repo) == _sha(repo, "integration/x")
 
     (repo / "own.txt").write_text("own\n")
@@ -177,14 +177,14 @@ def test_the_shared_checkout_cuts_from_and_refreshes_onto_the_start_point(repo, 
     landed = commit_on(repo, "integration/x", "sibling.txt", "landed\n")
     git(repo, "checkout", "-q", "main")
 
-    ensure_ticket_branch(repo, ticket, start_point="integration/x")
+    ensure_ticket_branch(repo, ticket, start_point="integration/x", session=session)
 
     assert git(repo, "branch", "--show-current").stdout.strip() == ticket.branch
     assert (repo / "sibling.txt").exists() and (repo / "own.txt").exists()
     assert _ancestor(repo, landed, "HEAD")
 
 
-def test_the_shared_checkout_does_not_refresh_over_uncommitted_work(repo, caplog):
+def test_the_shared_checkout_does_not_refresh_over_uncommitted_work(repo, caplog, session):
     ticket = Ticket(
         external_id="lg-a-6",
         branch="loregarden/lg-a-6",
@@ -193,19 +193,19 @@ def test_the_shared_checkout_does_not_refresh_over_uncommitted_work(repo, caplog
         workspace_id="w",
     )
     git(repo, "branch", "integration/y", "main")
-    ensure_ticket_branch(repo, ticket, start_point="integration/y")
+    ensure_ticket_branch(repo, ticket, start_point="integration/y", session=session)
     commit_on(repo, "integration/y", "sibling.txt", "landed\n")
     (repo / "seed.txt").write_text("edited but not committed\n")
 
     with caplog.at_level("WARNING"):
-        ensure_ticket_branch(repo, ticket, start_point="integration/y")
+        ensure_ticket_branch(repo, ticket, start_point="integration/y", session=session)
 
     assert not (repo / "sibling.txt").exists()
     assert (repo / "seed.txt").read_text() == "edited but not committed\n"
     assert any("uncommitted" in r.getMessage() for r in caplog.records)
 
 
-def test_a_conflicting_refresh_in_the_shared_checkout_is_a_valueerror(repo):
+def test_a_conflicting_refresh_in_the_shared_checkout_is_a_valueerror(repo, session):
     ticket = Ticket(
         external_id="lg-a-7",
         branch="loregarden/lg-a-7",
@@ -214,7 +214,7 @@ def test_a_conflicting_refresh_in_the_shared_checkout_is_a_valueerror(repo):
         workspace_id="w",
     )
     git(repo, "branch", "integration/z", "main")
-    ensure_ticket_branch(repo, ticket, start_point="integration/z")
+    ensure_ticket_branch(repo, ticket, start_point="integration/z", session=session)
     (repo / "shared.txt").write_text("ticket\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "ticket side")
@@ -222,12 +222,12 @@ def test_a_conflicting_refresh_in_the_shared_checkout_is_a_valueerror(repo):
     git(repo, "checkout", "-q", "main")
 
     with pytest.raises(ValueError, match="could not take"):
-        ensure_ticket_branch(repo, ticket, start_point="integration/z")
+        ensure_ticket_branch(repo, ticket, start_point="integration/z", session=session)
 
     assert git(repo, "status", "--porcelain").stdout.strip() == "", "merge was aborted cleanly"
 
 
-def test_a_repository_with_no_commits_cuts_from_head_and_says_so(tmp_path, caplog):
+def test_a_repository_with_no_commits_cuts_from_head_and_says_so(tmp_path, caplog, session):
     """A fresh `git init` has no base branch. The stage must still start."""
     repo = tmp_path / "empty"
     repo.mkdir()
@@ -241,7 +241,7 @@ def test_a_repository_with_no_commits_cuts_from_head_and_says_so(tmp_path, caplo
     )
 
     with caplog.at_level("WARNING"):
-        ensure_ticket_branch(repo, ticket, start_point="main")
+        ensure_ticket_branch(repo, ticket, start_point="main", session=session)
 
     assert git(repo, "branch", "--show-current").stdout.strip() == ticket.branch
     assert any("does not exist" in r.getMessage() for r in caplog.records)

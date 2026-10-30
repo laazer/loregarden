@@ -31,11 +31,10 @@ from pathlib import Path
 from loregarden.models.domain import Workspace, Worktree, WorktreeState
 from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.artifact_service import git_base_ref
-from loregarden.services.branch_landed import branch_work_has_landed
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
-from loregarden.services.worktree_lifecycle import retire_worktree
+from loregarden.services.worktree_lifecycle import Retirement, retire_worktree
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 
@@ -111,6 +110,18 @@ def _delete_remote_branch(repo_root: Path, remote: str, branch: str) -> str:
     return detail
 
 
+def _kept_because(outcome: Retirement) -> str:
+    """What the sweep shows an operator for one tree it left alone.
+
+    The refusal's own value and the gate's own sentence, which between them
+    carry the member that fired, the path that was not deleted and — on a
+    parked outcome — the unguessable name the checkout is under now. That last
+    one is the whole recovery procedure, so it travels in the report rather
+    than only in a log line nobody is reading at the time.
+    """
+    return f"its worktree is kept: {outcome.refusal.value} ({outcome.detail})"
+
+
 def _active_chat_worktrees(session: Session, workspace_id: str) -> list[Worktree]:
     return list(
         session.exec(
@@ -145,24 +156,28 @@ def sweep_chat_branches(session: Session, workspace: Workspace) -> ChatBranchSwe
         if not branch:
             result.kept.append(("<unnamed>", "the worktree row records no branch"))
             continue
-        if not branch_work_has_landed(repo_root, base, branch):
-            result.kept.append((branch, f"work is not yet in {base}"))
-            continue
-        # `retire_worktree` applies the same refusals the ticket path does, and
-        # answers with the premise that fired — or with the removal itself
-        # having failed. Which one it was is what the operator acts on, so it is
+        # No pre-check of its own. "Has this landed?" is the gate's FIRST
+        # premise now (lg-external-harness-1026 AC1/AC17), and a second
+        # implementation of it here was a second answer to one question: the two
+        # would drift the first time either moved, and the one that decides is
+        # not the one an operator would have read.
+        #
+        # `retire_worktree` answers with the premise that fired — or with the
+        # removal itself having failed, and where it parked what it could not
+        # delete. Which one it was is what the operator acts on, so it is
         # reported rather than guessed at: a tree kept for a stranded commit
         # holds no uncommitted work to go looking for.
         #
-        # The branch deletions below are guarded on `removed`, not on "no
-        # premise refused". A removal that was attempted and failed has no
-        # premise either, and dropping the ref for it would leave a checkout of
-        # a branch that exists nowhere — the one thing on disk still holding
-        # those commits, no longer tracked by anything. That loss is the one
-        # this sweep exists to avoid, so either answer stops it here.
+        # The branch deletions below are guarded on `refusal is None`, which is
+        # the only thing that means the checkout is gone. A removal that was
+        # attempted and failed has no premise either, and dropping the ref for
+        # it would leave a checkout of a branch that exists nowhere — the one
+        # thing on disk still holding those commits, no longer tracked by
+        # anything. That loss is the one this sweep exists to avoid, so every
+        # refusal stops it here, local ref and remote ref both.
         outcome = retire_worktree(session, service, worktree)
-        if not outcome.removed:
-            result.kept.append((branch, f"its worktree is kept: {outcome.kept_because}"))
+        if outcome.refusal is not None:
+            result.kept.append((branch, _kept_because(outcome)))
             continue
 
         remote = _remote_for_branch(repo_root, branch)
