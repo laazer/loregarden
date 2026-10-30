@@ -52,7 +52,11 @@ from loregarden.services.ci_checks import (
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.publish_tree import published_branch
 from loregarden.services.root_integration_sync import take_integration_branch
-from loregarden.services.target_branch import TargetBranchError, integration_branch_for
+from loregarden.services.target_branch import (
+    TargetBranchError,
+    integration_branch_for,
+    subtree_root,
+)
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
@@ -403,7 +407,7 @@ class CIService:
                 f"{settings.ci_retry_limit} fix attempt(s) ({result.failure_summary}). "
                 "Fix it on the branch and requeue.",
             )
-        reachable = _reachable_branches(ticket)
+        reachable = _reachable_branches(self.session, ticket)
         if branch not in reachable:
             return (
                 AutoFixRefusal.UNREACHABLE_BRANCH,
@@ -510,12 +514,20 @@ class CIService:
         return len(rows)
 
 
-def _reachable_branches(ticket: Ticket) -> tuple[str, ...]:
-    """The PR branches a repair turn on ``ticket`` can commit to: its own, and the
-    integration branch named after it when it roots a tree."""
+def _reachable_branches(session: Session, ticket: Ticket) -> tuple[str, ...]:
+    """The PR branches a repair turn on ``ticket`` can commit to: its own, and
+    its tree's integration branch.
+
+    This asks for ``subtree_root``'s integration branch directly rather than
+    going through ``landing_target``, and deliberately skips its
+    ``root.id == ticket.id`` check: a root ticket's repair turn may still
+    commit to its own tree's integration branch (its children's work lands
+    there before the root's own branch takes it), so the root case is not the
+    base-branch case `landing_target` treats it as for PR duplication.
+    """
     own = resolve_ticket_branch(ticket)
     try:
-        return own, integration_branch_for(ticket)
+        return own, integration_branch_for(subtree_root(session, ticket))
     except TargetBranchError:
         return (own,)
 

@@ -1,4 +1,5 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { Approval } from "../../api/client";
 import { renderWithRouter } from "../../test/renderWithRouter";
@@ -130,6 +131,14 @@ describe("ApprovalCard rework pause", () => {
     route_options: [{ key: "implement", name: "Implementation" }],
   };
 
+  const NAMES_PAUSE: Approval = {
+    ...PAUSE_APPROVAL,
+    tool_input_json: JSON.stringify({
+      target_stage: "implement",
+      unresolved_names: ["handoff:test_suite_complete incomplete"],
+    }),
+  };
+
   it("offers the routing box, so a reject can name where the work goes", () => {
     renderWithRouter(
       <ApprovalCard approval={PAUSE_APPROVAL} onApprove={() => {}} onReject={() => {}} />,
@@ -154,6 +163,233 @@ describe("ApprovalCard rework pause", () => {
     expect(onApprove).toHaveBeenCalledWith(
       expect.objectContaining({ route_to_stage_key: "implement" }),
     );
+  });
+
+  it("opens Waive unresolved items? when names remain and routing is off", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={onApprove} onReject={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: /waive unresolved items\?/i });
+    expect(within(dialog).getByText("handoff:test_suite_complete incomplete")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByRole("textbox"), {
+      target: { value: "accepted the remaining gap" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Waive and continue" }));
+    expect(onApprove).toHaveBeenCalledWith({ response: "accepted the remaining gap" });
+    expect(screen.getByRole("dialog", { name: /waive unresolved items\?/i })).toBeInTheDocument();
+  });
+
+  it("hides Retry without waiving when no names remain, and Approve is one-click", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={PAUSE_APPROVAL} onApprove={onApprove} onReject={() => {}} />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove).toHaveBeenCalled();
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+    expect(onApprove.mock.calls[0][0].route_to_stage_key).toBeUndefined();
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("treats missing or unreadable unresolved_names as empty", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard
+        approval={{ ...PAUSE_APPROVAL, tool_input_json: "{not json" }}
+        onApprove={onApprove}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+  });
+
+  it("treats an empty unresolved_names array as no names remaining", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...PAUSE_APPROVAL,
+          tool_input_json: JSON.stringify({ target_stage: "implement", unresolved_names: [] }),
+        }}
+        onApprove={onApprove}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("treats a missing unresolved_names key as no names remaining", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...PAUSE_APPROVAL,
+          tool_input_json: JSON.stringify({ target_stage: "implement" }),
+        }}
+        onApprove={onApprove}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+  });
+
+  it("treats unresolved_names null as no names remaining", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...PAUSE_APPROVAL,
+          tool_input_json: JSON.stringify({ target_stage: "implement", unresolved_names: null }),
+        }}
+        onApprove={onApprove}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+  });
+
+  it("treats a list of blank names as no names remaining", () => {
+    // CHECKPOINT: blank names do not answer the operator question; treat as empty.
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...PAUSE_APPROVAL,
+          tool_input_json: JSON.stringify({
+            target_stage: "implement",
+            unresolved_names: ["", "  "],
+          }),
+        }}
+        onApprove={onApprove}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("shows Retry without waiving only when names remain, and it sends an empty approve", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={onApprove} onReject={() => {}} />,
+    );
+
+    const retry = screen.getByRole("button", { name: "Retry without waiving" });
+    fireEvent.click(retry);
+    expect(onApprove).toHaveBeenCalled();
+    expect(onApprove.mock.calls[0][0].response).toBeUndefined();
+    expect(onApprove.mock.calls[0][0].route_to_stage_key).toBeUndefined();
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("does not open the waive modal when Routing is on — Approve & route back keeps names", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={onApprove} onReject={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /send back through the workflow/i }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "implement" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve & route back" }));
+
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ route_to_stage_key: "implement" }),
+    );
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps Reject on the existing sign-off modal and does not drop names", () => {
+    const onReject = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={() => {}} onReject={onReject} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(screen.getByRole("dialog", { name: /reject sign-off/i })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("does not add a waive modal or Retry to a workflow gate", () => {
+    renderWithRouter(
+      <ApprovalCard approval={GATE_APPROVAL} onApprove={() => {}} onReject={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry without waiving" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument();
+  });
+
+  it("Escape on the waive modal returns focus to Approve", async () => {
+    const user = userEvent.setup();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={() => {}} onReject={() => {}} />,
+    );
+
+    const approve = screen.getByRole("button", { name: "Approve" });
+    await user.click(approve);
+    expect(screen.getByRole("dialog", { name: /waive unresolved items\?/i })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /waive unresolved items\?/i })).not.toBeInTheDocument(),
+    );
+    expect(approve).toHaveFocus();
+  });
+
+  it("does not fire Retry without waiving twice", () => {
+    const onApprove = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={onApprove} onReject={() => {}} />,
+    );
+    const retry = screen.getByRole("button", { name: "Retry without waiving" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(onApprove).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the typed waive reason in the modal after Approve submit", () => {
+    renderWithRouter(
+      <ApprovalCard approval={NAMES_PAUSE} onApprove={() => {}} onReject={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("dialog", { name: /waive unresolved items\?/i });
+    fireEvent.change(within(dialog).getByRole("textbox"), {
+      target: { value: "accepted the remaining gap" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Waive and continue" }));
+    expect(screen.getByRole("dialog", { name: /waive unresolved items\?/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox")).toHaveValue("accepted the remaining gap");
+  });
+
+  it("disables Retry, Reject, and Approve while a waive resolve is in flight", () => {
+    renderWithRouter(
+      <ApprovalCard
+        approval={NAMES_PAUSE}
+        isSubmitting
+        onApprove={() => {}}
+        onReject={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Retry without waiving" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
   });
 });
 

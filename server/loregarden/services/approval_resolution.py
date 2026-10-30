@@ -19,6 +19,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from loregarden.models.domain import Approval, ApprovalKind, StageStatus, Ticket
+from loregarden.services.unresolved_ledger import (
+    HUMAN_AGENT_ID,
+    LedgerActor,
+    persisted_open_names,
+    waive,
+)
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session
@@ -125,6 +131,18 @@ def apply_gate_resolution(
             # invisible when the next stage happens to be PENDING, and wrong
             # the moment it is a gate.
             ticket.blocking_issues = ""
+            reason = response_text.strip()
+            open_names = persisted_open_names(session, ticket)
+            if reason:
+                human = LedgerActor(agent_id=HUMAN_AGENT_ID, stage_key="")
+                for name in open_names:
+                    waive(session, ticket, name, reason, human)
+            elif open_names:
+                set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.PENDING)
+                session.add(ticket)
+                session.add(instance)
+                session.commit()
+                return True
         set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
     else:
         reject_message = response_text.strip() or "Human rejected approval"

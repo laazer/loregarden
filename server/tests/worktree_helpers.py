@@ -114,12 +114,17 @@ def make_run(session, workspace, ticket, code: str, agent_id: str = "backend_imp
 
 
 def make_tree_ticket(session, workspace, external_id, *, parent=None, kind=None, **fields):
-    """An in-progress ticket with a branch named after it, for publish and landing tests."""
+    """An in-progress ticket with a branch named after it, for publish and landing tests.
+
+    ``workspace`` may be None, which is the only way to build an initiative:
+    ``ck_tickets_workspace_binding`` holds ``workspace_id IS NULL`` iff the work
+    item is an initiative.
+    """
     from loregarden.models.domain import Ticket, TicketState, WorkItemType
 
     ticket = Ticket(
         external_id=external_id,
-        workspace_id=workspace.id,
+        workspace_id=workspace.id if workspace else None,
         title=f"Ticket {external_id}",
         branch=f"loregarden/{external_id}",
         parent_ticket_id=parent.id if parent else None,

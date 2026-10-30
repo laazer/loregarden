@@ -1,7 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { ticketPath } from "../../lib/appNavigation";
 import {
   ticketPullRequestKey,
   type PullRequestCheck,
@@ -56,8 +58,17 @@ function countBy(checks: readonly PullRequestCheck[], outcome: PullRequestCheckO
   return checks.filter((check) => check.outcome === outcome).length;
 }
 
-/** The one-line answer to "can this merge, and if not, what is in the way?". */
-function verdict(pr: PullRequestStatus): { text: string; tone: "good" | "bad" | "warn" } {
+/**
+ * The one-line answer to "can this merge, and if not, what is in the way?".
+ *
+ * When everything passes the answer depends on whose PR this is: on a tree
+ * member the merge happens on the tree's pull request, not here, so the line
+ * names that destination instead of asserting a merge this tab does not offer.
+ */
+function verdict(
+  pr: PullRequestStatus,
+  isTreePullRequest: boolean,
+): { text: string; tone: "good" | "bad" | "warn" } {
   if (pr.state === "merged") return { text: `Merged into ${pr.base}.`, tone: "good" };
   if (pr.state === "closed") return { text: "Closed without merging.", tone: "warn" };
   const failing = pr.checks.filter((check) => check.outcome === "failing");
@@ -81,17 +92,32 @@ function verdict(pr: PullRequestStatus): { text: string; tone: "good" | "bad" | 
     // yet reported); saying "ready" here sent people to a merge button that refused.
     return { text: `Checks pass, but GitHub's rules for ${pr.base} still block the merge.`, tone: "warn" };
   }
+  if (isTreePullRequest) return { text: "Checks pass; merge it from the tree's pull request.", tone: "good" };
   return { text: "Checks pass; ready to merge.", tone: "good" };
 }
 
-function fixChecksPrompt(pr: PullRequestStatus): string {
+/**
+ * Non-null: the resolved PR is the tree's, and `shipsWith` is its integration
+ * branch. The branch name is reachable only through the object that asserts it,
+ * so no caller can read one without having been told whose PR this is.
+ *
+ * `rootRef` is the tree root's shareable id, as the server named it — never the
+ * branch with its prefix taken off. It is absent when the payload carries no
+ * root (an older or degraded response), which is the one case with no route out
+ * of the line.
+ */
+type TreePullRequest = { shipsWith: string; rootRef?: string };
+
+function fixChecksPrompt(pr: PullRequestStatus, treePullRequest: TreePullRequest | null): string {
   const failing = pr.checks.filter((check) => check.outcome === "failing");
   return [
     `CI is failing on PR #${pr.number} (${pr.url}):`,
     "",
     ...failing.map((check) => `- ${check.name}${check.url ? `: ${check.url}` : ""}`),
     "",
-    "Read the failing logs, find the first real failure, fix it on this ticket's branch, and push.",
+    treePullRequest?.shipsWith
+      ? `Read the failing logs, find the first real failure, fix it on ${treePullRequest.shipsWith} and push.`
+      : "Read the failing logs, find the first real failure, fix it on this ticket's branch, and push.",
   ].join("\n");
 }
 
@@ -209,7 +235,16 @@ export function TicketPullRequestPanel({
       </>
     );
   }
-  return <PullRequestSummary ticketId={ticketId} pr={data.pull_request} refresh={refresh} />;
+  return (
+    <PullRequestSummary
+      ticketId={ticketId}
+      pr={data.pull_request}
+      refresh={refresh}
+      treePullRequest={
+        data.is_tree_pull_request ? { shipsWith: data.ships_with, rootRef: data.ships_with_root || undefined } : null
+      }
+    />
+  );
 }
 
 function LookupFailed({ data, refresh }: { data: TicketPullRequest; refresh: ReactNode }) {
@@ -217,6 +252,9 @@ function LookupFailed({ data, refresh }: { data: TicketPullRequest; refresh: Rea
     <div className="ap-state" role="alert">
       <div className="ap-state-title">Could not ask GitHub about this branch&rsquo;s pull request</div>
       <div className="ap-state-body">
+        <p className="prp-muted">
+          GitHub could not be asked about <code className="prp-branch">{data.branch}</code>.
+        </p>
         <code className="prp-error">{data.error}</code>
         {data.recorded && (
           <p>
@@ -237,25 +275,41 @@ function PullRequestSummary({
   ticketId,
   pr,
   refresh,
+  treePullRequest,
 }: {
   ticketId: string;
   pr: PullRequestStatus;
   refresh: ReactNode;
+  treePullRequest: TreePullRequest | null;
 }) {
   const setCopilotOpen = useUiStore((s) => s.setCopilotOpen);
   const askToFix = useMutation({
-    mutationFn: () => api.sendTriageMessage(ticketId, fixChecksPrompt(pr)),
+    mutationFn: () => api.sendTriageMessage(ticketId, fixChecksPrompt(pr, treePullRequest)),
     onMutate: () => setCopilotOpen(true),
     onError: (error) => toastActionFailed("Hand failing checks to triage chat", error),
   });
   const badge = stateBadge(pr);
-  const summary = verdict(pr);
+  const isTreePullRequest = treePullRequest !== null;
+  const summary = verdict(pr, isTreePullRequest);
   const isOpen = pr.state === "open";
   const checks = [...pr.checks].sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome]);
   const failing = countBy(checks, "failing");
 
   return (
     <div className="prp">
+      {treePullRequest?.shipsWith && (
+        <p className="prp-muted">
+          Ships in its tree&rsquo;s pull request <code className="prp-branch">{treePullRequest.shipsWith}</code>
+          {treePullRequest.rootRef && (
+            <>
+              {" "}
+              <Link className="prp-tree-root" to={ticketPath(treePullRequest.rootRef, "pr")}>
+                Open the tree&rsquo;s pull request
+              </Link>
+            </>
+          )}
+        </p>
+      )}
       <header className="prp-head">
         <div className="prp-meta">
           <span className={`prp-badge prp-badge--${badge.tone}`}>{badge.label}</span>
@@ -280,7 +334,7 @@ function PullRequestSummary({
         {summary.text}
       </p>
 
-      <MergeAndCleanUpButton ticketId={ticketId} pr={pr} />
+      <MergeAndCleanUpButton ticketId={ticketId} pr={pr} isTreePullRequest={isTreePullRequest} />
 
       <div className="prp-actions prp-actions--start">
         <a

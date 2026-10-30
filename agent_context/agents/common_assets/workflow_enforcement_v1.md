@@ -62,7 +62,7 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
 <<<END_STAGE_REPORT>>>
 ```
 

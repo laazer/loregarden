@@ -1,5 +1,6 @@
 
 import type { Approval } from "../../api/chatTypes";
+import type { TicketTreeNode } from "../../api/types";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
@@ -8,6 +9,7 @@ import {
   needsMeReason,
   stageText,
   stateText,
+  type ShipsByTicket,
   type WorkItemRow,
   type WorkItemsSort,
   type WorkItemsSortKey,
@@ -32,6 +34,41 @@ const COLUMNS: Column[] = [
   { key: "parent", label: "Parent" },
 ];
 
+function WhyCell({
+  node,
+  approvals,
+  ships,
+  onOpenApproval,
+}: {
+  node: TicketTreeNode;
+  approvals: ReadonlyMap<string, Approval>;
+  ships: ShipsByTicket;
+  onOpenApproval: (ticketId: string) => void;
+}) {
+  const reason = needsMeReason(node, approvals.get(node.id), ships);
+  const ship = ships.get(node.id);
+  if (approvals.has(node.id) && node.workflow_stage_status === "awaiting") {
+    return (
+      <Button
+        variant="plain"
+        className="wi-why-link"
+        title="Open this approval in the inbox"
+        onClick={() => onOpenApproval(node.id)}
+      >
+        {reason}
+      </Button>
+    );
+  }
+  if (ship && ship.reason !== "never_reached_remote" && ship.pr_url) {
+    return (
+      <a href={ship.pr_url} target="_blank" rel="noreferrer" className="wi-why-link">
+        {reason}
+      </a>
+    );
+  }
+  return reason;
+}
+
 /**
  * One row per ticket; the title opens it in the Console, the parent opens the
  * parent. `showWhy` adds the reason a ticket is the operator's, for the
@@ -45,6 +82,7 @@ export function WorkItemsTable({
   onSort,
   showWhy,
   approvals,
+  ships,
   onOpenApproval,
 }: {
   rows: WorkItemRow[];
@@ -54,6 +92,8 @@ export function WorkItemsTable({
   showWhy: boolean;
   /** Each ticket's pending approval, by ticket id; names what an awaiting row is asked. */
   approvals: ReadonlyMap<string, Approval>;
+  /** Done tickets whose ship is not green, by ticket id. */
+  ships: ShipsByTicket;
   /** Opens the inbox on that ticket's approval. */
   onOpenApproval: (ticketId: string) => void;
 }) {
@@ -129,18 +169,7 @@ export function WorkItemsTable({
             </td>
             {showWhy ? (
               <td className="wi-col-why">
-                {approvals.has(node.id) && node.workflow_stage_status === "awaiting" ? (
-                  <Button
-                    variant="plain"
-                    className="wi-why-link"
-                    title="Open this approval in the inbox"
-                    onClick={() => onOpenApproval(node.id)}
-                  >
-                    {needsMeReason(node, approvals.get(node.id))}
-                  </Button>
-                ) : (
-                  needsMeReason(node)
-                )}
+                <WhyCell node={node} approvals={approvals} ships={ships} onOpenApproval={onOpenApproval} />
               </td>
             ) : null}
           </tr>

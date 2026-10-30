@@ -1,4 +1,4 @@
-import { conditionLabel, groupFindings, isAwaitingSamples } from "../monitorFindings";
+import { conditionLabel, groupFindings, isAwaitingSamples, isLiveFinding } from "../monitorFindings";
 import type { MonitorFinding } from "../../api/types";
 
 /**
@@ -135,6 +135,40 @@ it("can group by condition alone, keeping each finding's own stage", () => {
 
   expect(groups).toHaveLength(1);
   expect(groups[0].findings.map((f) => f.stage_key)).toEqual(["plan", "review"]);
+});
+
+it("keeps this invariant's unrepaired finding on a done ticket live", () => {
+  expect(
+    isLiveFinding(
+      finding({
+        condition: "invariant_unrepaired",
+        stage_key: "done_ticket_ship_is_observable",
+        ticket_state: "done",
+      }),
+    ),
+  ).toBe(true);
+});
+
+it("still hides stage_thrash and landed_work unrepaired on a done ticket", () => {
+  expect(isLiveFinding(finding({ ticket_state: "done" }))).toBe(false);
+  expect(
+    isLiveFinding(
+      finding({
+        condition: "invariant_unrepaired",
+        stage_key: "landed_work_is_committed",
+        ticket_state: "done",
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    isLiveFinding(
+      finding({
+        condition: "invariant_unrepaired",
+        stageKey: "done_ticket_ship_is_observable",
+        ticket_state: "done",
+      } as never),
+    ),
+  ).toBe(false);
 });
 
 it("tells a finding still awaiting samples from one to act on", () => {

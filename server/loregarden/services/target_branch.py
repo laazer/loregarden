@@ -52,6 +52,7 @@ from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.work_landed import landing_commit
+from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -138,13 +139,41 @@ def integration_branch_for(root: Ticket) -> str:
     return branch
 
 
-def target_branch_name(session: Session, ticket: Ticket, workspace: Workspace) -> str:
-    """The branch ``ticket``'s work lands on, without touching the repository."""
+class LandingTarget(BaseModel):
+    """Where a ticket's work lands, at both widths one walk already answers.
+
+    ``root`` is the tree root that keys ``branch``, and is ``None`` exactly when
+    the ticket is its own root — which is also the only case where ``branch`` is
+    the workspace's base branch. It is never the ticket itself, so a caller that
+    has a root has a different, existing ticket to name.
+    """
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    branch: str
+    root: Ticket | None
+
+
+def landing_target(session: Session, ticket: Ticket, workspace: Workspace) -> LandingTarget:
+    """The branch ``ticket``'s work lands on and the root that keys it.
+
+    One derivation exposed at two widths: `target_branch_name` is this function
+    read at the narrower one. Callers that want only the string keep getting
+    only the string; a caller that would otherwise re-derive the root from the
+    branch name reads it here instead, which the branch string cannot answer
+    (`integration_branch_for` slugs a root with no external id to eight hex
+    characters no route resolves).
+    """
     base = resolve_orchestration_profile(workspace).git.base_branch
     root = subtree_root(session, ticket)
     if root.id == ticket.id:
-        return base
-    return integration_branch_for(root)
+        return LandingTarget(branch=base, root=None)
+    return LandingTarget(branch=integration_branch_for(root), root=root)
+
+
+def target_branch_name(session: Session, ticket: Ticket, workspace: Workspace) -> str:
+    """The branch ``ticket``'s work lands on, without touching the repository."""
+    return landing_target(session, ticket, workspace).branch
 
 
 def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) -> BranchTips:

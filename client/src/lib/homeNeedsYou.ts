@@ -1,22 +1,24 @@
 /**
  * What Home's "Needs you" list holds, and the numbers in Home's header.
  *
- * Pure, so the grouping is tested without a page. Three kinds of row, in the
+ * Pure, so the grouping is tested without a page. Four kinds of row, in the
  * order the operator should take them:
  *
  *   1. Approvals waiting on a person, grouped by what they ask. Fourteen
  *      "Resolve Playtest exit actions" on one ticket were fourteen identical
  *      rows; they are one row, ×14, and reviewing one shows you all of them.
- *   2. Runs that failed today, grouped per ticket and stage, so a stage that
+ *   2. Done tickets whose ship is not green, grouped by PR (or carrying
+ *      branch when the published ref never reached the remote).
+ *   3. Runs that failed today, grouped per ticket and stage, so a stage that
  *      failed four times in a minute is one row saying 4×.
- *   3. Tickets waiting on a person: parked, or blocked on someone.
+ *   4. Tickets waiting on a person: parked, or blocked on someone.
  *
  * Tickets blocked on other tickets, and in-progress tickets nobody is running,
  * are not here: they do not need *you*, and the header counts them.
  */
 
 import type { Approval } from "../api/chatTypes";
-import type { TicketSummary } from "../api/types";
+import type { ShipReason, ShipViolation, TicketSummary } from "../api/types";
 import type { ChipStatus } from "./statusTone";
 
 /** A run as the run list sends it: only the fields this reads. */
@@ -59,6 +61,15 @@ export type NeedsYouRow =
       key: string;
       title: string;
       chip: ChipStatus;
+      ticketId: string;
+      where: string;
+    }
+  | {
+      kind: "ship";
+      key: string;
+      title: string;
+      chip: ChipStatus;
+      count: number;
       ticketId: string;
       where: string;
     };
@@ -122,10 +133,103 @@ export function approvalLabel(approval: Approval): string {
   return approval.title || approval.tool_name || APPROVAL_WORDS[approval.kind] || approval.kind;
 }
 
+/**
+ * The probe fields a ship row reads. The API's `ShipViolation` is a superset:
+ * `ci_run_result` is evidence the ticket's PR tab shows, and no row needs it.
+ */
+export type ShipRowInput = Pick<
+  ShipViolation,
+  "ticket_id" | "external_id" | "title" | "reason" | "pr_number" | "check_names" | "carrying_branch"
+>;
+
+const SHIP_REASON_RANK: Record<ShipReason, number> = {
+  failing: 0,
+  pending: 1,
+  never_reached_remote: 2,
+};
+
+function shipChip(reason: ShipReason): ChipStatus {
+  if (reason === "failing") return { tone: "bad", label: "Ship" };
+  if (reason === "pending") return { tone: "wait", label: "Ship" };
+  return { tone: "you", label: "Ship" };
+}
+
+function checkNamesSuffix(names: readonly string[]): string {
+  if (names.length === 0) return "";
+  const head = names.slice(0, 2).join(", ");
+  const extra = names.length > 2 ? ` and ${names.length - 2} more` : "";
+  return ` · ${head}${extra}`;
+}
+
+function lowestExternal(group: readonly ShipRowInput[]): ShipRowInput {
+  return [...group].sort((a, b) => a.external_id.localeCompare(b.external_id))[0];
+}
+
+function shipRows(ships: readonly ShipRowInput[]): NeedsYouRow[] {
+  const prGroups = new Map<number, ShipRowInput[]>();
+  const nrrGroups = new Map<string, ShipRowInput[]>();
+  for (const ship of ships) {
+    if (ship.reason === "never_reached_remote") {
+      nrrGroups.set(ship.carrying_branch, [...(nrrGroups.get(ship.carrying_branch) ?? []), ship]);
+      continue;
+    }
+    if (ship.pr_number == null) continue;
+    prGroups.set(ship.pr_number, [...(prGroups.get(ship.pr_number) ?? []), ship]);
+  }
+
+  const groups = [
+    ...[...prGroups.entries()].map(([pr, members]) => ({
+      reason: (lowestExternal(members).reason === "pending" ? "pending" : "failing") as ShipReason,
+      prNumber: pr,
+      branch: lowestExternal(members).carrying_branch,
+      members,
+    })),
+    ...[...nrrGroups.entries()].map(([branch, members]) => ({
+      reason: "never_reached_remote" as const,
+      prNumber: null as number | null,
+      branch,
+      members,
+    })),
+  ];
+  groups.sort(
+    (a, b) =>
+      SHIP_REASON_RANK[a.reason] - SHIP_REASON_RANK[b.reason] ||
+      (a.prNumber ?? Number.POSITIVE_INFINITY) - (b.prNumber ?? Number.POSITIVE_INFINITY) ||
+      a.branch.localeCompare(b.branch),
+  );
+
+  return groups.map(({ reason, prNumber, branch, members }) => {
+    const pick = lowestExternal(members);
+    const grouped = members.length > 1;
+    if (reason === "never_reached_remote") {
+      return {
+        kind: "ship" as const,
+        key: `ship-nrr-${branch}`,
+        title: grouped ? "never reached remote" : pick.title,
+        chip: shipChip(reason),
+        count: members.length,
+        ticketId: pick.ticket_id,
+        where: grouped ? `${members.length} tickets` : "never reached remote",
+      };
+    }
+    const pr = prNumber as number;
+    return {
+      kind: "ship" as const,
+      key: `ship-pr-${pr}`,
+      title: grouped ? `PR #${pr} ${reason}` : pick.title,
+      chip: shipChip(reason),
+      count: members.length,
+      ticketId: pick.ticket_id,
+      where: grouped ? `${members.length} tickets` : `PR #${pr} ${reason}${checkNamesSuffix(pick.check_names)}`,
+    };
+  });
+}
+
 export function needsYouRows(
   approvals: readonly Approval[],
   failures: readonly RecentRun[],
   tickets: readonly TicketSummary[],
+  ships: readonly ShipRowInput[] = [],
 ): NeedsYouRow[] {
   const groups = new Map<string, Approval[]>();
   for (const approval of approvals) {
@@ -177,5 +281,5 @@ export function needsYouRows(
     where: ticket.external_id,
   }));
 
-  return [...approvalRows, ...failedRows, ...personRows];
+  return [...approvalRows, ...shipRows(ships), ...failedRows, ...personRows];
 }

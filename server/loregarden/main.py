@@ -23,6 +23,7 @@ from loregarden.api import (
     composer_notes,
     diff_review,
     docker_capacity,
+    done_ticket_ship,
     editor,
     events,
     gate_presets,
@@ -146,7 +147,7 @@ def _recover_previous_boot(session: Session) -> None:
     # come back rather than staying claimed by a run this process will never
     # hear from again — and so every child has reached the state it will
     # actually be in before its parents are summarised from it.
-    reconcile_once(session)
+    reconcile_once(session, at_startup=True)
     # Resume only after every orphan row and stranded stage has been made
     # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
     resume_interrupted_orchestrations(session)
@@ -339,6 +340,7 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(reference_library.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
+app.include_router(done_ticket_ship.router, prefix="/api")
 app.include_router(github_issues.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_lanes.router)

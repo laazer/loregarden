@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from loregarden.agents.registry import REPAIR_AGENT_ID
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
+from loregarden.models.domain import AgentRun, StageReportStatus, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
 from loregarden.services.repair_brief import repair_brief_for
 from loregarden.services.rework_feedback import render_rework_feedback
+from loregarden.services.stage_verdict import (
+    StageVerdict,
+    collect_signals,
+    derive_verdict,
+    handoff_expected_for,
+    unresolved_section_lines,
+)
 from loregarden.services.studio_routing import is_agentless_stage, is_prunable_stage
+from loregarden.services.unresolved_ledger import LedgerActor, visible_unresolved
 from sqlmodel import Session
 
 #: Stage types whose agent authors the code — the ones that can still build
@@ -171,8 +179,40 @@ def build_orchestration_context(
             "",
             feedback,
         ]
+    lines += _unresolved_context_lines(session, ticket, run, stage_def)
 
     return "\n".join(lines)
+
+
+def _unresolved_context_lines(
+    session: Session | None,
+    ticket: Ticket,
+    run: AgentRun,
+    stage_def: WorkflowStageDef | None,
+) -> list[str]:
+    """Visible unresolved names (persisted ∪ live), or empty when there are none."""
+    if session is None or stage_def is None:
+        return []
+    live = derive_verdict(
+        collect_signals(
+            session,
+            ticket,
+            report=None,
+            tool_outcome=None,
+            stage_def=stage_def,
+            handoff_expected=handoff_expected_for(stage_def),
+            agent_id=run.agent_id,
+        )
+    ).unresolved
+    remaining = visible_unresolved(
+        session,
+        ticket,
+        live,
+        current_stage_key=stage_def.key,
+        actor=LedgerActor(agent_id=run.agent_id, stage_key=run.stage_key),
+    )
+    status = StageReportStatus.NEEDS_REWORK if remaining else StageReportStatus.PASS
+    return unresolved_section_lines(StageVerdict(status=status, unresolved=remaining))
 
 
 def _repair_brief(session: Session | None, ticket: Ticket, run: AgentRun, stage_key: str) -> str:

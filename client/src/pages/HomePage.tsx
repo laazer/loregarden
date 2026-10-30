@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "../api/client";
+import type { ShipProbe } from "../api/types";
 import { AddToTabMenu } from "../components/AddToTabMenu";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import {
@@ -14,9 +15,9 @@ import { HomeNeedsYou } from "../components/home/HomeNeedsYou";
 import { HomeRunningNow } from "../components/home/HomeRunningNow";
 import { StudioChatComposer } from "../components/studio/StudioChat";
 import { Button } from "../components/ui/Button";
-import { ticketPath } from "../lib/appNavigation";
 import { useComposerAttachments } from "../hooks/useComposerAttachments";
 import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
+import { ticketPath, type ArtifactTab } from "../lib/appNavigation";
 import { chatPath, stashHomeBaxterFiles, stashHomeBaxterPrompt } from "../lib/homeBaxter";
 import { failedToday, needsYouRows, pendingApprovals, waitsOnPerson } from "../lib/homeNeedsYou";
 import { runningTickets } from "../lib/runningTickets";
@@ -61,6 +62,27 @@ function loadError(query: { isError: boolean; error: unknown }, what: string): s
 }
 
 /**
+ * The one line that says GitHub could not be asked, however many workspaces
+ * could not be asked.
+ *
+ * Every probe row is `unavailable` until the first reconcile tick (the ship
+ * sweep is `at_startup=False`), so on every server start this would otherwise
+ * be the same sentence once per workspace. Distinct reasons are kept — "it
+ * failed" must not collapse into one answer that hides a second cause — but
+ * they share the single line.
+ */
+function shipProbeError(probes: readonly ShipProbe[]): string | null {
+  const reasons = [
+    ...new Set(
+      probes
+        .filter((probe) => probe.listing_state === "unavailable")
+        .map((probe) => describeError(probe.error, "request failed")),
+    ),
+  ];
+  return reasons.length === 0 ? null : `Couldn't load ships: ${reasons.join("; ")}`;
+}
+
+/**
  * Home answers, in order: what needs me, what is running, what just happened.
  *
  * It used to lead with a composer and eight equal tiles, the largest of them
@@ -99,6 +121,12 @@ export function HomePage() {
     queryFn: () => api.runs(undefined, RUN_LIMIT),
     refetchInterval: 15_000,
   });
+  const shipsQ = useQuery({
+    queryKey: ["done-ticket-ship", workspaceParam ?? "all"],
+    queryFn: () => api.doneTicketShip(workspaceParam),
+    refetchInterval: 15_000,
+    placeholderData: (previous) => previous,
+  });
   const statusQ = useTicketStatusSummary();
   const queue = useQueueStatus();
 
@@ -107,22 +135,37 @@ export function HomePage() {
   const ticketsById = useMemo(() => new Map(tickets.map((t) => [t.id, t])), [tickets]);
   const runs = useMemo(() => runsQ.data ?? [], [runsQ.data]);
   const failures = useMemo(() => failedToday(runs, now, RUN_LIMIT), [runs, now]);
+  const shipProbes = useMemo(() => {
+    const probes = shipsQ.data?.probes ?? [];
+    return workspaceParam ? probes.filter((probe) => probe.workspace_slug === workspaceParam) : probes;
+  }, [shipsQ.data, workspaceParam]);
+  const shipViolations = useMemo(
+    () => shipProbes.flatMap((probe) => probe.violations),
+    [shipProbes],
+  );
   const rows = useMemo(
-    () => needsYouRows(pending, failures.runs, tickets),
-    [pending, failures.runs, tickets],
+    () => needsYouRows(pending, failures.runs, tickets, shipViolations),
+    [pending, failures.runs, tickets, shipViolations],
   );
   const running = runningTickets(queue.activeRuns);
   const status = statusQ.data;
 
-  const needYou = pending.length + tickets.filter(waitsOnPerson).length;
-  const needsLoading = approvalsQ.isLoading || ticketsQ.isLoading || runsQ.isLoading;
+  const needYou =
+    pending.length + tickets.filter(waitsOnPerson).length + new Set(shipViolations.map((v) => v.ticket_id)).size;
+  const needsLoading = approvalsQ.isLoading || ticketsQ.isLoading || runsQ.isLoading || shipsQ.isLoading;
   const needsErrors = [
     loadError(approvalsQ, "approvals"),
     loadError(ticketsQ, "tickets"),
     loadError(runsQ, "recent runs"),
+    shipsQ.isError
+      ? `Couldn't load ships: ${describeError(shipsQ.error, "request failed")}`
+      : shipProbeError(shipProbes),
   ].filter((line): line is string => line !== null);
+  const needsStatus = shipProbes.some((probe) => probe.listing_state === "incomplete")
+    ? ["Ship list may be incomplete — GitHub did not return every PR."]
+    : [];
 
-  const openTicket = (ticketId: string) => peekTicket(ticketId);
+  const openTicket = (ticketId: string, tab?: ArtifactTab) => peekTicket(ticketId, tab);
   const openInbox = () => setInboxOpen(true);
 
   const sendToBaxter = (text: string) => {
@@ -221,6 +264,7 @@ export function HomePage() {
             rows={rows}
             loading={needsLoading}
             error={needsErrors}
+            status={needsStatus}
             onOpenApproval={(ticketId) => {
               openInbox();
               if (ticketId) navigate(ticketPath(ticketId));

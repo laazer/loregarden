@@ -98,6 +98,11 @@ def _mergeable(
         raise MergeRefused(f"Could not ask GitHub about the PR first: {current.error}")
     if pr is None or pr.number != number:
         raise MergeRefused(f"#{number} is no longer this ticket's pull request; refresh the tab")
+    if current.is_tree_pull_request:
+        raise MergeRefused(
+            f"#{number} is the pull request for {current.branch}, this ticket's tree; "
+            "it merges when that tree's root completes, not from here."
+        )
     if pr.head_sha != head_sha:
         raise MergeRefused(
             f"#{number} has new commits since you looked; refresh and check them before merging"

@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     PrListingState,
     StageStatus,
     TicketState,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services import (
@@ -37,14 +38,21 @@ from loregarden.services import (
 from loregarden.services import publish_tree as publish_tree_module
 from loregarden.services.ci_checks import OpenPullRequest, rollup
 from loregarden.services.ci_poll_scheduler import poll_workspace
-from loregarden.services.ci_service import AutoFixRefusal, CIService
+from loregarden.services.ci_service import AutoFixRefusal, CIService, _reachable_branches
 from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.ticket_pull_request import GhCheck
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
-from tests.worktree_helpers import at_terminal_stage, commit_on, git, make_repo, make_ticket
+from tests.worktree_helpers import (
+    at_terminal_stage,
+    commit_on,
+    git,
+    make_repo,
+    make_ticket,
+    make_tree_ticket,
+)
 
 JOB_URL = "https://github.com/o/r/actions/runs/11/job/22"
 FAILING = {
@@ -622,3 +630,155 @@ def test_a_manual_trigger_with_nothing_failing_says_why(client, session, workspa
     res = client.post(f"/api/ci/trigger-auto-fix/{done_ticket.id}")
     assert res.status_code == 409
     assert res.json()["detail"]
+
+
+# -- Reachable branches -------------------------------------------------------------
+
+
+def test_a_tree_member_reaches_its_tree_s_integration_branch_not_its_own_name(
+    session, workspace, done_ticket
+):
+    root = done_ticket
+    child = make_tree_ticket(session, workspace, "lg-ci-1-child", parent=root)
+
+    reachable = _reachable_branches(session, child)
+
+    assert reachable == (child.branch, f"integration/{root.external_id}")
+    assert f"integration/{child.external_id}" not in reachable
+
+
+def test_a_subtree_root_s_reachable_branches_are_unchanged(session, workspace, done_ticket):
+    reachable = _reachable_branches(session, done_ticket)
+
+    assert reachable == (done_ticket.branch, f"integration/{done_ticket.external_id}")
+
+
+def test_a_ticket_with_no_landing_tree_reaches_only_its_own_branch(session):
+    """AC5 — when ``subtree_root`` raises, the fallback is its own branch alone.
+
+    An initiative roots no landing tree, so ``target_branch._refuse_initiative``
+    raises ``TargetBranchError``. No integration branch may appear in the result:
+    a repair turn has nowhere else it could commit.
+    """
+    # An initiative carries no workspace_id: ck_tickets_workspace_binding holds
+    # workspace_id IS NULL iff work_item_type is initiative.
+    initiative = make_tree_ticket(session, None, "lg-ci-1-initiative", kind=WorkItemType.INITIATIVE)
+
+    reachable = _reachable_branches(session, initiative)
+
+    assert reachable == (initiative.branch,)
+    assert not [branch for branch in reachable if branch.startswith("integration/")]
+
+
+def test_a_grandchild_reaches_the_tree_s_root_not_its_own_parent(session, workspace, done_ticket):
+    """AC6 — the root walk goes past one level.
+
+    ``subtree_root`` walks ``parent_ticket_id`` to arbitrary depth, so a
+    grandchild's integration branch is still named after the tree's root, never
+    after the intermediate child it hangs from.
+    """
+    root = done_ticket
+    child = make_tree_ticket(session, workspace, "lg-ci-1-depth-child", parent=root)
+    grandchild = make_tree_ticket(session, workspace, "lg-ci-1-depth-grandchild", parent=child)
+
+    reachable = _reachable_branches(session, grandchild)
+
+    assert reachable == (grandchild.branch, f"integration/{root.external_id}")
+    assert f"integration/{child.external_id}" not in reachable
+
+
+def test_the_own_branch_is_resolved_not_read_off_the_row(session, workspace, done_ticket):
+    """A member whose ``branch`` column is blank still names a branch.
+
+    ``_reachable_branches`` resolves the first element through
+    ``resolve_ticket_branch``, so a row that never had its branch written falls
+    back to the derived name. Reading ``ticket.branch`` directly would hand a
+    repair turn the empty string, which matches no PR head and refuses the turn
+    with ``UNREACHABLE_BRANCH`` for a second spelling reason.
+    """
+    root = done_ticket
+    child = make_tree_ticket(session, workspace, "lg-ci-1-unbranched", parent=root)
+    child.branch = ""
+    child.milestone = "Ship Phase"
+    session.add(child)
+    session.commit()
+    session.refresh(child)
+
+    reachable = _reachable_branches(session, child)
+
+    assert reachable == (f"ship-phase/{child.external_id}", f"integration/{root.external_id}")
+    assert "" not in reachable
+
+
+def test_a_task_directly_under_an_initiative_reaches_only_its_own_branch(
+    session, workspace, done_ticket
+):
+    """AC5's second named trigger: the hierarchy disallows the parent link.
+
+    ``subtree_root`` reaches the initiative, asks the hierarchy whether a task
+    may sit there, and ``_require_initiative_child`` raises
+    ``TargetBranchError`` because ``VALID_HIERARCHY`` allows only milestones,
+    features and bugs under an initiative. The fallback must be the own branch
+    alone — not the initiative's name, which roots no landing tree.
+    """
+    initiative = make_tree_ticket(
+        session, None, "lg-ci-1-stray-initiative", kind=WorkItemType.INITIATIVE
+    )
+    task = make_tree_ticket(
+        session, workspace, "lg-ci-1-stray-task", parent=initiative, kind=WorkItemType.TASK
+    )
+
+    reachable = _reachable_branches(session, task)
+
+    assert reachable == (task.branch,)
+    assert not [branch for branch in reachable if branch.startswith("integration/")]
+
+
+def test_the_walk_stops_below_an_initiative_it_is_allowed_under(session, workspace, done_ticket):
+    """The tree's root is the milestone, never the initiative above it.
+
+    An initiative spans workspaces and orchestrates nothing, so the walk stops
+    at the highest ticket below it. A member under a milestone that is itself
+    filed under an initiative must still reach ``integration/<milestone>``:
+    neither the initiative's name (which would collect every milestone's work)
+    nor a refusal (the tree lands perfectly well).
+    """
+    initiative = make_tree_ticket(
+        session, None, "lg-ci-1-parent-initiative", kind=WorkItemType.INITIATIVE
+    )
+    milestone = make_tree_ticket(
+        session,
+        workspace,
+        "lg-ci-1-filed-milestone",
+        parent=initiative,
+        kind=WorkItemType.MILESTONE,
+    )
+    feature = make_tree_ticket(
+        session, workspace, "lg-ci-1-filed-feature", parent=milestone, kind=WorkItemType.FEATURE
+    )
+
+    reachable = _reachable_branches(session, feature)
+
+    assert reachable == (feature.branch, f"integration/{milestone.external_id}")
+    assert f"integration/{initiative.external_id}" not in reachable
+
+
+def test_a_parent_cycle_does_not_hang_or_name_the_child(session, workspace, done_ticket):
+    """A cycle in ``parent_ticket_id`` terminates at the higher ticket.
+
+    ``subtree_root`` carries a ``seen`` set precisely so a corrupted hierarchy
+    cannot spin forever; a repair turn blocking on a database walk would be
+    indistinguishable from a hung agent. The walk must stop on the second visit
+    and name the ticket it had climbed to, not the one it started from.
+    """
+    root = done_ticket
+    child = make_tree_ticket(session, workspace, "lg-ci-1-cycle-child", parent=root)
+    root.parent_ticket_id = child.id
+    session.add(root)
+    session.commit()
+    session.refresh(root)
+
+    reachable = _reachable_branches(session, child)
+
+    assert reachable == (child.branch, f"integration/{root.external_id}")
+    assert f"integration/{child.external_id}" not in reachable

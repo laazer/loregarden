@@ -132,6 +132,41 @@ def rollup(checks: list[GhCheck]) -> CIStatus:
     return CIStatus.PASSING
 
 
+def required_checks(checks: list[GhCheck]) -> list[GhCheck]:
+    """The checks the base branch's protection requires, as far as the read knows.
+
+    `isRequired` needs a pull request number, so a repository-wide listing
+    cannot ask for it and every check comes back None. All-None therefore means
+    "nobody said", and the conservative reading of that is "all of them": it
+    over-reports a failing optional check rather than hiding a failing required
+    one. All-False is different — that is GitHub saying none is required.
+    """
+    # lg-verdict-outcome-1637: on the listing path this is always empty, because
+    # `isRequired` cannot be asked for there. The fallback below is why that is
+    # safe rather than silent.
+    flagged = [check for check in checks if check.is_required is True]
+    if flagged:
+        return flagged
+    if checks and all(check.is_required is None for check in checks):
+        return checks
+    return []
+
+
+def required_rollup(checks: list[GhCheck]) -> CIStatus:
+    """`rollup` over the required checks only.
+
+    No checks at all is PENDING, as in `rollup`: a commit nothing has judged
+    yet has not passed. Checks that exist but none of which is required is
+    PASSING, not the empty PENDING: no required check is failing or pending.
+    """
+    if not checks:
+        return rollup(checks)
+    required = required_checks(checks)
+    if not required:
+        return CIStatus.PASSING
+    return rollup(required)
+
+
 def failing_checks(checks: list[GhCheck]) -> list[GhCheck]:
     return [check for check in checks if check_outcome(check) is PullRequestCheckOutcome.FAILING]
 

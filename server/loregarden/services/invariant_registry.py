@@ -26,6 +26,9 @@ from loregarden.services.checkouts_without_their_branch import checkouts_without
 from loregarden.services.cleaned_worktree_rows import cleaned_rows_with_their_checkout
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
+from loregarden.services.done_ticket_ship import (
+    violations_for_invariant as _recorded_ship_violations,
+)
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
@@ -51,6 +54,12 @@ from loregarden.services.tree_publish_scheduler import (
     published_cards_held,
 )
 from loregarden.services.unasked_awaits import block_unasked_awaits, unasked_awaits
+from loregarden.services.unresolved_ledger import (
+    detect_unaudited_open_shrink as _detect_open_shrink_findings,
+)
+from loregarden.services.unresolved_ledger import (
+    repair_unaudited_open_shrink as _repair_open_shrink_findings,
+)
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -492,6 +501,41 @@ AWAITING_STAGES_ARE_ASKED = Invariant(
 )
 
 
+def _detect_unaudited_open_shrink(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=item.ticket_id,
+            ticket_id=item.ticket_id,
+            entered_at=item.entered_at,
+            detail=item.detail,
+        )
+        for item in _detect_open_shrink_findings(session)
+    ]
+
+
+def _repair_unaudited_open_shrink(session: Session, violations: Sequence[Violation]) -> int:
+    return _repair_open_shrink_findings(
+        session, [item.ticket_id for item in violations if item.ticket_id]
+    )
+
+
+UNRESOLVED_OPEN_SHRINK_IS_AUDITED = Invariant(
+    name="unresolved_open_shrink_is_audited",
+    ticket="lg-verdict-outcome-136",
+    statement=(
+        "a name present on the previous unresolved_open snapshot and absent from the "
+        "latest must have an unresolved_clear or unresolved_waiver row between them"
+    ),
+    detect=_detect_unaudited_open_shrink,
+    repair=_repair_unaudited_open_shrink,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 10, 28),
+    prevented_by=(
+        "server/tests/test_stage_verdict_writers.py::test_every_unresolved_writer_persists"
+    ),
+)
+
+
 LANDED_WORK_IS_COMMITTED = Invariant(
     name="landed_work_is_committed",
     ticket="lg-milestone-that-1314",
@@ -711,6 +755,34 @@ HELD_REPAIRS_READ_IN_PROGRESS = Invariant(
 )
 
 
+DONE_TICKET_SHIP_IS_OBSERVABLE = Invariant(
+    # Spelled out, not imported: `pr_fix_coverage_check` reads names off this
+    # file without importing it. test_done_ticket_ship finds it by
+    # `done_ticket_ship.INVARIANT_NAME`, so the two cannot drift.
+    name="done_ticket_ship_is_observable",
+    ticket="lg-verdict-outcome-1630",
+    statement=(
+        "no done ticket's carrying pull request is open with a failing or pending required "
+        "check, and no done ticket's published branch never reached a remote"
+    ),
+    # The recorded probe, not a live `gh` pass: `reconciliation` asks GitHub once
+    # per tick through `done_ticket_ship`, and a probe that could not ask
+    # contributes nothing here rather than reading as every ship green.
+    detect=_recorded_ship_violations,
+    repair=None,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 10, 28),
+    expected_because=(
+        "a ticket's state is derived from its stage map alone, so done is reached before any "
+        "remote check has run; the gate stage grades a local worktree"
+    ),
+    unrepaired_action=(
+        "Open the pull request the finding names and fix or merge it; if the finding says the "
+        "branch never reached remote, push the published branch from the ticket's PR tab."
+    ),
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     HELD_REPAIRS_READ_IN_PROGRESS,
@@ -730,4 +802,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CHECKOUTS_KEEP_THEIR_BRANCH,
+    UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
+    DONE_TICKET_SHIP_IS_OBSERVABLE,
 )

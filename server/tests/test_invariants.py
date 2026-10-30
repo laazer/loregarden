@@ -94,6 +94,21 @@ def test_every_defect_invariant_points_at_a_prevention_test_that_exists(invarian
     assert name in _test_functions(file), f"{invariant.name}: {path} has no {name}"
 
 
+def test_unresolved_open_shrink_is_audited_is_registered():
+    """136 R12. DEFECT invariant; prevented_by is the writer census; scheduled once."""
+    invariant = next(
+        item for item in INVARIANTS if item.name == "unresolved_open_shrink_is_audited"
+    )
+    assert invariant.ticket == "lg-verdict-outcome-136"
+    assert invariant.reentry is InvariantReentry.DEFECT
+    assert invariant.prevented_by == (
+        "server/tests/test_stage_verdict_writers.py::test_every_unresolved_writer_persists"
+    )
+    assert invariant.repair is not None
+    scheduled = [step.name for step in PERIODIC_STEPS]
+    assert scheduled.count("unresolved_open_shrink_is_audited") == 1
+
+
 def test_a_defect_invariant_with_no_prevention_test_is_refused():
     with pytest.raises(ValueError, match="prevented_by"):
         _invariant(InvariantReentry.DEFECT, prevented_by="")

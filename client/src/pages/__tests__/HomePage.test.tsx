@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api, type Approval, type TicketSummary } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
+import { peekTicket } from "../../state/ticketPeekStore";
+import { useUiStore } from "../../state/uiStore";
 import { HomePage } from "../HomePage";
 
 jest.mock("../../api/client", () => {
@@ -17,11 +19,32 @@ jest.mock("../../api/client", () => {
       ticketStatusSummary: jest.fn(),
       studioWorkflows: jest.fn(),
       runs: jest.fn(),
+      doneTicketShip: jest.fn(),
+      monitorFindings: jest.fn(),
     },
   };
 });
 
-const mockedApi = api as jest.Mocked<typeof api>;
+jest.mock("../../state/ticketPeekStore", () => ({
+  ...jest.requireActual("../../state/ticketPeekStore"),
+  peekTicket: jest.fn(),
+}));
+
+const mockedApi = api as jest.Mocked<typeof api> & { doneTicketShip: jest.Mock };
+const mockedPeek = peekTicket as jest.MockedFunction<typeof peekTicket>;
+
+const EMPTY_SHIPS = {
+  probes: [
+    {
+      workspace_id: "ws",
+      workspace_slug: "loregarden",
+      probed_at: "2026-10-28T00:00:00Z",
+      listing_state: "complete",
+      error: null,
+      violations: [],
+    },
+  ],
+};
 
 const EMPTY_STATUS = {
   backlog: 0,
@@ -81,6 +104,9 @@ describe("HomePage", () => {
     mockedApi.ticketStatusSummary.mockResolvedValue(EMPTY_STATUS);
     mockedApi.studioWorkflows.mockResolvedValue([]);
     mockedApi.runs.mockResolvedValue([]);
+    mockedApi.doneTicketShip.mockResolvedValue(EMPTY_SHIPS);
+    mockedPeek.mockClear();
+    useUiStore.getState().setWorkspace("all");
   });
 
   function approval(overrides: Partial<Approval> = {}): Approval {
@@ -221,7 +247,312 @@ describe("HomePage", () => {
       renderHome();
 
       const section = await screen.findByRole("region", { name: "Needs you" });
-      expect(await within(section).findByText(/Nothing needs you/)).toBeInTheDocument();
+      expect(
+        await within(section).findByText(
+          "Nothing needs you. Approvals, runs that failed today, tickets waiting on a person, and finished tickets whose ship is not green show up here.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("withholds the empty copy and shows … until the ship probe returns", async () => {
+      mockedApi.doneTicketShip.mockReturnValue(new Promise(() => {}));
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(within(section).getByText("…")).toBeInTheDocument();
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+      expect(within(section).queryAllByRole("button", { name: /Ship/ })).toHaveLength(0);
+    });
+
+    it("lists a 1624-shaped failing ship and peeks the done ticket on the PR tab", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            ...EMPTY_SHIPS.probes[0],
+            violations: [
+              {
+                ticket_id: "t-1624",
+                external_id: "lg-living-map-1624",
+                title: "Map the hive",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: ["Server (Python)", "Client (TypeScript)"],
+                carrying_branch: "integration/lg-living-map-1618",
+                ci_run_result: null,
+              },
+            ],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      const row = await within(section).findByRole("button", {
+        name: /Map the hive.*PR #733 failing/,
+      });
+      expect(row).toHaveTextContent("Ship");
+      expect(row).toHaveTextContent("PR #733 failing · Server (Python), Client (TypeScript)");
+      expect(row).toHaveTextContent("Open");
+      expect(within(section).getByText("1 ship")).toBeInTheDocument();
+      fireEvent.click(row);
+      expect(mockedPeek).toHaveBeenCalledWith("t-1624", "pr");
+    });
+
+    it("adds unique ship-broken tickets to need you even when they group to one row", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            ...EMPTY_SHIPS.probes[0],
+            violations: [
+              {
+                ticket_id: "id-z",
+                external_id: "lg-ship-z",
+                title: "Later",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: [],
+                carrying_branch: "integration/x",
+                ci_run_result: null,
+              },
+              {
+                ticket_id: "id-a",
+                external_id: "lg-ship-a",
+                title: "Earlier",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: [],
+                carrying_branch: "integration/x",
+                ci_run_result: null,
+              },
+            ],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const glance = screen.getByLabelText("At a glance");
+      const kpi = (label: string) =>
+        within(glance).getByText(label).parentElement?.querySelector("dd") as HTMLElement;
+      await waitFor(() => expect(kpi("need you")).toHaveTextContent("2"));
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      const row = await within(section).findByRole("button", { name: /PR #733 failing/ });
+      expect(row).toHaveTextContent("×2");
+      expect(within(section).getByText("2 ships")).toBeInTheDocument();
+      fireEvent.click(row);
+      expect(mockedPeek).toHaveBeenCalledWith("id-a", "pr");
+    });
+
+    it("names a probe miss and keeps last-known ship rows instead of the empty copy", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            ...EMPTY_SHIPS.probes[0],
+            listing_state: "unavailable",
+            error: "gh: HTTP 401",
+            violations: [
+              {
+                ticket_id: "t-1624",
+                external_id: "lg-living-map-1624",
+                title: "Map the hive",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: ["Server (Python)", "Client (TypeScript)"],
+                carrying_branch: "integration/lg-living-map-1618",
+                ci_run_result: null,
+              },
+            ],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(await within(section).findByText(/Couldn't load ships: gh: HTTP 401/)).toBeInTheDocument();
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+      expect(
+        within(section).getByRole("button", { name: /Map the hive.*PR #733 failing/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("says GitHub could not be asked once, however many workspaces could not be asked", async () => {
+      // Every workspace's probe row is unavailable until the first reconcile
+      // tick, which is the state on every server start. Five identical lines
+      // (and five colliding React keys) is what that used to render.
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: ["loregarden", "blobert", "lore-eden", "loremaker", "scratch"].map((slug) => ({
+          ...EMPTY_SHIPS.probes[0],
+          workspace_id: `ws-${slug}`,
+          workspace_slug: slug,
+          listing_state: "unavailable" as const,
+          error: "Ship probe has not run yet",
+          violations: [],
+        })),
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      await waitFor(() =>
+        expect(
+          within(section).getAllByText("Couldn't load ships: Ship probe has not run yet"),
+        ).toHaveLength(1),
+      );
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it("keeps a second workspace's different reason on the one ships line", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            ...EMPTY_SHIPS.probes[0],
+            listing_state: "unavailable" as const,
+            error: "gh: HTTP 401",
+            violations: [],
+          },
+          {
+            ...EMPTY_SHIPS.probes[0],
+            workspace_id: "ws-2",
+            workspace_slug: "blobert",
+            listing_state: "unavailable" as const,
+            error: "ls-remote failed",
+            violations: [],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(
+        await within(section).findByText("Couldn't load ships: gh: HTTP 401; ls-remote failed"),
+      ).toBeInTheDocument();
+    });
+
+    it("says the ship list may be incomplete without hiding known reds", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            ...EMPTY_SHIPS.probes[0],
+            listing_state: "incomplete",
+            error: null,
+            violations: [
+              {
+                ticket_id: "t-1624",
+                external_id: "lg-living-map-1624",
+                title: "Map the hive",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: [],
+                carrying_branch: "integration/lg-living-map-1618",
+                ci_run_result: null,
+              },
+            ],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(
+        await within(section).findByText("Ship list may be incomplete — GitHub did not return every PR."),
+      ).toBeInTheDocument();
+      expect(within(section).queryByText(/Couldn't load ships/)).not.toBeInTheDocument();
+      expect(within(section).getByRole("button", { name: /Map the hive/ })).toBeInTheDocument();
+      expect(
+        within(section).getByRole("status", {
+          name: /Ship list may be incomplete — GitHub did not return every PR/,
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("treats a failed ships GET as unavailable and does not show the empty copy", async () => {
+      mockedApi.doneTicketShip.mockRejectedValue(new Error("network down"));
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(await within(section).findByText(/Couldn't load ships: network down/)).toBeInTheDocument();
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    });
+
+    it("asks doneTicketShip with the Home workspace slug, and with nothing when all", async () => {
+      const first = renderHome();
+      await screen.findByRole("region", { name: "Needs you" });
+      expect(mockedApi.doneTicketShip).toHaveBeenCalled();
+      expect(mockedApi.doneTicketShip.mock.calls.some((call) => call[0] === "loregarden")).toBe(false);
+      first.unmount();
+
+      mockedApi.doneTicketShip.mockClear();
+      useUiStore.getState().setWorkspace("loregarden");
+      renderHome();
+      await waitFor(() => expect(mockedApi.doneTicketShip).toHaveBeenCalledWith("loregarden"));
+    });
+
+    it("unions probes on all workspaces and still names one workspace's miss", async () => {
+      mockedApi.doneTicketShip.mockResolvedValue({
+        probes: [
+          {
+            workspace_id: "ws-a",
+            workspace_slug: "loregarden",
+            probed_at: "2026-10-28T00:00:00Z",
+            listing_state: "complete",
+            error: null,
+            violations: [
+              {
+                ticket_id: "t-1624",
+                external_id: "lg-living-map-1624",
+                title: "Map the hive",
+                reason: "failing",
+                pr_number: 733,
+                pr_url: "https://github.com/o/r/pull/733",
+                check_names: ["Server (Python)", "Client (TypeScript)"],
+                carrying_branch: "integration/lg-living-map-1618",
+                ci_run_result: null,
+              },
+            ],
+          },
+          {
+            workspace_id: "ws-b",
+            workspace_slug: "blobert",
+            probed_at: "2026-10-28T00:00:00Z",
+            listing_state: "unavailable",
+            error: "gh down",
+            violations: [],
+          },
+        ],
+      });
+
+      renderHome();
+
+      const section = await screen.findByRole("region", { name: "Needs you" });
+      expect(
+        await within(section).findByRole("button", { name: /Map the hive.*PR #733 failing/ }),
+      ).toBeInTheDocument();
+      expect(await within(section).findByText(/Couldn't load ships: gh down/)).toBeInTheDocument();
+      expect(within(section).queryByText(/Nothing needs you/)).not.toBeInTheDocument();
+    });
+
+    it("does not fetch done tickets or monitor findings for the ship list", async () => {
+      renderHome();
+      await screen.findByRole("region", { name: "Needs you" });
+      expect(mockedApi.doneTicketShip).toHaveBeenCalled();
+      const ticketCalls = mockedApi.tickets.mock.calls as unknown as unknown[][];
+      for (const args of ticketCalls) {
+        const params = args[0] as { state?: string[] } | undefined;
+        expect(params?.state ?? []).not.toContain("done");
+      }
+      expect(mockedApi.monitorFindings).not.toHaveBeenCalled();
     });
 
     it("says which source failed rather than showing an empty list", async () => {

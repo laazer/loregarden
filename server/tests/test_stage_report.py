@@ -218,6 +218,102 @@ def test_a_bare_string_is_not_a_criteria_list():
     assert report.unmet_criteria == []
 
 
+def test_waivers_are_parsed():
+    """136 R5. Producer waiver sidecar is StageReport.waivers, parsed like unmet_criteria."""
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 0.9,'
+        ' "waivers": [{"name": "handoff:test_suite_complete incomplete",'
+        ' "reason": "accepted the remaining gap"}]}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert len(report.waivers) == 1
+    assert report.waivers[0].name == "handoff:test_suite_complete incomplete"
+    assert report.waivers[0].reason == "accepted the remaining gap"
+
+
+def test_empty_reason_waiver_items_never_reach_the_parsed_list():
+    """136 R5. Empty/whitespace reason items are dropped at parse, so they never reach waive()."""
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 0.9,'
+        ' "waivers": [{"name": "handoff:X incomplete", "reason": "  "},'
+        ' {"name": "handoff:Y incomplete", "reason": ""}]}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert report.waivers == []
+
+
+def test_a_malformed_waivers_field_does_not_discard_report_status():
+    """136 R5 / R11. A sidecar the agent got wrong must not take the status down with it."""
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "fail", "confidence": 1.0, "reroute_to_stage": null,'
+        ' "reroute_context": "x", "waivers": "not a list"}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "fail"
+    assert report.waivers == []
+
+
+def test_a_null_waivers_field_does_not_discard_report_status():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 0.9, "waivers": null}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert report.waivers == []
+
+
+def test_waivers_as_a_list_of_strings_does_not_discard_report_status():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "fail", "confidence": 1.0,'
+        ' "waivers": ["handoff:test_suite_complete incomplete"]}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "fail"
+    assert report.waivers == []
+
+
+def test_a_waiver_item_missing_reason_never_reaches_the_parsed_list():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 0.9,'
+        ' "waivers": [{"name": "handoff:test_suite_complete incomplete"}]}\n'
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert report.waivers == []
+
+
+def test_mixed_valid_and_malformed_waiver_items_keep_the_valid_ones():
+    report = parse_stage_report(
+        "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+        '{"status": "pass", "confidence": 0.9,'
+        ' "waivers": ['
+        '{"name": "handoff:test_suite_complete incomplete", "reason": "catalog item retired"},'
+        '{"name": "handoff:test_all_runnable incomplete"},'
+        '"not an object"'
+        "]}\n"
+        "<<<END_STAGE_REPORT>>>"
+    )
+    assert report is not None
+    assert report.status == "pass"
+    assert len(report.waivers) == 1
+    assert report.waivers[0].name == "handoff:test_suite_complete incomplete"
+    assert report.waivers[0].reason == "catalog item retired"
+
+
 def test_a_malformed_criteria_field_costs_the_report_nothing():
     """The verdict is the one thing this parser exists to recover. A field an
     agent got wrong must not take the status down with it."""
@@ -255,6 +351,19 @@ def test_the_contract_schema_shows_the_field_it_asks_for():
     text = module.read_text(encoding="utf-8")
     schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
     assert "unmet_criteria" in schema_line, "the schema omits a field the prose demands"
+
+
+def test_the_contract_schema_shows_the_waivers_sidecar():
+    """136 R5. Producer waiver is StageReport.waivers; the contract schema must name it."""
+    from pathlib import Path
+
+    module = (
+        Path(__file__).resolve().parents[2]
+        / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
+    )
+    text = module.read_text(encoding="utf-8")
+    schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
+    assert "waivers" in schema_line, "producer waiver sidecar is missing from the contract schema"
 
 
 @pytest.mark.parametrize(

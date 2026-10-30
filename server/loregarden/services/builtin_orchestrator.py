@@ -464,6 +464,10 @@ class BuiltinOrchestrator:
 
         if status_after == StageStatus.AWAITING:
             return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+        if status_after != StageStatus.DONE:
+            # A write-path veto left this stage not DONE (PENDING, BLOCKED, …).
+            # Do not run transition gates and do not resolve linear next as pass.
+            return None
 
         next_route = StateMachine.resolve_next_stage_key(
             stages,

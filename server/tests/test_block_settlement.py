@@ -315,6 +315,8 @@ BLOCK_WRITERS: dict[str, str] = {
     ),
     "services/landing.py:_block": "delegates: artifact_service.block_ticket_for_unresolved_blocker",
     "services/orchestration_callbacks.py:block_ticket": "settles",
+    # A derived BLOCKED verdict: the stage map says blocked, settled as a decision.
+    "services/orchestration_callbacks.py:complete_stage": "settles",
     "services/gate_recovery.py:_block_after_gate_failure": (
         "delegates: orchestration_callbacks.block_ticket"
     ),

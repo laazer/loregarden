@@ -290,9 +290,10 @@ def test_proof_from_an_earlier_commit_does_not_count(session_and_ticket):
     assert "real_surface" in detail
 
 
-def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_ticket):
-    """A stage opts in by declaring required_evidence, so the requirement holds
-    regardless of whether the profile runs gate commands."""
+def test_missing_proof_is_not_a_transition_gate_failure(session_and_ticket):
+    """R10. Missing required evidence is a collect_signals input, not a
+    GateDecision failure after DONE. Command gates still fail on their own.
+    The requirement still holds at derive time (test_stage_verdict.py)."""
     from loregarden.models.domain import (
         OrchestrationRun,
         StageStatus,
@@ -345,9 +346,8 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
         from_stage="implement",
         to_stage="review",
     )
-    assert decision is not GateDecision.PASS
-    # The agent is told why, so it can attach the proof and retry.
-    assert "real_surface" in (ticket.blocking_issues or "")
+    assert decision is GateDecision.PASS
+    assert "real_surface" not in (ticket.blocking_issues or "")
 
 
 def test_verify_blocks_until_it_records_a_verdict(session_and_ticket):
