@@ -38,7 +38,8 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.rework_feedback import render_rework_feedback
-from pydantic import BaseModel, ValidationError
+from loregarden.services.unresolved_ledger import visible_unresolved
+from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class ReworkPausePayload(BaseModel):
     """
 
     target_stage: str = ""
+    unresolved_names: list[str] = Field(default_factory=list)
 
 
 def rework_pause_target(approval_payload: str) -> str:
@@ -121,8 +123,14 @@ def file_rework_pause(
     `subtree_auto_run.resolve_gate_if_permitted` only auto-signs design-plan
     workflow gates — but a rework pause must never share that kind, or a future
     unattended path that broadens gate sign-off would walk straight through the
-    cap that exists to stop a looping ticket. The kind is the guard.
+    cap that exists to stop a looping ticket.     The kind is the guard.
     """
+    names = [
+        item.name for item in visible_unresolved(session, ticket, (), current_stage_key=stage_key)
+    ]
+    if names:
+        listed = "\n".join(f"- `{name}`" for name in names)
+        message = f"{message}\n\nUnresolved items still open:\n{listed}"
     approval = Approval(
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
@@ -133,14 +141,18 @@ def file_rework_pause(
         impact=_pause_impact(session, ticket, target_stage=target_stage, message=message),
         checklist_json=json.dumps(
             [
-                f"Approve to accept '{stage_key}' as passed and carry on.",
+                "Approve with a written reason to waive surviving named items and accept "
+                "the stage as passed.",
+                "Retry without waiving to reset the rework budget, keep the names, and "
+                "re-dispatch (does not mark DONE).",
                 f"Reject to send the work back — to '{target_stage}' by default, or to the "
-                "stage you name under Routing.",
-                "Either resolution gives the loop its budget back, so the next round is not "
-                "paused again for this same reason.",
+                "stage you name under Routing. Names stay.",
+                "Either resolution gives the loop its budget back.",
             ]
         ),
-        tool_input_json=ReworkPausePayload(target_stage=target_stage).model_dump_json(),
+        tool_input_json=ReworkPausePayload(
+            target_stage=target_stage, unresolved_names=names
+        ).model_dump_json(),
         status=ApprovalStatus.PENDING,
     )
     session.add(approval)

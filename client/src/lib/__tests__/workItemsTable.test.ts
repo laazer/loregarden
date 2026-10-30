@@ -74,6 +74,40 @@ describe("needsMeReason", () => {
     expect(needsMeReason(node("b", { blocked_on: "tickets" }))).toBeNull();
     expect(needsMeReason(node("c", { state: "done", workflow_stage_status: "awaiting" }))).toBeNull();
   });
+
+  it("names the PR for a 1624-shaped done ticket whose ship is in the map", () => {
+    const done = node("1624", {
+      id: "t-1624",
+      external_id: "lg-living-map-1624",
+      state: "done",
+      title: "Map the hive",
+    });
+    const ships = new Map([
+      [
+        "t-1624",
+        {
+          reason: "failing" as const,
+          pr_number: 733,
+          pr_url: "https://github.com/o/r/pull/733",
+        },
+      ],
+    ]);
+    expect(needsMeReason(done, undefined, ships)).toBe("PR #733 failing");
+    expect(needsMeReason(done)).toBeNull();
+    expect(needsMeReason(node("plain", { state: "done" }), undefined, ships)).toBeNull();
+    expect(needsMeReason(node("w", { state: "wont_do" }), undefined, ships)).toBeNull();
+  });
+
+  it("says pending or Never reached remote from the ships map", () => {
+    const pending = node("p", { state: "done" });
+    const missing = node("m", { state: "done" });
+    const ships = new Map([
+      ["p", { reason: "pending" as const, pr_number: 12, pr_url: "https://github.com/o/r/pull/12" }],
+      ["m", { reason: "never_reached_remote" as const, pr_number: null, pr_url: null }],
+    ]);
+    expect(needsMeReason(pending, undefined, ships)).toBe("PR #12 pending");
+    expect(needsMeReason(missing, undefined, ships)).toBe("Never reached remote");
+  });
 });
 
 describe("views", () => {
@@ -116,6 +150,30 @@ describe("views", () => {
     expect(parseWorkItemsView(null)).toBe("needs_me");
     expect(parseWorkItemsView("bogus")).toBe("needs_me");
     expect(parseWorkItemsView("open")).toBe("open");
+  });
+
+  it("looks up ships by ticket id, not external_id", () => {
+    const done = node("1624", {
+      id: "t-1624",
+      external_id: "lg-living-map-1624",
+      state: "done",
+    });
+    const byExternal = new Map([
+      ["lg-living-map-1624", { reason: "failing" as const, pr_number: 733, pr_url: "https://x" }],
+    ]);
+    const byId = new Map([["t-1624", { reason: "failing" as const, pr_number: 733, pr_url: "https://x" }]]);
+    expect(needsMeReason(done, undefined, byExternal)).toBeNull();
+    expect(needsMeReason(done, undefined, byId)).toBe("PR #733 failing");
+  });
+
+  it("threads ships so a done broken-ship ticket counts in Needs me", () => {
+    const done = node("1624", { id: "t-1624", state: "done" });
+    const ships = new Map([["t-1624", { reason: "failing" as const, pr_number: 733, pr_url: "https://x" }]]);
+    const shipped = flattenWorkItems([done]);
+    expect(inView("needs_me", done, none, ships)).toBe(true);
+    expect(inView("needs_me", done, none)).toBe(false);
+    expect(viewCounts(shipped, none, ships).needs_me).toBe(1);
+    expect(viewCounts(shipped, none).needs_me).toBe(0);
   });
 });
 

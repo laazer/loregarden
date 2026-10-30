@@ -8,6 +8,7 @@ card, no block, and nothing else on record.
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 import threading
 from unittest import mock
@@ -24,15 +25,25 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services import integration_branch_health, integration_merge_agent
-from loregarden.services.github_pr_service import create_ticket_pull_request
+from loregarden.services import (
+    github_pr_service,
+    integration_branch_health,
+    integration_merge_agent,
+)
+from loregarden.services.github_pr_service import _refuse_tree_member, create_ticket_pull_request
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.integration_conflict_card import (
     conflict_card_title,
     report_integration_conflict,
 )
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
-from loregarden.services.target_branch import IntegrationConflictError, resolve_target_branch
+from loregarden.services.target_branch import (
+    IntegrationConflictError,
+    TargetBranchError,
+    landing_target,
+    resolve_target_branch,
+    subtree_root,
+)
 from loregarden.services.ticket_worktree import resolve_execution_root
 from sqlmodel import Session, select
 from tests.worktree_helpers import commit_on, git, head_branch, make_repo
@@ -83,6 +94,35 @@ def _ticket(session, workspace, external_id, *, parent=None, kind=WorkItemType.T
     session.commit()
     session.refresh(ticket)
     return ticket
+
+
+def _without_branch(message: str, branch: str) -> str:
+    """``message`` with the landing branch removed.
+
+    The branch embeds the root's slug, so a bare substring test for the root's
+    external id is satisfied by the branch name alone — it would pass for a
+    refusal that never names the root. Removing the branch first makes the
+    assertion about the root and nothing else.
+    """
+    assert branch in message
+    return message.replace(branch, "")
+
+
+def _initiative(session, external_id):
+    """An initiative, which is cross-workspace (no `workspace_id`) and roots no
+    landing tree of its own."""
+    initiative = Ticket(
+        external_id=external_id,
+        workspace_id=None,
+        title=external_id,
+        branch="",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    session.add(initiative)
+    session.commit()
+    session.refresh(initiative)
+    return initiative
 
 
 @pytest.fixture(name="tree")
@@ -225,9 +265,140 @@ def test_a_chat_turn_runs_on_the_stale_branch_instead_of_failing(session, worksp
 
 
 def test_open_pr_refuses_a_ticket_that_ships_in_its_trees_pr(session, workspace, tree):
-    _, child = tree
-    with pytest.raises(ValueError, match="integration/ms"):
+    ms, child = tree
+    with pytest.raises(ValueError, match="integration/ms") as refusal:
         create_ticket_pull_request(session, child)
+
+    # A branch name alone cannot be resolved back to a ticket
+    # (`integration_branch_for` slugs a root with no external id to eight hex
+    # characters), so the refusal has to name the root itself. The branch is
+    # removed first because it embeds the root's slug, and an occurrence inside
+    # it is not the root being named.
+    assert ms.external_id in _without_branch(str(refusal.value), BRANCH)
+
+
+def test_open_pr_refuses_a_grandchild_naming_its_trees_root_not_its_parent(session, workspace):
+    """The refusal is keyed on the tree root, which for a grandchild is neither
+    its parent nor itself — the one shape where "the root" and "the parent"
+    differ for a ticket that is not a direct member. The ids here are distinct
+    multi-word slugs so that neither name can match the message by accident.
+    """
+    root = _ticket(session, workspace, "ms-deep", kind=WorkItemType.MILESTONE)
+    member = _ticket(session, workspace, "member-deep", parent=root)
+    grandchild = _ticket(session, workspace, "leaf-deep", parent=member)
+
+    with pytest.raises(ValueError) as refusal:
+        _refuse_tree_member(session, grandchild, workspace)
+
+    message = str(refusal.value)
+    assert "integration/ms-deep" in message
+    assert root.external_id in _without_branch(message, "integration/ms-deep")
+    assert member.external_id not in message
+
+
+def test_open_pr_lets_an_unroutable_landing_target_propagate(session, workspace):
+    """C4: `TargetBranchError` out of the landing walk is not caught and
+    re-dressed as a refusal. An initiative roots no tree, so it has no landing
+    branch to report at all, and that is a different answer from "your work
+    ships elsewhere"."""
+    initiative = _initiative(session, "init-unroutable")
+
+    with pytest.raises(TargetBranchError):
+        _refuse_tree_member(session, initiative, workspace)
+
+
+def test_a_milestone_under_an_initiative_is_its_own_root_despite_having_a_parent(
+    session, workspace
+):
+    """`subtree_root` stops below an initiative, so a milestone under one is its
+    own landing root — the base-branch case — even though `parent_ticket_id` is
+    set. Only `root.id == ticket.id` tells this apart from `parent_ticket_id is
+    None`; a check that used the latter would wrongly refuse this milestone a
+    PR of its own."""
+    initiative = _initiative(session, "init-cross")
+    milestone = _ticket(
+        session, workspace, "ms-under-init", parent=initiative, kind=WorkItemType.MILESTONE
+    )
+
+    # Without these two the test passes under either predicate: it would prove
+    # the shape is handled, not that the shape is the divergent one.
+    assert milestone.parent_ticket_id == initiative.id
+    assert subtree_root(session, milestone).id == milestone.id
+
+    _refuse_tree_member(session, milestone, workspace)
+
+
+def test_the_refusal_reads_the_landing_walk_once_for_a_member_and_for_a_root(
+    session, workspace, tree
+):
+    """One walk, which no assertion about the outcome can see.
+
+    A body that asked twice — once for the branch, once for the root — raises
+    the same message with the same two names in it, and returns silently for
+    the same tickets, so every other test in this section is green for it. The
+    call count is the only observable difference, so it is asserted directly.
+    Both arms are counted: the early return is the arm where a second walk is
+    easiest to reintroduce, because the value it returns is discarded.
+    """
+    # Control: the name this test patches is the one the function body reads.
+    # A body calling `target_branch.landing_target` through the module would
+    # leave the patch unused and the count at zero, which the asserts below
+    # would read as "fewer walks", not as a test that measured nothing.
+    assert github_pr_service.landing_target is landing_target
+
+    ms, child = tree
+
+    with mock.patch.object(github_pr_service, "landing_target", wraps=landing_target) as walk:
+        with pytest.raises(ValueError):
+            _refuse_tree_member(session, child, workspace)
+    assert walk.call_count == 1, "a tree member's refusal walks the tree once"
+
+    with mock.patch.object(github_pr_service, "landing_target", wraps=landing_target) as walk:
+        _refuse_tree_member(session, ms, workspace)
+    assert walk.call_count == 1, "the silent return for a root walks the tree once"
+
+
+def test_the_pr_module_keeps_no_second_way_to_derive_where_a_ticket_lands(session):
+    """The three-step spelling is gone from the module, not just from the one
+    function body. `landing_target` answers all three questions, so a module
+    that still reaches for `target_branch_name`, `resolve_orchestration_profile`
+    or `subtree_root` has a second derivation of the same facts somewhere — the
+    shape this change removed, and the shape it would come back as. Checked over
+    the whole source so an attribute-style call (`target_branch.subtree_root`)
+    counts as well as an import.
+    """
+    source = inspect.getsource(github_pr_service)
+
+    assert "landing_target" in source
+    for second_derivation in (
+        "target_branch_name",
+        "resolve_orchestration_profile",
+        "subtree_root",
+    ):
+        assert second_derivation not in source, (
+            f"{second_derivation} re-derives what landing_target already returned"
+        )
+        assert not hasattr(github_pr_service, second_derivation)
+
+
+def test_a_refused_member_reaches_neither_git_nor_gh(session, workspace, tree):
+    """The refusal comes before any side effect, which is the whole point of
+    refusing: a member's branch pushed to `origin` is published whether or not
+    the PR is then opened, and nothing in the refusal path undoes it. Ordering
+    is invisible to the refusal's message, so the subprocess helpers are made
+    to fail on contact.
+    """
+    _ms, child = tree
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError(f"the refusal must come first, before {args!r}")
+
+    with (
+        mock.patch.object(github_pr_service, "run_git", _forbidden),
+        mock.patch.object(github_pr_service, "run_gh", _forbidden),
+    ):
+        with pytest.raises(ValueError, match="integration/ms"):
+            create_ticket_pull_request(session, child)
 
 
 # --- 5. the sweep gives a conflict the agent's merge turn ---------------------------

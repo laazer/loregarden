@@ -16,6 +16,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     Artifact,
+    BlockKind,
     BlockOrigin,
     DispatchSurface,
     EventType,
@@ -30,6 +31,7 @@ from loregarden.models.domain import (
     StageVerdictChannel,
     Ticket,
     TicketState,
+    UnresolvedArtifactKind,
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
@@ -55,9 +57,19 @@ from loregarden.services.run_interruption import (
     blocked_by_interruption,
 )
 from loregarden.services.run_lease import SUPERVISED
+from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
     guard_standalone_stage_dispatch,
+)
+from loregarden.services.stage_verdict import (
+    StageVerdict,
+    UnresolvedItem,
+    claim_from_tool_outcome,
+    collect_signals,
+    derive_verdict,
+    handoff_expected_for,
+    routing_outcome,
 )
 from loregarden.services.studio_routing import (
     is_prunable_stage,
@@ -66,6 +78,7 @@ from loregarden.services.studio_routing import (
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.unresolved_ledger import LedgerActor, settle_unresolved
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
@@ -74,6 +87,21 @@ from sqlmodel import Session, col, select
 
 def _orch_code() -> str:
     return f"orch_{secrets.token_hex(3)}"
+
+
+def _verdict_after_settle(
+    verdict: StageVerdict,
+    remaining: tuple[UnresolvedItem, ...],
+) -> StageVerdict:
+    """Keep settle's remaining names; a live PASS with names becomes NEEDS_REWORK."""
+    if not remaining:
+        return verdict
+    status = (
+        StageReportStatus.NEEDS_REWORK
+        if verdict.status is StageReportStatus.PASS
+        else verdict.status
+    )
+    return StageVerdict(status=status, unresolved=remaining)
 
 
 class OrchestrationCallbackService:
@@ -492,11 +520,47 @@ class OrchestrationCallbackService:
             message=blocking_issues,
         )
 
-        gate = (
-            gate_on_orchestrator_pass(
-                self.session, ticket, next(s for s in stages if s.key == stage_key)
+        stage_def = next(s for s in stages if s.key == stage_key)
+        run = self._latest_stage_run(ticket.id, stage_key)
+        report = parse_stage_report(run.stdout or "") if run else None
+        agent_id = (run.agent_id if run else "") or stage_def.agent_id
+        tool_claim = claim_from_tool_outcome(outcome)
+        claimed_reject = tool_claim is not StageReportStatus.PASS
+        verdict = derive_verdict(
+            collect_signals(
+                self.session,
+                ticket,
+                report=report,
+                tool_outcome=tool_claim,
+                stage_def=stage_def,
+                handoff_expected=handoff_expected_for(stage_def),
+                agent_id=agent_id,
             )
-            if advance and outcome == StageReportStatus.PASS
+        )
+        remaining = settle_unresolved(
+            self.session,
+            ticket,
+            verdict.unresolved,
+            LedgerActor(agent_id=agent_id, stage_key=stage_key),
+            waivers=tuple(report.waivers) if report else (),
+            current_stage_key=stage_key,
+            run_id=run.id if run else "",
+        )
+        verdict = _verdict_after_settle(verdict, remaining)
+        route = routing_outcome(verdict)
+        names = "\n".join(item.name for item in verdict.unresolved)
+        if names:
+            short_blocking_issues = record_blocking_issue(
+                self.session,
+                ticket,
+                run_id=run.id if run else None,
+                stage_key=stage_key,
+                message=names if not blocking_issues else f"{blocking_issues}\n\n{names}",
+            )
+
+        gate = (
+            gate_on_orchestrator_pass(self.session, ticket, stage_def)
+            if advance and verdict.status is StageReportStatus.PASS
             else None
         )
         if gate is not None:
@@ -504,7 +568,22 @@ class OrchestrationCallbackService:
             # the gate, and approving it advances the stage (AC-6).
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.AWAITING)
             ticket.blocking_issues = short_blocking_issues
-        elif advance:
+        elif verdict.status is StageReportStatus.BLOCKED:
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.BLOCKED)
+            ticket.blocking_issues = short_blocking_issues
+            settle_block(
+                self.session,
+                ticket,
+                orch_run,
+                instance=instance,
+                stages=stages,
+                stage_key=stage_key,
+                message=names or short_blocking_issues,
+                failed_agent=agent_id,
+                declared=BlockKind.DECISION,
+                repairable=False,
+            )
+        elif advance and (verdict.status is StageReportStatus.PASS or claimed_reject):
             transitions = self.orch._resolve_transitions(ticket)
             apply_stage_route(
                 ticket,
@@ -512,7 +591,7 @@ class OrchestrationCallbackService:
                 stages,
                 transitions,
                 from_key=stage_key,
-                outcome=outcome,
+                outcome=route,
                 next_stage_key=next_stage_key,
                 next_agent=next_agent,
                 blocking_issues=short_blocking_issues,
@@ -520,13 +599,23 @@ class OrchestrationCallbackService:
                 # Live call: the ValueError reaches the agent as a tool error.
                 strict=True,
             )
-        else:
+        elif advance:
+            # A claimed pass the derivation vetoed: do not mark DONE and do not
+            # route. The stage stays running so a later sentinel in the same run
+            # settles once (R8). An explicit `outcome="reject"` is the other case
+            # and routes above — an agent asking to send the work back named a
+            # target, and apply_stage_route's reject arm re-arms the stages
+            # upstream rather than marking this one DONE.
+            ticket.blocking_issues = short_blocking_issues
+        elif verdict.status is StageReportStatus.PASS:
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
             # See workflow_routing.apply_stage_route: next_agent is only a
             # trusted override on rework (reject), not a normal-pass hint.
-            if next_agent and outcome == "reject":
+            if next_agent and route == "reject":
                 ticket.next_agent = next_agent
                 ticket.next_status = "Proceed"
+            ticket.blocking_issues = short_blocking_issues
+        else:
             ticket.blocking_issues = short_blocking_issues
 
         self.session.add(ticket)
@@ -534,21 +623,29 @@ class OrchestrationCallbackService:
         self.session.add(orch_run)
         self.session.commit()
 
-        event_bus.publish(
-            self.session,
-            EventType.STAGE_COMPLETED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={
-                "stage_key": stage_key,
-                "orchestration_run_id": orch_run.id,
-                "outcome": outcome,
-                "workflow_stage_key": ticket.workflow_stage_key,
-            },
-        )
+        if verdict.status is StageReportStatus.PASS or claimed_reject:
+            event_bus.publish(
+                self.session,
+                EventType.STAGE_COMPLETED,
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket.id,
+                payload={
+                    "stage_key": stage_key,
+                    "orchestration_run_id": orch_run.id,
+                    "outcome": route,
+                    "workflow_stage_key": ticket.workflow_stage_key,
+                },
+            )
         self.orch.reconcile_ticket(ticket)
         self.session.refresh(ticket)
         return ticket
+
+    def _latest_stage_run(self, ticket_id: str, stage_key: str) -> AgentRun | None:
+        return self.session.exec(
+            select(AgentRun)
+            .where(AgentRun.ticket_id == ticket_id, AgentRun.stage_key == stage_key)
+            .order_by(col(AgentRun.created_at).desc())
+        ).first()
 
     def skip_stage(
         self,
@@ -845,6 +942,12 @@ class OrchestrationCallbackService:
         evidence_kind: str = "",
         commit_sha: str = "",
     ) -> Artifact:
+        if kind in {member.value for member in UnresolvedArtifactKind}:
+            raise ValueError(
+                f"kind {kind!r} is reserved for the unresolved ledger; "
+                "attach_artifact cannot mint unresolved_open / unresolved_waiver / "
+                "unresolved_clear"
+            )
         artifact = Artifact(
             ticket_id=ticket.id,
             run_id=run_id,

@@ -195,7 +195,12 @@ def _report(
     if not findings:
         return
     record_findings(session, findings)
-    escalate_invariant_reentries(session, invariant_name=invariant.name, condition=condition)
+    if invariant.reentry is not InvariantReentry.EXPECTED:
+        # EXPECTED means the world enters this state legitimately, so a
+        # violation is not a bug in anything: escalating one would file a Bug
+        # ticket per workspace every pass for a condition that is working as
+        # designed. The finding, and the surface reading it, are the report.
+        escalate_invariant_reentries(session, invariant_name=invariant.name, condition=condition)
     logger.warning(
         "Invariant %s: %s on %d ticket(s): %s",
         invariant.name,

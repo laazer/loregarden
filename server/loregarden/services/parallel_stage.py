@@ -52,10 +52,19 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.stage_verdict import (
+    StageVerdict,
+    collect_signals,
+    derive_verdict,
+    report_with_verdict,
+)
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
 from loregarden.services.ticket_worktree import resolve_execution_root
+from loregarden.services.unresolved_ledger import LedgerActor, settle_unresolved
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
+from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlalchemy.orm import object_session
 from sqlmodel import Session, select
 
 #: Stage-report statuses that make a member a rejection rather than a pass. The
@@ -93,9 +102,21 @@ class ParallelMemberResult:
 
 
 def member_result(
-    agent_id: str, *, status: RunStatus, stdout: str, stderr: str
+    agent_id: str,
+    *,
+    status: RunStatus,
+    stdout: str,
+    stderr: str,
+    session: Session | None = None,
+    ticket: Ticket | None = None,
+    stage_def: WorkflowStageDef | None = None,
 ) -> ParallelMemberResult:
-    """Judge one member from what its run produced."""
+    """Judge one member from what its run produced.
+
+    When ``session``/``ticket``/``stage_def`` are present, the member's claimed
+    stdout pass is derived (handoff_expected=False). Callers without a ticket
+    (infrastructure tests) still judge the envelope alone.
+    """
     report = parse_stage_report(stdout)
     if status != RunStatus.SUCCEEDED:
         return ParallelMemberResult(
@@ -123,6 +144,41 @@ def member_result(
             # dispatch budget still bounds a member that never reports.
             transient=True,
         )
+    if session is not None and ticket is not None and stage_def is not None:
+        verdict = derive_verdict(
+            collect_signals(
+                session,
+                ticket,
+                report=report,
+                tool_outcome=None,
+                stage_def=stage_def,
+                handoff_expected=False,
+                agent_id=agent_id,
+            )
+        )
+        remaining = settle_unresolved(
+            session,
+            ticket,
+            verdict.unresolved,
+            LedgerActor(agent_id=agent_id, stage_key=stage_def.key),
+            waivers=tuple(report.waivers),
+            current_stage_key=stage_def.key,
+        )
+        if remaining:
+            status = (
+                StageReportStatus.NEEDS_REWORK
+                if verdict.status is StageReportStatus.PASS
+                else verdict.status
+            )
+            verdict = StageVerdict(status=status, unresolved=remaining)
+        report = report_with_verdict(report, verdict, current_stage=stage_def.key)
+        if verdict.status is not StageReportStatus.PASS:
+            return ParallelMemberResult(
+                agent_id=agent_id,
+                failure=f"{agent_id}: {report.reroute_context or 'agent reported failure'}",
+                report=report,
+            )
+        return ParallelMemberResult(agent_id=agent_id, report=report)
     if report.status in _REJECTING_REPORT_STATUSES:
         return ParallelMemberResult(
             agent_id=agent_id,
@@ -134,20 +190,43 @@ def member_result(
 
 def member_result_from_run(run: AgentRun) -> ParallelMemberResult:
     """Judge one member from its settled run row."""
+    session = object_session(run)
+    ticket = session.get(Ticket, run.ticket_id) if session is not None else None
+    stage_def = _stage_def_for_run(session, ticket, run.stage_key) if ticket else None
     return member_result(
         run.agent_id,
         status=run.status,
         stdout=run.stdout or "",
         stderr=run.stderr or "",
+        session=session,
+        ticket=ticket,
+        stage_def=stage_def,
     )
 
 
 def member_passed(run: AgentRun | None) -> bool:
-    """Whether this member is done and does not need running again."""
+    """Whether this member is done and does not need running again.
+
+    True only when the run succeeded and ``derive_verdict`` status is pass, not
+    merely that stdout parsed as pass.
+    """
     if run is None or run.status != RunStatus.SUCCEEDED:
         return False
-    report = parse_stage_report(run.stdout or "")
-    return report is not None and report.status == _PASSING_REPORT_STATUS
+    result = member_result_from_run(run)
+    return (
+        not result.failure
+        and result.report is not None
+        and result.report.status == _PASSING_REPORT_STATUS
+    )
+
+
+def _stage_def_for_run(
+    session: Session | None, ticket: Ticket | None, stage_key: str
+) -> WorkflowStageDef | None:
+    if session is None or ticket is None or not stage_key:
+        return None
+    _, stages = resolve_ticket_stages(session, ticket)
+    return next((stage for stage in stages if stage.key == stage_key), None)
 
 
 def member_skill_name(stage_def: WorkflowStageDef, spec: ParallelAgentSpec) -> str:

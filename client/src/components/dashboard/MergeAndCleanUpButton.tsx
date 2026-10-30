@@ -21,7 +21,16 @@ import { Button } from "../ui/Button";
  * offered (a write: gated like any write tool), or without a tab through
  * `loregarden_merge_pull_request`. Either way the server re-checks the PR first.
  */
-export function MergeAndCleanUpButton({ ticketId, pr }: { ticketId: string; pr: PullRequestStatus }) {
+export function MergeAndCleanUpButton({
+  ticketId,
+  pr,
+  isTreePullRequest,
+}: {
+  ticketId: string;
+  pr: PullRequestStatus;
+  /** True when this PR is a tree member's view of the tree's own PR, not this ticket's. */
+  isTreePullRequest: boolean;
+}) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -47,9 +56,10 @@ export function MergeAndCleanUpButton({ ticketId, pr }: { ticketId: string; pr: 
       }
       return merge.mutateAsync(head_sha);
     },
-    pr.mergeable_now && !merge.data && !merge.isPending,
+    !isTreePullRequest && pr.mergeable_now && !merge.data && !merge.isPending,
   );
 
+  if (isTreePullRequest) return null;
   if (merge.data) return <MergeResult result={merge.data} />;
   if (!pr.mergeable_now) return null;
 

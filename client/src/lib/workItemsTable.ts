@@ -9,7 +9,14 @@
  */
 
 import type { Approval } from "../api/chatTypes";
-import type { BlockedOn, StageStatus, TicketState, TicketTreeNode, WorkItemType } from "../api/types";
+import type {
+  BlockedOn,
+  ShipReason,
+  StageStatus,
+  TicketState,
+  TicketTreeNode,
+  WorkItemType,
+} from "../api/types";
 import { approvalLabel } from "./homeNeedsYou";
 import { blockedOnStateLabel } from "../utils/blockKinds";
 import { hasParts } from "./ticketParts";
@@ -48,21 +55,45 @@ export function isOpen(node: TicketTreeNode): boolean {
   return !CLOSED_STATES.has(node.state);
 }
 
+/** The probe fields Work items needs to name Why and link the PR. */
+export interface ShipNeed {
+  reason: ShipReason;
+  pr_number: number | null;
+  pr_url: string | null;
+}
+
+export type ShipsByTicket = ReadonlyMap<string, ShipNeed>;
+
+function shipWhy(ship: ShipNeed): string {
+  if (ship.reason === "never_reached_remote") return "Never reached remote";
+  return `PR #${ship.pr_number} ${ship.reason}`;
+}
+
 /**
- * Why an open ticket is the operator's to act on, or null when it is not.
+ * Why a ticket is the operator's to act on, or null when it is not.
  *
- * Two signals the server already derives: a stage paused for an approval or an
- * answer (`awaiting`, which is what fills the inbox), and a block only a person
- * can clear (`blocked_on === "person"`, the board's "Needs you" column).
+ * Three signals: a stage paused for an approval or an answer (`awaiting`), a
+ * block only a person can clear (`blocked_on === "person"`), and a done ticket
+ * whose ship is not green (the persisted probe, keyed by ticket id).
  */
-export function needsMeReason(node: TicketTreeNode, approval?: Approval): string | null {
-  if (!isOpen(node)) return null;
-  if (node.workflow_stage_status === "awaiting") {
-    // The pending approval says what is being asked; fifteen rows of "your
-    // approval or answer" said nothing a row's position did not.
-    return approval ? approvalLabel(approval) : "Your approval or answer";
+export function needsMeReason(
+  node: TicketTreeNode,
+  approval?: Approval,
+  ships?: ShipsByTicket,
+): string | null {
+  if (isOpen(node)) {
+    if (node.workflow_stage_status === "awaiting") {
+      // The pending approval says what is being asked; fifteen rows of "your
+      // approval or answer" said nothing a row's position did not.
+      return approval ? approvalLabel(approval) : "Your approval or answer";
+    }
+    if (node.blocked_on === "person") return "Blocked until you act";
+    return null;
   }
-  if (node.blocked_on === "person") return "Blocked until you act";
+  if (node.state === "done") {
+    const ship = ships?.get(node.id);
+    return ship ? shipWhy(ship) : null;
+  }
   return null;
 }
 
@@ -73,8 +104,11 @@ export function needsMeReason(node: TicketTreeNode, approval?: Approval): string
  */
 export type RunningIds = ReadonlySet<string>;
 
-const VIEW_FILTERS: Record<WorkItemsView, (node: TicketTreeNode, running: RunningIds) => boolean> = {
-  needs_me: (node) => needsMeReason(node) !== null,
+const VIEW_FILTERS: Record<
+  WorkItemsView,
+  (node: TicketTreeNode, running: RunningIds, ships?: ShipsByTicket) => boolean
+> = {
+  needs_me: (node, _running, ships) => needsMeReason(node, undefined, ships) !== null,
   running: (node, running) => running.has(node.id),
   in_flight: (node) => node.state === "in_progress",
   blocked: (node) => node.state === "blocked",
@@ -82,8 +116,13 @@ const VIEW_FILTERS: Record<WorkItemsView, (node: TicketTreeNode, running: Runnin
   all: () => true,
 };
 
-export function inView(view: WorkItemsView, node: TicketTreeNode, running: RunningIds): boolean {
-  return VIEW_FILTERS[view](node, running);
+export function inView(
+  view: WorkItemsView,
+  node: TicketTreeNode,
+  running: RunningIds,
+  ships?: ShipsByTicket,
+): boolean {
+  return VIEW_FILTERS[view](node, running, ships);
 }
 
 /** Every ticket in the tree once, with the parent it sits under. */
@@ -104,11 +143,15 @@ export function flattenWorkItems(nodes: TicketTreeNode[]): WorkItemRow[] {
   return rows;
 }
 
-export function viewCounts(rows: WorkItemRow[], running: RunningIds): Record<WorkItemsView, number> {
+export function viewCounts(
+  rows: WorkItemRow[],
+  running: RunningIds,
+  ships?: ShipsByTicket,
+): Record<WorkItemsView, number> {
   const counts: Record<WorkItemsView, number> = { needs_me: 0, running: 0, in_flight: 0, blocked: 0, open: 0, all: 0 };
   for (const { node } of rows) {
     for (const { key } of WORK_ITEMS_VIEWS) {
-      if (VIEW_FILTERS[key](node, running)) counts[key] += 1;
+      if (VIEW_FILTERS[key](node, running, ships)) counts[key] += 1;
     }
   }
   return counts;

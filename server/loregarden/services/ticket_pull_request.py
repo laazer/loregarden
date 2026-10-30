@@ -28,13 +28,11 @@ from loregarden.models.domain import (
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.git_subprocess import run_gh
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.publish_ref import publish_ref_for
+from loregarden.services.publish_ref import branch_for_pr_head, publish_ref_for
 from loregarden.services.target_branch import (
     TargetBranchError,
     integration_branch_for,
-    subtree_root,
-    target_branch_name,
+    landing_target,
 )
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -80,8 +78,22 @@ class GhCheck(BaseModel):
     state: str = ""
     details_url: str = Field("", alias="detailsUrl")
     target_url: str = Field("", alias="targetUrl")
+    #: Whether the base branch's protection requires this check. None when the
+    #: read did not ask for it, or asked somewhere GitHub refuses to answer:
+    #: `isRequired` needs a pull request number, so a repository-wide listing
+    #: cannot carry it. `ci_checks.required_rollup` treats all-None as all-required.
+    is_required: bool | None = Field(None, alias="isRequired")
 
-    @field_validator("*", mode="before")
+    @field_validator(
+        "name",
+        "context",
+        "status",
+        "conclusion",
+        "state",
+        "details_url",
+        "target_url",
+        mode="before",
+    )
     @classmethod
     def _absent_is_empty(cls, value: str | None) -> str:
         # GitHub's GraphQL API reports an absent value (a running check's
@@ -161,6 +173,14 @@ class TicketPullRequest(BaseModel):
     #: tree; "" for a ticket that ships its own branch. A tree member gets no PR
     #: of its own (`github_pr_service._refuse_tree_member`).
     ships_with: str = ""
+    #: The tree root's shareable id — its `external_id`, or its full UUID when
+    #: it has none — so the branch above can be followed to the ticket whose
+    #: tab holds the merge. "" when this ticket ships its own branch, or when
+    #: no landing target resolved.
+    ships_with_root: str = ""
+    #: The PR found is the tree's, not this ticket's own: its head is not this
+    #: ticket's branch.
+    is_tree_pull_request: bool = False
 
 
 def check_outcome(check: GhCheck) -> PullRequestCheckOutcome:
@@ -234,56 +254,91 @@ def _failed(session: Session, ticket: Ticket, branch: str, error: str) -> Ticket
     )
 
 
-def _ships_with(session: Session, ticket: Ticket, workspace: Workspace) -> str:
+class ShipsWith(BaseModel):
+    """The tree this ticket's work ships in, named at both widths at once.
+
+    Both fields are empty together or set together: a member's root is by
+    construction a different, existing ticket, and a landing target that cannot
+    be resolved degrades the pair rather than either half of it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    branch: str = ""
+    root_ref: str = ""
+
+
+def _ships_with(session: Session, ticket: Ticket, workspace: Workspace) -> ShipsWith:
     try:
-        target = target_branch_name(session, ticket, workspace)
+        target = landing_target(session, ticket, workspace)
     except TargetBranchError:
         logger.warning("No landing target for %s", ticket.external_id, exc_info=True)
-        return ""
-    return "" if target == resolve_orchestration_profile(workspace).git.base_branch else target
+        return ShipsWith()
+    if target.root is None:
+        return ShipsWith()
+    return ShipsWith(
+        branch=target.branch, root_ref=target.root.external_id.strip() or target.root.id
+    )
 
 
 def ticket_pull_request(
     session: Session, ticket: Ticket, workspace: Workspace
 ) -> TicketPullRequest:
     """Ask GitHub for the pull request on ``ticket``'s branch."""
-    result = _lookup(session, ticket, workspace)
-    result.ships_with = _ships_with(session, ticket, workspace)
+    ships = _ships_with(session, ticket, workspace)
+    ships_with = ships.branch
+    result = _lookup(session, ticket, workspace, ships_with)
+    pr = result.pull_request
+    result.ships_with = ships_with
+    result.ships_with_root = ships.root_ref
+    result.is_tree_pull_request = (
+        bool(ships_with)
+        and pr is not None
+        and branch_for_pr_head(pr.head) != resolve_ticket_branch(ticket)
+    )
     return result
 
 
-def _candidate_branches(session: Session, ticket: Ticket, repo_root: Path) -> list[str]:
+def _candidate_branches(ticket: Ticket, repo_root: Path, ships_with: str) -> list[str]:
     """Where this ticket's PR would be, most likely first.
 
-    A tree's root publishes its integration branch (`publish_tree`), so that
-    is where its PR lives; its own branch is asked as well, for a root whose
-    tree never formed. Any other ticket's PR is on its own branch. A root's PR
-    is on ``publish/<branch>`` (`publish_ref`); the bare name is asked after
-    it, for a PR opened before publishing moved there.
+    The tree's branch is asked first, because a tree ships from there: a member
+    never publishes its own branch, and a root publishes its integration branch
+    (`publish_tree`). ``ships_with`` already names that branch for a member, so
+    it is read rather than derived a second time; a root (and a top-level
+    ticket, which is its own root) gets "" there and its integration branch is
+    computed. The ticket's own branch is asked after it, for a root whose tree
+    never formed and for a member that hand-opened a PR of its own. Each name is
+    asked as ``publish/<branch>`` (`publish_ref`) first, then bare, for a PR
+    opened before publishing moved there.
     """
     own = resolve_ticket_branch(ticket)
-    try:
-        is_root = subtree_root(session, ticket).id == ticket.id
-    except TargetBranchError:
-        return [own]
-    if not is_root:
-        return [own]
-    integration = integration_branch_for(ticket)
-    published = [integration, own] if rev(repo_root, f"refs/heads/{integration}") else [own]
-    return [name for branch in published for name in (publish_ref_for(branch), branch)]
+    if ships_with:
+        tree = ships_with
+    else:
+        try:
+            tree = integration_branch_for(ticket)
+        except TargetBranchError:
+            tree = ""
+    asked = [tree, own] if tree and rev(repo_root, f"refs/heads/{tree}") else [own]
+    return [name for branch in asked for name in (publish_ref_for(branch), branch)]
 
 
-def _lookup(session: Session, ticket: Ticket, workspace: Workspace) -> TicketPullRequest:
+def _lookup(
+    session: Session, ticket: Ticket, workspace: Workspace, ships_with: str
+) -> TicketPullRequest:
     repo_root = resolve_workspace_root(workspace)
-    branches = _candidate_branches(session, ticket, repo_root)
+    branches = _candidate_branches(ticket, repo_root, ships_with)
     if not (repo_root / ".git").exists():
         return _failed(session, ticket, branches[0], f"{repo_root} is not a git repository")
-    result = TicketPullRequest(lookup=PullRequestLookup.NONE, branch=branches[-1])
     for branch in branches:
         result = _view(session, ticket, repo_root, branch)
         if result.lookup is not PullRequestLookup.NONE:
             return result
-    return result
+    # Built only once every candidate has answered NONE: `branch` is the tree's
+    # for a member, so the panel's "ships in its tree's PR" copy names a real
+    # branch rather than the last name asked.
+    return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=ships_with or branches[-1])
 
 
 def _view(session: Session, ticket: Ticket, repo_root: Path, branch: str) -> TicketPullRequest:

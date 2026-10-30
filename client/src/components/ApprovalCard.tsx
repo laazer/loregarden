@@ -10,6 +10,7 @@ import { exitActionCategoryLabel } from "./exitActionCategories";
 import { IgnoreApprovalModal } from "./IgnoreApprovalModal";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
+import { WaiveUnresolvedModal } from "./WaiveUnresolvedModal";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
@@ -29,6 +30,30 @@ function questionList(approval: Approval): AgentQuestion[] {
   try {
     const payload = JSON.parse(approval.tool_input_json || "{}") as { questions?: AgentQuestion[] };
     return payload.questions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Surviving names on a Rework paused card, from the payload snapshot already
+ * on `tool_input_json`. Missing, unreadable, null, or blank entries are empty
+ * — the card then one-click Approves and hides Retry. The server waives
+ * currently persisted OPEN names, not this snapshot.
+ */
+function pauseUnresolvedNames(approval: Approval): string[] {
+  if (approval.kind !== "rework_pause") return [];
+  try {
+    const payload = JSON.parse(approval.tool_input_json || "{}") as {
+      unresolved_names?: unknown;
+    };
+    const names = payload.unresolved_names;
+    if (!Array.isArray(names)) return [];
+    return names.flatMap((name) => {
+      if (typeof name !== "string") return [];
+      const trimmed = name.trim();
+      return trimmed ? [trimmed] : [];
+    });
   } catch {
     return [];
   }
@@ -182,6 +207,8 @@ export function ApprovalCard({
   const [reworkNote, setReworkNote] = useState("");
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [ignoreModalOpen, setIgnoreModalOpen] = useState(false);
+  const [waiveModalOpen, setWaiveModalOpen] = useState(false);
+  const retryLock = useRef(false);
 
   const routeOptions = isGate ? approval.route_options ?? [] : [];
   // On a human action the checklist carries the handover findings, which the
@@ -210,6 +237,8 @@ export function ApprovalCard({
     setReworkStageKey("");
     setReworkNote("");
     setRejectModalOpen(false);
+    setWaiveModalOpen(false);
+    retryLock.current = false;
   }, [approval.id]);
 
   const reworkActive = reworkEnabled && !!reworkStageKey;
@@ -269,8 +298,21 @@ export function ApprovalCard({
     />
   );
 
+  const pauseNames = pauseUnresolvedNames(approval);
+  const namesRemain = pauseNames.length > 0;
+
   const submitApproval = () => {
+    if (approval.kind === "rework_pause" && namesRemain && !reworkActive) {
+      setWaiveModalOpen(true);
+      return;
+    }
     onApprove(resolvePayload());
+  };
+
+  const submitRetry = () => {
+    if (isSubmitting || retryLock.current) return;
+    retryLock.current = true;
+    onApprove({});
   };
 
   const submitRecheck = () => {
@@ -714,6 +756,16 @@ export function ApprovalCard({
                   : "Approve"}
           </button>
         ) : null}
+        {namesRemain ? (
+          <Button
+            variant="secondary"
+            style={{ flex: 1, borderRadius: 0 }}
+            disabled={isSubmitting}
+            onClick={submitRetry}
+          >
+            Retry without waiving
+          </Button>
+        ) : null}
         <button
           type="button"
           className="btn-secondary"
@@ -769,6 +821,17 @@ export function ApprovalCard({
               onConfirm={(payload) => {
                 setRejectModalOpen(false);
                 onReject(payload);
+              }}
+            />
+          )}
+          {approval.kind === "rework_pause" && (
+            <WaiveUnresolvedModal
+              open={waiveModalOpen}
+              names={pauseNames}
+              isSubmitting={isSubmitting}
+              onClose={() => setWaiveModalOpen(false)}
+              onConfirm={(payload) => {
+                onApprove({ response: payload.response });
               }}
             />
           )}

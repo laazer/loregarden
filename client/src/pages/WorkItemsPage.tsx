@@ -27,6 +27,7 @@ import {
   sortWorkItems,
   viewCounts,
   workspaceOptions,
+  type ShipNeed,
   type WorkItemsSort,
   type WorkItemsSortKey,
   type WorkItemsFilters,
@@ -44,7 +45,7 @@ const PAGE_SIZE = 200;
 
 const EMPTY_COPY: Record<WorkItemsView, string> = {
   needs_me:
-    "Nothing needs you right now. A ticket lands here when a stage waits for your approval or answer, or is blocked on something only a person can do.",
+    "Nothing needs you right now. A ticket lands here when a stage waits for your approval or answer, is blocked on something only a person can do, or is done while its ship is not green.",
   running: "Nothing is running. A ticket appears here while it holds an execution slot; start one from the Queue.",
   in_flight: "No ticket is in progress.",
   blocked: "No ticket is blocked.",
@@ -102,6 +103,26 @@ export function WorkItemsPage() {
       });
     }
   }, [approvalsQ.isError, approvalsQ.error]);
+  const shipsQ = useQuery({
+    queryKey: ["done-ticket-ship", "all"],
+    queryFn: () => api.doneTicketShip(),
+    refetchInterval: 15_000,
+    placeholderData: (previous) => previous,
+  });
+  const unavailableProbe = shipsQ.data?.probes.find((probe) => probe.listing_state === "unavailable");
+  const shipsUnavailableMessage = shipsQ.isError
+    ? describeError(shipsQ.error)
+    : unavailableProbe
+      ? describeError(unavailableProbe.error, "request failed")
+      : null;
+  useEffect(() => {
+    if (shipsUnavailableMessage === null) return;
+    pushToast({
+      tone: "error",
+      title: "Ships did not load",
+      message: shipsUnavailableMessage,
+    });
+  }, [shipsUnavailableMessage]);
   const approvalsByTicket = useMemo(() => {
     const byTicket = new Map<string, NonNullable<typeof approvalsQ.data>[number]>();
     for (const approval of pendingApprovals(approvalsQ.data)) {
@@ -109,6 +130,20 @@ export function WorkItemsPage() {
     }
     return byTicket;
   }, [approvalsQ.data]);
+  const shipsByTicket = useMemo(() => {
+    const byTicket = new Map<string, ShipNeed>();
+    for (const probe of shipsQ.data?.probes ?? []) {
+      for (const violation of probe.violations) {
+        byTicket.set(violation.ticket_id, {
+          reason: violation.reason,
+          pr_number: violation.pr_number,
+          pr_url: violation.pr_url,
+        });
+      }
+    }
+    return byTicket;
+  }, [shipsQ.data]);
+  const shipsIncomplete = (shipsQ.data?.probes ?? []).some((probe) => probe.listing_state === "incomplete");
   const navigate = useNavigate();
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
 
@@ -122,10 +157,13 @@ export function WorkItemsPage() {
     () => (workspace === "all" ? all : all.filter((row) => row.node.workspace_slug === workspace)),
     [all, workspace],
   );
-  const counts = useMemo(() => viewCounts(inWorkspace, runningIds), [inWorkspace, runningIds]);
+  const counts = useMemo(
+    () => viewCounts(inWorkspace, runningIds, shipsByTicket),
+    [inWorkspace, runningIds, shipsByTicket],
+  );
   const inViewRows = useMemo(
-    () => inWorkspace.filter((row) => inView(view, row.node, runningIds)),
-    [inWorkspace, view, runningIds],
+    () => inWorkspace.filter((row) => inView(view, row.node, runningIds, shipsByTicket)),
+    [inWorkspace, view, runningIds, shipsByTicket],
   );
   const rows = useMemo(
     () => sortWorkItems(inViewRows.filter((row) => matchesFilters(row, filters) && matchesSearch(row, search)), sort),
@@ -192,7 +230,9 @@ export function WorkItemsPage() {
           aria-label="Search work items"
         />
         <span className="wi-count" aria-live="polite">
-          {tree.data ? `${rows.length} ticket${rows.length === 1 ? "" : "s"}` : ""}
+          {tree.data
+            ? `${rows.length} ticket${rows.length === 1 ? "" : "s"}${shipsIncomplete ? " · ships incomplete" : ""}`
+            : ""}
         </span>
         <Button
           variant="secondary"
@@ -256,6 +296,7 @@ export function WorkItemsPage() {
               onSort={toggleSort}
               showWhy={view === "needs_me"}
               approvals={approvalsByTicket}
+              ships={shipsByTicket}
               onOpenApproval={(ticketId) => {
                 setInboxOpen(true);
                 navigate(ticketPath(ticketId));

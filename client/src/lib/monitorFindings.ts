@@ -118,6 +118,12 @@ export function conditionMeaning(condition: string): string | null {
  * are always current.
  */
 export function isLiveFinding(finding: MonitorFinding): boolean {
+  if (
+    finding.condition === "invariant_unrepaired" &&
+    finding.stage_key === "done_ticket_ship_is_observable"
+  ) {
+    return true;
+  }
   if (!finding.ticket_id) return true;
   return finding.ticket_state !== "done" && finding.ticket_state !== "wont_do";
 }
