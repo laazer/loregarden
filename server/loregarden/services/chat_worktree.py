@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, BaxterChatSession, PrimaryCheckoutUse, Workspace
-from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.git_automation_config import base_branch, resolve_git_automation
 from loregarden.services.primary_checkout import require_clean_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -78,7 +78,7 @@ def resolve_chat_execution_root(
 
     service = WorktreeService(session, repo_path=str(workspace_root))
     worktree = service.get_or_create_for_chat_session(
-        chat_session, run.id, parent_branch=config.base_branch
+        chat_session, run.id, parent_branch=base_branch(workspace)
     )
     if not worktree:
         logger.warning(

@@ -214,3 +214,110 @@ describe("what a repair or requeue was", () => {
     expect(line.detail).toBeUndefined();
   });
 });
+
+// lg-milestone-that-976: a handoff stamped a run RUNNING, could not prepare the
+// tree, and put the stage back to PENDING with no agent ever behind it. The
+// failure text is a lead sentence followed by git's merge output, and the rail
+// renders `line.text` verbatim with no clamp — so the sentence is the reason and
+// the whole of the text travels as `detail`, behind the <details> the rail has.
+describe("a dispatch that never attempted the work", () => {
+  const reason =
+    "Stage review's run run_a1b2c3 never attempted the work — lg-x-1: resolve the conflict " +
+    "with integration/lg-x-1. The stage was put back to PENDING, ready to be dispatched again.";
+  const detail =
+    "lg-x-1: resolve the conflict with integration/lg-x-1, or run the stage supervised.\n" +
+    "CONFLICT (content): Merge conflict in shared.txt\n" +
+    "Automatic merge failed; fix conflicts and then commit the result.";
+
+  it("puts the sentence on the line and the whole failure text behind it", () => {
+    const settled = decision("settled_failed_handoff", reason, "review");
+    settled.payload.detail = detail;
+
+    const [line] = historyLines([settled]);
+
+    expect(line.text).toContain("run_a1b2c3");
+    expect(line.text).toContain("PENDING");
+    expect(line.text).not.toContain("Automatic merge failed");
+    expect(line.detail).toBe(detail);
+  });
+
+  it("reads as trouble, like the other settles", () => {
+    const [line] = historyLines([decision("settled_failed_handoff", reason, "review")]);
+    expect(line.tone).toBe("failed");
+  });
+
+  // `detail` is the LAST fallback, so the kinds that already had a detail are
+  // unchanged: a repair's own account of what it fixed still wins.
+  it("still prefers a repair summary over a detail", () => {
+    const repaired = decision("repaired", "The repair turn cleared the block.");
+    repaired.payload.repair_summary = "Cause: stale lockfile. Fix: regenerated it.";
+    repaired.payload.detail = detail;
+
+    const [line] = historyLines([repaired]);
+
+    expect(line.detail).toBe("Cause: stale lockfile. Fix: regenerated it.");
+  });
+
+  // ...and the requeued arm, which reads `reason` rather than the fallbacks.
+  it("leaves a requeue showing its reason as the detail", () => {
+    const requeued = decision("requeued", "491 landed on main, so the conflict is gone.", "triage");
+    requeued.payload.actor = "mcp";
+    requeued.payload.detail = detail;
+
+    const [line] = historyLines([requeued]);
+
+    expect(line.detail).toBe("491 landed on main, so the conflict is gone.");
+  });
+});
+
+// The three arms of `decisionDetail` the cases above leave unexercised. AC9 is
+// one line, and "last fallback" is the whole of it: an edit that lands the new
+// read anywhere else passes every case above.
+describe("where a decision's detail comes from", () => {
+  const detail =
+    "lg-x-1: resolve the conflict with integration/lg-x-1, or run the stage supervised.\n" +
+    "CONFLICT (content): Merge conflict in shared.txt";
+
+  // `repair_summary` is pinned above; `block_message` is the other existing
+  // read, and it sits BETWEEN the summary and the new one. An implementation
+  // reading `repair_summary || detail || block_message` is green up there.
+  it("still prefers the block it was sent to over a detail", () => {
+    const dispatched = decision("dispatched_repair", "A repair turn was armed.");
+    dispatched.payload.block_message = "Harness: the CLI exited 1 with no output.";
+    dispatched.payload.detail = detail;
+
+    const [line] = historyLines([dispatched]);
+
+    expect(line.detail).toBe("Harness: the CLI exited 1 with no output.");
+  });
+
+  // The requeued arm reads `reason` and nothing else. A requeue recorded with
+  // no reason showed no detail before this change and must still show none:
+  // adding the new read to both arms is the easy way to write the one line.
+  it("leaves a requeue with no reason showing no detail at all", () => {
+    const requeued = decision("requeued", "", "triage");
+    requeued.payload.actor = "mcp";
+    requeued.payload.detail = detail;
+
+    const [line] = historyLines([requeued]);
+
+    expect(line.text).toContain("Requeued triage");
+    expect(line.detail).toBeUndefined();
+  });
+
+  // AC11: the line a settle renders is its reason, verbatim and prefixed — the
+  // fallback that spells the kind out is never the one an operator sees, and a
+  // settle that carried no failure text still opens nothing behind the line.
+  it("shows the settle's own sentence, and nothing behind it when there is no text", () => {
+    const reason =
+      "Stage review's run run_a1b2c3 never attempted the work — lg-x-1: resolve the " +
+      "conflict with integration/lg-x-1. The stage was put back to PENDING, ready to " +
+      "be dispatched again.";
+
+    const [line] = historyLines([decision("settled_failed_handoff", reason, "review")]);
+
+    expect(line.text).toBe(`Orchestrator: ${reason}`);
+    expect(line.text).not.toContain("settled failed handoff");
+    expect(line.detail).toBeUndefined();
+  });
+});

@@ -37,6 +37,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.drain import is_draining, refuse_reason
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import MergeOutcome, merge_preview
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_conflict_card import (
@@ -45,7 +46,6 @@ from loregarden.services.integration_conflict_card import (
 )
 from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.integration_merge_budget import merge_turn_refusal
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.work_landed import work_is_on
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -141,7 +141,7 @@ def check_workspace(session: Session, workspace: Workspace) -> list[BranchHealth
     repo_root = resolve_workspace_root(workspace)
     if not (repo_root / ".git").exists():
         return []
-    base = resolve_orchestration_profile(workspace).git.base_branch
+    base = base_branch(workspace)
     tips = _tips(repo_root, base)
     base_sha = tips.pop(base, "")
     if not base_sha or not tips:

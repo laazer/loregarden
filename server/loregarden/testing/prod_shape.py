@@ -43,6 +43,7 @@ from loregarden.services.artifact_records import (
     run_log_artifact_title,
 )
 from loregarden.services.memory_store import MemoryGraphStore
+from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.ticket_ids import assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_parent
 from loregarden.testing.factories import (
@@ -86,6 +87,12 @@ class Calibration(BaseModel):
     worked_runs: int
     worked_artifacts: int
     worked_system_share: float
+    #: The share of `done` tickets that carry a recorded landing. Measured
+    #: read-only 2026-10-23: 80 of 474 done. The invariant
+    #: `land_verification_ran` reads exactly these rows, and a scenario with none
+    #: of them makes its "first pass reports nothing" test pass vacuously — a
+    #: zero that is the detector (lg-milestone-that-1419).
+    landed_done_share: float
 
 
 #: Measured from the live database, 2026-09-28 (read-only).
@@ -137,6 +144,7 @@ CALIBRATION = Calibration(
     worked_runs=33,
     worked_artifacts=172,
     worked_system_share=0.40,
+    landed_done_share=80 / 474,
 )
 
 #: Live had no initiatives at calibration, with every milestone unclaimed. The
@@ -211,6 +219,8 @@ class ProdShapeSummary(BaseModel):
     memory_records: dict[str, int]
     worked_runs: int
     worked_artifacts: int
+    #: Done tickets carrying a recorded landing (`landed_sha`/`landed_branch`).
+    landings: int
     ci_attempts: int
     activity_events: int
     tree: TreeSummary
@@ -398,6 +408,7 @@ def build_prod_shape(
     worked_runs, worked_artifacts = _add_worked_history(
         session, all_tickets, random.Random(_RNG_SEED + 1)
     )
+    landings = _add_landings(session, all_tickets)
     ci_attempts = _add_ci_history(session, all_tickets)
     activity_events = add_activity(session, random.Random(_RNG_SEED + 2), prod_shape_id)
     tree = add_tree_shape(
@@ -431,11 +442,42 @@ def build_prod_shape(
         memory_records=memory,
         worked_runs=worked_runs,
         worked_artifacts=worked_artifacts,
+        landings=landings,
         ci_attempts=ci_attempts,
         activity_events=activity_events,
         tree=tree,
         survey_sources=survey_sources,
     )
+
+
+def _add_landings(session: Session, tickets: list) -> int:
+    """Done tickets recorded as landed on their tree's integration branch.
+
+    Live, read-only 2026-10-23: 80 of 474 `done` tickets carry a `landed_sha`.
+    They are the rows the `land_verification_ran` invariant reads, and the
+    scenario had none, so its "the first pass reports nothing" test would have
+    passed because nothing was scanned rather than because the bound held — a
+    zero that is the detector (lg-milestone-that-1419).
+
+    Every one is dated BEFORE that invariant's `since`, which is what makes them
+    the backlog the bound exists to leave alone. `resolved_at` is set explicitly
+    rather than left to `make_ticket`, which stamps `utcnow()` for a resolved
+    state: a landing dated today is a re-entry, and eighty of them is the
+    finding wall the bound is for.
+    """
+    done = [row for row in tickets if row[3] is TicketState.DONE]
+    wanted = round(len(done) * CALIBRATION.landed_done_share)
+    for n, (_slug, ticket_id, _ext, _state, parent_id) in enumerate(done[:wanted]):
+        ticket = session.get(Ticket, ticket_id)
+        parent = session.get(Ticket, parent_id) if parent_id else None
+        ticket.landed_branch = f"{INTEGRATION_PREFIX}{parent.external_id if parent else 'orphan'}"
+        # Forty hex, like a real sha: `landed_sha[:12]` is what a finding prints
+        # and what a person pastes, so a shorter stand-in would not exercise it.
+        ticket.landed_sha = (prod_shape_id("landing", n).replace("-", "") + "0" * 8)[:40]
+        ticket.resolved_at = _EPOCH + timedelta(days=n % 40)
+        session.add(ticket)
+    session.commit()
+    return min(wanted, len(done))
 
 
 def _add_initiative(session: Session, milestone_ids: list[str], tickets: list) -> None:

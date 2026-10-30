@@ -6,9 +6,10 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import Ticket
 from loregarden.services.branch_names import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_snapshot import git_reading, read_tree
@@ -117,7 +118,7 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     if not wanted:
         return False
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         return False
     if not (resolve_workspace_root(workspace) / ".git").exists():
@@ -194,7 +195,7 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     recorded against any agent run. Scoping it to recorded paths would silently
     commit nothing. Automated commits go through commit_paths instead.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise ValueError("Workspace not found")
 

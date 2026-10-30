@@ -56,6 +56,7 @@ from loregarden.services.cli_settings import (
 from loregarden.services.initiative_plan_service import load_initiative, plan_row, plan_view
 from loregarden.services.initiative_service import milestones_under
 from loregarden.services.interruption_messages import restart_interruption_message
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
@@ -198,9 +199,7 @@ def planner_workspace(session: Session, initiative: Ticket) -> Workspace:
         )
     missing: list[str] = []
     for milestone in milestones:
-        workspace = (
-            session.get(Workspace, milestone.workspace_id) if milestone.workspace_id else None
-        )
+        workspace = workspace_for_ticket(session, milestone)
         if workspace is None or workspace.slug in missing:
             continue
         if resolve_workspace_root(workspace).is_dir():

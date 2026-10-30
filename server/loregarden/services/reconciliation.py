@@ -59,9 +59,11 @@ from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     EVERY_BLOCK_IS_SETTLED,
+    EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
+    LAND_VERIFICATION_RAN,
     LANDED_WORK_IS_COMMITTED,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
@@ -156,8 +158,16 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_orphaned_agent_runs", settle_orphaned_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
+    # Before `reconcile_lanes`, and that order is the whole point. The lane
+    # sweep *repairs* a ghost lane already — quietly, as backlog — so running
+    # this after it would mean the detector never saw one and a DEFECT re-entry
+    # was never reported. Detection has to get there first (775).
+    _invariant(EVERY_BUSY_LANE_HAS_AN_OCCUPANT),
     # Before the lanes are driven: a hold whose ticket still reads blocked is
-    # re-armed here, so the same pass's re-dispatch runs the stage (1656).
+    # re-armed here, so the same pass's re-dispatch runs the stage (1656). It is
+    # independent of the ghost-lane detector above: that one reads `agent_slots`
+    # rows naming no occupant, this one reads a held entry against its ticket's
+    # state, so either order gives the same answer.
     _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     # Periodic by the same rule: it selects only tickets with no agent run and
@@ -246,6 +256,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After holds resume: dropping a parent-edge must not unpark a ticket whose
     # only remaining wait was the illegal one (release requires an edge).
     _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),
+    # Two hand repairs failed to prevent the next instance of "a ticket is done,
+    # its tests landed, its implementation is missing" (lg-milestone-that-1419).
+    # Report-only and bounded by its own `since`: it reads R3's land-verification
+    # receipt, never a suite — the tick is 30s and the suite is 901s.
+    _invariant(LAND_VERIFICATION_RAN),
     # An active row whose recorded checkout is gone: the control plane goes on
     # believing a checkout is there, and `resolve_execution_root` reuses the
     # row (lg-external-harness-1452). The self-repair that destroyed the

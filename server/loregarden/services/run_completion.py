@@ -37,7 +37,6 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowStageDef,
-    Workspace,
 )
 from loregarden.services.artifact_service import (
     record_blocking_issue,
@@ -87,6 +86,7 @@ from loregarden.services.rework_feedback import (
 )
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_log_stream import finalize_run_log_artifact
+from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
 from loregarden.services.stage_report import (
     StageReport,
     final_agent_message,
@@ -109,6 +109,7 @@ from loregarden.services.stage_verdict import (
     report_with_verdict,
 )
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.unresolved_ledger import LedgerActor, settle_unresolved
 from loregarden.services.usage_limit_wait import record_usage_limit_wait, resume_note
 from loregarden.services.usage_limits import (
@@ -451,7 +452,7 @@ def complete_run_tail(
         payload={"status": status.value},
     )
     if advance_workflow:
-        workspace = orch.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(orch.session, ticket)
         if workspace:
             refresh_execution_artifacts(
                 orch.session,
@@ -652,6 +653,15 @@ def _advance_clean_exit(
         _settle_block(orch, ticket, run, instance, stages, message=_missing_report_evidence(run))
         return None
 
+    # Commit the files land would refuse before this stage is marked done.
+    # A git failure blocks *this* stage; skip and success fall through.
+    commit = commit_succeeded_run_worktree(orch.session, ticket, run)
+    if commit.error:
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, commit.error)
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        _settle_block(orch, ticket, run, instance, stages, message=commit.error)
+        return None
+
     # The stage produced a verdict, so whatever infrastructure trouble it had on
     # the way is behind it. A rework round or a re-run months later must not
     # inherit retries spent on a server reload that had nothing to do with it.
@@ -821,7 +831,7 @@ def _rearmed_for_transient_retry(
     if not reason:
         return False
 
-    workspace = orch.session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(orch.session, ticket)
     if workspace is None:
         # No workspace, no profile, no budget to read. Fall through to the
         # ordinary failure branches rather than retrying against a guess.

@@ -12,17 +12,18 @@ because a person owes it, and related to the ticket it came from.
 
 from __future__ import annotations
 
-from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest, Workspace
+from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.operation_criteria import set_operation_splitter
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session
 
 
 def _split(session: Session, ticket: Ticket, criteria: list[str]) -> Ticket:
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"Ticket {ticket.external_id} has no workspace to split into")
     sibling = TicketService(session).create_ticket(

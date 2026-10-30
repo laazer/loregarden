@@ -172,6 +172,36 @@ it("distinguishes a failure to ask from having nothing to report", async () => {
   expect(screen.queryByText("Nothing to report")).not.toBeInTheDocument();
 });
 
+/**
+ * lg-milestone-that-1434 AC12. The second live instance of the same
+ * concatenation defect: this copy joins a message we do not control to a
+ * sentence we do. The *fallback* ends in a period, which is why no test ever
+ * caught it — a real error message does not, so `Failed to fetch Nothing is
+ * known about…` is what actually renders.
+ */
+it("terminates the server's message before the sentence that follows it", async () => {
+  monitorFindings.mockRejectedValue(new Error("Failed to fetch"));
+
+  renderView();
+
+  await screen.findByText(/could not load monitor findings/i);
+  const detail = screen.getByText(/Nothing is known about/);
+  const text = detail.textContent ?? "";
+  expect(text).toContain("Failed to fetch. Nothing is known about");
+  expect(text).not.toContain("Failed to fetch Nothing");
+});
+
+it("does not double the period when the message already ends in one", async () => {
+  monitorFindings.mockRejectedValue(new Error("The monitor endpoint did not answer."));
+
+  renderView();
+
+  await screen.findByText(/could not load monitor findings/i);
+  const text = screen.getByText(/Nothing is known about/).textContent ?? "";
+  expect(text).toContain("did not answer. Nothing is known about");
+  expect(text).not.toContain("answer..");
+});
+
 it("offers a retry that re-asks", async () => {
   monitorFindings.mockRejectedValueOnce(new Error("transient")).mockResolvedValue([finding()]);
 

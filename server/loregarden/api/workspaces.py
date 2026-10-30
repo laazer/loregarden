@@ -18,6 +18,7 @@ from loregarden.services.cli_settings import (
     workspace_cli_settings,
 )
 from loregarden.services.runtime_options import runtime_options_payload
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import WorkflowService, resolve_workspace_stages
 from loregarden.services.workspace_paths import (
     resolve_workspace_root,
@@ -141,7 +142,7 @@ def get_runtime_options(
         ticket_row = session.get(Ticket, ticket)
         if not ticket_row:
             raise HTTPException(404, "Ticket not found")
-        ws = session.get(Workspace, ticket_row.workspace_id)
+        ws = workspace_for_ticket(session, ticket_row)
         ticket_runtime = get_ticket_orchestration_runtime(ticket_row)
     elif workspace.strip():
         ws = session.exec(select(Workspace).where(Workspace.slug == workspace.strip())).first()

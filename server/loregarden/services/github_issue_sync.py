@@ -62,6 +62,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_service import can_choose
 from loregarden.services.ticket_tags import serialize_tags
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, select
@@ -332,7 +333,7 @@ def publish_ticket(session: Session, ticket: Ticket) -> LinkSyncResult:
         raise ValueError(f"{ticket.external_id} is already linked to a GitHub issue")
     if ticket.workspace_id is None:
         raise ValueError("Initiatives span workspaces and have no repository to open an issue in")
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise LookupError("Workspace not found")
     cwd = resolve_workspace_root(workspace)

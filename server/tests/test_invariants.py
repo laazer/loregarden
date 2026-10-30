@@ -13,25 +13,40 @@ import ast
 import json
 import re
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
+    AgentSlot,
     Artifact,
     BlockKind,
+    EventType,
     InvariantReentry,
     MonitorArtifactKind,
     MonitorCondition,
+    OrchestrationRun,
+    OrchestrationRunStatus,
+    OrchestratorDecision,
+    QueuedRun,
+    QueuePosition,
     Ticket,
     TicketState,
     WorkItemType,
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.services.invariant_registry import EVERY_BLOCK_IS_SETTLED, INVARIANTS
+from loregarden.services.invariant_registry import (
+    EVERY_BLOCK_IS_SETTLED,
+    EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
+    INVARIANTS,
+)
 from loregarden.services.invariants import Invariant, Violation, run_invariant
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.parallel_queue import ParallelQueueService, claim_free_slot
+from loregarden.services.queue_slot_claims import RESERVATION_GRACE
 from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.testing.factories import make_ticket
 from loregarden.testing.prod_shape import build_prod_shape
@@ -312,6 +327,351 @@ def test_a_block_written_around_settle_block_is_reported_as_a_missed_writer(
     assert ticket.block_kind is BlockKind.HARNESS
     assert [f.ticket_id for f in _findings(db_session)] == [ticket.id]
     assert run_invariant(db_session, EVERY_BLOCK_IS_SETTLED).found == 0
+
+
+# ---- a lane busy with nothing (lg-milestone-that-775) -----------------------
+
+
+def _slots(session: Session) -> list[AgentSlot]:
+    ParallelQueueService(session).initialize_slots()
+    return list(session.exec(select(AgentSlot).order_by(col(AgentSlot.slot_number))).all())
+
+
+def _ghost(session: Session, ticket: Ticket, slot: AgentSlot, *, orch_id: str | None = None):
+    """Slot 1's observed shape: busy, no occupant, claimed long enough ago that
+    the reservation grace has passed, with a settled lane entry behind it."""
+    slot.is_available = False
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    slot.assigned_at = utcnow() - RESERVATION_GRACE - timedelta(seconds=1)
+    entry = QueuedRun(
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        slot_number=slot.slot_number,
+        orchestration_run_id=orch_id,
+        status=QueuePosition.STARTED,
+        promoted_at=utcnow() - timedelta(minutes=5),
+    )
+    session.add(slot)
+    session.add(entry)
+    session.commit()
+    return entry
+
+
+def test_the_lane_invariant_is_registered_as_this_ticket_declares_it(db_session: Session):
+    """The registration is the contract `fix_coverage` and the PR check resolve
+    against, so its four decided fields are pinned rather than left to drift."""
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT in INVARIANTS
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.name == "every_busy_lane_has_an_occupant"
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.ticket == "lg-milestone-that-775"
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.reentry is InvariantReentry.DEFECT
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.since == date(2026, 9, 21)
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.prevented_by == (
+        "server/tests/test_queue_lanes.py"
+        "::test_completion_releases_the_slot_the_entry_names_even_with_its_ids_cleared"
+    )
+
+
+def test_a_lane_busy_with_nothing_is_detected_reported_and_given_back(
+    db_session: Session, probe_tickets
+):
+    """The real invariant end to end. Slot 1 sat `is_available=0` with both ids
+    null for 23 minutes while the board drew it busy and nothing ran in it."""
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+
+    check = run_invariant(db_session, EVERY_BUSY_LANE_HAS_AN_OCCUPANT)
+
+    assert (check.found, check.repaired) == (1, 1)
+    assert check.reentered == 1, "a claim stamped after the guard landed falsifies it"
+    db_session.refresh(slot)
+    assert slot.is_available is True
+    assert [f.ticket_id for f in _findings(db_session)] == [ticket.id], (
+        "the slot names no ticket, so the finding hangs on the last entry that "
+        "ran in that lane; without one it is a log line nobody reads"
+    )
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
+
+
+def test_a_slot_claimed_and_not_yet_bound_is_not_a_violation(db_session: Session):
+    """The first legal way a slot holds no ids. `claim_free_slot` takes the row
+    with both null so two requests cannot read it as free, and the caller fills
+    them in on `bind`. Reclaiming inside that window admits two orchestrations
+    into one lane — which is why the DEFECT policy is honest only with this
+    exclusion in place."""
+    _slots(db_session)
+    claimed = claim_free_slot(db_session)
+    assert claimed is not None
+    assert claimed.is_available is False
+    assert claimed.current_orchestration_run_id is None and claimed.current_run_id is None
+
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
+
+
+def test_a_slot_held_for_repair_is_not_a_violation(db_session: Session, probe_tickets):
+    """The second legal way. A provisional block keeps its lane rather than
+    handing it to the next ticket, and `reconcile_slots` recognises the hold by
+    the occupant id — so the detector must not undercut it."""
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    orch = OrchestrationRun(
+        run_code="orch_repair", ticket_id=ticket.id, workspace_id=ticket.workspace_id
+    )
+    db_session.add(orch)
+    db_session.commit()
+    slot.is_available = False
+    slot.current_orchestration_run_id = orch.id
+    slot.assigned_at = utcnow() - RESERVATION_GRACE - timedelta(seconds=1)
+    db_session.add(slot)
+    db_session.add(
+        QueuedRun(
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            slot_number=slot.slot_number,
+            orchestration_run_id=orch.id,
+            status=QueuePosition.REPAIRING,
+            promoted_at=utcnow() - timedelta(minutes=5),
+        )
+    )
+    db_session.commit()
+
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
+    db_session.refresh(slot)
+    assert slot.is_available is False, "the hold survives a detection pass"
+
+
+def test_the_repair_gives_back_only_the_lanes_this_pass_detected(
+    db_session: Session, probe_tickets
+):
+    """The repair is the ghost reclaim narrowed to its subjects, not a call to
+    the whole `reconcile_slots` sweep. A sweep would also reclaim rows this pass
+    never detected and never reported, and the count would say it repaired one."""
+    old, new = probe_tickets
+    first, second = _slots(db_session)[:2]
+    _ghost(db_session, old, first)
+    _ghost(db_session, new, second)
+
+    violations = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+    mine = [v for v in violations if v.subject_id == first.id]
+    assert len(violations) == 2 and len(mine) == 1
+
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.repair(db_session, mine) == 1
+
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert first.is_available is True
+    assert second.is_available is False, "repaired a lane this pass never detected"
+
+
+def test_the_repair_rechecks_each_subject_before_it_writes(db_session: Session, probe_tickets):
+    """Detect and repair are two reads of a world that moves between them: the
+    lane this pass found empty may have been claimed since. Writing from the
+    stale read is how a release hands out a lane that is already taken."""
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+    violations = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+    assert len(violations) == 1
+
+    # A reservation took the lane between the two reads.
+    slot.assigned_at = utcnow()
+    db_session.add(slot)
+    db_session.commit()
+
+    assert EVERY_BUSY_LANE_HAS_AN_OCCUPANT.repair(db_session, violations) == 0
+    db_session.refresh(slot)
+    assert slot.is_available is False, "released a lane claimed since the pass detected it"
+
+
+# ---- the corners the detector has to get right (test-break) -----------------
+
+
+def test_a_ghost_lane_that_never_ran_anything_is_still_given_back(db_session: Session):
+    """A slot can be busy with nothing and have no lane entry behind it at all —
+    a reservation that died between `claim_free_slot` and `bind` leaves exactly
+    that, and `_record_ghost_reclaim` already handles the shape ("and against
+    nothing when the lane never ran anything").
+
+    The lane is just as unusable, so it must still be found and released. A
+    detector that reads the ticket by joining `queued_runs` drops this row
+    silently, and the capacity is gone until someone restarts the server.
+    """
+    slot = _slots(db_session)[0]
+    slot.is_available = False
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    slot.assigned_at = utcnow() - RESERVATION_GRACE - timedelta(seconds=1)
+    db_session.add(slot)
+    db_session.commit()
+
+    violations = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+
+    assert [v.subject_id for v in violations] == [slot.id]
+    assert violations[0].ticket_id in (None, "")
+    check = run_invariant(db_session, EVERY_BUSY_LANE_HAS_AN_OCCUPANT)
+    assert (check.found, check.repaired) == (1, 1)
+    db_session.refresh(slot)
+    assert slot.is_available is True
+    assert _findings(db_session) == [], (
+        "a ticketless re-entry is logged, not filed (invariants._report)"
+    )
+
+
+def test_a_ghost_claimed_before_the_guard_landed_is_backlog_not_reentry(
+    db_session: Session, probe_tickets
+):
+    """`since` splits the two, and the split is only real if the detector dates
+    the row. `assigned_at` is the only date a slot carries and it is when the
+    lane was taken, so a claim from before 2026-09-21 is backlog: repaired, and
+    *not* reported as the guard having failed.
+
+    A detector leaving `entered_at` None reports every pre-fix row as a
+    re-entry (`invariants._entered_after` errs towards reporting), which would
+    escalate a bug at the first ticket for a lane the fix was never asked to
+    have prevented.
+    """
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    entry = _ghost(db_session, ticket, slot)
+    before_the_guard = datetime(2026, 9, 1, tzinfo=timezone.utc).replace(tzinfo=None)
+    slot.assigned_at = before_the_guard
+    entry.promoted_at = before_the_guard - timedelta(minutes=5)
+    db_session.add(slot)
+    db_session.add(entry)
+    db_session.commit()
+
+    check = run_invariant(db_session, EVERY_BUSY_LANE_HAS_AN_OCCUPANT)
+
+    assert (check.found, check.reentered, check.repaired) == (1, 0, 1)
+    assert _findings(db_session) == []
+    db_session.refresh(slot)
+    assert slot.is_available is True, "backlog is still repaired"
+
+
+def test_a_ghost_whose_claim_has_no_time_on_it_is_not_a_violation(
+    db_session: Session, probe_tickets
+):
+    """The stricter answer, at the third caller. AC6 resolves an undatable claim
+    towards leaving it alone, and the detector reads the same predicate as the
+    lane and the sweep — so it must come to the same answer here rather than
+    filing a DEFECT finding for a row the other two deliberately skip.
+    """
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+    slot.assigned_at = None
+    db_session.add(slot)
+    db_session.commit()
+
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
+
+
+def test_a_lane_whose_occupant_died_is_not_this_invariants_business(
+    db_session: Session, probe_tickets
+):
+    """Scope. "Busy with a run that finished" is the ordinary residue
+    `reconcile_slots` has swept since before this ticket; "busy with nothing" is
+    the state nothing could ever release. A detector that merges them reports a
+    DEFECT re-entry every time a run exits uncleanly — a guard that cries wolf
+    is retired by whoever is on call, and then the real one is gone too.
+    """
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    orch = OrchestrationRun(
+        run_code="orch_dead",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+    )
+    db_session.add(orch)
+    db_session.commit()
+    slot.is_available = False
+    slot.current_orchestration_run_id = orch.id
+    slot.assigned_at = utcnow() - RESERVATION_GRACE - timedelta(seconds=1)
+    db_session.add(slot)
+    db_session.commit()
+
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
+
+
+def test_detection_repairs_nothing_on_its_own(db_session: Session, probe_tickets):
+    """`run_invariant` reports re-entries *before* repair erases them, so a
+    detector that heals as it reads would file nothing and report a count that
+    looks identical to a healthy pass."""
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+
+    first = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+    second = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+
+    assert [v.subject_id for v in first] == [v.subject_id for v in second] == [slot.id]
+    db_session.refresh(slot)
+    assert slot.is_available is False, "detect wrote to the row it was asked about"
+
+
+def test_the_repair_does_not_reach_for_the_whole_sweep(db_session: Session, probe_tickets):
+    """AC10 as a mechanical check, not an outcome. The behavioural test below
+    catches a sweep that reclaims a second ghost; it cannot catch one that
+    sweeps and then happens to find nothing else, which still hands the next
+    unlucky row to a pass that never detected or reported it.
+    """
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+    violations = list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session))
+
+    with patch.object(ParallelQueueService, "reconcile_slots", autospec=True) as sweep:
+        repaired = EVERY_BUSY_LANE_HAS_AN_OCCUPANT.repair(db_session, violations)
+
+    assert sweep.call_count == 0, "the repair called reconcile_slots"
+    assert repaired == 1
+    db_session.refresh(slot)
+    assert slot.is_available is True
+
+
+def test_the_repair_says_where_a_person_reads_that_it_took_a_lane_back(
+    db_session: Session, probe_tickets
+):
+    """The repair is the existing ghost reclaim, and the reclaim's visible half
+    is the decision event: slot 1 sat busy with nothing for 23 minutes because
+    giving it back was a log line nobody read. A repair that only flips the
+    column is the silent version of the same fix.
+    """
+    _, ticket = probe_tickets
+    slot = _slots(db_session)[0]
+    _ghost(db_session, ticket, slot)
+
+    run_invariant(db_session, EVERY_BUSY_LANE_HAS_AN_OCCUPANT)
+
+    payloads = [
+        json.loads(event.payload_json)
+        for event in event_bus.ticket_history(db_session, ticket.id, limit=50)
+        if event.type == EventType.ORCHESTRATOR_DECISION
+    ]
+    assert [p["decision"] for p in payloads] == [OrchestratorDecision.RECLAIMED_GHOST_LANE.value]
+    assert payloads[0]["slot_number"] == slot.slot_number
+
+
+def test_every_ghost_in_a_full_pool_is_found_in_one_pass(db_session: Session, probe_tickets):
+    """Volume, and order-independence with it. The incident had one ghost; a
+    restart loop can leave every lane that way, and a detector returning the
+    first row it finds (`.first()`, `limit(1)`) would give one lane back per
+    reconcile tick while the board stays full.
+    """
+    _, ticket = probe_tickets
+    slots = _slots(db_session)
+    for slot in slots:
+        _ghost(db_session, ticket, slot)
+
+    check = run_invariant(db_session, EVERY_BUSY_LANE_HAS_AN_OCCUPANT)
+
+    assert (check.found, check.repaired) == (len(slots), len(slots))
+    for slot in slots:
+        db_session.refresh(slot)
+        assert slot.is_available is True
+    assert list(EVERY_BUSY_LANE_HAS_AN_OCCUPANT.detect(db_session)) == []
 
 
 # ---- convergence on production's shape ---------------------------------------

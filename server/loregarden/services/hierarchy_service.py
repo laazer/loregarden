@@ -14,6 +14,7 @@ from loregarden.models.domain import (
 from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prerequisite
 from loregarden.services.ticket_ids import respell_external_id
 from loregarden.services.ticket_split_view import split_ticket_ids
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
 
 
@@ -228,7 +229,7 @@ def _respell_subtree(session: Session, ticket: Ticket) -> None:
     """
     if ticket.workspace_id is None:
         return
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return
     for item in [ticket, *descendants_by_root(session, [ticket.id])[ticket.id]]:

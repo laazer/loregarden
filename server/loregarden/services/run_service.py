@@ -18,7 +18,6 @@ from loregarden.models.domain import (
     RunStatus,
     StageStatus,
     Ticket,
-    Workspace,
 )
 
 # Imported for its side effect: installs the splitter a spec's operation-criteria
@@ -28,6 +27,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
+from loregarden.services.interruption_messages import expired_lease_message
 from loregarden.services.orchestration import (
     LIVE_ORCHESTRATION_STATUSES,
     OrchestrationService,
@@ -40,6 +40,7 @@ from loregarden.services.run_capacity import run_capacity
 from loregarden.services.run_concurrency import (
     ACTIVE_ORCHESTRATION_STATUSES,
     orchestration_lease_expired,
+    subtree_orchestration_ids,
 )
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
@@ -56,6 +57,7 @@ from loregarden.services.run_lease import (
 from loregarden.services.run_reattach import runs_to_spare
 from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.stage_retry_budget import refund_stage_dispatch_charged_before
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
@@ -179,6 +181,18 @@ def fail_interrupted_runs(
     discriminator (see ``triage_service.triage_run_status``); they are reconciled by
     ``triage_run_service.fail_interrupted_triage_turns`` instead.
     """
+    # NOT the per-dispatch settle. `handoff_settle.settle_failed_handoff` closes
+    # out ONE run a handoff opened: it fails the run, hands that dispatch charge
+    # back, puts that stage back to PENDING, and records a decision saying so.
+    # This is the boot/orphan sweep, and it does only the first of those four on
+    # purpose. It claims every in-flight run it can see on a ticket, so refunding
+    # charges or forcing stages to PENDING here would hand retry budget back
+    # across every live stage on a restart, and would record a decision per run
+    # for something nobody decided. The orphan shape that *does* record a
+    # decision is `settle_orphaned_agent_runs`, below in this module — 976's own
+    # description attributed it to this function, which is the mistake a reader
+    # holding an editor turns into a budget reset.
+    #
     # INVARIANT, load-bearing and easy to break by a locally-correct edit: the
     # ticket-scoped branch below must always select a SUPERSET of what
     # `external_harness._resumable_stage_run` could adopt. That lookup declines on
@@ -398,15 +412,7 @@ def fail_interrupted_orchestration_runs(
     return failed
 
 
-EXPIRED_LEASE_MESSAGE = (
-    "Orchestration lease expired: nothing has renewed this run and no agent run is in "
-    "flight beneath it. Its driver is gone; the lane has been released."
-)
-
-
-def settle_expired_orchestration_leases(
-    session: Session, *, message: str = EXPIRED_LEASE_MESSAGE
-) -> list[OrchestrationRun]:
+def settle_expired_orchestration_leases(session: Session) -> list[OrchestrationRun]:
     """Make a run whose lease expired terminal, without waiting for a restart.
 
     The lease alone frees the *slot* — `_occupant_is_live` consults it on every
@@ -438,11 +444,22 @@ def settle_expired_orchestration_leases(
         ticket = session.get(Ticket, run.ticket_id)
         if not ticket:
             continue
+        # Each run is described by its own subtree, from the same helper the
+        # predicate just consulted in this session: the message an operator
+        # reads has to be the breadth this sweep actually examined, and one
+        # count computed outside the loop would describe the first run's tree
+        # for all of them.
+        message = expired_lease_message(run.run_code, len(subtree_orchestration_ids(session, run)))
+        # The reason is carried in the record itself, not only in the column it
+        # is about to be written to: an operator diagnosing a reap greps the
+        # server log, and a reason reachable only by querying
+        # orchestration_runs.error_message is a reason they never meet.
         logger.warning(
-            "Settling orchestration %s (ticket %s): lease expired, last seen %s",
+            "Settling orchestration %s (ticket %s): lease expired, last seen %s. %s",
             run.run_code,
             ticket.external_id or ticket.id,
             run.last_seen_at or run.started_at or run.created_at,
+            message,
         )
         callbacks.complete_orchestration(
             run, ticket, status=OrchestrationRunStatus.FAILED, message=message
@@ -748,7 +765,7 @@ class RunService:
         auto_repair: bool = True,
         timeout_seconds: int | None = None,
     ) -> OrchestrationRun:
-        ws = self.session.get(Workspace, ticket.workspace_id)
+        ws = workspace_for_ticket(self.session, ticket)
         if not ws:
             raise ValueError("Ticket workspace not found")
         profile = resolve_orchestration_profile(ws)

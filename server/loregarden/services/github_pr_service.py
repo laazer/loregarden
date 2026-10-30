@@ -7,6 +7,7 @@ import json
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.target_branch import landing_target
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -56,7 +57,7 @@ def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) 
 
 
 def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise ValueError("Workspace not found")
 

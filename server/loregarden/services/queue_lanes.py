@@ -60,7 +60,8 @@ from loregarden.services.queue_repair import (
     rerun_refusal,
     resolve_repair_route,
 )
-from loregarden.services.queue_slot_claims import (
+from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
+from loregarden.services.slot_claim_healing import (
     claim_orphaned_orchestrations,
     release_nested_slot_claims,
 )
@@ -112,23 +113,6 @@ def set_lane_dispatcher_factory(factory: Callable[[Session], LaneDispatcher] | N
     """Install what lanes use to start work. Called by the composition root."""
     global _dispatcher_factory  # noqa: PLW0603 — one process-wide wiring point
     _dispatcher_factory = factory
-
-
-def _claimed_after(slot: AgentSlot, promoted_at: datetime | None) -> bool:
-    """Whether the slot's claim postdates the entry's promotion.
-
-    SQLite hands back naive datetimes; both sides are read as UTC. A slot with
-    no claim time, or an entry never promoted, cannot be shown to be a later
-    claim, so the answer is no.
-    """
-    assigned_at = slot.assigned_at
-    if assigned_at is None or promoted_at is None:
-        return False
-    if assigned_at.tzinfo is None:
-        assigned_at = assigned_at.replace(tzinfo=timezone.utc)
-    if promoted_at.tzinfo is None:
-        promoted_at = promoted_at.replace(tzinfo=timezone.utc)
-    return assigned_at > promoted_at
 
 
 class QueueLaneService:
@@ -531,9 +515,11 @@ class QueueLaneService:
         own claim with the ids already cleared — release it — or a *fresh
         reservation* by a later request, which claims with null ids until
         `bind` and must be left alone. The two are told apart by when the slot
-        was claimed: a claim stamped after this entry was promoted is not this
-        entry's. Every other shape is logged and left, so a release that finds
-        nothing to release does not pass for one that succeeded.
+        was claimed, which is `queue_slot_claims.claim_is_fresh`'s question and
+        not one this module answers for itself any more: a claim stamped after
+        this entry was promoted, or one with no time on it at all, is not this
+        entry's to release. Every other shape is logged and left, so a release
+        that finds nothing to release does not pass for one that succeeded.
         """
         slot = self._slot(entry.slot_number)
         if slot is None:
@@ -545,18 +531,20 @@ class QueueLaneService:
             return None
         if slot.is_available:
             return None
-        occupant = slot.current_orchestration_run_id or slot.current_run_id
-        if occupant:
+        if not slot_is_busy_with_nothing(slot):
             logger.warning(
                 "Lane entry %s names slot %d, but that slot is now held by %s; leaving it in place",
                 entry.id,
                 entry.slot_number,
-                occupant,
+                slot.current_orchestration_run_id or slot.current_run_id,
             )
             return None
-        if _claimed_after(slot, entry.promoted_at):
+        # No `now=`: the release asks only whether the claim is someone else's.
+        # Inheriting the sweep's grace would leave a lane added to and completed
+        # inside the minute unreleasable, which is the bug this fixed.
+        if claim_is_fresh(slot, not_claimed_after=entry.promoted_at):
             logger.warning(
-                "Lane entry %s names slot %d, which a later reservation has claimed "
+                "Lane entry %s names slot %d, whose claim is not this entry's to release "
                 "(assigned %s, entry promoted %s); leaving it in place",
                 entry.id,
                 entry.slot_number,

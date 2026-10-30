@@ -423,7 +423,7 @@ def test_a_reservation_that_never_binds_is_collected_after_the_grace(session, wo
     """The grace defers the sweep; it must not disable it."""
     from datetime import timedelta
 
-    from loregarden.services.parallel_queue import RESERVATION_GRACE
+    from loregarden.services.queue_slot_claims import RESERVATION_GRACE
 
     admission = QueueAdmissionService(session, max_concurrent=3)
     reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-stale"))

@@ -19,7 +19,7 @@ import {
   type GateStudioTarget,
 } from "../../../lib/appNavigation";
 import { scrollIntoScroller } from "../../../lib/scrollWithin";
-import { describeError, errorStatus } from "../../../state/toastStore";
+import { describeError, endSentence, errorStatus } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
 import { WorkspaceGatesPanel } from "../WorkspaceGatesPanel";
 import "../WorkspaceGatesPanel.css";
@@ -55,6 +55,9 @@ interface ProfileState {
   isLoading: boolean;
   isError: boolean;
   error: unknown;
+  /** The alert's own control: re-read the profile without reloading the browser. */
+  refetch: () => void;
+  isFetching: boolean;
 }
 
 /**
@@ -396,6 +399,23 @@ function GateStudioMain({
   onDirtyChange: (dirty: boolean) => void;
   link: LinkFn;
 }) {
+  // react-query resets a query that failed with no data to pending/fetching on
+  // `refetch()` and clears `error`, so a branch guarded on `profile.isError`
+  // alone unmounts the moment the operator presses the alert's own retry — and
+  // this panel has no loading branch, so they would be dropped back onto
+  // `collectWorkspaceControls(workspace, undefined)`: the plausible,
+  // complete-looking empty gate list lg-milestone-that-1215 removed. Holding
+  // the last failure is what keeps the alert up across its own re-read.
+  // Keyed by the workspace it describes: the profile query key is
+  // ["orchestration-profile", slug], so switching workspaces starts a brand-new
+  // observer (isError false, isFetching true) and the clear below is skipped. An
+  // unkeyed ref would then render the previous workspace's file — and the
+  // previous workspace's permission claim — under the new workspace's name.
+  const lastFailure = useRef<{ slug: string | null; error: unknown } | null>(null);
+  if (profile.isError) lastFailure.current = { slug: target.workspaceSlug, error: profile.error };
+  else if (!profile.isFetching) lastFailure.current = null;
+  const failure = lastFailure.current?.slug === target.workspaceSlug ? lastFailure.current : null;
+
   if (workspacesLoading) return <p className="studio-preview-hint">Loading workspaces…</p>;
   if (workspacesFailed) {
     return <p className="studio-preview-hint">Gate Studio needs the workspace list — see the error beside it.</p>;
@@ -410,10 +430,46 @@ function GateStudioMain({
       </div>
     );
   }
-  if (profile.isError && errorStatus(profile.error) === 403) {
+  if (failure && errorStatus(failure.error) === 403) {
     return (
       <div className="gate-load-error" role="alert">
         <p>You don't have permission to read the gate settings for {workspace.slug}.</p>
+      </div>
+    );
+  }
+  // Every other way the profile read can fail, and the one this panel causes
+  // itself: it is the surface that writes these files, so a half-written or
+  // hand-edited one comes back here as a 400 naming the file (
+  // lg-milestone-that-1215 AC13). Until now only the 403 was handled and
+  // everything else fell through to `collectWorkspaceControls(workspace, null)`,
+  // which renders a plausible, complete-looking gate list for settings nobody
+  // could read — so the operator arriving with "why are my gates not what I
+  // set?" was shown an empty list, the one answer that stops them finding out.
+  // After the 403 branch, not before it: a general branch in front would tell
+  // them to go and fix a file they are not allowed to read.
+  if (failure) {
+    // Three blocks, not one spliced line: the detail is the server's own text,
+    // 4-7 lines of it for a pydantic ValidationError, and it carries no
+    // terminator of its own (the server builds one line by design) — hence
+    // `endSentence`. "loaded", not "read", because the 400 detail owns the
+    // words "could not be read as an orchestration profile" and the lead must
+    // not say them again two words ahead of it.
+    const detail = endSentence(describeError(failure.error, "the request failed"));
+    // The status decides, never the message text: on this route a 400 is the
+    // only failure that named a file (`ProfileUnreadableError` resolves the
+    // path), and a transport failure is not an ApiError at all.
+    const instruction =
+      errorStatus(failure.error) === 400
+        ? "Fix that file, then try again."
+        : "Check that the control plane is reachable, then try again.";
+    return (
+      <div className="gate-load-error gate-load-error-stacked" role="alert">
+        <p>Gate settings for {workspace.slug} could not be loaded.</p>
+        {detail ? <p className="gate-load-error-detail">{detail}</p> : null}
+        <p>{instruction}</p>
+        <Button variant="secondary" onClick={() => profile.refetch()} disabled={profile.isFetching}>
+          {profile.isFetching ? "Trying again…" : "Try again"}
+        </Button>
       </div>
     );
   }

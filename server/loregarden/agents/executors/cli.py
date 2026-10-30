@@ -78,10 +78,15 @@ from loregarden.services.handoff_boundary import (
     verdict_proceeds,
     verify_run_boundary,
 )
+from loregarden.services.handoff_tree_status import (
+    HandoffTreePreparationError,
+    PreparedTree,
+)
 from loregarden.services.learning_outcomes import confidence_for
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.recorded_paths import ticket_recorded_paths
@@ -90,9 +95,10 @@ from loregarden.services.run_errors import (
     agent_timeout_message,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
-from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
@@ -119,6 +125,85 @@ logger = logging.getLogger(__name__)
 # green result as commit-scoped evidence. Consumers reuse that via the general
 # evidence ledger (build_evidence_ledger), so only the producer is keyed on skill.
 _FULL_SUITE_SKILL = "run_tests"
+
+
+def _stage_phrase(run: AgentRun) -> str:
+    """How a refusal names the stage whose slot is wrong.
+
+    ``agent_runs.stage_key`` is free text with a ``""`` column default, and a
+    run opened outside the workflow cursor can carry an unusable one. ``stage
+    ""`` names nothing and reads as a bug in the message rather than a fact
+    about the stage, so the name is dropped rather than a new field plumbed in
+    to replace it.
+    """
+    return f'stage "{run.stage_key}"' if run.stage_key.strip() else "this stage"
+
+
+def _unknown_agent_message(run: AgentRun, ticket: Ticket) -> str:
+    """Why this stage cannot be handed over, and what to fix, in one sentence.
+
+    Composed here rather than at the two raise sites that need it
+    (``render_stage_prompt`` and ``prepare_terminal_handoff``) because the
+    operator cannot tell which entry point answered them — the external harness
+    reaches the first, the terminal route the second, and both land in the same
+    toast and the same ``agent_runs.stderr``. Two copies of the f-string drift;
+    these two had already drifted. Module-level and not a method because
+    ``CliAgentExecutor`` is near the organization gate's ``MAX_CLASS_LINES``.
+
+    The blank arm is the case this installation has actually produced: of 3063
+    ``agent_runs`` exactly one carried a non-tree handoff message, and its whole
+    text was ``Unknown agent: `` with nothing after the colon. ``.strip()``
+    rather than a truthiness test, because ``names agent "   "`` is that
+    dangling colon with quotes round it.
+    """
+    stage = _stage_phrase(run)
+    if not run.agent_id.strip():
+        return (
+            f"{ticket.external_id}: {stage} records no agent, so there is nothing "
+            "to run — pick its agent in Workflow Studio."
+        )
+    return (
+        f'{ticket.external_id}: {stage} names agent "{run.agent_id}", not in the '
+        "agent registry — pick its agent in Workflow Studio."
+    )
+
+
+def _missing_workspace_message(ticket: Ticket) -> str:
+    """The ticket points at a workspace row that is not there.
+
+    ``workspace_id`` is the actionable identifier and it goes last: a
+    36-character UUID does not fit inside the 160-prose-character budget beside
+    the other facts in any order, so it takes the place the clamp eats — and it
+    is the one fact recoverable from the ticket row itself.
+    """
+    return (
+        f"{ticket.external_id}: this ticket's workspace row is missing, so no repo can "
+        f"be resolved — re-point the ticket at a workspace "
+        f"(workspace_id {ticket.workspace_id})."
+    )
+
+
+def _missing_repo_path_message(ticket: Ticket, workspace: Workspace, workspace_root: Path) -> str:
+    """The workspace's repo path is not there, or is there but is not a directory.
+
+    Both arms exist because `not workspace_root.is_dir()` is also true for a
+    regular file, a symlink to one, or a socket at that path — and "does not
+    exist" is false in its only diagnostic clause for every one of those, so an
+    operator who checks the path finds it there and looks for the wrong fix.
+    The path goes last for the same reason the tree sentence puts it last: it is
+    70-130 characters on its own, so the four facts do not fit in four lines in
+    any order, and the fact the clamp eats must be the recoverable one — which
+    is this, from the workspace settings the sentence sends the operator to.
+    """
+    if workspace_root.exists():
+        return (
+            f"{ticket.external_id}: workspace {workspace.slug}'s repo path is not a "
+            f"directory — fix it in workspace settings: {workspace_root}."
+        )
+    return (
+        f"{ticket.external_id}: workspace {workspace.slug}'s repo path does not exist — "
+        f"fix it in workspace settings: {workspace_root}."
+    )
 
 
 class CliAgentExecutor:
@@ -150,7 +235,7 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
 
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
             return self.orchestration.complete_run(
                 run,
@@ -408,7 +493,7 @@ class CliAgentExecutor:
             advance_workflow=advance_workflow,
         )
 
-    def render_stage_prompt(self, run: AgentRun, ticket: Ticket) -> tuple[str, Path]:
+    def render_stage_prompt(self, run: AgentRun, ticket: Ticket) -> tuple[str, PreparedTree]:
         """The exact prompt a supervised run of this stage would receive, plus its tree.
 
         Shared by every path that hands a stage to something this process does not
@@ -419,16 +504,16 @@ class CliAgentExecutor:
         """
         agent = get_agent(run.agent_id)
         if not agent:
-            raise ValueError(f"Unknown agent: {run.agent_id}")
+            raise ValueError(_unknown_agent_message(run, ticket))
 
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
-            raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
+            raise ValueError(_missing_workspace_message(ticket))
 
         workspace_root = resolve_workspace_root(workspace)
         agent_context_dir = resolve_agent_context_dir(workspace)
         if not workspace_root.is_dir():
-            raise ValueError(f"Workspace repo path does not exist: {workspace_root}")
+            raise ValueError(_missing_repo_path_message(ticket, workspace, workspace_root))
 
         # The handed-off tree is the same one the supervised run would use: the
         # ticket's worktree, on its branch, brought up to its target. Checking
@@ -437,9 +522,10 @@ class CliAgentExecutor:
         # worktree is what handed the operator a base that could not see a
         # prerequisite landed since the tree was cut.
         #
-        # `resolve_execution_root` resolves the target branch itself, to cut a
-        # worktree, so it raises before any `ensure_ticket_branch` call and sits
-        # inside the same handler. The target is resolved against the shared
+        # `resolve_execution_root` needs the target branch too, to cut a
+        # worktree from it, so it is handed the same memo and raises before any
+        # `ensure_ticket_branch` call, inside the same handler. The target is
+        # resolved against the shared
         # checkout on purpose: resolution writes refs, and refs are shared by
         # every worktree of a repository (lg-milestone-that-779 S3).
         #
@@ -448,27 +534,53 @@ class CliAgentExecutor:
         # non-git execution root surfaces as `ensure_ticket_branch`'s own
         # `ValueError` and reaches the operator as the 400 any other unpreparable
         # tree does.
+        #
+        # One resolution, through the memo this class already owns: the worktree
+        # cut and the refresh's `start_point` are the same question, and the
+        # boundary reads the answer a third time for free. The memo is lazy, so
+        # a handoff refused before the refresh — an unknown agent above, or a
+        # dirty primary checkout inside `resolve_execution_root` — writes no
+        # shared ref on its way out (lg-milestone-that-974 AC4).
+        once = self._target_branch_once(ticket, workspace, workspace_root=workspace_root)
         try:
-            repo_root = resolve_execution_root(self.session, run, ticket, workspace)
+            repo_root = resolve_execution_root(
+                self.session, run, ticket, workspace, resolve_target=once
+            )
             ensure_ticket_branch(
                 repo_root,
                 ticket,
                 session=self.session,
-                start_point=resolve_target_branch(
-                    self.session, ticket, workspace, repo_root=workspace_root
-                ),
+                start_point=once(),
                 ignoring=ticket_recorded_paths(self.session, ticket),
                 seat=MergeTurnSeat(self.session, workspace, ticket),
             )
-        except (TargetBranchError, subprocess.CalledProcessError) as exc:
-            # This path has no run to fail and no stage to block, so it raises —
-            # as a `ValueError`, which both handoff edges already render (the
-            # route maps it to a 400, the MCP dispatcher to an `isError`).
-            # `_refresh_onto`'s own `ValueError` and `DirtyPrimaryCheckoutError`
-            # (a `ValueError` subclass by design) pass through unwrapped: the
-            # first already carries git's merge output, and re-wrapping the
-            # second would lose the dirty-path list the park path is built on.
-            raise ValueError(f"Could not prepare the tree for {ticket.external_id}: {exc}") from exc
+        # Three arms, and the order is load-bearing in a way nothing in Python
+        # enforces: `DirtyPrimaryCheckoutError` and `HandoffTreePreparationError`
+        # are both `ValueError` subclasses, so a bare `except ValueError` above
+        # either one swallows it silently.
+        #
+        # Everything raised from inside this `try` is a tree-preparation failure
+        # and earns the tree lead sentence, which is the whole of the
+        # classification: the three refusals above it stay plain `ValueError`s,
+        # so the default for a failure nobody classified is its own text
+        # (lg-milestone-that-975).
+        except DirtyPrimaryCheckoutError:
+            # The one thing raised in here that is not about the tree. It passes
+            # through unwrapped so the park path keeps `.dirty_paths` and its own
+            # "Commit, stash or discard" sentence leads.
+            raise
+        except (TargetBranchError, ProfileUnreadableError, subprocess.CalledProcessError) as exc:
+            # This path has no run to fail and no stage to block, so it raises.
+            # Both handoff edges render the result: the route maps it to a 400,
+            # the MCP dispatcher to an `isError`.
+            raise HandoffTreePreparationError(
+                f"Could not prepare the tree for {ticket.external_id}: {exc}"
+            ) from exc
+        except ValueError as exc:
+            # `_refresh_onto`'s conflict and the checkout failures. Marked rather
+            # than re-worded — the text is carried byte-identical, so git's own
+            # merge output still trails the lead sentence the boundary composes.
+            raise HandoffTreePreparationError(str(exc)) from exc
 
         stage_def = self._resolve_stage_def(ticket, run)
         prompt = self._build_prompt(
@@ -480,11 +592,11 @@ class CliAgentExecutor:
             stage_def,
             assembly_source=MemoryBriefingAssembly.RENDER,
         )
-        return prompt, repo_root
+        return prompt, PreparedTree(repo_root=repo_root, target_branch=once())
 
     def prepare_terminal_handoff(
         self, run: AgentRun, ticket: Ticket
-    ) -> tuple[CliInvocation, Path | None, Path]:
+    ) -> tuple[CliInvocation, Path | None, PreparedTree]:
         """Build a self-contained CLI invocation for this stage without spawning it.
 
         Used to hand a stage off to a human's own terminal instead of the app's subprocess
@@ -499,17 +611,17 @@ class CliAgentExecutor:
         """
         agent = get_agent(run.agent_id)
         if not agent:
-            raise ValueError(f"Unknown agent: {run.agent_id}")
+            raise ValueError(_unknown_agent_message(run, ticket))
 
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
-            raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
+            raise ValueError(_missing_workspace_message(ticket))
 
-        prompt, repo_root = self.render_stage_prompt(run, ticket)
+        prompt, tree = self.render_stage_prompt(run, ticket)
 
         # A handed-off run is still a run against a tree, and the terminal it is
         # pasted into is the surface most likely to be on a stale branch.
-        stamp_run_boundary(self.session, run, read_boundary(repo_root))
+        stamp_run_boundary(self.session, run, read_boundary(tree.repo_root))
 
         prompt_dir = Path(tempfile.mkdtemp(prefix="loregarden-handoff-"))
         prompt_file = prompt_dir / "prompt.md"
@@ -519,7 +631,7 @@ class CliAgentExecutor:
             prompt=prompt,
             prompt_file=prompt_file,
             skill_name=run.skill_name,
-            workspace_root=repo_root,
+            workspace_root=tree.repo_root,
             workspace=workspace,
         )
         cleanup_path: Path | None = None
@@ -536,7 +648,7 @@ class CliAgentExecutor:
         run.command = f"[terminal-handoff] {' '.join(invocation.argv)}"
         self.session.add(run)
         self.session.commit()
-        return invocation, cleanup_path, repo_root
+        return invocation, cleanup_path, tree
 
     def _touch_ticket_agent(self, ticket: Ticket, agent_name: str, status: RunStatus) -> None:
         ticket.last_updated_by = agent_name

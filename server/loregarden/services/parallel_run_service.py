@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
+from loregarden.models.domain import AgentRun, Ticket, Worktree
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class ParallelRunService:
             timeout_override_seconds=timeout_seconds,
         )
 
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         config = resolve_git_automation(workspace, ticket) if workspace else None
         if not config or not config.worktree:
             return run, None

@@ -3,7 +3,7 @@
  "source": "heuristic",
  "sprint": {
   "basis": "workspace_throughput",
-  "capacity": 4998,
+  "capacity": 4830,
   "committed": 1,
   "days": 14,
   "planned": 458
@@ -4285,7 +4285,7 @@
    ],
    "key": "sprint",
    "kind": "sprint",
-   "rationale": "Work already in progress, then the next work that fits about 4998 work items at the pace each workspace finished over the last three weeks.",
+   "rationale": "Work already in progress, then the next work that fits about 4830 work items at the pace each workspace finished over the last three weeks.",
    "target_date": "2026-10-12",
    "title": "Sprint Sep 28 \u2013 Oct 12"
   }
