@@ -70,15 +70,15 @@ def _remote_sha(repo, branch):
 
 def _published(repo, branch) -> str:
     """The commit the remote holds as ``publish/<branch>``, asserted to be one
-    commit cut from the base tip whose tree is the base and the branch merged
-    (958), and that nothing was pushed under the branch's own name."""
+    commit cut from the remote's base tip whose tree is that base and the branch
+    merged (958), and that nothing was pushed under the branch's own name."""
     head = _remote_sha(repo, publish_ref_for(branch))
     assert head, f"{branch} was not published"
     assert _remote_sha(repo, branch) == "", "the cut is never pushed as the branch itself"
     git(repo, "fetch", "-q", "origin", f"refs/heads/{publish_ref_for(branch)}")
     parents = git(repo, "rev-list", "--parents", "-n1", head).stdout.split()[1:]
-    assert parents == [_sha(repo, "main")], "one commit, on the base tip"
-    merged = git(repo, "merge-tree", "--write-tree", "main", branch).stdout.split()[0]
+    assert parents == [_sha(repo, "origin/main")], "one commit, on the remote's base tip"
+    merged = git(repo, "merge-tree", "--write-tree", "origin/main", branch).stdout.split()[0]
     assert _sha(repo, f"{head}^{{tree}}") == merged, "the base and the branch, merged"
     return head
 
@@ -143,7 +143,7 @@ def test_a_root_finishing_its_workflow_publishes_and_marks_done(session, workspa
 
 def test_a_push_failure_blocks_the_root_with_the_reason(session, workspace, repo):
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
-    git(repo, "remote", "set-url", "origin", str(repo.parent / "no-such-remote.git"))
+    git(repo, "remote", "set-url", "--push", "origin", str(repo.parent / "no-such-remote.git"))
     at_terminal_stage(session, ms)
 
     OrchestrationService(session).advance_stage(ms)
@@ -373,6 +373,7 @@ def test_unsigned_history_is_published_as_one_signed_commit(session, workspace, 
 def test_a_branch_behind_the_base_does_not_revert_what_the_base_gained(session, workspace, repo):
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
     commit_on(repo, "main", "later.txt", "on main after the branch was cut\n")
+    git(repo, "push", "-q", "origin", "main")
 
     assert publish_tree(session, ms, workspace).ok
 
@@ -381,9 +382,38 @@ def test_a_branch_behind_the_base_does_not_revert_what_the_base_gained(session, 
     assert {"later.txt", "c1.txt"} <= set(files)
 
 
+def test_the_cut_is_from_the_remotes_base_not_a_stale_local_one(session, workspace, repo):
+    """The PR merges into the remote's base. A cut from a local base the checkout
+    never pulled carries a diff against old work and conflicts there (#692)."""
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    commit_on(repo, "main", "later.txt", "merged on the remote\n")
+    git(repo, "push", "-q", "origin", "main")
+    remote_main = _sha(repo, "main")
+    git(repo, "reset", "-q", "--hard", "HEAD~1")  # the checkout never pulled it
+
+    assert publish_tree(session, ms, workspace).ok
+
+    head = _published(repo, target)
+    assert _sha(repo, f"{head}~1") == remote_main != _sha(repo, "main")
+    assert "later.txt" in git(repo, "ls-tree", "--name-only", head).stdout.split()
+
+
+def test_a_base_that_cannot_be_fetched_publishes_nothing_and_says_why(session, workspace, repo):
+    ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
+    git(repo, "remote", "set-url", "origin", str(repo.parent / "no-such-remote.git"))
+
+    outcome = publish_tree(session, ms, workspace)
+
+    assert not outcome.ok
+    assert "could not fetch main" in outcome.detail and "no-such-remote" in outcome.detail
+    session.refresh(ms)
+    assert ms.landed_sha == ""
+
+
 def test_a_branch_that_conflicts_with_the_base_is_not_published(session, workspace, repo):
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
     commit_on(repo, "main", "c1.txt", "main's own c1\n")
+    git(repo, "push", "-q", "origin", "main")
 
     outcome = publish_tree(session, ms, workspace)
 
@@ -431,7 +461,7 @@ def test_a_failed_publish_after_a_landing_files_a_card_and_a_later_one_closes_it
 ):
     ms, child, target = _child_at_terminal_stage(session, workspace, repo, PUSH_ONLY)
     remote = git(repo, "remote", "get-url", "origin").stdout.strip()
-    git(repo, "remote", "set-url", "origin", str(repo.parent / "no-such-remote.git"))
+    git(repo, "remote", "set-url", "--push", "origin", str(repo.parent / "no-such-remote.git"))
 
     OrchestrationService(session).advance_stage(child)
 
@@ -440,7 +470,7 @@ def test_a_failed_publish_after_a_landing_files_a_card_and_a_later_one_closes_it
     [card] = _publish_cards(session, ms)
     assert "push failed" in card.impact and "no-such-remote" in card.impact
 
-    git(repo, "remote", "set-url", "origin", remote)
+    git(repo, "remote", "set-url", "--push", "origin", remote)
     tree_publish_scheduler.schedule_tree_publish(ms.id, workspace.id)
 
     assert _publish_cards(session, ms) == []
@@ -475,6 +505,7 @@ def test_a_branch_whose_work_reached_the_base_by_a_squash_publishes_nothing(
     base, but it adds nothing to it; a push would open an empty PR."""
     ms, target = _landed_tree(session, workspace, repo, PUSH_ONLY)
     commit_on(repo, "main", "c1.txt", "child work\n")  # the squash of the tree's PR
+    git(repo, "push", "-q", "origin", "main")
 
     outcome = publish_tree(session, ms, workspace)
 
