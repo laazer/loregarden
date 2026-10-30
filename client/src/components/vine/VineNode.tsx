@@ -14,6 +14,8 @@ function MarkShape({ mark }: { mark: VineMark }) {
       );
     case "pruned":
       return <path className="vine-pruned" d="M7 2 V 8 M 4 10.5 L 10 7.5" />;
+    case "fork":
+      return <path className="vine-fork" d="M7 1.5 V 12.5 M 7 7 C 9 7, 11 5.5, 12.5 3" />;
     default:
       // A bud: closed until it opens; the fill says which kind of wait it is.
       return <path className={`vine-bud vine-bud--${mark}`} d="M7 1.5 C 10.5 4.5, 11.5 9, 7 12.5 C 2.5 9, 3.5 4.5, 7 1.5 Z" />;

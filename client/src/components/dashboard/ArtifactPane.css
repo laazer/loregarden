@@ -797,3 +797,9 @@
     display: none;
   }
 }
+
+/* The ticket's living map, given the pane's breathing room. */
+.artifact-map-pane {
+  padding: 14px 18px 18px;
+  overflow: auto;
+}

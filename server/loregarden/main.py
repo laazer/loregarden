@@ -30,6 +30,7 @@ from loregarden.api import (
     inbox,
     initiatives,
     instance_templates,
+    living_map,
     local_instances,
     machine_disk,
     mcp,
@@ -299,6 +300,7 @@ app.include_router(ticket_pull_request.router, prefix="/api")
 app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(ticket_handoff.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")
+app.include_router(living_map.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(workspace_dashboard.router, prefix="/api")

@@ -22,6 +22,7 @@ from loregarden.models.domain.initiative_suggestion_schemas import *  # noqa: F4
 from loregarden.models.domain.initiative_tables import *  # noqa: F401,F403
 from loregarden.models.domain.instance_template_tables import *  # noqa: F401,F403
 from loregarden.models.domain.invariant_enums import *  # noqa: F401,F403
+from loregarden.models.domain.living_map_tables import *  # noqa: F401,F403
 from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
 from loregarden.models.domain.memory_tables import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403

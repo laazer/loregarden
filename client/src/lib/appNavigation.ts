@@ -25,6 +25,8 @@ export type AppPage =
 export type ArtifactTab =
   /** What happened, stage by stage, and what needs a person. */
   | "timeline"
+  /** What waits on the operator, what is open and what was decided: the living map. */
+  | "map"
   | "diff"
   /** What the agents produced: every attachment, machinery hidden. */
   | "outputs"
@@ -41,10 +43,10 @@ export type ArtifactTab =
   | "monitor";
 
 /** Every routable ticket pane. */
-export const ARTIFACT_TABS: ArtifactTab[] = ["timeline", "diff", "outputs", "pr", "approvals", "hive", "monitor"];
+export const ARTIFACT_TABS: ArtifactTab[] = ["timeline", "map", "diff", "outputs", "pr", "approvals", "hive", "monitor"];
 
 /** The tab strip; the rest sit behind "More". */
-export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = ["timeline", "diff", "outputs", "pr", "approvals"];
+export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = ["timeline", "map", "diff", "outputs", "pr", "approvals"];
 
 /** The tab a ticket opens on when the link names none: where it is, and what needs a person. */
 export const DEFAULT_ARTIFACT_TAB: ArtifactTab = "timeline";
