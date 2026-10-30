@@ -8,7 +8,6 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import (
-    WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
     BlockOrigin,
     OrchestrationDriver,
@@ -24,15 +23,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
-from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
-from loregarden.services.dependency_readiness import (
-    UnmetPrerequisite,
-    UnmetReason,
-    unmet_prerequisites_for_start,
+from loregarden.services.child_readiness import (
+    ordered_children,
+    partition_children,
 )
+from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
-from loregarden.services.hold_line import HeldChild, render_hold_line
+from loregarden.services.hold_line import render_hold_line
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -63,11 +61,9 @@ from loregarden.services.studio_routing import (
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
     finalize_aggregator_ticket,
-    order_children_for_subtree,
     resolve_gate_if_permitted,
     ticket_workflow_complete,
 )
-from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import (
     next_executable_stage,
     parse_stage_map,
@@ -901,14 +897,9 @@ def _orchestrate_incomplete_children(
     the agent's own timeout. Module-level so BuiltinOrchestrator stays under
     its size cap.
     """
-    children = list(
-        builtin.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
-    )
-    dependencies = TicketDependencyService(builtin.session)
-    prereqs = dependencies.prerequisites_map([c.id for c in children])
-    children = order_children_for_subtree(children, prereqs)
+    children = ordered_children(builtin.session, ticket)
     workspace = builtin.session.get(Workspace, ticket.workspace_id)
-    runnable, parked, waiting = _partition_children(builtin.session, workspace, children)
+    runnable, parked, waiting = partition_children(builtin.session, workspace, children)
     for child in runnable:
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
@@ -953,65 +944,6 @@ def _orchestrate_incomplete_children(
     return None
 
 
-def _partition_children(
-    session: Session, workspace: Workspace | None, children: list[Ticket]
-) -> tuple[list[Ticket], list[str], list[HeldChild]]:
-    """Split ordered children into those that may run now, and two kinds of hold.
-
-    Deciding *whether* a child may run is a different job from running it, and
-    separating them keeps the run loop to the one thing it does. Both holds leave
-    the parent incomplete; they differ in who is owed:
-
-    - ``parked`` is owed by a person, and deliberately does not stop the rest of
-      the subtree (lg-workflow-integrity-449);
-    - ``waiting`` is owed by another ticket, whose work this run cannot reach.
-
-    That last qualifier is narrower than it looks, and reading it too widely is
-    what produced lg-milestone-that-779. A sibling exemption is right for one
-    reason only: `order_children_for_subtree` has already put a sibling that
-    has *not run* earlier in this list, so blocking on it would hold a child
-    whose prerequisite is about to run — an integration review depends on every
-    sibling, so it would never start at all. That is `UnmetReason.NOT_DONE`,
-    and it stays exempt.
-
-    Ordering cannot do the other half. A sibling in `done` whose branch never
-    landed has already had its turn, and no reordering makes work the
-    dependent's base cannot see appear in it (`UnmetReason.NOT_LANDED`). 779
-    observed exactly that: 715 reached `done` unlanded, 716 was dispatched
-    immediately, and 716's worktree was cut from an integration branch holding
-    none of 715's commits. So the exemption is keyed on the *reason*, per
-    entry, and never on being a sibling alone.
-
-    What ordering cannot express is a prerequisite it never saw. It drops edges
-    pointing outside the set, which is every cross-workspace edge and every edge
-    to a ticket under a different parent, so before this the orchestrator picked
-    up children whose prerequisite had not been started — in another repository —
-    and reported the failure as the child's own (676). Those are exactly the
-    edges nothing in this run can satisfy, which is what makes them a hold
-    rather than an ordering hint.
-    """
-    sibling_ids = {child.id for child in children}
-    runnable: list[Ticket] = []
-    parked: list[str] = []
-    waiting: list[HeldChild] = []
-    for child in children:
-        if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
-            continue
-        if child.state == TicketState.PARKED:
-            parked.append(child.title)
-            continue
-        unmet = [
-            entry
-            for entry in _unmet_for(session, child, workspace)
-            if not (entry.ticket.id in sibling_ids and entry.reason is UnmetReason.NOT_DONE)
-        ]
-        if unmet:
-            waiting.append(HeldChild(ticket=child, unmet=unmet))
-            continue
-        runnable.append(child)
-    return runnable, parked, waiting
-
-
 def _dependency_hold(session: Session, ticket: Ticket) -> str:
     """Why ``ticket`` may not take its next stage yet, or "" when it may."""
     try:
@@ -1019,18 +951,6 @@ def _dependency_hold(session: Session, ticket: Ticket) -> str:
     except DependencyHold as hold:
         return str(hold)
     return ""
-
-
-def _unmet_for(
-    session: Session, child: Ticket, workspace: Workspace | None
-) -> list[UnmetPrerequisite]:
-    """Landed-readiness when there is a repository to ask; state alone otherwise."""
-    if workspace is not None:
-        return unmet_prerequisites_for_start(session, child, workspace)
-    return [
-        UnmetPrerequisite(prereq, UnmetReason.NOT_DONE)
-        for prereq in TicketDependencyService(session).unmet_prerequisites(child.id)
-    ]
 
 
 def _run_and_collect_parallel_results(

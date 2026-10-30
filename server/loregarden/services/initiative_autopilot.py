@@ -25,7 +25,10 @@ Each tick, per plan with autopilot on:
    prerequisite can be `done` with its work never landed, and the queue does
    not check prerequisites at all — a queued ticket starts when its slot frees.
    Nor does it check ancestors: a ticket whose parent (or the plan's root) has
-   its own orchestration running waits, since that run works through it.
+   its own orchestration running waits, since that run works through it. A
+   parent is checked over its whole subtree (`subtree_start_hold`): it carries
+   no stages of its own, so one whose every child is held has nothing to run
+   and must not spend a slot discovering that.
 4. Queue it the way Machine's Lanes tab's "Add ticket" does
    (`QueueLaneService.add_to_lane`), into the least loaded agent slot, with
    `auto_approve` on: tool prompts do not stop it. Legacy stage sign-offs on
@@ -74,6 +77,7 @@ from loregarden.services.autopilot_sign_off import (
     record_autopilot_sign_off,
     self_and_ancestors,
 )
+from loregarden.services.child_readiness import subtree_start_hold
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.initiative_graph import (
     NEEDS_PERSON_TAG,
@@ -282,6 +286,20 @@ def _dispatch(
             for u in unmet
         )
         _record_once(session, plan.initiative_id, ticket.id, detail)
+        return False
+    # A parent carries no stages of its own: its run works through its children.
+    # Checking only the picked row's prerequisites passes a parent whose every
+    # child is held, which then cuts a lane, finds nothing to run, and pauses —
+    # and the pause is a success, so the same pick wins the next tick forever.
+    # Reading the subtree here costs the same git calls one layer earlier.
+    subtree_hold = subtree_start_hold(session, ticket, workspace)
+    if subtree_hold:
+        _record_once(
+            session,
+            plan.initiative_id,
+            ticket.id,
+            f"waiting: nothing under it can start yet — {subtree_hold}",
+        )
         return False
     try:
         if retry is not None:
