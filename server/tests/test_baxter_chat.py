@@ -802,10 +802,133 @@ def test_baxter_chat_conflict_when_turn_already_running(
     # so the per-session guard does not fire and this is not a 409.
     assert res.status_code == 202
 
-    # The workspace-scoped run check then rejects it inside the turn, which
-    # surfaces as a failed assistant message rather than a rejected request.
+    # A run in no worktree holds the shared checkout, so the turn is rejected
+    # inside, which surfaces as a failed assistant message, not a rejected request.
     snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
-    assert "previous message" in snapshot["messages"][-1]["content"].lower()
+    assert "shared checkout" in snapshot["messages"][-1]["content"].lower()
+
+
+def _thread_turn(
+    db_session: Session, session_id: str, *, isolated: bool, status: RunStatus = RunStatus.RUNNING
+) -> AgentRun:
+    """An in-flight Home turn stamped on `session_id`'s pending row, in its own
+    worktree when `isolated`, else in the shared checkout."""
+    from loregarden.models.domain import BaxterChatMessage, Worktree
+
+    workspace = _seeded_workspace(db_session)
+    run = AgentRun(
+        run_code=f"run_{session_id[:6]}",
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=status,
+    )
+    db_session.add(run)
+    db_session.commit()
+    if isolated:
+        tree = Worktree(workspace_id=workspace.id, agent_run_id=run.id, chat_session_id=session_id)
+        db_session.add(tree)
+        db_session.commit()
+        run.worktree_id = tree.id
+    db_session.add(
+        BaxterChatMessage(session_id=session_id, role="assistant", status="pending", run_id=run.id)
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+def test_a_thread_is_blocked_by_its_own_turn_not_by_another_threads_isolated_one(
+    client: TestClient, db_session: Session
+):
+    from loregarden.services.run_concurrency import find_blocking_chat_run
+
+    busy, other = _new_session(client), _new_session(client)
+    run = _thread_turn(db_session, busy, isolated=True)
+    workspace_id = _seeded_workspace(db_session).id
+
+    def blocking(session_id: str) -> AgentRun | None:
+        return find_blocking_chat_run(
+            db_session, workspace_id, stage_key=HOME_CHAT_STAGE_KEY, chat_session_id=session_id
+        )
+
+    assert blocking(other) is None
+    assert blocking(busy).id == run.id
+
+
+def test_a_turn_in_the_shared_checkout_blocks_every_thread(client: TestClient, db_session: Session):
+    from loregarden.services.run_concurrency import find_blocking_chat_run
+
+    busy, other = _new_session(client), _new_session(client)
+    run = _thread_turn(db_session, busy, isolated=False)
+
+    blocking = find_blocking_chat_run(
+        db_session,
+        _seeded_workspace(db_session).id,
+        stage_key=HOME_CHAT_STAGE_KEY,
+        chat_session_id=other,
+    )
+    assert blocking is not None and blocking.id == run.id
+
+
+def test_stop_in_one_thread_leaves_another_threads_turn_running(
+    client: TestClient, db_session: Session
+):
+    busy, other = _new_session(client), _new_session(client)
+    run = _thread_turn(db_session, busy, isolated=True)
+    _thread_turn(db_session, other, isolated=True)
+
+    res = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{other}/stop")
+
+    assert res.status_code == 200
+    db_session.refresh(run)
+    assert run.cancel_requested_at is None
+    assert (
+        client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{busy}").json()["run_status"]
+        == "running"
+    )
+
+
+def test_a_thread_never_shows_another_running_threads_approvals(
+    client: TestClient, db_session: Session
+):
+    from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus
+
+    asking, other = _new_session(client), _new_session(client)
+    run = _thread_turn(db_session, asking, isolated=True, status=RunStatus.AWAITING_PERMISSION)
+    _thread_turn(db_session, other, isolated=True)
+    db_session.add(
+        Approval(
+            ticket_id=None,
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+            kind=ApprovalKind.CLI_QUESTION,
+            title="Which shape?",
+            stage_key=HOME_CHAT_STAGE_KEY,
+            tool_name="AskUserQuestion",
+            tool_input_json="{}",
+            status=ApprovalStatus.PENDING,
+        )
+    )
+    db_session.commit()
+
+    def snapshot(session_id: str) -> dict:
+        return client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+
+    assert [a["title"] for a in snapshot(asking)["pending_approvals"]] == ["Which shape?"]
+    assert snapshot(asking)["run_status"] == "awaiting_input"
+    assert snapshot(other)["pending_approvals"] == []
+    assert snapshot(other)["run_status"] == "running"
+
+    # A turn whose row is not stamped with a run yet has no asks of its own.
+    from loregarden.models.domain import BaxterChatMessage
+
+    unstamped = _new_session(client)
+    db_session.add(BaxterChatMessage(session_id=unstamped, role="assistant", status="pending"))
+    db_session.commit()
+    assert snapshot(unstamped)["pending_approvals"] == []
 
 
 def test_home_chat_snapshot_surfaces_pending_approvals_and_awaiting_input(
@@ -835,7 +958,9 @@ def test_home_chat_snapshot_surfaces_pending_approvals_and_awaiting_input(
             session_id=session_id, role="user", content="Ship queue history?", status="complete"
         )
     )
-    db_session.add(BaxterChatMessage(session_id=session_id, role="assistant", status="pending"))
+    db_session.add(
+        BaxterChatMessage(session_id=session_id, role="assistant", status="pending", run_id=run.id)
+    )
     db_session.add(
         Approval(
             ticket_id=None,

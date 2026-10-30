@@ -51,7 +51,9 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.run_concurrency import (
+    find_active_chat_thread_run,
     find_active_workspace_chat_run,
+    find_blocking_chat_run,
     new_run_code,
 )
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
@@ -281,8 +283,8 @@ def _start_run(request: AgentTurnRequest) -> AgentRun:
     if not stage_key:
         raise ValueError("stage_key is required when creating a run")
 
-    if find_active_workspace_chat_run(request.session, request.workspace.id, stage_key=stage_key):
-        message = "An agent turn is already running — wait for it to finish."
+    message = _conflict_message(request, stage_key)
+    if message:
         if request.conflict_error:
             raise request.conflict_error(message)
         raise RuntimeError(message)
@@ -301,6 +303,31 @@ def _start_run(request: AgentTurnRequest) -> AgentRun:
     request.session.refresh(run)
     _bind_home_turn_run(request, run)
     return run
+
+
+def _conflict_message(request: AgentTurnRequest, stage_key: str) -> str:
+    """Why this turn cannot start now, or "" when it can."""
+    if not request.chat_session_id:
+        if find_active_workspace_chat_run(
+            request.session, request.workspace.id, stage_key=stage_key
+        ):
+            return "An agent turn is already running — wait for it to finish."
+        return ""
+    blocking = find_blocking_chat_run(
+        request.session,
+        request.workspace.id,
+        stage_key=stage_key,
+        chat_session_id=request.chat_session_id,
+    )
+    if blocking is None:
+        return ""
+    own = find_active_chat_thread_run(request.session, request.chat_session_id)
+    if own is not None and own.id == blocking.id:
+        return "This thread is still working on the previous message — wait for it to finish."
+    return (
+        "Another thread's turn is using the workspace's shared checkout — wait for it "
+        "to finish, or stop it from that thread."
+    )
 
 
 def _bind_home_turn_run(request: AgentTurnRequest, run: AgentRun) -> None:

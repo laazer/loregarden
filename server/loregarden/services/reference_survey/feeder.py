@@ -29,7 +29,13 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.db.session import engine
-from loregarden.models.domain import VALID_HIERARCHY, Ticket, TicketState, Workspace
+from loregarden.models.domain import (
+    VALID_HIERARCHY,
+    OrchestrationRun,
+    Ticket,
+    TicketState,
+    Workspace,
+)
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
     LicenceBasis,
@@ -74,10 +80,11 @@ from loregarden.services.reference_survey.queue import (
     target_workspaces,
 )
 from loregarden.services.reference_survey.upstream import refresh_stale
+from loregarden.services.run_concurrency import ACTIVE_ORCHESTRATION_STATUSES
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.workflow_service import WorkflowService
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -493,9 +500,20 @@ def _dispatch(
 
 
 def running_passes(session: Session) -> int:
+    """Passes holding a lane: dispatched, or recorded while the carrier's
+    orchestration is still finishing (gates, commit, land). A pass is FINISHED
+    when the agent records it, which can be ten minutes before its lane frees."""
+    still_driving = select(OrchestrationRun.ticket_id).where(
+        col(OrchestrationRun.status).in_(ACTIVE_ORCHESTRATION_STATUSES)
+    )
     return len(
         session.exec(
-            select(SurveyPass.id).where(SurveyPass.status == SurveyPassStatus.DISPATCHED)
+            select(SurveyPass.id).where(
+                or_(
+                    SurveyPass.status == SurveyPassStatus.DISPATCHED,
+                    col(SurveyPass.carrier_ticket_id).in_(still_driving),
+                )
+            )
         ).all()
     )
 
