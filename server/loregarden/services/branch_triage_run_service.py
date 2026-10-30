@@ -164,7 +164,7 @@ def _settle(
         return None
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = with_thinking_part(parts_json, thinking)
+    assistant.parts_json = with_thinking_part(parts_json, thinking, content=content)
     session.add(assistant)
     if assistant.run_id:
         run = session.get(AgentRun, assistant.run_id)

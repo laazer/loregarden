@@ -367,6 +367,47 @@ def test_interrupted_turn_is_settled_not_stranded(client: TestClient, monkeypatc
     assert "interrupted" in snapshot["messages"][-1]["content"].lower()
 
 
+def test_a_restart_keeps_the_plan_steps_the_interrupted_turn_checked_off(client: TestClient):
+    """The reaper used to drop the live row, so a plan two steps in stayed at 0/n."""
+    from loregarden.db.session import engine
+    from loregarden.models.domain import BaxterChatMessage, ChatTurnThinking
+    from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
+    from sqlmodel import Session
+
+    session_id = _new_session(client)
+    plan = {
+        "primitive": "todo_list",
+        "owner": "agent",
+        "plan_id": "repro",
+        "items": [
+            {"id": "a", "text": "Write the repro", "checked": True},
+            {"id": "b", "text": "Guard the writer", "checked": False},
+        ],
+    }
+    with Session(engine) as db:
+        assistant = BaxterChatMessage(session_id=session_id, role="assistant", status="pending")
+        db.add(assistant)
+        db.add(
+            ChatTurnThinking(
+                turn_id=assistant.id, answer=f"```loregarden\n{json.dumps(plan)}\n```", seq=3
+            )
+        )
+        db.commit()
+        turn_id = assistant.id
+
+    with Session(engine) as db:
+        assert len(fail_interrupted_baxter_chat_turns(db)) == 1
+        assert db.get(ChatTurnThinking, turn_id) is None
+
+    message = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()[
+        "messages"
+    ][-1]
+    kinds = [part["primitive"] for part in message["parts"]]
+    assert kinds == ["text", "todo_list"]
+    assert "interrupted" in message["parts"][0]["content"].lower()
+    assert [item["checked"] for item in message["parts"][1]["items"]] == [True, False]
+
+
 def test_stop_settles_pending_turn_and_unlocks_composer(client: TestClient):
     from loregarden.db.session import engine
     from loregarden.models.domain import BaxterChatMessage

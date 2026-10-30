@@ -301,7 +301,7 @@ class TriageTurnExecutor:
             content=settled.content,
             # Resolved at write time so the thread renders its cards after a
             # reload instead of degrading to the raw fenced JSON.
-            parts_json=with_thinking_part(settled.parts_json, thinking),
+            parts_json=with_thinking_part(settled.parts_json, thinking, content=settled.content),
             run_id=run.id if run else None,
         )
         self.session.add(assistant_message)

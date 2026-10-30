@@ -77,6 +77,38 @@ export function supersededAgentPlanKeys(messages: ChatMessageView[]): Set<string
 }
 
 /**
+ * Plan cards with the in-flight turn's progress laid over them.
+ *
+ * While a plan executes, the agent re-emits it between tool calls, but those
+ * copies only reach the thread when the turn settles. Until then the stored
+ * card would sit at 0/n. Each live plan replaces the thread's current card of
+ * the same identity; a superseded copy is never shown, so it is left alone.
+ */
+export function withLivePlans(
+  messages: ChatMessageView[],
+  livePlans: TodoListPart[],
+  superseded: Set<string>,
+): ChatMessageView[] {
+  if (!livePlans.length) return messages;
+  const live = new Map<string, TodoListPart>();
+  for (const plan of livePlans) {
+    const identity = agentPlanIdentity(plan);
+    if (identity) live.set(identity, plan);
+  }
+  return messages.map((message) => {
+    let changed = false;
+    const parts = (message.parts ?? []).map((part, index) => {
+      const identity = agentPlanIdentity(part);
+      const plan = identity ? live.get(identity) : undefined;
+      if (!plan || superseded.has(agentPlanPartKey(message.id, index))) return part;
+      changed = true;
+      return plan;
+    });
+    return changed ? { ...message, parts } : message;
+  });
+}
+
+/**
  * A short label for the Run message, or null when this is ordinary user text.
  *
  * The Run button posts the whole plan so the agent has the steps verbatim even

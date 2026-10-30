@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
+import { useChatTurnThinking, type ChatTurnThinking } from "../../../../hooks/useChatTurnThinking";
 import { StudioChatMessages } from "../../../studio/StudioChat";
 import {
   AGENT_PLAN_REQUEST_PREFIX,
@@ -7,9 +8,24 @@ import {
   agentPlanRequestTask,
   agentPlanRunSummary,
   supersededAgentPlanKeys,
+  withLivePlans,
 } from "../agentPlan";
 import { TodoListPrimitive, agentPlanExecuteMessage } from "../TodoListPrimitive";
 import type { ChatPart, TodoListPart } from "../types";
+
+jest.mock("../../../../hooks/useChatTurnThinking", () => ({ useChatTurnThinking: jest.fn() }));
+
+const IDLE_TURN: ChatTurnThinking = {
+  content: "",
+  answer: "",
+  activity: "",
+  plans: [],
+  isStreaming: false,
+};
+
+beforeEach(() => {
+  jest.mocked(useChatTurnThinking).mockReturnValue(IDLE_TURN);
+});
 
 const plan = (planId: string | null, checked: boolean): TodoListPart => ({
   primitive: "todo_list",
@@ -131,5 +147,40 @@ describe("one-shot plan requests", () => {
     expect(screen.getByText("Asked for a plan")).toBeInTheDocument();
     expect(screen.getByText("Add a history API")).toBeInTheDocument();
     expect(screen.queryByText(/Emit a `todo_list` primitive/)).not.toBeInTheDocument();
+  });
+});
+
+describe("live plan progress", () => {
+  it("lays the streamed copy over the thread's current card of the same plan", () => {
+    const messages = [{ id: "m1", role: "assistant", content: "", parts: [plan("history", false)] }];
+    const shown = withLivePlans(messages, [plan("history", true)], new Set());
+    expect((shown[0].parts ?? [])[0]).toEqual(plan("history", true));
+  });
+
+  it("leaves superseded copies and other plans as stored", () => {
+    const messages = [
+      { id: "m1", role: "assistant", content: "", parts: [plan("history", false)] },
+      { id: "m2", role: "assistant", content: "", parts: [plan("other", false)] },
+    ];
+    const shown = withLivePlans(messages, [plan("history", true)], new Set(["m1#0"]));
+    expect(shown).toEqual(messages);
+  });
+
+  it("ticks the thread's card while the executing turn is still in flight", () => {
+    jest.mocked(useChatTurnThinking).mockReturnValue({
+      ...IDLE_TURN,
+      answer: "Step one done.",
+      plans: [plan("history", true)],
+      isStreaming: true,
+    });
+    render(
+      <StudioChatMessages
+        messages={[{ id: "m1", role: "assistant", content: "", parts: [plan("history", false)] }]}
+        isThinking
+        activeTurnId="turn-1"
+        showAssistantAvatar={false}
+      />,
+    );
+    expect(screen.getByText("Complete")).toBeInTheDocument();
   });
 });

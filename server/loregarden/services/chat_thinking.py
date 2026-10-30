@@ -23,6 +23,14 @@ folded into the message — the settled message *is* the reply — but it has to
 stream, because a read-only turn emits an empty thinking block and the reply is
 then the only thing that moves. Without it those surfaces would show a live
 panel with nothing in it.
+
+The reply is also where an executing plan reports progress. Baxter re-emits its
+`todo_list` card between tool calls as steps complete, but the CLI's settled
+`result` is only its *final* message, so those re-emissions never reach the
+stored reply. Each frame therefore carries the newest copy of every agent plan
+seen in the reply so far, and settling folds the newest copy into the message
+when the final reply did not re-emit it, so a plan's progress survives the turn
+that made it, including one a restart killed.
 """
 
 from __future__ import annotations
@@ -30,13 +38,16 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from loregarden.db.session import engine
 from loregarden.models.domain import ChatTurnThinking
-from loregarden.models.domain.chat_primitives import ThinkingPart
+from loregarden.models.domain.chat_primitives import TextPart, ThinkingPart, TodoListPart
+from loregarden.services.chat_primitives.parser import parse_primitive_parts
 from loregarden.services.event_hub import event_hub
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -53,6 +64,42 @@ MAX_ACTIVITY_CHARS = 160
 #: arrive far faster than anyone can read; at this rate the panel moves
 #: continuously and the row is written a few times a second, not hundreds.
 FLUSH_INTERVAL_SECONDS = 0.25
+
+
+#: The title an agent plan takes when it carries none. Mirrors the client's
+#: ``DEFAULT_AGENT_PLAN_TITLE``, which keys plans the same way.
+DEFAULT_AGENT_PLAN_TITLE = "Agent execution plan"
+
+
+def agent_plan_identity(part: TodoListPart) -> str:
+    """The key that makes a re-emitted plan replace its earlier card.
+
+    Mirrors ``agentPlanIdentity`` in the client: the agent's ``plan_id`` when it
+    gave one, else the title, which is what the model varies least between turns.
+    """
+    plan_id = (part.plan_id or "").strip()
+    if plan_id:
+        return f"id:{plan_id.lower()}"
+    title = (part.title or "").strip() or DEFAULT_AGENT_PLAN_TITLE
+    return f"title:{title.lower()}"
+
+
+def streamed_agent_plans(answer: str) -> list[TodoListPart]:
+    """The newest copy of each agent plan in a streamed reply, in first-seen order."""
+    latest: dict[str, TodoListPart] = {}
+    for part in parse_primitive_parts(answer or ""):
+        if part.primitive == "todo_list" and part.owner == "agent":
+            latest[agent_plan_identity(part)] = part
+    return list(latest.values())
+
+
+@dataclass(frozen=True)
+class SettledThinking:
+    """What a finished turn's live row leaves for its message."""
+
+    transcript: str = ""
+    #: The newest copy of each agent plan the turn streamed.
+    plans: tuple[TodoListPart, ...] = ()
 
 
 def chat_turn_topic(turn_id: str) -> str:
@@ -88,11 +135,29 @@ class ChatTurnThinkingSink:
         self._answer = ""
         self._activity = ""
         self._seq = 0
+        self._resume()
         self._pending = False
         self._last_flush = 0.0
         #: Once token deltas are seen, the completed ``assistant`` snapshot of
         #: the same blocks is ignored — otherwise every thought lands twice.
         self._saw_deltas = False
+
+    def _resume(self) -> None:
+        """Continue a turn that already streamed, rather than start it over.
+
+        A plan execution re-runs the agent under the same turn id until the
+        plan is complete. A fresh sink restarted ``seq`` at zero, and every
+        reader drops a frame older than one it has shown, so the panel froze
+        for the whole continuation, and the first attempt's plan progress was
+        overwritten by an empty reply.
+        """
+        with Session(engine) as session:
+            row = session.get(ChatTurnThinking, self.turn_id)
+            if not row:
+                return
+            self._content = row.content
+            self._answer = row.answer
+            self._seq = row.seq
 
     # -- ingestion ---------------------------------------------------------
 
@@ -308,6 +373,7 @@ class ChatTurnThinkingSink:
             "answer": self._answer,
             "activity": self._activity,
             "seq": self._seq,
+            "plans": [plan.model_dump() for plan in streamed_agent_plans(self._answer)],
         }
         try:
             self._persist(payload)
@@ -335,43 +401,60 @@ def read_chat_turn_thinking(session: Session, turn_id: str) -> dict[str, Any]:
     """The turn's reasoning so far, or an empty frame if it has produced none."""
     row = session.get(ChatTurnThinking, turn_id)
     if not row:
-        return {"turn_id": turn_id, "content": "", "answer": "", "activity": "", "seq": 0}
+        return {
+            "turn_id": turn_id,
+            "content": "",
+            "answer": "",
+            "activity": "",
+            "seq": 0,
+            "plans": [],
+        }
     return {
         "turn_id": row.turn_id,
         "content": row.content,
         "answer": row.answer,
         "activity": row.activity,
         "seq": row.seq,
+        "plans": [plan.model_dump() for plan in streamed_agent_plans(row.answer)],
     }
 
 
-def finish_chat_turn_thinking(session: Session, turn_id: str) -> str:
-    """Take the turn's transcript and drop the live row.
+def finish_chat_turn_thinking(session: Session, turn_id: str) -> SettledThinking:
+    """Take the turn's transcript and streamed plans, and drop the live row.
 
     Called as the turn settles, on the failure path as well as the success one:
     what an agent was doing when it died is the most useful thing it produced.
     """
     if not turn_id:
-        return ""
+        return SettledThinking()
     row = session.get(ChatTurnThinking, turn_id)
     if not row:
-        return ""
-    content = row.content
+        return SettledThinking()
+    settled = SettledThinking(
+        transcript=row.content.strip(),
+        plans=tuple(streamed_agent_plans(row.answer)),
+    )
     session.delete(row)
     session.commit()
     event_hub.publish(chat_turn_topic(turn_id), {"type": "chat_thinking_done", "data": {}})
-    return content.strip()
+    return settled
 
 
-def with_thinking_part(parts_json: str, thinking: str) -> str:
-    """Put the turn's reasoning at the front of its message's parts.
+def with_thinking_part(parts_json: str, thinking: SettledThinking, *, content: str) -> str:
+    """Fold a settled turn's reasoning and plan progress into its message's parts.
 
-    First rather than last because the parts render in order and reasoning that
-    reads after the conclusion it produced is backwards. Collapsed, because the
-    conclusion is what the operator came for.
+    Reasoning goes first rather than last because the parts render in order and
+    reasoning that reads after the conclusion it produced is backwards.
+    Collapsed, because the conclusion is what the operator came for.
+
+    A plan the turn streamed but its final reply did not re-emit is appended, so
+    its card shows the steps that were checked off. One the final reply did
+    re-emit is left alone: that copy is the newest. ``content`` becomes a text
+    part when the parts held none, because a message with a card and no text
+    part renders without its prose (a failed turn's parts start empty).
     """
-    text = (thinking or "").strip()
-    if not text:
+    text = thinking.transcript.strip()
+    if not text and not thinking.plans:
         return parts_json
     try:
         parts = json.loads(parts_json or "[]")
@@ -381,7 +464,44 @@ def with_thinking_part(parts_json: str, thinking: str) -> str:
         parts = []
     if not isinstance(parts, list):
         parts = []
-    return json.dumps([ThinkingPart(content=text).model_dump(), *parts])
+    plans = _plans_missing_from(parts, thinking.plans)
+    if plans and not any(_primitive(part) == "text" for part in parts) and content.strip():
+        parts = [TextPart(content=content).model_dump(), *parts]
+    leading = [ThinkingPart(content=text).model_dump()] if text else []
+    return json.dumps([*leading, *parts, *(plan.model_dump() for plan in plans)])
+
+
+class _StoredPart(BaseModel):
+    """Just enough of a stored part to say what kind it is."""
+
+    primitive: str = ""
+
+
+def _primitive(part: Any) -> str:
+    try:
+        return _StoredPart.model_validate(part).primitive
+    except ValidationError:
+        # Not a part at all (the stored list held a bare value): no kind to match.
+        logger.warning("Unreadable stored chat part while folding streamed plans")
+        return ""
+
+
+def _plans_missing_from(parts: list[Any], plans: tuple[TodoListPart, ...]) -> list[TodoListPart]:
+    """The streamed plans whose identity the stored parts do not already carry."""
+    present: set[str] = set()
+    for part in parts:
+        if _primitive(part) != "todo_list":
+            continue
+        try:
+            stored = TodoListPart.model_validate(part)
+        except ValidationError:
+            # A malformed stored card cannot be matched; the streamed copy is
+            # then appended beside it, which shows progress rather than hiding it.
+            logger.warning("Unreadable todo_list part while folding streamed plans")
+            continue
+        if stored.owner == "agent":
+            present.add(agent_plan_identity(stored))
+    return [plan for plan in plans if agent_plan_identity(plan) not in present]
 
 
 def clear_orphaned_chat_turn_thinking(session: Session) -> int:
