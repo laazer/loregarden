@@ -66,6 +66,7 @@ it("reports nothing, and opens nothing, when no turn is in flight", () => {
     content: "",
     answer: "",
     activity: "",
+    plans: [],
     isStreaming: false,
   });
   expect(sockets).toHaveLength(0);
@@ -106,6 +107,35 @@ it("shows pushed frames as they arrive", async () => {
     latest().handlers.onFrame({ turn_id: "t1", content: "one two", activity: "Thinking", seq: 3 });
   });
   await waitFor(() => expect(result.current.content).toBe("one two"));
+});
+
+it("carries the plans the reply has re-emitted, and none when a frame has no field", async () => {
+  const { result } = renderHook(() => useChatTurnThinking("t1"));
+  act(() => latest().handlers.onStatus("open"));
+  const planCard = {
+    primitive: "todo_list" as const,
+    owner: "agent" as const,
+    plan_id: "p",
+    items: [{ id: "a", text: "A", checked: true }],
+  };
+
+  act(() => {
+    latest().handlers.onFrame({
+      turn_id: "t1",
+      content: "",
+      answer: "",
+      activity: "",
+      seq: 2,
+      plans: [planCard],
+    });
+  });
+  await waitFor(() => expect(result.current.plans).toEqual([planCard]));
+
+  act(() => {
+    latest().handlers.onFrame({ turn_id: "t1", content: "older server", activity: "", seq: 3 });
+  });
+  await waitFor(() => expect(result.current.content).toBe("older server"));
+  expect(result.current.plans).toEqual([]);
 });
 
 it("ignores a read that lands behind what the socket already pushed", async () => {
