@@ -60,6 +60,8 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
         onSave={details.save}
         onSaveChecks={details.saveChecks}
         isSavingChecks={details.isSavingChecks}
+        conflict={details.conflict}
+        closeEditorNonce={details.closeEditorNonce}
       />
     </>
   );

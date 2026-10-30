@@ -211,6 +211,9 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       await waitFor(() => {
         expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
           acceptance_criteria: ['Original criterion', 'Added criterion'],
+          // The edit form sends the revision its draft was seeded from, so a
+          // concurrent write to this ticket is refused rather than overwritten.
+          expected_revision: 1,
         });
       });
     });
@@ -231,6 +234,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       await waitFor(() => {
         expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
           checked_acceptance_criteria: ['Two'],
+          expected_revision: 1,
         });
       });
     });
@@ -253,6 +257,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       await waitFor(() => {
         expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
           title: 'Retitled',
+          expected_revision: 1,
         });
       });
     });

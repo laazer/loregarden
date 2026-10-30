@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as apiClient from '../api/client';
 import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
@@ -16,6 +16,14 @@ import { MarkdownContent } from './chat/MarkdownContent';
 import { CopyValueButton } from './CopyValueButton';
 import { TicketCriteriaEditor, TicketCriteriaView } from './TicketCriteriaChecklist';
 import { criteriaDrafts, draftChecked, draftCriteria, type CriterionDraft } from '../lib/criterionDrafts';
+import {
+  parseTicketTags,
+  ticketPatchKeys,
+  ticketSnapshot,
+  type TicketFieldSnapshot,
+  type TicketPatchKey,
+} from '../lib/ticketFieldDiff';
+import { TicketConflictNotice } from './TicketConflictNotice';
 import './TicketDetailsModal.css';
 import { Button } from "./ui/Button";
 import { StatusChip } from "./ui/StatusChip";
@@ -34,22 +42,39 @@ export interface TicketDetailsSaveDraft {
   tags: string[];
   state: TicketState;
   priority: number;
+  /** The ticket as it was when this draft was seeded, revision included.
+   *
+   * The caller diffs against this rather than against its live query data,
+   * because the ticket query refetches on every invalidation from anywhere in
+   * this pane and a draft that outlives one refetch would otherwise be diffed
+   * against a row the operator never read — carrying the other writer's fields
+   * back out as the operator's own, which is the lost update this exists to
+   * stop. It is also where `expected_revision` comes from, so the token and the
+   * diff have one baseline instead of two. */
+  seed: TicketDraftSeed;
 }
 
-/** Comma-separated, blanks and case-insensitive duplicates dropped — mirrors
- * services/ticket_tags.normalize_tags, which has the last word on what is stored. */
-function parseTags(text: string): string[] {
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  for (const raw of text.split(',')) {
-    const tag = raw.trim();
-    if (!tag) continue;
-    const key = tag.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    tags.push(tag);
-  }
-  return tags;
+/** What the editor was seeded from: the revision, and the seven field values. */
+export interface TicketDraftSeed {
+  revision: number;
+  fields: TicketFieldSnapshot;
+}
+
+/** The revision-conflict state the pane hands the modal to render.
+ *
+ * The modal owns the draft, so "discard my text" has to be its decision; the
+ * pane owns the patch and the comparison, so everything else is the pane's. */
+export interface TicketDetailsConflict {
+  /** The operator's own fields that moved on the server, in form order. */
+  movedFields: readonly TicketPatchKey[];
+  /** A resubmit is in flight: neither button may fire again. */
+  isResolving: boolean;
+  /** Resubmit the identical patch against the revision just fetched. */
+  onKeep: () => void;
+  /** Clear the conflict; the modal reseeds the draft from the server itself. */
+  onDiscard: () => void;
+  /** Escape, once: dismiss the block without leaving edit mode. */
+  onDismiss: () => void;
 }
 
 export interface TicketDetailsModalProps {
@@ -65,6 +90,13 @@ export interface TicketDetailsModalProps {
   /** Saves which criteria are checked off, from read mode. Rejects when it failed. */
   onSaveChecks?: (checked: string[]) => Promise<void>;
   isSavingChecks?: boolean;
+  /** A revision conflict to put to the operator, or null when there is none.
+   * Rendered instead of `saveError`, never beside it: a conflict is a question
+   * and an error is a failure, and showing both would claim two things at once. */
+  conflict?: TicketDetailsConflict | null;
+  /** Bumped when a write landed from outside the form — a conflict resubmit —
+   * so the editor closes the way it does after an ordinary save. */
+  closeEditorNonce?: number;
   /** Leaves the modal for the ticket's own page. Omitted where the modal is opened from that page. */
   onOpenTicket?: () => void;
 }
@@ -78,6 +110,8 @@ interface EditDraft {
   tagsText: string;
   state: TicketState;
   priority: number;
+  /** Frozen at the moment this draft was seeded; never follows a refetch. */
+  seed: TicketDraftSeed;
 }
 
 function asDisplayString(value: unknown, fallback = ''): string {
@@ -107,6 +141,7 @@ function seedDraft(ticket: apiClient.TicketDetail): EditDraft {
     tagsText: asStringArray(ticket.tags).join(', '),
     state: ticket.state,
     priority: ticket.priority,
+    seed: { revision: ticket.revision, fields: ticketSnapshot(ticket) },
   };
 }
 
@@ -133,6 +168,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   onSave,
   onSaveChecks,
   isSavingChecks = false,
+  conflict = null,
+  closeEditorNonce = 0,
   onOpenTicket,
 }) => {
   const [mode, setMode] = useState<ModalMode>('view');
@@ -140,6 +177,10 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   // Read-mode checks shown before the server confirms them; null = show the ticket's.
   const [pendingChecks, setPendingChecks] = useState<string[] | null>(null);
   const dialogRef = useDialogFocusTrap<HTMLDivElement>();
+  // The ticket as of this render, for the two handlers that must read the
+  // newest one without re-firing their effect every time it changes.
+  const ticketRef = useRef(ticket);
+  ticketRef.current = ticket;
 
   const criteria = asStringArray(ticket?.acceptance_criteria);
   const savedChecks = asStringArray(ticket?.checked_acceptance_criteria);
@@ -157,14 +198,32 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
     setPendingChecks(null);
   }, [savedChecksKey]);
 
+  // A conflict resubmit landed outside the form, so close the editor the way an
+  // ordinary save does. Zero is "nothing has landed", so a fresh mount is not it.
+  useEffect(() => {
+    if (closeEditorNonce === 0) return;
+    setMode('view');
+    setDraft(null);
+  }, [closeEditorNonce]);
+
   const editing = mode === 'edit' && draft !== null && ticket !== null;
 
-  // Escape backs out one level: out of the editor first, then out of the modal.
+  // Escape backs out one level: out of the conflict block first, then out of
+  // the editor, then out of the modal. The block comes first because leaving
+  // edit mode nulls the draft, and the draft is the very text the conflict
+  // state exists to protect — an operator pressing Escape to get rid of a
+  // notice must not lose 2,434 characters of description with it.
+  //
   // Through the dismiss stack, so a Reject or Ignore dialog opened from an
   // approval card above this one takes the press instead of closing both.
   useDialogDismiss(
     isOpen
       ? () => {
+          if (editing && conflict) {
+            if (conflict.isResolving) return;
+            conflict.onDismiss();
+            return;
+          }
           if (editing) {
             if (isSaving) return;
             setMode('view');
@@ -197,18 +256,24 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 
   const patchDraft = (patch: Partial<EditDraft>) => setDraft((current) => (current ? { ...current, ...patch } : current));
 
-  const draftTags = draft ? parseTags(draft.tagsText) : [];
+  const draftTags = draft ? parseTicketTags(draft.tagsText) : [];
   const draftCriteriaList = draft ? draftCriteria(draft.criteria) : [];
   const draftChecks = draft ? draftChecked(draft.criteria) : [];
-  const isDirty =
-    editing &&
-    (draft.title.trim() !== asDisplayString(ticket.title) ||
-      draft.description !== asDisplayString(ticket.description) ||
-      draftCriteriaList.join('\n') !== criteria.join('\n') ||
-      draftChecks.join('\n') !== savedChecks.filter((c) => criteria.includes(c)).join('\n') ||
-      draftTags.join(',') !== parseTags(asStringArray(ticket.tags).join(',')).join(',') ||
-      draft.state !== ticket.state ||
-      draft.priority !== ticket.priority);
+  const draftFields: TicketFieldSnapshot | null = draft
+    ? {
+        title: draft.title.trim(),
+        description: draft.description,
+        acceptanceCriteria: draftCriteriaList,
+        checkedAcceptanceCriteria: draftChecks,
+        tags: draftTags,
+        state: draft.state,
+        priority: draft.priority,
+      }
+    : null;
+  // Dirty is exactly "a save would send something", measured against the seed
+  // and with the one per-field comparison the patch and the 409 filter use. The
+  // seed, not the live ticket: a refetch under an open editor is not an edit.
+  const isDirty = editing && draftFields !== null && ticketPatchKeys(draft.seed.fields, draftFields).length > 0;
   const canSave = isDirty && !!draft && draft.title.trim().length > 0 && !!onSave;
 
   const handleSave = async () => {
@@ -222,6 +287,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
         tags: draftTags,
         state: draft.state,
         priority: draft.priority,
+        seed: draft.seed,
       });
     } catch {
       // silent-ok: the caller reports the failure through `saveError`, rendered
@@ -244,6 +310,14 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
       // snaps back to what the server holds so it never shows an unsaved tick.
       setPendingChecks(null);
     }
+  };
+
+  // "Discard my text and load latest": the pane has already written what the
+  // server holds into the query cache, so reseeding from `ticket` is loading it.
+  const discardDraftForServer = () => {
+    const latest = ticketRef.current;
+    if (latest) setDraft(seedDraft(latest));
+    conflict?.onDiscard();
   };
 
   const ticketNumber = asDisplayString(ticket?.external_id) || asDisplayString(ticket?.id);
@@ -327,7 +401,16 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
             <p className="modal-hint" style={{ color: 'var(--red)' }}>{error}</p>
           )}
 
-          {saveError && (
+          {editing && conflict && (
+            <TicketConflictNotice
+              movedFields={conflict.movedFields}
+              isResolving={conflict.isResolving}
+              onKeep={conflict.onKeep}
+              onDiscard={discardDraftForServer}
+            />
+          )}
+
+          {saveError && !conflict && (
             <p className="modal-hint" role="alert" style={{ color: 'var(--red)' }}>{saveError}</p>
           )}
 

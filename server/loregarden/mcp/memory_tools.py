@@ -165,14 +165,19 @@ def execute_memory_tool(
         )
         return json.dumps(result, indent=2)
 
-    # loregarden_create_memory_relation
-    result = memory.create_relation(
-        source_id=arguments["source_id"],
-        target_id=arguments["target_id"],
-        # Parsed at the boundary: an unknown label is refused naming the vocabulary.
-        relation_type=parse_relation_type(
-            arguments.get("relation_type", MemoryRelationType.RELATED.value)
-        ),
-        workspace_slug=arguments["workspace_slug"],
-    )
-    return json.dumps(result, indent=2)
+    # Named rather than left as the fall-through: `test_mcp_all_tools_smoke`
+    # reads the routed names out of this module's source, and a branch with no
+    # literal reads as advertised-but-undispatched.
+    if name == "loregarden_create_memory_relation":
+        result = memory.create_relation(
+            source_id=arguments["source_id"],
+            target_id=arguments["target_id"],
+            # Parsed at the boundary: an unknown label is refused naming the vocabulary.
+            relation_type=parse_relation_type(
+                arguments.get("relation_type", MemoryRelationType.RELATED.value)
+            ),
+            workspace_slug=arguments["workspace_slug"],
+        )
+        return json.dumps(result, indent=2)
+
+    raise ValueError(f"{name} is a memory tool with no handler")

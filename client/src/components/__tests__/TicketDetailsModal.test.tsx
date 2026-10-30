@@ -185,6 +185,21 @@ describe('TicketDetailsModal', () => {
           tags: [],
           state: 'in_progress',
           priority: 1,
+          // The draft carries what it was seeded from, so the caller diffs
+          // against the row the operator read rather than against whatever the
+          // ticket query last refetched.
+          seed: {
+            revision: 1,
+            fields: {
+              title: 'Original title',
+              description: 'Original description',
+              acceptanceCriteria: [],
+              checkedAcceptanceCriteria: [],
+              tags: [],
+              state: 'in_progress',
+              priority: 1,
+            },
+          },
         });
       });
     });
