@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 SECTION_HEADING = "## User-facing surfaces"
 RECORD_TOOL = "loregarden_record_ux_answers"
 RESOLVED_BY_PUBLISH = "automation"
+#: Titles every card `report_missing_ux_answers` files; `tree_publish_scheduler`
+#: closes one once the base holds its tree, since no later publish will.
+MISSING_UX_CARD_PREFIX = "UX answers missing: "
 
 
 @dataclass(frozen=True)
@@ -190,7 +193,7 @@ def tree_ux_section(
 
 
 def missing_card_title(root: Ticket) -> str:
-    return f"UX answers missing: {root.external_id or root.id[:8]}"
+    return f"{MISSING_UX_CARD_PREFIX}{root.external_id or root.id[:8]}"
 
 
 def _pending(session: Session, root: Ticket) -> list[Approval]:
@@ -220,7 +223,8 @@ def report_missing_ux_answers(
         "needs the question, action and real data for each change. These tickets have none "
         f"recorded:\n\n" + "\n".join(names) + "\n\n"
         f"Record them with `{RECORD_TOOL}` (or `no_change_reason` where nobody can see it). "
-        "The next publish of the tree writes them into the PR and closes this card."
+        "The next publish of the tree writes them into the PR and closes this card; so does "
+        "the base taking the tree's work in, since nothing publishes after that."
     )
     existing = _pending(session, root)
     if existing:
