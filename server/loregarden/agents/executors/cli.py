@@ -453,6 +453,7 @@ class CliAgentExecutor:
             ensure_ticket_branch(
                 repo_root,
                 ticket,
+                session=self.session,
                 start_point=resolve_target_branch(
                     self.session, ticket, workspace, repo_root=workspace_root
                 ),
@@ -628,6 +629,7 @@ class CliAgentExecutor:
             ensure_ticket_branch(
                 repo_root,
                 ticket,
+                session=self.session,
                 start_point=start_point,
                 ignoring=ticket_recorded_paths(self.session, ticket),
                 seat=MergeTurnSeat(self.session, workspace, ticket),

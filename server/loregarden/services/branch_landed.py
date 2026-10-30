@@ -24,6 +24,11 @@ computed from, and recomputes only what can have changed:
 
 The deleting caller (`chat_branch_sweep`) calls :func:`branch_work_has_landed`
 directly and never reads the cache.
+
+The predicate lives here, and not in `branch_triage_service`, so that the
+receipt gate can read it without importing the service that now routes its
+removals *through* the gate — that import would be a cycle, and a
+function-local import to dodge one is banned here.
 """
 
 from __future__ import annotations

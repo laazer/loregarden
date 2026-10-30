@@ -5,12 +5,17 @@ both known failure modes — a crash leaves it half-applied, and two tickets
 cannot run at once. These tests pin that ticket execution never moves it.
 """
 
+import dataclasses
+import inspect
+from dataclasses import fields, is_dataclass
 from pathlib import Path
+from typing import get_type_hints
+from unittest import mock
 
 import pytest
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import Ticket, Workspace, Worktree, WorktreeState
 from loregarden.services.git_automation_config import serialize_override
-from loregarden.services.ticket_worktree import resolve_execution_root
+from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
 from tests.worktree_helpers import head_branch, make_repo, make_run, make_ticket
@@ -269,3 +274,152 @@ def test_a_ticket_with_worktrees_off_is_never_asked_for_a_target(session, worksp
         raise AssertionError("a run with worktrees off must not be asked for a target")
 
     assert resolve_execution_root(session, run, ticket, workspace, resolve_target=never) == repo
+
+
+# ---------------------------------------------------------------------------
+# R5 — TicketCheckout + resolve_ticket_checkout
+# ---------------------------------------------------------------------------
+
+
+def _checkout_types():
+    from loregarden.services.ticket_worktree import TicketCheckout, resolve_ticket_checkout
+
+    return TicketCheckout, resolve_ticket_checkout
+
+
+def test_ticket_checkout_is_a_frozen_dataclass_of_path_and_parent_branch():
+    """AC-R5.1 Fields are only path and parent_branch; empty default; not a tuple."""
+    TicketCheckout, _ = _checkout_types()
+    assert is_dataclass(TicketCheckout)
+    assert TicketCheckout.__dataclass_params__.frozen is True
+    assert [field.name for field in fields(TicketCheckout)] == ["path", "parent_branch"]
+    checkout = TicketCheckout(path=Path("/tmp/tree"))
+    assert checkout.parent_branch == ""
+    with pytest.raises(TypeError):
+        _path, _parent = checkout
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        checkout.parent_branch = "main"
+
+
+def test_ticket_worktree_does_not_import_parent_ref_or_return_worktree():
+    """R5: do not import parent_ref; do not return Worktree."""
+    from loregarden.services import ticket_worktree
+
+    source = inspect.getsource(ticket_worktree)
+    assert "parent_ref" not in source
+    assert "live_diff_base" not in source
+    annotations = inspect.signature(ticket_worktree.resolve_ticket_checkout).return_annotation
+    assert "Worktree" not in str(annotations)
+    assert get_type_hints(ticket_worktree.resolve_ticket_root)["return"] is Path
+
+
+def test_an_active_worktree_directory_carries_its_parent_branch(session, workspace, ticket, repo):
+    """AC-R5 Active row whose worktree_path is a directory → that path + parent_branch."""
+    TicketCheckout, resolve_ticket_checkout = _checkout_types()
+    run = make_run(session, workspace, ticket, "r1")
+    service = WorktreeService(session, repo_path=str(repo))
+    row = service.get_or_create_for_ticket(ticket, run.id, parent_branch="main")
+    assert row is not None
+    assert Path(row.worktree_path).is_dir()
+
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+
+    assert checkout.path == Path(row.worktree_path)
+    assert checkout.parent_branch == "main"
+    assert resolve_ticket_root(session, ticket, workspace) == checkout.path
+    assert resolve_ticket_root(session, ticket, workspace) != repo
+
+
+def test_a_missing_worktree_directory_unsets_parent_branch(session, workspace, ticket, repo):
+    """AC-R5.2 Missing-dir must not merge-base against the shared checkout."""
+    TicketCheckout, resolve_ticket_checkout = _checkout_types()
+    run = make_run(session, workspace, ticket, "r1")
+    gone = repo.parent / "gone-worktree"
+    row = Worktree(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        ticket_id=ticket.id,
+        parent_branch="integration/lg-root-1",
+        worktree_path=str(gone),
+        branch=ticket.branch,
+        state=WorktreeState.ACTIVE,
+    )
+    session.add(row)
+    session.commit()
+    assert not gone.is_dir()
+
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+
+    assert checkout.path == repo
+    assert checkout.parent_branch == ""
+    root = resolve_ticket_root(session, ticket, workspace)
+    assert root == repo
+    assert isinstance(root, Path)  # py-org: allow-isinstance — Path is PosixPath on this host
+
+
+def test_no_worktree_row_is_the_workspace_root_with_unset_parent(session, workspace, ticket, repo):
+    """R5 else-arm: no active row → workspace root, parent_branch ''."""
+    _, resolve_ticket_checkout = _checkout_types()
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+    assert checkout.path == repo
+    assert checkout.parent_branch == ""
+    assert resolve_ticket_root(session, ticket, workspace) == repo
+
+
+def test_a_worktree_path_that_is_a_file_unsets_parent_branch(session, workspace, ticket, repo):
+    """R5: spec is `is_dir()`. A file at worktree_path is not a checkout. # CHECKPOINT"""
+    _, resolve_ticket_checkout = _checkout_types()
+    run = make_run(session, workspace, ticket, "r1")
+    not_a_tree = repo.parent / "not-a-tree"
+    not_a_tree.write_text("a file, not a directory\n")
+    session.add(
+        Worktree(
+            workspace_id=workspace.id,
+            agent_run_id=run.id,
+            ticket_id=ticket.id,
+            parent_branch="integration/lg-root-1",
+            worktree_path=str(not_a_tree),
+            branch=ticket.branch,
+            state=WorktreeState.ACTIVE,
+        )
+    )
+    session.commit()
+    assert not_a_tree.exists()
+    assert not not_a_tree.is_dir()
+
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+
+    assert checkout.path == repo
+    assert checkout.parent_branch == ""
+    assert resolve_ticket_root(session, ticket, workspace) == repo
+
+
+def test_a_merged_worktree_does_not_carry_its_parent_branch(session, workspace, ticket, repo):
+    """R5: one ACTIVE lookup. A MERGED row is not a checkout. # CHECKPOINT"""
+    _, resolve_ticket_checkout = _checkout_types()
+    run = make_run(session, workspace, ticket, "r1")
+    service = WorktreeService(session, repo_path=str(repo))
+    row = service.get_or_create_for_ticket(ticket, run.id, parent_branch="main")
+    assert row is not None
+    row.state = WorktreeState.MERGED
+    session.add(row)
+    session.commit()
+
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+
+    assert checkout.path == repo
+    assert checkout.parent_branch == ""
+    assert resolve_ticket_root(session, ticket, workspace) == repo
+
+
+def test_resolve_ticket_checkout_makes_one_active_worktree_lookup(session, workspace, ticket, repo):
+    """R5: one WorktreeService.active_worktree_for_ticket lookup, not a second query."""
+    from loregarden.services.ticket_worktree import resolve_ticket_checkout
+
+    with mock.patch.object(
+        WorktreeService, "active_worktree_for_ticket", return_value=None
+    ) as lookup:
+        checkout = resolve_ticket_checkout(session, ticket, workspace)
+    lookup.assert_called_once_with(ticket.id)
+    assert checkout.path == repo
+    assert checkout.parent_branch == ""

@@ -5,9 +5,11 @@ import type { TicketState } from "../api/client";
 import {
   checkoutBranchTriage,
   deleteBranchTriage,
+  type BranchRemovalVerdict,
   type BranchTriageEntry,
   type BranchTriagePrStatus,
 } from "../lib/branchTriageApi";
+import { pushToast } from "../state/toastStore";
 import { ticketPath } from "../lib/appNavigation";
 import { useNavigate } from "react-router-dom";
 import { BranchCheckoutConfirmModal } from "./BranchCheckoutConfirmModal";
@@ -89,6 +91,9 @@ export function BranchTriageList({
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  // What the receipt gate answered, when it refused or parked. Held apart from
+  // the mutation's `error`: a refusal is not a failure and must not read as one.
+  const [deleteVerdict, setDeleteVerdict] = useState<BranchRemovalVerdict | null>(null);
   const [branchPendingDelete, setBranchPendingDelete] = useState<BranchTriageEntry | null>(null);
   const [branchPendingCheckout, setBranchPendingCheckout] = useState<BranchTriageEntry | null>(null);
   const [worktreesBranchName, setWorktreesBranchName] = useState<string | null>(null);
@@ -125,6 +130,22 @@ export function BranchTriageList({
       discardCommits: boolean;
     }) => deleteBranchTriage(workspaceSlug, branch, discardCommits, removeWorktrees),
     onSuccess: (result, { branch, removeWorktrees }) => {
+      if (result.outcome === "refused" || result.outcome === "parked") {
+        // Nothing was deleted, so the dialog stays up holding the gate's answer
+        // and the control that leads out of it.
+        setDeleteVerdict(result);
+        setDeleteNotice(null);
+        if (result.outcome === "parked") {
+          pushToast({
+            tone: "error",
+            title: `${branch}: the checkout is parked, not deleted`,
+            message: result.detail || `Parked at ${result.parked_path}`,
+          });
+        }
+        qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
+        return;
+      }
+      setDeleteVerdict(null);
       setBranchPendingDelete(null);
       refreshBranches(branch);
       if (result.already_gone) {
@@ -138,6 +159,7 @@ export function BranchTriageList({
       setDeleteNotice(`Deleted ${branch}.`);
     },
     onError: (error, { branch }) => {
+      setDeleteVerdict(null);
       const message = error instanceof Error ? error.message : "Failed to delete branch";
       if (/not found/i.test(message)) {
         refreshBranches(branch);
@@ -347,11 +369,17 @@ export function BranchTriageList({
         error={
           branchPendingDelete && remove.error instanceof Error ? remove.error.message : null
         }
+        outcome={deleteVerdict?.outcome}
+        refusal={deleteVerdict}
         onClose={() => {
-          if (!remove.isPending) setBranchPendingDelete(null);
+          if (!remove.isPending) {
+            setDeleteVerdict(null);
+            setBranchPendingDelete(null);
+          }
         }}
         onConfirm={(discardCommits) => {
           if (!branchPendingDelete) return;
+          setDeleteVerdict(null);
           remove.mutate({
             branch: branchPendingDelete.name,
             removeWorktrees: branchNeedsWorktreeRemoval(branchPendingDelete),

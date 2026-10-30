@@ -193,7 +193,7 @@
 
 .ticket-conflict-notice-text {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   color: var(--tx);
 }

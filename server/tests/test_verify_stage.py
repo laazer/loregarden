@@ -54,8 +54,9 @@ def _seeded_ticket(session):
 def _prompt_for(session, stage_type, tmp_path):
     ticket = _seeded_ticket(session)
     # The seeded workspace carries repo_path="." — it resolves to the developer's
-    # own checkout, and build_verify_context shells out `git diff main` there. Left
-    # alone, this test would pass on a branch ahead of main and fail on a clean one.
+    # own checkout, and build_verify_context calls ensure_diff_artifact there
+    # (ticket-local / live merge-base). Left alone, this test would pass on a
+    # branch ahead of main and fail on a clean one.
     # Point it somewhere with no git checkout, and record the claim explicitly, so
     # the block under test comes from the DB rather than from the working tree.
     workspace = session.get(Workspace, ticket.workspace_id)

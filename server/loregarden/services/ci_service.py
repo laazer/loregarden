@@ -40,6 +40,7 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.ci_autofix_dispatch import block_for_ci, dispatch_ci_fix
 from loregarden.services.ci_checks import (
     OpenPullRequest,
@@ -48,7 +49,6 @@ from loregarden.services.ci_checks import (
     failure_logs,
     rollup,
 )
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.publish_tree import published_branch
 from loregarden.services.root_integration_sync import take_integration_branch

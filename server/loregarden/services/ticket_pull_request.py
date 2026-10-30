@@ -25,7 +25,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.orchestration_profile import resolve_orchestration_profile

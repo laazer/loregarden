@@ -856,6 +856,88 @@ a.branch-triage-badge:hover {
   color: var(--txm);
 }
 
+/*
+ * The receipt gate refused: nothing was deleted and nothing was lost.
+ *
+ * Amber, not the red of `.branch-triage-delete-error` — a safety bar that
+ * worked must not look like a failure, or the operator learns to force past
+ * one. No entrance animation: the modal is already on screen.
+ */
+.branch-cleanup-refusals {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--amb) 45%, transparent);
+  background: color-mix(in srgb, var(--amb) 10%, transparent);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-cleanup-refusals .modal-section-title {
+  color: var(--aml);
+}
+
+.branch-cleanup-refusal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.branch-cleanup-refusal-reason {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--txm);
+}
+
+.branch-cleanup-refusal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.branch-cleanup-refusal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.branch-cleanup-refusal-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.branch-cleanup-refusal code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--tx);
+  word-break: break-all;
+}
+
+.branch-cleanup-refusal-parked-label,
+.branch-cleanup-refusal-detail {
+  color: var(--txm);
+}
+
+.branch-cleanup-refusal-detail {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
 /* A family of branches folded into one row: its stem, how many, how many are done. */
 .branch-triage-family td {
   padding: 4px 8px;

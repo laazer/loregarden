@@ -16,6 +16,16 @@ const TICKET = {
   workflow_template_slug: "studio-loregarden-tdd-v3",
 } as unknown as TicketDetail;
 
+const writeText = jest.fn();
+
+/** A clipboard that accepts the write, and an empty toast stack. */
+function stubClipboard() {
+  jest.clearAllMocks();
+  writeText.mockResolvedValue(undefined);
+  useToastStore.getState().clear();
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+}
+
 function open() {
   render(
     <WorkflowRunOverflowMenu
@@ -30,16 +40,7 @@ function open() {
 }
 
 describe("WorkflowRunOverflowMenu — external harness prompts", () => {
-  const writeText = jest.fn().mockResolvedValue(undefined);
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    useToastStore.getState().clear();
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      configurable: true,
-    });
-  });
+  beforeEach(stubClipboard);
 
   it("offers one item per harness", () => {
     open();
@@ -83,5 +84,34 @@ describe("WorkflowRunOverflowMenu — external harness prompts", () => {
       expect(toasts.some((t) => t.message.includes("workspace repo missing"))).toBe(true);
     });
     expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
+describe("S7.3 — the orchestrate command's copy reports a refusal", () => {
+  beforeEach(stubClipboard);
+
+  it("copies the command when the clipboard takes it", async () => {
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy orchestrate command" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("curl ..."));
+  });
+
+  it("reports a clipboard that refused rather than floating the rejection", async () => {
+    // `onSelect={() => void copyText(...)}` was a bare floating promise. Once
+    // `copyText` rejects on a refusal (S7.1) that becomes an unhandled
+    // rejection — a failure the operator never sees, in the one place whose
+    // whole purpose is to put a command on their clipboard.
+    writeText.mockRejectedValue(new Error("Document is not focused"));
+    Object.defineProperty(document, "execCommand", { value: () => false, configurable: true });
+
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy orchestrate command" }));
+
+    await waitFor(() => {
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts.map((t) => t.tone)).toContain("error");
+      expect(toasts.some((t) => t.title === "Copy orchestrate command failed")).toBe(true);
+    });
   });
 });

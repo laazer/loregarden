@@ -76,12 +76,15 @@ def _test_functions(path: Path) -> set[str]:
 
 @pytest.mark.parametrize(
     "invariant",
-    [i for i in INVARIANTS if i.reentry is InvariantReentry.DEFECT],
+    [i for i in INVARIANTS if i.prevented_by],
     ids=lambda i: i.name,
 )
 def test_every_defect_invariant_points_at_a_prevention_test_that_exists(invariant: Invariant):
     """`prevented_by` is the claim a re-entry falsifies, so it must name a real test.
 
+    DEFECT requires the field; EXPECTED may set it. Parametrize on
+    `bool(invariant.prevented_by)` so an EXPECTED pointer cannot rot either.
+    `__post_init__` is unchanged: EXPECTED still does not require the field.
     The test itself runs with the suite; this only proves the pointer is not stale,
     which a rename would otherwise make silently.
     """
@@ -105,6 +108,25 @@ def test_a_report_only_invariant_must_say_what_a_person_does():
     probe = _invariant(InvariantReentry.DEFECT)
     with pytest.raises(ValueError, match="unrepaired_action"):
         Invariant(**{**probe.__dict__, "repair": None})
+
+
+def test_an_expected_invariant_may_omit_prevented_by():
+    """AC14.6. Do not change Invariant.__post_init__: EXPECTED still does not
+    require the field. A pointer that is set is existence-checked; one that
+    is not set is still legal.
+    """
+    invariant = Invariant(
+        name="probe_invariant",
+        ticket="lg-probe-1",
+        statement="probe rows do not exist",
+        detect=lambda _session: [],
+        repair=lambda _session, _violations: 0,
+        reentry=InvariantReentry.EXPECTED,
+        since=date(2026, 9, 1),
+        prevented_by="",
+        expected_because="the world moves",
+    )
+    assert invariant.prevented_by == ""
 
 
 # ---- backlog versus re-entry ------------------------------------------------

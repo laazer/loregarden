@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from loregarden.models.domain import Workspace
-from loregarden.services.git_branch import validate_branch_name
+from loregarden.services.branch_names import validate_branch_name
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_browser import (
     assert_browse_allowed,

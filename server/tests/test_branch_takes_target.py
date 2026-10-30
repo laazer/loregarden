@@ -15,8 +15,9 @@ from unittest import mock
 import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Workspace
 from loregarden.services import integration_merge_agent
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.branch_takes_target import MergeTurnSeat, take_target
-from loregarden.services.git_branch import ensure_ticket_branch, resolve_ticket_branch
+from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_merge_noco import squash_twin
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.worktree_service import WorktreeRefreshError, WorktreeService
@@ -107,7 +108,7 @@ def test_a_superseded_branch_is_moved_to_its_target_in_the_checkout(
 ):
     old = _sha(repo, superseded)
 
-    ensure_ticket_branch(repo, ticket, start_point="main")
+    ensure_ticket_branch(repo, ticket, start_point="main", session=session)
 
     assert _sha(repo, superseded) == _sha(repo, "main")
     assert head_branch(repo) == superseded
@@ -140,7 +141,7 @@ def test_a_superseded_branch_with_work_of_its_own_is_not_moved(
     through that twin; it is never moved onto `main`, which would drop the work."""
     tip = commit_on(repo, superseded, "extra.txt", "only on the branch\n")
 
-    ensure_ticket_branch(repo, ticket, start_point="main")
+    ensure_ticket_branch(repo, ticket, start_point="main", session=session)
 
     git(repo, "merge-base", "--is-ancestor", tip, superseded)
     assert _sha(repo, superseded) != _sha(repo, "main"), "a branch with unique work is never moved"
@@ -199,7 +200,7 @@ def test_a_branch_holding_a_squash_of_its_target_takes_it_in_the_checkout(
     branch, tip, landed = twinned
     git(repo, "checkout", "-q", branch)
 
-    ensure_ticket_branch(repo, ticket, start_point=INTEGRATION)
+    ensure_ticket_branch(repo, ticket, start_point=INTEGRATION, session=session)
 
     _assert_took_the_tree(repo, tip, landed)
     assert _merge_runs(session, ticket) == [], "no agent turn for history alone"
@@ -266,7 +267,11 @@ def test_a_conflict_is_merged_by_the_agent_in_the_checkout(
 
     with mock.patch.object(integration_merge_agent, "_run_agent", side_effect=_resolving) as turn:
         ensure_ticket_branch(
-            repo, ticket, start_point="main", seat=MergeTurnSeat(session, workspace, ticket)
+            repo,
+            ticket,
+            start_point="main",
+            seat=MergeTurnSeat(session, workspace, ticket),
+            session=session,
         )
 
     head = _sha(repo, "HEAD")
@@ -308,7 +313,11 @@ def test_a_turn_that_resolves_nothing_leaves_the_branch_and_names_why(
 
     with pytest.raises(ValueError, match="could not take") as raised:
         ensure_ticket_branch(
-            repo, ticket, start_point="main", seat=MergeTurnSeat(session, workspace, ticket)
+            repo,
+            ticket,
+            start_point="main",
+            seat=MergeTurnSeat(session, workspace, ticket),
+            session=session,
         )
 
     assert "shared.txt" in str(raised.value)

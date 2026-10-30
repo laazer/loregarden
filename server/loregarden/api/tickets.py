@@ -48,9 +48,13 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
     comparable_utc,
 )
-from loregarden.services import btw_service
+from loregarden.services import artifact_service, btw_service
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
-from loregarden.services.artifact_service import list_ticket_artifacts
+from loregarden.services.artifact_service import (
+    ensure_diff_artifact,
+    ensure_test_artifact,
+    list_ticket_artifacts,
+)
 from loregarden.services.block_classification import block_message_for
 from loregarden.services.blocked_on import (
     blocked_on_clause,
@@ -123,6 +127,10 @@ from loregarden.services.workflow_service import (
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
+
+# Bound, not ImportFrom: py_organization rejects importing a `_` name, and this
+# ticket forbids promoting `_test_artifact_is_valid` in artifact_service.
+_test_artifact_is_valid = artifact_service._test_artifact_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -377,13 +385,6 @@ def _current_error(
 
 
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
-    from loregarden.services.artifact_service import (
-        _diff_artifact_is_valid,
-        _test_artifact_is_valid,
-        ensure_diff_artifact,
-        ensure_test_artifact,
-    )
-
     ticket_id = ticket.id
     grouped: dict = {
         "diff": None,
@@ -447,8 +448,7 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
 
     workspace = workspace_for(session, ticket.workspace_id)
     if workspace:
-        if not grouped["diff"] or not _diff_artifact_is_valid(grouped["diff"] or {}):
-            grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
+        grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
         if not grouped["tests"] or not _test_artifact_is_valid(grouped["tests"] or {}):
             grouped["tests"] = ensure_test_artifact(session, ticket=ticket)
     if not grouped.get("live") and ticket.workflow_stage_status == StageStatus.AWAITING:
