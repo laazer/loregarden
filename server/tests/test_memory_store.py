@@ -126,8 +126,8 @@ def test_obsidian_append_checkpoint_marks_each_entry_boundary(vault_dir):
 
     The boundary used to be a blank line, which an entry may contain — so a
     multi-paragraph checkpoint was read back as several, and the fragments spent
-    the stage briefing's slots. `_split_entries` in `agents/inherited_wisdom`
-    reads what this writes.
+    the stage briefing's slots. `split_checkpoint_entries` in
+    `services/checkpoint_logs` reads what this writes.
     """
     store = ObsidianMemoryStore(vault_dir)
     written = store.append_checkpoint(
