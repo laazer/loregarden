@@ -43,6 +43,8 @@ export function TicketPeekHost() {
       onSave={details.save}
       onSaveChecks={details.saveChecks}
       isSavingChecks={details.isSavingChecks}
+      conflict={details.conflict}
+      closeEditorNonce={details.closeEditorNonce}
       onOpenTicket={() => {
         if (!peek) return;
         // Prefer the shareable id: it is the address the ticket page keeps.

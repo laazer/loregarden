@@ -175,3 +175,32 @@
 .ticket-ac-add {
   margin-top: 8px;
 }
+
+/* The revision-conflict block: amber, because it is a question the operator
+   answers, not a failure. No entrance animation — see TicketConflictNotice. */
+.ticket-conflict-notice {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--amb);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--amb) 12%, transparent);
+}
+
+.ticket-conflict-notice:focus-visible {
+  outline: 2px solid var(--amb);
+  outline-offset: 2px;
+}
+
+.ticket-conflict-notice-text {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--tx);
+}
+
+.ticket-conflict-notice-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}

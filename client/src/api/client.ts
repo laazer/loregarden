@@ -387,6 +387,10 @@ export const api = {
       auto_state?: boolean;
       /** Reparent; "" detaches (legal only for a milestone). */
       parent_ticket_id?: string;
+      /** Opt-in compare-and-swap: the revision this edit was based on. Omit for
+       * last-write-wins, which is what every system writer does. A mismatch is
+       * refused with a 409 carrying the stored revision. */
+      expected_revision?: number;
     },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}`, {
