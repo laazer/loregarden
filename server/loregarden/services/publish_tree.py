@@ -11,8 +11,8 @@ alive as long as its milestone, weeks against a base taking ~96 commits a week,
 and every integration conflict filed was on such a branch (491: 29 commits
 unpublished since 09-21).
 
-What is pushed is not the branch's history but one commit cut from the base
-tip, carrying the branch merged into it, signed where the repository signs
+What is pushed is not the branch's history but one commit cut from the
+remote's base tip, fetched for the purpose (`publish_base`), carrying the branch merged into it, signed where the repository signs
 (`git_merge_noco.squash_onto`). The PR is the tree's net change, and the
 branch's own commits never reach the base. That history can carry unsigned
 commits: a ticket branch cut before 782 brought seven back into 491's branch
@@ -60,6 +60,7 @@ from loregarden.services.git_automation import (
 )
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
 from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
@@ -115,11 +116,10 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
 
     config = resolve_git_automation(workspace, ticket)
-    base_sha = rev(repo_root, f"refs/heads/{config.base_branch}")
-    try:
-        already_there = work_is_on(repo_root, tip, base_sha)
-    except RuntimeError as exc:
-        failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=str(exc))
+    chain = tree_chain(config)
+    base_sha, already_there, failure = _base_holding(repo_root, tip, config.base_branch, chain)
+    if failure:
+        failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=failure)
         _emit(session, ticket, config.base_branch, failed)
         return failed
     if already_there:
@@ -128,7 +128,6 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         # own PR, which ancestry cannot see. A push would publish a branch with
         # nothing on it, and its PR would be empty.
         return PublishOutcome(ok=True, branch=branch, tip=tip, skipped=True)
-    chain = tree_chain(config)
     prepared = _prepare(
         session, repo_root, ticket, branch=branch, base_sha=base_sha, tip=tip, config=chain
     )
@@ -244,6 +243,45 @@ def published_branch(repo_root: Path, root: Ticket) -> tuple[str, str]:
         return integration, tip
     own = resolve_ticket_branch(root)
     return own, rev(repo_root, f"refs/heads/{own}")
+
+
+def _base_holding(
+    repo_root: Path, tip: str, base_branch: str, config: GitAutomationConfig
+) -> tuple[str, bool, str]:
+    """The base tip to cut from, whether it already holds ``tip``, and why not ("" when known)."""
+    base_sha, failure = publish_base(repo_root, base_branch, config)
+    if failure:
+        return "", False, failure
+    try:
+        return base_sha, work_is_on(repo_root, tip, base_sha), ""
+    except RuntimeError as exc:
+        return base_sha, False, str(exc)
+
+
+def publish_base(repo_root: Path, base_branch: str, config: GitAutomationConfig) -> tuple[str, str]:
+    """The base tip to cut the publish from, and why it could not be read ("" when it was).
+
+    A chain that pushes cuts from the remote's base, fetched now: the PR merges
+    into that, not into whatever the checkout last pulled. The primary
+    checkout's `main` sat at f05dce1d while the remote took #661 and #733, and
+    lg-external-harness-463's cut from it conflicted with the base its PR
+    targets (#692) though the branch itself merged the remote's base cleanly.
+    A chain that never pushes has no remote to answer to, and cuts nothing.
+    """
+    if "push" not in enabled_steps(config):
+        return rev(repo_root, f"refs/heads/{base_branch}"), ""
+    tracking = f"refs/remotes/origin/{base_branch}"
+    fetched = run_git(
+        ["fetch", "--quiet", "origin", f"+refs/heads/{base_branch}:{tracking}"],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if fetched.returncode != 0:
+        reason = (fetched.stderr or fetched.stdout or "").strip()
+        return "", f"could not fetch {base_branch} from origin to cut the publish from: {reason}"
+    return rev(repo_root, tracking), ""
 
 
 def tree_chain(config: GitAutomationConfig) -> GitAutomationConfig:
