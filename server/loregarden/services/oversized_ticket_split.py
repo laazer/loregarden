@@ -40,6 +40,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.schemas import HierarchyWorkItem
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -47,7 +48,6 @@ from loregarden.services.cli_agent_runner import (
 )
 from loregarden.services.decomposition_service import DecompositionService, GenerateFn
 from loregarden.services.finalize_hierarchy import finalize_hierarchy
-from loregarden.services.git_branch import resolve_ticket_branch
 from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.integration_review import ensure_review_child

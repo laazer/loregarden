@@ -15,7 +15,11 @@ from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.parallel_run_service import ParallelRunService
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.queue_status import build_queue_status
-from loregarden.services.worktree_service import WorktreeService, repo_path_for_worktree
+from loregarden.services.worktree_lifecycle import RemovalFailure, retire_worktree
+from loregarden.services.worktree_service import (
+    WorktreeService,
+    repo_path_for_worktree,
+)
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
     emit_conflict_detected,
@@ -410,40 +414,43 @@ def cleanup_worktree(
     worktree_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
-    """
-    Manually cleanup a worktree.
+    """Manually clean up a worktree, through the one receipt gate.
 
-    Args:
-        worktree_id: Worktree ID
+    This route used to hand any worktree id straight to the removal seam with
+    no premise at all — no receipt, no claim, not a glance at the tree — which
+    made it the shortest path to the defect the gate exists to close. It now
+    reports what the gate decided, in three shapes a caller can tell apart:
 
-    Returns:
-        {
-            "status": "cleaned",
-            "message": str,
-        }
+    * 200 — the checkout is gone.
+    * 409 — a PREMISE refused and nothing was deleted. The tree is still there
+      and still owned; the reason names which premise, so an operator can act
+      on it (land the branch, commit the work, wait for the agent).
+    * 400 — every premise held and the removal itself did not work. Which of
+      the two causes it was is in the detail, because they call for opposite
+      responses: a path outside the worktrees folder never clears, and an
+      `rmtree` that raised usually clears on the next attempt.
     """
     try:
-        # Get worktree
         worktree = session.get(Worktree, worktree_id)
         if not worktree:
             raise HTTPException(status_code=404, detail="Worktree not found")
 
-        # Cleanup worktree
         worktree_service = WorktreeService(
             session, repo_path=repo_path_for_worktree(session, worktree)
         )
-        success = worktree_service.cleanup_worktree(worktree)
+        outcome = retire_worktree(session, worktree_service, worktree)
 
-        if success:
+        if outcome.refusal is None:
             return {
                 "status": "cleaned",
                 "message": f"Worktree {worktree_id} cleaned up",
             }
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Cleanup failed",
-            )
+        if outcome.refusal in set(RemovalFailure):
+            raise HTTPException(status_code=400, detail=outcome.detail)
+        raise HTTPException(
+            status_code=409,
+            detail=f"{outcome.refusal.value}: {outcome.detail}",
+        )
 
     except HTTPException:
         raise

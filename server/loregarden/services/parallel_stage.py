@@ -213,6 +213,7 @@ def prepare_tree_for_parallel_stage(
         ensure_ticket_branch(
             execution_root,
             ticket,
+            session=session,
             start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
             ignoring=ticket_recorded_paths(session, ticket),
             seat=MergeTurnSeat(session, workspace, ticket),

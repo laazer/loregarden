@@ -10,7 +10,10 @@ import {
   type CleanupCandidate,
 } from "../lib/branchCleanup";
 import { deleteBranchTriage, type BranchTriageEntry } from "../lib/branchTriageApi";
-import { describeError } from "../state/toastStore";
+import { useRestoreFocusOnSettle } from "../hooks/useRestoreFocusOnSettle";
+import { describeError, pushToast } from "../state/toastStore";
+import { removalNotice, type BranchRemovalNotice } from "../lib/branchRemovalNotices";
+import { BranchNoticeRow, BranchRefusalBlock } from "./BranchRemovalNotices";
 import { IconCloseButton } from "./IconCloseButton";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
@@ -22,8 +25,14 @@ interface BranchCleanupFailure {
 }
 
 interface BranchCleanupResult {
+  /** Only the branches the gate answered `deleted` for. */
   deleted: string[];
+  /** Transport failures — the red block, as before. */
   failures: BranchCleanupFailure[];
+  /** `parked` outcomes: every premise held, the delete did not finish. Also red. */
+  parked: BranchRemovalNotice[];
+  /** `refused` outcomes: the gate worked and nothing was lost. Amber. */
+  refusals: BranchRemovalNotice[];
 }
 
 /**
@@ -116,8 +125,12 @@ function BranchCleanupModalBody({
   const [selected, setSelected] = useState<Set<string>>(
     () => defaultCleanupSelection(cleanupCandidates(branches)),
   );
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<
+    { done: number; total: number; refused: number } | null
+  >(null);
   const [failures, setFailures] = useState<BranchCleanupFailure[]>([]);
+  const [parked, setParked] = useState<BranchRemovalNotice[]>([]);
+  const [refusals, setRefusals] = useState<BranchRemovalNotice[]>([]);
 
   // A branch that disappeared from the snapshot (deleted here or elsewhere)
   // must not stay ticked, or the next run would try to delete it again.
@@ -135,22 +148,51 @@ function BranchCleanupModalBody({
       const byName = new Map(candidates.map((item) => [item.entry.name, item]));
       const deleted: string[] = [];
       const failed: BranchCleanupFailure[] = [];
-      setProgress({ done: 0, total: names.length });
+      const held: BranchRemovalNotice[] = [];
+      const kept: BranchRemovalNotice[] = [];
+      setProgress({ done: 0, total: names.length, refused: 0 });
       for (const name of names) {
+        const entry = byName.get(name)?.entry;
+        const ticket = entry?.linked_tickets[0] ?? null;
         try {
           // Never discards commits: a branch holding the only copy is refused
           // and listed below with the reason. Discarding is a per-branch choice.
-          await deleteBranchTriage(workspaceSlug, name, false, (byName.get(name)?.worktreeCount ?? 0) > 0);
-          deleted.push(name);
+          const result = await deleteBranchTriage(
+            workspaceSlug,
+            name,
+            false,
+            (byName.get(name)?.worktreeCount ?? 0) > 0,
+          );
+          // The outcome is a field. A 200 whose body says `refused` deleted
+          // nothing, and counting it as a deletion is what this branch of the
+          // ticket exists to stop.
+          if (result.outcome === "refused") {
+            kept.push(removalNotice(name, result, ticket));
+          } else if (result.outcome === "parked") {
+            held.push(removalNotice(name, result, ticket));
+            // The parked path IS the recovery procedure, and this modal is
+            // about to close over it.
+            pushToast({
+              tone: "error",
+              title: `${name}: the checkout is parked, not deleted`,
+              message: result.detail || `Parked at ${result.parked_path}`,
+            });
+          } else {
+            deleted.push(name);
+          }
         } catch (error) {
           // silent-ok: not swallowed — the failure is recorded per branch and
           // rendered in the dialog, so the remaining branches still get their
           // turn instead of one locked worktree ending the run.
           failed.push({ branch: name, message: describeError(error, "Failed to delete branch") });
         }
-        setProgress((current) => ({ done: (current?.done ?? 0) + 1, total: names.length }));
+        setProgress((current) => ({
+          done: (current?.done ?? 0) + 1,
+          total: names.length,
+          refused: kept.length,
+        }));
       }
-      return { deleted, failures: failed };
+      return { deleted, failures: failed, parked: held, refusals: kept };
     },
     onSettled: () => {
       setProgress(null);
@@ -158,12 +200,18 @@ function BranchCleanupModalBody({
     },
     onSuccess: (result) => {
       setFailures(result.failures);
+      setParked(result.parked);
+      setRefusals(result.refusals);
       if (result.deleted.length) onBranchesDeleted?.(result.deleted);
-      if (!result.failures.length) onClose();
+      // Anything the operator still has a decision about keeps the dialog up.
+      if (!result.failures.length && !result.parked.length && !result.refusals.length) onClose();
     },
   });
 
   const isDeleting = remove.isPending;
+  // The submit is disabled for the run, which blurs it; focus comes back to it
+  // when the run settles so a retry needs no walk back through the branch list.
+  const rememberActivated = useRestoreFocusOnSettle(isDeleting);
   useEffect(() => {
     onBusyChange(isDeleting);
   }, [isDeleting, onBusyChange]);
@@ -217,6 +265,35 @@ function BranchCleanupModalBody({
       </div>
 
       <div className="modal-body">
+        {/*
+          The answer comes first, above the lists.
+          Measured on the sandbox with 110 branches selected and all 110
+          refused: rendered after the branch list, the refusal block sat
+          13,035px below the scroll position behind 214 rows, so the screen
+          read as "nothing happened". It is the one thing the operator has a
+          decision about, so it goes where the eye already is.
+        */}
+        {failures.length || parked.length ? (
+          <div className="branch-triage-delete-error branch-cleanup-failures">
+            <div className="modal-section-title">
+              {failures.length + parked.length} branch
+              {failures.length + parked.length === 1 ? "" : "es"} could not be deleted
+            </div>
+            <ul>
+              {failures.map((failure) => (
+                <li key={failure.branch}>
+                  <code>{failure.branch}</code> — {failure.message}
+                </li>
+              ))}
+              {parked.map((notice) => (
+                <BranchNoticeRow key={notice.label} notice={notice} />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <BranchRefusalBlock notices={refusals} pluralNoun="branch(es)" />
+
         {candidates.length === 0 ? (
           <p className="branch-cleanup-empty">
             Nothing to clean up. Every branch in this workspace is either {baseBranch} or the
@@ -314,31 +391,19 @@ function BranchCleanupModalBody({
           </p>
         ) : null}
 
-        {failures.length ? (
-          <div className="branch-triage-delete-error branch-cleanup-failures">
-            <div className="modal-section-title">
-              {failures.length} branch{failures.length === 1 ? "" : "es"} could not be deleted
-            </div>
-            <ul>
-              {failures.map((failure) => (
-                <li key={failure.branch}>
-                  <code>{failure.branch}</code> — {failure.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </div>
 
       <div className="modal-footer">
         <span className="branch-cleanup-status" aria-live="polite">
           {progress
-            ? `Deleting ${progress.done} of ${progress.total}…`
+            ? `Deleting ${progress.done} of ${progress.total}…${
+                progress.refused ? ` · ${progress.refused} refused` : ""
+              }`
             : `${selected.size} selected${
                 selectedWorktrees
                   ? ` · ${selectedWorktrees} worktree${selectedWorktrees === 1 ? "" : "s"}`
                   : ""
-              }`}
+              }${refusals.length ? ` · ${refusals.length} refused` : ""}`}
         </span>
         <Button variant="secondary" disabled={isDeleting} onClick={onClose}>
           Cancel
@@ -346,8 +411,11 @@ function BranchCleanupModalBody({
         <Button
           variant="primary" className="branch-delete-confirm-submit"
           disabled={isDeleting || selected.size === 0}
-          onClick={() => {
+          onClick={(event) => {
+            rememberActivated(event.currentTarget);
             setFailures([]);
+            setParked([]);
+            setRefusals([]);
             remove.mutate(
               candidates
                 .filter((item) => selected.has(item.entry.name))

@@ -24,12 +24,13 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services.branch_names import chat_session_branch
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches, sweep_chat_branches
 from loregarden.services.chat_worktree import resolve_chat_execution_root
-from loregarden.services.git_branch import chat_session_branch
+from loregarden.services.directory_release import DirectoryReleaseFailed, ReleaseDisposition
 from loregarden.services.orchestration_profile import GitAutomationConfig
-from loregarden.services.worktree_lifecycle import KeepReason
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_lifecycle import KeepReason, RemovalFailure
+from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, make_repo
 
@@ -108,6 +109,21 @@ def _thread_that_wrote(session, workspace, repo, *, landed: bool, **kwargs):
         git(repo, "merge", "-q", "--squash", branch)
         git(repo, "commit", "-q", "-m", f"squash: {branch}")
     return chat, run, branch, root
+
+
+_KEPT_PREFIX = "its worktree is kept: "
+
+
+def _stated_cause(reason: str) -> str:
+    """The refusal a kept-reason names, without the gate's sentence after it.
+
+    `_kept_because` writes `its worktree is kept: <refusal> (<detail>)`. The
+    detail is the gate's own wording and may describe the tree truthfully
+    (a STILL_PARKED outcome says "its checkout is parked at …"), so asking
+    whether a premise "fired" reads the cause, not the whole line.
+    """
+    assert reason.startswith(_KEPT_PREFIX), reason
+    return reason[len(_KEPT_PREFIX) :].split(" (", 1)[0]
 
 
 def _remote_branches(remote) -> str:
@@ -360,7 +376,22 @@ def test_a_checkout_the_server_could_not_remove_keeps_its_branch(
     """
     chat, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
 
-    with mock.patch.object(WorktreeService, "cleanup_worktree", return_value=False):
+    # lg-external-harness-1026 migrated the seam: `remove_checkout` no longer
+    # answers a value a caller can forget to read. It raises, carrying
+    # lg-external-harness-1165's `CleanupRefusal` member and the parked path,
+    # and `retire_worktree` is the one place that catches it — so the stub
+    # raises too, and the shape this test guards is unchanged.
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=f"{root}.parked",
+        ),
+    ):
         result = sweep_chat_branches(session, workspace)
 
     assert result.removed == []
@@ -369,8 +400,9 @@ def test_a_checkout_the_server_could_not_remove_keeps_its_branch(
     # The reason names what happened, not a premise that never fired: a sweep
     # log saying "uncommitted changes" about a permission error sends the
     # operator looking for edits that are not there.
-    assert "removing its checkout failed" in reason
-    assert not any(member.value in reason for member in KeepReason)
+    assert RemovalFailure.CLEANUP_FAILED.value in reason
+    assert _stated_cause(reason) == RemovalFailure.CLEANUP_FAILED.value
+    assert _stated_cause(reason) not in {member.value for member in KeepReason}
     # Local and remote both survive, and so does the checkout and the row.
     assert branch in git(repo, "branch", "--format=%(refname:short)").stdout
     assert branch in _remote_branches(remote)
@@ -393,7 +425,7 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
 ):
     """AC4 at the volume the sweep runs at, with a per-tree failure.
 
-    The single-thread failure test above stubs `cleanup_worktree` to False for
+    The single-thread failure test above stubs `remove_checkout` to one refusal for
     the whole sweep, so every answer in that run is the same answer: a sweep
     that bailed on the first tree it could not retire, or that decided one
     tree's fate from another's outcome, passes it unchanged. Here one thread's
@@ -409,9 +441,9 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
     test that happened to create the stuck thread second.
 
     Both threads satisfy every premise and both have landed, which is what makes
-    this the dangerous shape: the only thing separating them is the bool from
-    the seam, and dropping a ref on the wrong side of it leaves a checkout of a
-    branch that exists nowhere.
+    this the dangerous shape: the only thing separating them is whether the
+    seam raised, and dropping a ref on the wrong side of it leaves a checkout
+    of a branch that exists nowhere.
     """
     first, second = ("Will not go", "Went fine") if stuck_first else ("Went fine", "Will not go")
     threads = {}
@@ -426,16 +458,25 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
     stuck_row = session.exec(
         select(Worktree).where(Worktree.chat_session_id == stuck_chat.id)
     ).one()
-    real_cleanup = WorktreeService.cleanup_worktree
+    real_cleanup = WorktreeService.remove_checkout
 
     def refuse_only_the_stuck_one(self, worktree):
+        # Never `False`: the seam raises now, and any value it returns reads
+        # as "the checkout is gone", so a stub that kept returning `False`
+        # would be read as a successful removal.
         if worktree.id == stuck_row.id:
-            return False
+            raise DirectoryReleaseFailed(
+                "rmtree failed",
+                disposition=ReleaseDisposition.STILL_PARKED,
+                refusal=CleanupRefusal.REMOVE_RAISED,
+                uncleaned_path=str(stuck_root),
+                parked_path=f"{stuck_root}.parked",
+            )
         return real_cleanup(self, worktree)
 
     with mock.patch.object(
         WorktreeService,
-        "cleanup_worktree",
+        "remove_checkout",
         autospec=True,
         side_effect=refuse_only_the_stuck_one,
     ):
@@ -443,8 +484,9 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
 
     assert result.removed == [clean_branch]
     assert [name for name, _ in result.kept] == [stuck_branch]
-    assert "removing its checkout failed" in result.kept[0][1]
-    assert not any(member.value in result.kept[0][1] for member in KeepReason)
+    assert RemovalFailure.CLEANUP_FAILED.value in result.kept[0][1]
+    assert _stated_cause(result.kept[0][1]) == RemovalFailure.CLEANUP_FAILED.value
+    assert _stated_cause(result.kept[0][1]) not in {member.value for member in KeepReason}
 
     local = git(repo, "branch", "--format=%(refname:short)").stdout
     assert stuck_branch in local
@@ -454,3 +496,75 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
     assert stuck_root.is_dir()
     assert not clean_root.exists()
     assert stuck_row.state == WorktreeState.ACTIVE
+
+
+# ===========================================================================
+# lg-external-harness-1026 — the sweep stops pre-checking, and starts
+# reporting what the gate parked.
+# ===========================================================================
+
+
+def test_the_sweep_no_longer_runs_its_own_landed_pre_check(
+    session, workspace, repo, remote, pruning
+):
+    """`branch_work_has_landed` is now enforced *inside* the gate.
+
+    Two implementations of "did this land" is two answers to one question, and
+    they drift the first time either moves. The pre-check went; the sweep asks
+    `retire_worktree` and reports what it says.
+    """
+    import inspect
+
+    from loregarden.services import chat_branch_sweep
+
+    source = inspect.getsource(chat_branch_sweep)
+    assert "branch_work_has_landed" not in source, (
+        "the sweep keeps a second copy of the receipt check"
+    )
+
+
+def test_an_unlanded_chat_branch_is_still_kept_and_its_ref_survives(
+    session, workspace, repo, remote, pruning
+):
+    """The behaviour the pre-check used to provide, now provided by the gate.
+
+    Deleting the pre-check must not delete the protection: an unlanded chat
+    branch's checkout stays, its local ref stays, and its remote ref stays.
+    """
+    _, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=False)
+
+    result = sweep_chat_branches(session, workspace)
+
+    assert result.removed == []
+    assert [name for name, _ in result.kept] == [branch]
+    assert root.is_dir()
+    assert branch in _remote_branches(remote)
+    assert branch in git(repo, "branch", "--format=%(refname:short)").stdout
+
+
+def test_a_parked_outcome_is_reported_with_its_exact_path_and_keeps_both_refs(
+    session, workspace, repo, remote, pruning
+):
+    """The loud case. The directory is neither where it was nor deleted, and
+    the parked path is the only thing that knows where it went — so the sweep's
+    own report carries it rather than leaving it in a log line."""
+    _, _, branch, root = _thread_that_wrote(session, workspace, repo, landed=True)
+    parked = f"{root}.parked-feedface"
+
+    with mock.patch.object(
+        WorktreeService,
+        "remove_checkout",
+        side_effect=DirectoryReleaseFailed(
+            "rmtree failed",
+            disposition=ReleaseDisposition.STILL_PARKED if parked else ReleaseDisposition.INTACT,
+            refusal=CleanupRefusal.REMOVE_RAISED,
+            uncleaned_path=str(root),
+            parked_path=parked,
+        ),
+    ):
+        result = sweep_chat_branches(session, workspace)
+
+    assert result.removed == []
+    assert parked in result.kept[0][1]
+    assert branch in _remote_branches(remote)
+    assert branch in git(repo, "branch", "--format=%(refname:short)").stdout

@@ -48,7 +48,10 @@ from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
+    ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     AWAITING_STAGES_ARE_ASKED,
+    CHECKOUTS_KEEP_THEIR_BRANCH,
+    CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     EVERY_BLOCK_IS_SETTLED,
     EXHAUSTED_GATES_BLOCK,
@@ -61,6 +64,7 @@ from loregarden.services.invariant_registry import (
     PUBLISH_CARDS_CLOSE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
+    WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
 from loregarden.services.invariants import Invariant, run_invariant
 from loregarden.services.network_wait_resume import resume_network_waits
@@ -215,6 +219,26 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After holds resume: dropping a parent-edge must not unpark a ticket whose
     # only remaining wait was the illegal one (release requires an edge).
     _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),
+    # An active row whose recorded checkout is gone: the control plane goes on
+    # believing a checkout is there, and `resolve_execution_root` reuses the
+    # row (lg-external-harness-1452). The self-repair that destroyed the
+    # directory and left the row is closed; an operator removing a checkout by
+    # hand is the way in that stays, so this settles it on the timer.
+    _invariant(ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT),
+    # A row whose parked_at names a path that is gone while the checkout is
+    # present: directory_release._restore asked a person to move it back by
+    # hand, they did, and the locator still points at the vanished park copy
+    # (lg-external-harness-1416). The checkout is still owned; clear the
+    # false locator, do not settle the row.
+    _invariant(WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH),
+    # A cleanup row whose checkout is still there: a removal that failed read as
+    # one that worked (lg-external-harness-954). Report-only; whether the
+    # directory holds work is a person's call.
+    _invariant(CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT),
+    # A checkout still on disk whose branch is gone: a discard deleted the only
+    # ref to its commits after the removal failed (lg-external-harness-1166).
+    # Report-only; the commits may still be wanted.
+    _invariant(CHECKOUTS_KEEP_THEIR_BRANCH),
 )
 
 

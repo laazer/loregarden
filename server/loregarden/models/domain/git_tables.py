@@ -119,6 +119,28 @@ class Worktree(SQLModel, table=True):
     has_conflicts: bool = False
     conflict_files_json: str = "[]"
     conflict_summary: str | None = None
+    #: The durable claim on this checkout: the pid that cut or reused it, the
+    #: process start time that tells a reused pid from the original, and the
+    #: boot both were read under. Three columns rather than one blob so a
+    #: half-written claim is visible as one (`process_identity.parse_claim`),
+    #: and all three default to `''` because every row written before
+    #: lg-external-harness-1026 has no claim — read as "nobody claims this",
+    #: which is the single deliberate fail-open in that change and is bounded
+    #: by the receipt premise beside it.
+    claim_pid: str = ""
+    claim_birth: str = ""
+    claim_boot_id: str = ""
+    #: Why the last sweep did not remove this checkout, in the words it
+    #: reported. Evidence records uncertainty rather than releasing ownership,
+    #: and the row is the only place that answer survives the sweep that
+    #: produced it — so it is written on every refusal and cleared the moment
+    #: the tree is settled, because a reason describing a condition that has
+    #: since resolved sends an operator after the wrong thing.
+    unresolved_reason: str = ""
+    #: Where a failed removal left the checkout: `release_directory` renames
+    #: before it deletes, so a delete that failed and could not be undone has
+    #: the bytes under an unguessable name and this is the only record of it.
+    parked_at: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     merged_at: datetime | None = None
     cleaned_at: datetime | None = None

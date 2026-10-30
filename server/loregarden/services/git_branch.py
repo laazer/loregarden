@@ -9,60 +9,31 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from loregarden.models.domain import (
-    BaxterChatSession,
     BranchHolder,
     PrimaryCheckoutUse,
+    RemovalOutcome,
     Ticket,
 )
+from loregarden.services import branch_names
 from loregarden.services.branch_takes_target import MergeTurnSeat, bring_tree_along, take_target
+from loregarden.services.checkout_release import (
+    RETIREMENT_ROUTE,
+    WorktreeRemoval,
+    release_checkout,
+)
 from loregarden.services.git_merge_noco import is_ancestor
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.git_trees import is_main_working_tree, main_working_tree
 from loregarden.services.primary_checkout import require_clean_tree
 from loregarden.services.worktree_snapshot import read_tree
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
-_BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
 _WORKTREE_LOCK_RE = re.compile(
     r"already used by worktree at ['\"]?([^'\"]+)['\"]?",
     re.IGNORECASE,
 )
-
-
-def _slugify(text: str) -> str:
-    slug = _SLUG_RE.sub("-", text.lower()).strip("-")
-    return slug[:48]
-
-
-def default_ticket_branch(ticket: Ticket) -> str:
-    slug = ticket.external_id.strip() or ticket.id[:8]
-    prefix = _slugify(ticket.milestone) or "loregarden"
-    return f"{prefix}/{slug}"
-
-
-def chat_session_branch(chat_session: BaxterChatSession) -> str:
-    """The branch a Home chat thread's acting turns commit to.
-
-    Derived from the thread's own id rather than its title: a title is derived
-    from the first message and the operator can rename it, and a branch that
-    moves when a conversation is renamed is a branch that loses its commits.
-    The title only decorates, so a thread is recognisable in `git branch`.
-    """
-    slug = _slugify(chat_session.title)
-    stem = f"{slug}-{chat_session.id[:8]}" if slug else chat_session.id[:8]
-    return f"chat/{stem}"
-
-
-def resolve_ticket_branch(ticket: Ticket) -> str:
-    branch = ticket.branch.strip()
-    return branch or default_ticket_branch(ticket)
-
-
-def validate_branch_name(branch: str) -> None:
-    if not branch or not _BRANCH_RE.match(branch):
-        raise ValueError(f"Invalid branch name: {branch!r}")
 
 
 def _process_text(exc: subprocess.CalledProcessError) -> str:
@@ -110,20 +81,21 @@ def _held_branch_message(
 ) -> str:
     """What the operator reads when something else is holding `branch`.
 
-    Three shapes, one per `BranchHolder`, and each ends in a command that can
-    succeed against the tree named on its first line (UX-1, UX-2). The string
-    `worktree remove --force` appears in the linked-worktree shape only: aimed
-    at a main working tree git exits 128 however the operator runs it, so
-    printing it there hands over a remedy that cannot work (AC2).
+    Three shapes, one per `BranchHolder`, and all three now end in the same
+    detach/switch remedy (AC11). The linked-worktree shape used to print the
+    destructive plumbing this module no longer runs on the operator's behalf
+    *because* it destroys uncommitted work nothing can regenerate — handing it
+    over instead was the same destructive act with an extra step
+    (lg-external-harness-1452).
+    Retiring the tree for real is the owning ticket's landing or publish, and
+    the refusal note says so.
     """
     if holder is BranchHolder.LINKED_WORKTREE:
         return (
             f"Branch {branch!r} is already checked out in another worktree at "
             f"{locked_at}. Git refuses a second checkout (exit 128).\n\n"
-            f"Free it with:\n"
-            f"  git worktree remove --force {locked_at}\n"
-            f"then retry the run. Stale Claude/Cursor scratchpad worktrees are a "
-            f"common cause."
+            f"{_free_the_branch_with(locked_at, start_point=start_point)} Stale "
+            f"Claude/Cursor scratchpad worktrees are a common cause."
         )
     if holder is BranchHolder.MAIN_WORKING_TREE:
         return (
@@ -160,16 +132,86 @@ def _checkout_failure_message(
     return detail or f"git checkout -B {branch!r} failed ({exc})"
 
 
-def _try_free_worktree_lock(
-    repo_root: Path, branch: str, locked_at: str, *, holder: BranchHolder
-) -> tuple[bool, str]:
-    """Try to remove a linked worktree holding `branch`.
+#: AC10. The first line is what `TicketAttention` renders — one ellipsed row —
+#: and what survives `.toast__message`'s ~4-line clamp. So it is ONE sentence,
+#: inside 80 characters, carrying the verdict and nothing else: no filesystem
+#: path (live ones are 87-88 characters) and no branch name. Both of those,
+#: the gate's own premise and the remedy all follow on later lines.
+_PREMISE_VERDICT = "Nothing was deleted; the branch is still held by another checkout."
+_ERROR_VERDICT = "Nothing was deleted; the worktree gate could not finish its check."
+#: `RETIREMENT_ROUTE` is the gate's own sentence, printed once per note: the
+#: supported way to retire a checkout, which the destructive command this
+#: module no longer names is not (AC11).
 
-    Returns ``(repaired, note)``. ``repaired`` is True only when the lock was
-    cleared and checkout should be retried. Only a `LINKED_WORKTREE` is removed:
-    the decision is about the tree holding the branch, never about which tree
-    the dispatch was standing in, which is what `repo_root` answers now that it
-    is routinely the ticket's own worktree (lg-milestone-that-916).
+
+def _kept_note(locked_at: str, report: WorktreeRemoval) -> str:
+    """The gate's refusal, in the order the operator reads it (AC3, AC10, AC12a).
+
+    Verdict first, then the checkout that was kept, then the gate's own
+    sentence verbatim — never `report.detail` alone, which opens with an
+    87-88 character path on the `no_receipt` shape and with a premise 55
+    characters ahead of one on `cleanup_failed`. A gate that answered with an
+    empty `detail` still gets a line saying what was kept, because a refusal
+    that renders blank is a refusal nobody can act on.
+    """
+    lines = [_PREMISE_VERDICT, f"Kept the checkout at {locked_at} and everything in it."]
+    if report.detail.strip():
+        lines.append(report.detail.strip())
+    if report.parked_path:
+        lines.append(f"A copy of it was parked at {report.parked_path}.")
+    if RETIREMENT_ROUTE not in report.detail:
+        # The `no_receipt` shape already ends in it, and printing the same
+        # sentence twice in four lines is how a reader learns to skip the end
+        # of the message. The other shapes do not, so it is added for them.
+        lines.append(RETIREMENT_ROUTE)
+    return "\n".join(lines)
+
+
+def _unanswered_note(locked_at: str, failure: Exception) -> str:
+    """The gate itself failed (AC12b).
+
+    A distinct verdict and the failure's own words: "the gate refused" and
+    "the gate could not run" must not collapse into one sentence, or a broken
+    check reports itself as a clean answer.
+    """
+    return "\n".join(
+        [
+            _ERROR_VERDICT,
+            f"Kept the checkout at {locked_at} and everything in it.",
+            f"The gate raised {type(failure).__name__}: {failure}",
+            RETIREMENT_ROUTE,
+        ]
+    )
+
+
+def _try_free_worktree_lock(
+    branch: str,
+    locked_at: str,
+    *,
+    holder: BranchHolder,
+    session: Session,
+) -> tuple[bool, str]:
+    """Ask the receipt gate whether the tree holding `branch` may be released.
+
+    Returns ``(repaired, note)``. ``repaired`` is True only on
+    `RemovalOutcome.DELETED` — the one answer that frees the branch and makes
+    a checkout retry worth attempting. Every other answer, PARKED included,
+    leaves the branch held, so it is a refusal with a note the operator reads.
+
+    This function destroys nothing itself. It used to delete the tree with
+    git's own plumbing on any path git called a linked worktree, gated on that
+    shape alone: no receipt, no claim, no dirtiness probe and no `worktrees`
+    row, and the row left ACTIVE afterwards. `release_checkout` is the one
+    place that decision lives, and it is the same gate every other removal
+    site goes through (lg-external-harness-1452).
+
+    Only a `LINKED_WORKTREE` is even a candidate: the decision is about the
+    tree holding the branch, never about which tree the dispatch was standing
+    in (lg-milestone-that-916). The receipt gate names its own containment
+    base from the checkout's workspace row, not from a caller-supplied path
+    (lg-external-harness-1488). That early return asks the gate nothing, so
+    it has no answer to report — `_held_branch_message` alone carries the
+    explanation, and this is the one empty note (AC12a).
     """
     if holder is not BranchHolder.LINKED_WORKTREE:
         logger.warning(
@@ -179,34 +221,35 @@ def _try_free_worktree_lock(
         )
         return False, ""
 
-    result = run_git(
-        ["worktree", "remove", "--force", locked_at],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = ((result.stderr or result.stdout) or "worktree remove failed").strip()
+    try:
+        report = release_checkout(session, locked_at)
+    except Exception as failure:  # noqa: BLE001 - reported in the note and logged below
+        # Not narrowed: the gate reads the database and the filesystem, so its
+        # failures range from OperationalError to OSError, and a `ValueError`
+        # escaping here would read to every caller as a refusal that was
+        # DECIDED rather than a check that died (AC12b).
         logger.warning(
-            "Self-repair could not remove worktree %s locking %s: %s",
+            "The worktree gate could not answer for %s locking %s",
             locked_at,
             branch,
-            detail,
+            exc_info=True,
         )
-        return False, f"Tried to remove locking worktree {locked_at} but failed: {detail}"
+        return False, _unanswered_note(locked_at, failure)
 
-    run_git(
-        # silent-ok: bookkeeping after the removal above already freed the branch
-        ["worktree", "prune"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
+    if report.outcome is RemovalOutcome.DELETED:
+        note = f"Self-repaired: released the locking checkout at {locked_at} so {branch!r} can check out."
+        logger.warning(note)
+        return True, note
+
+    note = _kept_note(locked_at, report)
+    logger.warning(
+        "The worktree gate kept %s locking %s (%s): %s",
+        locked_at,
+        branch,
+        report.reason or report.outcome.value,
+        report.detail,
     )
-    note = f"Self-repaired: removed locking worktree {locked_at} so {branch!r} can check out."
-    logger.warning(note)
-    return True, note
+    return False, note
 
 
 def _branch_exists(repo_root: Path, branch: str) -> bool:
@@ -305,6 +348,7 @@ def ensure_ticket_branch(
     repo_root: Path,
     ticket: Ticket,
     *,
+    session: Session,
     start_point: str = "",
     ignoring: Iterable[str] = (),
     seat: MergeTurnSeat | None = None,
@@ -319,8 +363,12 @@ def ensure_ticket_branch(
     conflict get an agent's merge turn; without one, a conflict still raises.
 
     If another linked worktree holds the branch — common with stale Claude
-    scratchpads — remove that worktree once and retry. Gate autofix never sees
-    this failure because it happens before any agent starts.
+    scratchpads — ask the receipt gate once whether that checkout may be
+    released, and retry only if it was. ``session`` is required, and required
+    keyword-only, because that gate reads the `worktrees` table: a default
+    would ship a path where the invariant never runs, and `object_session` is
+    measured dead here (detached `Ticket` objects answer `None`). Gate autofix
+    never sees this failure because it happens before any agent starts.
 
     Returns early, having asked git exactly one question, when the tree is
     already on the branch and ``start_point`` is already an ancestor of its
@@ -341,8 +389,8 @@ def ensure_ticket_branch(
     (864). Already on the branch, nothing is carried, and an edit there is kept
     as it always was.
     """
-    branch = resolve_ticket_branch(ticket)
-    validate_branch_name(branch)
+    branch = branch_names.resolve_ticket_branch(ticket)
+    branch_names.validate_branch_name(branch)
 
     if not (repo_root / ".git").exists():
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
@@ -393,7 +441,9 @@ def ensure_ticket_branch(
             raise ValueError(_checkout_failure_message(branch, first_exc)) from first_exc
         holder = _classify_holder(locked_at, main_tree)
 
-        repaired, repair_note = _try_free_worktree_lock(repo_root, branch, locked_at, holder=holder)
+        repaired, repair_note = _try_free_worktree_lock(
+            branch, locked_at, holder=holder, session=session
+        )
         if not repaired:
             raise ValueError(
                 _checkout_failure_message(

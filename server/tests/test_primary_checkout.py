@@ -206,7 +206,7 @@ def test_switching_a_dirty_checkout_onto_a_ticket_branch_is_refused(session, wor
     (repo / "operator.txt").write_text("wip\n")
 
     with pytest.raises(DirtyPrimaryCheckoutError):
-        ensure_ticket_branch(repo, ticket)
+        ensure_ticket_branch(repo, ticket, session=session)
 
     assert head_branch(repo) == "main", "nothing may have been switched"
 
@@ -215,7 +215,7 @@ def test_switching_over_the_tickets_own_work_is_allowed(session, workspace, repo
     ticket = make_ticket(session, workspace)
     (repo / "mine.py").write_text("x\n")
 
-    ensure_ticket_branch(repo, ticket, ignoring={"mine.py"})
+    ensure_ticket_branch(repo, ticket, ignoring={"mine.py"}, session=session)
 
     assert head_branch(repo) == ticket.branch
 

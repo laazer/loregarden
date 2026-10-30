@@ -16,7 +16,7 @@ from loregarden.core.workflow_loader import (
 )
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.artifact_service import git_base_ref
-from loregarden.services.git_branch import resolve_ticket_branch
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session

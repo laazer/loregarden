@@ -25,9 +25,10 @@ from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.log_storage import read_log_lines
+from loregarden.services.parent_ref import live_diff_base
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_state_service import choose
-from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.ticket_worktree import resolve_ticket_checkout
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, select
@@ -610,34 +611,46 @@ def _stat_and_patch(cwd: Path, ref: str | None) -> tuple[str, str] | None:
     return text[: marker + 1], text[marker + 1 :]
 
 
-def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dict[str, Any] | None:
+def capture_git_diff(
+    workspace: Workspace, repo_root: Path | None = None, *, against: str | None = None
+) -> dict[str, Any] | None:
     """Return the diff artifact payload from `repo_root`, or the shared checkout.
 
     Ticket-scoped callers pass the ticket's worktree: its changes are not in the
     shared checkout at all, so the Diff tab would show whatever else happened to
     be dirty there — or nothing.
+
+    `against` is a SHA the caller already resolved. When set, that string is the
+    only base: git failure or an empty stat returns None, with no fallback.
     """
     cwd = repo_root or resolve_workspace_root(workspace)
     if not (cwd / ".git").exists():
         return None
 
-    # The usual base first, without resolving it separately: a diff against a
-    # `main` that exists is the answer, and only when it is not does the
-    # candidate search run, exactly as it always did.
-    diff_ref = _PREFERRED_BASE
-    diffed = _stat_and_patch(cwd, diff_ref)
-    if diffed is None:
-        base = git_base_ref(cwd)
-        diff_ref = base if base else "HEAD"
-        # A `main` that resolves but would not diff fails the same way twice.
-        if diff_ref != _PREFERRED_BASE:
-            diffed = _stat_and_patch(cwd, diff_ref)
-    stat_text, patch_text = diffed or ("", "")
-    if not stat_text.strip():
-        diff_ref = "working tree"
-        stat_text, patch_text = _stat_and_patch(cwd, None) or ("", "")
-    if not stat_text.strip():
-        return None
+    if against:
+        diffed = _stat_and_patch(cwd, against)
+        if diffed is None or not diffed[0].strip():
+            return None
+        stat_text, patch_text = diffed
+        diff_ref = against
+    else:
+        # The usual base first, without resolving it separately: a diff against a
+        # `main` that exists is the answer, and only when it is not does the
+        # candidate search run, exactly as it always did.
+        diff_ref = _PREFERRED_BASE
+        diffed = _stat_and_patch(cwd, diff_ref)
+        if diffed is None:
+            base = git_base_ref(cwd)
+            diff_ref = base if base else "HEAD"
+            # A `main` that resolves but would not diff fails the same way twice.
+            if diff_ref != _PREFERRED_BASE:
+                diffed = _stat_and_patch(cwd, diff_ref)
+        stat_text, patch_text = diffed or ("", "")
+        if not stat_text.strip():
+            diff_ref = "working tree"
+            stat_text, patch_text = _stat_and_patch(cwd, None) or ("", "")
+        if not stat_text.strip():
+            return None
 
     stat_lines = [line for line in stat_text.splitlines() if line.strip()]
     summary = stat_lines[-1] if stat_lines else ""
@@ -1090,6 +1103,56 @@ def record_blocking_issue(
     return f"{pointer} {BLOCKING_POINTER_PHRASE} for details."
 
 
+@dataclass(frozen=True)
+class _TicketDiffPlan:
+    """How to capture this ticket's diff: SHA, omit, or skip.
+
+    skip is not against=None. None means no parent (vs-main is correct); skip
+    means a named parent has no live base (vs-main is forbidden).
+    """
+
+    path: Path
+    against: str | None
+    skip: bool
+
+
+def _ticket_diff_plan(
+    session: Session,
+    *,
+    ticket: Ticket,
+    workspace: Workspace,
+) -> _TicketDiffPlan:
+    """Resolve path + against + skip. The only live_diff_base caller."""
+    checkout = resolve_ticket_checkout(session, ticket, workspace)
+    if checkout.parent_branch:
+        sha = live_diff_base(checkout.path, checkout.parent_branch)
+        if sha is None:
+            return _TicketDiffPlan(path=checkout.path, against=None, skip=True)
+        return _TicketDiffPlan(path=checkout.path, against=sha, skip=False)
+    return _TicketDiffPlan(path=checkout.path, against=None, skip=False)
+
+
+def _capture_from_plan(workspace: Workspace, plan: _TicketDiffPlan) -> dict[str, Any] | None:
+    """The only capture_git_diff caller: skip, against=plan.against, or omit."""
+    if plan.skip:
+        return None
+    if plan.against:
+        return capture_git_diff(workspace, plan.path, against=plan.against)
+    return capture_git_diff(workspace, plan.path)
+
+
+def _capture_ticket_diff(
+    session: Session,
+    *,
+    ticket: Ticket,
+    workspace: Workspace,
+) -> dict[str, Any] | None:
+    """Thin wrapper for refresh: plan, then capture or skip."""
+    return _capture_from_plan(
+        workspace, _ticket_diff_plan(session, ticket=ticket, workspace=workspace)
+    )
+
+
 def refresh_execution_artifacts(
     session: Session,
     *,
@@ -1098,7 +1161,7 @@ def refresh_execution_artifacts(
     workspace: Workspace,
 ) -> None:
     """Update diff/test artifacts after an agent run completes."""
-    diff = capture_git_diff(workspace, resolve_ticket_root(session, ticket, workspace))
+    diff = _capture_ticket_diff(session, ticket=ticket, workspace=workspace)
     if diff and diff.get("sections"):
         _upsert_artifact(
             session,
@@ -1138,16 +1201,26 @@ def ensure_diff_artifact(
     ticket: Ticket,
     workspace: Workspace,
 ) -> dict[str, Any] | None:
-    """Return stored diff or capture from git on demand."""
+    """Return stored diff or capture from git on demand.
+
+    Plan first, then reuse: skip keeps a valid stored row; a SHA reuses only
+    when stored.range equals that SHA; no parent keeps today's sections reuse.
+    """
+    plan = _ticket_diff_plan(session, ticket=ticket, workspace=workspace)
     existing = session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "diff")
     ).first()
     if existing:
         stored = json.loads(existing.content_json or "{}")
-        if _diff_artifact_is_valid(stored):
+        if _diff_artifact_is_valid(stored) and (
+            plan.skip or plan.against is None or stored.get("range") == plan.against
+        ):
             return stored
 
-    diff = capture_git_diff(workspace, resolve_ticket_root(session, ticket, workspace))
+    if plan.skip:
+        return None
+
+    diff = _capture_from_plan(workspace, plan)
     if diff and diff.get("sections"):
         _upsert_artifact(
             session,

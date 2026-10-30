@@ -469,7 +469,7 @@ def test_aggregator_parent_creates_no_git_branch_of_its_own(db_session: Session,
     that runs zero stages leaves no branch behind — while its child, which runs
     its stages for real, does get one.
     """
-    from loregarden.services.git_branch import resolve_ticket_branch
+    from loregarden.services.branch_names import resolve_ticket_branch
 
     ws = _make_workspace(db_session, tmp_path, "auto-mode-no-parent-branch")
     parent = _make_ticket(

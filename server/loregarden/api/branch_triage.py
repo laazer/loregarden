@@ -184,7 +184,8 @@ def remove_branch(
 ) -> dict:
     ws = _workspace_or_404(session, slug)
     try:
-        removed = delete_branch(
+        report = delete_branch(
+            session,
             ws,
             branch,
             force=bool(body and body.force),
@@ -192,12 +193,12 @@ def remove_branch(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    removed_worktrees = bool(body and body.remove_worktrees) and removed
-    return {
-        "deleted": branch,
-        "already_gone": not removed,
-        "removed_worktrees": removed_worktrees,
-    }
+    # A refusal is a 200, not a 4xx: the gate worked and nothing was lost, and
+    # a raise would collapse it back into the transport-error path this ticket
+    # exists to separate it from. The client renders amber for `refused` and
+    # red plus a toast for `parked`, and branches on `outcome` — never on "the
+    # request did not throw", which is what counted a refusal as a deletion.
+    return report.as_payload(branch)
 
 
 @router.post("/{slug}/branch-triage/worktrees/remove")
@@ -209,10 +210,10 @@ def remove_worktree(
 ) -> dict:
     ws = _workspace_or_404(session, slug)
     try:
-        remove_branch_worktree(ws, branch, body.path)
+        report = remove_branch_worktree(session, ws, branch, body.path)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"branch": branch, "removed_path": body.path}
+    return report.as_payload(branch)
 
 
 @router.get("/{slug}/branch-triage/chat")
