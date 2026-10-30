@@ -402,7 +402,7 @@ def test_the_parallel_path_refreshes_an_existing_worktree_onto_its_target(
     landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
     run = make_run(session, workspace, dependent, "p1")
 
-    assert prepare_tree_for_parallel_stage(session, dependent, "work", [run]) == ""
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run]) == ""
 
     assert _ancestor(root, landed, "HEAD"), "the members share a tree that can see the work"
     assert _ancestor(root, own, "HEAD")
@@ -423,7 +423,7 @@ def test_the_parallel_path_blocks_the_stage_when_the_refresh_conflicts(
     at_terminal_stage(session, dependent)
     run = make_run(session, workspace, dependent, "p1")
 
-    message = prepare_tree_for_parallel_stage(session, dependent, "work", [run])
+    message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
 
     assert "could not take" in message, message
     session.refresh(dependent)
@@ -533,7 +533,7 @@ def test_every_member_of_a_parallel_stage_shares_the_one_refreshed_tree(
     landed = commit_on(Path(repo), target, "sibling.txt", "landed after the tree was cut\n")
     runs = [make_run(session, workspace, dependent, f"p{n}") for n in range(1, 4)]
 
-    assert prepare_tree_for_parallel_stage(session, dependent, "work", runs) == ""
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", runs, stamped=runs) == ""
 
     assert _ancestor(root, landed, "HEAD")
     for run in runs:
@@ -562,7 +562,11 @@ def test_a_conflicting_parallel_refresh_loses_nothing_in_the_worktree(
     at_terminal_stage(session, dependent)
 
     assert "could not take" in prepare_tree_for_parallel_stage(
-        session, dependent, "work", [make_run(session, workspace, dependent, "p1")]
+        session,
+        dependent,
+        "work",
+        [make_run(session, workspace, dependent, "p1")],
+        stamped=[make_run(session, workspace, dependent, "p1")],
     )
 
     assert git(root, "status", "--porcelain").stdout.strip() == "", (
@@ -603,11 +607,16 @@ def agents_fixture(session):
     return session
 
 
-def _handoff(session, workspace, ticket, code: str) -> tuple[str, Path]:
+def _handoff(session, workspace, ticket, code: str):
     """One terminal/harness handoff's tree preparation and prompt render.
 
     The single call both handoff edges make; everything they add afterwards
     (a prompt file, a run view) is downstream of the tree it returns.
+
+    Returns `(prompt, PreparedTree)` as of lg-milestone-that-974: the branch the
+    tree was brought up to leaves with the tree, so neither boundary re-derives
+    it. Compatibility posture is `internal` — every caller moves to the new
+    shape in that change, with no second method returning the old one.
     """
     return CliAgentExecutor(session).render_stage_prompt(
         make_run(session, workspace, ticket, code), ticket
@@ -630,9 +639,9 @@ def test_render_stage_prompt_refreshes_an_existing_worktree_onto_its_target(
         "fixture: the worktree must not already have the work, or this proves nothing"
     )
 
-    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+    _prompt, tree = _handoff(session, workspace, dependent, "h1")
 
-    assert repo_root == root, "the handed-off tree is the ticket's worktree, not a fresh one"
+    assert tree.repo_root == root, "the handed-off tree is the ticket's worktree, not a fresh one"
     assert _ancestor(root, landed, "HEAD"), "the landed prerequisite is reachable from HEAD"
     assert (root / "sibling.txt").exists()
     assert _ancestor(root, own, "HEAD") and (root / "own.txt").exists(), (
@@ -658,10 +667,10 @@ def test_a_dirty_worktree_is_still_handed_off_unrefreshed(
     assert git(root, "status", "--porcelain").stdout.strip(), "fixture: the tree must be dirty"
 
     with caplog.at_level("WARNING"):
-        prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+        prompt, tree = _handoff(session, workspace, dependent, "h1")
 
     assert prompt, "the handoff is not blocked by a tree that could not be refreshed"
-    assert repo_root == root
+    assert tree.repo_root == root
     assert (root / "in-flight.txt").read_text() == "an operator is still writing this\n", (
         "the uncommitted work is untouched"
     )
@@ -746,9 +755,9 @@ def test_a_handoff_with_nothing_new_on_the_target_moves_neither_tree(
         "fixture: the ticket's own commit must not already be on the target"
     )
 
-    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+    _prompt, tree = _handoff(session, workspace, dependent, "h1")
 
-    assert repo_root == root
+    assert tree.repo_root == root
     assert _sha(root) == before_head, "nothing landed, so there was nothing to merge"
     assert _sha(repo, target) == before_target, "and the target branch is not written to at all"
     assert not _ancestor(repo, before_head, target), (
@@ -773,9 +782,9 @@ def test_a_handoff_puts_a_worktree_left_on_another_branch_back_on_the_ticket_s(
     git(root, "checkout", "-q", "-b", "scratch/left-behind")
     assert head_branch(root) != dependent.branch, "fixture: the tree starts off the branch"
 
-    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+    _prompt, tree = _handoff(session, workspace, dependent, "h1")
 
-    assert repo_root == root
+    assert tree.repo_root == root
     assert head_branch(root) == dependent.branch
     assert _ancestor(root, own, "HEAD") and (root / "own.txt").exists(), (
         "and the ticket's earlier stages are still in it"
@@ -855,7 +864,11 @@ def test_the_parallel_path_resolves_its_target_in_the_shared_checkout(
         "loregarden.services.parallel_stage.resolve_target_branch", _target_branch_spy(calls)
     ):
         message = prepare_tree_for_parallel_stage(
-            session, dependent, "work", [make_run(session, workspace, dependent, "p1")]
+            session,
+            dependent,
+            "work",
+            [make_run(session, workspace, dependent, "p1")],
+            stamped=[make_run(session, workspace, dependent, "p1")],
         )
 
     assert message == ""
@@ -970,9 +983,9 @@ def test_the_ticket_s_own_unfinished_work_does_not_block_its_own_handoff(
     _record_changed_path(session, workspace, dependent, "stage-one-left-this.txt")
     git(root, "checkout", "-q", "-b", "scratch/left-behind")
 
-    _prompt, repo_root = _handoff(session, workspace, dependent, "h1")
+    _prompt, tree = _handoff(session, workspace, dependent, "h1")
 
-    assert repo_root == root
+    assert tree.repo_root == root
     assert head_branch(root) == dependent.branch, "the tree was not put back on its branch"
     assert (root / "stage-one-left-this.txt").read_text() == (
         "this ticket's own work in progress\n"
@@ -1483,3 +1496,821 @@ def test_a_dispatch_with_nothing_landed_does_no_checkout_and_no_merge(
     assert _dispatch_asking(dispatch_git, "merge-base", "--is-ancestor") != [], (
         "the one question that establishes it must actually be asked"
     )
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-1200: one target-branch resolution per *parallel* stage.
+#
+# `prepare_tree_for_parallel_stage` still holds the pair 918 removed from the
+# single-agent dispatch path: `resolve_execution_root` resolves the target to
+# cut the worktree from it, and the `ensure_ticket_branch` call one line later
+# resolves the same target for the same ticket against the same refs. Resolving
+# is a *write* — `ensure_integration_branch`, `_refresh_from_tips`, and behind
+# them a blocking merge turn that files an inbox card — so the second reading is
+# two more git processes and a second merge attempt against refs every worktree
+# of the repository shares.
+#
+# The spies below are installed on `parallel_stage`'s and `ticket_worktree`'s
+# bindings, and on no others. `_resolution_spies()` above cannot be reused: it
+# patches `agents.executors.cli`'s binding, which this function never reaches,
+# so it would report 1 whether or not the fix landed. A spy on
+# `services.target_branch.resolve_target_branch` itself reports 0 against
+# anything, because every consumer binds the name at import.
+#
+# And the one resolution has to stay *lazy*. `resolve_execution_root` returns
+# early when the run already has a worktree, and raises
+# `DirtyPrimaryCheckoutError` from `_require_clean_fallback` when worktrees are
+# off and the shared checkout holds someone else's work — so there is a path
+# that resolves zero times today. A hoist would make that path write shared
+# refs where today it writes nothing, which is a behaviour change wearing a
+# refactor's clothes. That is what `test_a_dirty_shared_checkout_parks_the_
+# parallel_stage_without_resolving` is for; the count on the already-set path
+# is 1 either way and kills nothing on its own.
+# ---------------------------------------------------------------------------
+
+
+def _parallel_resolution_spies():
+    """`(calls, (parallel_patch, worktree_patch))` — call-through spies on both bindings.
+
+    `calls` holds the `repo_root` of every resolution either binding made, so
+    `len(calls)` is the total per parallel stage and each entry says which tree
+    it was resolved against.
+
+    `**extra` is here only for the `ticket_worktree` binding, which passes
+    `merge_conflicts=`. The `parallel_stage` binding must be called with
+    exactly `(session, ticket, workspace, *, repo_root)`: `_target_branch_spy`
+    above is frozen to that shape by AC3, and a memo that passed
+    `merge_conflicts=` through would raise `TypeError` inside it.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services.target_branch import resolve_target_branch as real
+
+    calls: list[Path] = []
+
+    def spy(session, ticket, workspace, *, repo_root, **extra):
+        calls.append(Path(repo_root))
+        return real(session, ticket, workspace, repo_root=repo_root, **extra)
+
+    return calls, (
+        patch("loregarden.services.parallel_stage.resolve_target_branch", spy),
+        patch("loregarden.services.ticket_worktree.resolve_target_branch", spy),
+    )
+
+
+def test_one_parallel_stage_resolves_its_target_branch_once(session, workspace, dependent, repo):
+    """AC1. Counted across both import bindings, so the count cannot hide in
+    the binding the spy is not on.
+
+    Non-vacuous: against the code as it stands *before* lg-milestone-that-1200
+    this same test reports **2** — `resolve_execution_root` resolves through
+    `ticket_worktree`'s binding to cut the tree from the target, and the
+    `ensure_ticket_branch` call one line later resolves it again through
+    `parallel_stage`'s to refresh onto it. Removing `resolve_target=once` from
+    the `resolve_execution_root` call restores that 2.
+
+    No worktree is assigned to `runs[0]` and `config.worktree` is left on, so
+    this is the path that resolves on both surfaces: the cut and the refresh.
+    """
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    assert target != "main", (
+        "fixture: the target must differ from the base branch, or a resolution "
+        "issues no git at all and costs nothing to repeat (R7)"
+    )
+    run = make_run(session, workspace, dependent, "p1")
+    assert not run.worktree_id, "fixture: the cut must still be ahead of us"
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert message == "", message
+    assert len(calls) == 1, (
+        f"one parallel stage resolved its target branch {len(calls)} times, in "
+        f"{calls}: the worktree cut and the branch refresh must share the one answer"
+    )
+    assert calls == [Path(repo)], f"and it must be resolved in the shared checkout, not in {calls}"
+
+
+def test_a_parallel_stage_whose_tree_exists_resolves_only_for_the_refresh(
+    session, workspace, dependent, repo
+):
+    """AC2(a). `runs[0]` already has its worktree, so `resolve_execution_root`
+    takes its early return and resolves nothing; the one resolution is the
+    `ensure_ticket_branch` call site's.
+
+    This pins that the early return stays free. It does *not* kill the hoist
+    mutant — that call site is unconditional, so a hoisted memo and a lazy one
+    both report 1 here. `test_a_dirty_shared_checkout_parks_the_parallel_stage_
+    without_resolving` is the one that does.
+    """
+    from loregarden.models.domain import AgentRun
+    from sqlmodel import select
+
+    _existing_worktree(session, workspace, dependent)
+    member = make_run(session, workspace, dependent, "p1")
+    first = session.exec(select(AgentRun).where(AgentRun.run_code == "r1")).one()
+    member.worktree_id = first.worktree_id
+    assert member.worktree_id, "fixture: the first dispatch must have cut a worktree"
+    session.add(member)
+    session.commit()
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        message = prepare_tree_for_parallel_stage(
+            session, dependent, "work", [member], stamped=[member]
+        )
+
+    assert message == "", message
+    assert len(calls) == 1, (
+        f"a stage handed its tree resolved {len(calls)} target branches: {calls} — "
+        "the early return must resolve nothing and the refresh exactly once"
+    )
+    assert calls == [Path(repo)], (
+        f"and the one resolution belongs to the shared checkout, not {calls}"
+    )
+
+
+def test_a_dirty_shared_checkout_parks_the_parallel_stage_without_resolving(
+    session, workspace, dependent, repo
+):
+    """AC2(b)/AC4(b). Worktrees off and the checkout holding someone else's
+    work: `_require_clean_fallback` raises before anything is resolved, so the
+    stage is parked and nothing may be written to shared refs on its behalf.
+    Zero resolutions today, and zero after.
+
+    This is the mutant kill. A memo evaluated above the `resolve_execution_root`
+    call reports 1 here: it would file an inbox card and refresh an integration
+    branch for a stage whose members never start.
+    """
+    _worktrees_off(session, dependent)
+    (Path(repo) / "someone-elses.txt").write_text("an operator was mid-edit here\n")
+    assert git(repo, "status", "--porcelain").stdout.strip(), "fixture: the checkout is dirty"
+    at_terminal_stage(session, dependent)
+    run = make_run(session, workspace, dependent, "p1")
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert calls == [], f"a stage that never starts resolved {len(calls)} target branches: {calls}"
+    assert message.startswith("Failed to checkout branch: "), message
+    assert "someone-elses.txt" in message, message
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status == StageStatus.BLOCKED
+    [error] = _error_artifacts(session, dependent)
+    assert error.title == "Shared checkout refused — work", (
+        "the ERROR artifact the operator looks for is still filed, with the paths"
+    )
+    content = json.loads(error.content_json)
+    assert "someone-elses.txt" in content["dirty_paths"]
+
+
+@pytest.mark.parametrize("tree_exists", [False, True], ids=["cut", "already-cut"])
+def test_an_unresolvable_target_blocks_the_parallel_stage_from_either_surface(
+    session, workspace, dependent, repo, tree_exists
+):
+    """AC4(a). Handing the memo to `resolve_execution_root` moves where the
+    error comes from: on the path that still has to cut a tree the raise now
+    surfaces from inside `resolve_execution_root`'s `resolve_target()` call,
+    and on the path whose tree exists it surfaces from the caller's own
+    evaluation of `start_point`. Both spellings must block the stage with the
+    same words, so the operator reads the same thing either way.
+
+    The `except (ValueError, subprocess.CalledProcessError, TargetBranchError)`
+    tuple is what catches it on both, and must not be narrowed, widened or
+    reordered to make one of these pass.
+    """
+    from unittest.mock import patch
+
+    from loregarden.models.domain import AgentRun
+    from loregarden.services.target_branch import TargetBranchError
+    from sqlmodel import select
+
+    if tree_exists:
+        _existing_worktree(session, workspace, dependent)
+    at_terminal_stage(session, dependent)
+    run = make_run(session, workspace, dependent, "p1")
+    if tree_exists:
+        first = session.exec(select(AgentRun).where(AgentRun.run_code == "r1")).one()
+        run.worktree_id = first.worktree_id
+        session.add(run)
+        session.commit()
+    exc = TargetBranchError("'integration/lg-ms' has no base to take")
+
+    def raising(session, ticket, workspace, *, repo_root, **extra):
+        raise exc
+
+    with patch("loregarden.services.parallel_stage.resolve_target_branch", raising):
+        message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert message == f"Failed to checkout branch: {exc}", message
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status == StageStatus.BLOCKED
+    assert str(exc) in (dependent.blocking_issues or ""), dependent.blocking_issues
+
+
+def test_the_git_processes_one_parallel_stage_starts_are_measured(
+    session, workspace, dependent, repo, dispatch_git, record_property
+):
+    """AC6. The saving is measured on the path AC1 counts, not estimated.
+
+    `dispatch_git` counts every `git` argv started under `subprocess.Popen`,
+    which is where the count has to be taken: the path crosses
+    `ticket_worktree`, `target_branch`, `git_branch` and `git_merge_noco`, and
+    each of them binds `run_git` by name. `reconcile_timer._sweep` is held off
+    for the same reason it is there — a sweep firing inside the window would
+    count its own `for-each-ref` against the stage.
+
+    The figure is recorded rather than pinned to a constant. A second
+    resolution is the two processes `resolve_target_branch` repeats
+    (`for-each-ref` for the integration ref, `merge-base --is-ancestor` for its
+    base), so this test asserts the *structural* fact that makes the figure
+    move — the ticket's integration ref is looked up once per stage — and
+    leaves the absolute totals to the stage report. A delta of 0 would be a
+    reportable measurement, not a failure here.
+    """
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    assert target != "main", "fixture: a ticket with no integration branch resolves no refs"
+    run = make_run(session, workspace, dependent, "p1")
+    dispatch_git.clear()  # the fixture's own resolution must not be counted
+
+    message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert message == "", message
+    record_property("parallel_stage_git_processes", len(dispatch_git))
+    record_property("parallel_stage_git_argvs", [" ".join(argv) for argv in dispatch_git])
+    assert dispatch_git, "the measurement is vacuous if the stage started no git at all"
+    assert len(_dispatch_asking(dispatch_git, "for-each-ref")) == 1, (
+        f"the ticket's integration ref is looked up once per stage, not "
+        f"{len(_dispatch_asking(dispatch_git, 'for-each-ref'))} times, in "
+        f"{[' '.join(argv) for argv in dispatch_git]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-1200, test-break: four mutants the designed suite lets
+# through, and the two contracts no path-level count can see.
+#
+# (1) **The one answer is the wrong answer.** Every test above counts
+#     resolutions and asserts the tree they were taken in; none of them asks
+#     what the shared answer *was*. So `start_point=ticket.branch` — a plausible
+#     slip while rewiring that very argument, "the tree is already on the ticket
+#     branch" — resolves exactly once, in the shared checkout, returns `""`, and
+#     looks up the integration ref once. It passes AC1, AC2(a), AC3 and AC6. On
+#     the already-cut path `test_the_parallel_path_refreshes_an_existing_
+#     worktree_onto_its_target` kills it, because the landed sibling never
+#     arrives. On the *cut* path — which is the path AC1 and AC6 both count —
+#     nothing above looks at where the tree was cut from, so a memo answering
+#     `main` cuts the stage's tree off the base and loses every sibling's landed
+#     work (lg-milestone-that-769) while reporting a count of 1.
+#
+# (2) **A memo that outlives its stage.** AC1 counts one stage. A memo cached on
+#     the module, or keyed by ticket id, counts 1 there and passes — and the
+#     defect is not the cached *name*, which does not change, but the skipped
+#     *write*: `_refresh_from_tips` is what carries the base branch onto the
+#     integration branch, so a second stage that reuses the first stage's answer
+#     never sees what landed on `main` between them. This is mutant (1) of
+#     lg-milestone-that-918's own test-break block, in the module 1200 copies
+#     the memo into.
+#
+# (3) **A hoist killed by one fixture.** AC2(b) rests entirely on the
+#     dirty-primary-checkout park, which needs `_worktrees_off` *and* a dirty
+#     checkout. A second, independent zero-resolution path — a recorded worktree
+#     whose directory is gone, falling back onto a dirty checkout
+#     (`workspace_paths.resolve_run_root` → `_require_clean_fallback`) — keeps
+#     the kill when someone changes how worktrees are switched off. plan-risk
+#     proposed this one and plan-synthesis recorded it as the alternative.
+#
+# (4) **An evaluation above the guards.** `prepare_tree_for_parallel_stage`
+#     returns `""` three times before it would resolve anything: no workspace,
+#     no members, and a workspace root that is not a directory. A factory built
+#     or evaluated above those returns writes shared refs for a stage with no
+#     members at all.
+#
+# And two properties of the memo itself that no path through this function can
+# observe, because no path calls `once()` twice: that building it resolves
+# nothing, and that a failure is not cached. They are asserted directly.
+# ---------------------------------------------------------------------------
+
+
+def test_a_parallel_stage_cuts_its_tree_from_the_target_and_not_the_base(
+    session, workspace, dependent, repo
+):
+    """The one answer must be the ticket's target branch.
+
+    This is the cut path's half of lg-milestone-that-769: a sibling's landed
+    work lives on the integration branch and never on `main` until the tree
+    completes, so a stage whose tree is cut from the base starts from a tree
+    that cannot see it. Counting resolutions cannot tell the two apart — both
+    are one call in the shared checkout — so the assertion is on the tree git
+    actually produced.
+
+    Passes before lg-milestone-that-1200 and after: handing the answer over
+    must not change *which* answer it is. It fails for any memo that returns
+    the base branch, another ticket's branch, or `ticket.branch`.
+    """
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    landed = commit_on(Path(repo), target, "sibling.txt", "a sibling landed before the stage\n")
+    assert not _ancestor(Path(repo), landed, "main"), (
+        "fixture: the work must be on the integration branch and *only* there, "
+        "or a tree cut from the base would see it anyway and the test proves nothing"
+    )
+    run = make_run(session, workspace, dependent, "p1")
+    assert not run.worktree_id, "fixture: the cut must still be ahead of us"
+
+    assert prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run]) == ""
+
+    session.refresh(run)
+    worktree = WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(
+        dependent.id
+    )
+    assert worktree is not None, "the stage must have cut a tree of its own"
+    root = Path(worktree.worktree_path)
+    assert _ancestor(root, landed, "HEAD"), (
+        f"the stage's tree was cut from the base, not from {target}: the sibling "
+        "work every member needs is not in it"
+    )
+
+
+def test_a_second_parallel_stage_resolves_its_own_target(session, workspace, dependent, repo):
+    """One resolution *per stage*, not one per ticket or per process.
+
+    The memo has to be built inside `prepare_tree_for_parallel_stage`, because
+    the thing being saved is a write and not a lookup: resolving is what carries
+    the base branch onto the integration branch, so a memo that outlives its
+    stage makes everything that landed on `main` since the first stage invisible
+    to the second. A count of 1 on a single stage cannot see that.
+
+    Two stages, so this reports **4** against the code before
+    lg-milestone-that-1200 and 2 after — and the refresh assertion is red for
+    any memo cached beyond the stage, whatever it counts.
+    """
+    first = make_run(session, workspace, dependent, "p1")
+    assert (
+        prepare_tree_for_parallel_stage(session, dependent, "work", [first], stamped=[first]) == ""
+    )
+    session.refresh(first)
+    assert first.worktree_id, "fixture: the first stage cut the ticket's tree"
+    tree = WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(dependent.id)
+    assert tree is not None
+    root = Path(tree.worktree_path)
+    landed = commit_on(Path(repo), "main", "between-stages.txt", "landed between the stages\n")
+    assert not _ancestor(root, landed, "HEAD"), "fixture: the first stage cannot have seen it"
+    second = make_run(session, workspace, dependent, "p2")
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        message = prepare_tree_for_parallel_stage(
+            session, dependent, "review", [second], stamped=[second]
+        )
+
+    assert message == "", message
+    assert len(calls) == 1, (
+        f"the second parallel stage resolved its target {len(calls)} times, in "
+        f"{calls}: each stage resolves once, and resolves for itself"
+    )
+    session.refresh(second)
+    assert second.worktree_id == first.worktree_id, (
+        "fixture: the second stage must reuse the ticket's tree, or it would see "
+        "the new work by being re-cut rather than by being refreshed"
+    )
+    assert _ancestor(root, landed, "HEAD"), (
+        "the second stage reused the first stage's answer: what landed on the "
+        "base branch between them never reached the integration branch, and the "
+        "members work in a tree that cannot see it"
+    )
+
+
+def test_a_vanished_worktree_over_a_dirty_checkout_parks_without_resolving(
+    session, workspace, dependent, repo
+):
+    """The second zero-resolution path, so the hoist mutant's kill does not rest
+    on one fixture.
+
+    A recorded worktree whose directory is gone falls back to the shared
+    checkout (`workspace_paths.resolve_run_root`), and the fallback is refused
+    when that checkout holds work which is not this ticket's — before anything
+    is resolved. Unlike AC2(b)'s park this needs no `git_automation_json`, so a
+    change to how worktrees are switched off cannot take the kill with it.
+
+    Zero resolutions today and zero after. A memo evaluated above the
+    `resolve_execution_root` call reports 1 here and refreshes shared refs for a
+    stage whose members never start.
+    """
+    import shutil
+
+    root = _existing_worktree(session, workspace, dependent)
+    worktree = WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(
+        dependent.id
+    )
+    assert worktree is not None
+    shutil.rmtree(root)
+    assert not root.is_dir(), "fixture: the recorded tree is gone from disk"
+    (Path(repo) / "someone-elses.txt").write_text("an operator was mid-edit here\n")
+    at_terminal_stage(session, dependent)
+    run = make_run(session, workspace, dependent, "p1")
+    run.worktree_id = worktree.id
+    session.add(run)
+    session.commit()
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert calls == [], f"a stage that never starts resolved {len(calls)} target branches: {calls}"
+    assert message.startswith("Failed to checkout branch: "), message
+    assert "someone-elses.txt" in message, message
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status == StageStatus.BLOCKED
+    [error] = _error_artifacts(session, dependent)
+    assert error.title == "Shared checkout refused — work"
+
+
+def test_a_parallel_stage_with_nothing_to_prepare_resolves_nothing(
+    session, workspace, dependent, repo
+):
+    """The three guards above the resolution, each of which returns `""`.
+
+    Resolving writes shared refs and can block on a merge turn, so a stage with
+    no members, or a workspace whose checkout is not on this disk, must not
+    reach it. A factory built or evaluated above these returns does.
+    """
+    run = make_run(session, workspace, dependent, "p1")
+    calls, (parallel_spy, worktree_spy) = _parallel_resolution_spies()
+
+    with parallel_spy, worktree_spy:
+        assert prepare_tree_for_parallel_stage(session, dependent, "work", [], stamped=[]) == ""
+        assert calls == [], f"a stage with no members resolved a target branch: {calls}"
+
+        workspace.repo_path = str(Path(repo) / "not-checked-out-here")
+        session.add(workspace)
+        session.commit()
+        assert (
+            prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run]) == ""
+        )
+
+    assert calls == [], (
+        f"a stage whose workspace checkout is not on this disk resolved {calls} — "
+        "the guard is above the resolution for a reason"
+    )
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status != StageStatus.BLOCKED, (
+        "and neither guard is a failure: nothing was prepared and nothing blocked"
+    )
+
+
+def test_the_target_branch_memo_is_lazy_and_does_not_cache_a_failure(
+    session, workspace, dependent, repo
+):
+    """The two properties of the memo that no path through the function shows.
+
+    No path calls `once()` twice — `resolve_execution_root` takes it or skips
+    it, and `start_point` evaluates it once — so neither "building it resolves
+    nothing" nor "a failure is retried" is visible from a count taken around
+    the stage. Both are asserted here directly, because the first is what makes
+    the zero-resolution paths zero and the second is what stops a transient
+    merge-turn failure from being remembered as this ticket's answer for the
+    rest of the stage.
+    """
+    from unittest.mock import patch
+
+    from loregarden.services.parallel_stage import _target_branch_once
+    from loregarden.services.target_branch import TargetBranchError
+
+    answers: list[str] = []
+
+    def answering(session, ticket, workspace, *, repo_root, **extra):
+        answers.append(f"integration/call-{len(answers) + 1}")
+        return answers[-1]
+
+    with patch("loregarden.services.parallel_stage.resolve_target_branch", answering):
+        once = _target_branch_once(session, dependent, workspace, workspace_root=Path(repo))
+        assert answers == [], "building the memo must resolve nothing — that is what makes it lazy"
+        assert once() == "integration/call-1"
+        assert once() == "integration/call-1", "the second reading is the first answer"
+        assert len(answers) == 1, f"the memo resolved {len(answers)} times, not once"
+
+    attempts: list[int] = []
+
+    def failing(session, ticket, workspace, *, repo_root, **extra):
+        attempts.append(1)
+        raise TargetBranchError("the merge turn was not granted")
+
+    with patch("loregarden.services.parallel_stage.resolve_target_branch", failing):
+        failing_once = _target_branch_once(session, dependent, workspace, workspace_root=Path(repo))
+        for _ in range(2):
+            with pytest.raises(TargetBranchError):
+                failing_once()
+
+    assert len(attempts) == 2, (
+        "a failure must not be cached: the memo holds answers, and a raise is not one"
+    )
+
+
+def test_an_integration_branch_that_cannot_take_its_base_blocks_the_real_cut(
+    session, workspace, dependent, repo
+):
+    """AC4(a)'s cut surface, without the mock that stands in for it.
+
+    The parametrized test above patches `parallel_stage.resolve_target_branch`
+    to raise `TargetBranchError` directly, so it would pass even if the error
+    the real resolver raises never reached that handler —
+    `IntegrationConflictError` is a subclass today, and nothing above says so.
+    This drives the real conflict: the integration branch and `main` both touch
+    one file, so `_refresh_from_tips` files the inbox card and raises on its
+    own, from inside `resolve_execution_root`'s call to the memo.
+
+    The stage blocks with git's own words, and no tree is cut for a stage whose
+    members never start.
+    """
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    commit_on(Path(repo), target, "clash.txt", "integration side\n")
+    commit_on(Path(repo), "main", "clash.txt", "main side\n")
+    at_terminal_stage(session, dependent)
+    run = make_run(session, workspace, dependent, "p1")
+
+    message = prepare_tree_for_parallel_stage(session, dependent, "work", [run], stamped=[run])
+
+    assert message.startswith("Failed to checkout branch: "), message
+    assert "clash.txt" in message, message
+    session.refresh(dependent)
+    assert dependent.workflow_stage_status == StageStatus.BLOCKED
+    assert "clash.txt" in (dependent.blocking_issues or ""), dependent.blocking_issues
+    assert (
+        WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(dependent.id)
+        is None
+    ), "a stage that cannot resolve its target must not leave a tree behind"
+
+
+# ---------------------------------------------------------------------------
+# lg-milestone-that-974: one target-branch resolution per *handoff*, carried
+# outward as one noun.
+#
+# `render_stage_prompt` holds the same pair 918 removed from the dispatch path
+# and 1200 from the parallel path: it calls `resolve_execution_root` with no
+# `resolve_target=` (so that call resolves the target to cut the tree from it)
+# and then resolves the same target again for `start_point`. For a ticket with
+# no worktree yet, one handoff therefore resolves TWICE before either boundary
+# read makes it three — an undercount in the ticket's own title.
+#
+# The existing `test_the_handoff_resolves_its_target_in_the_shared_checkout`
+# above cannot see that: it pre-creates a worktree, so `resolve_execution_root`
+# takes its early return and resolves nothing. It stays (it pins *which tree*
+# the resolution happens in, which is 779 S3's question) and it is not evidence
+# for the count.
+#
+# And the one resolution has to stay LAZY. `render_stage_prompt` has a path
+# that resolves zero times today — worktrees off over a checkout holding
+# someone else's work, where `_require_clean_fallback` raises before anything
+# is resolved — and resolving is a *write*: `ensure_integration_branch`,
+# `_refresh_from_tips`, and behind them a blocking merge turn that files an
+# inbox card. A memo evaluated above the `try` would write shared refs for a
+# handoff that never happens.
+# ---------------------------------------------------------------------------
+
+
+def _ensure_branch_spy(start_points: list[str]):
+    """A call-through spy on `ensure_ticket_branch` recording each `start_point`.
+
+    Call-through, so the tree really is refreshed and `repo_root` really is the
+    tree the handoff hands over — the point of AC2 is that the branch reported
+    and the branch merged in are one answer, which a stub cannot show.
+    """
+    from loregarden.services.git_branch import ensure_ticket_branch as real
+
+    def spy(repo_root, ticket, *, session, start_point="", ignoring=(), seat=None):
+        start_points.append(start_point)
+        return real(
+            repo_root,
+            ticket,
+            session=session,
+            start_point=start_point,
+            ignoring=ignoring,
+            seat=seat,
+        )
+
+    return spy
+
+
+def test_the_handoff_hands_back_the_branch_it_refreshed_the_tree_onto(
+    session, workspace, dependent, repo, agents
+):
+    """AC2. One answer, not two readings.
+
+    The returned `PreparedTree.target_branch` has to be the very string passed
+    as `ensure_ticket_branch(start_point=...)` on that call. Counting
+    resolutions cannot tell a right answer from a wrong one — `target_branch`
+    set to `ticket.branch`, or to the base branch, resolves exactly once and
+    reports a count of 1 while telling the operator their tree carries a branch
+    it does not. So this asserts on the value, against the argument the refresh
+    actually received.
+    """
+    from unittest.mock import patch
+
+    root = _existing_worktree(session, workspace, dependent)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    assert target != "main", (
+        "fixture: the target must differ from the base branch, or `main` and the "
+        "right answer are indistinguishable"
+    )
+    assert target != dependent.branch
+    start_points: list[str] = []
+
+    with patch(
+        "loregarden.agents.executors.cli.ensure_ticket_branch", _ensure_branch_spy(start_points)
+    ):
+        _prompt, tree = _handoff(session, workspace, dependent, "h1")
+
+    assert start_points == [target], (
+        f"the refresh was brought up to {start_points}, and the handoff reports "
+        f"{tree.target_branch!r}"
+    )
+    assert tree.target_branch == start_points[0], (
+        "the branch handed to the boundary is not the branch the tree was "
+        "refreshed onto: two readings of one question"
+    )
+    assert tree.repo_root == root, "and the tree reported is the one that call prepared"
+
+
+def test_one_handoff_resolves_its_target_branch_once(session, workspace, dependent, repo, agents):
+    """AC3. Counted across BOTH import bindings, for a ticket with no worktree.
+
+    Non-vacuous: against the code as it stands *before* this change the same
+    test reports **2** — `resolve_execution_root` resolves through
+    `ticket_worktree`'s binding to cut the tree from the target, and
+    `render_stage_prompt` resolves again through `cli`'s to build `start_point`.
+    A spy on `services.target_branch.resolve_target_branch` instead of these two
+    reports **0** and passes against anything, because every consumer binds the
+    name at import.
+
+    No worktree is created up front, deliberately: that is the fixture shape
+    the existing shared-checkout test lacks, and it is the only one in which
+    the second resolution is observable at all.
+    """
+    target = resolve_target_branch(session, dependent, workspace, repo_root=Path(repo))
+    assert target != "main", (
+        "fixture: the target must differ from the base branch, or a resolution "
+        "issues no git at all and costs nothing to repeat"
+    )
+    assert (
+        WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(dependent.id)
+        is None
+    ), "fixture: the cut must still be ahead of us, or `resolve_execution_root` resolves nothing"
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        _prompt, tree = _handoff(session, workspace, dependent, "h1")
+
+    assert len(calls) == 1, (
+        f"one handoff resolved its target branch {len(calls)} times, in {calls}: the "
+        "worktree cut and the branch refresh must share the one answer"
+    )
+    assert calls == [Path(repo)], (
+        f"and it must be resolved in the shared checkout, not in {calls} — resolving "
+        "writes refs, and refs are shared by every worktree of a repository"
+    )
+    assert tree.target_branch == target
+    assert tree.repo_root != Path(repo), "the handoff still cut the ticket its own tree"
+
+
+def test_a_handoff_that_parks_on_a_dirty_checkout_resolves_nothing(
+    session, workspace, dependent, repo, agents
+):
+    """AC4. The resolution stays lazy.
+
+    Worktrees off and the shared checkout holding work that is not this
+    ticket's: `_require_clean_fallback` raises `DirtyPrimaryCheckoutError`
+    before anything is resolved, and the handoff never happens. Nothing may be
+    written to shared refs on its behalf — zero resolutions today, zero after.
+
+    This is the mutant kill for the whole change. A `PreparedTree` built above
+    the `try`, or a memo evaluated when it is created rather than when it is
+    read, reports 1 here: it would refresh an integration branch and file an
+    inbox card for a handoff that is refused before it starts.
+    """
+    _worktrees_off(session, dependent)
+    (Path(repo) / "someone-elses.txt").write_text("an operator was mid-edit here\n")
+    assert git(repo, "status", "--porcelain").stdout.strip(), "fixture: the checkout is dirty"
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        with pytest.raises(ValueError) as excinfo:
+            _handoff(session, workspace, dependent, "h1")
+
+    assert "someone-elses.txt" in str(excinfo.value), str(excinfo.value)
+    assert calls == [], (
+        f"a handoff that never happens resolved {len(calls)} target branches: {calls}"
+    )
+    integration = [
+        line
+        for line in git(repo, "for-each-ref", "--format=%(refname)").stdout.splitlines()
+        if "integration" in line
+    ]
+    assert integration == [], (
+        f"a refused handoff created {integration}: resolving is a write, and the park "
+        "path must write nothing"
+    )
+
+
+# --- lg-milestone-that-974, test-break: two mutants the designed suite lets live
+
+
+def test_a_second_handoff_through_one_executor_resolves_its_own_target(
+    session, workspace, dependent, repo, agents
+):
+    """The memo's lifetime is one handoff, not one executor.
+
+    `test_one_handoff_resolves_its_target_branch_once` counts a single handoff,
+    so an implementation that hangs the memo on `self` instead of building it
+    per call reports **1** there and passes. It is wrong in the direction that
+    does not fail: the second handoff reports a count of 0, the integration
+    branch is never brought up to whatever landed on the base in between, and
+    the operator is handed a tree built on a base that is one handoff out of
+    date — with nothing logged and nothing raised.
+
+    `test_a_second_dispatch_through_one_executor_resolves_its_own_target` makes
+    the same point for `_prepare_tree`; this is the handoff edge of it, which
+    is the one lg-milestone-that-974 moves.
+    """
+    root = _existing_worktree(session, workspace, dependent)
+    executor = CliAgentExecutor(session)
+
+    _prompt, first_tree = executor.render_stage_prompt(
+        make_run(session, workspace, dependent, "h1"), dependent
+    )
+    assert first_tree.repo_root == root
+
+    landed = commit_on(Path(repo), "main", "from-main.txt", "landed on the base branch\n")
+    assert not _ancestor(root, landed, "HEAD"), (
+        "fixture: the base commit must not already be in the tree, or this proves nothing"
+    )
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy:
+        _prompt, second_tree = executor.render_stage_prompt(
+            make_run(session, workspace, dependent, "h2"), dependent
+        )
+
+    assert len(calls) == 1, (
+        f"the second handoff through the same executor resolved {len(calls)} times: a "
+        "memo cached on `self` answers from the first handoff and never carries the "
+        "base branch onto the target again"
+    )
+    assert second_tree.target_branch == first_tree.target_branch
+    assert _ancestor(root, landed, "HEAD"), (
+        "the base commit that landed between the two handoffs never reached the "
+        "handed-over tree: the second handoff reused the first's answer"
+    )
+
+
+def test_a_handoff_refused_before_it_starts_resolves_nothing(
+    session, workspace, dependent, repo, agents
+):
+    """AC4's other zero-resolution path, and the one a hoist survives.
+
+    `test_a_handoff_that_parks_on_a_dirty_checkout_resolves_nothing` fails a
+    handoff from *inside* the `try`, so a `PreparedTree` or a memo evaluated at
+    the top of the method — but still below the agent and workspace guards —
+    passes it. `render_stage_prompt` refuses three things before that: an
+    unknown agent, an unknown workspace, and a workspace root that is not a
+    directory. None of them may write a shared ref on the way out.
+
+    An unknown agent is the live one: `_begin_external_stage` renders whatever
+    `start_stage_execution` opened, and a stage naming an agent the registry
+    lost reaches here. Resolving for it would create the integration branch,
+    merge the base into it, and be able to spend a merge turn — for a handoff
+    that returns a 400 either way.
+    """
+    assert (
+        WorktreeService(session, repo_path=str(repo)).active_worktree_for_ticket(dependent.id)
+        is None
+    ), "fixture: no tree yet, or a resolution on this path would be unobservable"
+    run = make_run(session, workspace, dependent, "h1")
+    run.agent_id = "an_agent_the_registry_no_longer_has"
+    session.add(run)
+    session.commit()
+    calls, (cli_spy, worktree_spy) = _resolution_spies()
+
+    with cli_spy, worktree_spy, pytest.raises(ValueError) as excinfo:
+        CliAgentExecutor(session).render_stage_prompt(run, dependent)
+
+    # lg-milestone-that-975 re-points this from `Unknown agent`, which was the
+    # whole of what the operator got: no ticket, no stage, no next action, and
+    # an empty name when `run.agent_id` was blank. The refusal still has to be
+    # about the agent — the assertion below is what this test is for, and it is
+    # only meaningful if the handoff was refused for the reason it was set up to
+    # be refused for.
+    message = str(excinfo.value)
+    assert "an_agent_the_registry_no_longer_has" in message, message
+    assert "agent registry" in message, message
+    assert calls == [], (
+        f"a handoff refused before it started resolved {len(calls)} target branches: "
+        f"{calls} — the memo must not be read until a consumer asks"
+    )
+    integration = [
+        line
+        for line in git(repo, "for-each-ref", "--format=%(refname)").stdout.splitlines()
+        if "integration" in line
+    ]
+    assert integration == [], f"a refused handoff created {integration}"

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.ticket_ids import resolve as resolve_external_id
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
 
 _UUID_RE = re.compile(
@@ -33,7 +34,7 @@ def _workspace_by_slug(session: Session, workspace_slug: str) -> Workspace | Non
 
 
 def compact_ticket_row(session: Session, ticket: Ticket) -> dict[str, Any]:
-    ws = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id is not None else None
+    ws = workspace_for_ticket(session, ticket)
     return {
         "id": ticket.id,
         "external_id": ticket.external_id,

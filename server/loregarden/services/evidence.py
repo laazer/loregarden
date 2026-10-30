@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
+from loregarden.models.domain import Artifact, ArtifactKind, Ticket
 from loregarden.services.git_commit_push_service import head_commit_sha
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
 from sqlmodel import Session, select
@@ -41,7 +42,7 @@ FULL_SUITE_EVIDENCE_KIND = "full_suite_green"
 
 def resolve_head_sha(session: Session, ticket: Ticket) -> str:
     """HEAD of the ticket checkout (active worktree or workspace-root fallback), or ""."""
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         return ""
     return head_commit_sha(resolve_ticket_root(session, ticket, workspace))
@@ -125,7 +126,7 @@ def evidence_kinds_for_tree(session: Session, ticket: Ticket, tree: TreeSnapshot
 
 def _ticket_head(session: Session, ticket: Ticket, tree: TreeSnapshot) -> str:
     """`resolve_head_sha`, answered from `tree` when it is of the same checkout."""
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         return ""
     root = resolve_ticket_root(session, ticket, workspace)

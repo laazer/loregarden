@@ -36,9 +36,9 @@ from loregarden.models.domain import (
     ReworkArtifactKind,
     ReworkStopReason,
     Ticket,
-    Workspace,
 )
 from loregarden.services.git_commit_push_service import head_commit_sha
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -95,7 +95,7 @@ def _tree_sha(session: Session, ticket: Ticket, run_id: str | None) -> str:
     `resolve_run_root` already falls back to the workspace checkout for a run
     with no worktree, or one whose directory has been cleaned up.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         return ""
     root = resolve_workspace_root(workspace)

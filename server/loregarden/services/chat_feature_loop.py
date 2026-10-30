@@ -61,6 +61,7 @@ from loregarden.services.run_service import schedule_orchestration
 from loregarden.services.ticket_activity import activity_for
 from loregarden.services.ticket_ids import resolve
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session, col, select
 
@@ -494,7 +495,7 @@ def feature_loop_view(session: Session, chat_session: BaxterChatSession) -> dict
         return None
     rows = _criteria(session, chat_session.id)
     reading = assess(session, ticket, rows)
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     return {
         "ticket": {
             "id": ticket.id,

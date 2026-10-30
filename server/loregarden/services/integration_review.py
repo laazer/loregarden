@@ -10,9 +10,10 @@ draft items, so the scope preview and imports are left untouched.
 
 from __future__ import annotations
 
-from loregarden.models.domain import Ticket, TicketDependency, WorkItemType, Workspace
+from loregarden.models.domain import Ticket, TicketDependency, WorkItemType
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, select
 
 INTEGRATION_REVIEW_TITLE = "Integration review"
@@ -77,7 +78,7 @@ def ensure_review_child(session: Session, parent: Ticket, *, created_by: str = "
         for review in existing:
             link_review_to_siblings(session, review.id, created_by=created_by)
         return None
-    workspace = session.get(Workspace, parent.workspace_id)
+    workspace = workspace_for_ticket(session, parent)
     if not workspace:
         return None
     review = TicketService(session).create_ticket(
@@ -124,7 +125,7 @@ def backfill_integration_reviews(
     created: list[str] = []
     for parent in parents:
         if workspace_slug:
-            ws = session.get(Workspace, parent.workspace_id)
+            ws = workspace_for_ticket(session, parent)
             if not ws or ws.slug != workspace_slug:
                 continue
         new_id = ensure_review_child(session, parent, created_by=created_by)

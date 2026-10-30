@@ -577,6 +577,28 @@
   margin: 0;
 }
 
+/*
+ * A profile that will not parse comes back as the server's own message: 4 lines
+ * for a yaml syntax error, 7 for a 2-error pydantic ValidationError. Laid out
+ * as a flex item beside the lead and the retry, that is unreadable, so this
+ * alert stacks (lg-milestone-that-1434).
+ */
+.gate-load-error-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* The whitespace the server sent is the structure of the message, and an
+   absolute path or a pydantic docs URL has no break opportunity in it. */
+.gate-load-error-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--txm);
+}
+
 .gate-banner-actions {
   display: flex;
   gap: 8px;

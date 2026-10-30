@@ -49,7 +49,6 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowTemplate,
-    Workspace,
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
 from loregarden.services.active_workspaces import active_workspaces
@@ -70,6 +69,7 @@ from loregarden.services.run_duration_stats import (
 )
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlalchemy.orm import load_only
@@ -778,7 +778,7 @@ def resolve_monitor_mode(
     creation. Null there means the run made no choice, so the workspace profile
     decides — which is not the same as choosing `report`.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     profile = resolve_orchestration_profile(workspace) if workspace else None
     config = profile.monitor if profile else None
 

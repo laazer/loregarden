@@ -35,6 +35,7 @@ from loregarden.models.domain import (
 from loregarden.services.interruption_messages import (
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
+    ORCHESTRATION_LEASE_EXPIRED_PREFIX,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
@@ -86,7 +87,7 @@ _HARNESS_SIGNATURES = (
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     SUPERSEDED_RUN_MESSAGE,
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
-    "Orchestration lease expired",
+    ORCHESTRATION_LEASE_EXPIRED_PREFIX,
     "Agent run lease expired",
     "Agent run exited successfully but emitted no parseable",
     "Environment preflight failed",

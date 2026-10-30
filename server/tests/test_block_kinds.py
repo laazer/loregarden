@@ -48,9 +48,10 @@ from loregarden.services.interruption_messages import (
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
+    expired_lease_message,
 )
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
-from loregarden.services.run_service import AGENT_LEASE_EXPIRED_MESSAGE, EXPIRED_LEASE_MESSAGE
+from loregarden.services.run_service import AGENT_LEASE_EXPIRED_MESSAGE
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds, decision_payloads
@@ -75,7 +76,7 @@ SDF_39_OPTIONS = ["Relax the bar to 0.5", "Try approach B", "Accept and continue
         INTERRUPTED_RUN_MESSAGE,
         STRANDED_STAGE_MESSAGE,
         ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
-        EXPIRED_LEASE_MESSAGE,
+        expired_lease_message("orch_abc123", 2),
         AGENT_LEASE_EXPIRED_MESSAGE,
         "Agent run exited successfully but emitted no parseable <<<LOREGARDEN_STAGE_REPORT>>> block.",
         "Environment preflight failed before this stage could run.\n  git_core_bare: ...",

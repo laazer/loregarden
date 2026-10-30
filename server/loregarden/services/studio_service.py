@@ -7,10 +7,8 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from loregarden.agents.mcp_context import select_transport_blocks
 from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
-from loregarden.agents.tool_grants import parse_tool_grants
 from loregarden.config import settings
 from loregarden.core.workflow_loader import write_template_version
 from loregarden.mcp.tool_ids import (
@@ -19,11 +17,9 @@ from loregarden.mcp.tool_ids import (
 )
 from loregarden.models.domain import (
     ArtifactKind,
-    ControlPlaneTransport,
     StudioAgent,
     StudioAgentCreate,
     StudioAgentPreview,
-    StudioAgentPreviewProfile,
     StudioAgentPreviewRequest,
     StudioAgentUpdate,
     StudioAgentVersion,
@@ -54,11 +50,12 @@ from loregarden.services.skill_service import SkillService
 from loregarden.services.studio_agent_config import (
     default_mcp_tools,
     ensure_studio_role_preamble,
-    frontmatter_bool,
     load_role_body,
-    parse_markdown_frontmatter,
-    resolve_studio_mcp_tools,
-    strip_markdown_frontmatter,
+)
+from loregarden.services.studio_agent_prompt import preview_agent_markdown
+from loregarden.services.studio_agent_references import (
+    refuse_agent_delete,
+    scan_agent_references,
 )
 from loregarden.services.studio_agent_views import (
     agent_snapshot_view,
@@ -74,6 +71,7 @@ from loregarden.services.studio_generation import (
     slugify,
     tool_names,
 )
+from loregarden.services.studio_mcp_tool_guides import MCP_TOOL_GUIDES
 from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.studio_workflow_validation import (
     available_agent_ids,
@@ -89,6 +87,8 @@ from loregarden.services.studio_workflow_validation import (
 )
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HANDOFF_CHECKS = [
     StudioHandoffCheck(
@@ -108,175 +108,6 @@ DEFAULT_GATE_CHECKS = [
         impact="Human review required before the workflow advances.",
     ),
 ]
-
-MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
-    StudioMcpToolGuide(
-        name="loregarden_get_ticket",
-        description="Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
-        when_to_use="At stage start and before any workflow decision — never trust stale project_board WORKFLOW STATE alone.",
-        example='tools/call loregarden_get_ticket {"ticket_id": "<uuid or external id>", "workspace_slug": "loregarden"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_list_tickets",
-        description="Search and list tickets in a workspace for discovery.",
-        when_to_use="When you need sibling tasks, child work items, or to find a ticket by title/slug.",
-        example='tools/call loregarden_list_tickets {"workspace_slug": "loregarden", "search": "cli runner"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_get_ticket_by_external",
-        description="Read ticket state by workspace slug and external_id.",
-        when_to_use="When you know the ticket id (e.g. lor-mcp-gateway-142) but not the UUID.",
-        example='tools/call loregarden_get_ticket_by_external {"workspace_slug": "loregarden", "external_id": "lor-mcp-gateway-142"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_start_orchestration",
-        description="Start a top-level orchestration run for a ticket.",
-        when_to_use="Autopilot / external orchestrator only — not typical stage agents.",
-        example='tools/call loregarden_start_orchestration {"ticket_id": "<uuid>", "driver": "external_mcp"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_start_stage",
-        description="Mark a workflow stage as running before invoking a sub-agent.",
-        when_to_use="Orchestrator only — before delegating to a sub-agent.",
-        example='tools/call loregarden_start_stage {"run_id": "<orchestration_run_id>", "stage_key": "implement", "agent_id": "backend_implementer"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_complete_stage",
-        description="Mark a stage done and advance the workflow cursor.",
-        when_to_use="Orchestrator after a sub-agent succeeds and gates pass. Stage runs from the IDE usually auto-complete.",
-        example='tools/call loregarden_complete_stage {"run_id": "<orchestration_run_id>", "stage_key": "testing"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_skip_stage",
-        description="Mark an optional stage as won't do.",
-        when_to_use=(
-            "When a stage the template marks optional does not apply to this ticket — a "
-            "frontend review on a backend-only change. Required stages are refused."
-        ),
-        example='tools/call loregarden_skip_stage {"run_id": "<orchestration_run_id>", "stage_key": "frontend_review", "reason": "No client/ files touched"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_block_ticket",
-        description="Block the ticket and fail the orchestration run.",
-        when_to_use="Unrecoverable failure — document message clearly for operators.",
-        example='tools/call loregarden_block_ticket {"run_id": "<orchestration_run_id>", "message": "Tests failed after 3 attempts"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_attach_evidence",
-        description="Attach proof that the work behaves as claimed, stamped with the commit it proves.",
-        when_to_use=(
-            "When you can show the change working, not just that tests pass: a red-to-green "
-            "test, output from the real surface (HTTP response, screenshot, DB row), or a "
-            "verifier's verdict."
-        ),
-        example=(
-            'tools/call loregarden_attach_evidence {"run_id": "<agent_run>", '
-            '"evidence_kind": "real_surface", "title": "POST /api/tickets returns 201", '
-            '"content_json": "{"status": 201}"}'
-        ),
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_attach_artifact",
-        description="Attach log, diff, test output, or other artifact to the ticket.",
-        when_to_use="After producing logs, diffs, or structured output the operator should see in the IDE.",
-        example='tools/call loregarden_attach_artifact {"run_id": "<agent_run>", "kind": "log", "title": "Test summary", "content_json": "{\\"lines\\":[]}"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_request_approval",
-        description="Raise the workflow gate for a stage's outstanding exit actions.",
-        when_to_use=(
-            "A stage whose exit actions still need a person: an agentless gate stage, or an "
-            "agent stage whose run left actions only a person can resolve. Refused when "
-            "nothing is outstanding; a sign-off is an operator_judgment exit action authored "
-            "on the stage. Not to run a stage (start_stage / begin_external_stage) or waive "
-            "one (skip_stage)."
-        ),
-        example='tools/call loregarden_request_approval {"run_id": "<agent_run>", "stage_key": "playtest"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_complete_orchestration",
-        description="Finish an orchestration run.",
-        when_to_use="Orchestrator when all stages are done or the run should terminate.",
-        example='tools/call loregarden_complete_orchestration {"run_id": "<orchestration_run_id>", "status": "succeeded"}',
-        orchestrator_only=True,
-        stage_agent=False,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_memory_status",
-        description="Discover workspace-scoped Obsidian dirs (memory, learnings, blog posts) and SQLite graph path.",
-        when_to_use="Before writing or searching agent memory artifacts — always pass workspace_slug from the run prompt.",
-        example='tools/call loregarden_memory_status {"workspace_slug": "loregarden"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_append_learning",
-        description="Persist ticket learnings to obsidian_learnings_dir and optional graph SQLite.",
-        when_to_use="Learning Agent after Gatekeeper — ticket-scoped insights.",
-        example='tools/call loregarden_append_learning {"ticket_id": "03-wire-cli", "workspace_slug": "loregarden", "content": "…"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_upsert_memory",
-        description="Upsert durable memory nodes under obsidian_memory_dir and graph SQLite.",
-        when_to_use="Patterns, anti-patterns, and reusable knowledge — never write vault files directly.",
-        example='tools/call loregarden_upsert_memory {"title": "MCP workflow state", "body": "…", "workspace_slug": "loregarden"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_upsert_blog_post",
-        description="Persist human-readable blog post markdown under obsidian_blogposts_dir.",
-        when_to_use="Blog Post Agent after learning — retrospective for operators.",
-        example='tools/call loregarden_upsert_blog_post {"ticket_id": "03-wire-cli", "workspace_slug": "loregarden", "title": "…", "body": "…"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_create_memory_relation",
-        description="Link two memory graph nodes in the workspace SQLite DB (memory_relations table).",
-        when_to_use="Learning Agent — use graph.id values from upsert/append responses as source_id and target_id.",
-        example='tools/call loregarden_create_memory_relation {"source_id": "<uuid>", "target_id": "<uuid>", "workspace_slug": "loregarden", "relation_type": "supports"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_search_memory",
-        description="Search memory, learnings, and blog post notes plus SQLite graph nodes in a workspace.",
-        when_to_use="Before acting when prior workspace context may exist (planner, spec, implementers).",
-        example='tools/call loregarden_search_memory {"query": "permission bridge", "workspace_slug": "loregarden"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_search_reference",
-        description="Search DevDocs for a documentation page and get back ranked entries with their URLs.",
-        when_to_use="Before fetching framework docs — search for the exact page instead of guessing a URL, then pass the returned url to loregarden_fetch_reference. Omit docset to get suggestions.",
-        example='tools/call loregarden_search_reference {"query": "useEffect", "docset": "react"}',
-        stage_agent=True,
-    ),
-    StudioMcpToolGuide(
-        name="loregarden_fetch_reference",
-        description="Fetch a documentation page through loregarden's cache, extracted to markdown.",
-        when_to_use="Instead of WebFetch for framework or library docs — the raw HTML is fetched and extracted once per URL, and repeat reads are served from the cache.",
-        example='tools/call loregarden_fetch_reference {"url": "https://docs.pydantic.dev/latest/concepts/models/"}',
-        stage_agent=True,
-    ),
-]
-
-
-logger = logging.getLogger(__name__)
 
 # Fields captured verbatim in each StudioAgentVersion snapshot. Matches the
 # migration backfill (0022) for the columns that existed then; later columns are
@@ -343,6 +174,16 @@ _AGENT_JSON_COLUMNS = frozenset(
 )
 
 _AGENT_STRIPPED_COLUMNS = frozenset({"name", "description"})
+
+
+class AgentSlugImmutable(ValueError):
+    """A PATCH asked to rename an agent, which is not a thing that can happen.
+
+    A `ValueError` subclass so the route can catch it ahead of the generic
+    `except ValueError` that maps every other `update_agent` failure to 404 —
+    which would answer "agent not found" to a rename attempt. The precedent is
+    `StageRemovalNeedsConfirmation`, caught the same way for the same reason.
+    """
 
 
 def _agent_update_values(body: StudioAgentUpdate) -> dict[str, object]:
@@ -677,155 +518,6 @@ def _template_snapshot_view(template: WorkflowTemplate, snap: dict) -> StudioWor
     )
 
 
-def studio_agent_config(session: Session, agent_id: str) -> dict | None:
-    agent = session.exec(select(StudioAgent).where(StudioAgent.slug == agent_id)).first()
-    if not agent:
-        return None
-    return _studio_agent_dict(agent)
-
-
-def _studio_agent_dict(agent: StudioAgent) -> dict:
-    raw_tools = json.loads(agent.mcp_tools_json or "[]")
-    return {
-        "slug": agent.slug,
-        "tool_grants": parse_tool_grants(agent.tool_grants_json),
-        "name": agent.name,
-        "role_body": ensure_studio_role_preamble(agent.role_body),
-        "adapter": agent.adapter,
-        "default_model": agent.default_model,
-        "timeout": agent.timeout,
-        "default_skill": agent.default_skill,
-        "mcp_enabled": agent.mcp_enabled,
-        "mcp_tools": resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
-        "gate_checks": json.loads(agent.gate_checks_json or "[]"),
-        "handoff_checks": json.loads(agent.handoff_checks_json or "[]"),
-        "studio": True,
-    }
-
-
-def build_studio_prompt_sections(
-    agent_cfg: dict, *, transport: ControlPlaneTransport = ControlPlaneTransport.MCP
-) -> str:
-    """This agent's own tool guide, handoff checks and gates.
-
-    ``transport`` decides how the tools are described, because "use these MCP
-    tools" is false for a run that has none. The pointers to the MCP and memory
-    modules that used to live here are gone: every consumer of this block
-    already appends both modules a few lines further down.
-    """
-    sections: list[str] = []
-    if agent_cfg.get("mcp_enabled", True):
-        tools = agent_cfg.get("mcp_tools") or tool_names()
-        lead = (
-            "Use these MCP tools for ticket workflow state:"
-            if transport is ControlPlaneTransport.MCP
-            else "Use these tools for ticket workflow state, each invoked as "
-            "`./scripts/loregarden-cli.sh mcp call <tool> key=value…`:"
-        )
-        sections.extend(["## Loregarden control-plane tools", lead, ", ".join(tools)])
-        guide_map = {item.name: item for item in MCP_TOOL_GUIDES}
-        for tool in tools:
-            guide = guide_map.get(tool)
-            if not guide:
-                continue
-            sections.extend(
-                [
-                    f"### {tool}",
-                    guide.description,
-                    f"**When to use:** {guide.when_to_use}",
-                    f"**Example:** `{guide.example}`",
-                ]
-            )
-            if guide.orchestrator_only:
-                sections.append(
-                    "_Orchestrator-only — stage agents usually should not call this directly._"
-                )
-    handoffs = agent_cfg.get("handoff_checks") or []
-    if handoffs:
-        sections.append("## Handoff checks (required before stage completion)")
-        for item in handoffs:
-            if isinstance(item, dict):
-                sections.append(f"- [{item.get('kind', 'check')}] {item.get('prompt', '')}")
-    gates = agent_cfg.get("gate_checks") or []
-    if gates:
-        sections.append("## Gate checks (human approval may be required)")
-        for item in gates:
-            if isinstance(item, dict):
-                sections.append(
-                    f"- [{item.get('kind', 'gate')}] {item.get('title', '')}: {item.get('impact', '')}"
-                )
-    return "\n".join(sections)
-
-
-def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
-    tools = body.mcp_tools or (default_mcp_tools() if body.mcp_enabled else [])
-    return {
-        "name": body.name,
-        "role_body": ensure_studio_role_preamble(body.role_body),
-        "adapter": body.adapter,
-        "timeout": body.timeout,
-        "default_skill": body.default_skill,
-        "mcp_enabled": body.mcp_enabled,
-        "mcp_tools": resolve_studio_mcp_tools(tools, mcp_enabled=body.mcp_enabled),
-        "gate_checks": [item.model_dump() for item in body.gate_checks],
-        "handoff_checks": [item.model_dump() for item in body.handoff_checks],
-    }
-
-
-def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPreview:
-    cfg = _preview_agent_cfg(body)
-    role_frontmatter = parse_markdown_frontmatter(body.role_body)
-    role_body = ensure_studio_role_preamble(strip_markdown_frontmatter(body.role_body)).strip()
-    metadata = StudioAgentPreviewProfile(
-        description=role_frontmatter.get("description") or body.description.strip(),
-        model=role_frontmatter.get("model") or "",
-        provider=body.adapter or "claude",
-        default_skill=body.default_skill or "",
-        timeout=body.timeout,
-        always_apply=frontmatter_bool(role_frontmatter.get("alwaysApply")),
-    )
-    section_names: list[str] = ["header", "role"]
-    parts = [
-        "## Agent Role",
-        role_body or "_No role instructions yet._",
-    ]
-    studio_sections = build_studio_prompt_sections(cfg)
-    if studio_sections:
-        section_names.extend(["mcp_tools", "handoffs", "gates"])
-        parts.extend(["", studio_sections])
-    mcp_doc_path = settings.agent_context_dir / "agents/common_assets/loregarden_mcp_v1.md"
-    if body.mcp_enabled and mcp_doc_path.is_file():
-        section_names.append("mcp_module")
-        # The preview shows a supervised run's prompt, and a supervised run is
-        # the one this process wires MCP into — so the module is rendered for
-        # that transport rather than with both channels' text at once.
-        mcp_doc = select_transport_blocks(
-            strip_markdown_frontmatter(mcp_doc_path.read_text(encoding="utf-8")),
-            ControlPlaneTransport.MCP,
-        )[:8000]
-        parts.extend(["", "## Loregarden MCP module (excerpt)", mcp_doc])
-    memory_doc_path = settings.agent_context_dir / "agents/common_assets/memory_protocol_v1.md"
-    if body.mcp_enabled and memory_doc_path.is_file():
-        section_names.append("memory_protocol_module")
-        memory_doc = strip_markdown_frontmatter(memory_doc_path.read_text(encoding="utf-8"))[:8000]
-        parts.extend(["", "## Memory protocol module (excerpt)", memory_doc])
-    parts.extend(
-        [
-            "",
-            "## Permission policy",
-            "Request human approval via Loregarden before destructive or high-risk tool use.",
-            "Do not bypass workspace permission checks.",
-        ]
-    )
-    section_names.append("permissions")
-    return StudioAgentPreview(
-        name=body.name.strip(),
-        markdown="\n".join(parts),
-        sections=section_names,
-        profile=metadata,
-    )
-
-
 # Generic vocabulary that implies a specialty even when the ticket text doesn't
 # use the route's literal keyword (e.g. "modal button" implies frontend work).
 
@@ -970,7 +662,23 @@ class StudioService:
     def update_agent(self, slug: str, body: StudioAgentUpdate) -> StudioAgentView:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
         if not agent:
+            # Before the slug check: the sentence that refusal carries
+            # ("duplicate the agent under a new slug instead") is false for an
+            # agent that does not exist, and the delete path answers 404 first
+            # for the same reason.
             raise ValueError(f"Studio agent not found: {slug}")
+        # An unchanged *literal* echo is a no-op too, not only a slugify-equal
+        # one: built-in agents are seeded with the registry id verbatim
+        # (`ac_gatekeeper`), and slugify maps `_` to `-`, so comparing only the
+        # slugified echo against the raw stored slug would refuse an agent's own
+        # slug for all 29 of them. Slugifying both sides instead would collapse a
+        # genuinely different stored slug into a silent no-op (A5/AC2).
+        if body.slug is not None and body.slug != agent.slug and slugify(body.slug) != agent.slug:
+            raise AgentSlugImmutable(
+                f"slug cannot be changed after creation: '{agent.slug}' is a by-string key "
+                "that workflow templates, drafts, ticket pins and the run ledger all name. "
+                "Duplicate the agent under a new slug instead."
+            )
         if body.default_skill is not None:
             validate_default_skill(body.default_skill)
         agent.sqlmodel_update(_agent_update_values(body))
@@ -986,13 +694,27 @@ class StudioService:
         return self._agent_view_with_warnings(agent)
 
     def delete_agent(self, slug: str) -> None:
+        """Delete the agent and its version history, or refuse and name why.
+
+        The scan runs *first*, so a refusal leaves the session untouched and the
+        agent writable afterwards. The 2xx arm is an ordering fix and nothing
+        more: `StudioAgentVersion.agent_id` is a bare foreign key with no ORM
+        relationship, so the unit of work has no delete-order dependency to
+        honour and emits `DELETE FROM studio_agents` first, which SQLite's
+        foreign-key check rejects. The `flush()` between the two sends the
+        version deletes to the database before the agent row goes.
+        """
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
         if not agent:
             raise ValueError(f"Studio agent not found: {slug}")
+        references = scan_agent_references(self.session, slug)
+        if references.blocking:
+            raise refuse_agent_delete(slug, references)
         for version in self.session.exec(
             select(StudioAgentVersion).where(StudioAgentVersion.agent_id == agent.id)
         ).all():
             self.session.delete(version)
+        self.session.flush()
         self.session.delete(agent)
         self.session.commit()
 
@@ -1451,10 +1173,3 @@ def _prune_transitions(
     """
     keys = {stage.key for stage in stages}
     return [item for item in transitions if item.get("from") in keys and item.get("to") in keys]
-
-
-def load_studio_agent_config(agent_id: str) -> dict | None:
-    from loregarden.db.session import engine
-
-    with Session(engine) as session:
-        return studio_agent_config(session, agent_id)

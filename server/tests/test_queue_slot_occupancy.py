@@ -7,6 +7,7 @@ orchestration was keyed on `current_run_id`, which a lane never sets, so an
 occupied slot drew as "Available" and offered to start a second ticket in it.
 """
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -24,6 +25,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.queue_slot_claims import RESERVATION_GRACE
 from loregarden.services.queue_status import build_queue_status
 from sqlmodel import Session, select
 
@@ -80,9 +82,20 @@ def _orch(session: Session, ticket: Ticket, code: str, **kwargs) -> Orchestratio
 
 
 def _occupy(session: Session, slot_number: int, **held) -> AgentSlot:
-    """Pin a slot to whatever `held` names, as a leaked release would leave it."""
+    """Pin a slot to whatever `held` names, as a leaked release would leave it.
+
+    The claim is stamped stale by default, because a real one always is: both
+    writers (`claim_free_slot` and the orphan heal) set `assigned_at`, and the
+    residue these tests describe is a claim made and then abandoned. Leaving the
+    column null made the fixture ask a different question — "may a claim with no
+    time on it be taken?" — which lg-milestone-that-775 answers *no* (AC6, the
+    stricter of the two hand-written predicates). Pass `assigned_at=` to ask
+    that question on purpose; see
+    `test_queue_lanes.py::test_reconcile_does_not_reclaim_a_ghost_whose_claim_has_no_time_on_it`.
+    """
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == slot_number)).one()
     slot.is_available = False
+    slot.assigned_at = datetime.now(timezone.utc) - RESERVATION_GRACE - timedelta(seconds=1)
     for field, value in held.items():
         setattr(slot, field, value)
     session.add(slot)

@@ -16,7 +16,9 @@ the driver.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
@@ -40,12 +42,14 @@ from loregarden.services.dependency_hold import link_reported_prerequisites
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.recorded_paths import ticket_recorded_paths
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
 )
+from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
 from loregarden.services.stage_report import (
     StageReport,
     is_transient_failure,
@@ -59,6 +63,8 @@ from loregarden.services.stage_verdict import (
     report_with_verdict,
 )
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
+from loregarden.services.target_branch_memo import target_branch_once
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.unresolved_ledger import LedgerActor, settle_unresolved
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
@@ -259,8 +265,41 @@ def latest_member_run(
     ).first()
 
 
+def _target_branch_once(
+    session: Session,
+    ticket: Ticket,
+    workspace: Workspace,
+    *,
+    workspace_root: Path,
+) -> Callable[[], str]:
+    """This stage's target branch, resolved at most once and only when asked.
+
+    Built per stage inside `prepare_tree_for_parallel_stage` — see
+    `services/target_branch_memo` for why all three of lazy, once and
+    not-caching-a-failure are load-bearing, and why the memo must not outlive
+    the stage.
+
+    The resolution is written as a closure over this module's own
+    `resolve_target_branch` global, read at call time, because that is the
+    binding the tests pinning *where* resolution happens patch. The same idiom
+    `CliAgentExecutor._target_branch_once` already documents.
+
+    `repo_root` is the workspace root and not the execution root: resolution
+    writes refs, refs are shared across every worktree of a repository, and the
+    integration-branch bookkeeping belongs in the shared checkout (779 S3).
+    """
+    return target_branch_once(
+        lambda: resolve_target_branch(session, ticket, workspace, repo_root=workspace_root)
+    )
+
+
 def prepare_tree_for_parallel_stage(
-    session: Session, ticket: Ticket, stage_key: str, runs: list[AgentRun]
+    session: Session,
+    ticket: Ticket,
+    stage_key: str,
+    runs: list[AgentRun],
+    *,
+    stamped: list[AgentRun],
 ) -> str:
     """Have the tree the members will share ready before any of them start.
 
@@ -276,10 +315,20 @@ def prepare_tree_for_parallel_stage(
     still resolved against the shared checkout (S3): resolution writes refs, and
     refs are shared across worktrees.
 
+    ``stamped`` is the subset of ``runs`` **this** pass opened, and therefore
+    the only members a failure here may settle. A resuming external fan-out's
+    ``runs`` also holds members adopted from a prior pass: those are work the
+    harness is still holding, and failing one destroys it unrecoverably, since
+    nothing else ever settles an external run (lg-milestone-that-974 AC14). The
+    builtin driver stamps every member it passes, so there the two are equal.
+
     Returns an error message (and finalizes the stage as BLOCKED) on failure,
-    else an empty string.
+    else an empty string. A failure from the resolvers also settles the members
+    this pass stamped, so none is left reading as a live agent; the
+    dirty-checkout failure above does not, for the reason ``_fail_stamped_members``
+    gives.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace or not runs:
         return ""
 
@@ -287,13 +336,18 @@ def prepare_tree_for_parallel_stage(
     if not workspace_root.is_dir():
         return ""
 
+    # One answer for the whole stage, built here rather than above the three
+    # guards: it is lazy, so the paths that return before this write no refs.
+    once = _target_branch_once(session, ticket, workspace, workspace_root=workspace_root)
     try:
-        execution_root = resolve_execution_root(session, runs[0], ticket, workspace)
+        execution_root = resolve_execution_root(
+            session, runs[0], ticket, workspace, resolve_target=once
+        )
         ensure_ticket_branch(
             execution_root,
             ticket,
             session=session,
-            start_point=resolve_target_branch(session, ticket, workspace, repo_root=workspace_root),
+            start_point=once(),
             ignoring=ticket_recorded_paths(session, ticket),
             seat=MergeTurnSeat(session, workspace, ticket),
         )
@@ -307,13 +361,63 @@ def prepare_tree_for_parallel_stage(
             content=exc.artifact_content(stage_key=stage_key),
         )
         return _block_on_checkout_failure(session, ticket, stage_key, exc)
-    except (ValueError, subprocess.CalledProcessError, TargetBranchError) as exc:
+    except (
+        ValueError,
+        subprocess.CalledProcessError,
+        TargetBranchError,
+        ProfileUnreadableError,
+    ) as exc:
         # `TargetBranchError` reaches here from `resolve_execution_root` as well
         # as from the resolution below: cutting the worktree resolves the same
         # target branch, and an integration branch that cannot take its base
         # must block the stage rather than escape the dispatcher (779).
+        #
+        # `ProfileUnreadableError` is additive and a regression guard, not new
+        # behaviour: both resolvers above read the orchestration profile
+        # (`resolve_target_branch` -> `resolve_orchestration_profile`), so a
+        # schema-invalid profile was already caught here as pydantic's
+        # `ValidationError` — a `ValueError`. It is a `RuntimeError` now, and
+        # both callers of this helper have already stamped one `AgentRun` per
+        # member, so without the name it escapes the dispatcher and leaves
+        # those members RUNNING with nothing behind them and nothing that
+        # settles them (lg-milestone-that-1215 Risk 4).
+        _fail_stamped_members(session, ticket, stamped, exc)
         return _block_on_checkout_failure(session, ticket, stage_key, exc)
     return ""
+
+
+def _fail_stamped_members(
+    session: Session, ticket: Ticket, stamped: list[AgentRun], exc: Exception
+) -> None:
+    """Settle the members this pass opened, so none is left reading as alive.
+
+    The members are stamped RUNNING and committed before the tree is prepared,
+    so a failure there leaves one orphan run per member: a row that reads as a
+    live agent with nothing behind it. The stage block is what an operator sees
+    and it says nothing about the runs, and nothing else settles an
+    external-harness run — they are exempt from the restart reapers by design.
+
+    Called from the resolver handler and not from the dirty-checkout one above.
+    That handler's stranding is older than this change and unchanged by it,
+    while R5's retry-budget fallback is what newly lets a profile that will not
+    parse reach the resolvers *after* the members are stamped: before it, the
+    first profile read raised during the dispatch decision with nothing stamped
+    at all (measured, lg-milestone-that-1215 Risk 4). Widening this to the
+    dirty-checkout path would also double the ERROR artifacts an operator reads
+    there, which 864 pinned deliberately.
+
+    Run-level only: ``settle_failed_handoff_run`` would also put the stage back
+    to PENDING, the opposite of the BLOCKED state this failure is reported
+    through.
+    """
+    orch = OrchestrationService(session)
+    message = f"Failed to checkout branch: {exc}"
+    for member in stamped:
+        session.refresh(member)
+        if member.status == RunStatus.RUNNING:
+            orch.complete_run(
+                member, status=RunStatus.FAILED, stderr=message, advance_workflow=False
+            )
 
 
 def _block_on_checkout_failure(
@@ -407,6 +511,24 @@ def reconcile_parallel_stage(
         return _route_parallel_stage_failures(session, ticket, orch_run, stage_key, results)
 
     orch = OrchestrationService(session)
+    # Members share one repo_path; commit once before DONE so land sees HEAD.
+    commit = commit_succeeded_run_worktree(session, ticket, None)
+    if commit.error:
+        orch.finalize_stage(
+            ticket, stage_key, status=StageStatus.BLOCKED, blocking_message=commit.error
+        )
+        instance, stages = orch._resolve_stages(ticket)
+        settle_block(
+            session,
+            ticket,
+            orch_run,
+            instance=instance,
+            stages=stages,
+            stage_key=stage_key,
+            message=commit.error,
+        )
+        session.refresh(ticket)
+        return True, ""
     orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
     session.refresh(ticket)
     return True, ""
