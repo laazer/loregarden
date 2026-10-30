@@ -8,7 +8,6 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import (
-    WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
     BlockOrigin,
     OrchestrationDriver,
@@ -20,19 +19,17 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowStageDef,
-    Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
-from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
-from loregarden.services.dependency_readiness import (
-    UnmetPrerequisite,
-    UnmetReason,
-    unmet_prerequisites_for_start,
+from loregarden.services.child_readiness import (
+    ordered_children,
+    partition_children,
 )
+from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
-from loregarden.services.hold_line import HeldChild, render_hold_line
+from loregarden.services.hold_line import render_hold_line
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -54,7 +51,10 @@ from loregarden.services.run_lease import lease_renewal
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
-from loregarden.services.stage_transient_retry import stage_rearmed_for_latest_run
+from loregarden.services.stage_transient_retry import (
+    latest_run_for_stage,
+    stage_rearmed_for_latest_run,
+)
 from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
@@ -63,11 +63,10 @@ from loregarden.services.studio_routing import (
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
     finalize_aggregator_ticket,
-    order_children_for_subtree,
     resolve_gate_if_permitted,
     ticket_workflow_complete,
 )
-from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_state import (
     next_executable_stage,
     parse_stage_map,
@@ -366,10 +365,10 @@ class BuiltinOrchestrator:
     def _stage_wants_another_attempt(self, ticket: Ticket, target_key: str) -> bool:
         """Whether this pass should re-dispatch the stage it just ran.
 
-        Two things re-arm a stage mid-pass, and both mean the same thing to this
-        loop: the stage is PENDING again and the work it stands for has not been
-        judged, so advancing past it — or running its exit gate — would decide an
-        outcome nobody produced.
+        Several things re-arm a stage mid-pass, and they all mean the same thing
+        to this loop: the stage is PENDING again and the work it stands for has
+        not been judged, so advancing past it — or running its exit gate — would
+        decide an outcome nobody produced.
 
         **A scope-denial reroute** pinned the sibling implementer
         (`permission_bridge._try_scope_reroute`); the run "failed" only because
@@ -392,7 +391,58 @@ class BuiltinOrchestrator:
         # pinned. Same shape as the two above; consumed by the dispatch.
         if repair_pinned(ticket, target_key):
             return True
+        # **A landing still owed** (`run_completion._advance_clean_exit`): a run
+        # that PASSED on the terminal stage leaves it PENDING on purpose, because
+        # the terminal stage's DONE is the landing's to write and the agent that
+        # just ran has not landed anything. Without this the loop reads that
+        # deliberate PENDING as an exit, `_advance_after_stage` finds no route out
+        # of a terminal stage, and the run closes SUCCEEDED over unlanded work —
+        # exactly what a landing-conflict resolver's resolution hit
+        # (lg-milestone-that-929).
+        if self._terminal_stage_owes_a_landing(ticket, target_key):
+            return True
         return stage_rearmed_for_latest_run(self.session, ticket, target_key)
+
+    def _terminal_stage_owes_a_landing(self, ticket: Ticket, target_key: str) -> bool:
+        """Whether a *passing* run left the terminal stage PENDING for the landing.
+
+        Narrow on purpose, because the re-attempt this authorises is what turns a
+        finished run into another pass of the loop. All of these must hold, and
+        each excludes a state that must NOT re-dispatch:
+
+        * it is this ticket's current stage and PENDING — a stage elsewhere in
+          the map is not this question;
+        * the stage is TERMINAL — an ordinary stage left PENDING is the loop's
+          own business and re-dispatching it would spin;
+        * the stage is AGENTLESS — the landing is owed by a terminal *marker*,
+          whose next pass finalizes through `_finish_workflow` and lands. A
+          terminal stage that names an agent of its own is PENDING after every
+          pass it makes, so without this the loop would re-dispatch that agent
+          until `max_stages` with nothing landed. No live template has one, but
+          `studio_workflow_validation` does not forbid authoring one;
+        * its most recent run SUCCEEDED — a cancelled run leaves the terminal
+          stage PENDING too, and re-dispatching there restarts work a human
+          stopped;
+        * that run reported no verdict worse than `pass` — a report of
+          `blocked`/`fail` sets the stage BLOCKED rather than PENDING, so an
+          agent that resolved the conflict and then reported `blocked` still
+          blocks instead of having its work landed over its own word.
+
+        The last is carried by the one before it: the only path that leaves a
+        terminal stage PENDING on a SUCCEEDED run is the pass branch in
+        `run_completion._advance_clean_exit`. The repair pin is consumed at
+        dispatch and asked before this predicate, so a resolver's own turn is
+        not the dispatch this clause authorises.
+        """
+        latest = latest_run_for_stage(self.session, ticket, target_key)
+        if latest is None or latest.status is not RunStatus.SUCCEEDED:
+            return False
+        # Resolved here rather than taken from the caller so the predicate
+        # cannot be told the wrong answer by a second call site.
+        stage_def = self.orch.stage_definition(ticket, target_key)
+        if stage_def is None or not is_terminal_stage(stage_def):
+            return False
+        return is_agentless_stage(stage_def)
 
     def _complete_run(self, orch_run: OrchestrationRun, ticket: Ticket) -> OrchestrationRun:
         """Close an orchestration run, deriving its status from the ticket's own
@@ -467,6 +517,11 @@ class BuiltinOrchestrator:
         if status_after != StageStatus.DONE:
             # A write-path veto left this stage not DONE (PENDING, BLOCKED, …).
             # Do not run transition gates and do not resolve linear next as pass.
+            # A terminal stage the ticket still sits on has no route out, and the
+            # loop already declined to re-attempt it: continuing would re-dispatch
+            # its agent until `max_stages` with nothing landed.
+            if is_terminal_stage(stage_def) and ticket.workflow_stage_key == target_key:
+                return self._pause_orchestration(orch_run, ticket)
             return None
 
         next_route = StateMachine.resolve_next_stage_key(
@@ -807,7 +862,11 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_seconds=timeout_seconds,
         )
-        tree_error = prepare_tree_for_parallel_stage(self.session, ticket, stage_key, runs)
+        # Every member here was opened by the call above, so the pass stamped all
+        # of them and a checkout failure may settle all of them.
+        tree_error = prepare_tree_for_parallel_stage(
+            self.session, ticket, stage_key, runs, stamped=runs
+        )
         if tree_error:
             return False, tree_error
         results = _run_and_collect_parallel_results(runs, self.executor.preflight_ledger)
@@ -901,14 +960,9 @@ def _orchestrate_incomplete_children(
     the agent's own timeout. Module-level so BuiltinOrchestrator stays under
     its size cap.
     """
-    children = list(
-        builtin.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
-    )
-    dependencies = TicketDependencyService(builtin.session)
-    prereqs = dependencies.prerequisites_map([c.id for c in children])
-    children = order_children_for_subtree(children, prereqs)
-    workspace = builtin.session.get(Workspace, ticket.workspace_id)
-    runnable, parked, waiting = _partition_children(builtin.session, workspace, children)
+    children = ordered_children(builtin.session, ticket)
+    workspace = workspace_for_ticket(builtin.session, ticket)
+    runnable, parked, waiting = partition_children(builtin.session, workspace, children)
     for child in runnable:
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
@@ -953,65 +1007,6 @@ def _orchestrate_incomplete_children(
     return None
 
 
-def _partition_children(
-    session: Session, workspace: Workspace | None, children: list[Ticket]
-) -> tuple[list[Ticket], list[str], list[HeldChild]]:
-    """Split ordered children into those that may run now, and two kinds of hold.
-
-    Deciding *whether* a child may run is a different job from running it, and
-    separating them keeps the run loop to the one thing it does. Both holds leave
-    the parent incomplete; they differ in who is owed:
-
-    - ``parked`` is owed by a person, and deliberately does not stop the rest of
-      the subtree (lg-workflow-integrity-449);
-    - ``waiting`` is owed by another ticket, whose work this run cannot reach.
-
-    That last qualifier is narrower than it looks, and reading it too widely is
-    what produced lg-milestone-that-779. A sibling exemption is right for one
-    reason only: `order_children_for_subtree` has already put a sibling that
-    has *not run* earlier in this list, so blocking on it would hold a child
-    whose prerequisite is about to run — an integration review depends on every
-    sibling, so it would never start at all. That is `UnmetReason.NOT_DONE`,
-    and it stays exempt.
-
-    Ordering cannot do the other half. A sibling in `done` whose branch never
-    landed has already had its turn, and no reordering makes work the
-    dependent's base cannot see appear in it (`UnmetReason.NOT_LANDED`). 779
-    observed exactly that: 715 reached `done` unlanded, 716 was dispatched
-    immediately, and 716's worktree was cut from an integration branch holding
-    none of 715's commits. So the exemption is keyed on the *reason*, per
-    entry, and never on being a sibling alone.
-
-    What ordering cannot express is a prerequisite it never saw. It drops edges
-    pointing outside the set, which is every cross-workspace edge and every edge
-    to a ticket under a different parent, so before this the orchestrator picked
-    up children whose prerequisite had not been started — in another repository —
-    and reported the failure as the child's own (676). Those are exactly the
-    edges nothing in this run can satisfy, which is what makes them a hold
-    rather than an ordering hint.
-    """
-    sibling_ids = {child.id for child in children}
-    runnable: list[Ticket] = []
-    parked: list[str] = []
-    waiting: list[HeldChild] = []
-    for child in children:
-        if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
-            continue
-        if child.state == TicketState.PARKED:
-            parked.append(child.title)
-            continue
-        unmet = [
-            entry
-            for entry in _unmet_for(session, child, workspace)
-            if not (entry.ticket.id in sibling_ids and entry.reason is UnmetReason.NOT_DONE)
-        ]
-        if unmet:
-            waiting.append(HeldChild(ticket=child, unmet=unmet))
-            continue
-        runnable.append(child)
-    return runnable, parked, waiting
-
-
 def _dependency_hold(session: Session, ticket: Ticket) -> str:
     """Why ``ticket`` may not take its next stage yet, or "" when it may."""
     try:
@@ -1019,18 +1014,6 @@ def _dependency_hold(session: Session, ticket: Ticket) -> str:
     except DependencyHold as hold:
         return str(hold)
     return ""
-
-
-def _unmet_for(
-    session: Session, child: Ticket, workspace: Workspace | None
-) -> list[UnmetPrerequisite]:
-    """Landed-readiness when there is a repository to ask; state alone otherwise."""
-    if workspace is not None:
-        return unmet_prerequisites_for_start(session, child, workspace)
-    return [
-        UnmetPrerequisite(prereq, UnmetReason.NOT_DONE)
-        for prereq in TicketDependencyService(session).unmet_prerequisites(child.id)
-    ]
 
 
 def _run_and_collect_parallel_results(

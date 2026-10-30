@@ -1,6 +1,10 @@
 /**
- * Agent Studio's wire shapes: the agents, workflows, versions and drift reports
- * the `/api/studio/*` endpoints serve. Re-exported from ./types.
+ * The Workflow Studio's wire types: agents, their versions, workflow drafts and
+ * their stages.
+ *
+ * Split out of `types.ts` when that file reached its 1200-line cap. One
+ * cohesive group — everything under `/api/studio/**` sends or accepts — and
+ * `types.ts` re-exports it, so no import anywhere else moves.
  */
 
 import type { WorkflowTransition } from "./types";
@@ -39,6 +43,35 @@ export interface StudioAgent {
   version?: number;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * What `PATCH /api/studio/agents/{slug}` accepts, and nothing else.
+ *
+ * Mirrors the server's `StudioAgentUpdate`, which sets `extra="forbid"`: any
+ * other key is a 422, `slug` included — the slug is fixed after creation, since
+ * it is a by-string key with no FK and no single owner, so a rename either
+ * rewrites run history or orphans it. The body used to be typed
+ * `Partial<StudioAgent>`, the *view* type, which let `tsc` wave through `id`,
+ * `version`, `built_in`, `read_only`, `role_file`, `tool_grant_warnings` and
+ * both timestamps. Spelling the writable fields out is what makes the next such
+ * key a build failure rather than a runtime 422 on the operator's save.
+ */
+export interface StudioAgentUpdateBody {
+  name?: string;
+  description?: string;
+  role_body?: string;
+  adapter?: string;
+  default_model?: string;
+  timeout?: number;
+  default_skill?: string;
+  mcp_enabled?: boolean;
+  mcp_tools?: string[];
+  gate_checks?: StudioGateCheck[];
+  handoff_checks?: StudioHandoffCheck[];
+  tool_grants?: StudioAgentToolGrants;
+  /** Goes on the new version row, not on the agent. */
+  change_note?: string;
 }
 
 /** How an agent's tool access is decided. Mirrors the server `ToolPosture` enum. */

@@ -39,10 +39,11 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.drain import is_draining, refuse_reason
-from loregarden.services.git_automation_config import resolve_git_automation
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.publish_tree import PublishOutcome, publish_tree, published_branch
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_ux_section import MISSING_UX_CARD_PREFIX
 from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -306,7 +307,7 @@ def published_cards_held(session: Session) -> list[HeldCard]:
     held_cards: list[HeldCard] = []
     for card in cards:
         root = session.get(Ticket, card.ticket_id) if card.ticket_id else None
-        workspace = session.get(Workspace, root.workspace_id) if root else None
+        workspace = workspace_for_ticket(session, root) if root else None
         if root is None or workspace is None:
             logger.warning("Publish card %s names no ticket or workspace; leaving it", card.id)
             continue
@@ -338,7 +339,7 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
     branch, tip = published_branch(repo_root, root)
     if not tip:
         return ""
-    base = resolve_git_automation(workspace, root).base_branch
+    base = base_branch(workspace)
     for ref in (f"refs/remotes/origin/{base}", f"refs/heads/{base}"):
         base_sha = rev(repo_root, ref)
         if not base_sha:

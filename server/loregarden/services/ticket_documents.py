@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from loregarden.core.event_bus import event_bus
-from loregarden.models.domain import Artifact, EventType, Ticket, Workspace
+from loregarden.models.domain import Artifact, EventType, Ticket
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
 
@@ -180,7 +181,7 @@ def _is_document(artifact: Artifact, fields: _DocumentFields) -> bool:
 
 
 def _ticket_label(session: Session, ticket: Ticket) -> dict[str, str]:
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     return {
         "ticket_id": ticket.id,
         "external_id": ticket.external_id,

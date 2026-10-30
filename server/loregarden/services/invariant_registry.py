@@ -9,11 +9,15 @@ pass picks it up from `INVARIANTS` by name (`reconciliation.PERIODIC_STEPS`).
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime, timezone
 
 from loregarden.models.domain import (
+    AgentSlot,
+    Artifact,
+    ArtifactKind,
     InvariantReentry,
     Ticket,
     TicketState,
@@ -21,6 +25,7 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.checkouts_without_their_branch import checkouts_without_their_branch
 from loregarden.services.cleaned_worktree_rows import cleaned_rows_with_their_checkout
@@ -30,13 +35,21 @@ from loregarden.services.done_ticket_ship import (
     violations_for_invariant as _recorded_ship_violations,
 )
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
+from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
+from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.orphaned_worktree_rows import (
     rows_without_their_checkout,
     settle_rows_without_their_checkout,
 )
+from loregarden.services.parallel_queue import (
+    last_lane_entry,
+    record_ghost_reclaim,
+    release_slot,
+)
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
+from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_parked_at_rows import (
@@ -49,6 +62,7 @@ from loregarden.services.terminal_stage_sweep import (
     tickets_whose_landing_cleared,
 )
 from loregarden.services.ticket_dependencies import ancestor_waits, drop_ancestor_waits
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import (
     close_held_cards,
     published_cards_held,
@@ -148,6 +162,76 @@ def _close_cards(session: Session, violations: Sequence[Violation]) -> int:
     )
 
 
+def _ghost_lanes(session: Session) -> list[AgentSlot]:
+    """Slots that read busy, name no occupant, and whose claim may be taken.
+
+    The two legal ways a slot holds no ids are excluded by the same predicate
+    the lane and the sweep answer from, which is what makes `DEFECT` an honest
+    policy here rather than a guard that cries wolf:
+
+    - a slot just taken by `claim_free_slot` and not yet bound — both ids are
+      null on purpose, and it is inside `RESERVATION_GRACE`;
+    - a slot held for repair — it names its occupant, so it is not busy with
+      *nothing* at all, and the hold `reconcile_slots` recognises by that id
+      survives this pass untouched.
+
+    "Busy with an occupant that finished" is deliberately not here: that is the
+    ordinary residue `reconcile_slots` has swept since before 775, and a
+    detector merging the two would report a DEFECT re-entry every time a run
+    exited uncleanly.
+    """
+    now = utcnow()
+    return [
+        slot
+        for slot in session.exec(
+            select(AgentSlot)
+            .where(AgentSlot.is_available == False)  # noqa: E712
+            .order_by(col(AgentSlot.slot_number))
+        ).all()
+        if slot_is_busy_with_nothing(slot) and not claim_is_fresh(slot, now=now)
+    ]
+
+
+def _busy_lanes_with_no_occupant(session: Session) -> list[Violation]:
+    """`entered_at` is `assigned_at`: when the lane was taken is the only date a
+    slot carries, and it is the right one — the claim is what was never undone."""
+    violations: list[Violation] = []
+    for slot in _ghost_lanes(session):
+        last = last_lane_entry(session, slot.slot_number)
+        violations.append(
+            Violation(
+                subject_id=slot.id,
+                ticket_id=last.ticket_id if last else None,
+                entered_at=slot.assigned_at,
+                detail=(
+                    f"lane {slot.slot_number} reads busy with no occupant "
+                    f"(claimed {slot.assigned_at}); nothing can release it"
+                ),
+            )
+        )
+    return violations
+
+
+def _reclaim_busy_lanes(session: Session, violations: Sequence[Violation]) -> int:
+    """Give back exactly the lanes this pass detected, re-reading each first.
+
+    The existing ghost reclaim, narrowed to these subjects — not a call to
+    `reconcile_slots`, which would also reclaim rows this pass never detected
+    and never reported, while the count said it repaired one. Re-detecting is
+    what keeps a reservation that took the lane between the two reads: detect
+    and repair are two reads of a world that moves.
+    """
+    wanted = {v.subject_id for v in violations}
+    repaired = 0
+    for slot in _ghost_lanes(session):
+        if slot.id not in wanted:
+            continue
+        release_slot(session, slot)
+        record_ghost_reclaim(session, slot)
+        repaired += 1
+    return repaired
+
+
 def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
     """Done tickets whose live worktree still holds their own uncommitted work.
 
@@ -166,7 +250,7 @@ def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
     ).all()
     found: list[Violation] = []
     for ticket, worktree in rows:
-        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(session, ticket)
         if workspace is None:
             continue
         try:
@@ -187,6 +271,207 @@ def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
                 )
             )
     return found
+
+
+#: When the land-verification receipt's writer landed, and so the line between
+#: backlog and re-entry for `LAND_VERIFICATION_RAN`. One constant, shared by the
+#: registration and by the detector's own bound: two copies is two answers to
+#: "what is backlog?", and the one that drifts is the detector's — which is the
+#: one that decides whether eighty old landings are reported.
+#:
+#: Measured on the live database read-only 2026-10-23: 1,844 tickets, 474
+#: `done`, 80 `done` with a `landed_sha`, and 0 land-verification receipts of any
+#: kind, because no landing had ever written one. Unbounded, the first reconcile
+#: tick after boot would upsert 80 `invariant_unrepaired` findings and
+#: auto-create one escalation Bug listing all 80 by external id — and
+#: `run_invariant` re-reports the pre-`since` backlog on EVERY pass for a
+#: report-only invariant, so it is not self-limiting.
+#:
+#: The date is the day AFTER this change lands, not the day of it. A landing
+#: earlier on the SAME day predates the writer by hours and has no receipt, so a
+#: bound of the landing day reports it as re-entry: measured against a copy of
+#: the live database, six loregarden landings from 00:29 to 07:28 on 2026-10-23
+#: fell at or after a 2026-10-23 bound, which is six findings and an escalation
+#: Bug on the first pass where AC10 requires zero. `Invariant.since` is a date
+#: and `invariants._since` reads it as that day's midnight, so the first whole
+#: day every landing can carry a receipt is the first day in range.
+LAND_VERIFICATION_SINCE = date(2026, 10, 24)
+
+
+def _has_a_passing_receipt(bodies: Sequence[str | None]) -> bool:
+    """Whether any of these receipt bodies says the suite passed.
+
+    `content_json` is a text column every `loregarden_attach_artifact` caller
+    and every hand repair can write, so this is a `json.loads` and a subscript
+    over operator-supplied text. A body that cannot be read is NOT a passing
+    verdict and must not take the pass down with it: `run_invariant` is one step
+    of `PERIODIC_STEPS`, and a detector that raises reports nothing for any
+    ticket from then on while the surface says "no violations" — a guard failing
+    that reads exactly like a guard working.
+
+    The comparison is exact. `status` is one of three words this ticket's own
+    writer controls and the client's `PASSING` set matches them exactly, so
+    `.strip().lower()` here would be defensive normalization — and would clear a
+    landing whose receipt the client itself colours `warn`.
+    """
+    for body in bodies:
+        try:
+            status = json.loads(body or "").get("status")
+        except (ValueError, AttributeError):
+            # Unreadable, or JSON that is not an object: no verdict, so this
+            # receipt clears nothing and the landing stays reported below.
+            continue
+        if status == RECEIPT_PASSED:
+            return True
+    return False
+
+
+def _landed_without_a_verified_suite(session: Session) -> list[Violation]:
+    """Done tickets whose recorded landing has no passing land-verification receipt.
+
+    Pure database reads (plus the workspace's own orchestration profile): `state
+    == DONE`, a non-empty `landed_sha`, no `ArtifactKind.LAND_VERIFICATION`
+    artifact whose `content_json.status` is `passed`, and a `resolved_at` at or
+    after `LAND_VERIFICATION_SINCE`. It runs no suite and shells out to nothing,
+    deliberately: the reconcile tick is 30s, the suite is 901s, collection alone
+    is 21s, and `test_invariants.py` runs every detector inside pytest. R3's
+    receipt is the record this reads instead.
+
+    Three conditions are easy to misread, so all three are stated:
+
+    - A ticket with no `landed_sha` is never a violation. There is no landing to
+      judge; the Outputs tab shows its "No outputs yet" empty state, and a
+      detector that read that as a failure would report every done ticket closed
+      without landing.
+    - An UNDATED landing (`resolved_at is None`) is left alone. That INVERTS
+      `invariants._entered_after`'s documented "unknown entry time counts as
+      re-entry" default, on purpose: `resolved_at` is stamped when a ticket
+      resolves, so a landing this detector cannot date is by construction one
+      that predates the receipt writer and `since`. Erring towards silence is
+      the opposite of the framework's default, which is why it says so here
+      rather than leaving a reader to meet it as a bug.
+    - A landing in a workspace that verifies NOTHING is not a per-landing
+      violation, because the invariant's `DEFECT` re-entry says "a writer is
+      supposed to make this unreachable" and in that workspace no writer is.
+      `land_verifier` returns `GateOutcome.DISABLED` when `land_verify_commands`
+      is empty and `record_land_verification` writes that verdict as `disabled`,
+      never `passed` — so every landing in a workspace on `default.yaml`'s empty
+      list would be a permanent violation that report-only never clears, one
+      finding per landing and one escalation Bug per workspace, for a workspace
+      sitting in its documented off state.
+
+      That off state is still reported, once: `_workspace_verifies_no_landing`
+      is ONE workspace-scoped violation naming the workspace and how many
+      landings it covers. One finding, not N, and emptying
+      `land_verify_commands` therefore cannot make this detector silent — which
+      is the blindness the plan stage warned the substitute detector had.
+
+    Condition "no PASSING receipt" is not "no receipt": a verified landing
+    re-landed later writes a `disabled`/`already_contained` row beside the
+    passing one, and reading "the latest receipt" would turn that into a
+    violation.
+
+    `entered_at` is the ticket's `resolved_at` — `Ticket` carries no landing
+    timestamp, and `_landed_with_uncommitted_work` makes the same choice for the
+    same reason.
+    """
+    since = datetime(
+        LAND_VERIFICATION_SINCE.year,
+        LAND_VERIFICATION_SINCE.month,
+        LAND_VERIFICATION_SINCE.day,
+        tzinfo=timezone.utc,
+    )
+    landed = [
+        ticket
+        for ticket in session.exec(
+            select(Ticket).where(
+                col(Ticket.state) == TicketState.DONE,
+                col(Ticket.landed_sha) != "",
+            )
+        ).all()
+        if _resolved_at_or_after(ticket, since)
+    ]
+    if not landed:
+        return []
+    by_workspace: dict[str | None, list[Ticket]] = {}
+    for ticket in landed:
+        by_workspace.setdefault(ticket.workspace_id, []).append(ticket)
+    violations: list[Violation] = []
+    judged: list[Ticket] = []
+    for tickets in by_workspace.values():
+        workspace = workspace_for_ticket(session, tickets[0])
+        if workspace is not None and not resolve_git_automation(workspace).land_verify_commands:
+            violations.append(_workspace_verifies_no_landing(workspace, tickets))
+            continue
+        # A landing with no workspace row to resolve a profile from is judged
+        # per-landing: its arming cannot be read either way, and the framework's
+        # default for what a detector cannot determine is to report it.
+        judged.extend(tickets)
+    if not judged:
+        return violations
+    receipts: dict[str, list[str | None]] = {}
+    for ticket_id, body in session.exec(
+        select(col(Artifact.ticket_id), col(Artifact.content_json)).where(
+            col(Artifact.kind) == ArtifactKind.LAND_VERIFICATION,
+            col(Artifact.ticket_id).in_([ticket.id for ticket in judged]),
+        )
+    ).all():
+        receipts.setdefault(ticket_id, []).append(body)
+    violations.extend(
+        Violation(
+            subject_id=ticket.id,
+            ticket_id=ticket.id,
+            entered_at=ticket.resolved_at,
+            detail=(
+                f"{ticket.external_id} landed on {ticket.landed_branch} at "
+                f"{ticket.landed_sha[:12]} with no passing land_verification receipt"
+            ),
+        )
+        for ticket in judged
+        if not _has_a_passing_receipt(receipts.get(ticket.id, []))
+    )
+    return violations
+
+
+def _workspace_verifies_no_landing(workspace: Workspace, landings: Sequence[Ticket]) -> Violation:
+    """The one violation for a workspace whose profile verifies no landing at all.
+
+    Workspace-scoped by `subject_id`, so `record_findings` upserts one finding
+    and `escalate_invariant_reentries` files one Bug however many landings the
+    workspace has. It still has to hang on a ticket (`artifacts.ticket_id` is
+    NOT NULL, and `invariants._report` only logs a ticketless violation), so it
+    hangs on the most recent landing it covers, named in the detail beside the
+    count — the landing an operator would open first.
+    """
+    most_recent = max(landings, key=lambda ticket: (_at_utc(ticket.resolved_at), ticket.id))
+    return Violation(
+        subject_id=workspace.id,
+        ticket_id=most_recent.id,
+        entered_at=most_recent.resolved_at,
+        detail=(
+            f"workspace {workspace.slug} verifies no landing: land_verify_commands is empty "
+            f"in its orchestration profile, so each of its {len(landings)} landing(s) since "
+            f"{LAND_VERIFICATION_SINCE.isoformat()} wrote a 'disabled' receipt and none can "
+            f"ever pass (most recent: {most_recent.external_id} on "
+            f"{most_recent.landed_branch} at {most_recent.landed_sha[:12]})"
+        ),
+    )
+
+
+def _resolved_at_or_after(ticket: Ticket, since: datetime) -> bool:
+    """Whether the ticket resolved at or after `since`; False when undated."""
+    if ticket.resolved_at is None:
+        return False
+    return _at_utc(ticket.resolved_at) >= since
+
+
+def _at_utc(value: datetime | None) -> datetime:
+    """One timestamp comparable with another: SQLite hands back naive UTC, and a
+    row written in the same process is aware, so ordering two landings without
+    this raises rather than answering."""
+    if value is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 EVERY_BLOCK_IS_SETTLED = Invariant(
@@ -243,6 +528,20 @@ PUBLISH_CARDS_CLOSE = Invariant(
     reentry=InvariantReentry.EXPECTED,
     since=date(2026, 10, 20),
     expected_because="a published PR is merged on GitHub by a person, not by the control plane",
+)
+
+EVERY_BUSY_LANE_HAS_AN_OCCUPANT = Invariant(
+    name="every_busy_lane_has_an_occupant",
+    ticket="lg-milestone-that-775",
+    statement="no execution slot reads busy with no occupant",
+    detect=_busy_lanes_with_no_occupant,
+    repair=_reclaim_busy_lanes,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 9, 21),
+    prevented_by=(
+        "server/tests/test_queue_lanes.py"
+        "::test_completion_releases_the_slot_the_entry_names_even_with_its_ids_cleared"
+    ),
 )
 
 
@@ -545,13 +844,34 @@ LANDED_WORK_IS_COMMITTED = Invariant(
     reentry=InvariantReentry.DEFECT,
     since=date(2026, 10, 21),
     prevented_by=(
-        "server/tests/test_landing_uncommitted.py"
-        "::test_a_ticket_with_uncommitted_work_does_not_land"
+        "server/tests/test_stage_end_commit.py"
+        "::test_succeeded_writing_stage_is_on_head_before_next_stage"
     ),
     unrepaired_action=(
         "Open the worktree the finding names. If the files are the ticket's work, commit them "
         "to its branch and land it again; if not, discard them with `git checkout -- <path>`. "
         "A clean tree is removed by the next startup's worktree sweep."
+    ),
+)
+
+LAND_VERIFICATION_RAN = Invariant(
+    name="land_verification_ran",
+    ticket="lg-milestone-that-1419",
+    statement="every recorded landing has a passing land-verification receipt",
+    detect=_landed_without_a_verified_suite,
+    # Report-only: only a person can run a suite and judge what it says. A
+    # repair here would be the control plane deciding its own landing passed.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=LAND_VERIFICATION_SINCE,
+    prevented_by=(
+        "server/tests/test_land_verification_receipt.py"
+        "::test_every_landing_that_records_a_landed_sha_writes_a_receipt"
+    ),
+    unrepaired_action=(
+        "Run `uv run --directory server pytest -q -n auto` against the ticket's landed "
+        "branch. If it is red, reopen the ticket with the failing test named; if it is "
+        "green, record the verdict on the ticket."
     ),
 )
 
@@ -785,6 +1105,7 @@ DONE_TICKET_SHIP_IS_OBSERVABLE = Invariant(
 
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
+    EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     HELD_REPAIRS_READ_IN_PROGRESS,
     EXHAUSTED_GATES_BLOCK,
     EVERY_BLOCK_IS_SETTLED,
@@ -798,6 +1119,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     HELD_TICKETS_RESUME,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
+    LAND_VERIFICATION_RAN,
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,

@@ -15,7 +15,7 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.tool_args import reject_truncated_call
-from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest, Workspace
+from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
     load_criteria,
@@ -35,6 +35,7 @@ from loregarden.services.ticket_documents import document_index
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_revision_guard import guard_ticket_revision
 from loregarden.services.ticket_tags import load_tags, normalize_tags
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 
 
 def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
@@ -90,7 +91,7 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
 
 def blocked_by_summaries(session: Session, ticket: Ticket) -> list[dict[str, str]]:
     """`blocked_by`, each entry saying why: not done, or done but not landed (770)."""
-    workspace = session.get(Workspace, ticket.workspace_id) if ticket.workspace_id else None
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         return ticket_summaries(
             session,
@@ -118,7 +119,7 @@ def ticket_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, 
     for tid in ticket_ids:
         dep = session.get(Ticket, tid)
         if dep is not None:
-            workspace = session.get(Workspace, dep.workspace_id)
+            workspace = workspace_for_ticket(session, dep)
             out.append(
                 {
                     "id": dep.id,

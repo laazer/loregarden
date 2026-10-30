@@ -23,10 +23,9 @@ from pathlib import Path
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
 from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
+from loregarden.services.capacity_environment import CALLER_CWD_ENV, LEASE_ENV
 from loregarden.services.capacity_run import (
-    CALLER_CWD_ENV,
     DEFAULT_STALL_SECONDS,
-    LEASE_ENV,
     CapacityQueueStalled,
     CapacityRequest,
     run_holding,

@@ -624,11 +624,114 @@ def test_completion_does_not_release_a_slot_someone_else_reserved_since(lanes, s
     assert slot.is_available is False, "released a lane a later reservation holds"
 
 
+def test_completion_does_not_release_a_slot_whose_claim_has_no_time_on_it(
+    lanes, session, workspace
+):
+    """Where the two hand-written copies of this predicate disagreed, the shared
+    one takes the stricter answer: do not release.
+
+    A slot with `is_available=0`, no occupant and no `assigned_at` cannot be
+    shown to be this entry's own residue rather than a reservation that has not
+    bound yet. `_claimed_after` used to answer "not a later claim" and the lane
+    released it, which is the lane handing out a slot someone may be about to
+    use. Today every claim writer stamps `assigned_at`, so this is reachable
+    only by a hand-written row — and that is exactly the reader who should not
+    have a lane taken out from under them.
+    """
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    slot.assigned_at = None
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+
+    session.refresh(slot)
+    assert slot.is_available is False, "released a claim that could not be dated"
+
+
+def test_reconcile_does_not_reclaim_a_ghost_whose_claim_has_no_time_on_it(
+    lanes, session, workspace
+):
+    """The same stricter answer on the other side of the extraction.
+
+    `_within_reservation_grace` returned False for a null `assigned_at`, so the
+    sweep reclaimed a slot whose claim it could not date. Both callers now read
+    one predicate, so both leave it alone — and a reader checking the two
+    against each other finds them agreeing rather than disagreeing by accident.
+    """
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    first = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    first.status = OrchestrationRunStatus.SUCCEEDED
+    slot.current_orchestration_run_id = None
+    slot.assigned_at = None
+    session.add(first)
+    session.add(slot)
+    session.commit()
+
+    freed = lanes.reconcile_lanes()
+
+    assert 1 not in freed
+    session.refresh(slot)
+    assert slot.is_available is False, "reclaimed a claim that could not be dated"
+
+
+def test_the_same_completion_delivered_twice_releases_one_lane_once(lanes, session, workspace):
+    """Completions are not delivered exactly once: a restart can replay one, and
+    `reconcile_lanes` settles entries the same completion already settled. The
+    first call releases the lane with the ids already cleared; by the second,
+    the lane may belong to the ticket behind it, and releasing it again hands
+    one slot to two orchestrations.
+    """
+    first_ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=first_ticket.id, slot_number=1)
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+    session.refresh(slot)
+    assert slot.is_available is True
+
+    # The lane is taken again, and the stale completion arrives a second time.
+    next_ticket = _ticket(session, workspace.id, "LG-2")
+    lanes.add_to_lane(ticket_id=next_ticket.id, slot_number=1)
+    session.refresh(slot)
+    assert slot.is_available is False
+    second_occupant = slot.current_orchestration_run_id
+
+    lanes.on_orchestration_complete(orch_id)
+
+    session.refresh(slot)
+    assert slot.is_available is False, "the replayed completion released a lane it no longer held"
+    assert slot.current_orchestration_run_id == second_occupant
+
+
 def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
-    """The observed shape, end to end: the ticket's only lane entry points at a
-    finished orchestration, and a builtin start through the MCP tool follows.
-    While that orchestration runs, the queue snapshot must show it — not a
-    lane that is busy with nothing in it.
+    """The observed shape of lg-milestone-that-775, end to end and in one test.
+
+    714's first run did not complete cleanly: `reconcile_slots` had already
+    cleared the slot's occupant ids by the time `on_orchestration_complete`
+    ran, so the release keyed on those ids found nothing and returned before
+    `is_available = True`. The restart then got no lane entry — the ticket
+    already had one — and ran outside every lane the board draws from. The
+    board showed one lane busy and nothing running.
+
+    So the whole sequence runs here: **complete with the slot ids already
+    cleared**, then restart, then read the snapshot while the restart is in
+    flight. Splitting it in two (one test that pre-clears and never restarts,
+    one that restarts after an ordinary completion) is what let the halves pass
+    while the sequence that was actually observed went unrun.
 
     `execute` is stood in for by something that does what the real one does
     to the queue: it starts the orchestration run, then finishes it. The
@@ -647,13 +750,21 @@ def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
     svc = OrchestrationCallbackService(session)
     ticket = _ticket(session, workspace.id, "LG-714")
 
-    # First run: through a lane, then finished.
+    # First run: through a lane, then finished — but with the slot's occupant
+    # ids already gone when the completion lands, which is what reconcile had
+    # done to slot 1 by 12:36. The release has nothing but the entry's own
+    # slot_number to go on.
     lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     first = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    slot.current_orchestration_run_id = None
+    slot.current_run_id = None
+    session.add(slot)
+    session.commit()
+
     svc.complete_orchestration(first, ticket, status=OrchestrationRunStatus.SUCCEEDED)
     session.refresh(slot)
-    assert slot.is_available is True
+    assert slot.is_available is True, "the completion left slot 1 busy with nothing"
 
     seen: dict = {}
 
@@ -680,6 +791,7 @@ def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
     )
     busy = snapshot["total_slots"] - snapshot["available_slots"]
     assert busy == len(snapshot["active_runs"]), "a lane is busy with nothing running in it"
+    assert busy == 1, "the restart must occupy exactly the lane its predecessor held"
 
     # And afterwards: the lane is back, and nothing is left holding it.
     session.refresh(slot)
@@ -695,7 +807,8 @@ def test_reconcile_reclaims_a_ghost_lane_and_says_so(lanes, session, workspace):
 
     from loregarden.core.event_bus import event_bus
     from loregarden.models.domain import EventType, OrchestratorDecision
-    from loregarden.services.parallel_queue import RESERVATION_GRACE, claim_free_slot
+    from loregarden.services.parallel_queue import claim_free_slot
+    from loregarden.services.queue_slot_claims import RESERVATION_GRACE
 
     ticket = _ticket(session, workspace.id, "LG-1")
     lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)

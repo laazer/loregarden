@@ -503,3 +503,61 @@ def test_relanding_keeps_the_commit_that_landed_it(session, conflicted, workspac
 
     session.refresh(conflicted)
     assert conflicted.landed_sha == first.landed_sha
+
+
+def test_a_resolver_that_resolves_lands_in_the_same_orchestration(
+    session, conflicted, workspace, repo, monkeypatch
+):
+    """The whole point of arming the resolver: its resolution lands the ticket.
+
+    Every other test whose fake resolver reports `pass` commits nothing, so a
+    retried landing would conflict again — none of them proves the chain from a
+    real resolution to a landing. 782's run instead called the landing tool it
+    is refused and blocked for a person (lg-milestone-that-929).
+    """
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.models.domain import (
+        AgentRun,
+        Approval,
+        OrchestrationRunStatus,
+        RunStatus,
+    )
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+    from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+    from sqlmodel import select
+
+    target = resolve_target_branch(session, conflicted, workspace, repo_root=repo)
+    tip_before = git(repo, "rev-parse", conflicted.branch).stdout.strip()
+    dispatched: list[tuple[str, str]] = []
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        dispatched.append((run.agent_id, run.stage_key))
+        _resolve_by_hand(repo, worker_ticket, target)
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=(
+                "<<<LOREGARDEN_STAGE_REPORT>>>\n"
+                + json.dumps({"status": "pass", "confidence": 0.9})
+                + "\n<<<END_STAGE_REPORT>>>\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    profile = OrchestrationProfile(slug="resolver", gates=GatesConfig(enabled=False))
+
+    orch_run = BuiltinOrchestrator(session).execute(conflicted, profile, max_stages=5)
+
+    session.refresh(conflicted)
+    # (a) one resolution turn, on the terminal stage, under the repair agent.
+    assert dispatched == [(REPAIR_AGENT_ID, "done")]
+    # (b) and (c) are the oracle: only a second landing that actually merged can
+    # produce them, so a broken retry chain fails here and not on (a).
+    assert conflicted.landed_sha, "the same orchestration retried the landing"
+    assert conflicted.landed_sha != tip_before, "and landed the resolution, not the old tip"
+    assert conflicted.state is TicketState.DONE
+    assert git(repo, "merge-base", "--is-ancestor", conflicted.branch, target).returncode == 0
+    # (d) nobody was asked: the run succeeded and no approval was raised.
+    assert orch_run.status is OrchestrationRunStatus.SUCCEEDED
+    assert session.exec(select(Approval).where(Approval.ticket_id == conflicted.id)).all() == []

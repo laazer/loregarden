@@ -50,7 +50,8 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
-from loregarden.services.studio_service import build_studio_prompt_sections
+from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"
@@ -211,7 +212,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     session.commit()
     session.refresh(user_message)
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     corrector = (
         cli_card_corrector(TRIAGE_CLI_PROFILE, apply_triage_runtime_overrides(workspace, ticket))
         if workspace
@@ -263,7 +264,7 @@ def invoke_triage_model(
     if stub is not None:
         return stub
 
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise ValueError("Ticket workspace not found")
 
@@ -406,7 +407,7 @@ def build_triage_prompt(
     agent, same rules, one copy. What stays local is this rail's own data: the
     ticket, its criteria, its gate and its runs.
     """
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
     runs = session.exec(

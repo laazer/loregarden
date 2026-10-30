@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 from loregarden.models.domain import Workspace
+from loregarden.models.domain.enums_capacity import DockerFootprint
+from loregarden.models.domain.schemas import GitAutomationView
 from loregarden.services.orchestration_profile import (
     GatesConfig,
     GitAutomationConfig,
@@ -142,3 +144,79 @@ def test_a_caller_mutating_its_profile_does_not_reach_the_next(profile_dir, work
     resolve_orchestration_profile(workspace).gates.commands.append("rm -rf /")
 
     assert "rm -rf /" not in resolve_orchestration_profile(workspace).gates.commands
+
+
+GIT_CONFIGURED_PROFILE = """\
+slug: proj
+name: Proj Autopilot
+gates:
+  enabled: true
+git:
+  commit: true
+  push: true
+  # The suite that must pass against the merge a land would publish.
+  land_verify_commands:
+    - uv run --project server pytest -q
+  land_verify_capacity_footprint: stack
+  tree_open_pr: true
+  tree_auto_merge: true
+  prune_landed_chat_branches: true
+"""
+
+
+@pytest.fixture(name="git_profile_dir")
+def git_profile_dir_fixture(tmp_path, monkeypatch):
+    root = tmp_path / "agent_context" / "orchestration"
+    root.mkdir(parents=True)
+    (root / "proj.yaml").write_text(GIT_CONFIGURED_PROFILE, encoding="utf-8")
+    monkeypatch.setattr("loregarden.services.orchestration_profile.orchestration_dir", lambda: root)
+    return root
+
+
+def test_a_toggle_save_does_not_disable_the_land_guard(git_profile_dir, workspace):
+    """The queue's automation panel PUTs its whole `GitAutomationView` on every
+    toggle, and that view carries no `land_verify_*` field — so `model_validate`
+    defaults them and, without the preserve list, one click on "push" wrote an
+    empty command list over a configured one and silently turned the land guard
+    off for that workspace (lg-milestone-that-1238, AC20).
+
+    This is the endpoint's own path: a view that names neither field, validated
+    into a config exactly as `update_workspace_git_automation` does.
+    """
+    view = GitAutomationView(commit=True, push=True, auto_merge=True)
+    assert "land_verify_commands" not in view.model_dump()
+
+    profile = update_git_config(
+        workspace, GitAutomationConfig.model_validate(view.model_dump(mode="json"))
+    )
+
+    assert profile.git.land_verify_commands == ["uv run --project server pytest -q"]
+    assert profile.git.land_verify_capacity_footprint is DockerFootprint.STACK
+    # The toggle the panel did send still lands.
+    assert profile.git.auto_merge is True
+    # And the comment above the preserved list is still in the file.
+    assert "# The suite that must pass" in _text(git_profile_dir)
+
+
+def test_the_other_fields_the_toggle_view_omits_also_survive(git_profile_dir, workspace):
+    """Same defect, three fields that had it before the land guard existed."""
+    profile = update_git_config(
+        workspace,
+        GitAutomationConfig.model_validate(GitAutomationView(commit=True).model_dump(mode="json")),
+    )
+
+    assert profile.git.tree_open_pr is True
+    assert profile.git.tree_auto_merge is True
+    assert profile.git.prune_landed_chat_branches is True
+
+
+def test_a_caller_that_owns_the_whole_block_can_still_clear_it(git_profile_dir, workspace):
+    """Preserving is for the editor that cannot see the field, not a rule that
+    the field is unwritable: an explicit empty `preserve` writes what it sends."""
+    profile = update_git_config(
+        workspace,
+        GitAutomationConfig(commit=True, land_verify_commands=[]),
+        preserve=frozenset(),
+    )
+
+    assert profile.git.land_verify_commands == []

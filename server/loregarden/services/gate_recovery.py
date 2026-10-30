@@ -33,7 +33,6 @@ from loregarden.models.domain import (
     Ticket,
     WorkflowInstance,
     WorkflowStageDef,
-    Workspace,
 )
 from loregarden.services.artifact_service import looks_like_test_output
 from loregarden.services.autofix_commit import (
@@ -64,6 +63,7 @@ from loregarden.services.stage_retry_budget import (
     gate_failure_artifact_title,
 )
 from loregarden.services.studio_routing import took_light_route
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_routing import apply_stage_route
 from sqlmodel import Session, select
@@ -156,7 +156,7 @@ class GateRecovery:
         Only once those are exhausted do we fall back to today's behaviour —
         reroute for rework and pause for a human.
         """
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
             # Can't run gates without a workspace; don't wedge the pipeline over it.
             return GateDecision.PASS

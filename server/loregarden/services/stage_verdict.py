@@ -21,7 +21,6 @@ from loregarden.models.domain import (
     StageType,
     Ticket,
     WorkflowStageDef,
-    Workspace,
 )
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.fix_coverage import missing_fix_coverage
@@ -29,6 +28,7 @@ from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.operation_criteria import pending_operation_criteria
 from loregarden.services.stage_report import StageReport
 from loregarden.services.studio_routing import is_agentless_stage, took_light_route
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ux_answers import missing_ux_answers
 from loregarden.services.workflow_service import resolve_ticket_stages
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -409,7 +409,7 @@ def _required_catalog_keys(
     """Required catalog keys for this pair, or None if the catalog cannot load."""
     if not from_agent or not to_agent:
         return None
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if workspace is None or not workspace.repo_path:
         return None
     path = Path(workspace.repo_path) / _GATE_MODULE_RELPATH

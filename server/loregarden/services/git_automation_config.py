@@ -25,10 +25,54 @@ from loregarden.services.orchestration_profile import (
 
 logger = logging.getLogger(__name__)
 
+#: Keys that are fields of the config and still may not be overridden per
+#: ticket. `base_branch` is the whole set: a ticket that could name its own base
+#: gave one repository two answers — the tree's publish base and the ticket's own
+#: PR base already disagreed — and it could walk through the `target == base`
+#: guard that decides whether a landing happens at all
+#: (lg-milestone-that-1228). It stays a field of the model, holding the
+#: workspace profile's value; only the override layer stops carrying it.
+NOT_OVERRIDABLE = frozenset({"base_branch"})
+
 #: Keys a ticket is allowed to override. Anything else in the stored JSON is
 #: ignored rather than trusted — the column is written by the API and by
 #: agents, and an unknown key means a stale client, not a new feature.
-OVERRIDABLE = frozenset(GitAutomationConfig.model_fields)
+#:
+#: Written as a subtraction on purpose: a field added to the model is overridable
+#: by default, and only the deliberate exclusions above are spelled out. A
+#: hand-listed literal here is what made `base_branch` overridable in the first
+#: place, because it was derived from the model and nobody decided it.
+OVERRIDABLE = frozenset(GitAutomationConfig.model_fields) - NOT_OVERRIDABLE
+
+
+def base_branch(workspace: Workspace) -> str:
+    """The branch everything in this workspace is cut from and lands onto.
+
+    One answer, and the workspace profile's. Takes no ticket: a ticket parameter
+    is the defect this accessor exists to close, because it is what let two
+    callers resolve two different bases for one repository.
+    """
+    return resolve_orchestration_profile(workspace).git.base_branch
+
+
+def _warn_about_dropped(override: dict[str, Any]) -> None:
+    """Say which excluded keys were thrown away, once, and where they belong.
+
+    Driven by `NOT_OVERRIDABLE` rather than by the one key it holds today: a
+    second exclusion added to that set must be reported too, or it goes back to
+    being dropped in silence, which is the behaviour this warning ends.
+    Deliberately NOT emitted for a key that is not a field of the config at all —
+    that is a stale client's typo, it has always been dropped quietly, and
+    warning about it would put one operator message behind every typo.
+    """
+    dropped = sorted(key for key in override if key in NOT_OVERRIDABLE)
+    if not dropped:
+        return
+    logger.warning(
+        "Ignoring per-ticket git override of %s: it is a workspace setting, "
+        "configured in the workspace's orchestration profile",
+        ", ".join(dropped),
+    )
 
 
 def parse_override(raw: str) -> dict[str, Any]:
@@ -43,11 +87,17 @@ def parse_override(raw: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         logger.warning("Ignoring non-object ticket git override: %r", raw[:120])
         return {}
+    _warn_about_dropped(parsed)
     return {key: value for key, value in parsed.items() if key in OVERRIDABLE}
 
 
 def serialize_override(override: dict[str, Any]) -> str:
-    """Store only known keys, and store nothing at all for an empty override."""
+    """Store only known keys, and store nothing at all for an empty override.
+
+    The caller's dict is read, never written: `ticket_manual_edit` holds the body
+    it passed in and writes the ticket from it afterwards.
+    """
+    _warn_about_dropped(override)
     cleaned = {key: value for key, value in override.items() if key in OVERRIDABLE}
     return json.dumps(cleaned, sort_keys=True) if cleaned else ""
 

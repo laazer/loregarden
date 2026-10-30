@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session
 
 # A ticket cannot legitimately nest this deep (milestone > feature > capability > task),
@@ -100,7 +101,7 @@ def resolve_compatibility_posture(
     # An initiative has no workspace; `session.get` with a None key warns, and
     # SQLAlchemy has said it will raise.
     if workspace is None and ticket is not None and ticket.workspace_id:
-        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(session, ticket)
 
     if workspace is not None:
         from_workspace = coerce_posture(workspace.compatibility_posture)

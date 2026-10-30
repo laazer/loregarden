@@ -30,7 +30,6 @@ from loregarden.models.domain import (
     ClaimCertainty,
     OrchestratorDecision,
     Ticket,
-    Workspace,
 )
 from loregarden.models.domain.enums import HandoffGateSkip
 from loregarden.services.evidence import resolve_head_sha
@@ -45,6 +44,7 @@ from loregarden.services.handoff_store import (
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -375,7 +375,7 @@ def write_handoff(
 
     svc = OrchestrationCallbackService(session)
     ticket = svc.resolve_ticket(ticket_id=ticket_id, workspace_slug=workspace_slug)
-    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise HandoffWriteError("Workspace not found for ticket")
 

@@ -27,6 +27,12 @@ class OrchestratorDecision(StrEnum):
     SETTLED_ORPHANED_RUN = "settled_orphaned_run"
     #: A stage stuck RUNNING with no live run behind it was settled to blocked.
     SETTLED_STRANDED_STAGE = "settled_stranded_stage"
+    #: A handoff stamped a run RUNNING, failed to prepare the tree, and the
+    #: stage went back to PENDING with no agent ever behind it (976). Recorded
+    #: once per run the handoff stamped: it is the only record a reset stage
+    #: leaves, since the other three effects of that settle — the run failing,
+    #: the charge coming back, the stage moving — say nothing about why.
+    SETTLED_FAILED_HANDOFF = "settled_failed_handoff"
     #: A handoff was stored despite the workspace gate not knowing the pair,
     #: because the ticket's own template confirmed it (730).
     OVERRULED_STALE_GATE = "overruled_stale_gate"
