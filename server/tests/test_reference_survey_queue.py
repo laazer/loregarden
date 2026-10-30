@@ -9,6 +9,8 @@ import pytest
 from loregarden.models.domain import (
     Approval,
     ApprovalStatus,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     Ticket,
     TicketState,
     WorkflowInstance,
@@ -434,6 +436,36 @@ def test_the_feeder_dispatches_the_head_as_a_carrier_on_the_survey_workflow(ctx)
     )
     # One running is the limit: the next tick waits.
     assert "at the limit" in feeder.feed_once(session).waiting
+
+
+def test_a_recorded_pass_holds_the_limit_until_its_carrier_stops_driving(ctx):
+    """The agent records a pass well before its orchestration frees the lane;
+    counting only DISPATCHED let a second pass start beside it."""
+    session, world, tree = ctx
+    _source, survey_pass = running_pass(session, world, tree)
+    carrier = Ticket(
+        external_id="lg-carrier-1",
+        workspace_id=world.workspace_id,
+        title="carrier",
+        parent_ticket_id=world.carrier_parent_id,
+    )
+    session.add(carrier)
+    session.commit()
+    orchestration = OrchestrationRun(
+        run_code="orch_t", ticket_id=carrier.id, workspace_id=world.workspace_id,
+        status=OrchestrationRunStatus.RUNNING,
+    )  # fmt: skip
+    survey_pass.status = SurveyPassStatus.FINISHED
+    survey_pass.carrier_ticket_id = carrier.id
+    session.add_all([orchestration, survey_pass])
+    session.commit()
+
+    assert feeder.running_passes(session) == 1
+
+    orchestration.status = OrchestrationRunStatus.SUCCEEDED
+    session.add(orchestration)
+    session.commit()
+    assert feeder.running_passes(session) == 0
 
 
 def test_a_hand_recorded_licence_the_file_contradicts_is_reported(ctx):

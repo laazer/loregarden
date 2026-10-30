@@ -22,22 +22,33 @@ import logging
 
 from loregarden.models.domain import AgentRun
 from loregarden.services.run_cancellation import request_cancel
-from loregarden.services.run_concurrency import find_active_workspace_chat_run
+from loregarden.services.run_concurrency import (
+    find_active_chat_thread_run,
+    find_active_workspace_chat_run,
+    find_unclaimed_chat_run,
+)
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
 
 def request_chat_run_cancel(
-    session: Session, workspace_id: str, *, stage_key: str
+    session: Session, workspace_id: str, *, stage_key: str, chat_session_id: str = ""
 ) -> AgentRun | None:
-    """Ask the workspace's in-flight chat run to stop. Returns it, or None.
+    """Ask the in-flight chat run to stop: the thread's own when `chat_session_id`
+    is given (threads run in parallel) or, failing that, one no thread claims;
+    else the workspace's. Returns it, or None.
 
     Never raises: a run that will not take a cancel request is already past the
     point where one would help, and the caller's next move — settling the
     pending row — is what the operator is waiting on either way.
     """
-    run = find_active_workspace_chat_run(session, workspace_id, stage_key=stage_key)
+    if chat_session_id:
+        run = find_active_chat_thread_run(session, chat_session_id) or find_unclaimed_chat_run(
+            session, workspace_id, stage_key=stage_key
+        )
+    else:
+        run = find_active_workspace_chat_run(session, workspace_id, stage_key=stage_key)
     if not run:
         return None
     try:

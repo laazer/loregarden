@@ -11,7 +11,13 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from loregarden.models.domain import AgentRun, OrchestrationRun, OrchestrationRunStatus, RunStatus
+from loregarden.models.domain import (
+    AgentRun,
+    BaxterChatMessage,
+    OrchestrationRun,
+    OrchestrationRunStatus,
+    RunStatus,
+)
 from loregarden.services import hierarchy_service
 from sqlmodel import Session, col, select
 
@@ -47,6 +53,60 @@ def find_active_workspace_chat_run(
             col(AgentRun.ticket_id).is_(None),
             AgentRun.workspace_id == workspace_id,
             AgentRun.stage_key == stage_key,
+            col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
+        )
+    ).first()
+
+
+def find_active_chat_thread_run(session: Session, chat_session_id: str) -> AgentRun | None:
+    """In-flight run of one chat thread: the run its pending assistant row is stamped with."""
+    return session.exec(
+        select(AgentRun)
+        .join(BaxterChatMessage, col(BaxterChatMessage.run_id) == AgentRun.id)
+        .where(
+            BaxterChatMessage.session_id == chat_session_id,
+            col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
+        )
+    ).first()
+
+
+def find_unclaimed_chat_run(
+    session: Session, workspace_id: str, *, stage_key: str
+) -> AgentRun | None:
+    """In-flight run of the channel that no thread's message is stamped with: one
+    that died before `_bind_home_turn_run`, which only a workspace-wide Stop reaches."""
+    claimed = select(BaxterChatMessage.run_id).where(col(BaxterChatMessage.run_id).is_not(None))
+    return session.exec(
+        select(AgentRun).where(
+            col(AgentRun.ticket_id).is_(None),
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.stage_key == stage_key,
+            col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
+            col(AgentRun.id).not_in(claimed),
+        )
+    ).first()
+
+
+def find_blocking_chat_run(
+    session: Session, workspace_id: str, *, stage_key: str, chat_session_id: str
+) -> AgentRun | None:
+    """What stops a new turn in this chat thread: its own in-flight run, or any
+    run of the channel not isolated in a worktree.
+
+    Threads run in parallel because an acting turn executes in its thread's own
+    worktree. A run with no `worktree_id` is, or may yet be, in the shared
+    checkout: a read-only turn, one whose tree could not be cut, or one whose
+    tree is not stamped yet. Those still hold the checkout for the workspace.
+    """
+    own = find_active_chat_thread_run(session, chat_session_id)
+    if own is not None:
+        return own
+    return session.exec(
+        select(AgentRun).where(
+            col(AgentRun.ticket_id).is_(None),
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.stage_key == stage_key,
+            col(AgentRun.worktree_id).is_(None),
             col(AgentRun.status).in_(IN_FLIGHT_STATUSES),
         )
     ).first()

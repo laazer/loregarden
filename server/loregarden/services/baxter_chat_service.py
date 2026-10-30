@@ -107,12 +107,11 @@ from loregarden.services.cli_settings import (
     resolve_effective_adapter,
     validated_effort_pins,
 )
-from loregarden.services.run_concurrency import find_active_workspace_chat_run
+from loregarden.services.run_concurrency import find_active_chat_thread_run
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
-    TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
 from loregarden.services.worktree_lifecycle import RemovalFailure, release_chat_worktree
@@ -575,9 +574,11 @@ def list_home_chat_pending_approvals(
     """
     if not latest_pending_turn(session, chat_session.id):
         return []
-    active = find_active_workspace_chat_run(
-        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
-    )
+    active = find_active_chat_thread_run(session, chat_session.id)
+    if active is None:
+        # Threads run in parallel, so an unfiltered list would hand this one
+        # another thread's asks; with no run of its own it has none yet.
+        return []
     query = (
         select(Approval)
         .where(
@@ -587,8 +588,7 @@ def list_home_chat_pending_approvals(
         )
         .order_by(col(Approval.created_at).asc())
     )
-    if active is not None:
-        query = query.where(Approval.run_id == active.id)
+    query = query.where(Approval.run_id == active.id)
     rows = list(session.exec(query).all())
     return [approval_to_view(session, item) for item in rows]
 
@@ -599,9 +599,7 @@ def baxter_chat_run_status(
     """Return (run_status, active_turn_id) for the thread's latest turn."""
     pending = latest_pending_turn(session, chat_session.id)
     if pending:
-        active = find_active_workspace_chat_run(
-            session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
-        )
+        active = find_active_chat_thread_run(session, chat_session.id)
         if active is not None and active.status == RunStatus.AWAITING_PERMISSION:
             return "awaiting_input", pending.id
         return "running", pending.id
@@ -1066,9 +1064,7 @@ def invoke_baxter_chat_model(
         claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
         chat_session_id=chat_session.id if chat_session else "",
         surface=ChatSurface.HOME,
-        conflict_error=lambda msg: BaxterChatConflictError(
-            f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
-        ),
+        conflict_error=BaxterChatConflictError,
         track_workflow_stage=False,
         extra_dirs=(session_attachments_dir(session_id),) if has_image(list(attachments)) else (),
     )

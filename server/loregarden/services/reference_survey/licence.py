@@ -115,7 +115,33 @@ _RESTRICTION_RE = re.compile(
     r"not permitted to|without (the )?prior written|all rights reserved",
     re.IGNORECASE,
 )
+#: "allows … and commercial use" grants it; the restriction check must not read it as a
+#: limit. A span containing a negation ("allows personal but not commercial use") is kept.
+_PERMITTED_COMMERCIAL_RE = re.compile(
+    r"\b(allows?|permits?|permitted|including|includes)\b"
+    r"(?:(?!\b(?:not|no|except|but|without)\b)[^.;]){0,120}?\bcommercial use",
+    re.IGNORECASE,
+)
 _SPDX_LINE_RE = re.compile(r"SPDX-License-Identifier:\s*(?P<expr>[^\n*]+)")
+#: A licence identifier named in prose ("licensed under Apache-2.0", a REUSE pointer file).
+_ID_TOKEN_RE = re.compile(r"(?<![\w.+-])[A-Za-z][A-Za-z0-9.+-]*[A-Za-z0-9+](?![\w+-])")
+
+
+def _restricted(lowered: str) -> bool:
+    return bool(_RESTRICTION_RE.search(_PERMITTED_COMMERCIAL_RE.sub(" ", lowered)))
+
+
+def _named_readings(body: str) -> list[_Reading]:
+    """Licences a prose file names by identifier. All-lowercase tokens are English
+    words ("mit", "zlib") far more often than identifiers, so they are skipped."""
+    readings = []
+    for token in _ID_TOKEN_RE.findall(body):
+        if token.islower():
+            continue
+        reading = _id_reading(token)
+        if reading.kind is not LicenceKind.CUSTOM:
+            readings.append(reading)
+    return readings
 
 
 @dataclass(frozen=True)
@@ -255,10 +281,19 @@ def text_reading(body: str) -> _Reading:
             subsumed.add(marker.subsumes)
         reading = _id_reading(marker.spdx)
         if reading.kind is LicenceKind.OPEN and (
-            len(lowered) > marker.max_chars or _RESTRICTION_RE.search(lowered)
+            len(lowered) > marker.max_chars or _restricted(lowered)
         ):
             reading = _Reading(LicenceKind.CUSTOM, f"{marker.spdx} with terms of its own")
         matched.append(reading)
+    if not matched:
+        # Not a licence text, so prose about one: a docs page or a pointer to
+        # per-file SPDX headers. Every licence it names applies, stricter winning.
+        matched = [
+            _Reading(LicenceKind.CUSTOM, f"{r.name} with terms of its own")
+            if r.kind is LicenceKind.OPEN and _restricted(lowered)
+            else r
+            for r in _named_readings(body)
+        ]
     if not matched:
         return _Reading(LicenceKind.CUSTOM, "unrecognised licence text")
     result = matched[0]

@@ -122,6 +122,74 @@ def test_a_permissive_looking_text_with_terms_of_its_own_fails_closed(tmp_path):
     assert verdict.use is LicenceUse.EXCLUDED
 
 
+APACHE2 = "Apache License\nVersion 2.0, January 2004\n" + "terms " * 50
+#: claude-mem's docs/license.md: a page about the licence, not its text.
+APACHE_DOCS_PAGE = (
+    "# License\n\nClaude-Mem is licensed under the Apache License 2.0.\n\n"
+    "Apache-2.0 allows broad use, modification, distribution, and commercial use,\n"
+    "subject to the license terms.\n"
+)
+#: Verzeta-Studio's LICENSE: a REUSE pointer naming per-file SPDX licences.
+REUSE_POINTER = (
+    "Verzeta Studio is released under a triple-license arrangement:\n"
+    "  - GPL-3.0-or-later  for the differentiated components.\n"
+    "  - LGPL-3.0-or-later for the supporting infrastructure.\n"
+    "  - Commercial        for organisations that do not want either copyleft variant.\n"
+)
+
+
+@pytest.mark.parametrize(
+    "files, kind, use, name",
+    [
+        (
+            {"LICENSE": APACHE2, "docs/license.md": APACHE_DOCS_PAGE},
+            LicenceKind.OPEN,
+            LicenceUse.FULL,
+            "Apache-2.0",
+        ),
+        (
+            {"LICENSE": REUSE_POINTER},
+            LicenceKind.LIMITED,
+            LicenceUse.PATTERNS_ONLY,
+            "GPL-3.0-or-later",
+        ),
+        (
+            {"LICENSE": "Licensed under MIT, but commercial use requires a paid licence.\n"},
+            LicenceKind.CUSTOM,
+            LicenceUse.EXCLUDED,
+            "MIT with terms of its own",
+        ),
+        (
+            {"LICENSE": "MIT. This allows personal use but not commercial use.\n"},
+            LicenceKind.CUSTOM,
+            LicenceUse.EXCLUDED,
+            "MIT with terms of its own",
+        ),
+        (
+            {"LICENSE": "Core is MIT; the enterprise folder is PolyForm-Shield-1.0.0.\n"},
+            LicenceKind.LIMITED,
+            LicenceUse.EXCLUDED,
+            "PolyForm-Shield-1.0.0",
+        ),
+        (
+            {"LICENSE": "Written at the mit lab with zlib compression. Ask first.\n"},
+            LicenceKind.CUSTOM,
+            LicenceUse.EXCLUDED,
+            "unrecognised licence text",
+        ),
+    ],
+)
+def test_prose_naming_a_licence_reads_as_the_licence_it_names(tmp_path, files, kind, use, name):
+    verdict = classify_tree(write_tree(tmp_path, files))
+    assert (verdict.kind, verdict.use, verdict.name) == (kind, use, name)
+
+
+def test_a_licence_text_that_permits_commercial_use_is_not_restricted(tmp_path):
+    text = MIT_TEXT + "\nThis permits personal and commercial use.\n"
+    verdict = classify_tree(write_tree(tmp_path, {"LICENSE": text}))
+    assert verdict.use is LicenceUse.FULL
+
+
 def test_an_oversized_licence_file_is_refused_and_named(tmp_path):
     write_tree(tmp_path, {"LICENSE": "x" * (MAX_LICENCE_BYTES + 1)})
     verdict = classify_tree(tmp_path)
