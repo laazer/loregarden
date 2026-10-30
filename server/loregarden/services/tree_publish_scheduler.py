@@ -43,9 +43,10 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.publish_tree import PublishOutcome, publish_tree, published_branch
+from loregarden.services.tree_ux_section import MISSING_UX_CARD_PREFIX
 from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,10 @@ def _what_failed(root: Ticket, outcome: PublishOutcome) -> tuple[str, str]:
 
 def close_publish_card(session: Session, root: Ticket, *, reason: str = "") -> int:
     """Close the pending publish card on ``root``, if any. Returns how many closed."""
-    cards = _pending(session, root)
+    return _resolve(session, root, _pending(session, root), reason=reason)
+
+
+def _resolve(session: Session, root: Ticket, cards: list[Approval], *, reason: str) -> int:
     for card in cards:
         card.status = ApprovalStatus.APPROVED
         card.resolved_by = RESOLVED_BY_PUBLISH
@@ -268,7 +272,7 @@ def close_publish_card(session: Session, root: Ticket, *, reason: str = "") -> i
 
 
 def close_published_cards(session: Session) -> int:
-    """Close each pending publish card whose base already holds its tree's work.
+    """Close each pending publish or UX-answers card whose base already holds its tree's work.
     Returns how many closed. The reconciler reaches this as the
     `publish_cards_close_once_landed` invariant (`services.invariant_registry`)."""
     return close_held_cards(session, published_cards_held(session))
@@ -276,7 +280,7 @@ def close_published_cards(session: Session) -> int:
 
 @dataclass(frozen=True)
 class HeldCard:
-    """A pending publish card, its root, and how the base already holds the work."""
+    """A pending publish or UX-answers card, its root, and how the base already holds the work."""
 
     card: Approval
     root: Ticket
@@ -284,12 +288,19 @@ class HeldCard:
 
 
 def published_cards_held(session: Session) -> list[HeldCard]:
-    """Pending publish cards whose base already holds what they publish. Read-only."""
+    """Pending cards about a tree's publish whose base already holds what it publishes.
+
+    Read-only. The UX-answers card is one: it asks for answers for the next
+    publish, and a tree the base holds has none, so nothing else would close it.
+    """
     cards = session.exec(
         select(Approval).where(
             Approval.kind == ApprovalKind.HUMAN_ACTION,
             Approval.status == ApprovalStatus.PENDING,
-            col(Approval.title).startswith(PUBLISH_CARD_PREFIX),
+            or_(
+                col(Approval.title).startswith(PUBLISH_CARD_PREFIX),
+                col(Approval.title).startswith(MISSING_UX_CARD_PREFIX),
+            ),
         )
     ).all()
     held_cards: list[HeldCard] = []
@@ -306,11 +317,11 @@ def published_cards_held(session: Session) -> list[HeldCard]:
 
 
 def close_held_cards(session: Session, held_cards: list[HeldCard]) -> int:
-    """Close the publish card of each of ``held_cards``. Returns how many closed."""
+    """Close each of ``held_cards``. Returns how many closed."""
     closed = 0
     for item in held_cards:
-        logger.info("Closing %s's publish card: %s", item.root.external_id, item.held)
-        closed += close_publish_card(session, item.root, reason=item.held)
+        logger.info("Closing %s's card %r: %s", item.root.external_id, item.card.title, item.held)
+        closed += _resolve(session, item.root, [item.card], reason=item.held)
     return closed
 
 

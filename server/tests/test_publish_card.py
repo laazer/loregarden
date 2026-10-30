@@ -27,6 +27,7 @@ from loregarden.services.tree_publish_scheduler import (
     publish_card_title,
     report_publish_failure,
 )
+from loregarden.services.tree_ux_section import missing_card_title, report_missing_ux_answers
 from sqlmodel import Session, select
 from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
 
@@ -177,6 +178,36 @@ def test_the_sweep_leaves_a_card_whose_work_is_not_on_the_base(session, workspac
 
     assert close_published_cards(session) == 0
     assert len(_cards(session, ms)) == 1
+
+
+def _pending_titled(session, root, title) -> list[Approval]:
+    session.expire_all()
+    return list(
+        session.exec(
+            select(Approval).where(
+                Approval.ticket_id == root.id,
+                Approval.status == ApprovalStatus.PENDING,
+                Approval.title == title,
+            )
+        ).all()
+    )
+
+
+def test_the_sweep_closes_a_ux_answers_card_once_the_pr_is_merged(session, workspace, tree, repo):
+    """#661, #692 and #733 merged with their cards pending: only a publish closed one,
+    and a merged tree never publishes again."""
+    ms, _ = tree
+    with mock.patch.object(git_automation, "_gh", side_effect=_gh(merge_refused=False)):
+        assert publish_and_settle(session, ms, workspace).ok
+    report_missing_ux_answers(session, ms, (), PR)
+    assert close_published_cards(session) == 0, "the base does not hold the work yet"
+    assert len(_pending_titled(session, ms, missing_card_title(ms))) == 1
+
+    commit_on(repo, "main", "c1.txt", "child work\n")
+    git(repo, "push", "-q", "origin", "main")
+
+    assert close_published_cards(session) == 1
+    assert _pending_titled(session, ms, missing_card_title(ms)) == []
 
 
 def test_the_sweep_is_a_reconcile_step():
