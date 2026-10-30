@@ -33,6 +33,7 @@ from loregarden.services.ticket_dependencies import (
 from loregarden.services.ticket_discovery import ticket_neighbors_mcp
 from loregarden.services.ticket_documents import document_index
 from loregarden.services.ticket_relations import TicketRelationService
+from loregarden.services.ticket_revision_guard import guard_ticket_revision
 from loregarden.services.ticket_tags import load_tags, normalize_tags
 
 
@@ -45,6 +46,10 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
     return {
         "ticket_id": ticket.id,
         "external_id": ticket.external_id,
+        # Every write on this transport gets this payload, so the revision is
+        # here unconditionally: an agent cannot send `expected_revision` on its
+        # next call if the key only appears when it sent one on this call.
+        "revision": ticket.revision,
         # The id this ticket read as before the restructure, so an agent working
         # from an older artifact or branch name can tell it is the same ticket.
         "legacy_external_id": ticket.legacy_external_id,
@@ -259,6 +264,16 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             "description, priority, acceptance_criteria, tags, parent."
         )
 
+    # Read straight off the arguments: the token is an edge concern and must not
+    # reach `_collect_update_fields` or `UpdateTicketRequest`, or a call carrying
+    # only {ticket_id, expected_revision} would stop being a no-op and become a
+    # legal write that burns a revision and changes nothing. Checked after the
+    # fields guard for the same reason — a refused call must not claim the row.
+    # `is not None`, not truthiness: 0 is a real revision.
+    expected_revision = arguments.get("expected_revision")
+    if expected_revision is not None:
+        guard_ticket_revision(session, ticket_id=ticket.id, expected_revision=expected_revision)
+
     OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
     return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
 
@@ -343,6 +358,13 @@ def normalize_update_ticket_args(
             payload[field] = coerce_string_list(args.get(field), field=field)
     if args.get("priority") is not None:
         payload["priority"] = coerce_int(args.get("priority"), field="priority")
+    if args.get("expected_revision") is not None:
+        # `is not None`, not truthiness: 0 is the revision every freshly created
+        # ticket holds, so a falsy check here would drop the token and leave the
+        # write unguarded after the caller asked for a guard.
+        payload["expected_revision"] = coerce_int(
+            args.get("expected_revision"), field="expected_revision"
+        )
     if args.get("auto_state") is not None:
         payload["auto_state"] = coerce_bool(args.get("auto_state"))
     return payload
