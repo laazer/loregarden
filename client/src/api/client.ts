@@ -98,6 +98,7 @@ import type {
   ReferenceRepo,
   UsageSnapshot,
   CIStatusResponse,
+  DoneTicketShipResponse,
   ReloadStatus,
   RunLog,
   RunMessagesPayload,
@@ -313,6 +314,10 @@ export const api = {
   ticketStatusSummary: (workspace?: string) =>
     request<TicketStatusSummary>(
       `/api/tickets/status-summary${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`,
+    ),
+  doneTicketShip: (workspace?: string) =>
+    request<DoneTicketShipResponse>(
+      `/api/done-ticket-ship${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`,
     ),
   ticketTree: (params?: {
     workspace?: string;

@@ -6,8 +6,7 @@ import json
 
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_subprocess import run_gh, run_git
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.target_branch import subtree_root, target_branch_name
+from loregarden.services.target_branch import landing_target
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -46,13 +45,13 @@ def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) 
     resolved twice (lg-durable-remote-336 was on both `integration/…-335` and
     its own PR #555).
     """
-    target = target_branch_name(session, ticket, workspace)
-    if target == resolve_orchestration_profile(workspace).git.base_branch:
+    target = landing_target(session, ticket, workspace)
+    if target.root is None:
         return
-    root = subtree_root(session, ticket)
     raise ValueError(
-        f"{ticket.external_id} lands on {target}; its work ships in that tree's pull request "
-        f"when {root.external_id} completes. A PR for its own branch would duplicate it."
+        f"{ticket.external_id} lands on {target.branch}; its work ships in that tree's pull "
+        f"request when {target.root.external_id} completes. A PR for its own branch would "
+        "duplicate it."
     )
 
 

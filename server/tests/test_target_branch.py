@@ -26,6 +26,7 @@ from loregarden.services.target_branch import (
     TargetBranchError,
     ensure_integration_branch,
     integration_branch_for,
+    landing_target,
     resolve_target_branch,
     subtree_root,
     target_branch_name,
@@ -124,6 +125,124 @@ def test_every_descendant_shares_the_root_integration_branch(
     assert integration_branch_for(milestone) == "integration/lg-ms-3"
     assert target_branch_name(db_session, feature, workspace) == "integration/lg-ms-3"
     assert target_branch_name(db_session, task, workspace) == "integration/lg-ms-3"
+
+
+# --- one walk, two projections (lg-verdict-outcome-1655) ----------------------------
+#
+# `target_branch_name` answered half of "where does this ticket's work land": the
+# branch, never the root ticket that keys it. Its caller in
+# `ticket_pull_request._ships_with` had loaded that root through `subtree_root`
+# and thrown it away, so the PR tab could name the tree's branch and not the
+# ticket it belongs to. `landing_target` exposes the same single walk at both
+# widths; `target_branch_name` is its first projection.
+
+
+def test_landing_target_names_the_branch_and_the_root_that_keys_it(
+    db_session: Session, workspace: Workspace
+):
+    """AC1/AC4, all four shapes.
+
+    `root` is None exactly when the ticket is its own root, which is also the
+    only case where `branch` is the workspace base branch. For a member it is
+    the root `Ticket` row itself — never the ticket passed in, and never the
+    nearest parent, which is why the grandchild is here beside the child.
+    """
+    solo = _ticket(db_session, workspace, "solo-20")
+    milestone = _ticket(db_session, workspace, "lg-ms-20", work_item_type=WorkItemType.MILESTONE)
+    feature = _ticket(db_session, workspace, "lg-ft-20", parent=milestone)
+    task = _ticket(db_session, workspace, "lg-tk-20", parent=feature)
+
+    # Its own root: no root named, and the base branch.
+    for own_root in (solo, milestone):
+        target = landing_target(db_session, own_root, workspace)
+        assert target.root is None, own_root.external_id
+        assert target.branch == "main", own_root.external_id
+
+    # A member and a grandchild: the tree's root, and the tree's branch.
+    for member in (feature, task):
+        target = landing_target(db_session, member, workspace)
+        assert target.root is not None, member.external_id
+        assert target.root.id == milestone.id, member.external_id
+        assert target.root.id != member.id, member.external_id
+        assert target.root.external_id == "lg-ms-20", member.external_id
+        assert target.branch == "integration/lg-ms-20", member.external_id
+
+    # The two projections are one derivation: `.branch` cannot disagree with the
+    # string function, in any of the four shapes.
+    for ticket in (solo, milestone, feature, task):
+        assert landing_target(db_session, ticket, workspace).branch == target_branch_name(
+            db_session, ticket, workspace
+        ), ticket.external_id
+
+
+def test_landing_target_raises_wherever_target_branch_name_raises(
+    db_session: Session, workspace: Workspace
+):
+    """AC1: raising behaviour is unchanged, which only holds if the error
+    escapes the function the delegate now calls. An initiative is refused, and
+    so is a type the hierarchy forbids directly under one."""
+    initiative = _initiative(db_session, "init-x-20")
+    stray = _ticket(db_session, workspace, "lg-tk-21", parent=initiative)
+
+    with pytest.raises(TargetBranchError, match="init-x-20"):
+        landing_target(db_session, initiative, workspace)
+    with pytest.raises(TargetBranchError, match="lg-tk-21"):
+        landing_target(db_session, stray, workspace)
+
+
+def test_landing_target_cannot_be_re_pointed_after_it_is_answered(
+    db_session: Session, workspace: Workspace
+):
+    """AC1: the model is frozen, whichever of the two allowed shapes it is.
+
+    One walk answered at two widths is only one answer while nothing can edit
+    half of it: a caller that re-pointed `.branch` would leave `.root` naming a
+    tree the branch no longer belongs to, which is the disagreement this seam
+    exists to make impossible. A Pydantic model raises `ValidationError` and a
+    frozen dataclass `FrozenInstanceError`, so the assertion is on the refusal
+    and on the value surviving it, never on the exception's type.
+    """
+    milestone = _ticket(db_session, workspace, "lg-ms-22", work_item_type=WorkItemType.MILESTONE)
+    member = _ticket(db_session, workspace, "lg-tk-22", parent=milestone)
+    target = landing_target(db_session, member, workspace)
+
+    for field, value in (("branch", "main"), ("root", None)):
+        with pytest.raises(Exception):
+            setattr(target, field, value)
+
+    # Both fields are still what the walk answered, which is also what proves
+    # the refusals above were the model refusing and not a typo in a name.
+    assert target.branch == "integration/lg-ms-22"
+    assert target.root is not None and target.root.id == milestone.id
+
+
+def test_a_milestone_under_an_initiative_names_no_root_either(
+    db_session: Session, workspace: Workspace
+):
+    """AC1: "its own root" is `root.id == ticket.id`, not "has no parent".
+
+    `subtree_root` stops at an initiative, so a milestone filed under one is its
+    own landing root while still carrying a `parent_ticket_id`. Deciding the
+    `None` on the parent id instead would name this milestone as its own tree's
+    root — a payload whose branch is the base branch and whose root ref is the
+    ticket you are looking at, which is a self-link onto `main`.
+    """
+    initiative = _initiative(db_session, "init-x-22")
+    milestone = _ticket(
+        db_session, workspace, "lg-ms-23", parent=initiative, work_item_type=WorkItemType.MILESTONE
+    )
+    feature = _ticket(
+        db_session, workspace, "lg-ft-23", parent=milestone, work_item_type=WorkItemType.FEATURE
+    )
+
+    own = landing_target(db_session, milestone, workspace)
+    assert milestone.parent_ticket_id == initiative.id
+    assert own.root is None
+    assert own.branch == "main"
+
+    inside = landing_target(db_session, feature, workspace)
+    assert inside.root is not None and inside.root.id == milestone.id
+    assert inside.branch == "integration/lg-ms-23"
 
 
 def test_resolve_creates_the_integration_branch_from_base_once(

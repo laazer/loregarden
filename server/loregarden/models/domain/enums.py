@@ -133,6 +133,19 @@ class PrListingState(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class ShipReason(StrEnum):
+    """Why a done ticket's ship is not green.
+
+    ``FAILING`` and ``PENDING`` are the carrying pull request's required-check
+    rollup; ``NEVER_REACHED_REMOTE`` is a finished tree with no pull request in
+    any state and no remote ref, so nothing was ever published to judge.
+    """
+
+    FAILING = "failing"
+    PENDING = "pending"
+    NEVER_REACHED_REMOTE = "never_reached_remote"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 
@@ -619,6 +632,23 @@ class ReworkArtifactKind(StrEnum):
     #: rework is supposed to act on. `rework_reroute_count` counts forward from
     #: the newest marker; `render_rework_feedback` still renders every round.
     BUDGET_RESET = "rework_budget_reset"
+
+
+class UnresolvedArtifactKind(StrEnum):
+    """The `artifacts.kind` values the unresolved-item ledger owns.
+
+    Its own kind rather than an `ArtifactKind` member or a `tickets.unresolved_json`
+    column: OPEN is the current named set, CLEAR and WAIVER are the only legal
+    shrinks, and the existing artifacts table already stores them. See
+    `services.unresolved_ledger`.
+    """
+
+    #: Current set after each write-path merge. Persist never shrinks this.
+    OPEN = "unresolved_open"
+    #: One row per waived name: name, reason, actor, run_id; `created_at` is when.
+    WAIVER = "unresolved_waiver"
+    #: One row per producer-clear: name, actor, run_id.
+    CLEAR = "unresolved_clear"
 
 
 class DispatchSurface(StrEnum):

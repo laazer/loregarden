@@ -161,58 +161,50 @@ class GateRecovery:
             # Can't run gates without a workspace; don't wedge the pipeline over it.
             return GateDecision.PASS
 
-        # Missing proof is reported as a gate failure so it inherits the whole
-        # recovery path: the stage's own agent is handed the reason and gets a
-        # bounded number of tries to attach it before a human is pulled in.
-        # Checked independently of profile.gates.enabled — a stage only opts in by
-        # declaring required_evidence, so nothing that has not asked is affected.
-        detail = self._missing_evidence_detail(ticket, stage_def, stages)
-        if not detail:
-            # Evaluate the transition gate on *every* advance — including when
-            # gates are disabled or nothing runnable is configured — and record
-            # the outcome, so a gate that ran-and-passed is auditable apart from
-            # one that never ran (ticket 88). run_transition_gates short-circuits
-            # cheaply for the disabled/skipped cases; only a real "failed" sets
-            # detail and pulls in the recovery path below.
-            result = run_transition_gates(
-                self.session,
-                profile,
-                workspace,
-                ticket,
-                from_stage=from_stage,
-                to_stage=to_stage,
-                stage_def=stage_def,
-            )
-            # A stage that has already been rerouted for a gate fix is being
-            # re-evaluated after an agent had a go at it. `count_gate_fix_attempts`
-            # is the durable record of that, so the attribution costs no new
-            # state (lg-workflow-integrity-683).
-            record_gate_evaluation(
-                self.session,
-                self.callbacks,
-                ticket,
-                orch_run,
-                result,
-                from_stage=from_stage,
-                to_stage=to_stage,
-                fix_tier=(
-                    GateFixTier.AGENT
-                    if count_gate_fix_attempts(self.session, ticket.id, from_stage)
-                    else GateFixTier.NONE
-                ),
-            )
-            if not result.ok:
-                if result.outcome is GateOutcome.UNAVAILABLE:
-                    # The gate could not run — a hung command, a binary not on
-                    # PATH. That is a fact about the machine, and handing it to
-                    # the stage's own agent buys a full CLI run that cannot
-                    # possibly fix it, then re-runs a stage that already passed.
-                    # Straight to a human.
-                    self._block_after_gate_failure(
-                        ticket, orch_run, from_stage, clean_gate_detail(result)
-                    )
-                    return GateDecision.BLOCKED
-                detail = clean_gate_detail(result)
+        # Missing required evidence is a collect_signals input (stage_verdict),
+        # settled by the write-path derive before DONE. It is not an independent
+        # GateDecision failure here. Command gates still run.
+        result = run_transition_gates(
+            self.session,
+            profile,
+            workspace,
+            ticket,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            stage_def=stage_def,
+        )
+        # A stage that has already been rerouted for a gate fix is being
+        # re-evaluated after an agent had a go at it. `count_gate_fix_attempts`
+        # is the durable record of that, so the attribution costs no new
+        # state (lg-workflow-integrity-683).
+        record_gate_evaluation(
+            self.session,
+            self.callbacks,
+            ticket,
+            orch_run,
+            result,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            fix_tier=(
+                GateFixTier.AGENT
+                if count_gate_fix_attempts(self.session, ticket.id, from_stage)
+                else GateFixTier.NONE
+            ),
+        )
+        if not result.ok:
+            if result.outcome is GateOutcome.UNAVAILABLE:
+                # The gate could not run — a hung command, a binary not on
+                # PATH. That is a fact about the machine, and handing it to
+                # the stage's own agent buys a full CLI run that cannot
+                # possibly fix it, then re-runs a stage that already passed.
+                # Straight to a human.
+                self._block_after_gate_failure(
+                    ticket, orch_run, from_stage, clean_gate_detail(result)
+                )
+                return GateDecision.BLOCKED
+            detail = clean_gate_detail(result)
+        else:
+            detail = ""
         if not detail:
             return GateDecision.PASS
 

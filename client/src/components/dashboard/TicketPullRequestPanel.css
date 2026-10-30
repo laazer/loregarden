@@ -257,6 +257,17 @@
   overflow-wrap: anywhere;
 }
 
+.prp-tree-root {
+  color: var(--txm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prp-tree-root:hover,
+.prp-tree-root:focus-visible {
+  color: var(--ac2);
+}
+
 a.prp-check-name {
   text-decoration: none;
 }

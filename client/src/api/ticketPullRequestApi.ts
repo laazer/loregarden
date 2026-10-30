@@ -58,6 +58,10 @@ export interface TicketPullRequest {
   recorded: { url: string; number: string; title: string } | null;
   /** The integration branch a tree member ships on; "" when the ticket ships its own branch. */
   ships_with: string;
+  /** The tree root's shareable id (its external id, or its full UUID when it has none); "" when there is none. */
+  ships_with_root: string;
+  /** The PR found is the tree's, not this ticket's own: its head is not this ticket's branch. */
+  is_tree_pull_request: boolean;
 }
 
 /** Its own key, not under ["ticket", id]: that prefix is invalidated on every

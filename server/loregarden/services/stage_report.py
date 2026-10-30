@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.interruption_messages import (
@@ -32,6 +32,14 @@ _SENTINEL_RE = re.compile(
 _VALID_STATUSES = {"pass", "fail", "needs_rework", "blocked"}
 
 _SENTINEL = "<<<LOREGARDEN_STAGE_REPORT>>>"
+
+
+@dataclass(frozen=True)
+class WaiverItem:
+    """One producer-owned unresolved name the finishing report asks to waive."""
+
+    name: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,9 @@ class StageReport:
     #: ticket until they land, instead of blocking it and spending a repair turn
     #: on a wait no agent can shorten (lg-milestone-that-1315).
     waiting_on: list[str] = field(default_factory=list)
+    #: Producer-owned unresolved names this finishing persist asks to waive.
+    #: Parsed apart from the verdict so a malformed list cannot discard status.
+    waivers: list[WaiverItem] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -175,6 +186,46 @@ def _criteria_of(payload: str) -> list[str]:
     return [item.strip() for item in (parsed.unmet_criteria or []) if item.strip()]
 
 
+class _WaiversPayload(BaseModel):
+    """`waivers` alone, parsed apart from the verdict like the criteria.
+
+    A list the agent got wrong must not cost the report its status.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    waivers: list[Any] | None = Field(default=None)
+
+
+def _waivers_of(payload: str) -> list[WaiverItem]:
+    """Producer waiver items with a non-empty reason, or none when unusable."""
+    try:
+        parsed = _WaiversPayload.model_validate_json(payload)
+    except ValidationError:
+        logger.warning("stage report waivers could not be parsed", exc_info=True)
+        return []
+    items: list[WaiverItem] = []
+    for raw in parsed.waivers or []:
+        try:
+            item = _WaiverItemPayload.model_validate(raw)
+        except ValidationError:
+            continue
+        name = item.name.strip()
+        reason = item.reason.strip()
+        if name and reason:
+            items.append(WaiverItem(name=name, reason=reason))
+    return items
+
+
+class _WaiverItemPayload(BaseModel):
+    """One waiver object as an agent wrote it."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    reason: str
+
+
 class _BlockPayload(BaseModel):
     """`blocked_kind` and `options`, parsed apart from the verdict like the
     criteria are: a kind the agent misspelt must not cost the block its
@@ -239,6 +290,7 @@ def _build_report(payload: str) -> StageReport | None:
         options=block.options,
         kind_as_written=block.kind_as_written,
         waiting_on=block.waiting_on,
+        waivers=_waivers_of(payload),
     )
 
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
@@ -7,12 +7,19 @@ import type { TicketState, TicketTreeNode } from "../../api/types";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useQueueStatus, type QueueStatusValue } from "../../state/QueueStatusContext";
+import { pushToast } from "../../state/toastStore";
 import { useUiStore } from "../../state/uiStore";
 import type { Approval } from "../../api/chatTypes";
 import { WorkItemsPage } from "../WorkItemsPage";
 
 jest.mock("../../api/client");
-const mockApi = api as jest.Mocked<typeof api>;
+const mockApi = api as jest.Mocked<typeof api> & { doneTicketShip: jest.Mock };
+
+jest.mock("../../state/toastStore", () => ({
+  ...jest.requireActual("../../state/toastStore"),
+  pushToast: jest.fn(),
+}));
+const mockToast = pushToast as jest.MockedFunction<typeof pushToast>;
 
 jest.mock("../../state/QueueStatusContext", () => ({
   ...jest.requireActual("../../state/QueueStatusContext"),
@@ -120,9 +127,24 @@ function bodyRows() {
 }
 
 describe("WorkItemsPage", () => {
+  const emptyShips = {
+    probes: [
+      {
+        workspace_id: "ws",
+        workspace_slug: "loregarden",
+        probed_at: "2026-10-28T00:00:00Z",
+        listing_state: "complete" as const,
+        error: null,
+        violations: [],
+      },
+    ],
+  };
+
   beforeEach(() => {
     mockApi.ticketTree.mockReset();
     mockApi.approvals.mockReset().mockResolvedValue([]);
+    mockApi.doneTicketShip = jest.fn().mockResolvedValue(emptyShips);
+    mockToast.mockClear();
     running();
   });
 
@@ -249,10 +271,124 @@ describe("WorkItemsPage", () => {
     mockApi.ticketTree.mockResolvedValue([node("a"), node("b", { state: "done" })]);
     renderPage();
 
-    expect(await screen.findByText(/Nothing needs you right now/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Nothing needs you right now. A ticket lands here when a stage waits for your approval or answer, is blocked on something only a person can do, or is done while its ship is not green.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show open tickets (1)" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
+  });
+
+  it("lists a 1624-shaped done ticket with a GitHub Why link, and not a plain done ticket", async () => {
+    mockApi.ticketTree.mockResolvedValue([
+      node("await", { state: "in_progress", workflow_stage_status: "awaiting", title: "Needs a gate" }),
+      node("1624", {
+        id: "t-1624",
+        external_id: "lg-living-map-1624",
+        state: "done",
+        title: "Map the hive",
+      }),
+      node("plain", { state: "done", title: "Already shipped" }),
+    ]);
+    mockApi.doneTicketShip.mockResolvedValue({
+      probes: [
+        {
+          ...emptyShips.probes[0],
+          violations: [
+            {
+              ticket_id: "t-1624",
+              external_id: "lg-living-map-1624",
+              title: "Map the hive",
+              reason: "failing",
+              pr_number: 733,
+              pr_url: "https://github.com/o/r/pull/733",
+              check_names: ["Server (Python)", "Client (TypeScript)"],
+              carrying_branch: "integration/lg-living-map-1618",
+              ci_run_result: null,
+            },
+          ],
+        },
+      ],
+    });
+    renderPage();
+
+    await screen.findByRole("table");
+    expect(screen.getByRole("button", { name: /Needs me/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Map the hive")).toBeInTheDocument();
+    const why = screen.getByRole("link", { name: "PR #733 failing" });
+    expect(why).toHaveAttribute("href", "https://github.com/o/r/pull/733");
+    expect(why).toHaveAttribute("target", "_blank");
+    expect(why).toHaveAttribute("rel", "noreferrer");
+    expect(screen.queryByRole("button", { name: "PR #733 failing" })).toBeNull();
+    expect(screen.queryByText("Already shipped")).not.toBeInTheDocument();
+    expect(screen.getByText("Needs a gate")).toBeInTheDocument();
+  });
+
+  it("shows Never reached remote as text, not a control", async () => {
+    mockApi.ticketTree.mockResolvedValue([
+      node("nrr", { id: "t-nrr", state: "done", title: "Unpushed work" }),
+    ]);
+    mockApi.doneTicketShip.mockResolvedValue({
+      probes: [
+        {
+          ...emptyShips.probes[0],
+          violations: [
+            {
+              ticket_id: "t-nrr",
+              external_id: "lg-nrr",
+              title: "Unpushed work",
+              reason: "never_reached_remote",
+              pr_number: null,
+              pr_url: null,
+              check_names: [],
+              carrying_branch: "loregarden/lg-nrr",
+              ci_run_result: null,
+            },
+          ],
+        },
+      ],
+    });
+    renderPage();
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Never reached remote")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Never reached remote/ })).toBeNull();
+  });
+
+  it("toasts when ships did not load and keeps awaiting rows", async () => {
+    mockApi.ticketTree.mockResolvedValue([
+      node("await", { state: "in_progress", workflow_stage_status: "awaiting", title: "Needs a gate" }),
+    ]);
+    mockApi.doneTicketShip.mockRejectedValue(new Error("gh down"));
+    renderPage();
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Needs a gate")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tone: "error",
+          title: "Ships did not load",
+          message: expect.stringMatching(/gh down/),
+        }),
+      ),
+    );
+  });
+
+  it("notes an incomplete ship list in the count line without emptying the table", async () => {
+    mockApi.ticketTree.mockResolvedValue([
+      node("await", { state: "in_progress", workflow_stage_status: "awaiting", title: "Needs a gate" }),
+    ]);
+    mockApi.doneTicketShip.mockResolvedValue({
+      probes: [{ ...emptyShips.probes[0], listing_state: "incomplete" }],
+    });
+    renderPage();
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Needs a gate")).toBeInTheDocument();
+    expect(screen.getByText(/ships incomplete/)).toBeInTheDocument();
   });
 
   it("reports a failed load with a retry", async () => {

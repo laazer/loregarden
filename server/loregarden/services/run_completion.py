@@ -14,8 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, SPEC_AGENT_ID
 from loregarden.config import settings
@@ -67,7 +66,6 @@ from loregarden.services.exit_action_ledger import (
     outstanding_exit_actions,
 )
 from loregarden.services.exit_actions import attest_assigned_actions
-from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.network_wait import (
@@ -103,7 +101,15 @@ from loregarden.services.stage_transient_retry import (
     retrying_message,
     transient_failure_reason,
 )
+from loregarden.services.stage_verdict import (
+    StageVerdict,
+    collect_signals,
+    derive_verdict,
+    handoff_expected_for,
+    report_with_verdict,
+)
 from loregarden.services.ticket_state_service import choose
+from loregarden.services.unresolved_ledger import LedgerActor, settle_unresolved
 from loregarden.services.usage_limit_wait import record_usage_limit_wait, resume_note
 from loregarden.services.usage_limits import (
     UsageLimit,
@@ -111,9 +117,8 @@ from loregarden.services.usage_limits import (
     format_usage_limit_hint,
     usage_limit_blocking_issue,
 )
-from loregarden.services.ux_answers import missing_ux_answers
 from loregarden.services.workflow_routing import apply_stage_route, reject_fallback_key
-from loregarden.services.workflow_state import set_stage_status
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
 if TYPE_CHECKING:
@@ -431,7 +436,9 @@ def complete_run_tail(
         run.verdict_channel = StageVerdictChannel.SENTINEL
         orch.session.add(run)
     if advance_workflow:
-        advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
+        derived = advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
+        if derived is not None:
+            report = derived
 
     persist_run_artifacts(orch, ticket, run, status, stderr, report, artifacts, stdout=stdout)
 
@@ -734,57 +741,53 @@ def _pass_held(
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
     stderr: str,
-) -> bool:
-    """Whether a clean exit's pass was settled as something other than a pass."""
-    return (
-        _sent_back_for_missing_record(
-            orch, ticket, run, report, instance, stages, stderr, missing_ux_answers
-        )
-        or _sent_back_for_missing_record(
-            orch, ticket, run, report, instance, stages, stderr, missing_fix_coverage
-        )
-        or _held_for_operation_criteria(orch, ticket, run, report, instance, stages)
-    )
+) -> StageReport | None:
+    """Settle a claimed pass that did not earn one. None means the pass stands.
 
-
-class MissingRecord(Protocol):
-    """Why a passing run of ``agent_id`` still owes ``ticket`` a record, or ""."""
-
-    def __call__(self, session: Session, ticket: Ticket, *, agent_id: str) -> str: ...
-
-
-def _sent_back_for_missing_record(
-    orch: OrchestrationService,
-    ticket: Ticket,
-    run: AgentRun,
-    report: StageReport | None,
-    instance: WorkflowInstance,
-    stages: list[WorkflowStageDef],
-    stderr: str,
-    missing_record: MissingRecord,
-) -> bool:
-    """A pass that left no record its stage owes is rework, not a pass.
-
-    The design stage owes UX answers (`ux_answers`); a bug's spec stage owes
-    its fix coverage (`fix_coverage`). Sent back to the same stage and agent
-    with the reason, under the rework loop cap like any other rework: after
-    that, a person is asked.
+    Collect+derive is the verdict; this function is the sentinel call site.
+    Returns the derived report to persist when the pass was held.
     """
-    if report is None or report.status != "pass":
-        return False
-    missing = missing_record(orch.session, ticket, agent_id=run.agent_id)
-    if not missing:
-        return False
-    clear_transient_retries(orch.session, ticket.id, run.stage_key)
-    rework = replace(
-        report,
-        status="needs_rework",
-        reroute_to_stage=run.stage_key,
-        reroute_to_agent=run.agent_id,
-        reroute_context=missing,
+    if report is None or report.status != StageReportStatus.PASS:
+        return None
+    stage_def = next((stage for stage in stages if stage.key == run.stage_key), None)
+    if stage_def is None:
+        return None
+    verdict = derive_verdict(
+        collect_signals(
+            orch.session,
+            ticket,
+            report=report,
+            tool_outcome=None,
+            stage_def=stage_def,
+            handoff_expected=handoff_expected_for(stage_def),
+            agent_id=run.agent_id,
+        )
     )
-    _reroute_or_block_for_rework(orch, ticket, run, rework, instance, stages, stderr)
-    return True
+    remaining = settle_unresolved(
+        orch.session,
+        ticket,
+        verdict.unresolved,
+        LedgerActor(agent_id=run.agent_id, stage_key=run.stage_key),
+        waivers=tuple(report.waivers),
+        current_stage_key=run.stage_key,
+        run_id=run.id,
+    )
+    if remaining:
+        status = (
+            StageReportStatus.NEEDS_REWORK
+            if verdict.status is StageReportStatus.PASS
+            else verdict.status
+        )
+        verdict = StageVerdict(status=status, unresolved=remaining)
+    if verdict.status is StageReportStatus.PASS:
+        return None
+    derived = report_with_verdict(report, verdict, current_stage=run.stage_key)
+    if verdict.status is StageReportStatus.BLOCKED:
+        if not _held_for_operation_criteria(orch, ticket, run, report, instance, stages):
+            _block_on_report(orch, ticket, run, instance, stages, derived, stderr)
+        return derived
+    _reroute_or_block_for_rework(orch, ticket, run, derived, instance, stages, stderr)
+    return derived
 
 
 def _rearmed_for_transient_retry(
@@ -1047,10 +1050,13 @@ def advance_stage_after_run(
     stderr: str,
     *,
     stdout: str = "",
-) -> None:
+) -> StageReport | None:
     instance, stages = orch._resolve_stages(ticket)
     if not instance or not stages or _outside_the_workflow(ticket, run, stages):
-        return
+        return report
+    stop, report = _stop_if_already_settled(orch, ticket, run, report, instance, stages, status)
+    if stop:
+        return report
 
     # Only when the agent produced no outcome of its own: a run that emitted a
     # stage report reached a verdict, and that verdict outranks anything the
@@ -1060,11 +1066,8 @@ def advance_stage_after_run(
     gate_approval: Approval | None = None
     if limit is not None:
         _block_for_usage_limit(orch, ticket, run, instance, stages, status, limit)
-    elif report and report.status == StageReportStatus.BLOCKED:
-        _settle_reported_block(orch, ticket, run, instance, stages, report, stderr)
-    elif report and report.status in ("fail", "needs_rework"):
-        clear_transient_retries(orch.session, ticket.id, run.stage_key)
-        _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
+    elif _settled_pessimistic_report(orch, ticket, run, report, instance, stages, stderr):
+        pass
     elif report is None and _rearmed_for_transient_retry(
         orch, ticket, run, instance, stages, status, stderr, stdout=stdout
     ):
@@ -1077,10 +1080,11 @@ def advance_stage_after_run(
         # fail-closed block. One that exited part-way through its turn does come
         # through here: there is no prose verdict on it to fail closed over.
         pass
-    elif status == RunStatus.SUCCEEDED and _pass_held(
-        orch, ticket, run, report, instance, stages, stderr
+    elif (
+        status == RunStatus.SUCCEEDED
+        and (held := _pass_held(orch, ticket, run, report, instance, stages, stderr)) is not None
     ):
-        pass
+        report = held
     elif status == RunStatus.SUCCEEDED:
         gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)
         _note_repair_if_it_was_one(orch, ticket, run, report)
@@ -1108,6 +1112,129 @@ def advance_stage_after_run(
     if gate_approval is not None:
         _sign_off_gate_if_permitted(orch, ticket, run, stages, gate_approval)
         orch.session.refresh(ticket)
+    return report
+
+
+_FINISHED_STAGE_STATUSES = frozenset(
+    {
+        StageStatus.DONE,
+        StageStatus.BLOCKED,
+        StageStatus.AWAITING,
+        StageStatus.WONT_DO,
+    }
+)
+
+
+def _stop_if_already_settled(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    status: RunStatus,
+) -> tuple[bool, StageReport | None]:
+    """Skip a second settlement when the tool path already finished this stage.
+
+    Only a verdict can be settled twice, so this guards a run that reached one:
+    one that emitted a report, or one that exited cleanly. A run that *died*
+    reported nothing for the tool path to have already settled, and blocking its
+    stage is the only way the operator learns it died — the guard used to swallow
+    that too, leaving an unknown-agent failure reading as work still moving.
+    """
+    if report is None and status is not RunStatus.SUCCEEDED:
+        return False, report
+    stage_map = parse_stage_map(instance, stages)
+    if stage_map.get(run.stage_key) not in _FINISHED_STAGE_STATUSES:
+        return False, report
+    if report is None:
+        return True, None
+    return True, _stamp_derived_report(orch, ticket, run, report, stages)
+
+
+def _settled_pessimistic_report(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stderr: str,
+) -> bool:
+    """Handle a claimed fail/needs_rework/blocked report. True if it settled."""
+    if report is None:
+        return False
+    stage_def = next((stage for stage in stages if stage.key == run.stage_key), None)
+    if stage_def is not None:
+        live = derive_verdict(
+            collect_signals(
+                orch.session,
+                ticket,
+                report=report,
+                tool_outcome=None,
+                stage_def=stage_def,
+                handoff_expected=handoff_expected_for(stage_def),
+                agent_id=run.agent_id,
+            )
+        ).unresolved
+        settle_unresolved(
+            orch.session,
+            ticket,
+            live,
+            LedgerActor(agent_id=run.agent_id, stage_key=run.stage_key),
+            waivers=tuple(report.waivers),
+            current_stage_key=run.stage_key,
+            run_id=run.id,
+        )
+    if report.status == StageReportStatus.BLOCKED:
+        _settle_reported_block(orch, ticket, run, instance, stages, report, stderr)
+        return True
+    if report.status in (StageReportStatus.FAIL, StageReportStatus.NEEDS_REWORK):
+        clear_transient_retries(orch.session, ticket.id, run.stage_key)
+        _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
+        return True
+    return False
+
+
+def _stamp_derived_report(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport,
+    stages: list[WorkflowStageDef],
+) -> StageReport:
+    """Re-derive for persist when this run's write path already settled."""
+    stage_def = next((stage for stage in stages if stage.key == run.stage_key), None)
+    if stage_def is None:
+        return report
+    verdict = derive_verdict(
+        collect_signals(
+            orch.session,
+            ticket,
+            report=report,
+            tool_outcome=None,
+            stage_def=stage_def,
+            handoff_expected=handoff_expected_for(stage_def),
+            agent_id=run.agent_id,
+        )
+    )
+    remaining = settle_unresolved(
+        orch.session,
+        ticket,
+        verdict.unresolved,
+        LedgerActor(agent_id=run.agent_id, stage_key=run.stage_key),
+        waivers=tuple(report.waivers),
+        current_stage_key=run.stage_key,
+        run_id=run.id,
+    )
+    if remaining:
+        status = (
+            StageReportStatus.NEEDS_REWORK
+            if verdict.status is StageReportStatus.PASS
+            else verdict.status
+        )
+        verdict = StageVerdict(status=status, unresolved=remaining)
+    return report_with_verdict(report, verdict, current_stage=run.stage_key)
 
 
 def persist_run_artifacts(

@@ -22,6 +22,7 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services import pull_request_merge, ticket_pull_request
+from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.pull_request_merge import MergeFailed, MergeRefused, merge_and_clean_up
 from sqlmodel import Session, select
@@ -29,6 +30,9 @@ from tests.worktree_helpers import git, grant_receipt, make_repo
 
 BRANCH = "loregarden/lg-1"
 SHA = "a" * 40
+#: The tree rooted at the `ticket` fixture, and the head its PR has on GitHub.
+INTEGRATION = "integration/lg-1"
+TREE_HEAD = publish_ref_for(INTEGRATION)
 
 
 @pytest.fixture(name="session")
@@ -60,6 +64,21 @@ def ticket_fixture(session, workspace):
     session.commit()
     session.refresh(ticket)
     return ticket
+
+
+@pytest.fixture(name="member")
+def member_fixture(session, workspace, ticket, repo):
+    """A ticket inside `ticket`'s tree. Its work ships in the root's PR, so the
+    PR its tab now resolves is the tree's — and merging it would squash the
+    whole tree to the base and delete the branch its siblings are still on."""
+    git(repo, "branch", INTEGRATION)
+    member = Ticket(
+        external_id="lg-2", workspace_id=workspace.id, title="c", parent_ticket_id=ticket.id
+    )
+    session.add(member)
+    session.commit()
+    session.refresh(member)
+    return member
 
 
 def _pr(**overrides):
@@ -347,3 +366,122 @@ def test_a_pipeline_agent_calling_it_is_refused(session, workspace, ticket, gith
     with pytest.raises(ValueError):
         _mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA}, orchestrated=True)
     assert not fake.did("pr", "merge")
+
+
+# --- a tree member may read its tree's PR, and may not merge it -----------------------
+
+
+def test_a_tree_member_is_refused_its_trees_merge(session, workspace, member, repo, github):
+    """AC3(b)/AC9(a): the refusal is an instruction, pinned to the character — it
+    names the PR the operator clicked, the branch (which carries the root's
+    external id, so they can navigate without a second lookup), the reason and
+    where not to do it. Nothing is merged, no worktree is removed and no branch
+    is deleted."""
+    tree = repo.parent / "lg-1-tree"
+    git(repo, "worktree", "add", "-q", str(tree), BRANCH)
+    fake = github(FakeGitHub(_pr(headRefName=TREE_HEAD)))
+
+    with pytest.raises(MergeRefused) as refused:
+        merge_and_clean_up(session, member, workspace, number=7, head_sha=SHA)
+
+    assert str(refused.value) == (
+        f"#7 is the pull request for {TREE_HEAD}, this ticket's tree; "
+        "it merges when that tree's root completes, not from here."
+    )
+    assert not fake.did("pr", "merge")
+    assert not fake.did("api", "-X", "DELETE")
+    assert tree.exists(), "a sibling's worktree"
+    assert git(repo, "branch", "--list", INTEGRATION).stdout.strip(), "the tree's branch"
+    assert git(repo, "branch", "--list", BRANCH).stdout.strip()
+
+
+@pytest.mark.parametrize(
+    ("pr", "number", "head", "match"),
+    [
+        # After the identity check: a number that is not this PR still reads
+        # "refresh the tab", which is the honest answer for a stale tab.
+        (_pr(headRefName=TREE_HEAD), 8, SHA, "no longer"),
+        # Before the staleness and mergeability checks, which are less fundamental.
+        (_pr(headRefName=TREE_HEAD), 7, "b" * 40, "this ticket's tree"),
+        (_pr(headRefName=TREE_HEAD, mergeStateStatus="BLOCKED"), 7, SHA, "this ticket's tree"),
+    ],
+)
+def test_where_the_tree_refusal_sits_among_the_other_refusals(
+    session, workspace, member, github, pr, number, head, match
+):
+    """AC3(b) placement: immediately after the identity check, before `head_sha`."""
+    fake = github(FakeGitHub(pr))
+
+    with pytest.raises(MergeRefused, match=match):
+        merge_and_clean_up(session, member, workspace, number=number, head_sha=head)
+
+    assert not fake.did("pr", "merge")
+
+
+def test_an_agent_is_refused_its_trees_merge_with_a_sentence_it_can_act_on(
+    session, workspace, member, github
+):
+    """AC9(d): the same sentence reaches `loregarden_merge_pull_request`, so an
+    agent reading it can go to the root named in the branch."""
+    fake = github(FakeGitHub(_pr(headRefName=TREE_HEAD)))
+
+    with pytest.raises(ValueError) as refused:
+        _mcp(session, {"ticket_id": "lg-2", "number": 7, "head_sha": SHA})
+
+    assert TREE_HEAD in str(refused.value)
+    assert "it merges when that tree's root completes, not from here." in str(refused.value)
+    assert not fake.did("pr", "merge")
+
+
+def test_a_tree_root_still_merges_its_own_tree_pull_request(
+    session, workspace, ticket, member, repo, github
+):
+    """The false-positive the `bool(ships_with)` gate exists to prevent, on the
+    merge path: a root's own tree PR has head `publish/integration/<root>`, which
+    is not the root's own branch. Refusing on the head comparison alone would take
+    the merge away from the surface's main use today — 215 live roots have members.
+    """
+    fake = github(FakeGitHub(_pr(headRefName=TREE_HEAD)))
+
+    result = merge_and_clean_up(session, ticket, workspace, number=7, head_sha=SHA)
+
+    assert ["pr", "merge", "7", "--squash", "--match-head-commit", SHA] in fake.calls
+    assert result.merge_commit == "m" * 40
+    assert git(repo, "branch", "--list", INTEGRATION).stdout.strip() == ""
+    assert fake.did("api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{TREE_HEAD}")
+
+
+def test_a_members_own_published_pr_is_not_refused_as_its_trees(
+    session, workspace, member, repo, github
+):
+    """A member that hand-opened a PR on its own branch, published: the head is
+    `publish/<own>`, which *is* its own branch, so it is the member's to merge.
+    A refusal keyed on `pr.head != own` instead of `branch_for_pr_head(pr.head)`
+    would strand it, with the sentence telling the operator to go to a root that
+    has nothing to do with this PR."""
+    own = resolve_ticket_branch(member)
+    git(repo, "branch", own)
+    fake = github(FakeGitHub(_pr(headRefName=publish_ref_for(own))))
+
+    result = merge_and_clean_up(session, member, workspace, number=7, head_sha=SHA)
+
+    assert ["pr", "merge", "7", "--squash", "--match-head-commit", SHA] in fake.calls
+    assert result.merge_commit == "m" * 40
+    assert git(repo, "branch", "--list", own).stdout.strip() == ""
+    assert git(repo, "branch", "--list", INTEGRATION).stdout.strip(), "the tree's branch"
+
+
+def test_a_member_whose_lookup_failed_reads_that_before_the_tree(session, workspace, member):
+    """Order among the refusals: "GitHub could not be asked" comes first, and must
+    not be answered with the tree sentence — which would assert that #7 *is* the
+    tree's PR on the strength of a lookup that returned nothing."""
+    unreachable = subprocess.CompletedProcess(["gh"], 1, "", "HTTP 503: upstream error")
+    merge_gh = mock.Mock(side_effect=AssertionError("gh must not be asked to merge"))
+    with (
+        mock.patch.object(ticket_pull_request, "run_gh", return_value=unreachable),
+        mock.patch.object(pull_request_merge, "run_gh", merge_gh),
+        pytest.raises(MergeRefused, match="Could not ask GitHub"),
+    ):
+        merge_and_clean_up(session, member, workspace, number=7, head_sha=SHA)
+
+    merge_gh.assert_not_called()

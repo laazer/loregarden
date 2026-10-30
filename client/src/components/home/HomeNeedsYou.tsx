@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import type { ArtifactTab } from "../../lib/appNavigation";
 import type { NeedsYouRow } from "../../lib/homeNeedsYou";
 import { Button } from "../ui/Button";
 import { StatusChip } from "../ui/StatusChip";
@@ -9,10 +10,12 @@ const VISIBLE_ROWS = 10;
 
 function countLine(rows: readonly NeedsYouRow[]): string {
   const approvals = rows.reduce((n, row) => n + (row.kind === "approval" ? row.count : 0), 0);
+  const ships = rows.reduce((n, row) => n + (row.kind === "ship" ? row.count : 0), 0);
   const failed = rows.reduce((n, row) => n + (row.kind === "failed" ? row.count : 0), 0);
   const people = rows.filter((row) => row.kind === "person").length;
   const parts = [
     approvals ? `${approvals} approval${approvals === 1 ? "" : "s"}` : "",
+    ships ? `${ships} ship${ships === 1 ? "" : "s"}` : "",
     failed ? `${failed} failed` : "",
     people ? `${people} ticket${people === 1 ? "" : "s"}` : "",
   ].filter(Boolean);
@@ -30,6 +33,7 @@ export function HomeNeedsYou({
   rows,
   loading,
   error,
+  status = [],
   onOpenApproval,
   onOpenTicket,
   onOpenInbox,
@@ -38,8 +42,10 @@ export function HomeNeedsYou({
   loading: boolean;
   /** Why a source could not be read, already in words; one line each. */
   error: string[];
+  /** Incomplete-but-usable notes (not the unavailable error path). */
+  status?: string[];
   onOpenApproval: (ticketId: string | null) => void;
-  onOpenTicket: (ticketId: string) => void;
+  onOpenTicket: (ticketId: string, tab?: ArtifactTab) => void;
   onOpenInbox: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -54,15 +60,22 @@ export function HomeNeedsYou({
           Open inbox →
         </Button>
       </div>
-      {error.map((line) => (
-        <p key={line} className="home-empty home-empty--error" role="status">
+      {error.map((line, index) => (
+        // The lines are one per source, in a fixed order, so the index is the
+        // stable identity; two sources that fail the same way share a message.
+        <p key={`error-${index}`} className="home-empty home-empty--error" role="status">
           {line}
         </p>
       ))}
-      {!loading && rows.length === 0 && error.length === 0 ? (
+      {status.map((line, index) => (
+        <p key={`status-${index}`} className="home-empty" role="status" aria-label={line}>
+          {line}
+        </p>
+      ))}
+      {!loading && rows.length === 0 && error.length === 0 && status.length === 0 ? (
         <p className="home-empty">
-          Nothing needs you. Approvals, runs that failed today and tickets waiting on a person show
-          up here.
+          Nothing needs you. Approvals, runs that failed today, tickets waiting on a person, and
+          finished tickets whose ship is not green show up here.
         </p>
       ) : null}
       {shown.length > 0 ? (
@@ -75,7 +88,7 @@ export function HomeNeedsYou({
                 onClick={() =>
                   row.kind === "approval"
                     ? onOpenApproval(row.ticketId)
-                    : onOpenTicket(row.ticketId)
+                    : onOpenTicket(row.ticketId, row.kind === "ship" ? "pr" : undefined)
                 }
               >
                 <StatusChip {...row.chip} />

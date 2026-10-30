@@ -83,6 +83,7 @@ from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
 )
+from loregarden.services.unresolved_ledger import visible_unresolved
 from loregarden.services.workflow_service import (
     resolve_ticket_stages,
     resolve_workspace_stages,
@@ -500,6 +501,14 @@ class OrchestrationService:
         current = ticket.workflow_stage_key
         if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
             raise ValueError("Current stage must complete before advancing")
+
+        remaining = visible_unresolved(self.session, ticket, (), current_stage_key=current or "")
+        if remaining:
+            names = ", ".join(item.name for item in remaining)
+            raise ValueError(
+                "Cannot Advance while unresolved items remain: "
+                f"{names}. Producer-clear them or waive them from the Rework paused card."
+            )
 
         # Resolved before the current stage is marked done: marking the
         # *terminal* stage done derives `done` on the ticket (set_stage_status

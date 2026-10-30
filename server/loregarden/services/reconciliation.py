@@ -46,6 +46,10 @@ from loregarden.services.chat_feature_loop import advance_feature_loops
 from loregarden.services.chat_wait_watch import poll_chat_waits
 from loregarden.services.dependency_release import mark_parked_waits
 from loregarden.services.docker_reaper import reap_docker_leases
+from loregarden.services.done_ticket_ship import (
+    probe_all_workspaces,
+    retract_resolved_ships,
+)
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.invariant_registry import (
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
@@ -53,6 +57,7 @@ from loregarden.services.invariant_registry import (
     CHECKOUTS_KEEP_THEIR_BRANCH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
+    DONE_TICKET_SHIP_IS_OBSERVABLE,
     EVERY_BLOCK_IS_SETTLED,
     EXHAUSTED_GATES_BLOCK,
     HELD_REPAIRS_READ_IN_PROGRESS,
@@ -64,6 +69,7 @@ from loregarden.services.invariant_registry import (
     PUBLISH_CARDS_CLOSE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
+    UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
 from loregarden.services.invariants import Invariant, run_invariant
@@ -93,6 +99,11 @@ class SweepStep:
 
     name: str
     run: Callable[[Session], object]
+    #: False for a step boot must not pay for. Repair at boot is the point of
+    #: this pass, so the default is True; a step whose whole body is a network
+    #: read of a world that has not changed since the last tick adds seconds to
+    #: every start and repairs nothing, and the timer runs it a minute later.
+    at_startup: bool = True
 
 
 def _invariant(invariant: Invariant) -> SweepStep:
@@ -102,6 +113,22 @@ def _invariant(invariant: Invariant) -> SweepStep:
         return run_invariant(session, invariant)
 
     return SweepStep(invariant.name, run)
+
+
+def _probe_and_report_ships(session: Session) -> object:
+    """This invariant's own step: ask GitHub, record the probe, then report.
+
+    Not `_invariant()`, because the detector alone cannot carry it. The ask is
+    a network read whose three outcomes differ (asked and these violate, asked
+    and none do, could not ask), so the probe is written first and
+    `run_invariant` reads *that*. Retraction only follows a COMPLETE ask: an
+    outage must not clear a finding GitHub never said was resolved. Nothing
+    here repairs anything — only a person can fix a red pull request.
+    """
+    probe_all_workspaces(session)
+    check = run_invariant(session, DONE_TICKET_SHIP_IS_OBSERVABLE)
+    retract_resolved_ships(session)
+    return check
 
 
 def _settle_leases(session: Session) -> object:
@@ -239,19 +266,33 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # ref to its commits after the removal failed (lg-external-harness-1166).
     # Report-only; the commits may still be wanted.
     _invariant(CHECKOUTS_KEEP_THEIR_BRANCH),
+    # A recorded unresolved name that left OPEN without CLEAR/WAIVER is an
+    # unaudited delete. Restore the previous OPEN; do not invent an audit row.
+    _invariant(UNRESOLVED_OPEN_SHRINK_IS_AUDITED),
+    # Last of the invariants: the only one that reaches the network, so a slow
+    # or unreachable GitHub delays nothing else in the pass.
+    SweepStep(
+        DONE_TICKET_SHIP_IS_OBSERVABLE.name,
+        _probe_and_report_ships,
+        at_startup=False,
+    ),
 )
 
 
-def reconcile_once(session: Session) -> list[str]:
+def reconcile_once(session: Session, *, at_startup: bool = False) -> list[str]:
     """Run every periodic sweep. Returns the names of the ones that raised.
 
     Never raises. A sweep is repair, and repair that can take the caller down
     with it is worse than no repair — on the timer it would end the loop, and at
     startup it would stop the server booting over a row nobody has looked at in
     a month.
+
+    ``at_startup`` skips the steps that say they are not worth a boot's time;
+    see `SweepStep.at_startup`.
     """
     failed: list[str] = []
-    for step in PERIODIC_STEPS:
+    steps = [s for s in PERIODIC_STEPS if s.at_startup] if at_startup else PERIODIC_STEPS
+    for step in steps:
         try:
             step.run(session)
         except Exception:  # noqa: BLE001 — best-effort by design; see module docstring
