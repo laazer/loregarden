@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { API_BASE, api } from "../api/client";
+import type { TodoListPart } from "../components/chat/primitives/types";
 import {
   ChatThinkingSocket,
   EMPTY_THINKING_FRAME,
@@ -19,11 +20,21 @@ export interface ChatTurnThinking {
   answer: string;
   /** What the agent is doing right now, or "" when it has not said. */
   activity: string;
+  /** Agent plans as the reply last re-emitted them, newest copy of each. */
+  plans: TodoListPart[];
   /** Whether anything is being received — false once the turn settles. */
   isStreaming: boolean;
 }
 
-const NOTHING: ChatTurnThinking = { content: "", answer: "", activity: "", isStreaming: false };
+const NO_PLANS: TodoListPart[] = [];
+
+const NOTHING: ChatTurnThinking = {
+  content: "",
+  answer: "",
+  activity: "",
+  plans: NO_PLANS,
+  isStreaming: false,
+};
 
 /**
  * The reasoning of whichever turn is in flight, as it is produced.
@@ -109,6 +120,8 @@ export function useChatTurnThinking(turnId: string | null | undefined): ChatTurn
     content: frame.content,
     answer: frame.answer,
     activity: frame.activity,
+    // A server older than the field sends none; the thread card then stays as stored.
+    plans: frame.plans ?? NO_PLANS,
     isStreaming: !done,
   };
 }

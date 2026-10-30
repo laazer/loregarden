@@ -72,7 +72,7 @@ def _settle(
     thinking = finish_chat_turn_thinking(session, assistant.id)
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = with_thinking_part(parts_json, thinking)
+    assistant.parts_json = with_thinking_part(parts_json, thinking, content=content)
     session.add(assistant)
     session.commit()
 

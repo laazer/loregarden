@@ -185,7 +185,7 @@ def _settle(
         return assistant
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = with_thinking_part(parts_json, thinking)
+    assistant.parts_json = with_thinking_part(parts_json, thinking, content=content)
     session.add(assistant)
     if assistant.run_id:
         run = session.get(AgentRun, assistant.run_id)
@@ -342,8 +342,12 @@ def fail_interrupted_baxter_chat_turns(
     ).all()
     settled: list[BaxterChatMessage] = []
     for assistant in orphaned:
+        # The live row outlives the process; fold it in before startup clears
+        # it, so a plan that was checking off steps keeps the ones it finished.
+        thinking = finish_chat_turn_thinking(session, assistant.id)
         assistant.content = message
         assistant.status = "failed"
+        assistant.parts_json = with_thinking_part(assistant.parts_json, thinking, content=message)
         session.add(assistant)
         if assistant.run_id:
             run = session.get(AgentRun, assistant.run_id)

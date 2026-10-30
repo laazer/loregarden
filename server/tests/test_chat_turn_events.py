@@ -23,6 +23,7 @@ def test_reading_a_turn_with_no_reasoning_is_an_empty_frame(client):
         "answer": "",
         "activity": "",
         "seq": 0,
+        "plans": [],
     }
 
 
@@ -40,6 +41,7 @@ def test_reading_a_turn_returns_what_it_has_thought_so_far(client, db_session: S
         "answer": "",
         "activity": "Read · a.py",
         "seq": 4,
+        "plans": [],
     }
 
 

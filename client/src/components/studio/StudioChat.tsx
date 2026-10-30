@@ -19,6 +19,7 @@ import {
   agentPlanRequestTask,
   agentPlanRunSummary,
   supersededAgentPlanKeys,
+  withLivePlans,
 } from "../chat/primitives/agentPlan";
 import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
@@ -141,6 +142,12 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   // A re-emitted execution plan replaces its earlier card rather than stacking
   // another one, so only the newest copy stays live in the thread.
   const supersededPlans = useMemo(() => supersededAgentPlanKeys(messages), [messages]);
+  // A plan executing in this turn checks steps off before the turn settles;
+  // the thread's card shows that progress rather than its stored 0/n.
+  const shownMessages = useMemo(
+    () => withLivePlans(messages, thinking.plans, supersededPlans),
+    [messages, thinking.plans, supersededPlans],
+  );
 
   // Message *count* is the wrong trigger on its own: a reply streams in, a
   // thinking card unfolds, a primitive finishes loading and grows — the thread
@@ -175,7 +182,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
       ref={listRef}
       className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}
     >
-      {messages.map((message) => {
+      {shownMessages.map((message) => {
         const isUser = isUserChatRole(message.role);
         const body = chatMessageBody(message);
         const parts = message.parts;

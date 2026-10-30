@@ -9,7 +9,13 @@ jest.mock("../../../hooks/useChatTurnThinking", () => ({
 }));
 
 beforeEach(() => {
-  mockThinking.mockReturnValue({ content: "", answer: "", activity: "", isStreaming: false });
+  mockThinking.mockReturnValue({
+    content: "",
+    answer: "",
+    activity: "",
+    plans: [],
+    isStreaming: false,
+  });
 });
 
 describe("LiveThinkingStream", () => {
@@ -73,6 +79,7 @@ describe("StudioChatMessages live thinking", () => {
       content: "Reading the runner.",
       answer: "",
       activity: "Read · runner.py",
+      plans: [],
       isStreaming: true,
     });
 
@@ -96,6 +103,7 @@ describe("StudioChatMessages live thinking", () => {
       content: "",
       answer: "A dark mode ticket should cover",
       activity: "Writing the reply",
+      plans: [],
       isStreaming: true,
     });
 

@@ -11,6 +11,7 @@
  * triage and ticket triage all speak this without knowing about each other.
  */
 
+import type { TodoListPart } from "../components/chat/primitives/types";
 import { ReconnectingSocket, type SocketStatus } from "./reconnectingSocket";
 
 /** One frame of a turn's reasoning. Always the whole transcript, not a delta. */
@@ -35,6 +36,13 @@ export interface ChatThinkingFrame {
    * what it has already shown.
    */
   seq: number;
+  /**
+   * The newest copy of each agent plan the reply has emitted so far. The agent
+   * re-emits its plan between tool calls as steps complete; this is how the
+   * plan card in the thread shows that progress before the turn settles.
+   * Absent from a server that predates it.
+   */
+  plans?: TodoListPart[];
 }
 
 export const EMPTY_THINKING_FRAME: ChatThinkingFrame = {
@@ -43,6 +51,7 @@ export const EMPTY_THINKING_FRAME: ChatThinkingFrame = {
   answer: "",
   activity: "",
   seq: 0,
+  plans: [],
 };
 
 /** Three states, matching `QueueSocket`: a socket is trying, up, or down. */
