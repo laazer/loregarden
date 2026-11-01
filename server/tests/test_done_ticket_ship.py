@@ -778,6 +778,49 @@ def test_github_read_error_is_unavailable_not_empty_green(db_session: Session):
     assert dts.violations_for_invariant(db_session) == []
 
 
+def _without_checkout(session: Session, workspace: Workspace, missing: Path) -> None:
+    workspace.repo_path = str(missing)
+    session.add(workspace)
+    session.commit()
+
+
+def test_planned_workspace_without_checkout_is_complete_not_an_error(
+    db_session: Session, tmp_path: Path
+):
+    """Tickets planned for a repository not created yet: nothing could have shipped."""
+    dts = _dts()
+    workspace = make_workspace(db_session, slug="ship-planned", repo_path=str(tmp_path / "not-yet"))
+    _tree(
+        db_session,
+        workspace,
+        child_external_id="lg-ship-planned-1",
+        child_state=TicketState.BACKLOG,
+    )
+    with mock.patch.object(dts, "list_open_pull_requests") as listing:
+        probe = dts.probe_workspace(db_session, workspace)
+    listing.assert_not_called()
+    assert probe.listing_state is PrListingState.COMPLETE
+    assert probe.error == ""
+    assert probe.violations == []
+
+
+def test_missing_checkout_with_done_tickets_is_unavailable_naming_it(
+    db_session: Session, tmp_path: Path
+):
+    """A checkout gone from under done work never reaches `gh`, whose bare ENOENT blamed gh."""
+    dts = _dts()
+    workspace = _lore(db_session)
+    _tree(db_session, workspace, child_external_id="lg-ship-gone-1", root_state=TicketState.DONE)
+    missing = tmp_path / "gone"
+    _without_checkout(db_session, workspace, missing)
+    with mock.patch.object(dts, "list_open_pull_requests") as listing:
+        probe = dts.probe_workspace(db_session, workspace)
+    listing.assert_not_called()
+    assert probe.listing_state is PrListingState.UNAVAILABLE
+    assert str(missing) in probe.error
+    assert workspace.slug in probe.error
+
+
 def test_load_probe_with_no_row_is_unavailable(db_session: Session):
     dts = _dts()
     workspace = _lore(db_session)

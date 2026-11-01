@@ -96,6 +96,7 @@ from loregarden.services.target_branch import (
     subtree_root,
 )
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
+from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlmodel import Session, col, desc, select
 
@@ -361,7 +362,20 @@ def _violation_for(
 
 def probe_workspace(session: Session, workspace: Workspace) -> WorkspaceProbe:
     """Ask GitHub about one workspace's done tickets. Never raises."""
-    repo_root = Path(workspace.repo_path or ".")
+    repo_root = resolve_workspace_root(workspace)
+    if not repo_root.is_dir():
+        if not _done_tickets(session, workspace):
+            # A workspace still being planned (tickets, no checkout yet) has
+            # nothing that could have shipped: that is a complete answer.
+            return WorkspaceProbe(PrListingState.COMPLETE, "", [])
+        # Done tickets with no checkout: `gh` would fail on the cwd with a
+        # bare ENOENT that reads as "gh is not installed"; say what is wrong.
+        error = (
+            f"{workspace.slug}'s repository {repo_root} does not exist; restore it, "
+            "change the workspace's repo path, or archive the workspace"
+        )
+        logger.warning("Ship probe skipped %s: %s", workspace.slug, error)
+        return WorkspaceProbe(PrListingState.UNAVAILABLE, error, [])
     try:
         open_listing = list_open_pull_requests(repo_root)
         all_listing = list_pull_requests(
