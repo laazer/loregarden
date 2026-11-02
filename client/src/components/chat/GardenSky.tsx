@@ -1,3 +1,5 @@
+import "./GardenSky.css";
+
 /**
  * The few stars behind Baxter's garden (Mock 4). Static: nothing here moves,
  * so there is no motion to honour or withhold. Decoration only, hidden from

@@ -123,13 +123,94 @@ it("tells the layout whether a panel is showing, so a right dock can collapse", 
   expect(useUiStore.getState().dockPanelsVisible).toBe(false);
 });
 
-it("shows the bound conversation's turns once opened", () => {
+it("opens an empty thread on where to start, not a blank pane", () => {
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
   render(<CopilotDock />, { wrapper: MemoryRouter });
 
-  expect(screen.getByText("No messages yet.")).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "What is blocking this ticket?" })).toBeEnabled();
+});
+
+describe("the empty thread", () => {
+  it("draws nothing while the conversation loads, so a thread on its way is not shown as gone", () => {
+    mockResolver.mockReturnValue(bind({ session: session({ isLoading: true }), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
+
+    expect(container.querySelector(".dock-welcome")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).not.toBeInTheDocument();
+  });
+
+  it("says the conversation failed to load rather than offering openers that cannot send", () => {
+    mockResolver.mockReturnValue(bind({ session: session({ loadError: true }), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    render(<CopilotDock />, { wrapper: MemoryRouter });
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).not.toBeInTheDocument();
+  });
+
+  it("gives the reason nothing can be sent in place of the openers", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session(), label: "Ticket triage", composerBlocked: "Attach a milestone first" }),
+    );
+    useUiStore.setState({ copilotOpen: true });
+
+    render(<CopilotDock />, { wrapper: MemoryRouter });
+
+    expect(screen.getByText("Attach a milestone first")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).not.toBeInTheDocument();
+  });
+
+  it("gives way to the thinking walker once a first turn is on its way", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session({ isBusy: true, runStatus: "running" }), label: "Ticket triage" }),
+    );
+    useUiStore.setState({ copilotOpen: true });
+
+    const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
+
+    expect(container.querySelector(".dock-welcome")).toBeNull();
+  });
+
+  it("offers the archive where there is one, and opens it", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home" }),
+        label: "loregarden",
+        ticketId: null,
+        archive: {
+          scope: "loregarden",
+          sessionId: "s1",
+          openSession: jest.fn(),
+          startNewChat: jest.fn(),
+          sendInNewChat: jest.fn().mockResolvedValue(undefined),
+          forkSession: jest.fn().mockResolvedValue(undefined),
+          forkFromMessage: jest.fn().mockResolvedValue(undefined),
+        },
+      }),
+    );
+    mockedApi.baxterChatSessions.mockResolvedValue([]);
+    useUiStore.setState({ copilotOpen: true });
+
+    renderDock();
+    fireEvent.click(screen.getByRole("button", { name: "Pick up a past conversation" }));
+
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
+  });
+
+  it("offers no archive on a conversation that has none", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    render(<CopilotDock />, { wrapper: MemoryRouter });
+
+    expect(screen.queryByRole("button", { name: "Pick up a past conversation" })).not.toBeInTheDocument();
+  });
 });
 
 it("renders pending approvals as an in-thread agent ask, not dock chrome", () => {
@@ -205,15 +286,14 @@ it("sends an opener through the bound session rather than filling a composer", (
   });
 });
 
-it("keeps the openers beside the turns, not between them and the composer", () => {
+it("keeps the openers in the thread, not in a rail a sidebar is too narrow to show", () => {
   mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
   const { container } = render(<CopilotDock />, { wrapper: MemoryRouter });
 
-  const rail = container.querySelector(".copilot-dock-rail");
-  expect(rail).not.toBeNull();
-  expect(rail).toContainElement(
+  expect(container.querySelector(".copilot-dock-rail")).toBeNull();
+  expect(container.querySelector(".copilot-dock-chat-main")).toContainElement(
     screen.getByRole("button", { name: "What is blocking this ticket?" }),
   );
 });
@@ -437,7 +517,7 @@ describe("the chat archive", () => {
     mockedApi.baxterChatSessions.mockResolvedValue([ARCHIVE_ENTRY]);
   });
 
-  it("takes the openers' place in the rail rather than covering the turns", async () => {
+  it("lists the archive in the rail beside the thread rather than covering it", async () => {
     mockResolver.mockReturnValue(bindBaxter());
     useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
 
@@ -446,7 +526,7 @@ describe("the chat archive", () => {
     const rail = container.querySelector(".copilot-dock-rail");
     expect(rail).not.toBeNull();
     expect(rail).toContainElement(await screen.findByText("Queue triage"));
-    expect(screen.queryByText("Try asking")).not.toBeInTheDocument();
+    expect(rail).not.toContainElement(screen.getByRole("group", { name: "Suggested prompts" }));
   });
 
   it("opens the picked conversation and gives the rail back", async () => {
@@ -554,7 +634,7 @@ describe("the terminal pane", () => {
     render(<CopilotDock />, { wrapper: MemoryRouter });
 
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
-    expect(screen.getByText("No messages yet.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
   });
 
   it("will not open a shell with nowhere to run it", () => {
@@ -581,7 +661,7 @@ describe("the terminal pane", () => {
     rerender(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
-    expect(screen.queryByText("No messages yet.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).not.toBeInTheDocument();
   });
 
   it("keeps the shell when the terminal itself is closed", () => {

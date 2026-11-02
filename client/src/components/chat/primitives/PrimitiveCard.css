@@ -2139,17 +2139,27 @@
     display: none;
   }
 
+  /* A list row: priority, then the title on the full width with its status
+     under it. Beside it, a long status ("Blocked · Waiting on tickets") took
+     half a 380px sidebar and cut the title to two words. */
   .lg-ticket-table tr {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
+    row-gap: 4px;
     padding: 6px 12px;
     border-bottom: 1px solid var(--bd);
   }
 
   .lg-ticket-table td {
+    width: auto;
     padding: 0 4px;
     border: 0;
+  }
+
+  .lg-ticket-table-status {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .lg-ticket-table-ticket {
