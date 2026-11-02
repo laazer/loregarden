@@ -102,8 +102,12 @@ describe("DockerQueueBoard", () => {
     render(<DockerQueueBoard status={status({ holders: [parent, child] })} {...idle} />);
 
     expect(screen.getByTestId("docker-free-slots")).toHaveTextContent("3 of 4");
-    expect(within(screen.getByTestId("docker-slot-parent")).getByText(/machine/)).toBeTruthy();
-    expect(within(screen.getByTestId("docker-slot-child")).getByText(/nested/)).toBeTruthy();
+    const card = screen.getByTestId("docker-slot-parent");
+    expect(within(card).getByText(/machine/)).toBeTruthy();
+    // Inside its parent's card, not beside it: see R10b below. This assertion
+    // read the child from a sibling card before 1923 nested it.
+    expect(within(card).getByTestId("docker-child-child")).toBeTruthy();
+    expect(screen.queryByTestId("docker-slot-child")).not.toBeInTheDocument();
   });
 
   it("meters the machine and the docker pool separately", () => {
@@ -456,6 +460,10 @@ describe("DockerQueueBoard", () => {
       memory_mb: 1024,
       holder_label: "gates plan_to_plan-synthesis · loregarden · lg-machine-resource-1923",
       holder: { what: "gates plan_to_plan-synthesis", branch: null, worktree: null, pid: 4242 },
+      // Priced from the parent's 0.5-cpu grant: half covered, half booked
+      // ahead of the queue. Measured off a live row, 2026-11-02.
+      covered_cpus: 0.5,
+      covered_memory_mb: 512,
       held_seconds: 12,
       ...overrides,
     });

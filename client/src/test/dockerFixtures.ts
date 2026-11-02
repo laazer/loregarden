@@ -11,6 +11,8 @@ export function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     holder_kind: "ad_hoc",
     pool: "docker",
     parent_lease_id: null,
+    covered_cpus: 0,
+    covered_memory_mb: 0,
     agent_run_id: null,
     ticket_id: null,
     footprint: "stack",
