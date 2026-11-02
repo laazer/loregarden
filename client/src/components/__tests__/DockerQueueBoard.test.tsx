@@ -17,6 +17,7 @@ import { MemoryRouter } from "react-router-dom";
 import { DockerQueueBoard } from "../DockerQueueBoard";
 import { Button } from "../ui/Button";
 import { dockerApi } from "../../api/dockerApi";
+import type { DockerLeaseRow } from "../../api/dockerTypes";
 import { capacityStatus as status, lease } from "../../test/dockerFixtures";
 import { uiActionRegistry } from "../../lib/agentActions/registry";
 import { pushToast } from "../../state/toastStore";
@@ -411,5 +412,193 @@ describe("DockerQueueBoard", () => {
       <DockerQueueBoard status={null} error="" loading onChanged={onChanged} attention={() => <p>band</p>} />,
     );
     expect(screen.getByText("band")).toBeInTheDocument();
+  });
+
+  // ---- lg-machine-resource-1923 R10/R11: a run's parent lease, and its children ----
+  //
+  // A run-scoped parent is 0.5 cpu held for the whole orchestration — 17
+  // minutes on average, 116 at the tail — and for most of that nothing is using
+  // it. Today its card is word-for-word identical to a working lease, so the
+  // board would report reserved-and-idle capacity as scarcity. Two decisions
+  // fix that, and both are structure rather than copy: the parent says it is
+  // idle, and its children are drawn INSIDE it rather than beside it.
+
+  /** A run-scoped parent: ORCHESTRATION kind, top-level, booking no slot. */
+  function parentLease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
+    return lease({
+      lease_id: "parent-1",
+      holder_kind: "orchestration",
+      pool: "host",
+      footprint: "light",
+      cpus: 0.5,
+      memory_mb: 512,
+      parent_lease_id: null,
+      ticket_id: "t-1923",
+      holder_label: "run orch_4535af · loregarden · lg-machine-resource-1923",
+      holder: {
+        what: "run orch_4535af",
+        branch: "loregarden/lg-machine-resource-1923",
+        worktree: null,
+        pid: 4242,
+      },
+      held_seconds: 250,
+      ...overrides,
+    });
+  }
+
+  function gateChild(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
+    return lease({
+      lease_id: "child-1",
+      parent_lease_id: "parent-1",
+      pool: "host",
+      footprint: "service",
+      cpus: 1,
+      memory_mb: 1024,
+      holder_label: "gates plan_to_plan-synthesis · loregarden · lg-machine-resource-1923",
+      holder: { what: "gates plan_to_plan-synthesis", branch: null, worktree: null, pid: 4242 },
+      held_seconds: 12,
+      ...overrides,
+    });
+  }
+
+  it("a parent lease with no live child reads as reserved, idle", () => {
+    // Not "holding". 0.5 cpu that nobody is using, drawn identically to a
+    // working lease, is what makes a held lease look like scarcity — and the
+    // operator's question here is "what is actually using this machine right
+    // now, and what is only reserved?".
+    render(<DockerQueueBoard status={status({ holders: [parentLease()] })} {...idle} />);
+
+    const card = screen.getByTestId("docker-slot-parent-1");
+    expect(within(card).getByText("reserved, idle")).toBeInTheDocument();
+    expect(within(card).queryByText("holding")).not.toBeInTheDocument();
+    // How long it has been idle, in the same vocabulary the rest of the card uses.
+    expect(within(card).getByText(/idle 4m/)).toBeInTheDocument();
+  });
+
+  it("a parent with a live child reads as holding, not idle", () => {
+    // The pair matters more than either half: a parent that always said "idle"
+    // would be as wrong as one that never did.
+    render(
+      <DockerQueueBoard status={status({ holders: [parentLease(), gateChild()] })} {...idle} />,
+    );
+
+    const card = screen.getByTestId("docker-slot-parent-1");
+    expect(within(card).getByText("holding")).toBeInTheDocument();
+    expect(within(card).queryByText("reserved, idle")).not.toBeInTheDocument();
+  });
+
+  it("a reaped parent keeps its orphaned badge rather than reading as idle", () => {
+    // An orphaned or unverifiable lease is a different fact: the reaper could
+    // not account for it. Idling that badge away would hide the one state on
+    // this board that needs a person.
+    render(
+      <DockerQueueBoard
+        status={status({
+          holders: [
+            parentLease({ lease_id: "reaped", status: "orphaned" }),
+            parentLease({
+              lease_id: "unprobeable",
+              last_probe_outcome: "daemon_unreachable",
+              last_probe_error: "docker daemon unreachable",
+            }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(within(screen.getByTestId("docker-slot-reaped")).getByText("orphaned")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("docker-slot-unprobeable")).getByText("unverified"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("reserved, idle")).not.toBeInTheDocument();
+  });
+
+  it("a child lease renders inside its parent's card, not as a sibling", () => {
+    // The grid implies peers, and a 0.5 parent drawn beside its 1.0 child reads
+    // as 1.5 cpu to anyone adding the cards up. The child states its own cost
+    // and how much of it was booked ahead of the line.
+    render(
+      <DockerQueueBoard status={status({ holders: [parentLease(), gateChild()] })} {...idle} />,
+    );
+
+    const grid = screen.getByTestId("docker-slot-grid");
+    expect(grid.children).toHaveLength(1);
+    const card = screen.getByTestId("docker-slot-parent-1");
+    const child = within(card).getByTestId("docker-child-child-1");
+    expect(child).toHaveTextContent("gates plan_to_plan-synthesis");
+    expect(child).toHaveTextContent("1 cpu");
+    expect(child).toHaveTextContent(/0\.5 (cpus? )?booked ahead of the line/);
+  });
+
+  it("a child whose parent is not on the board is labelled, not dropped", () => {
+    // A child the board cannot place is a ledger fault, and a fault that
+    // renders as nothing is the one kind nobody ever reports.
+    render(<DockerQueueBoard status={status({ holders: [gateChild()] })} {...idle} />);
+
+    const card = screen.getByTestId("docker-slot-child-1");
+    expect(card).toHaveTextContent("nested · parent not on the board");
+    expect(within(card).getByText(/gates plan_to_plan-synthesis/)).toBeInTheDocument();
+  });
+
+  it("releasing a parent says how many children draw on it", async () => {
+    // Releasing a parent cascades: `release_lease` ends every child under it.
+    // Offering that as if it ended one lease is the dialog claiming less than
+    // the action does.
+    releaseLease.mockResolvedValue({ lease_id: "parent-1", released: true });
+    render(
+      <DockerQueueBoard status={status({ holders: [parentLease(), gateChild()] })} {...idle} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^Release: run orch_4535af/ }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Release this run's parent lease?");
+    expect(dialog).toHaveTextContent("1 gate child draws on it");
+  });
+
+  it("one confirm disables the parent's Release and its children's", async () => {
+    // The existing pendingId guard holds the row whose lease is in flight. A
+    // child's button left live during its parent's release is a second confirm
+    // for a lease that is already ending.
+    let finish: (value: { lease_id: string; released: boolean }) => void = () => {};
+    releaseLease.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(
+      <DockerQueueBoard status={status({ holders: [parentLease(), gateChild()] })} {...idle} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^Release: run orch_4535af/ }));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Release" }),
+    );
+
+    expect(screen.getByRole("button", { name: /^Release: run orch_4535af/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /^Release: gates plan_to_plan-synthesis/ }),
+    ).toBeDisabled();
+
+    await act(async () => finish({ lease_id: "parent-1", released: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(releaseLease).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the parent's buttons before its children's in DOM order", () => {
+    // Tab order follows the DOM, so nesting the children visually while leaving
+    // their buttons ahead of the parent's would make the keyboard order
+    // disagree with the nesting a sighted reader sees. No new focus trap and no
+    // disclosure: the children are a plain list inside the card.
+    render(
+      <DockerQueueBoard
+        status={status({ holders: [parentLease(), gateChild(), gateChild({ lease_id: "child-2" })] })}
+        {...idle}
+      />,
+    );
+
+    const names = within(screen.getByTestId("docker-slot-parent-1"))
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent ?? "");
+    expect(names[0]).toMatch(/^Release: run orch_4535af/);
+    expect(names.slice(1)).toHaveLength(2); // both children's, inside the parent's card
+    expect(names.slice(1).every((name) => /gates plan_to_plan-synthesis/.test(name))).toBe(true);
   });
 });

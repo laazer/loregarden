@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../../api/client";
 import type { TicketDetail } from "../../../api/client";
-import type { LedgerAttempt, LedgerVisit, TicketArtifactItem, TicketLedger, TicketTreeNode } from "../../../api/types";
+import type { CapacityWait, LedgerAttempt, LedgerVisit, TicketArtifactItem, TicketLedger, TicketTreeNode } from "../../../api/types";
 import { stageFanoutApi } from "../../../lib/stageFanoutApi";
 import { navigateToTicketTab } from "../../../lib/useAppNavigation";
 import { useReaderStore } from "../../../state/readerStore";
@@ -37,12 +38,15 @@ function visit(stage_key: string, attempts: LedgerAttempt[], overrides: Partial<
   return { stage_key, visit_number: 1, status: attempts[attempts.length - 1].status, is_parallel: false, attempts, ...overrides };
 }
 
-function ledger(visits: LedgerVisit[]): TicketLedger {
+function ledger(visits: LedgerVisit[], capacity_wait: CapacityWait | null = null): TicketLedger {
   return {
     visits,
     total_runs: visits.reduce((n, v) => n + v.attempts.length, 0),
     reworked_stages: [...new Set(visits.filter((v) => v.visit_number > 1).map((v) => v.stage_key))],
     total_seconds: 1800,
+    // Null by default, not 0: a ticket with no lease rows waited an unknown
+    // amount of time, and the summary must then omit the clause entirely.
+    capacity_wait,
   };
 }
 
@@ -94,21 +98,27 @@ function renderTimeline({
   childTickets = [] as TicketTreeNode[],
   onOpenRunLog = jest.fn(),
   onOpenTicket = jest.fn(),
+  capacityWait = null as CapacityWait | null,
 } = {}) {
-  mockApi.ticketLedger.mockResolvedValue(ledger(visits));
+  mockApi.ticketLedger.mockResolvedValue(ledger(visits, capacityWait));
   mockApi.ticketArtifacts.mockResolvedValue({ items, total: items.length });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
-      <TicketTimeline
-        ticket={detail}
-        isActive={false}
-        pendingApprovals={pendingApprovals}
-        childTickets={childTickets}
-        onOpenRunLog={onOpenRunLog}
-        onOpenTicket={onOpenTicket}
-      />
-    </QueryClientProvider>,
+    // The summary's capacity figure is a Link to Machine -> Capacity, so the
+    // pane needs a router: a reader who sees the wait must be able to see who
+    // is holding the line.
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <TicketTimeline
+          ticket={detail}
+          isActive={false}
+          pendingApprovals={pendingApprovals}
+          childTickets={childTickets}
+          onOpenRunLog={onOpenRunLog}
+          onOpenTicket={onOpenTicket}
+        />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
   return { onOpenRunLog, onOpenTicket };
 }
@@ -479,3 +489,121 @@ describe("a parent's timeline is where each child is", () => {
   });
 });
 
+
+// ---- lg-machine-resource-1923 R12: how much of this was waiting for the machine ----
+//
+// Measured on lg-reference-sources-1912: of 57 minutes wall-clock, 8 was agent
+// work and 29 was queueing. The summary already states the first half ("N runs ·
+// Xm of agent time") and the second half had nowhere to land, so a reader could
+// not make the comparison this ticket is about. It lands here rather than in a
+// new panel: a new panel would need its own five states and its own reason to
+// exist, and the operator already reads this line.
+
+describe("what this ticket spent waiting for the machine", () => {
+  const WAITED: CapacityWait = {
+    total_seconds: 2944,
+    lease_count: 2,
+    reacquired_seconds: 0,
+  };
+
+  it("the summary states the capacity wait and links to the capacity board", async () => {
+    // The figure IS the action: a wait a reader cannot act on ends at the text.
+    // machinePath("capacity") is "/machine".
+    renderTimeline({ capacityWait: WAITED });
+
+    await screen.findByRole("button", { name: /Planning/ });
+    const link = screen.getByRole("link", { name: /waiting for machine capacity/ });
+    expect(link).toHaveAttribute("href", "/machine");
+    expect(link).toHaveTextContent("49m 4s");
+    // Formatted by the existing duration() helper, never raw seconds.
+    expect(link).not.toHaveTextContent("2944");
+  });
+
+  it("a null capacity_wait omits the clause entirely", async () => {
+    // Absent is not zero. The ledger is switched off, or this ticket predates
+    // it; "0s waiting for machine capacity" would be a measurement nobody made.
+    renderTimeline({ capacityWait: null });
+
+    await screen.findByRole("button", { name: /Planning/ });
+    expect(screen.queryByText(/waiting for machine capacity/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no capacity wait/)).not.toBeInTheDocument();
+    expect(screen.getByText(/of agent time/)).toBeInTheDocument();
+  });
+
+  it("a wait under five seconds reads as no capacity wait", async () => {
+    // The floor is measured: one of 1912's five gate leases was granted in
+    // 0.1s. Below it the honest statement is that there was no wait, which is
+    // a different fact from not knowing.
+    renderTimeline({ capacityWait: { total_seconds: 0.1, lease_count: 1, reacquired_seconds: 0 } });
+
+    await screen.findByRole("button", { name: /Planning/ });
+    expect(screen.getByText(/no capacity wait/)).toBeInTheDocument();
+    expect(screen.queryByText(/0s waiting/)).not.toBeInTheDocument();
+  });
+
+  it("a visit preceded by a wait carries one quiet line", async () => {
+    // One line under the stage name, in the existing quiet-visit styling — not
+    // a panel, and not one line per lease: 30 leases sit on one live ticket.
+    renderTimeline({
+      visits: [
+        visit("plan", [attempt({ run_id: "p1", agent_id: "planner" })], {
+          capacity_wait_seconds: 384,
+        }),
+        visit("implement", [attempt({ run_id: "i1" })], { capacity_wait_seconds: null }),
+      ],
+      capacityWait: WAITED,
+    });
+
+    await screen.findByRole("button", { name: /Planning/ });
+    expect(screen.getByText("waited 6m 24s for machine capacity")).toBeInTheDocument();
+    // The visit whose wait was below the floor carries no line at all.
+    expect(screen.getAllByText(/for machine capacity$/)).toHaveLength(1);
+  });
+
+  it("a wait that followed a park reads as re-acquired", async () => {
+    // A re-acquire is the cost of a park a person had to resolve, and it is
+    // the only place that cost is legible. "waited" and "re-acquired after"
+    // are different events and must not read the same.
+    renderTimeline({
+      visits: [
+        visit("plan", [attempt({ run_id: "p1", agent_id: "planner" })], {
+          capacity_wait_seconds: 384,
+          capacity_wait_after_park: true,
+        }),
+      ],
+      capacityWait: { total_seconds: 384, lease_count: 2, reacquired_seconds: 384 },
+    });
+
+    await screen.findByRole("button", { name: /Planning/ });
+    expect(screen.getByText("re-acquired after 6m 24s")).toBeInTheDocument();
+    expect(screen.queryByText(/^waited 6m 24s/)).not.toBeInTheDocument();
+  });
+
+  it("shows the ledger's error instead of a stale figure, and nothing while it loads", async () => {
+    // The wait arrives in the same payload as the stages, so it has no state of
+    // its own: a failed read is the existing alert, and a pending one is the
+    // existing skeleton with no placeholder number beside it.
+    mockApi.ticketLedger.mockRejectedValue(new Error("database is locked"));
+    mockApi.ticketArtifacts.mockResolvedValue({ items: [], total: 0 });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <TicketTimeline
+            ticket={ticket()}
+            isActive={false}
+            pendingApprovals={0}
+            childTickets={[]}
+            onOpenRunLog={jest.fn()}
+            onOpenTicket={jest.fn()}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load this ticket’s run ledger",
+    );
+    expect(screen.queryByText(/machine capacity/)).not.toBeInTheDocument();
+  });
+});

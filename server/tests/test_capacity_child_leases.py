@@ -348,3 +348,93 @@ def _blocked(session, lease_id: str, blocked: set[str]) -> bool:
         )
     ).all()
     return any(_blocked(session, child, blocked) for child in children)
+
+
+# ---- lg-machine-resource-1923 R8a: reuse is per holder kind -------------------
+
+
+def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, host) -> None:
+    """`held_for_run` must not hand an orchestration claim an agent run's lease.
+
+    `run_capacity` stamps every agent-run host lease with the run's
+    `orchestration_run_id` as well as its own `agent_run_id`. A parent claim
+    carries the orchestration id and no agent run id, so the old lookup — which
+    filtered on `agent_run_id` when one was given and *else* on
+    `orchestration_run_id`, and never on `holder_kind` — would match a
+    straggling 0.25-cpu AGENT_RUN lease and hand it back as the run's parent.
+
+    The damage is not the wrong row. It is that the gate children then draw on
+    a 0.25-cpu grant that is about to be released by a different code path
+    (`RUN_COMPLETED`) while they are still running, taking their cover with it.
+    So the narrowing is by `holder_kind`, threaded from `reserve`, and this
+    test is the one that says the conflation was the defect.
+    """
+    from loregarden.models.domain import DockerHolderKind
+    from loregarden.services.docker_leases import held_for_run, reserve
+
+    orchestration_run_id = "orch-1"
+    agent = reserve(
+        session,
+        holder_label="agent run backend_implementer · stage implement",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=0.25,
+        memory_mb=768,
+        pool=CapacityPool.HOST,
+        holder_kind=DockerHolderKind.AGENT_RUN,
+        agent_run_id="run-1",
+        orchestration_run_id=orchestration_run_id,
+        takes_slot=False,
+    )
+    assert agent.granted
+
+    parent = reserve(
+        session,
+        holder_label="run orch_abc123 · proj · lg-machine-resource-1923",
+        footprint=DockerFootprint.LIGHT,
+        pool=CapacityPool.HOST,
+        holder_kind=DockerHolderKind.ORCHESTRATION,
+        orchestration_run_id=orchestration_run_id,
+        takes_slot=False,
+    )
+
+    assert parent.granted
+    assert parent.reused is False, "an agent run's lease was handed back as the run's parent"
+    assert parent.lease_id != agent.lease_id
+    assert _lease(session, parent.lease_id).cpus == 0.5, "the parent's own size, not the agent's"
+
+    # The lookup itself, which is what `reserve` consults: it answers per kind.
+    assert (
+        held_for_run(
+            session,
+            pool=CapacityPool.HOST,
+            agent_run_id=None,
+            orchestration_run_id=orchestration_run_id,
+            holder_kind=DockerHolderKind.ORCHESTRATION,
+        ).id
+        == parent.lease_id
+    )
+    assert (
+        held_for_run(
+            session,
+            pool=CapacityPool.HOST,
+            agent_run_id="run-1",
+            orchestration_run_id=orchestration_run_id,
+            holder_kind=DockerHolderKind.AGENT_RUN,
+        ).id
+        == agent.lease_id
+    )
+    # And a second agent run under the same orchestration still gets its own.
+    second = reserve(
+        session,
+        holder_label="agent run test_designer · stage test-design",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=0.25,
+        memory_mb=768,
+        pool=CapacityPool.HOST,
+        holder_kind=DockerHolderKind.AGENT_RUN,
+        agent_run_id="run-2",
+        orchestration_run_id=orchestration_run_id,
+        takes_slot=False,
+    )
+    assert second.granted and second.reused is False
+    assert second.lease_id not in {agent.lease_id, parent.lease_id}
