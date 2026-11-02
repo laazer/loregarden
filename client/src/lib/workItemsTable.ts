@@ -175,7 +175,7 @@ export interface WorkItemsSort {
 export const DEFAULT_WORK_ITEMS_SORT: WorkItemsSort = { key: "priority", dir: "ascending" };
 
 export function stateText(node: TicketTreeNode): string {
-  return blockedOnStateLabel(node.state, node.blocked_on);
+  return blockedOnStateLabel(node.state, node.blocked_on, node.agent_retry);
 }
 
 export function stageText(node: TicketTreeNode): string {

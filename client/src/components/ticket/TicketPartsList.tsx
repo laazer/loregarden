@@ -1,6 +1,6 @@
 import type { TicketTreeNode } from "../../api/client";
 import { partStanding, type PartStanding } from "../../lib/ticketParts";
-import { ticketStateChip } from "../../lib/ticketStates";
+import { stuckTicketChip } from "../../utils/blockKinds";
 import { Button } from "../ui/Button";
 import { StatusChip } from "../ui/StatusChip";
 
@@ -32,7 +32,7 @@ export function TicketPartsList({ heading, parts, onOpenTicket }: TicketPartsLis
       <ol className="ticket-parts-list">
         {parts.map((part) => {
           const standing = partStanding(part);
-          const chip = ticketStateChip(part.state);
+          const chip = stuckTicketChip(part);
           const where =
             standing === "waiting" && part.waiting_on?.length
               ? `after ${part.waiting_on.map((w) => w.external_id).join(", ")}`
@@ -50,7 +50,7 @@ export function TicketPartsList({ heading, parts, onOpenTicket }: TicketPartsLis
                   {where ? ` · ${where}` : ""}
                 </div>
               </div>
-              <StatusChip tone={chip.tone} label={chip.label} />
+              <StatusChip tone={chip.tone} label={chip.label} title={chip.title} />
             </li>
           );
         })}

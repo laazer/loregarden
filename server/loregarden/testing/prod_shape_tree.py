@@ -80,6 +80,8 @@ TREE_CALIBRATION = TreeShape(
 #: chain (milestone -> feature -> capability), one of each agent kind, and one
 #: decision: live had no person-owned block that day, but 2026-09-28 had four,
 #: and a scenario without one never renders the "Needs me" person path.
+_AGENT_KINDS = (BlockKind.HARNESS, BlockKind.WORK)
+
 _KINDS = {
     WorkItemType.MILESTONE: BlockKind.TICKETS,
     WorkItemType.FEATURE: BlockKind.TICKETS,
@@ -153,6 +155,11 @@ def _classify_blocks(session: Session, rows: list) -> dict[BlockKind, int]:
             continue
         ticket.block_kind = _KINDS[ticket.work_item_type]
         kinds[ticket.block_kind] = kinds.get(ticket.block_kind, 0) + 1
+        if ticket.block_kind in _AGENT_KINDS:
+            # Live 2026-11-02: all 14 harness and work blocks sat at a blocked
+            # stage with a re-run left, so all 14 read "agent can fix".
+            ticket.workflow_stage_key = ticket.workflow_stage_key or "implement"
+            ticket.workflow_stage_status = StageStatus.BLOCKED
         session.add(ticket)
         first.setdefault(slug, {}).setdefault(ticket.work_item_type, ticket)
     for by_type in first.values():

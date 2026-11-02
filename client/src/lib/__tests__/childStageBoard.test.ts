@@ -43,6 +43,8 @@ describe("the child stage board", () => {
 
   it("groups a row by where the child stands, a blocked one first", () => {
     expect(boardGroup(child({ state: "blocked" }))).toBe("blocked");
+    expect(boardGroup(child({ state: "blocked", blocked_on: "person" }))).toBe("blocked");
+    expect(boardGroup(child({ state: "blocked", blocked_on: "agent", agent_retry: "automatic" }))).toBe("agent");
     expect(boardGroup(child({ state: "in_progress", activity: "awaiting" }))).toBe("you");
     expect(boardGroup(child({ state: "in_progress", activity: "running" }))).toBe("running");
     expect(boardGroup(child({ state: "in_progress", activity: "idle" }))).toBe("in_progress");

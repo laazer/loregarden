@@ -189,6 +189,10 @@
   color: var(--red);
 }
 
+.csb-ref-wait {
+  color: var(--amb);
+}
+
 /* one stage: a track through the row, and the stage's mark on it */
 .csb-cell {
   position: relative;

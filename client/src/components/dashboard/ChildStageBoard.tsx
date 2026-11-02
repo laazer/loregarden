@@ -16,6 +16,7 @@ import {
 } from "../../lib/childStageBoard";
 import { partStanding, partsProgress } from "../../lib/ticketParts";
 import { describeError } from "../../state/toastStore";
+import { AGENT_RETRY_LABELS, AGENT_RETRY_MEANING, agentFix } from "../../utils/blockKinds";
 import { LaneLogView } from "../logs/LaneLogView";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -224,6 +225,8 @@ function BoardRow({
   onOpenRunLog: (runId: string) => void;
 }) {
   const active = isActive(child);
+  const fix = agentFix(child);
+  const refClass = fix ? "csb-ref-wait" : child.state === "blocked" ? "csb-ref-bad" : active ? "csb-ref-run" : undefined;
   const parts = child.child_count > 0 ? (node?.children ?? []) : [];
   return (
     <>
@@ -247,10 +250,10 @@ function BoardRow({
             <span className="csb-ref">
               {child.external_id}
               {child.state !== "done" && child.workflow_stage_name ? (
-                <span className={child.state === "blocked" ? "csb-ref-bad" : active ? "csb-ref-run" : undefined}>
+                <span className={refClass} title={fix ? AGENT_RETRY_MEANING[fix] : undefined}>
                   {" · "}
                   {child.workflow_stage_name}
-                  {child.state === "blocked" ? " blocked" : active ? " running" : ""}
+                  {fix ? ` · ${AGENT_RETRY_LABELS[fix].toLowerCase()}` : child.state === "blocked" ? " blocked" : active ? " running" : ""}
                 </span>
               ) : null}
             </span>

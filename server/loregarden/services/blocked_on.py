@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from loregarden.models.domain import (
+    AgentRetry,
     BlockedOn,
     BlockKind,
     DomainEvent,
@@ -31,6 +33,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.agent_retry import agent_retry_for, agent_retry_map, can_retry
 from loregarden.services.initiative_coverage import initiative_roots
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from sqlalchemy import ColumnElement, and_, exists, false, func, or_
@@ -51,18 +54,24 @@ _ID_CHUNK = 400
 _HELD_STATES = (TicketState.BACKLOG, TicketState.IN_PROGRESS)
 
 
-def blocked_on(ticket: Ticket, *, has_unmet_prerequisite: bool) -> BlockedOn | None:
+def blocked_on(
+    ticket: Ticket, *, has_unmet_prerequisite: bool, retryable: bool
+) -> BlockedOn | None:
     """One ticket's answer. An unclassified block reads as a person's: someone should look.
 
     A block an agent could clear (harness, work) on a ticket that also waits on
     prerequisites reads as waiting on tickets: a repair would be held at its
     dispatch, so "agent can clear" promised something that could not happen.
+    One with no re-run left (`retryable`, from `agent_retry.can_retry`) is a
+    person's: its kind still says agent, but nothing an agent does comes next.
     """
     if ticket.state == TicketState.BLOCKED:
         if ticket.block_kind is BlockKind.TICKETS:
             return BlockedOn.TICKETS
         if ticket.block_kind in _AGENT_KINDS:
-            return BlockedOn.TICKETS if has_unmet_prerequisite else BlockedOn.AGENT
+            if has_unmet_prerequisite:
+                return BlockedOn.TICKETS
+            return BlockedOn.AGENT if retryable else BlockedOn.PERSON
         return BlockedOn.PERSON
     if ticket.state in _HELD_STATES and has_unmet_prerequisite:
         return BlockedOn.TICKETS
@@ -122,24 +131,38 @@ def unmet_prerequisites(session: Session, ticket_ids: Iterable[str]) -> dict[str
     return unmet
 
 
-def blocked_on_map(session: Session, tickets: list[Ticket]) -> dict[str, BlockedOn]:
-    """`blocked_on` for a page of tickets, in one query per chunk; absent when not stuck."""
+def blocked_on_map(
+    session: Session, tickets: list[Ticket], retry: dict[str, AgentRetry] | None = None
+) -> dict[str, BlockedOn]:
+    """`blocked_on` for a page of tickets, in one query per chunk; absent when not stuck.
+
+    ``retry`` is `agent_retry_map` over the same page, when the caller has it.
+    """
     unmet = unmet_prerequisites(
         session,
         (t.id for t in tickets if t.state in (*_HELD_STATES, TicketState.BLOCKED)),
     )
+    retry = agent_retry_map(session, tickets) if retry is None else retry
     answers: dict[str, BlockedOn] = {}
     for ticket in tickets:
-        answer = blocked_on(ticket, has_unmet_prerequisite=ticket.id in unmet)
+        answer = blocked_on(
+            ticket, has_unmet_prerequisite=ticket.id in unmet, retryable=ticket.id in retry
+        )
         if answer is not None:
             answers[ticket.id] = answer
     return answers
 
 
-def blocked_on_clause(wanted: list[BlockedOn]) -> ColumnElement[bool]:
-    """The SQL twin of `blocked_on`, for filtering a ticket query by its answer."""
+def blocked_on_clause(wanted: list[BlockedOn], spent: list[str]) -> ColumnElement[bool]:
+    """The SQL twin of `blocked_on`, for filtering a ticket query by its answer.
+
+    ``spent`` is `agent_retry.spent_agent_blocks`: the agent-kind blocks with no
+    re-run left, which `blocked_on` reads as a person's.
+    """
     blocked = col(Ticket.state) == TicketState.BLOCKED
     clauses: list[ColumnElement[bool]] = []
+    agent_block = and_(blocked, col(Ticket.block_kind).in_(_AGENT_KINDS))
+    is_spent = col(Ticket.id).in_(spent)
     if BlockedOn.PERSON in wanted:
         clauses.append(
             and_(
@@ -147,9 +170,9 @@ def blocked_on_clause(wanted: list[BlockedOn]) -> ColumnElement[bool]:
                 or_(col(Ticket.block_kind).is_(None), col(Ticket.block_kind).in_(_PERSON_KINDS)),
             )
         )
-    agent_block = and_(blocked, col(Ticket.block_kind).in_(_AGENT_KINDS))
+        clauses.append(and_(agent_block, is_spent, ~_unmet_prerequisite_exists()))
     if BlockedOn.AGENT in wanted:
-        clauses.append(and_(agent_block, ~_unmet_prerequisite_exists()))
+        clauses.append(and_(agent_block, ~is_spent, ~_unmet_prerequisite_exists()))
     if BlockedOn.TICKETS in wanted:
         clauses.append(
             or_(
@@ -193,6 +216,7 @@ def _workspace_slugs(session: Session) -> dict[str, str]:
 
 
 def _ref(
+    session: Session,
     ticket: Ticket,
     reason: WaitingReason,
     slugs: dict[str, str],
@@ -205,7 +229,11 @@ def _ref(
         title=ticket.title,
         state=ticket.state,
         reason=reason,
-        blocked_on=blocked_on(ticket, has_unmet_prerequisite=has_unmet_prerequisite),
+        blocked_on=blocked_on(
+            ticket,
+            has_unmet_prerequisite=has_unmet_prerequisite,
+            retryable=can_retry(session, ticket),
+        ),
         workspace_slug=slugs.get(ticket.workspace_id or "", ""),
     )
 
@@ -260,11 +288,12 @@ def waiting_on_map(session: Session, tickets: list[Ticket]) -> dict[str, list[Wa
         refs: list[WaitingOnRef] = []
         if ticket.state == TicketState.BLOCKED and ticket.block_kind is BlockKind.TICKETS:
             refs += [
-                _ref(child, WaitingReason.BLOCKED_CHILD, slugs)
+                _ref(session, child, WaitingReason.BLOCKED_CHILD, slugs)
                 for child in _blocking_descendants(session, ticket)
             ]
         refs += [
-            _ref(prereq, WaitingReason.PREREQUISITE, slugs) for prereq in unmet.get(ticket.id, [])
+            _ref(session, prereq, WaitingReason.PREREQUISITE, slugs)
+            for prereq in unmet.get(ticket.id, [])
         ]
         if refs:
             waiting[ticket.id] = refs
@@ -282,7 +311,7 @@ def prerequisite_refs_map(session: Session, tickets: list[Ticket]) -> dict[str, 
         return {}
     slugs = _workspace_slugs(session)
     return {
-        ticket_id: [_ref(prereq, WaitingReason.PREREQUISITE, slugs) for prereq in prereqs]
+        ticket_id: [_ref(session, prereq, WaitingReason.PREREQUISITE, slugs) for prereq in prereqs]
         for ticket_id, prereqs in unmet.items()
     }
 
@@ -329,7 +358,36 @@ def root_blockers_map(session: Session, tickets: list[Ticket]) -> dict[str, list
             else:
                 found_roots[node.id] = node
         roots[ticket_id] = [
-            _ref(root, WaitingReason.PREREQUISITE, slugs)
+            _ref(session, root, WaitingReason.PREREQUISITE, slugs)
             for root in sorted(found_roots.values(), key=lambda t: (t.priority, t.created_at))
         ]
     return roots
+
+
+def blocked_on_with_retry(
+    session: Session, tickets: list[Ticket]
+) -> tuple[dict[str, BlockedOn], dict[str, AgentRetry]]:
+    """`blocked_on` and, where it answered AGENT, who starts the re-run."""
+    retry = agent_retry_map(session, tickets)
+    answers = blocked_on_map(session, tickets, retry)
+    return answers, agent_retry_for(answers, retry)
+
+
+@dataclass(frozen=True)
+class StuckPage:
+    """What each ticket of a page waits for, resolved once for the whole page."""
+
+    blocked_on: dict[str, BlockedOn]
+    agent_retry: dict[str, AgentRetry]
+    waiting_on: dict[str, list[WaitingOnRef]]
+    root_blockers: dict[str, list[WaitingOnRef]]
+
+    @classmethod
+    def of(cls, session: Session, tickets: list[Ticket]) -> StuckPage:
+        answers, retry = blocked_on_with_retry(session, tickets)
+        return cls(
+            answers,
+            retry,
+            waiting_on_map(session, tickets),
+            root_blockers_map(session, tickets),
+        )

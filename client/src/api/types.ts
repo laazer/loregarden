@@ -1,10 +1,10 @@
 import type { RepositoryState } from "./workspaceRepositoryTypes";
 import type { TicketDependencyRef } from "./ticketEdgeTypes";
 import type { LogLine } from "./runLogTypes";
-import type { BlockedOn, BlockKind, WaitingOnRef } from "./waitingTypes";
+import type { AgentRetry, BlockedOn, BlockKind, WaitingOnRef } from "./waitingTypes";
 
 export type { TicketDependencyRef };
-export type { BlockedOn, BlockKind, WaitingOnRef };
+export type { AgentRetry, BlockedOn, BlockKind, WaitingOnRef };
 
 // Shared API type definitions for the Loregarden client.
 // Split out of client.ts so the module boundary separates data shapes from calls.
@@ -60,6 +60,8 @@ export interface TicketSummary {
   block_kind?: BlockKind | null;
   /** What it waits for, derived server-side; null when it is not stuck. */
   blocked_on?: BlockedOn | null;
+  /** Who starts the re-run, when `blocked_on` is "agent"; null otherwise. */
+  agent_retry?: AgentRetry | null;
   /** The tickets it waits for: blocked descendants, or unmet prerequisites. */
   waiting_on?: WaitingOnRef[];
   /** The bottom of each unmet-prerequisite chain under it: what has to move
@@ -115,6 +117,8 @@ export interface TicketTreeNode {
   was_split?: boolean;
   /** What it waits for, derived server-side; absent or null when it is not stuck. */
   blocked_on?: BlockedOn | null;
+  /** Who starts the re-run, when `blocked_on` is "agent"; null otherwise. */
+  agent_retry?: AgentRetry | null;
   /** Its unfinished prerequisites — the waits the tree cannot draw. */
   waiting_on?: WaitingOnRef[];
   children: TicketTreeNode[];

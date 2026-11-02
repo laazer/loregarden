@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 import type { TicketTreeNode } from "../api/client";
-import { TICKET_STATE_COLORS } from "../lib/ticketStates";
-import { blockedOnStateLabel } from "../utils/blockKinds";
+import { blockedOnStateLabel, stuckTicketTone } from "../utils/blockKinds";
+import { STATUS_TONE_COLORS } from "../lib/statusTone";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
 import { Button } from "./ui/Button";
@@ -29,7 +29,7 @@ export function TicketTreeCompactRowBody({
   trail: ReactNode;
 }) {
   const hasChildren = node.children.length > 0;
-  const stateLabel = blockedOnStateLabel(node.state, node.blocked_on);
+  const stateLabel = blockedOnStateLabel(node.state, node.blocked_on, node.agent_retry);
   return (
     <div className="tree-compact">
       {hasChildren ? (
@@ -59,7 +59,7 @@ export function TicketTreeCompactRowBody({
       ) : null}
       <span
         className="tree-state-dot"
-        style={{ background: TICKET_STATE_COLORS[node.state] }}
+        style={{ background: STATUS_TONE_COLORS[stuckTicketTone(node)] }}
         aria-hidden
       />
       <span className="tree-compact-sr">

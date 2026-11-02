@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 
-import type { BlockedOn, StageStatus, TicketState, WorkflowStageView } from "../../../api/types";
+import type { AgentRetry, BlockedOn, StageStatus, TicketState, WorkflowStageView } from "../../../api/types";
+import { STATUS_TONE_COLORS } from "../../../lib/statusTone";
 import {
   priorityStyle,
   stageStatusColor,
   stageStatusChip,
   ticketStateColor,
 } from "../../../lib/ticketStates";
-import { blockedOnStateLabel } from "../../../utils/blockKinds";
+import { blockedOnStateLabel, stuckTicketTone } from "../../../utils/blockKinds";
 import { StatusChip } from "../../ui/StatusChip";
 
 export type ProgressSegment = {
@@ -130,6 +131,7 @@ export function TicketCardBody({
   compact = false,
   underPriority,
   blockedOn,
+  agentRetry,
   headless = false,
 }: {
   title: string;
@@ -149,11 +151,13 @@ export function TicketCardBody({
   underPriority?: ReactNode;
   /** What a stuck ticket waits for; named beside the state so "Blocked" says whose move it is. */
   blockedOn?: BlockedOn | null;
+  /** Who starts the fix, when an agent can clear the block. */
+  agentRetry?: AgentRetry | null;
   /** The card's head already names the ticket and its state: draw the progress and stage only. */
   headless?: boolean;
 }) {
   const prio = priorityStyle(priority);
-  const stateColor = ticketStateColor(state);
+  const stateColor = STATUS_TONE_COLORS[stuckTicketTone({ state, blocked_on: blockedOn, agent_retry: agentRetry })];
   const stageColor = stageStatusColor(stageStatus);
 
   return (
@@ -203,7 +207,7 @@ export function TicketCardBody({
             style={{ background: stateColor }}
             aria-hidden
           />
-          {blockedOnStateLabel(state, blockedOn)}
+          {blockedOnStateLabel(state, blockedOn, agentRetry)}
         </span>
         {workspaceSlug ? (
           <>

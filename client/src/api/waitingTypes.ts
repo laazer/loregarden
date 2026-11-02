@@ -9,6 +9,10 @@ export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tick
 /** What a stuck ticket waits for — mirrors `BlockedOn` in `models.domain.block_kinds`. */
 export type BlockedOn = "person" | "tickets" | "agent";
 
+/** Who starts the re-run that clears an agent's block — mirrors `AgentRetry`:
+ *  the initiative autopilot by itself, or one run of the blocked stage. */
+export type AgentRetry = "automatic" | "on_request";
+
 /** A ticket another one waits on, and what it waits on in turn. */
 export interface WaitingOnRef {
   id: string;
