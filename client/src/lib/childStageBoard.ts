@@ -1,4 +1,5 @@
 import type { StageStatus, TicketSummary, WorkflowStageView } from "../api/types";
+import { agentFix } from "../utils/blockKinds";
 
 /** One column of the board: a stage some child's workflow has. */
 export interface BoardColumn {
@@ -43,11 +44,13 @@ export function boardColumns(
 }
 
 /** Where a child stands, as the board groups its rows. */
-export type BoardGroup = "blocked" | "you" | "running" | "in_progress" | "not_started" | "done" | "wont_do";
+export type BoardGroup = "blocked" | "you" | "agent" | "running" | "in_progress" | "not_started" | "done" | "wont_do";
 
 export const BOARD_GROUPS: readonly { key: BoardGroup; label: string }[] = [
   { key: "blocked", label: "Blocked" },
   { key: "you", label: "Waiting on you" },
+  // Blocked, but on a fix an agent makes: grouped apart so "Blocked" is only what needs someone.
+  { key: "agent", label: "Agent can fix" },
   { key: "running", label: "Running" },
   { key: "in_progress", label: "In progress" },
   { key: "not_started", label: "Not started" },
@@ -58,6 +61,7 @@ export const BOARD_GROUPS: readonly { key: BoardGroup; label: string }[] = [
 export function boardGroup(child: TicketSummary): BoardGroup {
   if (child.state === "done") return "done";
   if (child.state === "wont_do") return "wont_do";
+  if (agentFix(child)) return "agent";
   if (child.state === "blocked") return "blocked";
   if (child.state === "parked" || child.activity === "awaiting") return "you";
   if (child.activity === "running" || child.activity === "queued") return "running";

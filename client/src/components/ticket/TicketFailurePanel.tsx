@@ -8,7 +8,7 @@ import { isErrorLine, ticketFailure } from "../../lib/ticketFailure";
 import { formatShortTime } from "../../lib/ticketOutputs";
 import { buildTicketTimeline } from "../../lib/ticketTimeline";
 import { formatLocalTimestamp } from "../../lib/timestamps";
-import { blockKindLabel, blockKindMeaning } from "../../utils/blockKinds";
+import { agentFix, blockHeadline } from "../../utils/blockKinds";
 import { CopyValueButton } from "../CopyValueButton";
 import { Button } from "../ui/Button";
 
@@ -50,6 +50,9 @@ export function TicketFailurePanel({
   if (!failure || ledger.isPending) return null;
 
   const { blocked, message, error, visit, attempt, attemptNumber } = failure;
+  const headline = blockHeadline(ticket);
+  // An agent's fix is amber like any wait: red is for what needs someone.
+  const tone = blocked && !agentFix(ticket) ? "tf--bad" : "tf--warn";
   const stageKey = visit?.visit.stage_key ?? error?.stage_key ?? "";
   const stageName = ticket.stages.find((stage) => stage.key === stageKey)?.name ?? stageKey;
   const runCode = attempt?.run_code ?? error?.run_code ?? "";
@@ -70,7 +73,7 @@ export function TicketFailurePanel({
 
   return (
     <section
-      className={`tf ${blocked ? "tf--bad" : "tf--warn"}`}
+      className={`tf ${tone}`}
       aria-label={blocked ? "Blocking issue" : "Last run failed"}
     >
       <div className="tf-head">
@@ -86,11 +89,11 @@ export function TicketFailurePanel({
           ) : null}
         </div>
         <span className="tf-chip">
-          {blocked ? `Blocked${ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}` : "Last run failed"}
+          {blocked ? headline.label : "Last run failed"}
         </span>
       </div>
 
-      {blocked && ticket.block_kind ? <p className="tf-sub">{blockKindMeaning(ticket.block_kind)}</p> : null}
+      {blocked && headline.meaning ? <p className="tf-sub">{headline.meaning}</p> : null}
 
       {lines.length > 0 ? (
         <div className="tf-out">

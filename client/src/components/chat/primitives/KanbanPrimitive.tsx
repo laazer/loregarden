@@ -70,6 +70,7 @@ export function TicketMini({ ticket, action }: { ticket: TicketSummary; action?:
         priority={ticket.priority}
         state={ticket.state}
         blockedOn={ticket.blocked_on}
+        agentRetry={ticket.agent_retry}
         workspaceSlug={ticket.workspace_slug}
         stageName={ticket.workflow_stage_name || undefined}
         stageStatus={ticket.workflow_stage_status}

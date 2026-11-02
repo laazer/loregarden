@@ -59,8 +59,19 @@ class BlockedOn(StrEnum):
     PERSON = "person"
     #: Another ticket must move first: a blocked child, or an unmet prerequisite.
     TICKETS = "tickets"
-    #: The control plane or a repair run can clear it (`harness`, `work`).
+    #: A re-run can still clear it (`harness`, `work`, with a retry left:
+    #: `services.agent_retry`). One with none left is a person's.
     AGENT = "agent"
+
+
+class AgentRetry(StrEnum):
+    """Who starts the re-run that clears a block `BlockedOn.AGENT` names — derived
+    (`services.agent_retry`). Either way nothing is owed but, at most, one click."""
+
+    #: The initiative autopilot covering it retries it on its next tick.
+    AUTOMATIC = "automatic"
+    #: Nothing will start it on its own; running the blocked stage does.
+    ON_REQUEST = "on_request"
 
 
 class WaitingReason(StrEnum):

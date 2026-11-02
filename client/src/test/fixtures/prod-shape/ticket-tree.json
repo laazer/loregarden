@@ -1,17 +1,21 @@
 [
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 6,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -65,14 +69,17 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": null,
           "child_count": 0,
           "children": [],
@@ -106,6 +113,7 @@
         "workspace_slug": "blobert"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -139,6 +147,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -157,6 +166,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -175,6 +185,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -193,6 +204,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -226,10 +238,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 10,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -258,10 +272,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -295,10 +311,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -332,6 +350,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -350,6 +369,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -368,6 +388,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -386,6 +407,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -414,14 +436,17 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": "tickets",
           "child_count": 0,
           "children": [],
@@ -480,6 +505,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -498,6 +524,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -531,10 +558,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 10,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -553,10 +582,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -590,14 +621,17 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": null,
           "child_count": 0,
           "children": [],
@@ -646,6 +680,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -664,6 +699,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -692,10 +728,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -729,6 +767,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -747,6 +786,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -775,6 +815,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -793,6 +834,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -826,14 +868,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 9,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -867,6 +912,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -885,6 +931,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -903,6 +950,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -921,6 +969,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -939,6 +988,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -957,6 +1007,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -975,10 +1026,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -997,6 +1050,7 @@
         "workspace_slug": "loregarden"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1030,6 +1084,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -1073,10 +1128,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 9,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1095,10 +1152,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1132,6 +1191,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -1160,14 +1220,17 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": null,
           "child_count": 0,
           "children": [],
@@ -1216,6 +1279,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1234,10 +1298,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1256,6 +1322,7 @@
         "workspace_slug": "loregarden"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1289,6 +1356,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -1317,6 +1385,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1335,6 +1404,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1368,10 +1438,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 9,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1390,10 +1462,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1427,14 +1501,17 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": null,
           "child_count": 0,
           "children": [],
@@ -1483,6 +1560,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1501,10 +1579,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1538,10 +1618,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1575,6 +1657,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1593,6 +1676,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1611,6 +1695,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -1654,18 +1739,22 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 10,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": null,
           "child_count": 0,
           "children": [],
@@ -1714,6 +1803,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1732,6 +1822,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1750,6 +1841,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1768,10 +1860,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1790,6 +1884,7 @@
         "workspace_slug": "loregarden"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1823,6 +1918,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1841,6 +1937,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1859,6 +1956,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1877,6 +1975,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1895,6 +1994,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -1928,14 +2028,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 10,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -1969,6 +2072,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -1997,6 +2101,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2015,14 +2120,17 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 1,
         "children": [
          {
+          "agent_retry": null,
           "blocked_on": "person",
           "child_count": 0,
           "children": [],
@@ -2081,10 +2189,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -2138,6 +2248,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2156,6 +2267,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2174,6 +2286,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2192,6 +2305,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2210,6 +2324,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -2253,14 +2368,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 4,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -2294,6 +2412,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2312,6 +2431,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -2340,6 +2460,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2373,10 +2494,12 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 5,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2395,6 +2518,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2413,6 +2537,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2431,6 +2556,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2449,6 +2575,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2497,14 +2624,17 @@
   "workspace_slug": ""
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 5,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2538,14 +2668,17 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -2594,6 +2727,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -2622,10 +2756,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2659,6 +2795,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2692,14 +2829,17 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 6,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2718,6 +2858,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2761,6 +2902,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -2789,10 +2931,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -2826,6 +2970,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2844,6 +2989,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2862,6 +3008,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2895,10 +3042,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2917,14 +3066,17 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -2973,6 +3125,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -2991,6 +3144,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3009,6 +3163,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3027,6 +3182,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3045,6 +3201,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3078,10 +3235,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 6,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3100,14 +3259,17 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3126,6 +3288,7 @@
         "workspace_slug": "blobert"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3184,10 +3347,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -3221,6 +3386,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3239,6 +3405,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -3267,6 +3434,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3300,10 +3468,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 5,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3322,10 +3492,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -3369,14 +3541,17 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3395,6 +3570,7 @@
         "workspace_slug": "blobert"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3443,6 +3619,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3461,10 +3638,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -3523,10 +3702,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 5,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3545,10 +3726,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -3592,6 +3775,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3610,14 +3794,17 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3636,6 +3823,7 @@
         "workspace_slug": "blobert"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3669,6 +3857,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -3702,6 +3891,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3735,10 +3925,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3757,6 +3949,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -3785,6 +3978,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3803,6 +3997,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -3831,10 +4026,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -3853,10 +4050,12 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -3905,6 +4104,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3923,6 +4123,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3956,10 +4157,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 6,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -3978,10 +4181,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4000,6 +4205,7 @@
       "workspace_slug": "blobert"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4043,6 +4249,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4061,6 +4268,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4079,10 +4287,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4116,6 +4326,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4149,14 +4360,17 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4190,10 +4404,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4237,6 +4453,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4255,6 +4472,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -4283,6 +4501,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4301,6 +4520,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4319,6 +4539,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4352,10 +4573,12 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 6,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4374,10 +4597,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4411,6 +4636,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4429,10 +4655,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -4476,10 +4704,12 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4513,6 +4743,7 @@
     "workspace_slug": "blobert"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4546,14 +4777,17 @@
   "workspace_slug": "blobert"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4587,6 +4821,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4605,10 +4840,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4642,6 +4879,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -4670,10 +4908,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4707,10 +4947,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4744,6 +4986,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4762,6 +5005,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4780,6 +5024,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4798,6 +5043,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4831,10 +5077,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4853,6 +5101,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -4871,10 +5120,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4893,6 +5144,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4936,10 +5188,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -4973,10 +5227,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5010,14 +5266,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -5076,6 +5335,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5094,6 +5354,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5127,10 +5388,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5149,10 +5412,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5186,14 +5451,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -5242,6 +5510,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -5270,6 +5539,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5288,6 +5558,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5306,6 +5577,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5324,10 +5596,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5361,6 +5635,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5379,6 +5654,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5412,14 +5688,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -5463,6 +5742,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5481,6 +5761,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5499,10 +5780,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5536,14 +5819,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -5592,10 +5878,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5639,6 +5927,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5657,6 +5946,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5675,6 +5965,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -5718,14 +6009,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5759,6 +6053,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -5787,10 +6082,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5824,14 +6121,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -5890,6 +6190,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -5918,10 +6219,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -5965,6 +6268,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -5983,6 +6287,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6001,6 +6306,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6034,10 +6340,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": "tickets",
   "child_count": 12,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6056,6 +6364,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6074,6 +6383,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -6102,6 +6412,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -6130,14 +6441,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -6186,6 +6500,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -6214,6 +6529,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6232,10 +6548,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6269,14 +6587,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": "on_request",
       "blocked_on": "agent",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -6306,7 +6627,7 @@
       "was_split": false,
       "work_item_type": "capability",
       "workflow_stage_name": "",
-      "workflow_stage_status": "pending",
+      "workflow_stage_status": "blocked",
       "workspace_slug": "loregarden"
      }
     ],
@@ -6325,6 +6646,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6343,6 +6665,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6361,6 +6684,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6394,14 +6718,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6435,6 +6762,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6453,6 +6781,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6471,6 +6800,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6489,6 +6819,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6507,10 +6838,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6529,6 +6862,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6572,6 +6906,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6590,6 +6925,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6608,6 +6944,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6626,6 +6963,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6644,6 +6982,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6677,10 +7016,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6699,10 +7040,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6736,6 +7079,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6754,10 +7098,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6801,6 +7147,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6819,14 +7166,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -6870,6 +7220,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -6903,6 +7254,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6921,6 +7273,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -6949,6 +7302,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -6982,10 +7336,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7004,6 +7360,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -7032,10 +7389,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -7069,6 +7428,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7087,6 +7447,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7105,6 +7466,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7123,6 +7485,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7141,14 +7504,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -7197,6 +7563,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7215,6 +7582,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7233,6 +7601,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7266,10 +7635,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7288,14 +7659,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -7344,6 +7718,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -7372,6 +7747,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7390,6 +7766,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -7418,6 +7795,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7436,10 +7814,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -7473,6 +7853,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7491,6 +7872,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7509,6 +7891,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7542,10 +7925,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7564,10 +7949,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -7596,6 +7983,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -7629,6 +8017,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7647,10 +8036,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -7669,6 +8060,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -7702,6 +8094,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7720,14 +8113,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -7776,6 +8172,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7794,6 +8191,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7812,6 +8210,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -7855,10 +8254,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7877,6 +8278,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -7895,10 +8297,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -7952,14 +8356,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -8018,6 +8425,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8036,6 +8444,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8054,6 +8463,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8072,10 +8482,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -8109,6 +8521,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8127,6 +8540,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8160,10 +8574,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8182,6 +8598,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8200,6 +8617,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8218,6 +8636,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8236,6 +8655,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8254,6 +8674,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8272,6 +8693,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8300,14 +8722,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -8341,6 +8766,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -8374,6 +8800,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8392,6 +8819,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8410,6 +8838,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": "on_request",
     "blocked_on": "agent",
     "child_count": 0,
     "children": [],
@@ -8424,7 +8853,7 @@
     "was_split": false,
     "work_item_type": "bug",
     "workflow_stage_name": "",
-    "workflow_stage_status": "pending",
+    "workflow_stage_status": "blocked",
     "workspace_slug": "loregarden"
    }
   ],
@@ -8443,10 +8872,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8475,6 +8906,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8503,6 +8935,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8521,10 +8954,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -8558,14 +8993,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -8614,6 +9052,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8642,6 +9081,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8660,6 +9100,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8678,6 +9119,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8696,6 +9138,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8724,6 +9167,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8767,18 +9211,22 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -8822,6 +9270,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -8855,6 +9304,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8873,6 +9323,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8891,6 +9342,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8909,6 +9361,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8937,6 +9390,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -8965,6 +9419,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -8983,6 +9438,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9001,6 +9457,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9029,6 +9486,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9047,6 +9505,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9080,10 +9539,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9102,6 +9563,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9130,6 +9592,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9148,10 +9611,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -9185,6 +9650,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9203,14 +9669,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -9259,10 +9728,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -9296,6 +9767,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9314,6 +9786,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9332,6 +9805,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9375,10 +9849,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9407,6 +9883,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9435,10 +9912,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -9482,6 +9961,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9500,10 +9980,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -9537,14 +10019,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -9593,6 +10078,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9611,6 +10097,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9629,6 +10116,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9647,6 +10135,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9680,10 +10169,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9712,14 +10203,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -9738,6 +10232,7 @@
         "workspace_slug": "loregarden"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -9771,6 +10266,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -9804,6 +10300,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9822,6 +10319,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9840,6 +10338,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9858,6 +10357,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9876,10 +10376,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -9913,6 +10415,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -9941,6 +10444,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9974,10 +10478,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -9996,6 +10502,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10014,6 +10521,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -10042,10 +10550,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10079,6 +10589,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10097,14 +10608,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -10138,6 +10652,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10171,10 +10686,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10208,6 +10725,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10226,6 +10744,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10244,6 +10763,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10277,14 +10797,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10318,6 +10841,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10336,10 +10860,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10373,6 +10899,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10391,6 +10918,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10409,6 +10937,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10427,10 +10956,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10464,14 +10995,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -10540,6 +11074,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10573,10 +11108,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -10605,6 +11142,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -10633,6 +11171,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10651,6 +11190,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10669,6 +11209,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10687,6 +11228,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10705,14 +11247,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -10756,6 +11301,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10799,10 +11345,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10836,6 +11384,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10854,6 +11403,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10887,14 +11437,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -10928,6 +11481,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10946,6 +11500,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -10974,6 +11529,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -10992,14 +11548,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -11058,10 +11617,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -11115,10 +11676,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11152,6 +11715,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11170,6 +11734,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -11213,14 +11778,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11239,10 +11807,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -11311,6 +11881,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11329,6 +11900,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11347,6 +11919,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -11375,6 +11948,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -11403,10 +11977,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11440,10 +12016,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11487,6 +12065,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11505,6 +12084,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11538,14 +12118,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11579,6 +12162,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11597,6 +12181,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -11625,6 +12210,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11643,6 +12229,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11661,10 +12248,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11698,10 +12287,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11720,10 +12311,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -11772,6 +12365,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11790,6 +12384,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11823,14 +12418,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11864,6 +12462,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11882,10 +12481,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -11919,6 +12520,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11937,6 +12539,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -11955,14 +12558,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -12011,6 +12617,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12029,6 +12636,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12047,6 +12655,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12065,6 +12674,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12098,10 +12708,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -12130,14 +12742,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -12186,6 +12801,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12204,10 +12820,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12226,6 +12844,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12259,6 +12878,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -12287,6 +12907,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -12315,10 +12936,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12362,6 +12985,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12380,6 +13004,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12413,10 +13038,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12435,6 +13062,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12453,10 +13081,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12475,6 +13105,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12508,10 +13139,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12545,6 +13178,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12563,14 +13197,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -12619,6 +13256,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12637,6 +13275,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12655,6 +13294,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12688,14 +13328,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12714,6 +13357,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12747,10 +13391,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12784,6 +13430,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12802,10 +13449,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -12839,6 +13488,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12857,6 +13507,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12875,14 +13526,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -12931,6 +13585,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -12964,14 +13619,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13005,6 +13663,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13023,6 +13682,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13041,10 +13701,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 3,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13063,6 +13725,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13081,6 +13744,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -13134,14 +13798,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -13200,6 +13867,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13218,6 +13886,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13236,6 +13905,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13269,10 +13939,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -13301,14 +13973,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -13357,6 +14032,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13375,10 +14051,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13422,6 +14100,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -13450,6 +14129,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13468,10 +14148,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13490,10 +14172,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -13542,6 +14226,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13560,6 +14245,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13593,10 +14279,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -13625,14 +14313,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -13681,6 +14372,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13699,10 +14391,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13746,10 +14440,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13783,6 +14479,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13801,6 +14498,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13819,6 +14517,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -13847,6 +14546,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13865,6 +14565,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13898,10 +14599,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13920,10 +14623,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -13957,6 +14662,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -13975,14 +14681,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -14026,6 +14735,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14059,6 +14769,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14077,6 +14788,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -14105,10 +14817,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 3,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14127,6 +14841,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14145,6 +14860,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14203,18 +14919,22 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -14263,6 +14983,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14281,6 +15002,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -14309,10 +15031,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14331,6 +15055,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14364,6 +15089,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -14392,6 +15118,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -14420,10 +15147,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14467,6 +15196,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14485,6 +15215,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14518,18 +15249,22 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -14578,10 +15313,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14615,6 +15352,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14633,10 +15371,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14655,6 +15395,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14688,10 +15429,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14725,10 +15468,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14762,6 +15507,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14795,14 +15541,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 3,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14821,10 +15570,12 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -14868,6 +15619,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14901,10 +15653,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -14938,6 +15692,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14956,6 +15711,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -14974,10 +15730,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -15021,6 +15779,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15039,10 +15798,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15091,10 +15852,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 7,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15113,14 +15876,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -15169,6 +15935,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15187,6 +15954,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15205,10 +15973,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15227,6 +15997,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15260,10 +16031,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15297,10 +16070,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15319,6 +16094,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15377,10 +16153,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 11,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -15409,6 +16187,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15427,6 +16206,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15445,10 +16225,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15482,10 +16264,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15519,10 +16303,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15556,6 +16342,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -15584,6 +16371,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15602,6 +16390,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15620,6 +16409,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -15648,6 +16438,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15681,14 +16472,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15722,6 +16516,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15740,6 +16535,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15758,6 +16554,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15776,10 +16573,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15813,10 +16612,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -15860,14 +16661,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -15926,6 +16730,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15944,6 +16749,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15977,10 +16783,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -15999,10 +16807,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16036,6 +16846,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16054,6 +16865,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -16082,14 +16894,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -16148,10 +16963,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16185,10 +17002,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16222,6 +17041,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16240,6 +17060,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16273,14 +17094,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16314,10 +17138,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16361,6 +17187,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16379,6 +17206,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16397,6 +17225,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16415,10 +17244,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16452,6 +17283,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16470,10 +17302,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16507,6 +17341,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16525,6 +17360,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16558,14 +17394,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16599,10 +17438,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16636,10 +17477,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16673,14 +17516,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -16729,6 +17575,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16747,6 +17594,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16765,6 +17613,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16783,6 +17632,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16801,6 +17651,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16834,10 +17685,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -16856,10 +17709,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16903,10 +17758,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16940,10 +17797,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -16987,10 +17846,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17024,6 +17885,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17042,10 +17904,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17079,6 +17943,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17097,6 +17962,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17140,10 +18006,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17162,10 +18030,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17199,10 +18069,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17236,14 +18108,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -17277,6 +18152,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17310,10 +18186,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17357,6 +18235,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17375,6 +18254,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17393,6 +18273,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17426,10 +18307,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17448,6 +18331,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17476,14 +18360,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -17532,6 +18419,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17550,10 +18438,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17587,6 +18477,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17615,10 +18506,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17652,6 +18545,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17670,6 +18564,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17698,6 +18593,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17741,14 +18637,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17767,6 +18666,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17810,6 +18710,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17828,6 +18729,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17846,6 +18748,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -17874,10 +18777,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -17931,6 +18836,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -17949,10 +18855,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -17996,10 +18904,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18033,6 +18943,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18066,10 +18977,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -18098,14 +19011,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": "tickets",
         "child_count": 0,
         "children": [],
@@ -18149,6 +19065,7 @@
       "workspace_slug": "loregarden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18182,10 +19099,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18219,6 +19138,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18237,6 +19157,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18255,10 +19176,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18292,6 +19215,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18310,6 +19234,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18328,6 +19253,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18361,10 +19287,12 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18383,6 +19311,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18401,10 +19330,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18438,6 +19369,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18456,14 +19388,17 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -18512,6 +19447,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18530,10 +19466,12 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18567,6 +19505,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18585,6 +19524,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18603,6 +19543,7 @@
     "workspace_slug": "loregarden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18636,14 +19577,17 @@
   "workspace_slug": "loregarden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 2,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18662,6 +19606,7 @@
       "workspace_slug": "loremaker"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18695,6 +19640,7 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18728,14 +19674,17 @@
   "workspace_slug": "loremaker"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 3,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18769,6 +19718,7 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18787,10 +19737,12 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18839,18 +19791,22 @@
   "workspace_slug": "loremaker"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 3,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -18899,6 +19855,7 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18917,6 +19874,7 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -18950,14 +19908,17 @@
   "workspace_slug": "loremaker"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 2,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -18991,10 +19952,12 @@
     "workspace_slug": "loremaker"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -19053,10 +20016,12 @@
   "workspace_slug": "loremaker"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 9,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19075,6 +20040,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19093,6 +20059,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19111,10 +20078,12 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -19168,6 +20137,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19186,10 +20156,12 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -19233,10 +20205,12 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -19280,6 +20254,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19298,6 +20273,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19331,10 +20307,12 @@
   "workspace_slug": "lore-eden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 10,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -19363,10 +20341,12 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -19400,6 +20380,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19418,6 +20399,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -19446,14 +20428,17 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -19502,6 +20487,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19520,6 +20506,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19538,6 +20525,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19556,6 +20544,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19574,6 +20563,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19607,10 +20597,12 @@
   "workspace_slug": "lore-eden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -19639,6 +20631,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19657,6 +20650,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19675,6 +20669,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19693,14 +20688,17 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 3,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -19734,10 +20732,12 @@
       "workspace_slug": "lore-eden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 1,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -19771,6 +20771,7 @@
       "workspace_slug": "lore-eden"
      },
      {
+      "agent_retry": null,
       "blocked_on": "tickets",
       "child_count": 0,
       "children": [],
@@ -19814,6 +20815,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19832,6 +20834,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19850,6 +20853,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19883,10 +20887,12 @@
   "workspace_slug": "lore-eden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 8,
   "children": [
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19905,6 +20911,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -19933,6 +20940,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -19961,6 +20969,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -19979,14 +20988,17 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 2,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 2,
       "children": [
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -20005,6 +21017,7 @@
         "workspace_slug": "lore-eden"
        },
        {
+        "agent_retry": null,
         "blocked_on": null,
         "child_count": 0,
         "children": [],
@@ -20038,6 +21051,7 @@
       "workspace_slug": "lore-eden"
      },
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -20071,10 +21085,12 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 1,
     "children": [
      {
+      "agent_retry": null,
       "blocked_on": null,
       "child_count": 0,
       "children": [],
@@ -20108,6 +21124,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": null,
     "child_count": 0,
     "children": [],
@@ -20126,6 +21143,7 @@
     "workspace_slug": "lore-eden"
    },
    {
+    "agent_retry": null,
     "blocked_on": "tickets",
     "child_count": 0,
     "children": [],
@@ -20169,6 +21187,7 @@
   "workspace_slug": "lore-eden"
  },
  {
+  "agent_retry": null,
   "blocked_on": null,
   "child_count": 0,
   "children": [],

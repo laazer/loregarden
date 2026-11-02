@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from loregarden.models.domain import (
     VALID_HIERARCHY,
+    AgentRetry,
     BlockedOn,
     Ticket,
     TicketTreeNode,
@@ -68,6 +69,7 @@ def build_tree(
     stage_names: dict[str, str] | None = None,
     members: dict[str, list[str]] | None = None,
     blocked_on: dict[str, BlockedOn] | None = None,
+    agent_retry: dict[str, AgentRetry] | None = None,
     waiting_on: dict[str, list[WaitingOnRef]] | None = None,
 ) -> list[TicketTreeNode]:
     """Assemble a forest from a flat ticket list (roots = no parent).
@@ -79,6 +81,7 @@ def build_tree(
     stage_names = stage_names or {}
     members = members or {}
     blocked_on = blocked_on or {}
+    agent_retry = agent_retry or {}
     waiting_on = waiting_on or {}
     by_id = {t.id: t for t in tickets}
     split_ids = split_ticket_ids(session, [t.id for t in tickets])
@@ -119,6 +122,7 @@ def build_tree(
             workflow_stage_name=stage_names.get(ticket.id, ""),
             workflow_stage_status=ticket.workflow_stage_status,
             blocked_on=blocked_on.get(ticket.id),
+            agent_retry=agent_retry.get(ticket.id),
             waiting_on=waiting_on.get(ticket.id, []),
             was_split=ticket.id in split_ids,
         )

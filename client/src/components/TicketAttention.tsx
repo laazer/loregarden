@@ -7,7 +7,7 @@ import type { MonitorFinding } from "../api/types";
 import { formatRelativeAge } from "../lib/timestamps";
 import { navigateToTicketTab } from "../lib/useAppNavigation";
 import { openReader } from "../state/readerStore";
-import { blockKindLabel } from "../utils/blockKinds";
+import { blockHeadline } from "../utils/blockKinds";
 import { Button } from "./ui/Button";
 import { TicketWaitingOn } from "./waiting/TicketWaitingOn";
 import "./TicketAttention.css";
@@ -74,7 +74,7 @@ export function TicketAttention({
   const truncated = block.length > TEASER_CHARS || teaser !== block;
   const blockLabel =
     ticket.state === "blocked"
-      ? `Blocked${ticket.block_kind ? ` · ${blockKindLabel(ticket.block_kind)}` : ""}`
+      ? blockHeadline(ticket).label
       : "Rework";
   const openTimeline = () => navigateToTicketTab(ticket.id, "timeline");
 

@@ -1,11 +1,9 @@
 import type { ReactNode } from "react";
 
 import type { TicketTreeNode } from "../api/client";
-import {
-  TICKET_STATE_COLORS,
-  stageStatusColor,
-} from "../lib/ticketStates";
-import { blockedOnStateLabel } from "../utils/blockKinds";
+import { stageStatusColor } from "../lib/ticketStates";
+import { blockedOnStateLabel, stuckTicketTone } from "../utils/blockKinds";
+import { STATUS_TONE_COLORS } from "../lib/statusTone";
 import { hasParts, partsTag } from "../lib/ticketParts";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
@@ -113,7 +111,7 @@ function TreeRow({
   const isMember = Boolean(node.member_link);
   // A member copy is a pointer: children are added at the real row.
   const showAddChild = !isMember && !!onAddChild && canHaveChildren(node.work_item_type);
-  const stateColor = TICKET_STATE_COLORS[node.state];
+  const stateColor = STATUS_TONE_COLORS[stuckTicketTone(node)];
   const wfColor = stageStatusColor(node.workflow_stage_status);
   const isV6 = presentation === "v6";
   const isCompact = presentation === "compact";
@@ -259,7 +257,7 @@ function TreeRow({
                   }}
                 >
                   <span className="tree-state-dot" style={{ background: stateColor }} />
-                  {blockedOnStateLabel(node.state, node.blocked_on)}
+                  {blockedOnStateLabel(node.state, node.blocked_on, node.agent_retry)}
                 </span>
                 {node.waiting_on?.length ? (
                   <>

@@ -12,9 +12,16 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import (
+    AgentRetry,
+    AgentRun,
+    AutopilotAction,
+    AutopilotEvent,
     BlockedOn,
     BlockKind,
+    InitiativePlan,
+    StageStatus,
     Ticket,
     TicketDependency,
     TicketState,
@@ -22,6 +29,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.agent_retry import agent_retry_map, spent_agent_blocks
 from loregarden.services.blocked_on import (
     blocked_on_clause,
     blocked_on_map,
@@ -69,6 +77,26 @@ def _ticket(
         parent_ticket_id=parent.id if parent else None,
     )
     session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def _at_blocked_stage(session: Session, ticket: Ticket, *, repaired: bool = False) -> Ticket:
+    """A blocked stage a re-run could still clear; ``repaired`` spends its one repair turn."""
+    ticket.workflow_stage_key = "implement"
+    ticket.workflow_stage_status = StageStatus.BLOCKED
+    session.add(ticket)
+    if repaired:
+        session.add(
+            AgentRun(
+                run_code="r-1",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+                agent_id=REPAIR_AGENT_ID,
+                stage_key="implement",
+            )
+        )
     session.commit()
     session.refresh(ticket)
     return ticket
@@ -193,10 +221,24 @@ def board_fixture(session, workspace) -> dict[str, Ticket]:
             session, workspace, "human", state=TicketState.BLOCKED, kind=BlockKind.HUMAN_ACTION
         ),
         "unclassified": _ticket(session, workspace, "unclassified", state=TicketState.BLOCKED),
-        "harness": _ticket(
-            session, workspace, "harness", state=TicketState.BLOCKED, kind=BlockKind.HARNESS
+        "harness": _at_blocked_stage(
+            session,
+            _ticket(
+                session, workspace, "harness", state=TicketState.BLOCKED, kind=BlockKind.HARNESS
+            ),
         ),
-        "work": _ticket(session, workspace, "work", state=TicketState.BLOCKED, kind=BlockKind.WORK),
+        "work": _at_blocked_stage(
+            session,
+            _ticket(session, workspace, "work", state=TicketState.BLOCKED, kind=BlockKind.WORK),
+        ),
+        # Its repair turn ran and it blocked again: the kind says agent, nothing agent comes next.
+        "work_repaired": _at_blocked_stage(
+            session,
+            _ticket(
+                session, workspace, "work-repaired", state=TicketState.BLOCKED, kind=BlockKind.WORK
+            ),
+            repaired=True,
+        ),
         "rolled_up": _ticket(
             session, workspace, "rolled-up", state=TicketState.BLOCKED, kind=BlockKind.TICKETS
         ),
@@ -235,6 +277,7 @@ EXPECTED = {
     "unclassified": BlockedOn.PERSON,
     "harness": BlockedOn.AGENT,
     "work": BlockedOn.AGENT,
+    "work_repaired": BlockedOn.PERSON,
     "rolled_up": BlockedOn.TICKETS,
     "held": BlockedOn.TICKETS,
     "held_mid_workflow": BlockedOn.TICKETS,
@@ -254,7 +297,9 @@ def test_the_filter_agrees_with_the_derivation(session, board, wanted):
     ids = [t.id for t in board.values()]
     matched = set(
         session.exec(
-            select(Ticket.id).where(col(Ticket.id).in_(ids), blocked_on_clause([wanted]))
+            select(Ticket.id).where(
+                col(Ticket.id).in_(ids), blocked_on_clause([wanted], spent_agent_blocks(session))
+            )
         ).all()
     )
     derived = blocked_on_map(session, list(board.values()))
@@ -263,7 +308,7 @@ def test_the_filter_agrees_with_the_derivation(session, board, wanted):
 
 
 def test_no_filter_value_matches_nothing(session, board):
-    assert session.exec(select(Ticket.id).where(blocked_on_clause([]))).all() == []
+    assert session.exec(select(Ticket.id).where(blocked_on_clause([], []))).all() == []
 
 
 # --- waiting_on: which tickets ------------------------------------------------------
@@ -316,6 +361,52 @@ def test_a_held_ticket_names_its_unfinished_prerequisites(session, board):
     assert board["met"].id not in refs
 
 
+# --- agent_retry: who starts the re-run ----------------------------------------------
+
+
+def _autopilot_over(session: Session, root: Ticket) -> InitiativePlan:
+    plan = InitiativePlan(initiative_id=root.id, autopilot=True)
+    session.add(plan)
+    session.commit()
+    return plan
+
+
+def test_a_retryable_block_waits_for_one_run_when_nothing_will_start_it(session, board):
+    retry = agent_retry_map(session, list(board.values()))
+    assert retry == {
+        board["harness"].id: AgentRetry.ON_REQUEST,
+        board["work"].id: AgentRetry.ON_REQUEST,
+    }
+
+
+def test_an_autopilot_covering_it_retries_it_until_it_has(session, workspace):
+    milestone = _ticket(session, workspace, "m", work_item_type=WorkItemType.MILESTONE)
+    task = _ticket(session, workspace, "t", parent=milestone)
+    _block(session, task, BlockKind.HARNESS)
+    _at_blocked_stage(session, task)
+    _autopilot_over(session, milestone)
+
+    assert agent_retry_map(session, [task]) == {task.id: AgentRetry.AUTOMATIC}
+
+    session.add(
+        AutopilotEvent(
+            initiative_id=milestone.id, action=AutopilotAction.RETRIED, ticket_id=task.id
+        )
+    )
+    session.commit()
+    # It retries once per time it is turned on; the next re-run is a person's click.
+    assert agent_retry_map(session, [task]) == {task.id: AgentRetry.ON_REQUEST}
+
+
+def test_a_spent_block_has_no_retry(session, board):
+    assert board["work_repaired"].id not in agent_retry_map(session, [board["work_repaired"]])
+    # With no blocked stage there is nothing to re-run either.
+    assert set(spent_agent_blocks(session)) == {
+        board["work_repaired"].id,
+        board["harness_and_held"].id,
+    }
+
+
 # --- the API carries both -----------------------------------------------------------
 
 
@@ -342,3 +433,23 @@ def test_the_ticket_and_the_tree_carry_the_answer(client: TestClient, db_session
     # The feature is scaffolding for its matching child, and still says what it is.
     assert matched["api-t"] == "person"
     assert matched["api-f"] == "tickets"
+
+
+def test_the_summary_says_who_starts_the_re_run(client: TestClient, db_session: Session):
+    ws = db_session.exec(select(Workspace)).first()
+    assert ws is not None
+    held_prereq = _ticket(db_session, ws, "api-prereq", state=TicketState.IN_PROGRESS)
+    _at_blocked_stage(
+        db_session, _ticket(db_session, ws, "api-a", state=TicketState.BLOCKED, kind=BlockKind.WORK)
+    )
+    held = _at_blocked_stage(
+        db_session, _ticket(db_session, ws, "api-h", state=TicketState.BLOCKED, kind=BlockKind.WORK)
+    )
+    _depends(db_session, held, held_prereq)
+
+    rows = {
+        r["external_id"]: (r["blocked_on"], r["agent_retry"])
+        for r in client.get(f"/api/tickets?workspace={ws.slug}&state=blocked").json()
+    }
+    assert rows["api-a"] == ("agent", "on_request")
+    assert rows["api-h"] == ("tickets", None)

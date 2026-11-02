@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from loregarden.models.domain.block_kinds import BlockedOn, BlockKind, WaitingReason
+from loregarden.models.domain.block_kinds import AgentRetry, BlockedOn, BlockKind, WaitingReason
 from loregarden.models.domain.enums import (
     CliTool,
     DoctorCheck,
@@ -230,6 +230,8 @@ class TicketSummary(SQLModel):
     block_kind: BlockKind | None = None
     #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
     blocked_on: BlockedOn | None = None
+    #: Who starts the re-run, when `blocked_on` is AGENT (`services.agent_retry`).
+    agent_retry: AgentRetry | None = None
     #: The tickets it waits for: its blocked descendants, or unmet prerequisites.
     waiting_on: list[WaitingOnRef] = []
     #: The bottom of each unmet-prerequisite chain under it: what has to move
@@ -280,6 +282,8 @@ class TicketTreeNode(SQLModel):
     was_split: bool = False
     #: What it waits for, derived (`services.blocked_on`); None when it is not stuck.
     blocked_on: BlockedOn | None = None
+    #: Who starts the re-run, when `blocked_on` is AGENT (`services.agent_retry`).
+    agent_retry: AgentRetry | None = None
     #: Its unfinished prerequisites — the waits the tree cannot draw.
     waiting_on: list[WaitingOnRef] = []
     children: list["TicketTreeNode"] = []

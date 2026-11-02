@@ -1,6 +1,7 @@
 [
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -27,6 +28,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -53,6 +55,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -79,6 +82,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
@@ -125,6 +129,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": "tickets",
   "blocked_on": "tickets",
   "branch": "",
@@ -161,6 +166,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
@@ -207,6 +213,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -233,6 +240,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
@@ -279,6 +287,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -305,6 +314,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -331,6 +341,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",
@@ -357,6 +368,7 @@
  },
  {
   "activity": "idle",
+  "agent_retry": null,
   "block_kind": null,
   "blocked_on": null,
   "branch": "",

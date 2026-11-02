@@ -4,7 +4,9 @@ import type { TicketTreeNode } from "../../api/types";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
-import { TICKET_STATE_COLORS, runStatusLabel, stageStatusColor } from "../../lib/ticketStates";
+import { STATUS_TONE_COLORS } from "../../lib/statusTone";
+import { runStatusLabel, stageStatusColor } from "../../lib/ticketStates";
+import { stuckTicketTone } from "../../utils/blockKinds";
 import {
   needsMeReason,
   stageText,
@@ -147,7 +149,7 @@ export function WorkItemsTable({
               {partLabel ? <span className="wi-parts wi-parts--of">{partLabel}</span> : null}
             </td>
             <td className="wi-col-state">
-              <span className="wi-dot" style={{ background: TICKET_STATE_COLORS[node.state] }} aria-hidden />
+              <span className="wi-dot" style={{ background: STATUS_TONE_COLORS[stuckTicketTone(node)] }} aria-hidden />
               {stateText(node)}
             </td>
             <td className="wi-col-stage" style={{ color: stageStatusColor(node.workflow_stage_status) }}>

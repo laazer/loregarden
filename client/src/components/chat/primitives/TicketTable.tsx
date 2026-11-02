@@ -1,9 +1,8 @@
 import { Fragment, useId, useMemo, useState } from "react";
 
 import type { TicketTreeNode } from "../../../api/types";
-import { ticketStateChip } from "../../../lib/ticketStates";
 import { peekTicket } from "../../../state/ticketPeekStore";
-import { blockedOnStateLabel } from "../../../utils/blockKinds";
+import { blockedOnStateLabel, stuckTicketChip } from "../../../utils/blockKinds";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { StatusChip } from "../../ui/StatusChip";
@@ -48,7 +47,7 @@ export function TicketTable({ nodes, label }: { nodes: TicketTreeNode[]; label: 
 
   const rows = (list: TicketTreeNode[], depth: number) =>
     list.map((node) => {
-      const chip = ticketStateChip(node.state);
+      const chip = stuckTicketChip(node);
       const expandable = node.children.length > 0;
       const expanded = open.has(node.id);
       return (
@@ -82,7 +81,11 @@ export function TicketTable({ nodes, label }: { nodes: TicketTreeNode[]; label: 
               </div>
             </td>
             <td className="lg-ticket-table-status">
-              <StatusChip tone={chip.tone} label={blockedOnStateLabel(node.state, node.blocked_on)} />
+              <StatusChip
+                tone={chip.tone}
+                label={blockedOnStateLabel(node.state, node.blocked_on, node.agent_retry)}
+                title={chip.title}
+              />
             </td>
             <td className="lg-ticket-table-stage">{node.workflow_stage_name || "—"}</td>
           </tr>
