@@ -625,3 +625,33 @@
     grid-row: 2 / span 2;
   }
 }
+
+/*
+ * Docked right, the chat is the column: no inset card inside a column that
+ * already has its own edge. The body's 14px padding and the pane's rounded
+ * corner cost 28px of a 380px sidebar and stopped the thread's ground short of
+ * its edges; one gutter on the text, matching the composer card's inset in the
+ * bar below, is all the spacing it needs.
+ */
+.copilot-dock--edge-right .copilot-dock-body {
+  padding: 0;
+}
+
+.copilot-dock--edge-right .copilot-dock-chat {
+  border-radius: 0;
+}
+
+.copilot-dock--edge-right .copilot-dock-messages {
+  padding-inline: 10px;
+  /* A full scrollbar takes its width out of the turns. */
+  scrollbar-width: thin;
+}
+
+.copilot-dock--edge-right .dock-welcome {
+  padding-inline: 12px;
+}
+
+/* The archive rail is the pane here (see the container query above). */
+.copilot-dock--edge-right .copilot-dock-rail {
+  padding-inline: 10px;
+}
