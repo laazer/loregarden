@@ -313,3 +313,288 @@ def test_the_endpoint_serves_the_capacity_wait_in_the_same_payload(client, db_se
     body = response.json()
     assert body["capacity_wait"]["total_seconds"] == 384.0
     assert all("capacity_wait_seconds" in visit for visit in body["visits"])
+
+
+# ---- lg-machine-resource-1923 R9, adversarially: the arithmetic's corners ----
+#
+# The cases above pin the rule. These pin the boundaries of the rule, where a
+# plausible implementation disagrees with it while passing every case above:
+# the floor's exact value, "at or after" at the instant itself, a lease that was
+# never granted, a clock that went backwards, rows that belong to something
+# else, and whether the figure is the same twice.
+
+
+def test_a_wait_of_exactly_five_seconds_is_attributed_to_its_visit(session, ticket) -> None:
+    """R9. The floor is "under 5 seconds", so 5.0 is above it.
+
+    `< 5` and `<= 5` both pass `test_a_wait_under_five_seconds_is_not_attributed_to_a_visit`
+    at 0.1s. They disagree here, and the number in the criterion is the one an
+    operator can argue with — so it is the one the test has to hold to.
+    """
+    _run(session, ticket, "spec", created_at=T0)
+    _lease(session, ticket, requested_at=T0 - timedelta(seconds=10), waited_seconds=5.0)
+
+    payload = _payload(session, ticket)
+
+    assert payload["visits"][0]["capacity_wait_seconds"] == 5.0
+    assert payload["capacity_wait"]["total_seconds"] == 5.0
+
+
+def test_a_lease_granted_at_the_instant_a_visit_began_belongs_to_that_visit(
+    session, ticket
+) -> None:
+    """R9. "At or after that lease's `granted_at`" — at the instant itself.
+
+    The gate for a transition is granted and then the next stage's run is
+    created, and on a machine that grants instantly those two stamps can be the
+    same. A strict `>` drops the lease to the following visit, or off the end of
+    the ledger entirely when it is the last one, and the per-visit figures then
+    disagree with the stage they belong to by one row.
+    """
+    plan_at = T0
+    spec_at = T0 + timedelta(minutes=10)
+    _run(session, ticket, "plan", created_at=plan_at)
+    _run(session, ticket, "spec", created_at=spec_at)
+    _lease(session, ticket, requested_at=plan_at - timedelta(seconds=60), waited_seconds=60)
+
+    payload = _payload(session, ticket)
+
+    assert payload["visits"][0]["capacity_wait_seconds"] == 60.0, (
+        "granted_at == the visit's first attempt created_at is 'at or after'"
+    )
+    assert payload["visits"][1]["capacity_wait_seconds"] is None
+
+
+def test_a_visits_two_waits_are_summed_and_the_floor_applies_to_the_sum(session, ticket) -> None:
+    """R9. "The sum of its attributed leases' waits", and the floor is on the sum.
+
+    A retried visit can be preceded by two grants. Two 3-second waits are 6
+    seconds of queueing before one stage, which is above the floor — an
+    implementation that applies the 5s test per lease shows nothing and reports
+    a stage that waited 6 seconds as a stage that waited none.
+    """
+    _run(session, ticket, "implement", created_at=T0)
+    _lease(session, ticket, requested_at=T0 - timedelta(seconds=120), waited_seconds=3.0)
+    _lease(session, ticket, requested_at=T0 - timedelta(seconds=60), waited_seconds=3.0)
+
+    payload = _payload(session, ticket)
+
+    assert payload["visits"][0]["capacity_wait_seconds"] == 6.0
+    assert payload["capacity_wait"] == {
+        "total_seconds": 6.0,
+        "lease_count": 2,
+        "reacquired_seconds": 0.0,
+    }
+
+
+def test_a_lease_that_was_never_granted_is_not_counted_as_a_wait_of_zero(session, ticket) -> None:
+    """R9. `granted_at` is NULL for a claim that never got capacity.
+
+    Both reachable rows are here: a gate that gave up inside its budget, which
+    `acquire_gate_capacity` releases as ABANDONED without ever being granted,
+    and a claim still in the line right now. Neither has a `granted_at`, so the
+    obvious subtraction raises `TypeError` inside a ledger read — which is a
+    500 on the Timeline, not a missing figure — and the obvious guard of
+    treating it as zero reports "this ticket did not wait" about the one row
+    that is waiting as the payload is built.
+    """
+    _run(session, ticket, "plan", created_at=T0)
+    granted = _lease(session, ticket, requested_at=T0 - timedelta(seconds=60), waited_seconds=60)
+    abandoned = _lease(session, ticket, requested_at=T0 - timedelta(hours=1), waited_seconds=0)
+    abandoned.granted_at = None
+    abandoned.end_reason = DockerLeaseEndReason.ABANDONED
+    waiting = _lease(session, ticket, requested_at=T0 + timedelta(minutes=1), waited_seconds=0)
+    waiting.granted_at = None
+    waiting.status = DockerLeaseStatus.WAITING
+    waiting.end_reason = None
+    session.add_all([abandoned, waiting])
+    session.commit()
+
+    payload = _payload(session, ticket)
+
+    assert payload["capacity_wait"] == {
+        "total_seconds": 60.0,
+        "lease_count": 1,
+        "reacquired_seconds": 0.0,
+    }, "an ungranted claim is not a trip through the line that cost nothing"
+    assert payload["visits"][0]["capacity_wait_seconds"] == 60.0
+    assert granted.granted_at is not None
+
+
+def test_a_clock_that_went_backwards_never_reports_a_negative_wait(session, ticket) -> None:
+    """R9. `granted_at` before `requested_at`.
+
+    Both stamps are written by the process that holds the lease, and this
+    machine's leases are written by several processes; a corrected clock, or a
+    row restored from a snapshot, is enough. A negative wait would subtract
+    from the ticket's total and could make a ticket that queued for 20 minutes
+    read as having queued for 12 — a figure that is wrong in the direction
+    nobody checks, on the surface this ticket adds to make queueing visible.
+    """
+    _run(session, ticket, "plan", created_at=T0)
+    _lease(session, ticket, requested_at=T0 - timedelta(seconds=60), waited_seconds=60)
+    skewed = _lease(session, ticket, requested_at=T0 - timedelta(seconds=30), waited_seconds=0)
+    skewed.granted_at = skewed.requested_at - timedelta(seconds=90)
+    session.add(skewed)
+    session.commit()
+
+    payload = _payload(session, ticket)
+
+    assert payload["capacity_wait"]["total_seconds"] >= 60.0, (
+        "a backwards clock was subtracted from the ticket's queue time"
+    )
+    assert payload["visits"][0]["capacity_wait_seconds"] >= 60.0
+
+
+def test_another_tickets_leases_and_the_docker_pool_are_not_this_tickets_wait(
+    session, ticket
+) -> None:
+    """R9. "The HOST `docker_leases` rows already carrying this ticket's id".
+
+    Two rows that are not this ticket's queue time and look exactly like it:
+    the lease of the ticket that was ahead of it in the line, and this ticket's
+    own DOCKER-pool claim, which is charged to the host pool but is a second
+    ledger whose wait is a different event. Counting either turns the Timeline
+    figure into something no operator can reconcile against the capacity board.
+    """
+    other = make_ticket(
+        session, workspace_id=ticket.workspace_id, external_id="lg-machine-resource-1925"
+    )
+    _run(session, ticket, "plan", created_at=T0)
+    _lease(session, ticket, requested_at=T0 - timedelta(seconds=60), waited_seconds=60)
+    _lease(session, other, requested_at=T0 - timedelta(seconds=900), waited_seconds=900)
+    docker_row = _lease(
+        session, ticket, requested_at=T0 - timedelta(seconds=300), waited_seconds=300
+    )
+    docker_row.pool = CapacityPool.DOCKER
+    session.add(docker_row)
+    session.commit()
+
+    payload = _payload(session, ticket)
+
+    assert payload["capacity_wait"] == {
+        "total_seconds": 60.0,
+        "lease_count": 1,
+        "reacquired_seconds": 0.0,
+    }
+
+
+def test_a_child_is_excluded_because_it_is_a_child_not_because_it_waited_nothing(
+    session, ticket
+) -> None:
+    """R9. The exclusion has to be structural.
+
+    `test_a_gate_childs_wait_is_not_double_counted_under_its_parent` is also
+    passed by an implementation that filters on `granted_at > requested_at` and
+    never looks at `parent_lease_id` — the child it uses happens to have waited
+    zero. This one hands a child a non-zero wait it could never earn, so only
+    an implementation that excludes children *as children* survives.
+
+    It matters because the two filters disagree on real rows the other way too:
+    a top-level parent granted the instant it asked is a trip to the line, and
+    a child is not one however its stamps read.
+    """
+    _run(session, ticket, "plan", created_at=T0)
+    parent = _lease(session, ticket, requested_at=T0 - timedelta(seconds=384), waited_seconds=384)
+    impossible = _lease(
+        session,
+        ticket,
+        requested_at=T0 - timedelta(seconds=200),
+        waited_seconds=200,
+        holder_kind=DockerHolderKind.AD_HOC,
+        parent_lease_id=parent.id,
+        label="gates triage_to_plan · proj · lg-reference-sources-1912",
+    )
+
+    payload = _payload(session, ticket)
+
+    assert impossible.parent_lease_id == parent.id
+    assert payload["capacity_wait"]["lease_count"] == 1
+    assert payload["capacity_wait"]["total_seconds"] == 384.0, (
+        "a child's stamps were added to the ticket's queue time"
+    )
+    assert payload["visits"][0]["capacity_wait_seconds"] == 384.0
+
+
+def test_two_parks_on_one_ticket_report_both_re_acquires(session, ticket) -> None:
+    """R9/R5. `reacquired_seconds` is a sum, not a flag.
+
+    A ticket can be parked more than once — an authored question, then an
+    authority grant — and each resolve pays the line again. One park is also
+    passed by an implementation that reports the *last* re-acquire, so the
+    second park is what makes the field a total. The first acquire is never a
+    re-acquire, however many follow it.
+    """
+    stages = [
+        ("spec", T0),
+        ("test-design", T0 + timedelta(hours=9)),
+        ("implement", T0 + timedelta(hours=18)),
+    ]
+    for stage_key, at in stages:
+        _run(session, ticket, stage_key, created_at=at)
+    _lease(
+        session,
+        ticket,
+        requested_at=stages[0][1] - timedelta(seconds=10),
+        waited_seconds=10,
+        end_reason=DockerLeaseEndReason.PARK_RELEASED,
+    )
+    _lease(
+        session,
+        ticket,
+        requested_at=stages[1][1] - timedelta(seconds=120),
+        waited_seconds=120,
+        end_reason=DockerLeaseEndReason.PARK_RELEASED,
+    )
+    _lease(session, ticket, requested_at=stages[2][1] - timedelta(seconds=300), waited_seconds=300)
+
+    payload = _payload(session, ticket)
+
+    assert [visit["capacity_wait_after_park"] for visit in payload["visits"]] == [
+        False,
+        True,
+        True,
+    ]
+    assert payload["capacity_wait"]["reacquired_seconds"] == 420.0, (
+        "both re-acquires, summed: 120 + 300"
+    )
+    assert payload["capacity_wait"]["total_seconds"] == 430.0
+
+
+def test_thirty_leases_read_the_same_twice_whatever_order_the_rows_are_in(session, ticket) -> None:
+    """R9, at the measured volume, twice.
+
+    `lg-external-harness-1026` holds 30 gate leases and 2867s of wait, measured
+    live. Two properties at that size, neither of which a three-row test can
+    see: the figures are identical on a second read of the same rows (no
+    dependence on row order, dict iteration or a mutated accumulator), and the
+    per-visit figures plus the unattributed remainder add up to the total —
+    so the number on the summary line can never disagree with the rows beneath
+    it, which is the one way this surface could mislead an operator while
+    looking consistent.
+    """
+    waits = [1 + (index * 37) % 120 for index in range(30)]
+    for index, stage_key in enumerate(["plan", "spec", "implement", "verify", "review"]):
+        _run(session, ticket, stage_key, created_at=T0 + timedelta(minutes=30 * index))
+    # Inserted back to front, so a reader that trusts primary-key order is wrong.
+    for index, wait in reversed(list(enumerate(waits))):
+        _lease(
+            session,
+            ticket,
+            requested_at=T0 + timedelta(minutes=5 * index) - timedelta(seconds=wait + 1),
+            waited_seconds=wait,
+        )
+
+    first = _payload(session, ticket)
+    second = _payload(session, ticket)
+
+    assert first["capacity_wait"] == second["capacity_wait"]
+    assert [visit["capacity_wait_seconds"] for visit in first["visits"]] == [
+        visit["capacity_wait_seconds"] for visit in second["visits"]
+    ]
+    assert first["capacity_wait"]["lease_count"] == 30
+    assert first["capacity_wait"]["total_seconds"] == pytest.approx(sum(waits))
+    attributed = sum(visit["capacity_wait_seconds"] or 0.0 for visit in first["visits"])
+    assert attributed <= first["capacity_wait"]["total_seconds"] + 0.05, (
+        "the per-visit rows claim more queue time than the ticket spent"
+    )
