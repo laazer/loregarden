@@ -81,8 +81,15 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="host", autouse=True)
 def host_fixture(session):
-    """7.0 cpu / 48332 MB / 6 slots — this machine, probed 2026-11-02."""
+    """7.0 cpu / 48332 MB / 6 slots — this machine, probed 2026-11-02.
+
+    The docker pool is pinned too (5.0 / 9942 / 4, probed 2026-10-27): one case
+    below reserves in it to prove `parent_lease_for` ignores it, and an
+    unmeasured ceiling would refuse that claim `docker_unavailable` rather than
+    exercising the filter.
+    """
     _set_ceiling(session, CapacityPool.HOST, cpus=7.0, memory_mb=48332, leases=6)
+    _set_ceiling(session, CapacityPool.DOCKER, cpus=5.0, memory_mb=9942, leases=4)
 
 
 @pytest.fixture(name="workspace")

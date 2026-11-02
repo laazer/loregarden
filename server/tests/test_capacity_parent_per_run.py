@@ -430,7 +430,7 @@ def test_the_two_refusals_name_the_same_two_numbers(session, workspace, ticket) 
 
 
 def test_the_1912_sequence_pays_the_capacity_line_once_not_twice(
-    session, workspace, ticket
+    session, workspace, ticket, monkeypatch
 ) -> None:
     """R7. The before/after, at the occupancy measured at 15:46 on 2026-11-02.
 
@@ -443,12 +443,14 @@ def test_the_1912_sequence_pays_the_capacity_line_once_not_twice(
     than an assertion: the identical sequence with no `orchestration_run_id`
     still pays twice.
     """
+    # The control at the bottom takes top-level claims behind a head that does
+    # not fit, which is the whole point of it — so it waits the real
+    # `gate_capacity_wait_seconds` (1800s) twice unless the budget is cut here.
+    # The parent and its children never queue, so this changes nothing the test
+    # measures; without it the test cannot finish.
+    monkeypatch.setattr("loregarden.config.settings.gate_capacity_wait_seconds", 0.3)
     # 7.0 ceiling, 4.25 held → 2.75 free, as measured.
     _reserve(session, CapacityPool.HOST, label="agent run · stage implement", cpus=4.25)
-    blocked = _reserve(session, CapacityPool.HOST, label="land-verify lg-other-1", cpus=4.0)
-    assert blocked.state is DockerGrantState.QUEUED, (
-        "the head of the line must not fit, or there is no head-of-line to replay"
-    )
     orch_run = _orch_run(session, ticket, workspace)
     profile = _profile(["true"])
 
@@ -460,6 +462,17 @@ def test_the_1912_sequence_pays_the_capacity_line_once_not_twice(
         from_stage="triage",
         to_stage="plan",
         orch_run=orch_run,
+    )
+    # Parked once the run holds its parent, because that is the arrangement the
+    # 29 minutes came out of: a 4.0-cpu head that does not fit, in front of a
+    # *gate's* claim. Parking it before the parent is acquired asks something
+    # else — that a 0.5-cpu claim queued behind a head which never fits is
+    # granted anyway, which is FIFO backfill (lg-machine-resource-1925) and is
+    # out of this ticket's scope. The run still pays the line at most once,
+    # which is what `_waited` counts below.
+    blocked = _reserve(session, CapacityPool.HOST, label="land-verify lg-other-1", cpus=4.0)
+    assert blocked.state is DockerGrantState.QUEUED, (
+        "the head of the line must not fit, or there is no head-of-line to replay"
     )
     _gate(
         session,

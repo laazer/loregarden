@@ -172,6 +172,9 @@ class GateRecovery:
             from_stage=from_stage,
             to_stage=to_stage,
             stage_def=stage_def,
+            # How the run's parent capacity lease reaches the gate: one trip to
+            # the line per run, a child of it per transition.
+            orch_run=orch_run,
         )
         # A stage that has already been rerouted for a gate fix is being
         # re-evaluated after an agent had a go at it. `count_gate_fix_attempts`

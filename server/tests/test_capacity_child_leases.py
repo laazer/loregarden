@@ -353,6 +353,46 @@ def _blocked(session, lease_id: str, blocked: set[str]) -> bool:
 # ---- lg-machine-resource-1923 R8a: reuse is per holder kind -------------------
 
 
+def _runs(session, count: int):
+    """One orchestration run and `count` agent runs under it, as real rows.
+
+    Both `docker_leases.agent_run_id` and `.orchestration_run_id` carry foreign
+    keys, so a fabricated id fails at the insert and the lookup under test never
+    runs at all.
+    """
+    from loregarden.models.domain import AgentRun, OrchestrationRun, OrchestrationRunStatus
+    from loregarden.models.domain import RunStatus as _RunStatus
+    from tests.factories import make_ticket, make_workspace
+
+    workspace = make_workspace(session, slug="child-lease-runs")
+    ticket = make_ticket(session, workspace_id=workspace.id, external_id="lg-machine-resource-857")
+    orchestration = OrchestrationRun(
+        run_code="orch_child_lease",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.RUNNING,
+    )
+    session.add(orchestration)
+    session.commit()
+    agent_runs = [
+        AgentRun(
+            run_code=f"run_child_lease_{index}",
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            agent_id="backend_implementer",
+            stage_key="implement",
+            status=_RunStatus.RUNNING,
+        )
+        for index in range(count)
+    ]
+    session.add_all(agent_runs)
+    session.commit()
+    session.refresh(orchestration)
+    for run in agent_runs:
+        session.refresh(run)
+    return orchestration, agent_runs
+
+
 def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, host) -> None:
     """`held_for_run` must not hand an orchestration claim an agent run's lease.
 
@@ -372,7 +412,10 @@ def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, ho
     from loregarden.models.domain import DockerHolderKind
     from loregarden.services.docker_leases import held_for_run, reserve
 
-    orchestration_run_id = "orch-1"
+    # Real rows: `docker_leases.agent_run_id` carries a foreign key, so a
+    # fabricated id fails at the insert and the lookup under test never runs.
+    orchestration, (first_run, second_run) = _runs(session, 2)
+    orchestration_run_id = orchestration.id
     agent = reserve(
         session,
         holder_label="agent run backend_implementer · stage implement",
@@ -381,7 +424,7 @@ def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, ho
         memory_mb=768,
         pool=CapacityPool.HOST,
         holder_kind=DockerHolderKind.AGENT_RUN,
-        agent_run_id="run-1",
+        agent_run_id=first_run.id,
         orchestration_run_id=orchestration_run_id,
         takes_slot=False,
     )
@@ -417,7 +460,7 @@ def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, ho
         held_for_run(
             session,
             pool=CapacityPool.HOST,
-            agent_run_id="run-1",
+            agent_run_id=first_run.id,
             orchestration_run_id=orchestration_run_id,
             holder_kind=DockerHolderKind.AGENT_RUN,
         ).id
@@ -432,7 +475,7 @@ def test_an_agent_run_lease_is_not_reused_for_an_orchestration_claim(session, ho
         memory_mb=768,
         pool=CapacityPool.HOST,
         holder_kind=DockerHolderKind.AGENT_RUN,
-        agent_run_id="run-2",
+        agent_run_id=second_run.id,
         orchestration_run_id=orchestration_run_id,
         takes_slot=False,
     )

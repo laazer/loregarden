@@ -284,6 +284,9 @@ def _gate(session, ticket, *actions: WorkflowExitAction) -> Approval:
         kind=ApprovalKind.WORKFLOW_GATE,
         status=ApprovalStatus.PENDING,
         stage_key="spec",
+        # `approvals.title` is NOT NULL; a gate row without one cannot be
+        # inserted, and the predicate under test would never see the gate.
+        title="Approve Spec completion",
         tool_input_json=_gate_payload(*actions),
     )
     session.add(approval)

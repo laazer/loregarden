@@ -70,6 +70,7 @@ def run_and_record_gates(
         from_stage=from_stage,
         to_stage=to_stage,
         stage_def=stage_def,
+        orch_run=orch_run,
     )
     record_gate_evaluation(
         session,
