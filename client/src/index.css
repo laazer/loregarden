@@ -2606,6 +2606,54 @@ label:is(
   /* Docked right the column is taller than its contents, and a bar floating at
      the top of the empty space reads as a header for nothing. */
   margin-top: auto;
+  /* The thread's ground (CopilotDock.css), so the composer sits in the
+     conversation as it does on the chat page, not on a strip of its own. */
+  border-top: none;
+  background: var(--bg0);
+}
+
+/*
+ * Docked right, the composer is the chat page's (.lg-chat-composer): the
+ * input, Send and the sheet in one rounded card at the head of the bar, the
+ * bar's other controls on a row beneath it. Docked bottom it stays one row,
+ * which is the point of the bar there.
+ */
+.app-utility-dock--right .app-action-bar-compose {
+  order: -1;
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--bd2);
+  border-radius: 16px;
+  background: var(--bg1);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 22%, transparent);
+}
+
+.app-utility-dock--right .app-action-bar-compose .lg-composer-commands--bar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.app-utility-dock--right .app-action-bar-input {
+  height: 34px;
+  font-size: var(--fs-lead);
+}
+
+.app-utility-dock--right .app-action-bar-send {
+  width: 48px;
+  height: 34px;
+}
+
+/* Under the input inside the card, the way the chat page's toolbar is. */
+.app-utility-dock--right .app-action-bar-sheet {
+  order: 1;
+  padding: 8px 0 0;
+  border-bottom: none;
+  border-top: 1px solid var(--bd);
 }
 
 .app-action-bar-baxter {

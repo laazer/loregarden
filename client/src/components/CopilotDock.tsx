@@ -7,6 +7,8 @@ import { CopilotDockHeader } from "./CopilotDockHeader";
 import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatArtifactsList } from "./chat/ChatArtifactsList";
+import { DockChatWelcome } from "./chat/DockChatWelcome";
+import { GardenSky } from "./chat/GardenSky";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
 import { showsChatWalker } from "../lib/chatSession";
 import { primitiveHistory } from "./chat/primitiveHistory";
@@ -106,11 +108,19 @@ export function CopilotDock() {
   // A kept-but-hidden shell still mounts so the process survives the toggle.
   if (!panelsVisible && !mountTerminal) return null;
 
-  // The rail holds one thing at a time, and the archive is the thing that was
-  // asked for: openers are always a click away again once a thread is picked.
+  // The rail is the archive, and only while it was asked for. The openers live
+  // in the empty thread instead: a sidebar is too narrow for a rail, and hid them.
   const showHistory = Boolean(archive) && historyOpen;
   const openers = session && !composerBlocked ? promptsFor(promptKind, branch) : [];
-  const showOpeners = !showHistory && session?.messages.length === 0 && openers.length > 0;
+  // Loading draws nothing: a welcome flashing in front of a thread that is
+  // about to arrive would read as the conversation being gone.
+  const showWelcome =
+    Boolean(session) &&
+    !session?.isLoading &&
+    session?.messages.length === 0 &&
+    !showsChatWalker(Boolean(session?.isBusy), session?.runStatus) &&
+    session?.runStatus !== "waiting" &&
+    pendingApprovals.length === 0;
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError || composerBlocked) return;
@@ -174,9 +184,25 @@ export function CopilotDock() {
               hidden={tab !== "chat"}
             >
             <div className="copilot-dock-chat-main">
+              {/* The chat page's night sky, behind the turns. Its vines stay on
+                  the page: a sidebar has no room for them. */}
+              <GardenSky />
+              {showWelcome ? (
+                <DockChatWelcome
+                  assistantLabel={assistantLabel}
+                  context={label}
+                  promptKind={promptKind}
+                  prompts={openers}
+                  promptsDisabled={session.isBusy}
+                  blocked={composerBlocked}
+                  loadError={Boolean(session.loadError)}
+                  onPick={sendQuick}
+                  onOpenHistory={archive && !showHistory ? () => setHistoryOpen(true) : undefined}
+                />
+              ) : (
               <StudioChatMessages
                 messages={session.messages}
-                emptyMessage={composerBlocked ?? "No messages yet."}
+                emptyMessage={session.isLoading ? "" : (composerBlocked ?? undefined)}
                 isThinking={
                   showsChatWalker(session.isBusy, session.runStatus) &&
                   pendingApprovals.length === 0
@@ -236,45 +262,22 @@ export function CopilotDock() {
                   ) : null
                 }
               />
+              )}
             </div>
-            {(showHistory || showOpeners) && (
-              // Beside the turns rather than beneath them: stacked, the openers
-              // sat between the thread and the composer and pushed the turns up
-              // every time the thread was empty.
+            {showHistory && archive && (
+              // Beside the turns rather than over them: switching threads is a
+              // detour, and the conversation stays readable while it lasts.
               <aside className="copilot-dock-rail">
-                {showHistory && archive ? (
-                  <ChatHistoryRail
-                    scope={archive.scope}
-                    activeSessionId={archive.sessionId}
-                    onSelectSession={(id) => {
-                      archive.openSession(id);
-                      // The rail was a detour: showing the picked conversation
-                      // matters more than keeping the list up.
-                      setHistoryOpen(false);
-                    }}
-                  />
-                ) : (
-                  <>
-                    <span className="copilot-dock-rail-label">Try asking</span>
-                    {openers.map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        className="copilot-dock-rail-btn"
-                        disabled={session.isBusy || session.loadError}
-                        onClick={() => sendQuick(prompt)}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--ac2)" aria-hidden>
-                          <ellipse cx="7" cy="8" rx="1.9" ry="2.5" />
-                          <ellipse cx="12" cy="6" rx="1.9" ry="2.7" />
-                          <ellipse cx="17" cy="8" rx="1.9" ry="2.5" />
-                          <path d="M12 11c3 0 5 2.1 5 4.3 0 1.9-1.7 2.5-3 2.5-.9 0-1.3-.4-2-.4s-1.1.4-2 .4c-1.3 0-3-.6-3-2.5C7 13.1 9 11 12 11z" />
-                        </svg>
-                        <span>{prompt}</span>
-                      </button>
-                    ))}
-                  </>
-                )}
+                <ChatHistoryRail
+                  scope={archive.scope}
+                  activeSessionId={archive.sessionId}
+                  onSelectSession={(id) => {
+                    archive.openSession(id);
+                    // The rail was a detour: showing the picked conversation
+                    // matters more than keeping the list up.
+                    setHistoryOpen(false);
+                  }}
+                />
               </aside>
             )}
             </div>

@@ -152,9 +152,11 @@
   gap: 0;
   /* So the rail's edge follows the pane's rounded corner. */
   overflow: hidden;
+  /* The chat page's night ground (BaxterChatGarden.css): a little of the
+     accent at the top, fading into the page colour the thread sits on. */
   background:
-    radial-gradient(640px 280px at 50% -30%, rgba(111, 174, 143, 0.08), transparent 55%),
-    transparent;
+    radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%),
+    var(--bg0);
   border-radius: 12px;
 }
 
@@ -259,6 +261,32 @@
   min-width: 0;
   min-height: 0;
   gap: 8px;
+  /* Holds the star field behind the turns and the fade over their foot. */
+  position: relative;
+}
+
+.copilot-dock-chat-main > .copilot-dock-messages,
+.copilot-dock-chat-main > .dock-welcome {
+  position: relative;
+  z-index: 1;
+}
+
+/* Turns dissolve into the composer below rather than being sliced by the
+   scroller's edge, as on the chat page (.baxter-chat-dock--fade). */
+.copilot-dock-chat-main::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 30px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--bg0) 0%,
+    color-mix(in srgb, var(--bg0) 82%, transparent) 34%,
+    color-mix(in srgb, var(--bg0) 34%, transparent) 68%,
+    transparent 100%
+  );
 }
 
 /* Stacked when the dock is too narrow to hold both. Keyed to the dock's own
@@ -277,6 +305,8 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The chat page's thread spacing, with clearance for the fade at the foot. */
+  padding: 20px 4px 22px;
 }
 
 /* Short threads sit on the composer rather than floating at the top of an empty
@@ -397,12 +427,110 @@
   overflow: hidden;
 }
 
-/* Too narrow for a 248px rail beside the turns, and the turns win. The action
-   bar still carries the first couple of openers, so nothing is unreachable. */
+/* Too narrow for a 248px rail beside the turns: the archive, asked for from
+   the head, takes the pane until a conversation is picked or it is closed.
+   Hiding it instead left the History button doing nothing in a sidebar. */
 @container (max-width: 620px) {
   .copilot-dock-rail {
+    flex: 1 1 auto;
+    width: auto;
+    border-left: none;
+  }
+
+  .copilot-dock-chat-row:has(> .copilot-dock-rail) > .copilot-dock-chat-main {
     display: none;
   }
+}
+
+/* An empty thread: Baxter, what he is here for, and where to start. Sits low
+   in the pane, on the composer, the way a short thread does. */
+.dock-welcome {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 6px 22px;
+}
+
+/* Auto margin, not `justify-content: flex-end`: see .copilot-dock-messages. */
+.dock-welcome > :first-child {
+  margin-top: auto;
+}
+
+/* The chat page's hero frame (.baxter-chat-hero-avatar), at the sidebar's size. */
+.dock-welcome-avatar {
+  padding: 3px;
+  border-radius: 14px;
+  background: linear-gradient(140deg, var(--ac), color-mix(in srgb, var(--ac) 70%, var(--bg0)));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ac) 40%, transparent);
+}
+
+.dock-welcome-avatar .baxter-avatar {
+  display: block;
+  border-radius: 11px;
+  box-shadow: none;
+}
+
+.dock-welcome-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dock-welcome-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.dock-welcome-context {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--txm);
+}
+
+.dock-welcome-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--txm);
+  max-width: 46ch;
+}
+
+.dock-welcome-prompts {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.dock-welcome-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--txl);
+}
+
+.dock-welcome-history {
+  font-size: var(--fs-small);
+  color: var(--ac2);
+  padding: 2px 0;
+}
+
+.dock-welcome-history:hover {
+  text-decoration: underline;
 }
 
 /* Chat, or what the chat has made: a tab row under the head. */
@@ -455,4 +583,45 @@
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Docked bottom the pane is wide and short: stacked, the welcome ran past a
+   340px dock and hid its last opener. Side by side it fits in two rows. The
+   free row on top (1fr) keeps it on the composer, and shrinks to nothing
+   rather than pushing anything out of reach. */
+@container (min-width: 700px) {
+  .dock-welcome {
+    display: grid;
+    grid-template-columns: auto minmax(0, 360px) minmax(240px, 380px);
+    justify-content: start;
+    grid-template-rows: 1fr auto auto;
+    column-gap: 16px;
+    row-gap: 6px;
+  }
+
+  .dock-welcome > :first-child {
+    margin-top: 0;
+  }
+
+  .dock-welcome-avatar {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .dock-welcome-intro {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .dock-welcome-history {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: start;
+  }
+
+  .dock-welcome-prompts {
+    grid-column: 3;
+    grid-row: 2 / span 2;
+  }
 }
