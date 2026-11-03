@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.terminal_stage_sweep import (
     finish_parked_terminal_tickets,
@@ -89,6 +90,17 @@ def parked_fixture(session, workspace, repo, milestone):
     commit_on(repo, ticket.branch, "work.txt", "work\n")
     at_terminal_stage(session, ticket)
     return ticket
+
+
+def test_boot_recovery_leaves_a_parked_ticket_for_the_timer(session, parked) -> None:
+    """A landing runs the tree's full suite, and boot runs on the event loop before
+    the server answers: three parked tickets kept a restarted server dark for
+    over half an hour. The timer lands it a tick later, on a worker thread."""
+    reconcile_once(session, at_startup=True)
+
+    session.refresh(parked)
+    assert parked.state == TicketState.IN_PROGRESS
+    assert parked.workflow_stage_status == StageStatus.PENDING
 
 
 def _target(session, ticket, workspace, repo):
