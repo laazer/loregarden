@@ -146,6 +146,22 @@ class ShipReason(StrEnum):
     NEVER_REACHED_REMOTE = "never_reached_remote"
 
 
+class Delivery(StrEnum):
+    """Where a ticket's work stands against the base (`services.base_delivery`).
+
+    ``done`` says the pipeline finished and the work landed, usually on the
+    tree's integration branch. Only a publish and a merged PR put it on the
+    base, so the two are reported apart rather than read off ``done``.
+    """
+
+    #: Nothing recorded as landed: no `landed_sha`.
+    NOT_LANDED = "not_landed"
+    #: Landed, and a commit on the base holds it (`on_base_sha`).
+    ON_BASE = "on_base"
+    #: Landed, and the base has not been seen holding it yet.
+    LANDED_NOT_ON_BASE = "landed_not_on_base"
+
+
 class CliAdapter(str, Enum):
     """Which CLI (or in-process runner) executes an agent turn.
 

@@ -55,6 +55,7 @@ from loregarden.services.artifact_service import (
     ensure_test_artifact,
     list_ticket_artifacts,
 )
+from loregarden.services.base_delivery import delivery_of
 from loregarden.services.block_classification import block_message_for
 from loregarden.services.blocked_on import (
     StuckPage,
@@ -102,7 +103,7 @@ from loregarden.services.ticket_dependencies import (
 from loregarden.services.ticket_ids import TicketNotFound
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
-from loregarden.services.ticket_pull_request import ships_with_tree
+from loregarden.services.ticket_pull_request import ships_with_branch
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_revision_guard import (
     TicketRevisionConflict,
@@ -941,13 +942,9 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         compatibility_posture_source=posture.source,
         split=ticket_split(session, ticket),
         active_orchestration=_active_orchestration_view(session, ticket),
-        ships_with=_ships_with_branch(session, ticket),
+        ships_with=ships_with_branch(session, ticket),
+        delivery=delivery_of(session, ticket),
     )
-
-
-def _ships_with_branch(session: Session, ticket: Ticket) -> str:
-    workspace = workspace_for(session, ticket.workspace_id)
-    return ships_with_tree(session, ticket, workspace).branch if workspace else ""
 
 
 def _active_orchestration_view(session: Session, ticket: Ticket) -> OrchestrationRunView | None:

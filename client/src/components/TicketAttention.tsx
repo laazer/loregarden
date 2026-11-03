@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 
 import { api } from "../api/client";
 import type { TicketDetail } from "../api/client";
-import type { MonitorFinding } from "../api/types";
+import type { Delivery, MonitorFinding } from "../api/types";
 import { formatRelativeAge } from "../lib/timestamps";
 import { navigateToTicketTab } from "../lib/useAppNavigation";
 import { openReader } from "../state/readerStore";
@@ -25,6 +25,41 @@ function firstLine(markdown: string): string {
 function findingLabel(finding: MonitorFinding): string {
   const condition = finding.condition.replace(/_/g, " ");
   return finding.stage_key ? `${condition} · ${finding.stage_key}` : condition;
+}
+
+/**
+ * A done ticket whose work landed but is not on the base: `done` alone read as
+ * shipped, and 679's tests sat three weeks on an unpublished branch that way.
+ * The next step is the root's publish card when one failed, else the PR tab,
+ * where the tree's PR (or the lack of one) is.
+ */
+function NotOnBase({ ticketId, delivery }: { ticketId: string; delivery: Delivery }) {
+  const base = delivery.base || "the base";
+  const failed = Boolean(delivery.publish_card_id);
+  const text = failed
+    ? `${delivery.root_ref}'s publish failed: ${firstLine(delivery.publish_failure)}`
+    : `Landed on ${delivery.branch}; on ${base} once ${delivery.root_ref}'s publish goes out and its PR merges.`;
+  return (
+    <div className={`attn-row ${failed ? "attn-row--bad" : "attn-row--warn"}`}>
+      <span className="attn-label">Not on {base}</span>
+      <span className="attn-text" title={failed ? delivery.publish_failure : text}>
+        {text}
+      </span>
+      {failed ? (
+        <Button
+          variant="plain"
+          className="attn-action"
+          onClick={() => navigateToTicketTab(delivery.root_id, "approvals")}
+        >
+          Publish card
+        </Button>
+      ) : (
+        <Button variant="plain" className="attn-action" onClick={() => navigateToTicketTab(ticketId, "pr")}>
+          Pull request
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -68,7 +103,8 @@ export function TicketAttention({
   const waiting = (ticket.waiting_on?.length ?? 0) > 0 || (ticket.dependencies ?? []).some(
     (dep) => dep.unmet_reason === "not_landed" && !dep.overridden,
   );
-  if (!block && !runFailed && findings.length === 0 && !waiting) return null;
+  const notOnBase = ticket.state === "done" && ticket.delivery?.state === "landed_not_on_base";
+  if (!block && !runFailed && findings.length === 0 && !waiting && !notOnBase) return null;
 
   const teaser = firstLine(block);
   const truncated = block.length > TEASER_CHARS || teaser !== block;
@@ -109,6 +145,8 @@ export function TicketAttention({
           </Button>
         </div>
       ) : null}
+
+      {notOnBase && ticket.delivery ? <NotOnBase ticketId={ticket.id} delivery={ticket.delivery} /> : null}
 
       {/* The tickets to open instead of this one: a rolled-up parent has nothing
           of its own to fix, and a held one starts when these land. */}

@@ -178,6 +178,11 @@ class Ticket(SQLModel, table=True):
     # not "done": a dependent's readiness reads this.
     landed_sha: str = ""
     landed_branch: str = ""
+    # A commit on the base that holds this ticket's landed work, recorded by
+    # `base_delivery.record_base_holdings` the first time the base is seen
+    # holding it. Empty while it is not on the base, or before anything looked:
+    # `landed_sha` set and this empty is "landed, not on main".
+    on_base_sha: str = ""
     milestone: str = ""
     work_item_type: WorkItemType = Field(
         default=WorkItemType.TASK,

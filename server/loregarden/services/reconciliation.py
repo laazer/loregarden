@@ -42,6 +42,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from loregarden.services.base_delivery import record_base_holdings
 from loregarden.services.chat_feature_loop import advance_feature_loops
 from loregarden.services.chat_wait_watch import poll_chat_waits
 from loregarden.services.dependency_release import mark_parked_waits
@@ -65,6 +66,7 @@ from loregarden.services.invariant_registry import (
     HELD_TICKETS_RESUME,
     LAND_VERIFICATION_RAN,
     LANDED_WORK_IS_COMMITTED,
+    LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
@@ -229,6 +231,15 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A publish card closed only when a later publish succeeded, so one whose PR
     # a person merged by hand stayed open in a tree with nothing left to land.
     _invariant(PUBLISH_CARDS_CLOSE),
+    # Landed work the base lacks, with no publish running, none of its tip and
+    # no card: 679's tests sat that way on integration/lg-run-durability-314 for
+    # three weeks (lg-milestone-that-1995). After the card sweep above, so a
+    # card it just closed (the base holds the work) is not read as missing.
+    # Not at startup: it fetches the base, and boot runs before the server answers.
+    _invariant(LANDED_WORK_REACHES_THE_BASE, at_startup=False),
+    # Records when the base holds a landing, for the ticket's "not on main" row.
+    # Not at startup: its first pass asks git about every landing once.
+    SweepStep("record_base_holdings", record_base_holdings, at_startup=False),
     # A survey card closed only by a click, so "clone failed" stayed pending for
     # days after the next pass cloned without trouble. The feeder now closes
     # them as it succeeds; this catches any it did not.

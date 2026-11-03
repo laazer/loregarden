@@ -34,6 +34,7 @@ from loregarden.services.target_branch import (
     integration_branch_for,
     landing_target,
 )
+from loregarden.services.workflow_service import workspace_for
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlmodel import Session, col, select
@@ -279,6 +280,12 @@ def ships_with_tree(session: Session, ticket: Ticket, workspace: Workspace) -> S
     return ShipsWith(
         branch=target.branch, root_ref=target.root.external_id.strip() or target.root.id
     )
+
+
+def ships_with_branch(session: Session, ticket: Ticket) -> str:
+    """`ships_with_tree`'s branch for ``ticket``; "" when it has no workspace."""
+    workspace = workspace_for(session, ticket.workspace_id)
+    return ships_with_tree(session, ticket, workspace).branch if workspace else ""
 
 
 def ticket_pull_request(

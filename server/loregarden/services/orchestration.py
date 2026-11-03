@@ -80,6 +80,7 @@ from loregarden.services.studio_routing import (
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
+from loregarden.services.tree_publish_scheduler import refuse_closing_unpublished
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
@@ -1126,6 +1127,8 @@ class ApprovalService(ExitActionApprovalMixin):
             raise ValueError("Approval not found")
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
+        # Approve and reject both close it; neither may lose unpublished work.
+        refuse_closing_unpublished(self.session, approval)
 
         if approved:
             # Work nobody did is the first refusal; then what the gate's own
@@ -1173,6 +1176,9 @@ class ApprovalService(ExitActionApprovalMixin):
 
     def ignore(self, approval_id: str, *, reason: str) -> Approval:
         """Close a pending approval without deciding it; see `approval_ignore`."""
+        approval = self.session.get(Approval, approval_id)
+        if approval is not None and approval.status is ApprovalStatus.PENDING:
+            refuse_closing_unpublished(self.session, approval)
         return ignore_approval(
             self.session,
             approval_id,

@@ -206,6 +206,8 @@ export interface TicketDetail extends TicketSummary {
   active_orchestration?: OrchestrationRunView | null;
   /** Its tree's integration branch, which carries its work to the base in one PR; "" when it lands on the base itself. */
   ships_with?: string;
+  /** Whether its landed work is on the base yet; `done` alone does not say. */
+  delivery?: Delivery;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -953,6 +955,24 @@ export interface AutoFixAttempt {
 export interface CIStatusResponse {
   ci_status: CIRunResult | null;
   auto_fix_history: AutoFixAttempt[];
+}
+
+/** Where a ticket's landed work stands against the base (`services/base_delivery.py`). */
+export type DeliveryState = "not_landed" | "on_base" | "landed_not_on_base";
+
+export interface Delivery {
+  state: DeliveryState;
+  /** The base it is judged against ("main"). */
+  base: string;
+  /** Where it landed: the tree's integration branch, or its own. */
+  branch: string;
+  on_base_sha: string;
+  /** The tree root whose publish carries it, while it is not on the base. */
+  root_id: string;
+  root_ref: string;
+  /** The root's pending "Publish failed" card, and what it says, when there is one. */
+  publish_card_id: string;
+  publish_failure: string;
 }
 
 /** Why a done ticket's ship is not green. `pr_number`/`pr_url` are null iff never_reached_remote. */

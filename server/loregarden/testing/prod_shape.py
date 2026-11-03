@@ -93,6 +93,10 @@ class Calibration(BaseModel):
     #: of them makes its "first pass reports nothing" test pass vacuously — a
     #: zero that is the detector (lg-milestone-that-1419).
     landed_done_share: float
+    #: The share of those landings the base holds (`on_base_sha`). Measured
+    #: read-only 2026-11-03 with `base_delivery`'s rule against origin/main: 271
+    #: of 280 landed tickets; the rest are the "landed, not on main" rows.
+    on_base_landed_share: float
 
 
 #: Measured from the live database, 2026-09-28 (read-only).
@@ -145,6 +149,7 @@ CALIBRATION = Calibration(
     worked_artifacts=172,
     worked_system_share=0.40,
     landed_done_share=80 / 474,
+    on_base_landed_share=271 / 280,
 )
 
 #: Live had no initiatives at calibration, with every milestone unclaimed. The
@@ -467,6 +472,7 @@ def _add_landings(session: Session, tickets: list) -> int:
     """
     done = [row for row in tickets if row[3] is TicketState.DONE]
     wanted = round(len(done) * CALIBRATION.landed_done_share)
+    on_base = round(wanted * CALIBRATION.on_base_landed_share)
     for n, (_slug, ticket_id, _ext, _state, parent_id) in enumerate(done[:wanted]):
         ticket = session.get(Ticket, ticket_id)
         parent = session.get(Ticket, parent_id) if parent_id else None
@@ -474,6 +480,8 @@ def _add_landings(session: Session, tickets: list) -> int:
         # Forty hex, like a real sha: `landed_sha[:12]` is what a finding prints
         # and what a person pastes, so a shorter stand-in would not exercise it.
         ticket.landed_sha = (prod_shape_id("landing", n).replace("-", "") + "0" * 8)[:40]
+        if n < on_base:
+            ticket.on_base_sha = (prod_shape_id("on-base", n).replace("-", "") + "0" * 8)[:40]
         ticket.resolved_at = _EPOCH + timedelta(days=n % 40)
         session.add(ticket)
     session.commit()
