@@ -1,0 +1,15 @@
+/* The star field of the app's night ground: behind every screen, and again in
+   the sidebar chat, which covers it. It fills whichever positioned frame
+   holds it. */
+.garden-sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.garden-sky circle {
+  fill: var(--tx);
+}

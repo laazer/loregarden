@@ -40,7 +40,6 @@ import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { showChatMessage } from "../lib/chatJump";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
-import { GardenSky } from "../components/chat/GardenSky";
 import { useScrollbarGutterVar } from "../hooks/useScrollbarGutterVar";
 import "./BaxterChatPage.css";
 import "./BaxterChatGarden.css";
@@ -593,7 +592,7 @@ export function BaxterChatPage() {
 
   return (
     <div className="baxter-chat-layout">
-      <div ref={chatRef} className={`baxter-chat lg-chat-surface${isEmpty ? "" : " baxter-chat--garden"}`}>
+      <div ref={chatRef} className={`baxter-chat${isEmpty ? "" : " baxter-chat--garden"}`}>
         {isEmpty ? (
           <div className="baxter-chat-welcome">
             <header className="baxter-chat-intro">
@@ -621,11 +620,10 @@ export function BaxterChatPage() {
           </div>
         ) : (
           <>
-            {/* Baxter's garden (Mock 4): the vines and stars hang on this frame,
+            {/* Baxter's garden (Mock 4): the vines hang on this frame,
                 which does not scroll, so they stay put while the thread moves
                 under them. Decoration only; see BaxterChatGarden.css. */}
             <div className="baxter-chat-garden">
-            <GardenSky />
             <div ref={threadRef} className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
               <StudioChatMessages
                 messages={threadMessages}

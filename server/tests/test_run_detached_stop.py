@@ -18,13 +18,16 @@ import signal
 import subprocess
 import sys
 import time
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import AgentRun, ProcessState, RunStatus, Ticket, Workspace
 from loregarden.models.domain.process_enums import DetachedStopOutcome
+from loregarden.services import process_identity
 from loregarden.services.process_identity import identify
 from loregarden.services.run_detached_stop import stop_detached_process
 from sqlmodel import Session
+from tests.process_probe import decided_reading, stamp_of
 
 _DEAD_PID = 2147483646
 
@@ -78,7 +81,7 @@ def test_a_detached_process_is_actually_killed(session):
     """AC1. The child dies, from a process that did not spawn it as a pipe child."""
     proc = _detached()
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+        run = _run(session, pid=proc.pid, identity=stamp_of(proc.pid))
 
         outcome = stop_detached_process(run)
 
@@ -121,15 +124,21 @@ def test_the_whole_process_group_goes_not_just_the_leader(session):
                 child_pid = None
         assert child_pid, "could not observe the grandchild; test cannot judge"
 
-        run = _run(session, pid=parent.pid, identity=identify(parent.pid).stamp)
+        run = _run(session, pid=parent.pid, identity=stamp_of(parent.pid))
         stop_detached_process(run)
 
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
+            # Bare `identify` on purpose: this is a poll break condition, and
+            # UNKNOWN here has a third meaning neither helper can express —
+            # keep polling. Routing it would either skip mid-poll or break
+            # early on no information, weakening the assertion below.
             if identify(child_pid).state is ProcessState.GONE:
                 break
             time.sleep(0.05)
-        assert identify(child_pid).state is ProcessState.GONE, "the grandchild outlived the stop"
+        assert decided_reading(child_pid).state is ProcessState.GONE, (
+            "the grandchild outlived the stop"
+        )
     finally:
         for pid in (child_pid, parent.pid):
             if pid:
@@ -140,10 +149,23 @@ def test_the_whole_process_group_goes_not_just_the_leader(session):
 
 
 def test_a_process_that_is_already_gone_reports_so_and_does_not_error(session):
-    """AC3. Stopping a finished run settles as it does today rather than raising."""
+    """AC3. Stopping a finished run settles as it does today rather than raising.
+
+    Not routed through `process_probe`: the behaviour under test is what `stop`
+    does about a GONE reading, not the `ps -o lstart=` contract. A real `ps`
+    that cannot answer in `_PS_TIMEOUT_SECONDS` reads UNKNOWN, and
+    `stop_detached_process` then correctly declines to signal — so under load
+    the assertion goes false rather than skipping. Patching `ps` to the answer a
+    dead pid gets makes GONE deterministic with no subprocess at all.
+    """
     run = _run(session, pid=_DEAD_PID, identity="gone")
 
-    assert stop_detached_process(run) is DetachedStopOutcome.ALREADY_GONE
+    with mock.patch.object(
+        process_identity.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
+    ):
+        assert stop_detached_process(run) is DetachedStopOutcome.ALREADY_GONE
 
 
 def test_a_run_with_no_pid_is_already_gone(session):
@@ -183,7 +205,7 @@ def test_a_live_pid_that_is_not_a_session_leader_is_not_signalled(session):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])  # not detached
     try:
         assert os.getpgid(proc.pid) != proc.pid, "precondition: this process leads no group"
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+        run = _run(session, pid=proc.pid, identity=stamp_of(proc.pid))
 
         outcome = stop_detached_process(run)
 
@@ -200,7 +222,7 @@ def test_a_process_that_ignores_sigterm_is_killed(session):
         "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
     )
     try:
-        run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+        run = _run(session, pid=proc.pid, identity=stamp_of(proc.pid))
 
         outcome = stop_detached_process(run, grace_seconds=0.5)
 
@@ -251,7 +273,7 @@ def test_stopping_a_wrapped_run_kills_the_agent_too(session, tmp_path, monkeypat
     the python child inside the wrapper dies with it."""
     proc = _wrapper_process(tmp_path, monkeypatch)
     group = os.getpgid(proc.pid)
-    run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+    run = _run(session, pid=proc.pid, identity=stamp_of(proc.pid))
 
     outcome = stop_detached_process(run, grace_seconds=1.0)
 
