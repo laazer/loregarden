@@ -39,6 +39,10 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.orchestration_capacity import (
+    release_terminal_run_parent,
+    terminal_run_parents,
+)
 from loregarden.services.orphaned_worktree_rows import (
     rows_without_their_checkout,
     settle_rows_without_their_checkout,
@@ -1103,6 +1107,56 @@ DONE_TICKET_SHIP_IS_OBSERVABLE = Invariant(
 )
 
 
+def _stranded_run_parents(session: Session) -> list[Violation]:
+    """Standing host leases whose orchestration is over.
+
+    A run-scoped parent lease is the longest-lived claim on this machine — a run
+    averages 17 minutes and the tail is 116 — so "held by a run that has
+    finished" has a real window to enter. `entered_at` is the lease's grant
+    time, which is the earliest this could have become true for that row.
+    """
+    return [
+        Violation(
+            subject_id=lease.id,
+            ticket_id=lease.ticket_id,
+            entered_at=lease.granted_at,
+            detail=(
+                f"{lease.holder_label} still holds {lease.cpus:g} cpus / "
+                f"{lease.memory_mb} MB for an orchestration that has ended"
+            ),
+        )
+        for lease in terminal_run_parents(session)
+    ]
+
+
+def _release_stranded_run_parents(session: Session, violations: Sequence[Violation]) -> int:
+    return sum(
+        1 for violation in violations if release_terminal_run_parent(session, violation.subject_id)
+    )
+
+
+RUN_PARENTS_END_WITH_THEIR_RUN = Invariant(
+    name="run_parents_end_with_their_run",
+    ticket="lg-machine-resource-1923",
+    statement="no host capacity lease is held for an orchestration run that has ended",
+    detect=_stranded_run_parents,
+    repair=_release_stranded_run_parents,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 11, 2),
+    expected_because=(
+        "`BuiltinOrchestrator.execute()`'s one `finally` makes this unreachable through the "
+        "driver, but a SIGKILL of the server skips every `finally` there is — the world "
+        "entering the state legitimately rather than a writer failing to guard it"
+    ),
+    # Set even though EXPECTED does not require it: the guard is real and this is
+    # the test that proves it, across every exit from execute().
+    prevented_by=(
+        "server/tests/test_orchestration_capacity.py"
+        "::test_no_park_leaves_a_held_parent_after_execute_returns"
+    ),
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
@@ -1126,4 +1180,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     CHECKOUTS_KEEP_THEIR_BRANCH,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
+    RUN_PARENTS_END_WITH_THEIR_RUN,
 )

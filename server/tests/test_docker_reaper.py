@@ -38,6 +38,8 @@ from sqlmodel import Session
 from tests.factories import make_agent_run, make_workspace
 
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
+# Above macOS's PID_MAX of 99999, so no process can hold it on this machine.
+_DEAD_PID = 999999
 #: This machine, as measured, for the ceiling refresh the sweep performs.
 HOST_INFO = {"NCPU": 8, "MemTotal": 16763441152}
 
@@ -367,3 +369,161 @@ def test_a_waiter_takes_back_capacity_from_a_holder_whose_process_is_gone(sessio
     assert granted.granted
     session.refresh(dead)
     assert dead.end_reason is DockerLeaseEndReason.PID_GONE
+
+
+# ---- lg-machine-resource-1923 R6: a dead orchestrator's parent is reclaimed ---
+#
+# A run-scoped parent lease lives for the whole orchestration — 17 minutes on
+# average, 116 at the tail — so the window in which its holder can die while it
+# still holds 0.5 cpu is the longest of any lease on this machine. Both tests
+# assert the children end PARENT_RELEASED and that the pool's held totals return
+# to what they were before the claim: a parent reclaimed while its cover is
+# still counted is a leak that looks like scarcity.
+
+
+def _parent_and_child(session, *, pid: int | None, orchestration_run_id: str):
+    from loregarden.models.domain import CapacityPool, DockerHolderKind
+    from loregarden.services.capacity_children import reserve_child
+    from tests.test_capacity_host_pool import _set_ceiling
+
+    # Pinned rather than probed: `NoLivenessProbe` refuses anything but `info`,
+    # and an unmeasured host ceiling would send the claim off to measure one.
+    _set_ceiling(session, CapacityPool.HOST, cpus=7.0, memory_mb=48332, leases=6)
+
+    parent = _hold(
+        session,
+        cpus=0.5,
+        memory_mb=512,
+        holder_kind=DockerHolderKind.ORCHESTRATION,
+        orchestration_run_id=orchestration_run_id,
+        holder_pid=pid,
+        pool=CapacityPool.HOST,
+        takes_slot=False,
+    )
+    child = reserve_child(
+        session,
+        parent_lease_id=parent.id,
+        holder_label="gates plan_to_plan-synthesis",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=1024,
+        pool=CapacityPool.HOST,
+    )
+    assert child.granted
+    return parent, session.get(DockerLease, child.lease_id)
+
+
+def _host_totals(session) -> tuple[float, int]:
+    from loregarden.models.domain import CapacityPool
+    from loregarden.services.docker_ledger import load_pool
+
+    session.expire_all()
+    row = load_pool(session, CapacityPool.HOST)
+    return (row.held_cpus, row.held_memory_mb)
+
+
+def _running_orchestration(session, *, renewed_minutes_ago: int):
+    from datetime import timedelta as _timedelta
+
+    from loregarden.models.domain import OrchestrationRun, OrchestrationRunStatus
+    from loregarden.models.domain.enums import utcnow
+    from tests.factories import make_ticket
+
+    workspace = make_workspace(session, slug="reaper-parent")
+    ticket = make_ticket(session, workspace_id=workspace.id, external_id="lg-reaper-parent-1")
+    # Real wall-clock, not NOW: `orchestration_lease_expired` compares against
+    # `datetime.now`, so a 2026-09-09 stamp would read as quiet for a year and
+    # make the live-run case indistinguishable from the stale one.
+    stamp = utcnow() - _timedelta(minutes=renewed_minutes_ago)
+    run = OrchestrationRun(
+        run_code="orch_reap1",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.RUNNING,
+        created_at=stamp,
+        started_at=stamp,
+        last_seen_at=stamp,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def test_a_parent_whose_pid_is_gone_is_reclaimed(session) -> None:
+    """R6. The decisive case: the orchestrating process is gone.
+
+    Nothing else can clear this. A parent names no containers, so docker cannot
+    be asked about it, and the run row still says RUNNING because the process
+    that would have completed it died.
+    """
+    before = _host_totals(session)
+    run = _running_orchestration(session, renewed_minutes_ago=1)
+    parent, child = _parent_and_child(session, pid=_DEAD_PID, orchestration_run_id=run.id)
+    assert _host_totals(session) != before
+
+    # Only the parent's pid is gone: the child's is this process's, and judging
+    # it PID_GONE too would assert PARENT_RELEASED off the wrong cause.
+    with mock.patch.object(docker_leases, "pid_alive", side_effect=lambda pid: pid != _DEAD_PID):
+        report = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
+
+    session.expire_all()
+    assert parent.id in report.reclaimed
+    assert session.get(DockerLease, parent.id).end_reason is DockerLeaseEndReason.PID_GONE
+    assert session.get(DockerLease, child.id).end_reason is DockerLeaseEndReason.PARENT_RELEASED
+    assert session.get(DockerLease, child.id).status is DockerLeaseStatus.RELEASED
+    assert _host_totals(session) == before, "reclaiming the parent stranded its child's booking"
+
+
+def test_a_parent_with_a_stale_lease_under_a_live_server_is_also_reclaimed(session) -> None:
+    """R6, and the realistic leak rather than the decisive one.
+
+    The parent's `holder_pid` is the *server's* pid, because the orchestration
+    driver runs in a thread of it. So the pid is alive long after the driver
+    thread has died, and `_run_is_live` judging on `OrchestrationRun.status`
+    alone vouches for a run nobody is driving — extending the lease on every
+    sweep, forever, silently.
+
+    The agent branch directly above already consults
+    `agent_run_lease_expired`; the orchestration branch must mirror it with
+    `orchestration_lease_expired`. The run below is RUNNING, has renewed
+    nothing for well past the lease, and has no agent run in flight to vouch
+    for it.
+    """
+    import os
+
+    from loregarden.services.run_concurrency import ORCHESTRATION_LEASE, orchestration_lease_expired
+
+    before = _host_totals(session)
+    stale_minutes = int(ORCHESTRATION_LEASE.total_seconds() // 60) + 30
+    run = _running_orchestration(session, renewed_minutes_ago=stale_minutes)
+    assert orchestration_lease_expired(session, run), "the scenario's own premise"
+    parent, child = _parent_and_child(session, pid=os.getpid(), orchestration_run_id=run.id)
+
+    report = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
+
+    session.expire_all()
+    assert parent.id in report.reclaimed, (
+        "a live server's pid vouched for a dead driver thread; this lease is "
+        "extended on every sweep and no clock ever recovers it"
+    )
+    assert parent.id not in report.renewed
+    assert session.get(DockerLease, child.id).end_reason is DockerLeaseEndReason.PARENT_RELEASED
+    assert _host_totals(session) == before
+
+
+def test_a_parent_whose_run_is_renewing_keeps_its_lease(session) -> None:
+    """R6's other side. The reaper must not free a parent out from under a live
+    orchestration: a run renewing inside its lease is work in flight, and
+    reclaiming its parent would make every later gate on it refuse."""
+    import os
+
+    run = _running_orchestration(session, renewed_minutes_ago=0)
+    parent, child = _parent_and_child(session, pid=os.getpid(), orchestration_run_id=run.id)
+
+    report = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
+
+    session.expire_all()
+    assert parent.id not in report.reclaimed
+    assert parent.id in report.renewed
+    assert session.get(DockerLease, child.id).status is DockerLeaseStatus.HELD

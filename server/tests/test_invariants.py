@@ -699,3 +699,93 @@ def test_one_pass_leaves_nothing_for_the_next(prod_shape_session: Session, invar
         return
     assert first.repaired == first.found, f"{invariant.name}: {first}"
     assert list(invariant.detect(prod_shape_session)) == []
+
+
+def test_the_orchestration_parent_lease_invariant_is_registered(db_session: Session):
+    """lg-machine-resource-1923 R6. A standing lease needs a state invariant.
+
+    The parent lease is the longest-lived claim on this machine — a run averages
+    17 minutes and the tail is 116 — so "an OCCUPYING parent whose run is over"
+    is a state with a real window to enter. It is EXPECTED rather than DEFECT:
+    `execute()`'s `finally` makes it unreachable through the driver, but a SIGKILL
+    of the server skips every `finally` there is, and that is the world entering
+    the state legitimately rather than a writer failing to guard it.
+
+    `prevented_by` is still set, and `test_every_defect_invariant_points_at_a_prevention_test_that_exists`
+    above parametrizes on the field rather than on the policy, so the pointer
+    cannot rot even though EXPECTED does not require it.
+    """
+    invariant = next(
+        (item for item in INVARIANTS if item.ticket == "lg-machine-resource-1923"), None
+    )
+    assert invariant is not None, "the parent lease ships with no invariant watching it"
+    assert invariant.reentry is InvariantReentry.EXPECTED
+    assert invariant.expected_because
+    assert invariant.repair is not None, "a held lease nobody is using is repairable: release it"
+    assert invariant.prevented_by == (
+        "server/tests/test_orchestration_capacity.py"
+        "::test_no_park_leaves_a_held_parent_after_execute_returns"
+    )
+    assert [step.name for step in PERIODIC_STEPS].count(invariant.name) == 1
+
+
+def test_the_parent_lease_invariant_detects_and_releases_a_terminal_runs_hold(
+    db_session: Session,
+):
+    """R6. The detector finds the prod shape, and one repair pass clears it.
+
+    The shape is exactly what a killed server leaves: an OCCUPYING HOST lease
+    with `holder_kind=ORCHESTRATION` whose `OrchestrationRun.status` is terminal.
+    A live run's parent must survive the same pass, or the reconcile timer would
+    free capacity out from under working orchestrations every 30 seconds.
+    """
+    from loregarden.models.domain import (
+        CapacityPool,
+        DockerFootprint,
+        DockerHolderKind,
+        DockerLease,
+        DockerLeaseStatus,
+    )
+    from loregarden.services.docker_leases import reserve
+    from loregarden.testing.factories import make_workspace
+    from tests.test_capacity_host_pool import _set_ceiling
+
+    invariant = next(
+        (item for item in INVARIANTS if item.ticket == "lg-machine-resource-1923"), None
+    )
+    assert invariant is not None, "the parent lease ships with no invariant watching it"
+    _set_ceiling(db_session, CapacityPool.HOST, cpus=7.0, memory_mb=48332, leases=6)
+    workspace = make_workspace(db_session, slug="parent-invariant")
+    held = {}
+    for run_code, status in (
+        ("orch_dead", OrchestrationRunStatus.SUCCEEDED),
+        ("orch_live", OrchestrationRunStatus.RUNNING),
+    ):
+        ticket = make_ticket(db_session, workspace_id=workspace.id, external_id=f"lg-pi-{run_code}")
+        run = OrchestrationRun(
+            run_code=run_code, ticket_id=ticket.id, workspace_id=workspace.id, status=status
+        )
+        db_session.add(run)
+        db_session.commit()
+        claim = reserve(
+            db_session,
+            holder_label=f"run {run_code} · parent-invariant · {ticket.external_id}",
+            footprint=DockerFootprint.LIGHT,
+            pool=CapacityPool.HOST,
+            holder_kind=DockerHolderKind.ORCHESTRATION,
+            orchestration_run_id=run.id,
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            takes_slot=False,
+        )
+        assert claim.granted, claim.message
+        held[run_code] = claim.lease_id
+
+    violations = list(invariant.detect(db_session))
+
+    assert [v.subject_id for v in violations] == [held["orch_dead"]]
+    assert invariant.repair(db_session, violations) == 1
+    db_session.expire_all()
+    assert db_session.get(DockerLease, held["orch_dead"]).status is DockerLeaseStatus.RELEASED
+    assert db_session.get(DockerLease, held["orch_live"]).status is DockerLeaseStatus.HELD
+    assert list(invariant.detect(db_session)) == [], "one pass must leave nothing for the next"

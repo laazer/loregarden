@@ -1,7 +1,8 @@
 import "./GardenSky.css";
 
 /**
- * The few stars behind Baxter's garden (Mock 4). Static: nothing here moves,
+ * The few stars of the app's night ground, first drawn behind Baxter's garden
+ * (Mock 4). Static: nothing here moves,
  * so there is no motion to honour or withhold. Decoration only, hidden from
  * assistive tech; the field stretches with the frame (`preserveAspectRatio`
  * none), which a scatter of dots tolerates.

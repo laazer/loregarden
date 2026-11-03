@@ -6,6 +6,10 @@
  * still alive queues again at the back — so the dialog says which of those the
  * operator is about to do, and asks why. The reason is kept on the lease.
  *
+ * Releasing a run's parent lease does more than end one lease: `release_lease`
+ * cascades to every child drawing on it, so the dialog counts them. Offering a
+ * cascade as if it ended one lease is the dialog claiming less than the action.
+ *
  * Focus is trapped and returned to the button that opened it; Escape and the
  * backdrop dismiss only while nothing is in flight, so a release cannot be
  * abandoned half-sent and fired again.
@@ -23,9 +27,16 @@ const DEFAULT_REASON = "Ended from the Machine capacity board";
 
 interface DockerLeaseReleaseProps {
   lease: DockerLeaseRow;
+  /** How many live leases draw on this one, and would end with it. */
+  childCount: number;
   inFlight: boolean;
   onClose: () => void;
   onConfirm: (reason: string) => void;
+}
+
+/** A run's standing claim, which gates draw children from. */
+function isRunParent(lease: DockerLeaseRow): boolean {
+  return lease.holder_kind === "orchestration" && lease.parent_lease_id === null;
 }
 
 /**
@@ -49,13 +60,25 @@ export function DockerLeaseReleaseDialog({
   );
 }
 
-function DockerLeaseReleaseBody({ lease, inFlight, onClose, onConfirm }: DockerLeaseReleaseProps) {
+function DockerLeaseReleaseBody({
+  lease,
+  childCount,
+  inFlight,
+  onClose,
+  onConfirm,
+}: DockerLeaseReleaseProps) {
   const [reason, setReason] = useState(DEFAULT_REASON);
 
   const waiting = lease.status === "waiting";
+  const parent = !waiting && isRunParent(lease);
   const what = lease.holder.what || "this unlabelled lease";
   const pid = lease.holder.pid ? `pid ${lease.holder.pid}` : "its process";
   const trimmed = reason.trim();
+  const cascade = parent
+    ? childCount === 0
+      ? "Nothing draws on it right now."
+      : `${childCount} gate ${childCount === 1 ? "child draws" : "children draw"} on it, and ${childCount === 1 ? "it ends" : "they end"} with it.`
+    : "";
 
   return (
     <>
@@ -63,7 +86,11 @@ function DockerLeaseReleaseBody({ lease, inFlight, onClose, onConfirm }: DockerL
         <div>
           <div className="state-label">Machine capacity</div>
           <h2 id="docker-release-title" className="modal-title">
-            {waiting ? "Drop from the line?" : "Release this hold?"}
+            {waiting
+              ? "Drop from the line?"
+              : parent
+                ? "Release this run's parent lease?"
+                : "Release this hold?"}
           </h2>
           <p className="modal-subtitle">
             {what}
@@ -84,6 +111,7 @@ function DockerLeaseReleaseBody({ lease, inFlight, onClose, onConfirm }: DockerL
               ? `It leaves the line now. If ${pid} is still running it will queue again at the back.`
               : `The ledger stops counting it and the next claim in line can start. ${pid} is not stopped — stop it yourself if it is stuck.`}
           </p>
+          {cascade ? <p className="docker-release-effect">{cascade}</p> : null}
           <label className="docker-release-field">
             <span>Why (kept on the lease)</span>
             <Textarea

@@ -91,6 +91,11 @@ class DockerLeaseEndReason(StrEnum):
 
     #: The holder released it.
     RELEASED = "released"
+    #: Given back because the ticket parked on something only a person can
+    #: resolve. Distinct from RELEASED: "the holder gave it back" and "a person
+    #: now owes this ticket" are different facts, and the re-acquire figure on
+    #: the ticket is derived from the difference (lg-machine-resource-1923).
+    PARK_RELEASED = "park_released"
     #: Its run finished; the completion path handed the lease back.
     RUN_COMPLETED = "run_completed"
     #: TTL expired and the lease named nothing docker could be asked about.

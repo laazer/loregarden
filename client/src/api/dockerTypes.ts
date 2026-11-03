@@ -77,6 +77,14 @@ export interface DockerLeaseRow {
   pool: CapacityPool;
   /** Set on a nested lease, which draws on its parent's grant and books no slot. */
   parent_lease_id: string | null;
+  /**
+   * How much of this lease's claim its parent's unlent grant covered. The rest
+   * — `cpus - covered_cpus` — was booked ahead of the FIFO line, which is the
+   * intended mode for a gate child under a LIGHT run parent, not a mis-sizing.
+   * Zero on a top-level lease, which covers itself from the pool.
+   */
+  covered_cpus: number;
+  covered_memory_mb: number;
   agent_run_id: string | null;
   ticket_id: string | null;
   footprint: string;

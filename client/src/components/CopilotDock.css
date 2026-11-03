@@ -152,11 +152,9 @@
   gap: 0;
   /* So the rail's edge follows the pane's rounded corner. */
   overflow: hidden;
-  /* The chat page's night ground (BaxterChatGarden.css): a little of the
-     accent at the top, fading into the page colour the thread sits on. */
-  background:
-    radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%),
-    var(--bg0);
+  /* The app's night ground, painted again here: the dock covers the
+     backdrop. */
+  background: var(--garden-ground), var(--bg0);
   border-radius: 12px;
 }
 

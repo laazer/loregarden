@@ -18,6 +18,7 @@ import { ViewAgentActions } from "./ViewAgentActions";
 import { useRuntimeOptionsQuery } from "../hooks/useRuntimeOptionsQuery";
 import { useTicketStatusSummary } from "../hooks/useTicketStatusSummary";
 import { useUsageSnapshot } from "../hooks/useUsageSnapshot";
+import { GardenSky } from "./GardenSky";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -120,7 +121,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
       <div className="app-frame">
-        <div className="app-ambient" aria-hidden />
+        <div className="app-ambient" aria-hidden>
+          <GardenSky />
+        </div>
         <AppSidebar
           workspaceSlug={sidebarWorkspaceSlug}
           onOpenSettings={openSettings}

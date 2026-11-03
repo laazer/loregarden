@@ -25,12 +25,12 @@ import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
 from loregarden.models.domain.process_enums import DetachedStopOutcome
 from loregarden.services import process_identity
-from loregarden.services.process_identity import identify
 from loregarden.services.run_detached_stop import stop_detached_process
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_reattach import reattach_surviving_runs, surviving_runs
 from loregarden.services.run_service import fail_interrupted_runs
 from sqlmodel import Session
+from tests.process_probe import stamp_of
 
 #: A pid no process on a sane machine holds, used where the point is that the
 #: process is gone rather than which process it was.
@@ -80,7 +80,7 @@ def _run(session, *, pid=None, identity="", harness=None, status=RunStatus.RUNNI
 
 def test_a_live_process_with_a_matching_identity_survives(session, sleeper):
     """AC1. The whole feature in one assertion."""
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     assert [r.id for r in surviving_runs(session)] == [run.id]
 
@@ -122,7 +122,7 @@ def test_an_externally_harnessed_run_is_left_alone(session, sleeper):
     _run(
         session,
         pid=sleeper.pid,
-        identity=identify(sleeper.pid).stamp,
+        identity=stamp_of(sleeper.pid),
         harness=ExternalHarness.CLAUDE_CODE,
     )
 
@@ -136,7 +136,7 @@ def test_the_boot_reaper_does_not_fail_a_reattached_run(session, sleeper):
     than no reattach at all — the row would be marked interrupted while a live
     agent kept writing to it.
     """
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     reattach_surviving_runs(session, interval_seconds=0.05)
     failed = fail_interrupted_runs(session)
@@ -147,18 +147,32 @@ def test_the_boot_reaper_does_not_fail_a_reattached_run(session, sleeper):
 
 
 def test_the_boot_reaper_still_fails_a_dead_run(session):
-    """The control. Without it, breaking the reaper entirely would pass the test above."""
+    """The control. Without it, breaking the reaper entirely would pass the test above.
+
+    Not routed through `process_probe`: this test is about the reaper, not about
+    the `ps -o lstart=` contract, and the reading it needs is GONE. A real `ps`
+    that cannot answer in `_PS_TIMEOUT_SECONDS` reads UNKNOWN, which the reaper
+    correctly spares — so on a loaded machine the assertion below goes false
+    rather than skipping. Patching `ps` to the answer a dead pid gets makes GONE
+    deterministic with no subprocess at all, and keeps the reaper covered on
+    exactly the busy machine this ticket is about.
+    """
     run = _run(session, pid=_DEAD_PID, identity="gone")
 
-    reattach_surviving_runs(session, interval_seconds=0.05)
-    failed = fail_interrupted_runs(session)
+    with mock.patch.object(
+        process_identity.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
+    ):
+        reattach_surviving_runs(session, interval_seconds=0.05)
+        failed = fail_interrupted_runs(session)
 
     assert run.id in {r.id for r in failed}
 
 
 def test_reattaching_renews_the_lease(session, sleeper):
     """AC3. Without a renewer the adopted run is reaped at the lease boundary."""
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
     assert run.last_seen_at is None
 
     reattach_surviving_runs(session, interval_seconds=0.05)
@@ -180,7 +194,7 @@ def test_renewal_stops_when_the_reattached_process_exits(session):
     process goes, renewal has to stop so the lease sweep can settle the row.
     """
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    run = _run(session, pid=proc.pid, identity=identify(proc.pid).stamp)
+    run = _run(session, pid=proc.pid, identity=stamp_of(proc.pid))
 
     reattach_surviving_runs(session, interval_seconds=0.05)
     deadline = time.monotonic() + 5
@@ -215,7 +229,7 @@ def test_a_live_run_survives_a_ps_that_cannot_answer(session, sleeper):
     The run is recorded with its real identity; then every `ps` at boot times
     out. Failing the run would be the reaper killing a working agent's row.
     """
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
         reattach_surviving_runs(session, interval_seconds=0.05)
@@ -227,7 +241,7 @@ def test_a_live_run_survives_a_ps_that_cannot_answer(session, sleeper):
 def test_a_run_ps_cannot_answer_about_is_not_adopted_either(session, sleeper, caplog):
     """Neither adopted nor failed: nothing vouches for the process, so no lease
     renewal starts; the lease reaper asks again on its next sweep."""
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     with (
         mock.patch.object(process_identity.subprocess, "run", _ps_times_out),
@@ -246,7 +260,7 @@ def test_the_lease_reaper_does_not_take_unknown_as_alive(session, sleeper):
     """Left for the lease: a `ps` that cannot answer vouches for nothing, so an
     expired lease is expired. A process `ps` *can* see stays alive whatever the
     lease says."""
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
     run.last_seen_at = datetime.now(timezone.utc) - timedelta(hours=1)
     session.add(run)
     session.commit()
@@ -258,7 +272,7 @@ def test_the_lease_reaper_does_not_take_unknown_as_alive(session, sleeper):
 
 def test_a_stop_cannot_vouch_for_a_pid_ps_cannot_answer_about(session, sleeper):
     """Not ALREADY_GONE — the run did not finish — and nothing is signalled."""
-    run = _run(session, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    run = _run(session, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
         outcome = stop_detached_process(run, grace_seconds=0.1)
