@@ -1,12 +1,6 @@
 /* Shared Baxter-first chat look. Used by StudioChat, CopilotDock, Triage,
-   Ticket Studio, Home, and the main /chat page. */
-
-.lg-chat-surface {
-  background:
-    radial-gradient(900px 420px at 50% -20%, rgba(111, 174, 143, 0.07), transparent 55%),
-    radial-gradient(720px 380px at 12% 18%, rgba(75, 155, 255, 0.05), transparent 50%),
-    var(--bg0);
-}
+   Ticket Studio, Home, and the main /chat page. Their ground is the app's
+   (.app-ambient), so none paints a background of its own. */
 
 /* Width budgets for chat UI primitives. A surface that has room to spare (the full-page
    Baxter thread) raises the wide/full budgets past the reading measure; narrow surfaces
