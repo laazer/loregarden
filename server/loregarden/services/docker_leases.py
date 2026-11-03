@@ -76,6 +76,7 @@ from loregarden.services.docker_wait_estimate import (
     poll_interval_for,
 )
 from loregarden.services.host_capacity import resolve_host_ceiling
+from loregarden.services.run_lease import pid_alive
 from sqlalchemy import bindparam, func, text, update
 from sqlmodel import Session, col, select
 
@@ -1016,6 +1017,33 @@ def docker_capacity_for_stage(
         reservation.release(reason=DockerLeaseEndReason.RUN_COMPLETED)
 
 
+def holder_gone(lease: DockerLease) -> bool:
+    """Whether the lease names a holder process that no longer exists. Decisive, and free."""
+    return lease.holder_pid is not None and not pid_alive(lease.holder_pid)
+
+
+def reclaim_dead_holders(session: Session) -> list[str]:
+    """Release every occupying lease whose holder process is gone. Returns their ids.
+
+    The reaper's first rule, run by a waiter on each poll. The reaper itself
+    runs on the reconcile timer, and a landing inside that sweep is the waiter:
+    it waited its whole 30-minute budget behind a server worker the restart had
+    killed, because the step that would have freed the lease could not run
+    until the wait ended.
+    """
+    occupying = session.exec(
+        select(DockerLease).where(
+            col(DockerLease.status).in_(OCCUPYING), col(DockerLease.holder_pid).is_not(None)
+        )
+    ).all()
+    dead = [lease.id for lease in occupying if holder_gone(lease)]
+    for lease_id in dead:
+        release_lease(session, lease_id, reason=DockerLeaseEndReason.PID_GONE, drain=False)
+    if dead:
+        logger.warning("Reclaimed %d lease(s) whose holder process is gone: %s", len(dead), dead)
+    return dead
+
+
 def wait_for_grant(
     session: Session, reservation: DockerReservation, *, budget: float
 ) -> DockerReservation:
@@ -1028,6 +1056,7 @@ def wait_for_grant(
     deadline = time.monotonic() + budget
     while time.monotonic() < deadline:
         time.sleep(min(_STAGE_POLL_SECONDS, max(0.1, budget / 10)))
+        reclaim_dead_holders(session)
         drain_waiters(session)
         session.expire_all()
         lease = session.get(DockerLease, reservation.lease_id)

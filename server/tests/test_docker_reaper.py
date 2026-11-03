@@ -110,7 +110,7 @@ def _fake_probe(liveness: DockerLiveness):
 
 def test_a_gone_pid_is_decisive_and_costs_no_subprocess(session) -> None:
     lease = _hold(session, holder_pid=999999, expired=False)
-    with mock.patch.object(docker_reaper, "pid_alive", return_value=False):
+    with mock.patch.object(docker_leases, "pid_alive", return_value=False):
         report = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
 
     assert lease.id in report.reclaimed
@@ -122,7 +122,7 @@ def test_a_gone_pid_is_decisive_and_costs_no_subprocess(session) -> None:
 
 def test_a_live_pid_on_an_unexpired_lease_is_left_alone(session) -> None:
     lease = _hold(session, holder_pid=1, expired=False)
-    with mock.patch.object(docker_reaper, "pid_alive", return_value=True):
+    with mock.patch.object(docker_leases, "pid_alive", return_value=True):
         report = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
     assert not report.reclaimed
     session.refresh(lease)
@@ -326,7 +326,7 @@ def test_a_waiter_whose_process_is_gone_leaves_the_line_at_once(session) -> None
         holder_pid=4_000_000,
     )
 
-    with mock.patch.object(docker_reaper, "pid_alive", return_value=False):
+    with mock.patch.object(docker_leases, "pid_alive", return_value=False):
         docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
 
     waiter = session.get(DockerLease, queued.lease_id)
@@ -347,3 +347,23 @@ def test_reclaimed_capacity_starts_what_was_waiting_for_it(session) -> None:
     assert holder.id in report.reclaimed
     assert waiting.lease_id in report.promoted
     assert session.get(DockerLease, waiting.lease_id).status is DockerLeaseStatus.HELD
+
+
+def test_a_waiter_takes_back_capacity_from_a_holder_whose_process_is_gone(session) -> None:
+    """The reaper runs on the reconcile timer, and a landing inside that sweep is
+    the waiter: behind a holder a restart had killed, it waited its whole budget."""
+    dead = _hold(session, cpus=8.0, memory_mb=8192, expired=False, holder_pid=4_000_000)
+    queued = docker_leases.reserve(
+        session, holder_label="landing", footprint=DockerFootprint.CUSTOM, cpus=4.0, memory_mb=4096
+    )
+    assert queued.position is not None
+
+    with (
+        mock.patch.object(docker_leases, "pid_alive", return_value=False),
+        mock.patch.object(docker_leases.time, "sleep"),
+    ):
+        granted = docker_leases.wait_for_grant(session, queued, budget=5.0)
+
+    assert granted.granted
+    session.refresh(dead)
+    assert dead.end_reason is DockerLeaseEndReason.PID_GONE

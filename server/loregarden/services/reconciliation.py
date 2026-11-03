@@ -108,13 +108,13 @@ class SweepStep:
     at_startup: bool = True
 
 
-def _invariant(invariant: Invariant) -> SweepStep:
+def _invariant(invariant: Invariant, *, at_startup: bool = True) -> SweepStep:
     """A registered invariant as a step, under the invariant's own name."""
 
     def run(session: Session) -> object:
         return run_invariant(session, invariant)
 
-    return SweepStep(invariant.name, run)
+    return SweepStep(invariant.name, run, at_startup=at_startup)
 
 
 def _probe_and_report_ships(session: Session) -> object:
@@ -170,26 +170,31 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # state, so either order gives the same answer.
     _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
     SweepStep("reconcile_lanes", _reconcile_lanes),
+    # Periodic by the same rule: it consults liveness predicates (a pid, the
+    # run behind the lease, and docker itself) rather than assuming everything
+    # in flight is an orphan. It also never frees a lease it could not verify,
+    # so a sweep during a docker restart is a no-op rather than a mass reclaim.
+    # Before the landings below: a landing waits for host capacity, and one
+    # queued behind a lease this step would free waits its whole budget.
+    SweepStep("reap_docker_leases", reap_docker_leases),
     # Periodic by the same rule: it selects only tickets with no agent run and
     # no orchestration behind them. It sits after the settlers so a stage they
     # just settled is read at its new status, and before `reconcile_all_parents`
     # so a ticket this finishes is summarised by its parent in the same pass.
-    SweepStep("finish_parked_terminal_tickets", finish_parked_terminal_tickets),
+    # Not at startup, nor the step after it: each landing runs the tree's full
+    # suite, and boot runs on the event loop before the server answers. Three
+    # parked tickets kept a restarted server dark for over half an hour; the
+    # timer lands them a tick later, on a worker thread.
+    SweepStep("finish_parked_terminal_tickets", finish_parked_terminal_tickets, at_startup=False),
     # Same selection rule (nothing live behind the ticket), for the BLOCKED
     # terminal stage the step above leaves alone. It acts only when a read-only
     # merge preview says the landing would now succeed, so a conflict that is
     # still there is never retried (928).
-    _invariant(LANDING_BLOCKS_CLEAR),
+    _invariant(LANDING_BLOCKS_CLEAR, at_startup=False),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
     # After the parents settle, so a feature ticket finished this pass is read
     # as done: its chat loop marks the round met and starts the queued one.
     SweepStep("advance_feature_loops", advance_feature_loops),
-    # Periodic by the same rule as the steps above: it consults liveness
-    # predicates — a pid, the run behind the lease, and docker itself — rather
-    # than assuming everything in flight is an orphan. It also never frees a
-    # lease it could not verify, so a sweep during a docker restart is a no-op
-    # rather than a mass reclaim.
-    SweepStep("reap_docker_leases", reap_docker_leases),
     # Same liveness rule as docker reaping: identify() is a predicate, UNKNOWN
     # is never GONE, and a sweep during a pid-lookup failure is a skip rather
     # than a drop. resume_chat_waits stays boot-only.
