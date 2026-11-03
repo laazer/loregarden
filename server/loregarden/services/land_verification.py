@@ -64,6 +64,7 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -340,6 +341,10 @@ def _verify_candidate(
             VerifyOutcome(ok=False, outcome=GateOutcome.UNAVAILABLE, detail=words), lead=lead
         )
 
+    # The same toolchain a ticket worktree gets. Without it every suite that
+    # drives a client gate found no node_modules, and from 2026-11-02 every
+    # landing in loregarden was refused on `test_ts_org_gate_cache` (84 of 84).
+    link_ignored_toolchains(repo_root, tree)
     try:
         # A passing verdict carries the last command it ran and the output of
         # every one of them. `VerifyOutcome(ok=True, outcome=PASSED)` on its own

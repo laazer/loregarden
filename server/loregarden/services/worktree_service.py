@@ -117,7 +117,7 @@ def repo_path_for_worktree(session: Session, worktree: Worktree) -> str:
 _LINKED_TOOLCHAIN_DIRS = ("client/node_modules",)
 
 
-def _link_ignored_toolchains(repo_path: Path, worktree_path: Path) -> None:
+def link_ignored_toolchains(repo_path: Path, worktree_path: Path) -> None:
     """Point a fresh worktree at the parent checkout's installed dependencies.
 
     Without this the client gate runs `npx oxlint` in a tree with no
@@ -436,7 +436,7 @@ class WorktreeService:
             run_git(add_args, cwd=str(self.repo_path), check=True, capture_output=True)
             if existed and refresh:
                 self._refresh_onto(worktree_path, branch, parent_branch)
-            _link_ignored_toolchains(self.repo_path, worktree_path)
+            link_ignored_toolchains(self.repo_path, worktree_path)
 
             head = run_git(
                 ["rev-parse", "HEAD"],

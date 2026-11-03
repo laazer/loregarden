@@ -590,6 +590,36 @@ def test_the_commands_run_in_a_detached_worktree_at_the_candidate_sha(
     )
 
 
+def test_the_tree_gets_the_checkout_s_client_toolchain_and_leaves_it_intact(
+    session, workspace, repo, milestone
+):
+    """node_modules is gitignored, so `git worktree add` never makes one. Every
+    suite that drives a client gate failed for want of it: 84 landings refused
+    in a row on `test_ts_org_gate_cache`, none of them about the ticket."""
+    from loregarden.services.land_verification import land_verifier
+
+    modules = Path(repo) / "client" / "node_modules"
+    modules.mkdir(parents=True)
+    (modules / "marker.txt").write_text("installed\n")
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-v-tool")
+    _configure(
+        session,
+        ticket,
+        land_verify_commands=[
+            "python3 -c 'import pathlib,sys;"
+            'sys.exit(0 if pathlib.Path("client/node_modules/marker.txt").exists() else 3)\''
+        ],
+    )
+
+    outcome = land_verifier(session, ticket, workspace)(
+        _merge_candidate(repo, target, ticket.branch)
+    )
+
+    assert outcome.ok, f"the suite found no toolchain: exit={outcome.exit_code}"
+    # Removing the tree removes the link, never what it points at.
+    assert (modules / "marker.txt").read_text() == "installed\n"
+
+
 def test_the_detached_worktree_is_removed_whether_the_commands_pass_or_raise(
     session, workspace, repo, milestone
 ):
