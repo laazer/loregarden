@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
-import type { TicketSummary, WorkspaceRuntimeSettings } from "../api/client";
+import type { TicketDetail, TicketSummary, WorkspaceRuntimeSettings } from "../api/client";
 import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug, initiativeChatScope } from "../lib/chatScope";
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
@@ -10,6 +10,7 @@ import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatSession } from "../lib/chatSession";
 import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../lib/dockChatPrompts";
 import { chatPath } from "../lib/homeBaxter";
+import { isLanding } from "../lib/workflowHelpers";
 import { useInitiativeAgentStore } from "../state/initiativeAgentStore";
 import { useTicketRefStore } from "../state/ticketRefStore";
 import { useUiStore } from "../state/uiStore";
@@ -100,7 +101,9 @@ export interface ActiveChatSession {
    * The branch this conversation's work sits on, when it has one.
    *
    * Read so the surfaces can offer branch-only actions — shipping a change, for
-   * one — without each of them working out where the branch comes from.
+   * one — without each of them working out where the branch comes from. Null
+   * for a ticket whose work ships in its tree's PR: a PR of its own branch
+   * would carry the same commits twice.
    */
   branch: string | null;
   /** Past threads of this conversation, or null when it keeps none. */
@@ -441,7 +444,7 @@ export function useActiveChatSession(): ActiveChatSession {
       label: ticketContext(ticket),
       ticketId,
       pendingApprovals: pending,
-      branch: ticket?.branch || null,
+      branch: ticket?.ships_with ? null : ticket?.branch || null,
       promptKind: ticketSession.kind,
     };
   }
@@ -463,9 +466,15 @@ export function useActiveChatSession(): ActiveChatSession {
  * things that say which run Baxter is reading. The id alone until it loads.
  */
 export function ticketContext(
-  ticket: Pick<TicketSummary, "external_id" | "workflow_stage_key"> | undefined,
+  ticket:
+    | (Pick<TicketSummary, "external_id" | "workflow_stage_key"> &
+        Partial<Pick<TicketDetail, "active_orchestration" | "stages">>)
+    | undefined,
 ): string {
   if (!ticket) return "";
+  // The terminal stage's key is "done", which read as the ticket being done
+  // while its work was still landing.
+  if (ticket.stages && isLanding({ ...ticket, stages: ticket.stages })) return `${ticket.external_id} · landing`;
   return ticket.workflow_stage_key
     ? `${ticket.external_id} · ${ticket.workflow_stage_key}`
     : ticket.external_id;

@@ -11,6 +11,7 @@ import { stageRowMeta, stageRunSummaries } from "../../lib/stageSummary";
 import { copyStageTerminalHandoffCommand } from "../../lib/terminalCommands";
 import { buildTicketTimeline } from "../../lib/ticketTimeline";
 import { vineMark } from "../../lib/vine";
+import { isLanding } from "../../lib/workflowHelpers";
 import { stageRouteHints, stageRouteLabel } from "../../lib/workflowTransitions";
 import { StageOverflowMenu } from "../StageOverflowMenu";
 import { Button } from "../ui/Button";
@@ -220,6 +221,8 @@ function CurrentStage({
   const isRunning = work.isStageRunning(stage.key);
   const busy = work.workflowBusy || work.startRun.isPending;
   const posture = ticket.resolved_compatibility_posture || "—";
+  // No agent runs the terminal stage, so "Running…" named nothing; the work is landing.
+  const landing = isLanding(ticket);
 
   return (
     <>
@@ -227,7 +230,14 @@ function CurrentStage({
         <dt>Current</dt>
         <dd>
           {stage.name}
-          {kind ? <span className="twf-set-note"> · {kind}</span> : null}
+          {landing ? (
+            <span className="twf-set-note">
+              {" "}
+              · landing on {ticket.ships_with || "the base branch"}
+            </span>
+          ) : kind ? (
+            <span className="twf-set-note"> · {kind}</span>
+          ) : null}
         </dd>
         {agent ? (
           <>
@@ -274,7 +284,7 @@ function CurrentStage({
         title={runCheck.reason}
         onClick={() => onRun(stage.key)}
       >
-        {failing && !isRunning ? "Retry stage" : currentStageRunLabel(stage, isRunning)}
+        {landing ? "Landing…" : failing && !isRunning ? "Retry stage" : currentStageRunLabel(stage, isRunning)}
       </Button>
     </>
   );

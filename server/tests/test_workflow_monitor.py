@@ -154,6 +154,31 @@ def test_a_normal_rework_round_is_not_thrash(db_session: Session):
     assert MonitorCondition.STAGE_THRASH not in _conditions(scan(db_session))
 
 
+def test_parallel_lanes_running_once_each_are_not_thrash(db_session: Session):
+    """A parallel stage dispatches every lane in the same second. Counted
+    together, four reviewers running once each read as "Stage 'review' ran 4
+    times" on lg-machine-resource-1923, at THRASH_FLOOR exactly."""
+    ticket = make_workspace_ticket(db_session, "monitor-lanes")
+    for agent_id in ("architecture_reviewer", "static_qa", "security_reviewer", "visual_qa"):
+        _run(db_session, ticket, stage_key="review", orch_id="orch-lanes", agent_id=agent_id)
+
+    assert MonitorCondition.STAGE_THRASH not in _conditions(scan(db_session))
+
+
+def test_one_lane_rerun_past_the_floor_is_thrash_and_names_its_agent(db_session: Session):
+    ticket = make_workspace_ticket(db_session, "monitor-lane-thrash")
+    _run(db_session, ticket, stage_key="review", orch_id="orch-lane-thrash", agent_id="static_qa")
+    for _ in range(5):
+        _run(
+            db_session, ticket, stage_key="review", orch_id="orch-lane-thrash", agent_id="visual_qa"
+        )
+
+    findings = [f for f in scan(db_session) if f.condition is MonitorCondition.STAGE_THRASH]
+    assert [(f.evidence["agent_id"], f.evidence["attempts"]) for f in findings] == [
+        ("visual_qa", "5")
+    ]
+
+
 def test_unbudgeted_repeats_are_reported_separately(db_session: Session):
     """Runs with no orchestration run had no retry budget at all before 560."""
     ticket = make_workspace_ticket(db_session, "monitor-unbudgeted")
@@ -687,6 +712,54 @@ def test_a_repeated_finding_upserts_rather_than_appending(db_session: Session):
     payload = json.loads(rows[0].content_json)
     assert payload["occurrences"] == 3
     assert payload["first_seen"] <= payload["last_seen"]
+
+
+def test_a_finding_whose_condition_cleared_is_gone_after_the_next_sweep(db_session: Session):
+    """The ticket page reads these as "needs attention". A run that stalled once
+    still read "stalled run · implement" a day after it finished."""
+    ticket = make_workspace_ticket(db_session, "monitor-cleared")
+    run = _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+        started_at=datetime.now(timezone.utc) - timedelta(hours=24),
+    )
+    sweep(db_session)
+    assert MonitorCondition.STALLED_RUN in _conditions(
+        list_findings(db_session, ticket_id=ticket.id)
+    )
+
+    run.status = RunStatus.SUCCEEDED
+    db_session.add(run)
+    db_session.commit()
+    sweep(db_session)
+
+    assert MonitorCondition.STALLED_RUN not in _conditions(
+        list_findings(db_session, ticket_id=ticket.id)
+    )
+
+
+def test_clearing_leaves_findings_the_scan_does_not_own(db_session: Session):
+    """Invariant findings escalate over their whole history, and the scan never
+    reproduces them; a sweep that cleared them would erase that history."""
+    ticket = make_workspace_ticket(db_session, "monitor-not-ours")
+    title = f"{MonitorCondition.INVARIANT_REENTERED.value}:some-invariant"
+    db_session.add(
+        Artifact(
+            ticket_id=ticket.id,
+            kind=MonitorArtifactKind.FINDING.value,
+            title=title,
+            content_json=json.dumps(
+                {"condition": MonitorCondition.INVARIANT_REENTERED.value, "stage_key": ""}
+            ),
+        )
+    )
+    db_session.commit()
+
+    sweep(db_session)
+
+    assert [row.title for row in _finding_rows(db_session)] == [title]
 
 
 def test_workspace_scoped_findings_are_not_persisted(db_session: Session):

@@ -626,7 +626,7 @@ def under_initiative_fixture(session, workspace):
 def test_a_ticket_directly_under_an_initiative_asks_its_publish_ref_as_well(
     session, workspace, under_initiative
 ):
-    """AC1(c)(iii), the second ACCEPTED divergence. `_ships_with` swallows the
+    """AC1(c)(iii), the second ACCEPTED divergence. `ships_with_tree` swallows the
     `TargetBranchError` to "", but the fallback `integration_branch_for(ticket)`
     then *succeeds*, naming `integration/LG-3`. No such ref exists, so the `rev`
     gate bounds the list at the ticket's own two names — today's `[own]` plus

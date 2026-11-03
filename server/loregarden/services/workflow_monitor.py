@@ -161,13 +161,18 @@ def _runs(session: Session, ticket_id: str | None) -> list[AgentRun]:
 
 
 def _detect_stage_thrash(runs: list[AgentRun], stats: DurationStats) -> list[MonitorFinding]:
-    """A (orchestration run, stage) pair attempted far more than the baseline."""
+    """One agent attempted one stage of one orchestration run far more than the baseline.
+
+    Counted per agent: a parallel stage dispatches each of its lanes once in the
+    same second, and counting the lanes together called four reviewers running
+    once each "Stage 'review' ran 4 times".
+    """
     threshold = max(THRASH_FLOOR, round(stats.attempts_per_stage * 2))
-    attempts: dict[tuple[str, str, str], int] = defaultdict(int)
+    attempts: dict[tuple[str, str, str, str], int] = defaultdict(int)
     for run in runs:
         if not run.orchestration_run_id or not run.stage_key:
             continue
-        attempts[(run.ticket_id, run.orchestration_run_id, run.stage_key)] += 1
+        attempts[(run.ticket_id, run.orchestration_run_id, run.stage_key, run.agent_id)] += 1
 
     return [
         MonitorFinding(
@@ -175,7 +180,7 @@ def _detect_stage_thrash(runs: list[AgentRun], stats: DurationStats) -> list[Mon
             ticket_id=ticket_id,
             stage_key=stage_key,
             summary=(
-                f"Stage '{stage_key}' ran {count} times in one orchestration run "
+                f"Stage '{stage_key}' ran {agent_id} {count} times in one orchestration run "
                 f"(baseline {stats.attempts_per_stage:.2f} attempts per stage)."
             ),
             evidence={
@@ -183,9 +188,10 @@ def _detect_stage_thrash(runs: list[AgentRun], stats: DurationStats) -> list[Mon
                 "threshold": str(threshold),
                 "baseline_attempts_per_stage": f"{stats.attempts_per_stage:.2f}",
                 "orchestration_run_id": orch_id,
+                "agent_id": agent_id,
             },
         )
-        for (ticket_id, orch_id, stage_key), count in sorted(attempts.items())
+        for (ticket_id, orch_id, stage_key, agent_id), count in sorted(attempts.items())
         if count >= threshold
     ]
 
@@ -639,6 +645,22 @@ WORKSPACE_SCOPED = frozenset(
 )
 
 
+#: The ticket-scoped conditions `scan` itself detects, so a full sweep is the
+#: authority on whether each still holds. Invariant findings are written by
+#: `services.invariants` and escalate over their whole history; they are not ours
+#: to clear.
+SWEPT_TICKET_CONDITIONS = frozenset(
+    {
+        MonitorCondition.STAGE_THRASH,
+        MonitorCondition.UNBUDGETED_REPEAT,
+        MonitorCondition.STALLED_RUN,
+        MonitorCondition.STALE_CURSOR,
+        MonitorCondition.EMPTIED_GROUP,
+        MonitorCondition.UNSETTLED_STAGE,
+    }
+)
+
+
 def _finding_title(finding: MonitorFinding) -> str:
     """The artifact title, which is also the upsert key.
 
@@ -698,6 +720,35 @@ def record_findings(session: Session, findings: list[MonitorFinding]) -> int:
     return touched
 
 
+def clear_resolved_findings(session: Session, findings: list[MonitorFinding]) -> int:
+    """Delete swept findings this scan no longer reproduces. Returns how many.
+
+    A finding is "needs attention" on the ticket page. Kept after its condition
+    cleared, a run that stalled once at 21:13 still read "stalled run" the next
+    day on a ticket that had long since moved on. The record survives the sweep
+    that saw it (and any repair that sweep made); it goes on the next one.
+    """
+    current = {
+        (finding.ticket_id, _finding_title(finding))
+        for finding in findings
+        if finding.condition in SWEPT_TICKET_CONDITIONS and finding.ticket_id
+    }
+    swept_prefixes = tuple(f"{condition.value}:" for condition in SWEPT_TICKET_CONDITIONS)
+    rows = session.exec(
+        select(Artifact).where(col(Artifact.kind) == MonitorArtifactKind.FINDING.value)
+    ).all()
+    cleared = 0
+    for row in rows:
+        title = row.title or ""
+        if not title.startswith(swept_prefixes) or (row.ticket_id, title) in current:
+            continue
+        session.delete(row)
+        cleared += 1
+    if cleared:
+        session.commit()
+    return cleared
+
+
 def sweep(session: Session) -> int:
     """Scan, persist, escalate recurring titles, then repair whatever the config allows.
 
@@ -716,6 +767,7 @@ def sweep(session: Session) -> int:
     touched = record_findings(session, findings)
     escalate_recurring_findings(session, sweep_started_at=sweep_started_at)
     apply_autofixes(session, findings)
+    clear_resolved_findings(session, findings)
     return touched
 
 

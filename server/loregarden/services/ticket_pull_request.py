@@ -268,7 +268,7 @@ class ShipsWith(BaseModel):
     root_ref: str = ""
 
 
-def _ships_with(session: Session, ticket: Ticket, workspace: Workspace) -> ShipsWith:
+def ships_with_tree(session: Session, ticket: Ticket, workspace: Workspace) -> ShipsWith:
     try:
         target = landing_target(session, ticket, workspace)
     except TargetBranchError:
@@ -285,7 +285,7 @@ def ticket_pull_request(
     session: Session, ticket: Ticket, workspace: Workspace
 ) -> TicketPullRequest:
     """Ask GitHub for the pull request on ``ticket``'s branch."""
-    ships = _ships_with(session, ticket, workspace)
+    ships = ships_with_tree(session, ticket, workspace)
     ships_with = ships.branch
     result = _lookup(session, ticket, workspace, ships_with)
     pr = result.pull_request

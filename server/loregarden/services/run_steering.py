@@ -29,6 +29,16 @@ logger = logging.getLogger(__name__)
 #: Adapters whose CLI accepts further input on stdin mid-run.
 STEERABLE_ADAPTERS = frozenset({"claude"})
 MAX_MESSAGE_CHARS = 2000
+#: What a run that is not RUNNING has done, as the refusal says it. Keyed by
+#: status rather than built from the enum's value, which read "Run is
+#: succeeded" to an operator.
+_NOT_RUNNING_PHRASE: dict[RunStatus, str] = {
+    RunStatus.QUEUED: "has not started yet",
+    RunStatus.AWAITING_PERMISSION: "is waiting on a permission decision",
+    RunStatus.SUCCEEDED: "has finished",
+    RunStatus.FAILED: "has failed",
+    RunStatus.CANCELLED: "was cancelled",
+}
 #: How often the bridge checks for new messages. Each check is a fresh session,
 #: so it is a real query; the run loop spins fast enough that polling every
 #: iteration would swamp the DB for a channel used a few times an hour.
@@ -43,7 +53,7 @@ def steer_refusal(run: AgentRun | None) -> str:
     if run is None:
         return "Run not found."
     if run.status != RunStatus.RUNNING:
-        return f"Run is {run.status.value.lower()}, so there is nothing to steer."
+        return f"This run {_NOT_RUNNING_PHRASE[run.status]}, so there is nothing to steer."
     if run.cancel_requested_at is not None:
         # A stop already in flight outranks anything queued behind it. The
         # bridge polls the cancel before it drains messages, so a steer accepted
