@@ -12,6 +12,9 @@ So these read the files as shipped.
 
 from __future__ import annotations
 
+import subprocess
+from unittest import mock
+
 import pytest
 from loregarden.models.domain import Workspace
 from loregarden.services.git_automation_config import enabled_steps, resolve_git_automation
@@ -37,24 +40,22 @@ def test_loregarden_commits_and_pushes_a_chat_threads_work():
     assert config.worktree is True
 
 
-def test_loregarden_stops_at_push_and_opens_no_pull_request():
-    """Push, and no further — deliberately, not by omission.
+def test_loregarden_opens_a_pull_request_for_a_chat_thread_and_never_merges_it():
+    """Push and open a PR, and no further.
 
-    `enabled_steps` is a chain: `open_pr` off disables `auto_merge` whatever its
-    own flag says. This repository has no branch protection, so
-    `gh pr merge --auto` lands a PR immediately rather than on green — opening
-    one has to stay a person's decision.
+    Push-only was the leak: a chat turn's work sat on `chat/<thread>` and reached
+    main only if someone knew to open a PR for it. Opening one asks nothing of a
+    person; merging still does, so `auto_merge` stays off for chat turns.
     """
     config = resolve_git_automation(_workspace("loregarden"))
 
-    assert enabled_steps(config) == ["commit", "push"]
-    assert config.open_pr is False
+    assert enabled_steps(config) == ["commit", "push", "open_pr"]
     assert config.auto_merge is False
 
 
 def test_loregarden_publishes_a_tree_with_a_pr_that_merges_on_green():
     """958: a tree's PR opens with its first landing and merges when the ruleset's
-    required checks pass. Chat turns stay push-only (above)."""
+    required checks pass. Chat turns open a PR but never auto-merge (above)."""
     config = resolve_git_automation(_workspace("loregarden"))
 
     assert enabled_steps(tree_chain(config)) == ["commit", "push", "open_pr", "auto_merge"]
@@ -138,11 +139,28 @@ def test_a_chat_turns_work_is_committed_and_pushed_under_the_shipped_policy(tmp_
         root = resolve_chat_execution_root(session, run, chat, workspace)
         (root / "what_the_turn_wrote.txt").write_text("real work\n")
 
-        outcome = publish_chat_turn(session, run.id, chat, workspace)
+        # `gh` is the one thing faked: the remote is a local bare repository, so
+        # there is no GitHub to open a PR on. Everything up to that call is real.
+        asked: list[list[str]] = []
+
+        def fake_gh(args, cwd):
+            asked.append(list(args))
+            opened = args[:2] == ["pr", "create"]
+            return subprocess.CompletedProcess(
+                args, 0, stdout="https://github.com/o/r/pull/1\n" if opened else "", stderr=""
+            )
+
+        with mock.patch("loregarden.services.git_automation._gh", side_effect=fake_gh):
+            outcome = publish_chat_turn(session, run.id, chat, workspace)
 
     assert outcome is not None
     assert outcome.automation is not None and outcome.automation.ok
-    assert [step.step for step in outcome.automation.steps] == ["commit", "push"]
+    assert [step.step for step in outcome.automation.steps] == ["commit", "push", "open_pr"]
+    assert outcome.automation.pr_url == "https://github.com/o/r/pull/1"
+    created = [a for a in asked if a[:2] == ["pr", "create"]]
+    assert len(created) == 1, asked
+    assert created[0][created[0].index("--head") + 1] == chat_session_branch(chat)
+    assert not [a for a in asked if a[:2] == ["pr", "merge"]], "a chat turn never auto-merges"
     assert git(root, "status", "--porcelain").stdout.strip() == ""
 
     branch = chat_session_branch(chat)

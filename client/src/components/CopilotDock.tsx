@@ -8,7 +8,7 @@ import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatArtifactsList } from "./chat/ChatArtifactsList";
 import { DockChatWelcome } from "./chat/DockChatWelcome";
-import { GardenSky } from "./chat/GardenSky";
+import { GardenSky } from "./GardenSky";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
 import { showsChatWalker } from "../lib/chatSession";
 import { primitiveHistory } from "./chat/primitiveHistory";

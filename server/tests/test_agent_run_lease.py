@@ -15,6 +15,7 @@ dead one and its lane is held forever.
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -39,6 +40,7 @@ from loregarden.services.run_lease import (
 from loregarden.services.run_service import settle_expired_agent_runs
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_state import parse_stage_map
+from tests.process_probe import stamp_of
 
 EXPIRED = AGENT_RUN_LEASE + timedelta(minutes=5)
 
@@ -121,8 +123,6 @@ def test_a_dead_recorded_pid_settles_it_without_waiting(db_session, ticket):
 
 def test_a_live_recorded_pid_outranks_a_stale_lease(db_session, ticket):
     """This process is alive, so the run it stands for is."""
-    import os
-
     run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED, handoff_pid=os.getpid())
 
     assert agent_run_lease_expired(db_session, run) is False
@@ -131,25 +131,18 @@ def test_a_live_recorded_pid_outranks_a_stale_lease(db_session, ticket):
 def test_a_verified_live_agent_process_outranks_a_stale_lease(db_session, ticket):
     """A missed beat is a delay; a CLI that is demonstrably still the same
     process is mid-answer, and reaping it costs the whole turn."""
-    import os
-
-    from loregarden.services.process_identity import identify
-
     run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED)
     run.agent_pid = os.getpid()
-    run.agent_pid_identity = identify(os.getpid()).stamp
+    run.agent_pid_identity = stamp_of(os.getpid())
     db_session.add(run)
     db_session.commit()
 
-    assert run.agent_pid_identity, "this host must be able to identify its own process"
     assert agent_run_lease_expired(db_session, run) is False
 
 
 def test_a_reused_pid_cannot_vouch_for_a_run_it_never_belonged_to(db_session, ticket):
     """Identity, not a bare pid: the same number with a different start time
     is another process, and the stale lease stands."""
-    import os
-
     run = _run(db_session, ticket, age=EXPIRED, last_seen=EXPIRED)
     run.agent_pid = os.getpid()
     run.agent_pid_identity = "not-this-process"

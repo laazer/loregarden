@@ -42,8 +42,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  /* A night ground: a little of the accent at the top, fading into the page. */
-  background: radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%);
+  /* Its ground and stars are the app's (.app-ambient), seen through. */
 }
 
 .baxter-chat-garden > .baxter-chat-thread {
