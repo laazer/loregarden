@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
@@ -13,10 +13,12 @@ import {
   type FindingGroup,
   type TicketFindings,
 } from "../../lib/monitorFindings";
+import { useHeldFailure } from "../../hooks/useHeldFailure";
 import { formatRelativeAge } from "../../lib/timestamps";
 import { describeError, endSentence } from "../../state/toastStore";
 import "./WorkflowMonitorView.css";
 import { TicketLink } from "../TicketLink";
+import { Button } from "../ui/Button";
 
 /**
  * Every current workflow-monitor finding, arranged around the question a
@@ -42,8 +44,12 @@ import { TicketLink } from "../TicketLink";
 
 type Scope = "attention" | "all";
 
-function Centred({ children }: { children: React.ReactNode }) {
-  return <div className="wm-centred">{children}</div>;
+function Centred({ children, role }: { children: React.ReactNode; role?: string }) {
+  return (
+    <div className="wm-centred" role={role}>
+      {children}
+    </div>
+  );
 }
 
 function StatePill({ state }: { state: TicketFindings["state"] }) {
@@ -195,10 +201,79 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
     refetchInterval: 30_000,
   });
 
+  // The hold that makes the failure branch below outlive its own Retry click:
+  // query-core clears `error` and puts a failed-with-no-data query back to
+  // pending on `refetch()`, so a branch guarded on `findings.isError` unmounted
+  // into the loading branch the moment the operator pressed Retry. The subject
+  // is the constant this query's key is pinned to — `["monitor-findings",
+  // "all"]`, and `api.monitorFindings()` takes no argument — and emphatically
+  // not `ticketId`, which feeds only `arrange()`. Keying it to the selection
+  // would drop a still-true failure on a ticket switch that re-reads nothing,
+  // and execution would fall through to `!all.length`: the monitor reporting
+  // health it never asked about.
+  const failure = useHeldFailure(findings, "all");
+  const retryRef = useRef<HTMLButtonElement>(null);
+  // Native `disabled` blurs a focused <button> in a real browser, so a keyboard
+  // operator who pressed Enter on Retry is dumped on <body> for the length of
+  // the read. Return them to it when the retry settles with the failure still
+  // held — qualified by the hold being present when the fetch *started*, since
+  // the first load goes true → false too, and guarded on <body> so focus the
+  // operator moved elsewhere is never stolen.
+  const wasRetrying = useRef(false);
+  useEffect(() => {
+    if (findings.isFetching) {
+      wasRetrying.current = Boolean(failure);
+      return;
+    }
+    if (wasRetrying.current && failure && document.activeElement === document.body) {
+      retryRef.current?.focus();
+    }
+    wasRetrying.current = false;
+    // `failure` is read for its value at the transition, not tracked: a change
+    // of reason must not re-run the effect and re-grab focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findings.isFetching]);
+
   const all = useMemo(() => findings.data ?? [], [findings.data]);
   const live = useMemo(() => all.filter(isLiveFinding), [all]);
   const shown = scope === "attention" ? live : all;
   const view = useMemo(() => arrange(shown, ticketId), [shown, ticketId]);
+
+  // Error: named, with the reason, and visibly distinct from "nothing to
+  // report" — a monitor that renders an empty list when it could not ask is
+  // the exact failure this surface exists to stop.
+  //
+  // Above the loading branch, and guarded on the held failure rather than
+  // `findings.isError`: both halves are the fix. A held failure must win over
+  // the pending state the operator's own Retry re-enters, or the pane unmounts
+  // into "Loading findings…" and the reason goes with it.
+  if (failure) {
+    return (
+      <Centred role="alert">
+        <div className="wm-error-title">Could not load monitor findings</div>
+        {/* The reason stands alone: it is the server's own text, and a
+            non-JSON proxy page reaches `request()`'s `message = text` fallback
+            at thousands of characters. Bounded and left-aligned by
+            `.wm-error-reason` so it cannot push Retry off the viewport. */}
+        <div className="wm-muted wm-narrow wm-error-reason">
+          {endSentence(describeError(failure.error, "The monitor endpoint did not answer."))}
+        </div>
+        <div className="wm-muted wm-narrow">
+          Nothing is known about the pipeline&rsquo;s health until this succeeds — this is not the same as having
+          nothing to report.
+        </div>
+        <Button
+          variant="plain"
+          className="tab-btn"
+          ref={retryRef}
+          onClick={() => findings.refetch()}
+          disabled={findings.isFetching}
+        >
+          {findings.isFetching ? "Retrying…" : "Retry"}
+        </Button>
+      </Centred>
+    );
+  }
 
   // Loading: the endpoint recomputes workspace conditions per request and can
   // take a few seconds — say so, rather than show a blank pane.
@@ -206,24 +281,6 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
     return (
       <Centred>
         <div className="wm-muted">Loading findings… the monitor recomputes workspace checks on each request.</div>
-      </Centred>
-    );
-  }
-
-  // Error: named, with the reason, and visibly distinct from "nothing to
-  // report" — a monitor that renders an empty list when it could not ask is
-  // the exact failure this surface exists to stop.
-  if (findings.isError) {
-    return (
-      <Centred>
-        <div className="wm-error-title">Could not load monitor findings</div>
-        <div className="wm-muted wm-narrow">
-          {endSentence(describeError(findings.error, "The monitor endpoint did not answer."))} Nothing is known about the
-          pipeline&rsquo;s health until this succeeds — this is not the same as having nothing to report.
-        </div>
-        <button type="button" className="tab-btn" onClick={() => findings.refetch()} disabled={findings.isFetching}>
-          {findings.isFetching ? "Retrying…" : "Retry"}
-        </button>
       </Centred>
     );
   }

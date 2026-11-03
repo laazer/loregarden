@@ -39,6 +39,15 @@
   color: var(--rdl);
 }
 
+/* The reason is foreign text of unknown length — centred text is unreadable
+   past two lines, and an unbounded gateway error page pushes Retry off the
+   viewport. */
+.wm-error-reason {
+  text-align: left;
+  max-height: 9em;
+  overflow: auto;
+}
+
 .wm-header {
   display: flex;
   align-items: center;
