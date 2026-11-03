@@ -5,6 +5,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from loregarden.models.domain.process_enums import AgentTransport
+from loregarden.services.gh_account_env import prime_gh_user_env
 from loregarden.services.path_resolve import (
     expand_path,
     resolve_icloud_root,
@@ -284,6 +285,9 @@ def _prime_cursor_api_key_env() -> None:
 
 _prime_claude_oauth_token_env()
 _prime_cursor_api_key_env()
+# The `gh` account a publish acts as, for every launcher and not only
+# dev-server.sh in the primary checkout; see `gh_account_env`.
+prime_gh_user_env(repo_root=settings.repo_root)
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 
