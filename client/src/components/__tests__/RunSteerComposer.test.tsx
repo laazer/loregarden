@@ -111,7 +111,7 @@ it("distinguishes a queued message from a delivered one", async () => {
 it("stays out of the way on a finished run with no history", async () => {
   mockApi.runMessages.mockResolvedValue({
     messages: [],
-    refusal: "Run is succeeded, so there is nothing to steer.",
+    refusal: "This run has finished, so there is nothing to steer.",
     cancel_requested_at: null,
   });
 
@@ -128,7 +128,7 @@ it("keeps showing what was sent after the run finishes", async () => {
         delivered_at: "2026-07-20T10:00:05",
       }),
     ],
-    refusal: "Run is succeeded, so there is nothing to steer.",
+    refusal: "This run has finished, so there is nothing to steer.",
     cancel_requested_at: null,
   });
 
@@ -307,7 +307,7 @@ it("takes the control away entirely once the run is no longer active", async () 
   // AC33's last label: `Stopping…` then the control is gone.
   mockApi.runMessages.mockResolvedValue(
     messagesPayload({
-      refusal: "Run is cancelled, so there is nothing to steer.",
+      refusal: "This run was cancelled, so there is nothing to steer.",
       cancel_requested_at: "2026-10-08T12:00:00+00:00",
     }),
   );

@@ -630,6 +630,11 @@ class BuiltinOrchestrator:
         `orch_run` to return now.
         """
         if is_terminal_stage(stage_def):
+            # Landing runs the tree's verify suite, which takes minutes. Left on
+            # the last agent stage, the run read as idle there the whole time.
+            orch_run.current_stage_key = target_key
+            self.session.add(orch_run)
+            self.session.commit()
             self.orch.finalize_workflow(ticket)
             self.session.refresh(ticket)
             return None

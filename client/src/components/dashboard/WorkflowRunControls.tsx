@@ -90,7 +90,7 @@ export function WorkflowRunControls({
               <Button
                 variant="primary"
                 compact
-                disabled={assemblePending}
+                disabled={assemblePending || Boolean(ticket.active_orchestration)}
                 onClick={() => onAssemble()}
               >
                 {agentsAssembleLabel(ticket, assemblePending)}
@@ -127,7 +127,7 @@ export function WorkflowRunControls({
               </svg>
             </Button>
           ) : (
-            <Button variant="primary" compact disabled={assemblePending} onClick={() => onAssemble()}>
+            <Button variant="primary" compact disabled={assemblePending || Boolean(ticket.active_orchestration)} onClick={() => onAssemble()}>
               {agentsAssembleLabel(ticket, assemblePending)}
             </Button>
           )}

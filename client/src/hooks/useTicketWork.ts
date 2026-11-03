@@ -61,7 +61,7 @@ export function useTicketWork(ticketId: string | null) {
     },
   });
 
-  const hasActiveRun =
+  const hasActiveAgentRun =
     ticketRuns.data?.some((r) => r.status === "running" || r.status === "awaiting_permission") ?? false;
 
   const detail = useQuery({
@@ -69,11 +69,17 @@ export function useTicketWork(ticketId: string | null) {
     queryFn: () => api.ticket(ticketId!),
     enabled: !!ticketId,
     refetchInterval: (query) => {
-      const status = query.state.data?.workflow_stage_status;
-      return hasActiveRun || status === "running" || status === "awaiting" ? 1000 : 3000;
+      const data = query.state.data;
+      const status = data?.workflow_stage_status;
+      const live = hasActiveAgentRun || Boolean(data?.active_orchestration);
+      return live || status === "running" || status === "awaiting" ? 1000 : 3000;
     },
   });
   const sel = detail.data;
+  // An orchestration is a run even between agents: landing runs the tree's
+  // verify suite with no agent at all, and read as idle ("Continue Run",
+  // "Complete ticket") for the minutes it took.
+  const hasActiveRun = hasActiveAgentRun || Boolean(sel?.active_orchestration);
 
   const artifactsFeed = useQuery({
     queryKey: ["ticket-artifacts", ticketId],

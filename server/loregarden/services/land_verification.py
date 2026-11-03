@@ -64,6 +64,7 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -251,7 +252,12 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
             argv,
             cwd=str(cwd),
             env={**scrubbed_git_env(), **granted},
-            capture_output=True,
+            # One stream, in the order it was written. Captured apart and joined
+            # stdout-first, `uv run`'s setup lines (stderr, written before pytest
+            # started) landed after pytest's summary, and the block's tail read
+            # "Installed 68 packages" instead of naming the failing tests.
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             timeout=LAND_VERIFY_TIMEOUT_SECONDS,
             check=False,
@@ -273,11 +279,10 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
             ),
         )
 
-    # `capture_output` reads both pipes to EOF before returning, so a suite
-    # writing a megabyte cannot fill a buffer and deadlock. The whole of it is
-    # carried: the excerpt is cut later, from the end, and the artifact wants
-    # all of it.
-    output = strip_ansi((completed.stdout or "") + (completed.stderr or ""))
+    # `run` reads the pipe to EOF before returning, so a suite writing a
+    # megabyte cannot fill a buffer and deadlock. The whole of it is carried:
+    # the excerpt is cut later, from the end, and the artifact wants all of it.
+    output = strip_ansi(completed.stdout or "")
     if completed.returncode == GATE_EX_UNAVAILABLE:
         # The command ran and said it could not do its job. Same number and same
         # meaning as the transition gates use, imported rather than re-spelled.
@@ -336,6 +341,10 @@ def _verify_candidate(
             VerifyOutcome(ok=False, outcome=GateOutcome.UNAVAILABLE, detail=words), lead=lead
         )
 
+    # The same toolchain a ticket worktree gets. Without it every suite that
+    # drives a client gate found no node_modules, and from 2026-11-02 every
+    # landing in loregarden was refused on `test_ts_org_gate_cache` (84 of 84).
+    link_ignored_toolchains(repo_root, tree)
     try:
         # A passing verdict carries the last command it ran and the output of
         # every one of them. `VerifyOutcome(ok=True, outcome=PASSED)` on its own

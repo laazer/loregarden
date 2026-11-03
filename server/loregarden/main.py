@@ -67,6 +67,7 @@ from loregarden.api import (
 from loregarden.config import settings
 from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
+from loregarden.core.open_file_limit import raise_open_file_limit
 from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
@@ -201,6 +202,7 @@ def _start_background_loops() -> list[asyncio.Task]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_console_logging()
+    raise_open_file_limit()
     if not settings.api_token:
         logger.warning(
             "LOREGARDEN_API_TOKEN is not set — the API (which writes files and "

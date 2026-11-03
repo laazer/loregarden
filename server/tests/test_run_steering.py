@@ -362,7 +362,17 @@ def test_a_detached_run_that_has_already_finished_still_says_so(db_session: Sess
     db_session.add(run)
     db_session.commit()
 
-    assert steer_refusal(run) == "Run is succeeded, so there is nothing to steer."
+    assert steer_refusal(run) == "This run has finished, so there is nothing to steer."
+
+
+@pytest.mark.parametrize("status", [s for s in RunStatus if s is not RunStatus.RUNNING])
+def test_every_settled_status_reads_as_a_sentence(db_session: Session, status: RunStatus):
+    """The refusal was built from the enum value: "Run is succeeded"."""
+    ticket = db_session.exec(select(Ticket)).first()
+    refusal = steer_refusal(_run(db_session, ticket, status=status))
+
+    assert refusal.startswith("This run ") and refusal.endswith(", so there is nothing to steer.")
+    assert f"is {status.value}" not in refusal
 
 
 def test_a_detached_chat_run_is_still_pointed_back_at_the_chat(db_session: Session):

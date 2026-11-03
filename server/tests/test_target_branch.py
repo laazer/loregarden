@@ -131,7 +131,7 @@ def test_every_descendant_shares_the_root_integration_branch(
 #
 # `target_branch_name` answered half of "where does this ticket's work land": the
 # branch, never the root ticket that keys it. Its caller in
-# `ticket_pull_request._ships_with` had loaded that root through `subtree_root`
+# `ticket_pull_request.ships_with_tree` had loaded that root through `subtree_root`
 # and thrown it away, so the PR tab could name the tree's branch and not the
 # ticket it belongs to. `landing_target` exposes the same single walk at both
 # widths; `target_branch_name` is its first projection.

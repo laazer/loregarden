@@ -202,6 +202,10 @@ export interface TicketDetail extends TicketSummary {
   compatibility_posture_source?: string;
   /** Set when the orchestrator split this ticket into parts. */
   split?: TicketSplit | null;
+  /** The live orchestration: a run is going even while no agent is (landing, say). */
+  active_orchestration?: OrchestrationRunView | null;
+  /** Its tree's integration branch, which carries its work to the base in one PR; "" when it lands on the base itself. */
+  ships_with?: string;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;

@@ -590,6 +590,36 @@ def test_the_commands_run_in_a_detached_worktree_at_the_candidate_sha(
     )
 
 
+def test_the_tree_gets_the_checkout_s_client_toolchain_and_leaves_it_intact(
+    session, workspace, repo, milestone
+):
+    """node_modules is gitignored, so `git worktree add` never makes one. Every
+    suite that drives a client gate failed for want of it: 84 landings refused
+    in a row on `test_ts_org_gate_cache`, none of them about the ticket."""
+    from loregarden.services.land_verification import land_verifier
+
+    modules = Path(repo) / "client" / "node_modules"
+    modules.mkdir(parents=True)
+    (modules / "marker.txt").write_text("installed\n")
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-v-tool")
+    _configure(
+        session,
+        ticket,
+        land_verify_commands=[
+            "python3 -c 'import pathlib,sys;"
+            'sys.exit(0 if pathlib.Path("client/node_modules/marker.txt").exists() else 3)\''
+        ],
+    )
+
+    outcome = land_verifier(session, ticket, workspace)(
+        _merge_candidate(repo, target, ticket.branch)
+    )
+
+    assert outcome.ok, f"the suite found no toolchain: exit={outcome.exit_code}"
+    # Removing the tree removes the link, never what it points at.
+    assert (modules / "marker.txt").read_text() == "installed\n"
+
+
 def test_the_detached_worktree_is_removed_whether_the_commands_pass_or_raise(
     session, workspace, repo, milestone
 ):
@@ -1386,6 +1416,35 @@ def test_the_inline_excerpt_is_the_tail_of_the_output_and_not_its_head(
     assert all(f"line{n}" in recorded for n in (1, 15, 30)), (
         f"the artifact holds a slice, not the output: {recorded[:200]!r}"
     )
+
+
+#: `uv run` writes its setup lines to stderr before pytest starts; pytest's
+#: summary goes to stdout last. The shape of lg-machine-resource-1923's refusal.
+SETUP_ON_STDERR_THEN_FAILURES = (
+    "python3 -c "
+    '\'import sys; sys.stderr.write("Installed 68 packages\\n"); sys.stderr.flush(); '
+    'print("FAILED tests/test_x.py::case"); sys.exit(1)\''
+)
+
+
+def test_the_output_is_in_the_order_it_was_written_across_both_streams(
+    session, workspace, repo, milestone
+):
+    """Joined stdout-first, stderr's setup chatter became the last line of the
+    block, so "What stopped it" read "Installed 68 packages in 187ms" and named
+    none of the eight failing tests."""
+    ticket, _, _ = _refused_land(
+        session, workspace, repo, milestone, "lg-brk-order", [SETUP_ON_STDERR_THEN_FAILURES]
+    )
+
+    outputs = [
+        json.loads(a.content_json)["output"]
+        for a in _receipts(session, ticket)
+        if "FAILED tests/test_x.py::case" in (a.content_json or "")
+    ]
+    assert outputs, [a.title for a in _receipts(session, ticket)]
+    # The block's excerpt is cut from the end of this, so its last line is what the block shows.
+    assert outputs[0].strip().splitlines()[-1] == "FAILED tests/test_x.py::case", outputs[0]
 
 
 def test_a_verification_that_could_not_run_refuses_the_land_without_blaming_the_tests(

@@ -122,6 +122,32 @@ describe("ticketContext", () => {
   it("is empty until the ticket loads", () => {
     expect(ticketContext(undefined)).toBe("");
   });
+
+  it("says landing, not done, while an orchestration lands the work", () => {
+    const stages = [{ key: "gate" }, { key: "done" }] as never;
+    const active_orchestration = { current_stage_key: "done" } as never;
+    expect(
+      ticketContext({ external_id: "lg-a-1", workflow_stage_key: "done", stages, active_orchestration }),
+    ).toBe("lg-a-1 · landing");
+    // Nothing live on it: the stage key, as before.
+    expect(ticketContext({ external_id: "lg-a-1", workflow_stage_key: "done", stages })).toBe("lg-a-1 · done");
+  });
+});
+
+it("offers no branch of its own for a ticket that ships in its tree's PR", async () => {
+  jest.mocked(api.ticket).mockResolvedValueOnce({
+    external_id: "lg-machine-resource-1923",
+    workflow_stage_key: "done",
+    branch: "ticket-loregarden-lg-machine-resource-1",
+    ships_with: "integration/lg-machine-resource-854",
+  } as never);
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/tickets/a3a0ea7d-0818-40ff-bfc9-0e7f5419cfbf/pr"),
+  });
+
+  await waitFor(() => expect(result.current.label).toBe("lg-machine-resource-1923 · done"));
+  // A non-null branch is what puts "Commit, push, and open a PR" in the dock.
+  expect(result.current.branch).toBeNull();
 });
 
 it("reads the ticket from the path, not from route params", () => {

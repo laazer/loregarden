@@ -376,6 +376,9 @@ class TicketDetail(TicketSummary):
     #: Set when the orchestrator split this ticket into parts; None otherwise,
     #: including for a ticket given sub-items by hand.
     split: TicketSplit | None = None
+    #: The live orchestration, so a run with no agent working (landing) still reads as running.
+    active_orchestration: "OrchestrationRunView | None" = None
+    ships_with: str = ""  # Its tree's integration branch; "" when it lands on the base itself.
 
 
 class WorkspaceSummary(SQLModel):
@@ -1494,3 +1497,4 @@ class McpServerView(SQLModel):
 
 HierarchyWorkItem.model_rebuild()
 TicketTreeNode.model_rebuild()
+TicketDetail.model_rebuild()
