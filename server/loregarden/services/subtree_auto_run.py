@@ -23,10 +23,9 @@ from loregarden.models.domain import (
 )
 from loregarden.services.autopilot_sign_off import (
     RESOLVED_BY_AUTOMATION,
-    auto_approve_may_sign_off,
-    autopilot_may_sign_off,
     record_auto_approve_sign_off,
     record_autopilot_sign_off,
+    signer_for_gate,
 )
 from loregarden.services.design_plan_gate import (
     orchestrator_may_sign_off,
@@ -156,9 +155,9 @@ def resolve_gate_if_permitted(
     ).first()
     if not approval:
         return False
-    autopilot = None if design_plan else autopilot_may_sign_off(session, ticket, approval)
-    by_run = not design_plan and autopilot is None and auto_approve_may_sign_off(orch_run, approval)
-    if not design_plan and autopilot is None and not by_run:
+    signer = None if design_plan else signer_for_gate(session, ticket, orch_run, approval)
+    autopilot = signer.plan if signer is not None else None
+    if not design_plan and signer is None:
         return False
     # Operator judgment only: an authority grant or a recheck is never made
     # unattended, so such a gate pauses the run for a person.

@@ -94,9 +94,33 @@ function describeShortfall(gaps: CapacityShortfall[]): string {
     .join("; ");
 }
 
-function holderStatus(row: DockerLeaseRow): string {
+/**
+ * A run's standing claim on the machine, which is a different thing from a
+ * working lease. One lease per orchestration run is held for the whole run —
+ * 17 minutes on average — and for most of that nothing is drawing on it, so
+ * drawing it identically to a lease that is running a test suite reports
+ * reserved capacity as scarcity.
+ */
+function isRunParent(row: DockerLeaseRow): boolean {
+  return row.holder_kind === "orchestration" && row.parent_lease_id === null;
+}
+
+/** Children still drawing on a lease. A released child draws nothing. */
+function liveChildren(row: DockerLeaseRow, holders: readonly DockerLeaseRow[]): DockerLeaseRow[] {
+  return holders.filter(
+    (other) => other.parent_lease_id === row.lease_id && other.status !== "released",
+  );
+}
+
+/**
+ * Orphaned and unverified come first: those are facts about what the reaper
+ * could NOT account for, and idling either away would hide the one state on
+ * this board that needs a person.
+ */
+function holderStatus(row: DockerLeaseRow, children: readonly DockerLeaseRow[]): string {
   if (row.status === "orphaned") return "orphaned";
   if (row.last_probe_outcome && row.last_probe_outcome !== "ok") return "unverified";
+  if (isRunParent(row) && children.length === 0) return "reserved, idle";
   return "holding";
 }
 
@@ -104,6 +128,20 @@ function holderStatus(row: DockerLeaseRow): string {
 function describePool(row: DockerLeaseRow): string {
   if (row.parent_lease_id) return "nested";
   return row.pool === "docker" ? "docker" : "machine";
+}
+
+/**
+ * What a child booked ahead of the FIFO line: its claim less the part its
+ * parent's unlent grant covered. A 1-cpu gate child under a 0.5-cpu run parent
+ * books 0.5 ahead of the queue, which is the intended mode on this machine and
+ * is stated rather than hidden — a reader adding the cards up should be able to
+ * see which half was already paid for.
+ */
+function describeChildCost(row: DockerLeaseRow): string {
+  const excess = Math.max(0, Math.round((row.cpus - row.covered_cpus) * 10) / 10);
+  const cost = formatCpus(row.cpus);
+  if (excess === 0) return `${cost}, covered by the parent`;
+  return `${cost}, ${formatCpus(excess)} booked ahead of the line`;
 }
 
 /**
@@ -190,10 +228,17 @@ function HolderIdentity({
 function LeaseActions({
   row,
   pending,
+  omitLink = false,
   onEnd,
 }: {
   row: DockerLeaseRow;
   pending: boolean;
+  /**
+   * For a child drawn inside its parent's card: the parent already links the
+   * ticket both of them belong to, and a second copy of that link is a
+   * duplicate destination in a row with no width to spare.
+   */
+  omitLink?: boolean;
   onEnd: (row: DockerLeaseRow) => void;
 }) {
   const waiting = row.status === "waiting";
@@ -202,7 +247,7 @@ function LeaseActions({
   const what = `${row.holder.what || "unlabelled lease"}${row.holder.branch ? ` on ${row.holder.branch}` : ""}`;
   return (
     <div className="docker-lease-actions">
-      {row.ticket_id ? (
+      {row.ticket_id && !omitLink ? (
         <Link
           className="docker-lease-link"
           to={ticketPath(row.ticket_id, row.agent_run_id ? "timeline" : "diff")}
@@ -254,13 +299,29 @@ function HolderProgress({ row }: { row: DockerLeaseRow }) {
   );
 }
 
-function holderTiming(row: DockerLeaseRow): string {
+/**
+ * How long it has held, and until when. A run parent nobody is drawing on has
+ * been *idle* for that time rather than running for it, in the same vocabulary
+ * the rest of the card uses.
+ */
+function holderTiming(row: DockerLeaseRow, idle: boolean): string {
   const expiry =
     row.expires_in_seconds === null ? "no expiry" : `expires in ${formatDuration(row.expires_in_seconds)}`;
-  return row.held_seconds === null ? expiry : `running ${formatDuration(row.held_seconds)} · ${expiry}`;
+  if (row.held_seconds === null) return expiry;
+  const verb = idle ? "idle" : "running";
+  return `${verb} ${formatDuration(row.held_seconds)} · ${expiry}`;
 }
 
-function HolderSlot({
+/**
+ * One gate's claim, drawn inside the card of the run parent it draws on.
+ *
+ * It is a row rather than a card of its own because the grid implies peers: a
+ * 0.5-cpu parent drawn beside its 1.0-cpu child reads as 1.5 cpu of machine to
+ * anyone adding the cards up, when the truth is 1.0 with half of it already
+ * booked by the parent. Its Release keeps its own aria-label, and sits after
+ * the parent's in DOM order so tab order follows the nesting.
+ */
+function ChildLeaseRow({
   row,
   pending,
   onEnd,
@@ -269,12 +330,44 @@ function HolderSlot({
   pending: boolean;
   onEnd: (row: DockerLeaseRow) => void;
 }) {
-  const status = holderStatus(row);
+  return (
+    <li className="docker-child-lease" data-testid={`docker-child-${row.lease_id}`}>
+      <div className="docker-child-copy">
+        <span className="docker-child-what" title={row.holder_label}>
+          {row.holder.what || "unlabelled"}
+        </span>
+        <span className="docker-child-cost">{describeChildCost(row)}</span>
+      </div>
+      <LeaseActions row={row} pending={pending} omitLink onEnd={onEnd} />
+    </li>
+  );
+}
+
+function HolderSlot({
+  row,
+  childLeases,
+  pending,
+  pendingId,
+  onEnd,
+}: {
+  row: DockerLeaseRow;
+  /** Leases drawing on this one, drawn inside this card rather than beside it. */
+  childLeases: readonly DockerLeaseRow[];
+  pending: boolean;
+  pendingId: string | null;
+  onEnd: (row: DockerLeaseRow) => void;
+}) {
+  const status = holderStatus(row, childLeases);
+  // A child the board cannot place is a ledger fault, and a fault that renders
+  // as nothing is the one kind nobody ever reports.
+  const stranded = row.parent_lease_id !== null;
   return (
     <div className="queue-slot queue-slot--busy" data-testid={`docker-slot-${row.lease_id}`}>
       <div className="queue-slot-head">
         <span className="queue-slot-dot" aria-hidden />
-        <span className="queue-slot-name">{describePool(row)}</span>
+        <span className="queue-slot-name">
+          {stranded ? "nested · parent not on the board" : describePool(row)}
+        </span>
         <span className="queue-slot-badge" data-run-status={status}>
           {status}
         </span>
@@ -292,9 +385,26 @@ function HolderSlot({
         ) : null}
         <HolderProgress row={row} />
         <div className="docker-slot-foot">
-          <span className="docker-slot-expiry">{holderTiming(row)}</span>
+          <span className="docker-slot-expiry">
+            {holderTiming(row, status === "reserved, idle")}
+          </span>
           <LeaseActions row={row} pending={pending} onEnd={onEnd} />
         </div>
+        {childLeases.length > 0 ? (
+          <ul className="docker-child-leases">
+            {childLeases.map((child) => (
+              <ChildLeaseRow
+                key={child.lease_id}
+                row={child}
+                // One confirm, one release: the parent's cascade ends every
+                // child under it, so a child's button left live during its
+                // parent's release is a second confirm for a lease already ending.
+                pending={pendingId === child.lease_id || pendingId === row.lease_id}
+                onEnd={onEnd}
+              />
+            ))}
+          </ul>
+        ) : null}
       </div>
     </div>
   );
@@ -473,6 +583,15 @@ export function DockerQueueBoard({
 
   const { host, holders, waiting } = status;
 
+  // A child draws on its parent's grant, so it is drawn inside the parent's
+  // card rather than beside it in the grid. A child whose parent is NOT on the
+  // board keeps a card of its own, labelled: the board cannot place it, which
+  // is a ledger fault, and a fault that renders as nothing is never reported.
+  const onBoard = new Set(holders.map((row) => row.lease_id));
+  const topLevel = holders.filter(
+    (row) => row.parent_lease_id === null || !onBoard.has(row.parent_lease_id),
+  );
+
   // Slots are the host pool's lease ceiling. Free slots come from the pool's
   // own booked count, not from the holder list: a nested lease or an agent
   // run's standing claim is a holder that books no slot, so subtracting holders
@@ -506,11 +625,13 @@ export function DockerQueueBoard({
 
       {holders.length > 0 ? (
         <div className="queue-slot-grid docker-holder-grid" data-testid="docker-slot-grid">
-          {holders.map((row) => (
+          {topLevel.map((row) => (
             <HolderSlot
               key={row.lease_id}
               row={row}
+              childLeases={liveChildren(row, holders)}
               pending={pendingId === row.lease_id}
+              pendingId={pendingId}
               onEnd={setConfirming}
             />
           ))}
@@ -572,6 +693,7 @@ export function DockerQueueBoard({
 
       <DockerLeaseReleaseDialog
         lease={confirming}
+        childCount={confirming ? liveChildren(confirming, holders).length : 0}
         inFlight={confirming !== null && pendingId === confirming.lease_id}
         onClose={() => setConfirming(null)}
         onConfirm={(reason) => void confirm(reason)}

@@ -43,10 +43,9 @@ from loregarden.services.artifact_service import (
     refresh_execution_artifacts,
 )
 from loregarden.services.autopilot_sign_off import (
-    auto_approve_may_sign_off,
-    autopilot_may_sign_off,
     record_auto_approve_sign_off,
     record_autopilot_sign_off,
+    signer_for_gate,
 )
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.block_repair import conflict_refusal, record_repair_outcome
@@ -381,11 +380,10 @@ def _sign_off_gate_if_permitted(
         and stage_def is not None
         and orchestrator_may_sign_off(parent, stage_def, auto_approve=False)
     )
-    autopilot = None if design_plan else autopilot_may_sign_off(orch.session, ticket, gate_approval)
-    by_run = (
-        not design_plan and autopilot is None and auto_approve_may_sign_off(parent, gate_approval)
-    )
-    if not design_plan and autopilot is None and not by_run:
+    signer = None if design_plan else signer_for_gate(orch.session, ticket, parent, gate_approval)
+    autopilot = signer.plan if signer is not None else None
+    by_run = signer is not None and autopilot is None
+    if not design_plan and signer is None:
         return
     # A sign-off answers operator judgment and nothing else: a grant or a
     # recheck is a person's to make, and the gate stays in the inbox for them.

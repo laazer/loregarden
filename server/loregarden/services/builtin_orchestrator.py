@@ -9,6 +9,9 @@ from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
     BlockOrigin,
     OrchestrationDriver,
     OrchestrationRun,
@@ -20,6 +23,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
+from loregarden.services import orchestration_capacity
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.child_readiness import (
@@ -118,6 +122,22 @@ STAGE_TIMEOUT_BUDGETS: dict[str, int] = {
 }
 
 
+def _pending_gate_approval(session: Session, ticket: Ticket) -> Approval | None:
+    """This ticket's pending workflow gate, or None.
+
+    None is the answer for the parks that have no gate row at all —
+    `loregarden_mark_needs_person`, a block — and those are release cases, which
+    is exactly what `release_for_park` does with it.
+    """
+    return session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+            Approval.status == ApprovalStatus.PENDING,
+        )
+    ).first()
+
+
 def stage_timeout_seconds(stage_def: WorkflowStageDef, run_default: int | None) -> int | None:
     """This stage's agent budget: its own if it declares one, else a floor for
     the heavy stages, else the run's.
@@ -172,23 +192,14 @@ class BuiltinOrchestrator:
         # receives and shares this same instance, so the cap holds across the
         # whole tree instead of resetting per ticket.
         budget = SubtreeBudget.for_root(_subtree_budget, profile)
-        orch_run = self.callbacks.start_orchestration_run(
+        orch_run, agent_timeout = self._begin_run(
             ticket,
-            driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
-            profile_slug=profile.slug,
+            profile,
             auto_approve=auto_approve,
             approve_design_plans=approve_design_plans,
             auto_repair=auto_repair,
-            stop_at_stage_key=stop_at_stage_key or "",
-            timeout_override_seconds=timeout_seconds,
-        )
-        self.session.refresh(ticket)
-        # Prefer the claim's stored timeout when this execute was dispatched from
-        # a lane that already answered the dialog.
-        agent_timeout = (
-            orch_run.timeout_override_seconds
-            if orch_run.timeout_override_seconds is not None
-            else timeout_seconds
+            stop_at_stage_key=stop_at_stage_key,
+            timeout_seconds=timeout_seconds,
         )
 
         stages_run = 0
@@ -198,36 +209,16 @@ class BuiltinOrchestrator:
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
 
-                # At every boundary, not only the first: plan and spec write the
-                # criteria that make a ticket oversized. A split makes the ticket
-                # an aggregator, and the child pass below runs its parts.
-                split_oversized_ticket(self.session, ticket, self.callbacks)
-
-                # The ticket's own prerequisites first: a parent waiting on
-                # another ticket holds its whole subtree.
-                child_pause = _dependency_hold(self.session, ticket) or (
-                    _orchestrate_incomplete_children(
-                        self,
-                        ticket,
-                        profile,
-                        auto_approve=auto_approve,
-                        timeout_seconds=agent_timeout,
-                        subtree_budget=budget,
-                    )
+                settled = self._settle_subtree_before_stages(
+                    ticket,
+                    profile,
+                    orch_run,
+                    auto_approve=auto_approve,
+                    agent_timeout=agent_timeout,
+                    budget=budget,
                 )
-                if child_pause:
-                    return self._pause_orchestration(orch_run, ticket, message=child_pause)
-
-                # A ticket with child tickets is a pure aggregator: its children
-                # carry the work and it never runs its own workflow stages. Running
-                # them would create an unused ticket branch (ensure_ticket_branch
-                # fires per stage agent) and sweep a parent commit onto whatever
-                # branch is checked out — the last child's — and decomposition
-                # happens in Ticket Studio, before orchestration, not in a stage
-                # agent. Reaching here means every child is complete
-                # (the pause above returns otherwise), so finalize the parent and stop.
-                if self._has_child_tickets(ticket):
-                    return self._finalize_aggregator_parent(orch_run, ticket)
+                if settled is not None:
+                    return settled
 
                 instance, stages, recovered_stage_key = self._resolve_stages_with_recovery(ticket)
                 if not instance or not stages:
@@ -268,7 +259,7 @@ class BuiltinOrchestrator:
                     ):
                         continue
                     return self._pause_orchestration(
-                        orch_run, ticket, message="Awaiting human approval"
+                        orch_run, ticket, message="Awaiting human approval", awaiting=True
                     )
 
                 # A pin outranks the stage's own emptiness. The terminal stage
@@ -327,8 +318,97 @@ class BuiltinOrchestrator:
                 ),
                 message=str(exc),
             )
+        finally:
+            # The run's standing host lease, handed back at every exit from this
+            # method. The park predicate decides which parks hold it; this
+            # guarantees the exits no predicate enumerates — a retry-budget
+            # block, a stage limit, a dependency hold, an exception at the run
+            # boundary. A parent held past here is capacity nobody is using,
+            # with this thread gone: no later `finally` runs, and a park waiting
+            # on a person leaves no dead pid for the reaper to judge.
+            # Idempotent, so a park that already released it credits once.
+            orchestration_capacity.release_parent(self.session, orch_run)
         self.session.refresh(orch_run)
         return orch_run
+
+    def _begin_run(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        *,
+        auto_approve: bool,
+        approve_design_plans: bool,
+        auto_repair: bool,
+        stop_at_stage_key: str | None,
+        timeout_seconds: int | None,
+    ) -> tuple[OrchestrationRun, int | None]:
+        """Open the run row and resolve the agent timeout it will dispatch with."""
+        orch_run = self.callbacks.start_orchestration_run(
+            ticket,
+            driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
+            profile_slug=profile.slug,
+            auto_approve=auto_approve,
+            approve_design_plans=approve_design_plans,
+            auto_repair=auto_repair,
+            stop_at_stage_key=stop_at_stage_key or "",
+            timeout_override_seconds=timeout_seconds,
+        )
+        self.session.refresh(ticket)
+        # Prefer the claim's stored timeout when this execute was dispatched from
+        # a lane that already answered the dialog.
+        agent_timeout = (
+            orch_run.timeout_override_seconds
+            if orch_run.timeout_override_seconds is not None
+            else timeout_seconds
+        )
+        return orch_run, agent_timeout
+
+    def _settle_subtree_before_stages(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        orch_run: OrchestrationRun,
+        *,
+        auto_approve: bool,
+        agent_timeout: int | None,
+        budget: SubtreeBudget,
+    ) -> OrchestrationRun | None:
+        """Everything owed before this ticket may run a stage of its own.
+
+        Returns the run to hand back when this pass stops here, or None when the
+        loop may go on to the ticket's own stages.
+        """
+        # At every boundary, not only the first: plan and spec write the
+        # criteria that make a ticket oversized. A split makes the ticket
+        # an aggregator, and the child pass below runs its parts.
+        split_oversized_ticket(self.session, ticket, self.callbacks)
+
+        # The ticket's own prerequisites first: a parent waiting on
+        # another ticket holds its whole subtree.
+        child_pause = _dependency_hold(self.session, ticket) or (
+            _orchestrate_incomplete_children(
+                self,
+                ticket,
+                profile,
+                auto_approve=auto_approve,
+                timeout_seconds=agent_timeout,
+                subtree_budget=budget,
+            )
+        )
+        if child_pause:
+            return self._pause_orchestration(orch_run, ticket, message=child_pause)
+
+        # A ticket with child tickets is a pure aggregator: its children
+        # carry the work and it never runs its own workflow stages. Running
+        # them would create an unused ticket branch (ensure_ticket_branch
+        # fires per stage agent) and sweep a parent commit onto whatever
+        # branch is checked out — the last child's — and decomposition
+        # happens in Ticket Studio, before orchestration, not in a stage
+        # agent. Reaching here means every child is complete
+        # (the pause above returns otherwise), so finalize the parent and stop.
+        if self._has_child_tickets(ticket):
+            return self._finalize_aggregator_parent(orch_run, ticket)
+        return None
 
     def _settle_finished_stage(
         self,
@@ -513,7 +593,9 @@ class BuiltinOrchestrator:
         status_after = stage_map.get(target_key, ticket.workflow_stage_status)
 
         if status_after == StageStatus.AWAITING:
-            return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+            return self._pause_orchestration(
+                orch_run, ticket, message="Awaiting human approval", awaiting=True
+            )
         if status_after != StageStatus.DONE:
             # A write-path veto left this stage not DONE (PENDING, BLOCKED, …).
             # Do not run transition gates and do not resolve linear next as pass.
@@ -575,11 +657,28 @@ class BuiltinOrchestrator:
         return self._complete_run(orch_run, ticket)
 
     def _pause_orchestration(
-        self, orch_run: OrchestrationRun, ticket: Ticket, *, message: str = ""
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        message: str = "",
+        awaiting: bool = False,
     ) -> OrchestrationRun:
         """Mark this orchestration run SUCCEEDED (the run itself didn't fail —
         it's just pausing here: awaiting approval, hit its stage limit, or has
-        nothing left to do this pass) and return it for the caller to return."""
+        nothing left to do this pass) and return it for the caller to return.
+
+        `awaiting` says this pause is a gate a person may now owe, which is the
+        one case where *why* the run stopped changes what happens to its host
+        capacity lease: a park automation will sign keeps it, and a park a person
+        owes gives it back as PARK_RELEASED so the re-acquire is legible on the
+        ticket. The `finally` in `execute()` still releases it either way — this
+        only decides the reason, and whether it is held a moment longer.
+        """
+        if awaiting:
+            orchestration_capacity.release_for_park(
+                self.session, orch_run, ticket, _pending_gate_approval(self.session, ticket)
+            )
         self.callbacks.complete_orchestration(
             orch_run,
             ticket,
@@ -655,7 +754,9 @@ class BuiltinOrchestrator:
             self.session, ticket, orch_run, stage_def, auto_approve=auto_approve
         ):
             return None
-        return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+        return self._pause_orchestration(
+            orch_run, ticket, message="Awaiting human approval", awaiting=True
+        )
 
     def _dispatch_agent_stage(
         self,

@@ -57,6 +57,9 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         "autofix_agent_fallback": True,
         "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
         "capacity_footprint": GatesConfig().capacity_footprint.value,
+        # The run-scoped parent lease's size (lg-machine-resource-1923), written
+        # with the rest of the gate config so retuning it is a profile edit.
+        "parent_capacity_footprint": GatesConfig().parent_capacity_footprint.value,
     }
 
 
@@ -88,6 +91,9 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         "autofix_agent_fallback": True,
         "autofix_max_agent_attempts": GatesConfig().autofix_max_agent_attempts,
         "capacity_footprint": GatesConfig().capacity_footprint.value,
+        # The run-scoped parent lease's size (lg-machine-resource-1923), written
+        # with the rest of the gate config so retuning it is a profile edit.
+        "parent_capacity_footprint": GatesConfig().parent_capacity_footprint.value,
     }
 
     profile = resolve_orchestration_profile(ws)

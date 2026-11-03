@@ -76,6 +76,7 @@ def reserve_child(
     ticket_id: str | None = None,
     workspace_id: str | None = None,
     holder_pid: int | None = None,
+    draw_on_parent: bool = True,
     invoke: DockerInvoke = run_docker,
 ) -> DockerReservation:
     """Grant a child of `parent_lease_id` now, or refuse it now. Never queues.
@@ -83,6 +84,15 @@ def reserve_child(
     `pool` defaults to the parent's. A child may only claim pools its parent is
     charged to — a host child of a docker parent, not the reverse — because the
     parent's allotment only exists in those pools.
+
+    `draw_on_parent=False` nests for *liveness* without spending the parent's
+    allotment: the whole price is booked from the pools ahead of the queue, or
+    refused at once. That is what a nested orchestration run's own parent lease
+    wants (lg-machine-resource-1923): it must never wait, and it must end when
+    the outer run's claim does, but it is concurrent work rather than work
+    inside the outer run's grant — a nested claim that ate the outer parent's
+    0.5 cpu would leave the outer run's own gate children with nothing to draw
+    on, and every later transition booking its full price as excess.
     """
     if not settings.docker_capacity_enabled:
         return DockerReservation(
@@ -138,7 +148,7 @@ def reserve_child(
         position=0,
         ttl_seconds=_ttl(ttl_seconds),
     )
-    return _grant(session, child)
+    return _grant(session, child, draw_on_parent=draw_on_parent)
 
 
 def _ttl(ttl_seconds: int | None) -> int:
@@ -146,7 +156,9 @@ def _ttl(ttl_seconds: int | None) -> int:
     return max(1, min(int(requested), settings.docker_lease_max_ttl_seconds))
 
 
-def _grant(session: Session, child: DockerLease) -> DockerReservation:
+def _grant(
+    session: Session, child: DockerLease, *, draw_on_parent: bool = True
+) -> DockerReservation:
     """Cover, book the excess, and insert — together, or not at all."""
     pools = CHARGED_POOLS[child.pool]
     deadline = time.monotonic() + CLAIM_CONTENTION_BUDGET_SECONDS
@@ -159,10 +171,13 @@ def _grant(session: Session, child: DockerLease) -> DockerReservation:
                 error_kind=REJECT_PARENT_NOT_HELD,
                 message="The parent lease ended before the grant.",
             )
-        child.covered_cpus = min(child.cpus, max(0.0, parent.cpus - parent.child_covered_cpus))
-        child.covered_memory_mb = min(
-            child.memory_mb, max(0, parent.memory_mb - parent.child_covered_memory_mb)
-        )
+        if draw_on_parent:
+            child.covered_cpus = min(child.cpus, max(0.0, parent.cpus - parent.child_covered_cpus))
+            child.covered_memory_mb = min(
+                child.memory_mb, max(0, parent.memory_mb - parent.child_covered_memory_mb)
+            )
+        else:
+            child.covered_cpus, child.covered_memory_mb = 0.0, 0
         excess_cpus = child.cpus - child.covered_cpus
         excess_memory = child.memory_mb - child.covered_memory_mb
         needs_pools = excess_cpus > 0 or excess_memory > 0
@@ -200,7 +215,11 @@ def _grant(session: Session, child: DockerLease) -> DockerReservation:
             continue
 
         now = datetime.now(timezone.utc)
-        child.granted_at = now
+        # Granted *at* the moment it was asked for, because a child never waits.
+        # Stamping `now` instead left every child row reading as a few hundred
+        # microseconds in the line, which is a wait of zero to a person and a
+        # non-zero wait to the arithmetic that sums a ticket's queue time.
+        child.granted_at = child.requested_at
         child.last_renewed_at = now
         child.expires_at = now + timedelta(seconds=child.ttl_seconds)
         session.add(child)

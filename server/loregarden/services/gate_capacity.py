@@ -11,6 +11,14 @@ deadlock.
 A gate that cannot get capacity in time is not run and not passed: it reports
 UNAVAILABLE, which `gate_recovery` routes to a human rather than to the
 stage's agent, because no agent can fix a busy machine.
+
+Amended by lg-machine-resource-1923. A gate handed its run's parent lease
+(`parent_lease_id`) claims a **child** of it and never queues: the thread asking
+is the thread holding the parent, so a wait here is a holder waiting on itself.
+The claim is priced from the parent's unlent remainder, any excess is booked
+ahead of the line, or it is refused at once. 858's reasoning still holds for a
+gate with no parent — a land verification, a standalone transition — and that
+branch is unchanged.
 """
 
 from __future__ import annotations
@@ -25,13 +33,22 @@ from loregarden.models.domain import (
     DockerFootprint,
     DockerGrantState,
     DockerHolderKind,
+    DockerLease,
     DockerLeaseEndReason,
     Ticket,
     Workspace,
 )
+from loregarden.services.capacity_children import reserve_child
 from loregarden.services.capacity_environment import child_environment
-from loregarden.services.docker_leases import release_lease, reserve, wait_for_grant
-from sqlmodel import Session
+from loregarden.services.docker_capacity import resolve_weights
+from loregarden.services.docker_leases import (
+    DockerReservation,
+    release_lease,
+    reserve,
+    wait_for_grant,
+)
+from loregarden.services.docker_ledger import OCCUPYING
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +78,45 @@ def acquire_gate_capacity(
     transition: str,
     ttl_seconds: int,
     wait_seconds: float | None = None,
+    parent_lease_id: str | None = None,
+    orchestration_run_id: str | None = None,
 ) -> GateLease:
-    """Hold host capacity for one transition's gate commands, or raise saying why not."""
+    """Hold host capacity for one transition's gate commands, or raise saying why not.
+
+    With `parent_lease_id` the claim is a child of the run's parent lease and
+    never queues; without one it is the ordinary top-level claim that waits in
+    line. A parent that has gone away is **refused**, never quietly promoted to
+    the top-level claim this did before 1923: that fallback would reintroduce a
+    wait of minutes to hours on a path nothing reports, and the ticket would
+    read as fixed.
+    """
     if footprint is DockerFootprint.NONE or not settings.docker_capacity_enabled:
         return GateLease()
 
     label = f"gates {transition} · {workspace.slug} · {ticket.external_id or ticket.id}"
+    if parent_lease_id:
+        reservation = reserve_child(
+            session,
+            parent_lease_id=parent_lease_id,
+            holder_label=label,
+            footprint=footprint,
+            pool=CapacityPool.HOST,
+            holder_kind=DockerHolderKind.AD_HOC,
+            # Stamped so the run's lease graph is readable from the run alone:
+            # one parent and a child per transition, which is what the capacity
+            # board draws and what the per-run assertions read.
+            orchestration_run_id=orchestration_run_id,
+            ticket_id=ticket.id,
+            workspace_id=workspace.id,
+            holder_pid=os.getpid(),
+            ttl_seconds=ttl_seconds,
+        )
+        if reservation.granted:
+            return GateLease(lease_id=reservation.lease_id, env=child_environment(reservation, {}))
+        raise GateCapacityUnavailable(
+            _child_refusal(session, footprint, transition, parent_lease_id, reservation)
+        )
+
     reservation = reserve(
         session,
         holder_label=label,
@@ -98,4 +148,45 @@ def acquire_gate_capacity(
     raise GateCapacityUnavailable(
         f"Gate commands for {transition} did not run: no {footprint.value} host capacity "
         f"({reservation.error_kind or 'still queued'}) — {reservation.message}"
+    )
+
+
+def _child_refusal(
+    session: Session,
+    footprint: DockerFootprint,
+    transition: str,
+    parent_lease_id: str,
+    reservation: DockerReservation,
+) -> str:
+    """The refused child, in the same two numbers the capacity board shows.
+
+    The ask and the parent's unlent remainder. An operator reading
+    "needs 1 cpu, this run's parent holds 0.5" on the ticket and a bare
+    `exceeds_parent_grant` on the board cannot tell they are one event.
+    """
+    cpus, _ = resolve_weights(footprint)
+    parent = session.get(DockerLease, parent_lease_id)
+    if parent is None or parent.status not in OCCUPYING:
+        return (
+            f"Gate commands for {transition} did not run: this run's parent lease "
+            f"{parent_lease_id} is gone ({reservation.error_kind or 'parent_not_held'}), so "
+            f"the {cpus:g}-cpu claim has nothing to draw on. A run whose standing claim has "
+            "been taken does not rejoin the line mid-transition — the run is re-queued "
+            f"instead. {reservation.message}"
+        )
+    remainder = max(0.0, parent.cpus - parent.child_covered_cpus)
+    children = session.exec(
+        select(DockerLease).where(
+            DockerLease.parent_lease_id == parent_lease_id,
+            col(DockerLease.status).in_(OCCUPYING),
+        )
+    ).all()
+    drawing = (
+        ", ".join(f"{child.holder_label} ({child.cpus:g} cpus)" for child in children) or "nothing"
+    )
+    return (
+        f"Gate commands for {transition} did not run: needs {cpus:g} cpu; this run's parent "
+        f"lease {parent_lease_id} holds {parent.cpus:g} and {remainder:g} cpus is bookable "
+        f"ahead of the line ({reservation.error_kind or 'exceeds_parent_grant'}). "
+        f"Drawing on it now: {drawing}. {reservation.message}"
     )

@@ -12,7 +12,15 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.core.terminal_text import strip_ansi
-from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    DockerFootprint,
+    GateOutcome,
+    OrchestrationRun,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
+from loregarden.services import orchestration_capacity
 from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
@@ -308,6 +316,88 @@ def _blocking(result: GateRunResult) -> GateRunResult:
     return replace(result, outcome=GateOutcome.FAILED)
 
 
+def _outer_parent_lease_id(session: Session, ticket: Ticket) -> str | None:
+    outer = orchestration_capacity.enclosing_parent_lease(session, ticket)
+    return outer.id if outer is not None else None
+
+
+@dataclass(frozen=True)
+class _ParentCapacity:
+    """The run's standing claim for this transition, or the refusal instead."""
+
+    lease_id: str | None = None
+    refusal: GateRunResult | None = None
+
+
+def _parent_lease_for_gates(
+    session: Session,
+    profile: OrchestrationProfile,
+    workspace: Workspace,
+    ticket: Ticket,
+    *,
+    orch_run: OrchestrationRun | None,
+) -> _ParentCapacity:
+    """Find or take this run's parent host lease before the gate claims a child.
+
+    A refusal is returned as UNAVAILABLE rather than raised or skipped: a gate
+    that cannot find out whether it has capacity must not report PASSED, and
+    `gate_recovery` routes UNAVAILABLE to a person because no agent can fix a
+    busy machine.
+
+    `parent_capacity_footprint: none` means this run takes no parent and its
+    gates claim top-level leases, as they did before 1923 — still metered, just
+    paying the line once per transition. It is NOT a way to run gate commands
+    holding nothing.
+    """
+    footprint = profile.gates.parent_capacity_footprint
+    if (
+        orch_run is None
+        or footprint is DockerFootprint.NONE
+        or profile.gates.capacity_footprint is DockerFootprint.NONE
+        or not settings.docker_capacity_enabled
+    ):
+        return _ParentCapacity()
+    try:
+        reservation = orchestration_capacity.acquire_or_find_parent(
+            session,
+            orch_run=orch_run,
+            ticket=ticket,
+            workspace=workspace,
+            footprint=footprint,
+            outer_parent_lease_id=_outer_parent_lease_id(session, ticket),
+        )
+    except Exception as exc:  # noqa: BLE001 - reported as UNAVAILABLE; see docstring
+        logger.exception("Could not read the capacity ledger for run %s", orch_run.run_code)
+        return _ParentCapacity(
+            refusal=GateRunResult(
+                ok=False,
+                outcome=GateOutcome.UNAVAILABLE,
+                message=(
+                    "Gates did not run: the capacity ledger could not be read, so whether "
+                    f"this run holds host capacity is unknown — {exc}"
+                ),
+            )
+        )
+    if not reservation.granted:
+        return _ParentCapacity(
+            refusal=GateRunResult(
+                ok=False,
+                outcome=GateOutcome.UNAVAILABLE,
+                message=f"Gates did not run: {reservation.message}",
+            )
+        )
+    # A child left behind by a killed transition would refuse every later gate
+    # on this run for the life of the run: `reserve_child` refuses rather than
+    # queues, and the reaper extends an expired child while its parent is held.
+    orchestration_capacity.release_leaked_gate_children(session, reservation.lease_id)
+    # Excess booking is the intended mode, not a mis-sizing: a 0.5-cpu parent
+    # lends what it can to a 1.0-cpu SERVICE child and books the rest ahead of
+    # the queue. A parent that fully covered its children is unaffordable on this
+    # machine, so the trade is deliberate and bounded — at most 0.5 standing plus
+    # 0.5 excess per in-flight ticket (lg-machine-resource-1923 R7/R8).
+    return _ParentCapacity(lease_id=reservation.lease_id)
+
+
 def run_transition_gates(
     session: Session,
     profile: OrchestrationProfile,
@@ -317,8 +407,18 @@ def run_transition_gates(
     from_stage: str,
     to_stage: str,
     stage_def: WorkflowStageDef | None = None,
+    orch_run: OrchestrationRun | None = None,
 ) -> GateRunResult:
-    """Run configured gate commands after *from_stage* completes and before *to_stage*."""
+    """Run configured gate commands after *from_stage* completes and before *to_stage*.
+
+    `orch_run` is how the run-scoped parent capacity lease arrives
+    (lg-machine-resource-1923). The parent is acquired *here*, lazily on the
+    first transition gate of the run, so a failure to acquire has a
+    `GateRunResult` to report through rather than being a silent skip; the
+    gate's own claim is then a child of it and never queues. With no run — a
+    land verification, a standalone transition — gates take a top-level claim
+    and wait in line exactly as they did before.
+    """
     if not profile.gates.enabled:
         return GateRunResult(ok=True, outcome=GateOutcome.DISABLED, message="gates disabled")
 
@@ -360,6 +460,9 @@ def run_transition_gates(
             ok=True, outcome=GateOutcome.SKIPPED, message="no gate commands configured"
         )
 
+    parent = _parent_lease_for_gates(session, profile, workspace, ticket, orch_run=orch_run)
+    if parent.refusal is not None:
+        return parent.refusal
     try:
         lease = acquire_gate_capacity(
             session,
@@ -370,6 +473,8 @@ def run_transition_gates(
             # Every command is bounded by GATE_TIMEOUT_SECONDS, so this covers
             # the whole run without a heartbeat.
             ttl_seconds=GATE_TIMEOUT_SECONDS * (len(templates) + 2),
+            parent_lease_id=parent.lease_id,
+            orchestration_run_id=orch_run.id if orch_run is not None else None,
         )
     except GateCapacityUnavailable as exc:
         return GateRunResult(ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc))

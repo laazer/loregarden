@@ -19,6 +19,9 @@ stays a person's (AC-6). Turning the autopilot off hands these gates back.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
+
 from loregarden.models.domain import (
     Approval,
     AutopilotAction,
@@ -93,11 +96,52 @@ def autopilot_may_sign_off(
     return autopilot_driving(session, ticket)
 
 
-def auto_approve_may_sign_off(orch_run: OrchestrationRun | None, approval: Approval) -> bool:
-    """Whether an `auto_approve` run signs this gate: legacy sign-off only."""
-    return (
-        orch_run is not None and orch_run.auto_approve and _gate_is_legacy_sign_off_only(approval)
-    )
+class GateSignerKind(StrEnum):
+    """Who, other than a person, may answer a stage gate."""
+
+    #: An initiative autopilot that dispatched this ticket or an ancestor.
+    AUTOPILOT = "autopilot"
+    #: An orchestration run started with `auto_approve`.
+    AUTO_APPROVE_RUN = "auto_approve_run"
+
+
+@dataclass(frozen=True)
+class GateSigner:
+    """The automation that owns a gate, and the plan the record needs.
+
+    `plan` rides along because `record_autopilot_sign_off` cannot write its
+    `AutopilotEvent` without the initiative id; it is None for a run signer.
+    """
+
+    kind: GateSignerKind
+    plan: InitiativePlan | None = None
+
+
+def signer_for_gate(
+    session: Session, ticket: Ticket, orch_run: OrchestrationRun | None, approval: Approval
+) -> GateSigner | None:
+    """The one composite deciding who may sign *this* approval, or None.
+
+    The single place that question is answered, because two copies of it drift
+    and the drift is invisible: one call site would sign a gate the other parks
+    on. `run_completion`, `subtree_auto_run` and `orchestration_capacity` all
+    read this rather than recomputing it.
+
+    Note what it is NOT keyed on: `orchestration_runs.auto_approve` alone. An
+    `auto_approve` run still parks for a person on an authored question, an
+    authority grant, a recheck, a `mark_needs_person` and a block — so the
+    predicate is per park, which is what lets the run-scoped capacity lease be
+    held across the parks automation will resolve and given back at the ones it
+    will not (lg-machine-resource-1923).
+    """
+    if not _gate_is_legacy_sign_off_only(approval):
+        return None
+    plan = autopilot_driving(session, ticket)
+    if plan is not None:
+        return GateSigner(kind=GateSignerKind.AUTOPILOT, plan=plan)
+    if orch_run is not None and orch_run.auto_approve:
+        return GateSigner(kind=GateSignerKind.AUTO_APPROVE_RUN)
+    return None
 
 
 def record_auto_approve_sign_off(

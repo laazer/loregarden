@@ -332,6 +332,32 @@ export interface LedgerVisit {
   /** Distinct lanes rather than repeated attempts. */
   is_parallel: boolean;
   attempts: LedgerAttempt[];
+  /**
+   * How long this visit spent queued for machine capacity before it started,
+   * or null when it was under the measured 5-second floor — one of 1912's five
+   * gate leases was granted in 0.1s, and a row saying "waited 0s" says nothing.
+   *
+   * Optional as well as nullable so a reader built before the field existed
+   * still typechecks; both spellings mean the same thing, which is *absent*.
+   * Never read a missing value as zero: that would claim a measurement.
+   */
+  capacity_wait_seconds?: number | null;
+  /** Whether that wait was a re-acquire after a park a person had to resolve. */
+  capacity_wait_after_park?: boolean;
+}
+
+/**
+ * What a ticket spent waiting for the machine rather than working.
+ *
+ * Null on the ledger when the capacity ledger is switched off, or when the
+ * ticket predates it and has no lease rows at all. Absent is not zero.
+ */
+export interface CapacityWait {
+  total_seconds: number;
+  /** Trips to the line, which is at most one per orchestration run. */
+  lease_count: number;
+  /** Of the total, how much was paid again after a park. */
+  reacquired_seconds: number;
 }
 
 export interface TicketLedger {
@@ -339,6 +365,7 @@ export interface TicketLedger {
   total_runs: number;
   reworked_stages: string[];
   total_seconds: number;
+  capacity_wait?: CapacityWait | null;
 }
 
 /** One row from the raw ticket artifact feed (Artifacts tab). */

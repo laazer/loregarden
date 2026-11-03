@@ -152,6 +152,10 @@ def test_an_empty_ledger_is_empty_not_an_error():
         "total_runs": 0,
         "reworked_stages": [],
         "total_seconds": 0.0,
+        # Null rather than 0.0, and absent from this call rather than measured:
+        # "nothing queued" and "nobody measured the queue" are different facts
+        # (lg-machine-resource-1923).
+        "capacity_wait": None,
     }
 
 
