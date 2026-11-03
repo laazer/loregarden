@@ -1,7 +1,8 @@
 """A publish card says how far the work got, and closes once the base holds it (1032).
 
 463's #620, 2026-10-14: the publish pushed and opened a mergeable PR, and only
-enabling auto-merge was refused. The card said the work was "not on its way to
+enabling auto-merge was refused. The merge step is now the merge queue's
+admission (973), so the same shape is a queue that refuses the PR. The card said the work was "not on its way to
 the base", suggested a push that had already succeeded, and stayed pending after
 a person merged the PR by hand, because only another publish could close it and
 the tree had nothing left to land.
@@ -14,8 +15,15 @@ import subprocess
 from unittest import mock
 
 import pytest
-from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, WorkItemType, Workspace
-from loregarden.services import git_automation
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    MergeQueueAdmission,
+    WorkItemType,
+    Workspace,
+)
+from loregarden.services import git_automation, merge_queue
 from loregarden.services.invariant_registry import PUBLISH_CARDS_CLOSE
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.publish_tree import PublishOutcome
@@ -32,6 +40,7 @@ from sqlmodel import Session, select
 from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
 
 PR = "https://github.com/example/repo/pull/7"
+QUEUE_IT = "./scripts/loregarden-cli.sh mcp call loregarden_enqueue_merge ticket_id={}"
 FULL_CHAIN = {"commit": True, "push": True, "tree_open_pr": True, "tree_auto_merge": True}
 
 
@@ -78,17 +87,11 @@ def tree_fixture(session, workspace, repo):
     return ms, target
 
 
-def _gh(*, merge_refused: bool):
-    def fake(args, cwd):
-        if args[:2] == ["pr", "list"]:
-            return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
-        if args[:2] == ["pr", "merge"] and merge_refused:
-            return subprocess.CompletedProcess(
-                args, 1, stdout="", stderr="GraphQL: Auto merge is not allowed for this repository"
-            )
-        return subprocess.CompletedProcess(args, 0, stdout=f"{PR}\n", stderr="")
-
-    return fake
+def _gh(args, cwd):
+    if args[:2] == ["pr", "list"]:
+        return subprocess.CompletedProcess(args, 0, stdout="\n", stderr="")
+    assert args[:2] != ["pr", "merge"], "a tree's PR lands through the merge queue, never gh"
+    return subprocess.CompletedProcess(args, 0, stdout=f"{PR}\n", stderr="")
 
 
 def _cards(session, root) -> list[Approval]:
@@ -106,21 +109,25 @@ def _cards(session, root) -> list[Approval]:
 
 
 def _refused_auto_merge(session, workspace, ms) -> Approval:
-    with mock.patch.object(git_automation, "_gh", side_effect=_gh(merge_refused=True)):
+    refusal = merge_queue.Admission(MergeQueueAdmission.NO_PULL_REQUEST, "no pull request")
+    with (
+        mock.patch.object(git_automation, "_gh", side_effect=_gh),
+        mock.patch.object(merge_queue, "enqueue", return_value=refusal),
+    ):
         outcome = publish_and_settle(session, ms, workspace)
     assert not outcome.ok and outcome.failed_step == "auto_merge"
     [card] = _cards(session, ms)
     return card
 
 
-def test_an_auto_merge_refusal_names_the_open_pr_and_how_to_merge_it(session, workspace, tree):
+def test_an_auto_merge_refusal_names_the_open_pr_and_how_to_queue_it(session, workspace, tree):
     ms, target = tree
 
     card = _refused_auto_merge(session, workspace, ms)
 
     assert PR in card.impact
     assert "not on its way" not in card.impact
-    assert card.tool_name == f"gh pr merge {PR} --squash"
+    assert card.tool_name == QUEUE_IT.format(ms.external_id)
 
 
 @pytest.mark.parametrize("step", ["push", "open_pr", ""])
@@ -144,14 +151,14 @@ def test_a_later_report_replaces_the_cards_action(session, workspace, tree):
 
     card = _refused_auto_merge(session, workspace, ms)
 
-    assert card.tool_name == f"gh pr merge {PR} --squash"
+    assert card.tool_name == QUEUE_IT.format(ms.external_id)
 
 
 def test_a_publish_from_any_path_closes_the_card(session, workspace, tree):
     ms, _ = tree
     _refused_auto_merge(session, workspace, ms)
 
-    with mock.patch.object(git_automation, "_gh", side_effect=_gh(merge_refused=False)):
+    with mock.patch.object(git_automation, "_gh", side_effect=_gh):
         assert publish_and_settle(session, ms, workspace).ok
 
     assert _cards(session, ms) == []
@@ -197,7 +204,7 @@ def test_the_sweep_closes_a_ux_answers_card_once_the_pr_is_merged(session, works
     """#661, #692 and #733 merged with their cards pending: only a publish closed one,
     and a merged tree never publishes again."""
     ms, _ = tree
-    with mock.patch.object(git_automation, "_gh", side_effect=_gh(merge_refused=False)):
+    with mock.patch.object(git_automation, "_gh", side_effect=_gh):
         assert publish_and_settle(session, ms, workspace).ok
     report_missing_ux_answers(session, ms, (), PR)
     assert close_published_cards(session) == 0, "the base does not hold the work yet"

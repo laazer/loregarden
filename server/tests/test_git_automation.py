@@ -7,9 +7,11 @@ shared checkout.
 
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
+from loregarden.services import git_automation
 from loregarden.services.git_automation import PublishSubject, publish_run
 from loregarden.services.git_automation_config import (
     enabled_steps,
@@ -256,3 +258,27 @@ def test_a_ticket_override_round_trips_through_the_patch_field(session, workspac
 
     assert ticket.git_automation_json == ""
     assert resolve_git_automation(workspace, ticket) == resolve_git_automation(workspace)
+
+
+# --- the merge step is the merge queue (lg-milestone-that-791 / 973) -----------------
+
+
+def test_auto_merge_without_a_queue_fails_closed_and_never_asks_gh_to_merge():
+    """The immediate-merge path is gone: with no queue to hand the PR to, the step
+    fails with a reason, and `gh` is never asked to merge (with or without --auto)."""
+    with mock.patch.object(git_automation, "_gh") as gh:
+        result = git_automation._auto_merge("https://github.com/o/r/pull/7", None)
+
+    assert not result.ok and "merge queue" in result.detail
+    gh.assert_not_called()
+
+
+def test_auto_merge_hands_the_pr_to_the_queue():
+    queued = git_automation.StepResult("auto_merge", True, "merge queue: queued at position 1")
+    enqueue = mock.Mock(return_value=queued)
+    with mock.patch.object(git_automation, "_gh") as gh:
+        result = git_automation._auto_merge("https://github.com/o/r/pull/7", enqueue)
+
+    assert result is queued
+    enqueue.assert_called_once_with("https://github.com/o/r/pull/7")
+    gh.assert_not_called()

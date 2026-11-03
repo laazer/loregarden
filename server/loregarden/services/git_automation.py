@@ -1,6 +1,6 @@
 """Land a finished run's work, as far as its workspace allows.
 
-Commit, push, open a PR, enable auto-merge — each its own switch, run in that
+Commit, push, open a PR, queue it to merge — each its own switch, run in that
 order and stopped at the first one that is off (see
 ``git_automation_config.enabled_steps`` for why the order is a chain rather
 than four independent choices).
@@ -20,7 +20,9 @@ its own worktree.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -186,28 +188,47 @@ def _commit(repo_root: Path, subject: PublishSubject) -> StepResult:
     return StepResult("commit", True, message)
 
 
-def _push(repo_root: Path, branch: str, head: str = "") -> StepResult:
+def _push(repo_root: Path, branch: str, head: str = "", *, base: str = "main") -> StepResult:
     if head:
-        return _push_head(repo_root, branch, head)
+        return push_commit_as(repo_root, branch, head, base=base)
     push = _git(["push", "-u", "origin", branch], repo_root)
     if push.returncode != 0:
         return StepResult("push", False, _fail_text(push, "git push failed"))
     return StepResult("push", True, f"pushed {branch}")
 
 
-def _push_head(repo_root: Path, branch: str, head: str) -> StepResult:
+#: Names the commit a staging push carries, for the pre-push hook's `skip`
+#: condition (`.lefthook/scripts/staged-push.sh`). That hook re-checks the
+#: commit is one cut on the remote base's tip before skipping anything.
+PUSH_STAGED_ENV = "LOREGARDEN_PUSH_STAGED"
+PUSH_STAGED_BASE_ENV = "LOREGARDEN_PUSH_STAGED_BASE"
+
+
+def push_commit_as(repo_root: Path, branch: str, head: str, *, base: str = "main") -> StepResult:
     """Push ``head`` as ``branch``, replacing what the remote held and nothing newer.
 
     The lease is the value just read from the remote, not a remote-tracking ref
     that may be stale: a push someone made to the PR branch since is refused,
     never overwritten. An absent branch leases on absence.
+
+    ``head`` is a commit cut on ``base``'s remote tip — a tree's publish
+    (`squash_onto`) or the merge queue's staging cut — so the push names it to
+    the pre-push hook, which skips the test suites for exactly that shape: they
+    would run on the checkout the push fired from, not on ``head``, and
+    ``head`` cannot land before its own required checks pass on it.
     """
     ref = f"refs/heads/{branch}"
     listed = _git(["ls-remote", "origin", ref], repo_root)
     if listed.returncode != 0:
         return StepResult("push", False, _fail_text(listed, "git ls-remote failed"))
     held = listed.stdout.split()[0] if listed.stdout.split() else ""
-    push = _git(["push", f"--force-with-lease={ref}:{held}", "origin", f"{head}:{ref}"], repo_root)
+    push = run_git(
+        ["push", f"--force-with-lease={ref}:{held}", "origin", f"{head}:{ref}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        env={**os.environ, PUSH_STAGED_ENV: head, PUSH_STAGED_BASE_ENV: base},
+    )
     if push.returncode != 0:
         return StepResult("push", False, _fail_text(push, "git push failed"))
     return StepResult("push", True, f"pushed {head[:12]} as {branch}")
@@ -304,18 +325,31 @@ def _refresh_body(repo_root: Path, pr_url: str, body: str) -> StepResult:
     return StepResult("open_pr", True, f"already open: {pr_url} (description refreshed)")
 
 
-def _auto_merge(repo_root: Path, pr_url: str) -> StepResult:
+#: How a publish hands its pull request to the merge queue: called with the PR's
+#: URL once it is open, answering whether the queue took it. The caller binds the
+#: ticket and the work; this module has no session and no ticket.
+Enqueue = Callable[[str], StepResult]
+
+
+def _auto_merge(pr_url: str, enqueue: Enqueue | None) -> StepResult:
+    """Hand the PR to the merge queue (lg-milestone-that-967); never `gh pr merge --auto`.
+
+    `--auto` merged on the PR's own checks with nothing asserting that the tree
+    GitHub merges is the tree they ran on, and nothing restaging a PR that went
+    stale behind the base. The queue does both. A caller with nothing to queue
+    — a chat turn, which has no ticket — fails closed with a reason rather than
+    falling back to the unchecked merge.
+    """
     if not pr_url:
         return StepResult("auto_merge", False, "no pull request to merge")
-
-    # --auto queues the merge behind the PR's required checks rather than
-    # merging now. That is the point: the queue should not land work that CI
-    # has not passed, and it should not sit waiting for CI either.
-    result = _gh(["pr", "merge", pr_url, "--auto", "--squash"], repo_root)
-    if result.returncode != 0:
-        detail = _fail_text(result, "gh pr merge failed")
-        return StepResult("auto_merge", False, detail)
-    return StepResult("auto_merge", True, "auto-merge enabled")
+    if enqueue is None:
+        return StepResult(
+            "auto_merge",
+            False,
+            "auto-merge lands through the merge queue, which takes ticket work only; "
+            "this PR has no ticket to queue it under, so it merges by hand",
+        )
+    return enqueue(pr_url)
 
 
 def publish_run(
@@ -324,6 +358,7 @@ def publish_run(
     workspace: Workspace,
     subject: PublishSubject,
     config: GitAutomationConfig,
+    enqueue: Enqueue | None = None,
 ) -> AutomationResult:
     """Run the configured publish steps for a finished run's checkout.
 
@@ -360,7 +395,7 @@ def publish_run(
             result.steps.append(pr_step)
             result.pr_url = pr_url
         elif step == "auto_merge":
-            result.steps.append(_auto_merge(repo_root, result.pr_url))
+            result.steps.append(_auto_merge(result.pr_url, enqueue))
 
         # A step that failed makes every later one meaningless — an unpushed
         # branch has no PR to open, and an unopened PR has nothing to merge.
@@ -371,7 +406,10 @@ def publish_run(
 
 
 def publish_branch(
-    repo_root: Path, subject: PublishSubject, config: GitAutomationConfig
+    repo_root: Path,
+    subject: PublishSubject,
+    config: GitAutomationConfig,
+    enqueue: Enqueue | None = None,
 ) -> AutomationResult:
     """The publish chain for a branch that is never checked out.
 
@@ -392,13 +430,15 @@ def publish_branch(
         if step == "commit":
             continue
         if step == "push":
-            result.steps.append(_push(repo_root, subject.branch, subject.head))
+            result.steps.append(
+                _push(repo_root, subject.branch, subject.head, base=config.base_branch)
+            )
         elif step == "open_pr":
             pr_step, pr_url = _open_pr(repo_root, subject, config.base_branch)
             result.steps.append(pr_step)
             result.pr_url = pr_url
         elif step == "auto_merge":
-            result.steps.append(_auto_merge(repo_root, result.pr_url))
+            result.steps.append(_auto_merge(result.pr_url, enqueue))
         if not result.ok:
             return result
     return result

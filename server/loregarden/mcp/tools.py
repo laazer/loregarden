@@ -41,6 +41,7 @@ from loregarden.mcp.initiative_plan_tools import (
 from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTANCE_TOOL_DEFINITIONS
 from loregarden.mcp.memory_tool_args import normalize_memory_tool_args
 from loregarden.mcp.memory_tools import execute_memory_tool
+from loregarden.mcp.merge_queue_tools import TOOL_DEFINITIONS as MERGE_QUEUE_TOOL_DEFINITIONS
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.run_resolution import (
@@ -1091,6 +1092,7 @@ TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UI_ACTION_TOOL_DEFINITIONS)

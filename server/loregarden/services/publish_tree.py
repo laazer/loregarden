@@ -29,9 +29,10 @@ integration branch for it, because its target is the base, so what it
 publishes is its own branch. Before this, it found no integration branch,
 skipped, and reached `done` with its work only on a local branch.
 
-The default is push and stop. Opening a PR stays a person's decision, and in
-this repository auto-merge is off and a ruleset on the base requires checks,
-so the merge itself is a person's too.
+The default is push and stop. A workspace that turns the merge step on
+(`tree_auto_merge`) hands the PR to the merge queue (lg-milestone-that-967),
+which lands it only once the required checks passed on the merged result it
+staged on the base's tip — never `gh pr merge --auto`.
 
 Runs once per tip: a root that completes again (a requeue, a re-run) with
 nothing new on the branch publishes nothing, and neither does a branch the
@@ -46,15 +47,19 @@ integration branch first, so they are what gets pushed (`root_integration_sync`)
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.core.event_bus import event_bus
-from loregarden.models.domain import EventType, Ticket, Workspace
+from loregarden.models.domain import EventType, MergeQueueAdmission, Ticket, Workspace
+from loregarden.services import merge_queue
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_automation import (
     AutomationResult,
+    Enqueue,
     PublishSubject,
+    StepResult,
     generated_body,
     publish_branch,
 )
@@ -81,6 +86,8 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+_PR_NUMBER = re.compile(r"/pull/(\d+)/?$")
 
 
 @dataclass(frozen=True)
@@ -140,7 +147,10 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         failed = PublishOutcome(ok=False, branch=branch, tip=tip, detail=prepared.failure)
         _emit(session, ticket, base, failed)
         return failed
-    result = publish_branch(repo_root, prepared.subject, chain)
+    enqueue = _enqueue_into_queue(
+        session, ticket, workspace, branch=branch, subject=prepared.subject, tip=tip, base=base
+    )
+    result = publish_branch(repo_root, prepared.subject, chain, enqueue)
     if result.ok and result.pr_url:
         _settle_ux_card(session, ticket, prepared.section, result.pr_url)
     outcome = PublishOutcome(
@@ -208,6 +218,51 @@ def _prepare(
         ),
         section=section,
     )
+
+
+def _enqueue_into_queue(
+    session: Session,
+    root: Ticket,
+    workspace: Workspace,
+    *,
+    branch: str,
+    subject: PublishSubject,
+    tip: str,
+    base: str,
+) -> Enqueue:
+    """The chain's merge step for a tree: admit its PR to the merge queue (973).
+
+    The candidate is the integration branch's tip — the work — not the cut the
+    push published: the queue cuts it onto the base again whenever the base
+    moves, and the PR's head follows. Already queued for this exact tip is
+    success; any other refusal fails the step with the queue's own reason.
+    """
+
+    def enqueue(pr_url: str) -> StepResult:
+        number = pull_request_number(pr_url)
+        admission = merge_queue.enqueue(
+            session,
+            root,
+            workspace,
+            merge_queue.Candidate(
+                pr_number=number,
+                pr_url=pr_url,
+                pr_head_branch=subject.branch,
+                source_branch=branch,
+                head_sha=tip,
+                base_branch=base,
+            ),
+        )
+        ok = admission.admitted or admission.outcome is MergeQueueAdmission.DUPLICATE_HEAD
+        return StepResult("auto_merge", ok, f"merge queue: {admission.detail}")
+
+    return enqueue
+
+
+def pull_request_number(pr_url: str) -> int:
+    """The number at the end of a pull request URL; 0 when it names none."""
+    match = _PR_NUMBER.search(pr_url)
+    return int(match.group(1)) if match else 0
 
 
 def _settle_ux_card(session: Session, root: Ticket, section: TreeUxSection, pr_url: str) -> None:
