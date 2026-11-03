@@ -38,6 +38,7 @@ from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification import RECEIPT_PASSED
+from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.orchestration_capacity import (
     release_terminal_run_parent,
@@ -858,6 +859,56 @@ LANDED_WORK_IS_COMMITTED = Invariant(
     ),
 )
 
+#: When `land_ticket` began refusing a landing that merged none of the ticket's
+#: recorded work: the line between backlog and re-entry for
+#: `LANDINGS_CARRY_THE_WORK`, shared with its detector's bound for the reason
+#: `LAND_VERIFICATION_SINCE` gives.
+LANDINGS_CARRY_THE_WORK_SINCE = date(2026, 11, 3)
+
+
+def _done_without_their_work(session: Session) -> list[Violation]:
+    """`entered_at` is `resolved_at`, as for `_landed_with_uncommitted_work`."""
+    since = datetime(
+        LANDINGS_CARRY_THE_WORK_SINCE.year,
+        LANDINGS_CARRY_THE_WORK_SINCE.month,
+        LANDINGS_CARRY_THE_WORK_SINCE.day,
+        tzinfo=timezone.utc,
+    )
+    return [
+        Violation(
+            subject_id=found.ticket.id,
+            ticket_id=found.ticket.id,
+            entered_at=found.ticket.resolved_at,
+            detail=f"{found.ticket.external_id} is done but {found.reason}",
+        )
+        for found in done_tickets_that_landed_nothing(session, since)
+    ]
+
+
+LANDINGS_CARRY_THE_WORK = Invariant(
+    name="landings_carry_the_work",
+    ticket="lg-verified-handoff-1158",
+    statement=(
+        "no done ticket whose runs recorded changed paths reached done on a landing that "
+        "merged none of them"
+    ),
+    detect=_done_without_their_work,
+    # Report-only: whether the work exists somewhere else, or was lost, is a
+    # person's to find out; the control plane cannot commit it for them.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=LANDINGS_CARRY_THE_WORK_SINCE,
+    prevented_by=(
+        "server/tests/test_landing_carried_work.py"
+        "::test_no_ok_exit_of_land_ticket_merges_nothing_a_writing_ticket_recorded"
+    ),
+    unrepaired_action=(
+        "Look for the paths the finding names on the ticket's branch, in its worktree and on "
+        "the base. If the work is lost, reopen the ticket; if another change delivered it, "
+        "note that change on the ticket."
+    ),
+)
+
 LAND_VERIFICATION_RAN = Invariant(
     name="land_verification_ran",
     ticket="lg-milestone-that-1419",
@@ -1173,6 +1224,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     HELD_TICKETS_RESUME,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
+    LANDINGS_CARRY_THE_WORK,
     LAND_VERIFICATION_RAN,
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
