@@ -65,9 +65,16 @@ callbacks:
   mode: api
 max_stages_per_run: 0
 git:
-  # Commit and push for chat turns, and stop there. `enabled_steps` runs these
-  # as a chain and halts at the first switch that is off, so leaving `open_pr`
-  # off disables `auto_merge` too — which is the intent, not an oversight.
+  # Commit, push and open a PR, and stop there. `enabled_steps` runs these as a
+  # chain and halts at the first switch that is off, so `auto_merge` (absent,
+  # schema default False) is the only step that does not run: merging a chat
+  # turn's work stays a person's decision. A ruleset on `main` requires the CI
+  # checks and signed commits either way.
+  #
+  # `open_pr` was off until 2026-11-03, and that was the leak: a chat turn's
+  # work was pushed to `chat/<thread>` and reached main only if someone knew to
+  # open a PR for it. Opening one costs nothing a person must act on, and
+  # `_existing_pr_url` keeps a thread to one PR however many turns it takes.
   #
   # A chat turn's `push` runs lefthook's pre-push suite, measured at 37 minutes
   # for a change reaching a widely-imported backend module. That is why
@@ -94,15 +101,17 @@ git:
   # for the ruleset's required checks on that exact commit, and lands only when
   # the tree GitHub merges equals the tree the checks passed on.
   #
-  # The chat-turn keys stay off: a chat turn has no ticket for the queue to take,
-  # so its merge step would fail closed (lg-milestone-that-791).
+  # Of the chat-turn pair, `open_pr` is on (above) and `auto_merge` stays absent
+  # until sibling lg-milestone-that-791 enables it behind a live gate
+  # precondition (schema default False).
   commit: true
   push: true
+  open_pr: true
   # For `publish_tree` only (958): a tree's PR opens with its first landing and
   # is queued to merge (967). Publishing only when a milestone finished kept its
   # integration branch alive for weeks against a base taking ~96 commits a week,
-  # and every integration conflict was on such a branch. Chat turns keep
-  # `open_pr`/`auto_merge` off and stay push-only.
+  # and every integration conflict was on such a branch. Chat turns open a PR
+  # (`open_pr`) and never auto-merge.
   tree_open_pr: true
   tree_auto_merge: true
   # Arming the guard lg-milestone-that-1238 built for exactly this shape and
