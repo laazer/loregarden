@@ -93,6 +93,25 @@ class GatesConfig(BaseModel):
     # work. A profile that adds a test suite to its gates sets `heavy` itself;
     # `none` runs them unreserved.
     capacity_footprint: DockerFootprint = DockerFootprint.SERVICE
+    # The run-scoped parent lease a whole orchestration holds, from which every
+    # transition gate draws a child (services/orchestration_capacity.py). A
+    # ticket then queues for host capacity once per run instead of once per
+    # transition — lg-reference-sources-1912 spent 29 of its 57 minutes in the
+    # line, across two gates, with the pool never actually short.
+    #
+    # `light` (0.5 cpu / 512 MB), measured 2026-11-02 against a 7.0-cpu host
+    # ceiling at `queue_settings.lane_count` 6: 6 x 0.5 standing + 6 x 0.25
+    # agent-run leases + 1.0 for one gate is 5.5 of 7.0. A `service` parent is
+    # 6 x 1.0 + 6 x 0.25 = 7.5, which oversubscribes the pool before a gate
+    # command runs and leaves the last lanes unable to get their own 0.25 while
+    # holding parents only their own forward progress can release — a holder
+    # that waits. It is config rather than code so retuning at a different lane
+    # count costs no change here; redo that arithmetic before raising it.
+    #
+    # `none` means this run takes no parent and its gates claim top-level
+    # leases, exactly as they did before lg-machine-resource-1923. It is still
+    # metered; it just pays the line per transition.
+    parent_capacity_footprint: DockerFootprint = DockerFootprint.LIGHT
 
 
 class GitAutomationConfig(BaseModel):

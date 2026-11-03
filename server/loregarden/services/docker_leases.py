@@ -565,19 +565,31 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
             return False
 
 
-def _held_for_run(
+def held_for_run(
     session: Session,
     *,
     pool: CapacityPool,
     agent_run_id: str | None,
     orchestration_run_id: str | None,
+    holder_kind: DockerHolderKind,
 ) -> DockerLease | None:
-    """A lease this run already holds in this pool, if any."""
+    """A lease of this *kind* that this run already holds in this pool, if any.
+
+    `holder_kind` is not optional, and narrowing by it is the point.
+    `run_capacity` stamps every agent-run host lease with its orchestration's id
+    as well as its own, so a claim carrying only the orchestration id — the
+    run-scoped parent of lg-machine-resource-1923 — used to match a straggling
+    0.25-cpu AGENT_RUN lease and be handed it back as "the lease this run already
+    holds". The wrong row is the small half of that: gate children would then
+    draw cover from a grant a different code path (`RUN_COMPLETED`) releases
+    while they are still running, taking their cover with it.
+    """
     if not agent_run_id and not orchestration_run_id:
         return None
     statement = select(DockerLease).where(
         DockerLease.status.in_(OCCUPYING),
         DockerLease.pool == pool,
+        DockerLease.holder_kind == holder_kind,
         col(DockerLease.parent_lease_id).is_(None),
     )
     if agent_run_id:
@@ -645,8 +657,12 @@ def reserve(
         # of real work and, being head-of-line, block it.
         return _queued_reservation(session, pending, reused=True)
 
-    existing = _held_for_run(
-        session, pool=pool, agent_run_id=agent_run_id, orchestration_run_id=orchestration_run_id
+    existing = held_for_run(
+        session,
+        pool=pool,
+        agent_run_id=agent_run_id,
+        orchestration_run_id=orchestration_run_id,
+        holder_kind=holder_kind,
     )
     if existing is not None:
         return DockerReservation(

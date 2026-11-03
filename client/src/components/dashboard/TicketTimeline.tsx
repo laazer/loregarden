@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useId, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { TicketDetail } from "../../api/client";
-import type { LedgerAttempt, TicketArtifactItem, TicketTreeNode, TransientRetryNotice } from "../../api/types";
+import type { CapacityWait, LedgerAttempt, TicketArtifactItem, TicketTreeNode, TransientRetryNotice } from "../../api/types";
+import { machinePath } from "../../lib/appNavigation";
 import { duration } from "../../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../../lib/ledgerStatus";
 import { attemptRows, ticketFailure, type AttemptRow as AttemptRowModel } from "../../lib/ticketFailure";
@@ -21,6 +23,64 @@ import { KindTag, VerdictPill } from "./outputParts";
 import "./ArtifactPane.css";
 
 const STDERR_PREVIEW_LINES = 8;
+
+/**
+ * Below this a wait is not worth a line. Measured, not chosen: one of
+ * lg-reference-sources-1912's five gate leases was granted in 0.1s, and "waited
+ * 0s for machine capacity" says nothing a reader can use. The server already
+ * applies the same floor per visit; the ticket's total has to be judged here,
+ * because `total_seconds` can legitimately be 0.1 with `capacity_wait` present.
+ */
+const CAPACITY_WAIT_FLOOR_SECONDS = 5;
+
+/**
+ * How much of this ticket's wall-clock was queueing rather than working.
+ *
+ * On lg-reference-sources-1912, 29 of 57 minutes was spent waiting for machine
+ * capacity against 8 minutes of agent work — and until this clause existed the
+ * summary stated only the 8, so nobody could make the comparison. The figure is
+ * also the action: a Link to Machine → Capacity, where the holders of the line
+ * are, because a wait a reader cannot act on ends at the text.
+ *
+ * Absent is not zero. A null (or missing) `capacity_wait` means the ledger is
+ * switched off or this ticket predates it, so the clause is omitted entirely
+ * rather than rendered as a measurement nobody made.
+ *
+ * The link names where it goes rather than ending at the figure, so a reader
+ * on a keyboard hears the destination and not just the number.
+ */
+function CapacityWaitClause({ wait }: { wait: CapacityWait | null | undefined }) {
+  if (!wait) return null;
+  if (wait.total_seconds < CAPACITY_WAIT_FLOOR_SECONDS) {
+    return <span className="tl-summary-wait">· no capacity wait</span>;
+  }
+  return (
+    <Link className="tl-summary-wait" to={machinePath("capacity")}>
+      · {duration(wait.total_seconds)} waiting for machine capacity — open the capacity
+      board
+    </Link>
+  );
+}
+
+/**
+ * The wait a stage visit sat through before it started, as one quiet line under
+ * the stage name. A re-acquire is worded differently because it is a different
+ * event: the parent lease was given back for a park a person had to resolve,
+ * and this ticket paid the line a second time. That cost is legible nowhere else.
+ *
+ * Null (or missing) means the visit's attributed waits were under the server's
+ * 5-second floor, so there is no line — not a line saying zero.
+ */
+function VisitWait({ seconds, afterPark }: { seconds: number | null | undefined; afterPark: boolean }) {
+  if (seconds === null || seconds === undefined) return null;
+  return (
+    <div className="tl-visit-wait">
+      {afterPark
+        ? `re-acquired after ${duration(seconds)}`
+        : `waited ${duration(seconds)} for machine capacity`}
+    </div>
+  );
+}
 
 /**
  * "What happened to this ticket, and where is it now?"
@@ -165,6 +225,7 @@ export function TicketTimeline({
               {data.total_runs} run{data.total_runs === 1 ? "" : "s"}
               {data.total_seconds > 0 ? ` · ${duration(data.total_seconds)} of agent time` : ""}
             </span>
+            <CapacityWaitClause wait={data.capacity_wait} />
             {data.reworked_stages.length > 0 ? (
               <span className="tl-summary-warn">Went back to: {data.reworked_stages.join(", ")}</span>
             ) : null}
@@ -313,6 +374,11 @@ function VisitItem({
           </span>
         </span>
       </Button>
+
+      <VisitWait
+        seconds={visit.visit.capacity_wait_seconds}
+        afterPark={visit.visit.capacity_wait_after_park ?? false}
+      />
 
       {open ? (
         <div id={bodyId} className="tl-visit-body">

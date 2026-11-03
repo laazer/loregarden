@@ -219,6 +219,20 @@
   color: var(--aml);
 }
 
+/* How much of this ticket was queueing rather than working, beside how much was
+   working. A link, because the holders of the line are on another page. */
+.tl-summary-wait {
+  color: var(--txl);
+}
+
+/* One quiet line under a stage name: the wait that visit sat through before it
+   started. Quiet on purpose — it is context for the stage, not an event of it. */
+.tl-visit-wait {
+  padding: 0 10px 4px 24px;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
 .tl-feed-note {
   display: flex;
   flex-wrap: wrap;

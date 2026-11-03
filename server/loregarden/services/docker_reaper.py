@@ -61,6 +61,7 @@ from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     LIVE_RUN_STATUSES,
 )
+from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_lease import agent_run_lease_expired
 from sqlmodel import Session, func, select
 
@@ -113,7 +114,15 @@ def _run_is_live(session: Session, lease: DockerLease) -> bool:
         return run.status in LIVE_RUN_STATUSES and not agent_run_lease_expired(session, run)
     if lease.orchestration_run_id:
         orchestration = session.get(OrchestrationRun, lease.orchestration_run_id)
-        return orchestration is not None and orchestration.status in LIVE_ORCHESTRATION_STATUSES
+        if orchestration is None or orchestration.status not in LIVE_ORCHESTRATION_STATUSES:
+            return False
+        # Mirrors the agent branch above, and for the realistic leak rather than
+        # the decisive one. A run-scoped parent lease's `holder_pid` is the
+        # *server's*, because the driver runs in a thread of it — so the pid
+        # outlives a dead driver thread by hours, and `status` alone (which only
+        # the owner ever moves) vouched for a run nobody was driving, extending
+        # its lease on every sweep, forever (lg-machine-resource-1923).
+        return not orchestration_lease_expired(session, orchestration)
     return False
 
 
