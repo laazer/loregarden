@@ -18,6 +18,7 @@ import {
   gateStudioTargetFromPath,
   type GateStudioTarget,
 } from "../../../lib/appNavigation";
+import { useHeldFailure } from "../../../hooks/useHeldFailure";
 import { scrollIntoScroller } from "../../../lib/scrollWithin";
 import { describeError, endSentence, errorStatus } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
@@ -404,17 +405,12 @@ function GateStudioMain({
   // alone unmounts the moment the operator presses the alert's own retry — and
   // this panel has no loading branch, so they would be dropped back onto
   // `collectWorkspaceControls(workspace, undefined)`: the plausible,
-  // complete-looking empty gate list lg-milestone-that-1215 removed. Holding
-  // the last failure is what keeps the alert up across its own re-read.
-  // Keyed by the workspace it describes: the profile query key is
-  // ["orchestration-profile", slug], so switching workspaces starts a brand-new
-  // observer (isError false, isFetching true) and the clear below is skipped. An
-  // unkeyed ref would then render the previous workspace's file — and the
-  // previous workspace's permission claim — under the new workspace's name.
-  const lastFailure = useRef<{ slug: string | null; error: unknown } | null>(null);
-  if (profile.isError) lastFailure.current = { slug: target.workspaceSlug, error: profile.error };
-  else if (!profile.isFetching) lastFailure.current = null;
-  const failure = lastFailure.current?.slug === target.workspaceSlug ? lastFailure.current : null;
+  // complete-looking empty gate list lg-milestone-that-1215 removed.
+  // `useHeldFailure` is that hold, keyed to the subject this query's key varies
+  // on — the profile key is ["orchestration-profile", slug], so the subject is
+  // the workspace slug, and an unkeyed hold would render the previous
+  // workspace's file, and its permission claim, under the new workspace's name.
+  const failure = useHeldFailure(profile, target.workspaceSlug);
 
   if (workspacesLoading) return <p className="studio-preview-hint">Loading workspaces…</p>;
   if (workspacesFailed) {
