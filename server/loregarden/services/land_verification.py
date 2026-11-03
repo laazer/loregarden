@@ -251,7 +251,12 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
             argv,
             cwd=str(cwd),
             env={**scrubbed_git_env(), **granted},
-            capture_output=True,
+            # One stream, in the order it was written. Captured apart and joined
+            # stdout-first, `uv run`'s setup lines (stderr, written before pytest
+            # started) landed after pytest's summary, and the block's tail read
+            # "Installed 68 packages" instead of naming the failing tests.
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             timeout=LAND_VERIFY_TIMEOUT_SECONDS,
             check=False,
@@ -273,11 +278,10 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
             ),
         )
 
-    # `capture_output` reads both pipes to EOF before returning, so a suite
-    # writing a megabyte cannot fill a buffer and deadlock. The whole of it is
-    # carried: the excerpt is cut later, from the end, and the artifact wants
-    # all of it.
-    output = strip_ansi((completed.stdout or "") + (completed.stderr or ""))
+    # `run` reads the pipe to EOF before returning, so a suite writing a
+    # megabyte cannot fill a buffer and deadlock. The whole of it is carried:
+    # the excerpt is cut later, from the end, and the artifact wants all of it.
+    output = strip_ansi(completed.stdout or "")
     if completed.returncode == GATE_EX_UNAVAILABLE:
         # The command ran and said it could not do its job. Same number and same
         # meaning as the transition gates use, imported rather than re-spelled.

@@ -1388,6 +1388,35 @@ def test_the_inline_excerpt_is_the_tail_of_the_output_and_not_its_head(
     )
 
 
+#: `uv run` writes its setup lines to stderr before pytest starts; pytest's
+#: summary goes to stdout last. The shape of lg-machine-resource-1923's refusal.
+SETUP_ON_STDERR_THEN_FAILURES = (
+    "python3 -c "
+    '\'import sys; sys.stderr.write("Installed 68 packages\\n"); sys.stderr.flush(); '
+    'print("FAILED tests/test_x.py::case"); sys.exit(1)\''
+)
+
+
+def test_the_output_is_in_the_order_it_was_written_across_both_streams(
+    session, workspace, repo, milestone
+):
+    """Joined stdout-first, stderr's setup chatter became the last line of the
+    block, so "What stopped it" read "Installed 68 packages in 187ms" and named
+    none of the eight failing tests."""
+    ticket, _, _ = _refused_land(
+        session, workspace, repo, milestone, "lg-brk-order", [SETUP_ON_STDERR_THEN_FAILURES]
+    )
+
+    outputs = [
+        json.loads(a.content_json)["output"]
+        for a in _receipts(session, ticket)
+        if "FAILED tests/test_x.py::case" in (a.content_json or "")
+    ]
+    assert outputs, [a.title for a in _receipts(session, ticket)]
+    # The block's excerpt is cut from the end of this, so its last line is what the block shows.
+    assert outputs[0].strip().splitlines()[-1] == "FAILED tests/test_x.py::case", outputs[0]
+
+
 def test_a_verification_that_could_not_run_refuses_the_land_without_blaming_the_tests(
     session, workspace, repo, milestone
 ):

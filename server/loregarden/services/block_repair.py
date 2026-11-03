@@ -31,6 +31,7 @@ import logging
 from dataclasses import dataclass
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
+from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
@@ -46,6 +47,7 @@ from loregarden.models.domain import (
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.repair_brief import arm_repair_turn
 from loregarden.services.studio_routing import repair_pin_applies
+from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -138,6 +140,32 @@ def conflict_refusal(stage_key: str) -> str:
     )
 
 
+def is_terminal_stage_key(stages: list[WorkflowStageDef] | None, stage_key: str) -> bool:
+    """Whether `stage_key` is the stage that ends the workflow, where no agent runs.
+
+    A block there is a landing that did not happen. Running the stage again
+    lands the same tree and is refused the same way, and a repair pin has
+    nothing to dispatch: the orchestrator finalizes that stage, it never runs
+    an agent on it.
+    """
+    terminal = find_terminal_stage(stages or [])
+    return terminal is not None and terminal.key == stage_key
+
+
+def blocked_on_terminal_stage(session: Session, ticket: Ticket) -> bool:
+    """`is_terminal_stage_key` for the stage the ticket's cursor is blocked on."""
+    _, stages = resolve_ticket_stages(session, ticket)
+    return is_terminal_stage_key(stages, ticket.workflow_stage_key)
+
+
+def _terminal_refusal(stage_key: str) -> str:
+    return (
+        f"'{stage_key}' is the terminal stage: no agent runs there, and running it again "
+        "lands the same tree. Fix what refused the landing on the branch, then requeue; "
+        "blocked for a person."
+    )
+
+
 def _not_repairable(stage_key: str, kind: BlockKind) -> str:
     """Why a kind no agent turn clears gets none, naming what clears it instead."""
     if kind is BlockKind.CONFLICT:
@@ -156,6 +184,27 @@ def repair_brief(stage_key: str, kind: BlockKind, message: str) -> str:
         f"you find is a decision or needs a person's hands, report `blocked` with that "
         f"`blocked_kind` instead — there will be no second repair.\n\n{message}"
     )
+
+
+def _run_refusal(
+    orch_run: OrchestrationRun | None, stages: list[WorkflowStageDef], stage_key: str
+) -> str:
+    """Why no repair turn can run for this block at all, before its kind is read; "" if one can."""
+    # First: a landing is refused from `finalize_workflow`, which has no run to
+    # pass, and "recorded outside an orchestration run" was the wrong reason.
+    if is_terminal_stage_key(stages, stage_key):
+        return _terminal_refusal(stage_key)
+    if orch_run is None:
+        return (
+            f"The block on '{stage_key}' was recorded outside an orchestration run, so there "
+            "is no orchestrator to spend a repair turn; it waits for a person."
+        )
+    if not orch_run.auto_repair:
+        return (
+            f"Auto-repair is off for this run, so the block on '{stage_key}' goes to a person "
+            "rather than taking a repair turn."
+        )
+    return ""
 
 
 def offer_repair(
@@ -178,18 +227,10 @@ def offer_repair(
     sentence, because a silent `False` here was how a block that nothing
     handled came to look handled (802).
     """
-    if orch_run is None:
-        return RepairOffer(
-            False,
-            f"The block on '{stage_key}' was recorded outside an orchestration run, so there "
-            "is no orchestrator to spend a repair turn; it waits for a person.",
-        )
-    if not orch_run.auto_repair:
-        return RepairOffer(
-            False,
-            f"Auto-repair is off for this run, so the block on '{stage_key}' goes to a person "
-            "rather than taking a repair turn.",
-        )
+    known = stages if stages is not None else resolve_ticket_stages(session, ticket)[1]
+    run_refusal = _run_refusal(orch_run, known, stage_key)
+    if run_refusal:
+        return RepairOffer(False, run_refusal)
     if failed_agent == REPAIR_AGENT_ID:
         return RepairOffer(
             False,

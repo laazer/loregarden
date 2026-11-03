@@ -35,7 +35,11 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
-from loregarden.services.block_repair import REPAIRABLE_KINDS, repair_already_spent
+from loregarden.services.block_repair import (
+    REPAIRABLE_KINDS,
+    blocked_on_terminal_stage,
+    repair_already_spent,
+)
 from loregarden.services.queue_repair import awaiting_a_person, resolve_repair_route
 from loregarden.services.stage_retry_budget import (
     blocked_on_stage_retry_budget,
@@ -67,6 +71,9 @@ def retry_reason(session: Session, ticket: Ticket) -> str | None:
         or awaiting_a_person(session, ticket)
         or blocked_on_stage_retry_budget(session, ticket, stage_key)
         or repair_already_spent(session, ticket, stage_key)
+        # `offer_repair` refuses the terminal stage; a label promising its
+        # re-run would clear the block said "agent can fix" on a refused land.
+        or blocked_on_terminal_stage(session, ticket)
     ):
         return None
     budget = stage_retry_budget_state(
