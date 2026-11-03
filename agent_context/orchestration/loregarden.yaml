@@ -134,7 +134,17 @@ git:
   # LAND_VERIFY_TIMEOUT_SECONDS (1800) is above the measured 901s suite — a
   # timeout is UNAVAILABLE, and UNAVAILABLE refuses the land. `default.yaml`
   # keeps its empty list, so no other workspace changes behaviour.
+  #
+  # jest runs first: it is the cheaper of the two (49s for 4847 tests on 4 cpus,
+  # measured 2026-11-03, against the 901s server suite), and the
+  # first refusal decides. Before it was listed, a client change reached an
+  # integration branch with nobody having run a client test on the merged tree.
+  # `npm --prefix client` runs the package's own `test` script with cwd at
+  # `client/`; `link_ignored_toolchains` links the primary checkout's
+  # `client/node_modules` into the throwaway tree, and `jest.config.cjs` sizes
+  # its workers from the grant (`LOREGARDEN_CAPACITY_WORKERS`).
   land_verify_commands:
+    - npm --prefix client test -- --ci
     - uv run --directory server pytest -q -n auto
   # A branch per acting turn, pushed, is a branch per conversation accumulating
   # forever. The sweep removes one only once its content is in the base branch —
