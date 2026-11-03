@@ -180,7 +180,7 @@ export function HomePage() {
   };
 
   return (
-    <div className="home-page lg-chat-surface">
+    <div className="home-page">
       <header className="home-header">
         <div>
           <p className="home-kicker">{formatDateLine(now)}</p>
