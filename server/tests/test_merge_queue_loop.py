@@ -42,9 +42,9 @@ REQUIRED = ["Server (Python)", "Client (TypeScript)", "PR UX section", "PR fix c
 
 
 def git(cwd: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-    ).stdout.strip()
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    assert result.returncode == 0, f"git {' '.join(args)} in {cwd}: {result.stderr.strip()}"
+    return result.stdout.strip()
 
 
 def commit_file(repo: Path, branch: str, name: str, content: str) -> str:
@@ -61,6 +61,9 @@ def commit_file(repo: Path, branch: str, name: str, content: str) -> str:
 def origin_fixture(tmp_path):
     origin = tmp_path / "origin.git"
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    # The fake GitHub commits its squash here; a CI runner has no ambient identity.
+    git(origin, "config", "user.email", "github@example.com")
+    git(origin, "config", "user.name", "GitHub")
     return origin
 
 
