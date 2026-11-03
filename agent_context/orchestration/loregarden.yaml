@@ -65,11 +65,16 @@ callbacks:
   mode: api
 max_stages_per_run: 0
 git:
-  # Commit and push, and stop there. `enabled_steps` runs these as a chain and
-  # halts at the first switch that is off, so leaving `open_pr` off disables
-  # `auto_merge` too — which is the intent, not an oversight. Auto-merge is off
-  # for this repository on GitHub, and a ruleset on `main` requires the CI checks
-  # and signed commits, so opening and merging a PR stay a person's decisions.
+  # Commit, push and open a PR, and stop there. `enabled_steps` runs these as a
+  # chain and halts at the first switch that is off, so `auto_merge` (absent,
+  # schema default False) is the only step that does not run: merging a chat
+  # turn's work stays a person's decision. A ruleset on `main` requires the CI
+  # checks and signed commits either way.
+  #
+  # `open_pr` was off until 2026-11-03, and that was the leak: a chat turn's
+  # work was pushed to `chat/<thread>` and reached main only if someone knew to
+  # open a PR for it. Opening one costs nothing a person must act on, and
+  # `_existing_pr_url` keeps a thread to one PR however many turns it takes.
   #
   # `push` runs lefthook's pre-push suite, measured at 37 minutes for a change
   # reaching a widely-imported backend module. That is why publishing happens
@@ -97,16 +102,17 @@ git:
   # hosted, nothing waits on bors: a tree's PR (`tree_open_pr` /
   # `tree_auto_merge` below, 958) merges on the ruleset's required checks.
   #
-  # The chat-turn keys are a separate pair, and they stay off: keep `open_pr` /
-  # `auto_merge` absent until sibling lg-milestone-that-791 enables them behind
-  # a live gate precondition (schema defaults are already False).
+  # Of the chat-turn pair, `open_pr` is on (above) and `auto_merge` stays absent
+  # until sibling lg-milestone-that-791 enables it behind a live gate
+  # precondition (schema default False).
   commit: true
   push: true
+  open_pr: true
   # For `publish_tree` only (958): a tree's PR opens with its first landing and
   # merges when the ruleset's required checks pass. Publishing only when a
   # milestone finished kept its integration branch alive for weeks against a
   # base taking ~96 commits a week, and every integration conflict was on such a
-  # branch. Chat turns keep `open_pr`/`auto_merge` off and stay push-only.
+  # branch. Chat turns open a PR (`open_pr`) and never auto-merge.
   # `tree_auto_merge` needs "Allow auto-merge" on in the repository's GitHub
   # settings; until it is, the merge step fails and says so on a card.
   tree_open_pr: true
