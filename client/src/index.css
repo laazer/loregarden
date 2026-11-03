@@ -3,6 +3,11 @@
      value for every primary action and every send, so Run and the send arrow
      are visibly the same control. */
   --leaf: 18px 3px 18px 3px;
+  /* The night ground first drawn behind Baxter's garden on /chat: a little of
+     the accent at the top, fading into the page. The app's backdrop
+     (.app-ambient) and any pane that must paint its own (the sidebar chat)
+     lay it over --bg0. */
+  --garden-ground: radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%);
   /* Native control parts the CSS cannot reach — a <select>'s open list, a
      checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
      a light-mode OS draws them light inside the dark app. A light theme sets
@@ -296,9 +301,22 @@ textarea::placeholder {
   inset: 0;
   pointer-events: none;
   z-index: -1;
-  background:
-    radial-gradient(680px 420px at 12% -6%, rgba(111, 174, 143, 0.06), transparent 60%),
-    radial-gradient(720px 480px at 92% 108%, rgba(75, 155, 255, 0.05), transparent 60%);
+  /* The /chat ground and its stars (GardenSky) behind every screen. A screen
+     shows it by painting no background of its own; panels and cards keep
+     theirs. */
+  background: var(--garden-ground);
+}
+
+/* The stars thin out down the screen like a sky over a horizon: lower down,
+   a lone star beside a table row reads as a status dot. The chat thread keeps
+   the whole sky, as it had before the backdrop took it over. Only the alpha of
+   the mask counts, so any opaque token does. */
+.app-ambient .garden-sky {
+  mask-image: linear-gradient(to bottom, var(--tx), transparent 55%);
+}
+
+.app-frame:has(.baxter-chat--garden) .app-ambient .garden-sky {
+  mask-image: none;
 }
 
 /*
@@ -2109,10 +2127,6 @@ label:is(
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--bd);
-  background:
-    radial-gradient(900px 420px at 50% -20%, rgba(111, 174, 143, 0.07), transparent 55%),
-    radial-gradient(720px 380px at 12% 18%, rgba(75, 155, 255, 0.05), transparent 50%),
-    var(--bg0);
 }
 
 .ticket-studio-chat-header {
@@ -3053,7 +3067,6 @@ button.send-leaf:hover:not(:disabled) {
 
 .tickets-pane.console-tickets {
   min-width: 0;
-  background: var(--bg0);
 }
 
 .workspaces-pane {
