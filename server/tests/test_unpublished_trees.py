@@ -16,8 +16,9 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     InvariantReentry,
+    MergeQueueAdmission,
 )
-from loregarden.services import git_automation, tree_publish_scheduler
+from loregarden.services import git_automation, merge_queue, tree_publish_scheduler
 from loregarden.services.invariant_registry import INVARIANTS, LANDED_WORK_REACHES_THE_BASE
 from loregarden.services.landing import land_before_done
 from loregarden.services.reconciliation import PERIODIC_STEPS
@@ -98,13 +99,24 @@ def _crash(*_args, **_kwargs):
     raise RuntimeError("publish blew up")
 
 
+_QUEUE_REFUSES = merge_queue.Admission(MergeQueueAdmission.NO_PULL_REQUEST, "no pull request")
+
+#: ending -> (arrange the repo, the fake `gh`, (object, attribute, patch kwargs) or None)
 ENDINGS = {
     "published": (lambda tmp_path, repo: None, fake_gh(), None),
-    "auto_merge refused": (lambda tmp_path, repo: None, fake_gh(failing="merge"), None),
+    "auto_merge refused": (
+        lambda tmp_path, repo: None,
+        fake_gh(),
+        (merge_queue, "enqueue", {"return_value": _QUEUE_REFUSES}),
+    ),
     "open_pr refused": (lambda tmp_path, repo: None, fake_gh(failing="create"), None),
     "push refused": (lambda tmp_path, repo: _refuse_publish_pushes(tmp_path), fake_gh(), None),
     "cut conflicts": (lambda tmp_path, repo: _conflict_with_base(repo), fake_gh(), None),
-    "publish crashed": (lambda tmp_path, repo: None, fake_gh(), _crash),
+    "publish crashed": (
+        lambda tmp_path, repo: None,
+        fake_gh(),
+        (tree_publish_scheduler, "publish_tree", {"side_effect": _crash}),
+    ),
 }
 
 
@@ -117,16 +129,15 @@ def test_every_way_a_landing_ends_leaves_its_tree_delivered_or_carded(
     A landing schedules its tree's publish; the publish pushes the tip or files a
     card. None of the endings may leave the tree in the invariant's state.
     """
-    arrange, gh, publish = ENDINGS[ending]
+    arrange, gh, patch = ENDINGS[ending]
     ms, child, _ = tree_with_child_branch(session, workspace, repo)
     arrange(tmp_path, repo)
 
     with ExitStack() as stack:
         stack.enter_context(mock.patch.object(git_automation, "_gh", side_effect=gh))
-        if publish is not None:
-            stack.enter_context(
-                mock.patch.object(tree_publish_scheduler, "publish_tree", side_effect=publish)
-            )
+        if patch is not None:
+            target, attribute, kwargs = patch
+            stack.enter_context(mock.patch.object(target, attribute, **kwargs))
         assert land_before_done(session, child, mock.Mock(), [], stage_key="done")
 
     session.expire_all()

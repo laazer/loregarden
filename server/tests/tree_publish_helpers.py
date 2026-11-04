@@ -60,9 +60,10 @@ def squash_onto_remote_main(repo: Path, filename: str = "c1.txt") -> None:
 
 
 def fake_gh(*, failing: str = ""):
-    """`git_automation._gh`: lists no PR, opens one at `PR`, and merges it.
+    """`git_automation._gh`: lists no PR and opens one at `PR`.
 
-    ``failing`` names the `gh pr` subcommand to refuse (`create`, `merge`).
+    ``failing`` names the `gh pr` subcommand to refuse (`create`). Auto-merge goes
+    through the merge queue, not `gh`; refuse it by patching `merge_queue.enqueue`.
     """
 
     def fake(args, cwd):
