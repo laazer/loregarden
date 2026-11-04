@@ -173,6 +173,65 @@ def test_no_node_on_path_is_unavailable_not_failed(stubbed: Path, tmp_path: Path
     assert "ts_ux_states_check.cjs — could not run (no node on PATH" in result.stdout
 
 
+@pytest.fixture
+def no_python_env(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """The real gate scripts in a repo whose server/ has no venv, on a PATH with
+    node and git but no uv: what a fresh worktree or another machine looks like."""
+    if shutil.which("node") is None or shutil.which("git") is None:
+        pytest.skip("node and git are needed on PATH")
+    repo = tmp_path / "repo"
+    shutil.copytree(_DISPATCHER.parent, repo / ".lefthook" / "scripts")
+    (repo / "server").mkdir()
+    (repo / "client" / "src").mkdir(parents=True)
+    (repo / "client" / "src" / "b.ts").write_text("export const b = 1;\n")
+    (repo / "a.py").write_text("a = 1\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("bash", "dirname", "basename", "node", "git", "env"):
+        (bin_dir / tool).symlink_to(shutil.which(tool))
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    return repo, {"PATH": str(bin_dir), "HOME": str(tmp_path)}
+
+
+def test_server_python_without_an_env_is_unavailable(no_python_env):
+    """Bash's own 127 read as a violation (lg-workflow-integrity-2111)."""
+    repo, env = no_python_env
+    result = subprocess.run(
+        ["bash", str(repo / ".lefthook" / "scripts" / "server_python.sh"), "-c", "pass"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == _EX_UNAVAILABLE, result.stderr
+    assert "uv sync --extra dev" in result.stderr
+
+
+def test_no_python_env_makes_every_python_backed_gate_unavailable(no_python_env):
+    """The real scripts, not stubs: the Python gates and the TS organization
+    gate's scope resolver all need the server env. None of them may report a
+    failure, which would send the stage's agent after code with nothing wrong."""
+    repo, env = no_python_env
+    result = subprocess.run(
+        ["bash", str(repo / ".lefthook" / "scripts" / _DISPATCHER.name), "a.py", "client/src/b.ts"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    out = result.stdout
+    for gate in (
+        "py_organization_check.py",
+        "py_silent_except_check.py",
+        "ts_organization_check.cjs",
+    ):
+        assert f"{gate} — could not run (exit {_EX_UNAVAILABLE})" in out, out
+    assert "failed (exit" not in out, out
+    assert result.returncode == _EX_UNAVAILABLE, out
+
+
 def test_gate_output_reaches_stdout(stubbed: Path, tmp_path: Path):
     """The orchestration runner reports stderr *instead of* stdout when both
     exist, so one gate's warning on stderr would hide another's findings."""

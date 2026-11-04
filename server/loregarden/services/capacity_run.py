@@ -65,6 +65,7 @@ from loregarden.services.capacity_environment import (  # noqa: F401
     WORKERS_ENV,
     child_environment,
 )
+from loregarden.services.capacity_line import leases_ahead
 from loregarden.services.capacity_progress import (
     PROGRESS_ENV,
     ProgressSync,
@@ -97,7 +98,7 @@ from loregarden.services.docker_wait_estimate import (
 )
 from loregarden.services.signal_relay import SignalRelay, Terminated
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, col, func, or_, select
+from sqlmodel import Session, col, func, select
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,7 @@ def _poll_until_granted(
             reservation.expires_at = as_utc(lease.expires_at)
             return reservation
 
-        front = _leases_ahead(session, lease)
+        front = leases_ahead(session, lease)
         if ahead_of_us - front.keys():
             # Something that stood between this lease and capacity has ended:
             # the line is moving, however long it still is.
@@ -306,24 +307,6 @@ def _poll_until_granted(
         session.commit()  # end any read transaction before sleeping on it
         stall_left = request.stall_seconds - (clock() - moved_at)
         sleep(max(1.0, min(poll_interval_for(estimate), stall_left)))
-
-
-def _leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]:
-    """Every lease this one waits behind: those holding capacity, and waiters ahead.
-
-    A waiter ahead that is granted stays in the set — it moved, but nothing
-    freed up. Only a lease leaving the set means capacity came back.
-    """
-    rows = session.exec(
-        select(DockerLease).where(
-            or_(
-                col(DockerLease.status).in_(OCCUPYING),
-                (DockerLease.status == DockerLeaseStatus.WAITING)
-                & (col(DockerLease.position) < lease.position),
-            )
-        )
-    ).all()
-    return {row.id: row for row in rows}
 
 
 def _stall_message(

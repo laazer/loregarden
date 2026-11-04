@@ -406,14 +406,14 @@ def test_a_gate_whose_parent_is_gone_is_refused_not_promoted_to_a_top_level_clai
     standing claim has been taken is not a run that should quietly rejoin the
     FIFO line mid-transition.
 
-    `wait_for_grant` is replaced with a raise, so a fallback that queues is a
+    `wait_while_line_moves` is replaced with a raise, so a fallback that queues is a
     failure here rather than a slow pass.
     """
 
     def never_waits(*args, **kwargs):
         raise AssertionError("a gate child queued; a holder that waits can deadlock")
 
-    monkeypatch.setattr("loregarden.services.gate_capacity.wait_for_grant", never_waits)
+    monkeypatch.setattr("loregarden.services.gate_capacity.wait_while_line_moves", never_waits)
     orch_run = _orch_run(session, ticket, workspace)
     if state == "released":
         parent = _acquire(session, orch_run, ticket, workspace)
