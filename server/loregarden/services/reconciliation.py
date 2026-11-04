@@ -62,6 +62,7 @@ from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
+    FINISHED_PASSES_CLOSE_THEIR_CARRIER,
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
     LAND_VERIFICATION_RAN,
@@ -76,6 +77,7 @@ from loregarden.services.invariant_registry import (
     RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
+    UNAVAILABLE_GATES_ARE_NOT_WORK,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
@@ -215,6 +217,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # blocks this classifies: a lease expiry settled two steps up gets its
     # kind here, in the same pass, without the settler having to know (749).
     _invariant(EVERY_BLOCK_IS_SETTLED),
+    # After the classifier, which is what could file a gate that never ran as
+    # work: re-filed as harness in the same pass (lg-machine-resource-2112).
+    _invariant(UNAVAILABLE_GATES_ARE_NOT_WORK),
     # Periodic by the same rule: it acts only on tickets still blocked on the
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
@@ -246,6 +251,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # days after the next pass cloned without trouble. The feeder now closes
     # them as it succeeds; this catches any it did not.
     _invariant(SURVEY_CARDS_CLOSE),
+    # Lands work (finalize_workflow), so periodic only, like the terminal sweep
+    # it hands each carrier to (lg-reference-sources-2018).
+    _invariant(FINISHED_PASSES_CLOSE_THEIR_CARRIER, at_startup=False),
     # Report-only: work left in a finished ticket's tree is a person's call to
     # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
     # kept, which is a handful, not one per ticket.

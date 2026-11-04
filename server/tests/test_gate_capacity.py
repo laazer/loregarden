@@ -155,7 +155,7 @@ def test_the_profile_yaml_spelling_round_trips() -> None:
 #
 # A gate child is priced from the parent's unlent remainder, any excess is
 # booked against the pools ahead of the queue, or it is refused at once. It
-# never calls `wait_for_grant`: the thread asking is the thread holding the
+# never calls `wait_while_line_moves`: the thread asking is the thread holding the
 # parent, and a holder that waits is the shape `capacity_children` forbids.
 
 
@@ -209,7 +209,7 @@ def test_a_gate_child_books_the_excess_ahead_of_the_queue(
     def never_waits(*args, **kwargs):  # pragma: no cover - asserted, never called
         raise AssertionError("a gate child queued; a holder that waits can deadlock")
 
-    monkeypatch.setattr("loregarden.services.gate_capacity.wait_for_grant", never_waits)
+    monkeypatch.setattr("loregarden.services.gate_capacity.wait_while_line_moves", never_waits)
     parent = _parent(session, ticket, workspace)
     _reserve(session, CapacityPool.HOST, label="agent runs", cpus=5.0)
     waiter = _reserve(session, CapacityPool.HOST, label="land-verify lg-other-1", cpus=4.0)
