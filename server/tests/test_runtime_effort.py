@@ -804,8 +804,19 @@ def test_simultaneous_cold_requests_all_answer_and_share_one_probe_per_cli(
 
     assert statuses == [200] * 8, f"not every caller was answered: {statuses}"
     # Each caller waits its own three bounded joins and nothing else — not a
-    # queue behind whoever dispatched first.
-    assert max(elapsed) < 3.0, f"the slowest of eight callers waited {max(elapsed):.2f}s"
+    # queue behind whoever dispatched first. A queue shows as a spread: the
+    # callers finish one join budget (0.75s) apart. The spread is what is
+    # asserted, not the slowest wall clock, because a loaded CI runner stalls
+    # the whole worker at once: one run measured seven callers at 3.24s, within
+    # 2ms of each other, which is a pause, not a queue (locally all eight finish
+    # in under 0.4s). The wall-clock bound only catches a caller that waits
+    # without a bound at all.
+    spread = max(elapsed) - min(elapsed)
+    assert spread < 0.75, (
+        f"callers finished {spread:.2f}s apart ({sorted(round(e, 2) for e in elapsed)}): "
+        "they queued behind one another"
+    )
+    assert max(elapsed) < 10.0, f"the slowest of eight callers waited {max(elapsed):.2f}s"
     # One probe per CLI, not one per caller. The fixture's stub is shared by all
     # three modules, so three is the whole cold-cache budget.
     assert three_hanging_clis.calls <= 3, (
