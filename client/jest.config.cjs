@@ -17,6 +17,13 @@ module.exports = {
   // interrupt a blocked event loop — which is why STRESS-07.1 runs 60 s and
   // passes either way.
   testTimeout: 20_000,
+  // A run held under the capacity ledger (land verification, capacity-run.sh)
+  // is told how many workers it was granted; jest's default is every core but
+  // one, which oversubscribes a machine whose other suites hold the rest. An
+  // explicit `--maxWorkers` still wins, and unset leaves jest's default.
+  ...(process.env.LOREGARDEN_CAPACITY_WORKERS
+    ? { maxWorkers: Number(process.env.LOREGARDEN_CAPACITY_WORKERS) }
+    : {}),
   setupFilesAfterEnv: ["<rootDir>/src/test/setup.ts"],
   transform: {
     "^.+\\.tsx?$": [

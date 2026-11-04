@@ -8,7 +8,7 @@ Risks covered:
 - R1: workflow-level `name: CI` alone does not satisfy (job-level `name:` required)
 - R2: `success()`-only / needs-skip aggregator is non-compliant (fail-closed required)
 - R3: tmp-branch names / globs must not appear in triggers
-- R4: concurrency block must remain the pre-change baseline
+- R4: concurrency block is pinned; a run on a shared branch is never cancelled
 
 Test-break mutations (must raise under the same helpers as live AC tests):
 - workflow title alone / wrong-case job name
@@ -90,7 +90,10 @@ _BASELINE_CLIENT: dict[str, Any] = {
 
 _BASELINE_CONCURRENCY: dict[str, Any] = {
     "group": "ci-${{ github.workflow }}-${{ github.ref }}",
-    "cancel-in-progress": True,
+    # Only a pull request's superseded run is cancelled. Unconditional `true`
+    # cancelled main's run whenever the next commit arrived, so landing N changes
+    # left N-1 of them with no evidence (lg-milestone-that-492 AC5).
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
 }
 
 _FORBIDDEN_TMP_BRANCHES = (
@@ -542,6 +545,14 @@ def test_ac8_concurrency_block_unchanged():
     """AC8 / R4 — concurrency group + cancel-in-progress stay at baseline."""
     doc = _load_ci()
     assert doc.get("concurrency") == _BASELINE_CONCURRENCY
+
+
+def test_a_push_to_a_shared_branch_never_cancels_its_run():
+    """492 AC5. `cancel-in-progress` must not be a bare `true`: every branch CI
+    builds on push (main, staging, trying) is shared, and its runs are evidence."""
+    cancel = _load_ci()["concurrency"]["cancel-in-progress"]
+    assert cancel is not True, "a bare true cancels main's run when the next commit lands"
+    assert "pull_request" in str(cancel), cancel
 
 
 def test_ac8_the_durable_check_lives_only_in_ci_yml():

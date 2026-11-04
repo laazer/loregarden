@@ -31,9 +31,11 @@ on:
       - scripts/sandbox.sh
       - .github/workflows/visual-qa.yml
 
+# Same rule as ci.yml: only a pull request's superseded run is cancelled; a
+# push to main keeps its run, so every commit on main is checked.
 concurrency:
   group: visual-qa-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   visual-qa:

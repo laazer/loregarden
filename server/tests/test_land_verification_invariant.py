@@ -793,7 +793,8 @@ def test_the_armed_workspace_is_armed_in_the_profile_the_detector_reads(workspac
     one by one, because AC7 arms its profile. Without this the workspace
     predicate could be silencing everything."""
     assert resolve_git_automation(workspace).land_verify_commands == [
-        "uv run --directory server pytest -q -n auto"
+        "npm --prefix client test -- --ci",
+        "uv run --directory server pytest -q -n auto",
     ]
 
 
