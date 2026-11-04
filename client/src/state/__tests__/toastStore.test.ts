@@ -1145,4 +1145,51 @@ describe("endSentence", () => {
     expect(endSentence("  indented")).toBe("  indented.");
     expect(endSentence("\n  indented.")).toBe("\n  indented.");
   });
+
+  /**
+   * AC-LT2. The right-trim must be linear. `text.replace(/\s+$/u, "")` is not
+   * anchored at the start, so V8 retries it from every offset and re-scans the
+   * whole whitespace run at each one: ~22,000ms here against ~0.06ms for
+   * `trimEnd()`.
+   *
+   * The `"a  "` tail is the point of the input and must not be "simplified"
+   * away: the quadratic cost needs a NON-whitespace character after the run so
+   * that `$` fails and the match restarts. A purely trailing run
+   * (`"a" + " ".repeat(100_000)`) is linear under the regex too (0.1ms), so it
+   * would be green against the unfixed code and prove nothing. The expected
+   * value keeps the leading run, which this function does not touch; `"a."` is
+   * what `trim()` returns, and `trim()` would break the row above. The explicit
+   * timeout is above the regex cost (jest.config sets 20_000) so the pre-fix
+   * red is this assertion reporting ~123,000ms, not a jest timeout. The cost is
+   * worse under jest than the 22,000ms measured in bare node, hence 180_000.
+   */
+  it(
+    "right-trims in linear time: a 100k whitespace run before a non-whitespace tail",
+    () => {
+      const run = " ".repeat(100_000);
+      const input = `${run}a  `;
+
+      const started = performance.now();
+      const result = endSentence(input);
+      const elapsed = performance.now() - started;
+
+      expect(result).toBe(`${run}a.`);
+      expect(elapsed).toBeLessThan(1000);
+    },
+    180_000,
+  );
+
+  /**
+   * Adversarial, and the mutant the rows above do not kill. The linearity row
+   * rules out every regex form and the left-trim row rules out `trim()`, but a
+   * hand-rolled loop over `" \t\n\r"` passes both while narrowing the set
+   * `/\s+$/u` removed: a detail ending in `\v`, U+00A0 or U+FEFF would then
+   * keep that whitespace and take a second terminator after it.
+   */
+  it("right-trims every whitespace the regex did, not space and tab alone", () => {
+    for (const ws of ["\r", "\v", "\f", "\u00a0", "\u1680", "\u2028", "\u3000", "\ufeff"]) {
+      expect(endSentence(`done.${ws}`)).toBe("done.");
+      expect(endSentence(`x${ws}`)).toBe("x.");
+    }
+  });
 });
