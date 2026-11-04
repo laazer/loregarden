@@ -17,6 +17,12 @@ holds the branch's work (`close_published_cards`): a PR merged by hand, in a
 tree with nothing left to land, otherwise kept its card for good (463's #620,
 2026-10-15). Nothing here blocks the ticket that landed: its own work is done,
 and the next landing (or the root's completion) publishes again.
+
+A person cannot close the card while the base still lacks the work
+(`refuse_closing_unpublished`): every card closed by hand before that left its
+work unpublished with nothing tracking it. A tree that ends up with no card and
+no publish anyway is the `landed_work_reaches_the_base` invariant's
+(`unpublished_trees`), which publishes it again.
 """
 
 from __future__ import annotations
@@ -39,10 +45,16 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.drain import is_draining, refuse_reason
-from loregarden.services.git_automation_config import base_branch
+from loregarden.services.git_automation_config import base_branch, resolve_git_automation
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
-from loregarden.services.publish_tree import PublishOutcome, publish_tree, published_branch
+from loregarden.services.publish_tree import (
+    PublishOutcome,
+    publish_base,
+    publish_tree,
+    published_branch,
+    tree_chain,
+)
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_ux_section import MISSING_UX_CARD_PREFIX
 from loregarden.services.work_landed import landing_commit
@@ -84,6 +96,12 @@ def schedule_tree_publish(root_id: str, workspace_id: str) -> None:
         with _GUARD:
             _IN_FLIGHT.discard(root_id)
         raise
+
+
+def publish_in_flight(root_id: str) -> bool:
+    """Whether a publish of the tree rooted at ``root_id`` is running in this process."""
+    with _GUARD:
+        return root_id in _IN_FLIGHT
 
 
 def run_tree_publish(root_id: str, workspace_id: str) -> None:
@@ -158,6 +176,12 @@ def _pending(session: Session, root: Ticket) -> list[Approval]:
     )
 
 
+def pending_publish_card(session: Session, root: Ticket) -> Approval | None:
+    """The pending publish card on ``root``, if there is one."""
+    cards = _pending(session, root)
+    return cards[0] if cards else None
+
+
 def report_publish_failure(session: Session, root: Ticket, outcome: PublishOutcome) -> Approval:
     """File the card, or refresh the pending one with the latest reason and action."""
     where, command = _what_failed(root, outcome)
@@ -216,9 +240,7 @@ def _what_failed(root: Ticket, outcome: PublishOutcome) -> tuple[str, str]:
     auto-merge was refused).
     """
     branch = outcome.branch or "the tree's branch"
-    republish = (
-        f"./scripts/loregarden-cli.sh mcp call loregarden_land_ticket ticket_id={root.external_id}"
-    )
+    republish = _republish_command(root)
     if outcome.pr_url:
         where = (
             f"`{branch}` is pushed and its PR is open: {outcome.pr_url}. The work reaches the "
@@ -249,6 +271,12 @@ def _what_failed(root: Ticket, outcome: PublishOutcome) -> tuple[str, str]:
         f"`{branch}` was not published: no commit could be cut to publish it, so the work that "
         "landed on it is not on its way to the base. Clear the cause below, then publish again.",
         republish,
+    )
+
+
+def _republish_command(root: Ticket) -> str:
+    return (
+        f"./scripts/loregarden-cli.sh mcp call loregarden_land_ticket ticket_id={root.external_id}"
     )
 
 
@@ -360,6 +388,50 @@ def _base_holds(root: Ticket, workspace: Workspace) -> str:
         if holder:
             return f"{ref} holds everything {branch} adds, in {holder[:12]}"
     return ""
+
+
+def refuse_closing_unpublished(session: Session, approval: Approval) -> None:
+    """Raise `ValueError` when ``approval`` is a publish card whose work the base still lacks.
+
+    13 publish cards were closed between 2026-10-01 and 2026-11-03; the 5 a
+    person closed (4 approved, 1 ignored) were all closed with the work still
+    unpublished, and nothing else tracked it once the card was gone. So a person
+    may close one only once the base holds the work (the sweep would close it
+    anyway), or once there is nothing left to publish (the branch deleted, which
+    is how work is abandoned on purpose). Anything else is refused with what
+    finishes it. The base is fetched first: "I merged the PR" is the usual reason
+    to close, and the merge is on the remote before anyone pulls it.
+    """
+    if approval.kind is not ApprovalKind.HUMAN_ACTION or not approval.title.startswith(
+        PUBLISH_CARD_PREFIX
+    ):
+        return
+    root = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
+    workspace = workspace_for_ticket(session, root) if root else None
+    if root is None or workspace is None:
+        logger.warning("Publish card %s names no ticket or workspace; not checking it", approval.id)
+        return
+    repo_root = resolve_workspace_root(workspace)
+    if not (repo_root / ".git").exists():
+        return
+    branch, tip = published_branch(repo_root, root)
+    if not tip:
+        return
+    base = base_branch(workspace)
+    _, failure = publish_base(repo_root, base, tree_chain(resolve_git_automation(workspace, root)))
+    if failure:
+        raise ValueError(
+            f"Could not check whether {base} holds {branch} yet ({failure}), so this card stays "
+            "open. Try again once the remote answers."
+        )
+    if _base_holds(root, workspace):
+        return
+    raise ValueError(
+        f"{base} does not hold the work on `{branch}` yet, so closing this card would leave "
+        f"{root.external_id}'s landed work unpublished with nothing tracking it. Publish again "
+        f"(`{_republish_command(root)}`) or merge its PR, and the card closes by itself once "
+        f"{base} holds the work. To abandon the work, delete `{branch}` first."
+    )
 
 
 def _report_crash(root_id: str, exc: Exception) -> None:

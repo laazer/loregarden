@@ -74,6 +74,8 @@ from loregarden.services.tree_publish_scheduler import (
     published_cards_held,
 )
 from loregarden.services.unasked_awaits import block_unasked_awaits, unasked_awaits
+from loregarden.services.unpublished_trees import publish_trees as _publish_unpublished_trees
+from loregarden.services.unpublished_trees import violations as _unpublished_tree_violations
 from loregarden.services.unresolved_ledger import (
     detect_unaudited_open_shrink as _detect_open_shrink_findings,
 )
@@ -1209,6 +1211,24 @@ RUN_PARENTS_END_WITH_THEIR_RUN = Invariant(
 )
 
 
+LANDED_WORK_REACHES_THE_BASE = Invariant(
+    name="landed_work_reaches_the_base",
+    ticket="lg-milestone-that-1995",
+    statement=(
+        "no integration branch holds landed work its base lacks with no publish running, "
+        "none of its tip, and no publish card in front of a person"
+    ),
+    detect=_unpublished_tree_violations,
+    repair=_publish_unpublished_trees,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 3),
+    prevented_by=(
+        "server/tests/test_unpublished_trees.py"
+        "::test_every_way_a_landing_ends_leaves_its_tree_delivered_or_carded"
+    ),
+)
+
+
 def _overwritten_runs(session: Session) -> list[Violation]:
     """`entered_at` is the second completion: the moment the first verdict was lost."""
     violations = []
@@ -1269,5 +1289,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
+    LANDED_WORK_REACHES_THE_BASE,
     RUNS_COMPLETE_ONCE,
 )

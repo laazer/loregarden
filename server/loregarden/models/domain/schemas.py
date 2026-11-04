@@ -6,6 +6,7 @@ from typing import Any
 from loregarden.models.domain.block_kinds import AgentRetry, BlockedOn, BlockKind, WaitingReason
 from loregarden.models.domain.enums import (
     CliTool,
+    Delivery,
     DoctorCheck,
     DoctorStatus,
     EventType,
@@ -338,6 +339,24 @@ class TicketSplit(SQLModel):
     over_limits: list[str] = Field(default_factory=list)
 
 
+class DeliveryView(SQLModel):
+    """Where a ticket's landed work stands against the base (`services.base_delivery`)."""
+
+    state: Delivery
+    #: Where it landed: its tree's integration branch, or its own branch.
+    branch: str = ""
+    #: The base commit holding it; set only when ``state`` is ON_BASE.
+    on_base_sha: str = ""
+    #: The base branch it is judged against ("main").
+    base: str = ""
+    #: The tree root whose publish carries it, when not on the base yet.
+    root_id: str = ""
+    root_ref: str = ""
+    #: The root's pending "Publish failed" card, and what it says, when there is one.
+    publish_card_id: str = ""
+    publish_failure: str = ""
+
+
 class TicketDetail(TicketSummary):
     #: Set only on the responses that start work. When the slot pool is full the
     #: request is queued rather than started, and the caller has to be able to
@@ -379,6 +398,8 @@ class TicketDetail(TicketSummary):
     #: The live orchestration, so a run with no agent working (landing) still reads as running.
     active_orchestration: "OrchestrationRunView | None" = None
     ships_with: str = ""  # Its tree's integration branch; "" when it lands on the base itself.
+    #: Whether its landed work is on the base yet (`services.base_delivery`).
+    delivery: DeliveryView = Field(default_factory=lambda: DeliveryView(state=Delivery.NOT_LANDED))
 
 
 class WorkspaceSummary(SQLModel):
@@ -885,66 +906,6 @@ class TicketCreate(SQLModel):
     #: Prerequisites it waits for, as UUIDs or external ids — written with the
     #: ticket, so nothing can dispatch it before they are recorded.
     depends_on: list[str] = []
-
-
-class TicketImportFile(SQLModel):
-    name: str
-    content: str
-
-
-class TicketImportItem(SQLModel):
-    title: str
-    work_item_type: WorkItemType = WorkItemType.TASK
-    description: str = ""
-    acceptance_criteria: list[str] = []
-    priority: int = 3
-    milestone: str = ""
-    external_id: str = ""
-    parent_external_id: str = ""
-    parent_ticket_id: str | None = None
-    source_format: str = ""
-    source_label: str = ""
-    preview_markdown: str = ""
-
-
-class TicketImportPreviewRequest(SQLModel):
-    workspace_slug: str
-    files: list[TicketImportFile]
-    mode: str = "smart"  # "smart" or "regular"
-
-
-class TicketImportPreviewPathsRequest(SQLModel):
-    workspace_slug: str
-    file_paths: list[str]
-
-
-class TicketImportPreviewResponse(SQLModel):
-    # `exclude_none` was here as a ConfigDict key, which Pydantic v2 has no such
-    # setting for: it was stored and ignored, and every None field serialized
-    # anyway. Removing it changes nothing observable — omitting None from this
-    # response would be a deliberate API change, not a typo fix. Found by
-    # re-enabling `typeddict-unknown-key` (547).
-
-    tickets: list[TicketImportItem]
-    errors: list[str]
-    warnings: list[str]
-    total: int
-    by_type: dict[str, int]
-    formats: list[str]
-    show_preview: bool
-    mode: str = "regular"
-    studio_context: dict[str, Any] | None = None
-
-
-class TicketImportRequest(SQLModel):
-    workspace_slug: str
-    tickets: list[TicketImportItem]
-
-
-class TicketImportResult(SQLModel):
-    created_count: int
-    ticket_ids: list[str]
-    errors: list[str]
 
 
 class ApprovalAction(SQLModel):

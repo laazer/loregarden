@@ -211,3 +211,61 @@ describe("waiting on other tickets", () => {
     expect(within(strip).getByRole("button", { name: "fewer" })).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+describe("a done ticket whose work is not on the base", () => {
+  const notOnBase = {
+    state: "landed_not_on_base" as const,
+    base: "main",
+    branch: "integration/lg-run-durability-314",
+    on_base_sha: "",
+    root_id: "root-314",
+    root_ref: "lg-run-durability-314",
+    publish_card_id: "",
+    publish_failure: "",
+  };
+
+  it("says so and leads to the pull request", async () => {
+    renderStrip(ticket({ state: "done", delivery: notOnBase }));
+
+    const row = await screen.findByText("Not on main");
+    const strip = within(row.closest(".attn-row") as HTMLElement);
+    expect(strip.getByText(/integration\/lg-run-durability-314/)).toBeInTheDocument();
+    fireEvent.click(strip.getByRole("button", { name: "Pull request" }));
+    expect(navigateToTicketTab).toHaveBeenCalledWith("t1", "pr");
+  });
+
+  it("leads to the root's publish card when the publish failed", async () => {
+    renderStrip(
+      ticket({
+        state: "done",
+        delivery: {
+          ...notOnBase,
+          publish_card_id: "card-1",
+          publish_failure: "`integration/x` was not pushed, so the work is not on its way.\n\npush denied",
+        },
+      }),
+    );
+
+    const row = await screen.findByText("Not on main");
+    const strip = within(row.closest(".attn-row") as HTMLElement);
+    expect(strip.getByText(/publish failed: integration\/x was not pushed/)).toBeInTheDocument();
+    fireEvent.click(strip.getByRole("button", { name: "Publish card" }));
+    expect(navigateToTicketTab).toHaveBeenCalledWith("root-314", "approvals");
+  });
+
+  it("stays quiet once the base holds the work, and before the ticket is done", async () => {
+    const { container, rerender } = renderStrip(
+      ticket({ state: "done", delivery: { ...notOnBase, state: "on_base", on_base_sha: "abc" } }),
+    );
+    await waitFor(() => expect(monitorFindings).toHaveBeenCalled());
+    expect(container.querySelector(".attn")).toBeNull();
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={client}>
+        <TicketAttention ticket={ticket({ state: "in_progress", delivery: notOnBase })} hasRunErrors={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("Not on main")).toBeNull();
+  });
+});

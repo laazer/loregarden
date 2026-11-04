@@ -26,6 +26,7 @@ from loregarden.models.domain import (
 from loregarden.services import git_automation, merge_queue
 from loregarden.services.invariant_registry import PUBLISH_CARDS_CLOSE
 from loregarden.services.land_ticket import land_ticket
+from loregarden.services.orchestration import ApprovalService
 from loregarden.services.publish_tree import PublishOutcome
 from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.services.target_branch import resolve_target_branch
@@ -219,3 +220,84 @@ def test_the_sweep_closes_a_ux_answers_card_once_the_pr_is_merged(session, works
 
 def test_the_sweep_is_a_reconcile_step():
     assert PUBLISH_CARDS_CLOSE.name in [step.name for step in PERIODIC_STEPS]
+
+
+# -- a person cannot close the card while the work is still unpublished ---------
+#
+# 13 publish cards were closed between 2026-10-01 and 2026-11-03. The 5 a person
+# closed (4 approved, 1 ignored) all left the work unpublished, and once the card
+# was gone nothing tracked it: 854's conflict was closed "approved" with the
+# branch still unpublished.
+
+
+def _close(session, card, how: str):
+    svc = ApprovalService(session)
+    if how == "ignore":
+        return svc.ignore(card.id, reason="looks done")
+    return svc.resolve(card.id, approved=how == "approve")
+
+
+@pytest.mark.parametrize("how", ["approve", "reject", "ignore"])
+def test_a_card_whose_work_the_base_lacks_cannot_be_closed(session, workspace, tree, how):
+    ms, target = tree
+    card = _refused_auto_merge(session, workspace, ms)
+
+    with pytest.raises(ValueError, match=f"does not hold the work on `{target}`"):
+        _close(session, card, how)
+
+    assert len(_cards(session, ms)) == 1
+
+
+@pytest.mark.parametrize("how", ["approve", "ignore"])
+def test_a_card_closes_once_the_remote_base_holds_the_work(session, workspace, tree, repo, how):
+    """Merged on GitHub and not yet pulled: the guard fetches before it judges."""
+    ms, _ = tree
+    card = _refused_auto_merge(session, workspace, ms)
+    before = git(repo, "rev-parse", "main").stdout.strip()
+    commit_on(repo, "main", "c1.txt", "child work\n")
+    git(repo, "push", "-q", "origin", "main")
+    git(repo, "reset", "-q", "--hard", before)
+    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+
+    _close(session, card, how)
+
+    assert _cards(session, ms) == []
+
+
+def test_a_card_closes_once_its_branch_is_deleted(session, workspace, tree, repo):
+    """Deleting the branch is how work is abandoned on purpose: nothing is left to lose."""
+    ms, target = tree
+    card = _refused_auto_merge(session, workspace, ms)
+    git(repo, "branch", "-D", target)
+
+    _close(session, card, "approve")
+
+    assert _cards(session, ms) == []
+
+
+def test_an_unreachable_remote_keeps_the_card_open(session, workspace, tree, repo):
+    ms, _ = tree
+    card = _refused_auto_merge(session, workspace, ms)
+    git(repo, "remote", "set-url", "origin", str(repo.parent / "gone.git"))
+
+    with pytest.raises(ValueError, match="Could not check"):
+        _close(session, card, "approve")
+
+    assert len(_cards(session, ms)) == 1
+
+
+def test_other_cards_are_not_checked(session, workspace, tree):
+    ms, _ = tree
+    other = Approval(
+        ticket_id=ms.id,
+        workspace_id=ms.workspace_id,
+        kind=ApprovalKind.HUMAN_ACTION,
+        title="Something else",
+        level="low",
+        impact="",
+        status=ApprovalStatus.PENDING,
+    )
+    session.add(other)
+    session.commit()
+
+    assert _close(session, other, "approve").status is ApprovalStatus.APPROVED
