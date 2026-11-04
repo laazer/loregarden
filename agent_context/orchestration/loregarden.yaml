@@ -76,11 +76,13 @@ git:
   # open a PR for it. Opening one costs nothing a person must act on, and
   # `_existing_pr_url` keeps a thread to one PR however many turns it takes.
   #
-  # `push` runs lefthook's pre-push suite, measured at 37 minutes for a change
-  # reaching a widely-imported backend module. That is why publishing happens
-  # after the reply settles rather than inside the turn — see
-  # `baxter_chat_run_service.schedule_chat_publish`. Enabling it here without
-  # that ordering leaves the composer disabled for the duration.
+  # A chat turn's `push` runs lefthook's pre-push suite, measured at 37 minutes
+  # for a change reaching a widely-imported backend module. That is why
+  # publishing happens after the reply settles rather than inside the turn — see
+  # `baxter_chat_run_service.schedule_chat_publish`. A tree's publish pushes a
+  # staging cut, which the hook skips (`.lefthook/scripts/staged-push.sh`): the
+  # suite would test the checkout the push fired from, not the cut, and the cut
+  # cannot land before its PR's required checks pass on exactly that commit.
   #
   # Without this, an acting chat turn wrote to its thread's worktree and stopped:
   # the work sat on `chat/<thread>` uncommitted, and the reply said so. Better
@@ -92,15 +94,12 @@ git:
   # branch after every landing on it and when the root finishes, a ticket with
   # no tree its own branch). Individual ticket stages never publish.
   #
-  # Bors try-merge gate (root `bors.toml` status = ["CI"] — the job-level
-  # aggregator `name: CI` in `.github/workflows/ci.yml`, not Server/Client):
-  # Reviewers enqueue with `bors r+` (land) or `bors try` (dry-run). CI builds
-  # `main`, `staging`, and `trying` (plus PRs). The gate is try-merge of the
-  # merged tree on `staging`/`trying` — not PR-head CI alone. Public bors.tech
-  # is deprecated; this repo uses self-hosted bors-ng (sibling
-  # lg-milestone-that-795 owns hosting / GitHub App install). Until it is
-  # hosted, nothing waits on bors: a tree's PR (`tree_open_pr` /
-  # `tree_auto_merge` below, 958) merges on the ruleset's required checks.
+  # The merge gate is loregarden's own merge queue (lg-milestone-that-967;
+  # bors was retired, 795/796). The chain's merge step admits a tree's PR to the
+  # queue (`git_automation._auto_merge` -> `merge_queue.enqueue`); it never calls
+  # `gh pr merge --auto`. The queue stages the PR merged onto main's tip, waits
+  # for the ruleset's required checks on that exact commit, and lands only when
+  # the tree GitHub merges equals the tree the checks passed on.
   #
   # Of the chat-turn pair, `open_pr` is on (above) and `auto_merge` stays absent
   # until sibling lg-milestone-that-791 enables it behind a live gate
@@ -109,12 +108,10 @@ git:
   push: true
   open_pr: true
   # For `publish_tree` only (958): a tree's PR opens with its first landing and
-  # merges when the ruleset's required checks pass. Publishing only when a
-  # milestone finished kept its integration branch alive for weeks against a
-  # base taking ~96 commits a week, and every integration conflict was on such a
-  # branch. Chat turns open a PR (`open_pr`) and never auto-merge.
-  # `tree_auto_merge` needs "Allow auto-merge" on in the repository's GitHub
-  # settings; until it is, the merge step fails and says so on a card.
+  # is queued to merge (967). Publishing only when a milestone finished kept its
+  # integration branch alive for weeks against a base taking ~96 commits a week,
+  # and every integration conflict was on such a branch. Chat turns open a PR
+  # (`open_pr`) and never auto-merge.
   tree_open_pr: true
   tree_auto_merge: true
   # Arming the guard lg-milestone-that-1238 built for exactly this shape and

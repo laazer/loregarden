@@ -26,6 +26,7 @@ from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.ci_checks import list_open_pull_requests
 from loregarden.services.ci_service import CIService
 from loregarden.services.github_pr_listing import GitHubReadError
+from loregarden.services.merge_queue_loop import advance_workspace
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -102,10 +103,26 @@ def poll_workspace(session: Session, workspace: Workspace) -> WorkspacePoll:
 
 
 def run_ci_poll(session: Session) -> list[WorkspacePoll]:
-    """One tick: every active workspace, then the log-retention prune."""
-    polls = [poll_workspace(session, workspace) for workspace in active_workspaces(session)]
+    """One tick: every active workspace, its merge queue, then the log-retention prune."""
+    polls: list[WorkspacePoll] = []
+    for workspace in active_workspaces(session):
+        poll = poll_workspace(session, workspace)
+        _advance_merge_queue(session, workspace, poll)
+        polls.append(poll)
     CIService(session).prune_logs()
     return polls
+
+
+def _advance_merge_queue(session: Session, workspace: Workspace, poll: WorkspacePoll) -> None:
+    """One merge queue cycle (`merge_queue_loop`), on the tick that already reads the PRs."""
+    try:
+        cycle = advance_workspace(session, workspace)
+    except Exception as exc:  # noqa: BLE001 — one workspace's queue must not starve the rest; reported below
+        session.rollback()
+        logger.exception("Merge queue for %s: the cycle failed", workspace.slug)
+        poll.errors.append(f"merge queue: {exc}")
+        return
+    poll.errors.extend(f"merge queue: {error}" for error in cycle.errors)
 
 
 def _tick() -> list[WorkspacePoll]:

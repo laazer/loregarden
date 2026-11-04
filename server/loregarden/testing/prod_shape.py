@@ -54,6 +54,10 @@ from loregarden.testing.factories import (
     make_workspace,
 )
 from loregarden.testing.prod_shape_activity import add_activity
+from loregarden.testing.prod_shape_merge_queue import (
+    MERGE_QUEUE_WORKSPACE,
+    add_merge_queue_shape,
+)
 from loregarden.testing.prod_shape_survey import SURVEY_WORKSPACE, add_survey_shape
 from loregarden.testing.prod_shape_tree import TREE_CALIBRATION, TreeSummary, add_tree_shape
 
@@ -226,6 +230,8 @@ class ProdShapeSummary(BaseModel):
     tree: TreeSummary
     #: The reference library's sources (`prod_shape_survey`).
     survey_sources: int
+    #: Merge queue entries on loregarden (`prod_shape_merge_queue`).
+    merge_queue_entries: int
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -432,6 +438,15 @@ def build_prod_shape(
         [(id_, ext) for s, id_, ext, _st, _parent in all_tickets if s == SURVEY_WORKSPACE],
         prod_shape_id,
     )
+    # Milestones are tree roots, and an entry is a root's PR.
+    roots = sorted({p for s, _id, _ext, _st, p in all_tickets if s == MERGE_QUEUE_WORKSPACE})
+    queue_roots = [(root, session.get(Ticket, root).external_id) for root in roots[:6]]
+    merge_queue_entries = add_merge_queue_shape(
+        session,
+        make_workspace(session, slug=MERGE_QUEUE_WORKSPACE).id,
+        queue_roots,
+        prod_shape_id,
+    )
     return ProdShapeSummary(
         tickets=len(all_tickets) + milestones,
         milestones=milestones,
@@ -447,6 +462,7 @@ def build_prod_shape(
         activity_events=activity_events,
         tree=tree,
         survey_sources=survey_sources,
+        merge_queue_entries=merge_queue_entries,
     )
 
 

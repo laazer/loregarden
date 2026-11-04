@@ -12,6 +12,7 @@ import { PageTopbar } from "../components/TopbarPageSlot";
 import { ActiveTicketsSection } from "../components/workspaceDashboard/ActiveTicketsSection";
 import { ActivitySection } from "../components/workspaceDashboard/ActivitySection";
 import { InstancesSection } from "../components/workspaceDashboard/InstancesSection";
+import { MergeQueueSection } from "../components/workspaceDashboard/MergeQueueSection";
 import { MilestonesSection } from "../components/workspaceDashboard/MilestonesSection";
 import { NeedsYouSection } from "../components/workspaceDashboard/NeedsYouSection";
 import { PullRequestsSection } from "../components/workspaceDashboard/PullRequestsSection";
@@ -35,6 +36,7 @@ const PAGE_KEYS = [
   "ticket-status-summary",
   "ticket-tree",
   "approvals",
+  "merge-queue",
   INSTANCES_KEY[0],
 ];
 
@@ -188,6 +190,7 @@ export function WorkspaceDashboardPage({ workspaceSlug }: WorkspaceDashboardPage
           />
         </div>
         <PullRequestsSection query={pullRequests} now={now} />
+        <MergeQueueSection workspaceSlug={workspaceSlug} now={now} />
         <div className="wsd-columns">
           <ActiveTicketsSection query={active} />
           <div className="wsd-column">
