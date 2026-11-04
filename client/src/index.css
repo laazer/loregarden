@@ -3,6 +3,15 @@
      value for every primary action and every send, so Run and the send arrow
      are visibly the same control. */
   --leaf: 18px 3px 18px 3px;
+  /* A drawn leaf, for a mask over a 2:1 box: a stem, a round base, widest a
+     third of the way along, a tip drawn out to a point and lifted a little,
+     and a midrib cut out of the blade. Two rounded corners on a box
+     (0 100% 0 100%) make a pea pod, pointed at both ends with no stem, which
+     is what this replaced. The first has its stem on the left; the second is
+     its mirror, stem on the right. The paths are drawn in the default fill:
+     only a mask's alpha counts. */
+  --leaf-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 14'%3E%3Cpath d='M0 6.55 H4.6 V7.45 H0 Z M4 7 C 4 2.8, 7.6 1.1, 11.6 1.3 C 17.6 1.6, 23 4.4, 28 5.9 C 23 8.6, 17.6 12.2, 11.6 12.6 C 7.6 12.9, 4 11.2, 4 7 Z M5.2 7.35 Q 15 6.75, 25.2 5.95 Q 15 6.1, 5.2 6.75 Z'/%3E%3C/svg%3E");
+  --leaf-mask-mirrored: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 14'%3E%3Cpath transform='matrix(-1 0 0 1 28 0)' d='M0 6.55 H4.6 V7.45 H0 Z M4 7 C 4 2.8, 7.6 1.1, 11.6 1.3 C 17.6 1.6, 23 4.4, 28 5.9 C 23 8.6, 17.6 12.2, 11.6 12.6 C 7.6 12.9, 4 11.2, 4 7 Z M5.2 7.35 Q 15 6.75, 25.2 5.95 Q 15 6.1, 5.2 6.75 Z'/%3E%3C/svg%3E");
   /* The night ground first drawn behind Baxter's garden on /chat: a little of
      the accent at the top, fading into the page. The app's backdrop
      (.app-ambient) and any pane that must paint its own (the sidebar chat)

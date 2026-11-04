@@ -8,8 +8,11 @@ function MarkShape({ mark }: { mark: VineMark }) {
     case "leaf":
       return (
         <>
-          <path className="vine-leaf" d="M2 7 C 4 1.5, 10.5 1.5, 13 7 C 10.5 12.5, 4 12.5, 2 7 Z" />
-          <path className="vine-leaf-rib" d="M3 7 H 11" />
+          {/* A stem, a round base, a tip lifted to a point: a leaf, not the
+              pea pod a lens pointed at both ends reads as. */}
+          <path className="vine-leaf-stem" d="M0.8 7.1 H 3.2" />
+          <path className="vine-leaf" d="M3 7 C 3 4.5, 4.6 3.1, 6.4 3.1 C 9 3.1, 11.5 4.9, 13.6 6.2 C 11.5 8.2, 9 10.7, 6.4 10.8 C 4.6 10.9, 3 9.5, 3 7 Z" />
+          <path className="vine-leaf-rib" d="M3.6 7 Q 8.2 6.55, 12.2 6.35" />
         </>
       );
     case "pruned":

@@ -93,8 +93,9 @@
   content: "";
   position: absolute;
   width: 28px;
-  height: 13px;
+  height: 14px;
   pointer-events: none;
+  mask: var(--leaf-mask) center / 100% 100% no-repeat;
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--ac) 85%, transparent),
@@ -117,7 +118,6 @@
 .baxter-chat--garden .lg-chat-turn--assistant::before {
   left: calc(-1 * var(--garden-gutter));
   top: 8px;
-  border-radius: 0 100% 0 100%;
   transform: rotate(-24deg);
   transform-origin: 0 50%;
 }
@@ -130,7 +130,8 @@
 .baxter-chat--garden .lg-chat-turn--user::before {
   right: calc(-1 * var(--garden-gutter));
   bottom: 14px;
-  border-radius: 100% 0 100% 0;
+  /* Its stem is on the vine, which is on this side. */
+  mask-image: var(--leaf-mask-mirrored);
   transform: rotate(24deg);
   transform-origin: 100% 50%;
 }
@@ -215,23 +216,24 @@
 .baxter-chat-hero-avatar::after {
   content: "";
   position: absolute;
-  width: 14px;
-  height: 7px;
+  width: 16px;
+  height: 8px;
   pointer-events: none;
+  mask: var(--leaf-mask) center / 100% 100% no-repeat;
   background: linear-gradient(135deg, var(--ac2), var(--ac));
 }
 
 .baxter-chat-hero-avatar::before {
   top: -4px;
-  right: -6px;
-  border-radius: 0 100% 0 100%;
+  right: -7px;
   transform: rotate(-30deg);
 }
 
 .baxter-chat-hero-avatar::after {
   bottom: -3px;
-  left: -6px;
-  border-radius: 100% 0 100% 0;
+  left: -7px;
+  /* Stem toward the ring, which is on its right. */
+  mask-image: var(--leaf-mask-mirrored);
   transform: rotate(-30deg);
 }
 
