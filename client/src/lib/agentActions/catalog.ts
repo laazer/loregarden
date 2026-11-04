@@ -50,6 +50,8 @@ export interface UiActionArgs {
   "queue.promote": { run_id: string };
   "queue.cancel": { run_id: string };
   "capacity.release": { lease_id: string; reason: string };
+  "merge_queue.retry": { entry_id: string };
+  "merge_queue.withdraw": { entry_id: string; reason?: string };
   /** Human-only on the server: never invoked by an agent, so nothing registers it. */
   "approval.resolve": { approval_id: string };
   "view.create": { workspace_slug: string; title: string; layout: ViewLayout };
@@ -93,6 +95,8 @@ export const UI_ACTION_LABELS: Record<UiActionName, string> = {
   "queue.promote": "Moved a run to the front of the queue",
   "queue.cancel": "Removed a run from the queue",
   "capacity.release": "Ended a machine-capacity lease",
+  "merge_queue.retry": "Sent a merge queue entry back in line",
+  "merge_queue.withdraw": "Withdrew a merge queue entry",
   "approval.resolve": "Resolved an approval",
   "view.create": "Added a tab",
   "view.open": "Opened a tab",

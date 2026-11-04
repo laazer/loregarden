@@ -78,6 +78,7 @@ from loregarden.services.orchestration_profile import (
     load_profile_from_path,
     orchestration_dir,
 )
+from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session, col, select
 from tests import land_receipt_helpers as helpers
 from tests.land_receipt_helpers import FAILING_SUITE, PASSING_SUITE
@@ -583,7 +584,11 @@ def test_the_receipt_has_a_kind_of_its_own():
 # recurrences, and the command's FORM is the rank-1 risk of arming it.
 # ---------------------------------------------------------------------------
 
-ARMED_COMMAND = "uv run --directory server pytest -q -n auto"
+JEST_COMMAND = "npm --prefix client test -- --ci"
+PYTEST_COMMAND = "uv run --directory server pytest -q -n auto"
+#: Cheaper first: the first refusal decides, so the client suite (49s measured)
+#: runs before the server suite (901s measured).
+ARMED_COMMANDS = [JEST_COMMAND, PYTEST_COMMAND]
 
 
 def _loregarden_profile():
@@ -596,7 +601,7 @@ def test_loregarden_arms_the_land_verification_it_has_never_run():
     of both reds' test-landing commits, and has never executed once."""
     git_config = _loregarden_profile().git
 
-    assert git_config.land_verify_commands == [ARMED_COMMAND], git_config.land_verify_commands
+    assert git_config.land_verify_commands == ARMED_COMMANDS, git_config.land_verify_commands
     assert git_config.land_verify_capacity_footprint is DockerFootprint.HEAVY, (
         "a land verification is a suite on the orchestration thread; it queues like one"
     )
@@ -613,7 +618,7 @@ def test_no_other_workspace_changes_behaviour():
     )
 
 
-def test_the_armed_command_is_in_the_only_form_that_can_execute():
+def test_the_armed_commands_are_in_the_only_form_that_can_execute():
     """AC7, and all three of these were proposed by a planning lane.
 
     `run_verify_command` uses `shlex.split` and `subprocess.run` with no shell,
@@ -623,16 +628,17 @@ def test_the_armed_command_is_in_the_only_form_that_can_execute():
     already takes the capacity lease for the whole command list, so wrapping the
     command in `capacity-run.sh` would double-book the ledger.
     """
-    command = _loregarden_profile().git.land_verify_commands[0]
-    argv = shlex.split(command)
-
-    assert argv[:4] == ["uv", "run", "--directory", "server"], argv
-    assert "&&" not in command and ";" not in command, f"no shell runs this: {command!r}"
-    assert not command.startswith("cd "), f"no shell runs this: {command!r}"
-    assert "bash -c" not in command, f"no shell runs this: {command!r}"
-    assert "capacity-run.sh" not in command, (
-        "`_holding` already holds the lease for the whole list; wrapping it double-books"
-    )
+    commands = _loregarden_profile().git.land_verify_commands
+    for command in commands:
+        assert "&&" not in command and ";" not in command, f"no shell runs this: {command!r}"
+        assert not command.startswith("cd "), f"no shell runs this: {command!r}"
+        assert "bash -c" not in command, f"no shell runs this: {command!r}"
+        assert "capacity-run.sh" not in command, (
+            "`_holding` already holds the lease for the whole list; wrapping it double-books"
+        )
+    # Each names its project from the repository root, the cwd it is given.
+    assert shlex.split(PYTEST_COMMAND)[:4] == ["uv", "run", "--directory", "server"]
+    assert shlex.split(JEST_COMMAND)[:3] == ["npm", "--prefix", "client"]
     assert LAND_VERIFY_TIMEOUT_SECONDS > 901, (
         f"the measured suite is 901s and the timeout is {LAND_VERIFY_TIMEOUT_SECONDS}s; "
         "a timeout REFUSES the land"
@@ -666,14 +672,14 @@ def detached_fixture():
         shutil.rmtree(holder, ignore_errors=True)
 
 
-def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detached):
+@pytest.mark.parametrize("command", ARMED_COMMANDS)
+def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detached, command):
     """AC7. An unparseable or not-on-PATH command is UNAVAILABLE, and UNAVAILABLE
     REFUSES THE LAND — so a wrong string here blocks every landing in this
     workspace. Driven through `run_verify_command`'s own parse-and-launch path,
     in the detached worktree it will be given, with the launch captured rather
     than the 901s suite run.
     """
-    command = _loregarden_profile().git.land_verify_commands[0]
     launched: dict[str, object] = {}
     real = subprocess.run
 
@@ -705,14 +711,32 @@ def test_uv_resolves_the_server_project_from_the_detached_worktrees_root(detache
     trivial payload, so it proves uv resolves the project there without paying
     for the suite.
     """
-    command = _loregarden_profile().git.land_verify_commands[0]
-    prefix = shlex.split(command)[:4]
+    prefix = shlex.split(PYTEST_COMMAND)[:4]
     probe = shlex.join([*prefix, "python", "-c", "import pytest; print('resolved')"])
 
     outcome = run_verify_command(probe, detached, footprint=DockerFootprint.NONE)
 
     assert outcome.outcome is GateOutcome.PASSED, f"{outcome.detail}\n{outcome.output}"
     assert "resolved" in outcome.output
+
+
+@pytest.mark.skipif(shutil.which("npm") is None, reason="npm is not on PATH on this machine")
+@pytest.mark.skipif(
+    not (REPO_ROOT / "client" / "node_modules").is_dir(),
+    reason="this checkout has no client/node_modules to link into the tree",
+)
+def test_jest_finds_the_client_suite_from_the_detached_worktrees_root(detached):
+    """The jest command, exercised where it will run: a fresh detached tree at
+    the repository root, given the parent checkout's `client/node_modules` the
+    way `_verify_candidate` gives it. `--listTests` proves npm resolves the
+    package script and jest finds the suite without paying for the run."""
+    link_ignored_toolchains(REPO_ROOT, detached)
+    probe = shlex.join([*shlex.split(JEST_COMMAND), "--listTests"])
+
+    outcome = run_verify_command(probe, detached, footprint=DockerFootprint.NONE)
+
+    assert outcome.outcome is GateOutcome.PASSED, f"{outcome.detail}\n{outcome.output}"
+    assert ".test.ts" in outcome.output, outcome.output[-2000:]
 
 
 def test_a_landing_in_a_state_other_than_done_still_gets_its_receipt(session, tmp_path):

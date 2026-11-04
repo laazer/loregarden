@@ -247,7 +247,12 @@ def _what_failed(root: Ticket, outcome: PublishOutcome) -> tuple[str, str]:
             f"base when that PR merges; only `{outcome.failed_step or 'a later step'}` failed."
         )
         if outcome.failed_step == "auto_merge":
-            return where, f"gh pr merge {outcome.pr_url} --squash"
+            # The merge step is the merge queue's admission (973); queue it again
+            # rather than merging around the queue's tested-tree check.
+            return where, (
+                "./scripts/loregarden-cli.sh mcp call loregarden_enqueue_merge "
+                f"ticket_id={root.external_id}"
+            )
         return where, ""
     if outcome.failed_step == "open_pr":
         return (

@@ -5,10 +5,14 @@ on:
     branches: [main, staging, trying]
   pull_request:
 
-# Cancel superseded runs on the same ref to save CI minutes.
+# Cancel a superseded run only on a pull request, whose branch is disposable.
+# A push to main/staging/trying is a commit on a shared branch: cancelling its
+# run when the next commit arrives leaves that commit with no evidence at all,
+# so landing N changes in a row yields one green check and N-1 blanks
+# (lg-milestone-that-492 AC5).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   server:
