@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { ApiError } from "../../../api/http";
 import { api } from "../../../api/client";
 import type { LibraryDetail, LibraryList, LibraryRow, QueueSchedule, TopicView } from "../../../api/referenceLibraryApi";
+import { memoryAddReferencePath } from "../../../lib/appNavigation";
 import { findUsabilityProblems } from "../../../lib/usabilityCheck";
 import { MemoryPage } from "../../../pages/MemoryPage";
 import { useToastStore } from "../../../state/toastStore";
@@ -36,7 +37,13 @@ const INITIATIVE = {
 } as Awaited<ReturnType<typeof api.initiatives>>[number];
 
 function Path() {
-  return <span data-testid="path">{useLocation().pathname}</span>;
+  const location = useLocation();
+  return (
+    <>
+      <span data-testid="path">{location.pathname}</span>
+      <span data-testid="search">{location.search}</span>
+    </>
+  );
 }
 
 function renderAt(path: string) {
@@ -531,6 +538,16 @@ describe("adding a reference", () => {
     expect(await within(form).findByRole("alert")).toHaveTextContent(/Not added: .*Not a repository URL/);
     fireEvent.keyDown(within(form).getByRole("textbox", { name: "URL" }), { key: "Escape" });
     expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
+  });
+
+  it("opens the add form when a quick action links in, and drops the request from the URL", async () => {
+    renderAt(memoryAddReferencePath());
+    const form = await screen.findByRole("form", { name: "Add a reference" });
+    // One-shot: once open, the URL no longer asks for it, so closing it sticks.
+    await waitFor(() => expect(screen.getByTestId("search")).toHaveTextContent(/^$/));
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "URL" }), { key: "Escape" });
+    expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a reference" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("names a source already refused briefly and links to it", async () => {

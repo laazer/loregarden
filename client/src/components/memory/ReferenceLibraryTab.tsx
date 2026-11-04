@@ -3,7 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api } from "../../api/client";
-import { memoryLibrarySourceFromPath, memoryPath } from "../../lib/appNavigation";
+import {
+  MEMORY_LIBRARY_ADD_PARAM,
+  memoryLibrarySourceFromPath,
+  memoryPath,
+} from "../../lib/appNavigation";
 import {
   DEFAULT_SORT,
   LIBRARY_VIEWS,
@@ -53,6 +57,18 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
   const [sort, setSort] = useState<LibrarySort>(DEFAULT_SORT);
   const [adding, setAdding] = useState(false);
   const [pasting, setPasting] = useState(false);
+
+  // A quick action elsewhere (the sidebar's right-click menu) links here with
+  // `?add=reference`. Open the form and drop the parameter, so it is a one-shot
+  // request rather than state the URL keeps reasserting.
+  const addRequested = searchParams.get(MEMORY_LIBRARY_ADD_PARAM) === "reference";
+  useEffect(() => {
+    if (!addRequested) return;
+    setAdding(true);
+    const params = new URLSearchParams(searchParams);
+    params.delete(MEMORY_LIBRARY_ADD_PARAM);
+    setSearchParams(params, { replace: true });
+  }, [addRequested, searchParams, setSearchParams]);
 
   const library = useQuery({
     queryKey: ["reference-library", slug],

@@ -13,7 +13,13 @@
  * to rove between and is one stop on its own.
  */
 
-import { useId, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useId,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { NavLink } from "react-router-dom";
 
 import { viewPath } from "../lib/appNavigation";
@@ -145,11 +151,14 @@ export function ToolRow({
   page,
   active,
   count,
+  onContextMenu,
 }: {
   page: SidebarPageDef;
   active: boolean;
   /** The page's live count, when it has one worth drawing. */
   count?: RailCount;
+  /** Opens the page's quick actions; absent when it has none, keeping the browser's menu. */
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const countId = useId();
   return (
@@ -165,6 +174,7 @@ export function ToolRow({
         className={`app-sidebar-link${active ? " app-sidebar-link--active" : ""}`}
         aria-describedby={count ? countId : undefined}
         onClick={blurOnClick}
+        onContextMenu={onContextMenu}
       >
         {active ? <span className="app-sidebar-bar" aria-hidden /> : null}
         {/* The count sits on the icon's corner, so a folded rail still shows it. */}

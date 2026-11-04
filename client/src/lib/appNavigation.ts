@@ -337,6 +337,18 @@ export function memoryLibrarySourceFromPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]) : null;
 }
 
+/**
+ * The search parameter that opens the reference library's add form on arrival.
+ * The library removes it once the form is open, so reloading or going back does
+ * not reopen a form the operator already closed.
+ */
+export const MEMORY_LIBRARY_ADD_PARAM = "add";
+
+/** The reference library with its "Add a reference" form open. */
+export function memoryAddReferencePath(): string {
+  return `${memoryPath("library")}?${MEMORY_LIBRARY_ADD_PARAM}=reference`;
+}
+
 /** Where an old `/knowledge[/:nodeId]` URL now lives. */
 export function memoryPathForLegacyKnowledge(pathname: string): string {
   const match = pathname.match(LEGACY_KNOWLEDGE_PATH_RE);
