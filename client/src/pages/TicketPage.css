@@ -8,10 +8,15 @@
   flex: none;
   padding: 12px 22px 10px;
   border-bottom: 1px solid var(--bd);
-  background: var(--bg1);
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* The header and the main column's tabs sit on the app's night sky, as the
+   chat thread does; their borders keep them apart from what is below. */
+.ticket-page .tab-bar {
+  background: none;
 }
 
 .ticket-page-crumbs ol {
