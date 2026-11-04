@@ -34,7 +34,6 @@ from loregarden.models.domain import (
     OrchestrationRun,
     Ticket,
     TicketState,
-    Workspace,
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
@@ -83,6 +82,7 @@ from loregarden.services.reference_survey.upstream import refresh_stale
 from loregarden.services.run_concurrency import ACTIVE_ORCHESTRATION_STATUSES
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, col, or_, select
 
@@ -331,7 +331,7 @@ def _create_carrier(
 ) -> Ticket:
     # The parent's workspace, which is not the source's when the source is homed
     # in a workspace with no carrier parent of its own (`carrier_parent`).
-    workspace = session.get(Workspace, parent.workspace_id)
+    workspace = workspace_for_ticket(session, parent)
     if workspace is None:
         raise ValueError(f"Carrier parent {parent.external_id} names a missing workspace")
     asked = survey_pass.question or "open read for what it serves"

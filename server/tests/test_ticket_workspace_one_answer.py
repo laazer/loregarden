@@ -65,7 +65,10 @@ MIN_FILES_SCANNED = 500
 #: 29, plus 2 from the merge queue (2026-11-03): `merge_queue.py` and
 #: `merge_queue_reports.py` read a `MergeQueueEntry`'s own workspace — the
 #: entry is the row, not a ticket — so they are out of this census by design.
-NON_TICKET_LOOKUPS = 31
+#: 30 since `reference_survey/feeder._create_carrier` files a carrier in its
+#: parent's workspace (`workspace_for_ticket`) rather than reading its source's
+#: SurveySource-keyed one: removed code, not lost reach.
+NON_TICKET_LOOKUPS = 30
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and
