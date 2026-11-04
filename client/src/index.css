@@ -8,6 +8,10 @@
      (.app-ambient) and any pane that must paint its own (the sidebar chat)
      lay it over --bg0. */
   --garden-ground: radial-gradient(70% 40% at 50% 0%, color-mix(in srgb, var(--ac) 7%, transparent), transparent 70%);
+  /* A sticky header over a pane that shows the ground: opaque enough to read
+     over what scrolls under it, sheer enough not to cut a band out of the sky.
+     Pair it with a backdrop blur. */
+  --garden-veil: color-mix(in srgb, var(--bg0) 86%, transparent);
   /* Native control parts the CSS cannot reach — a <select>'s open list, a
      checkbox, a date picker, a scrollbar — follow this, not the OS. Without it
      a light-mode OS draws them light inside the dark app. A light theme sets
@@ -312,7 +316,7 @@ textarea::placeholder {
    the whole sky, as it had before the backdrop took it over. Only the alpha of
    the mask counts, so any opaque token does. */
 .app-ambient .garden-sky {
-  mask-image: linear-gradient(to bottom, var(--tx), transparent 55%);
+  mask-image: linear-gradient(to bottom, var(--tx), transparent 35%);
 }
 
 .app-frame:has(.baxter-chat--garden) .app-ambient .garden-sky {
@@ -3933,7 +3937,6 @@ button.send-leaf:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--bd);
-  background: var(--bg0);
   min-height: 0;
 }
 

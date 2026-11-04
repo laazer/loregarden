@@ -312,9 +312,10 @@
 
 /* ---- the detail ---------------------------------------------------------- */
 
+/* The app's ground shows through, as it does beside it; the border keeps the
+   two panes apart. */
 .rl-detail {
   border-left: 1px solid var(--bd);
-  background: var(--bg1);
 }
 
 .rl-detail-head {
@@ -322,7 +323,8 @@
   top: 0;
   z-index: 1;
   padding: 12px 18px 10px;
-  background: var(--bg1);
+  background: var(--garden-veil);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--bd);
 }
 
