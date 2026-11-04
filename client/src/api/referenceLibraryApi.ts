@@ -148,6 +148,8 @@ export interface ReviewNowRequest {
   /** Workspaces the pass should read for as well. */
   workspace_slugs: string[];
   initiative_ids: string[];
+  /** Read for only these of the workspaces it serves, this pass alone; absent reads for all. */
+  only_for?: string[];
 }
 
 export interface LinkTargetsRequest {

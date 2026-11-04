@@ -9,6 +9,7 @@ rules, so the answer to "why has it not started?" is the same in both places.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from loregarden.config import settings
@@ -21,9 +22,14 @@ from loregarden.models.domain.survey_enums import (
 )
 from loregarden.models.domain.survey_tables import SurveyPass, SurveySource
 from loregarden.services.reference_survey import feeder
-from loregarden.services.reference_survey.errors import SurveyNotFound
+from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.initiatives import follow, resolve_initiatives
-from loregarden.services.reference_survey.queue import open_passes, request_pass, serve_workspaces
+from loregarden.services.reference_survey.queue import (
+    open_passes,
+    request_pass,
+    serve_workspaces,
+    target_workspaces,
+)
 from loregarden.services.reference_survey.review_gate import refuse_unrunnable
 from loregarden.services.reference_survey.schemas import PassRequestIn
 from pydantic import BaseModel, Field
@@ -167,6 +173,9 @@ class ReviewNowIn(BaseModel):
     workspace_slugs: list[str] = Field(default_factory=list)
     #: Initiatives to follow the source (its open tickets join them), by UUID or external id.
     initiative_ids: list[str] = Field(default_factory=list)
+    #: Read for only these of the workspaces it serves (counting `workspace_slugs`),
+    #: for this pass alone; the source keeps serving the rest. Empty reads for all.
+    only_for: list[str] = Field(default_factory=list)
 
 
 class ReviewNowResult(BaseModel):
@@ -217,6 +226,25 @@ def _pass_to_run(session: Session, source: SurveySource, question: str) -> Surve
     )
 
 
+def _narrow(session: Session, source: SurveySource, body: ReviewNowIn) -> str:
+    """`only_for` as the pass's `workspaces_json`: "[]" when it names every one served.
+
+    Checked before anything is written, counting the workspaces this review adds.
+    """
+    only_for = body.only_for
+    served = [w.slug for w, _ in target_workspaces(session, source.id)]
+    served += [slug for slug in body.workspace_slugs if slug not in served]
+    unserved = [slug for slug in only_for if slug not in served]
+    if unserved:
+        raise SurveyError(
+            f"{source.name} does not serve {', '.join(unserved)}; a review reads only for "
+            f"workspaces it serves ({', '.join(served)}). Add them in the same review."
+        )
+    if set(only_for) == set(served):
+        return "[]"
+    return json.dumps(list(dict.fromkeys(only_for)))
+
+
 def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNowResult:
     """Put the source first in line and dispatch its pass now if nothing holds it.
 
@@ -228,6 +256,7 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
         raise SurveyNotFound(f"No survey source {source_id!r}")
     refuse_unrunnable(session, source, body.reason)
     initiatives = resolve_initiatives(session, body.initiative_ids)
+    scope = _narrow(session, source, body) if body.only_for else "[]"
     added = (
         serve_workspaces(
             session, source, body.workspace_slugs, body.question.strip() or source.question, ""
@@ -238,6 +267,9 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     if source.status is SurveySourceStatus.REFUSED:
         _reopen(session, source, body.reason)
     survey_pass = _pass_to_run(session, source, body.question)
+    if body.only_for:
+        survey_pass.workspaces_json = scope
+        session.add(survey_pass)
     linked = follow(session, source.id, initiatives, actor="operator")
     source.priority = FIRST_IN_LINE
     session.add(source)

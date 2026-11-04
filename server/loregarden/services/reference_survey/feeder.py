@@ -34,7 +34,6 @@ from loregarden.models.domain import (
     OrchestrationRun,
     Ticket,
     TicketState,
-    Workspace,
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import (
@@ -76,13 +75,14 @@ from loregarden.services.reference_survey.passes import (
 from loregarden.services.reference_survey.queue import (
     next_queued_pass,
     open_passes,
+    pass_workspaces,
     promote_resolved_sources,
-    target_workspaces,
 )
 from loregarden.services.reference_survey.upstream import refresh_stale
 from loregarden.services.run_concurrency import ACTIVE_ORCHESTRATION_STATUSES
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, col, or_, select
 
@@ -101,7 +101,7 @@ class _Clock:
 _CLOCK = _Clock()
 
 SURVEY_WORKFLOW_SLUG = "reference-survey"
-#: The ticket carrier tickets are filed under, found by this tag in the source's workspace.
+#: The ticket carrier tickets are filed under, found by this tag; see `carrier_parent`.
 CARRIER_PARENT_TAG = "reference-survey-carrier"
 
 
@@ -116,14 +116,24 @@ class FeedResult:
 
 
 def carrier_parent(session: Session, workspace_id: str) -> Ticket | None:
+    """The open ticket carriers file under: `workspace_id`'s own, else any workspace's.
+
+    The control plane does the reading, so a source researched only for another
+    project still runs, under loregarden's parent. Looking in the source's home
+    alone would strand every source homed elsewhere with "no carrier parent",
+    because only loregarden has one; four blobert sources were waiting on
+    admission to meet exactly that.
+    """
     candidates = session.exec(
         select(Ticket).where(
-            Ticket.workspace_id == workspace_id,
             col(Ticket.tags_json).contains(CARRIER_PARENT_TAG),
             col(Ticket.state).not_in((TicketState.DONE, TicketState.WONT_DO)),
         )
     ).all()
-    return next((t for t in candidates if CARRIER_PARENT_TAG in load_tags(t.tags_json)), None)
+    tagged = [t for t in candidates if CARRIER_PARENT_TAG in load_tags(t.tags_json)]
+    own = [t for t in tagged if t.workspace_id == workspace_id]
+    preferred = own or tagged
+    return preferred[0] if preferred else None
 
 
 def _settle_abandoned(session: Session) -> int:
@@ -319,9 +329,11 @@ def carrier_type(parent: Ticket) -> WorkItemType:
 def _create_carrier(
     session: Session, source: SurveySource, survey_pass: SurveyPass, parent: Ticket, brief: str
 ) -> Ticket:
-    workspace = session.get(Workspace, source.workspace_id)
+    # The parent's workspace, which is not the source's when the source is homed
+    # in a workspace with no carrier parent of its own (`carrier_parent`).
+    workspace = workspace_for_ticket(session, parent)
     if workspace is None:
-        raise ValueError(f"Source {source.id} names a missing workspace")
+        raise ValueError(f"Carrier parent {parent.external_id} names a missing workspace")
     asked = survey_pass.question or "open read for what it serves"
     question = asked if len(asked) <= 70 else asked[:67] + "..."
     carrier = TicketService(session).create_ticket(
@@ -458,7 +470,7 @@ def _dispatch(
             survey_pass,
             slice_paths,
             clone,
-            [w.slug for w, _ in target_workspaces(session, source.id)],
+            pass_workspaces(session, survey_pass),
             initiative_context(session, source.id),
         ),
     )
