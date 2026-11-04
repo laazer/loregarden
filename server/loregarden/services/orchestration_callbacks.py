@@ -756,6 +756,7 @@ class OrchestrationCallbackService:
         message: str,
         prepared_action: PreparedAction | None = None,
         settlement: BlockSettlement | None = None,
+        declared: BlockKind | None = None,
     ) -> Ticket:
         """Stop this ticket, recording why.
 
@@ -776,6 +777,10 @@ class OrchestrationCallbackService:
         records the caller's own reason. Either way the block leaves with a kind
         and a recorded disposition, so nothing arrives on the board looking
         handled when nothing handled it (802).
+
+        ``declared`` is the kind when the caller knows it and the message would
+        not say: a short pointer to the Timeline reads as no kind at all, and the
+        text classifier's fallback for that is WORK (lg-machine-resource-2112).
         """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -806,6 +811,7 @@ class OrchestrationCallbackService:
                 transitions=self.orch._resolve_transitions(ticket),
                 stage_key=key or "",
                 message=message,
+                declared=declared,
                 repairable=repair.may_repair,
                 no_repair_reason=repair.withheld_reason,
             )

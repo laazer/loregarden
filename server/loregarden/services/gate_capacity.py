@@ -8,9 +8,12 @@ point this thread holds nothing on the ledger. A gate lease is therefore an
 ordinary top-level claim that waits in line; with nothing held, waiting cannot
 deadlock.
 
-A gate that cannot get capacity in time is not run and not passed: it reports
-UNAVAILABLE, which `gate_recovery` routes to a human rather than to the
-stage's agent, because no agent can fix a busy machine.
+A gate keeps its place in line for as long as the line moves
+(`capacity_line`); an orderly line of test suites is a wait, not a failure
+(lg-machine-resource-2112). A gate whose line stalls is not run and not passed:
+it reports UNAVAILABLE, which `gate_recovery` blocks as a harness problem for a
+person rather than handing to the stage's agent, because no agent can fix a
+busy machine.
 
 Amended by lg-machine-resource-1923. A gate handed its run's parent lease
 (`parent_lease_id`) claims a **child** of it and never queues: the thread asking
@@ -35,20 +38,22 @@ from loregarden.models.domain import (
     DockerHolderKind,
     DockerLease,
     DockerLeaseEndReason,
+    OrchestrationRun,
     Ticket,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.capacity_children import reserve_child
 from loregarden.services.capacity_environment import child_environment
+from loregarden.services.capacity_line import wait_while_line_moves
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
     DockerReservation,
     release_lease,
     reserve,
-    wait_for_grant,
 )
 from loregarden.services.docker_ledger import OCCUPYING
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, select, update
 
 logger = logging.getLogger(__name__)
 
@@ -131,15 +136,25 @@ def acquire_gate_capacity(
         ttl_seconds=ttl_seconds,
     )
     if reservation.state is DockerGrantState.QUEUED:
-        budget = settings.gate_capacity_wait_seconds if wait_seconds is None else wait_seconds
+        stall = settings.gate_capacity_wait_seconds if wait_seconds is None else wait_seconds
         logger.warning(
-            "Gates %s for %s are waiting up to %.0fs for host capacity: %s",
+            "Gates %s for %s are waiting in line for host capacity (giving up only if "
+            "nothing ahead finishes for %.0fs): %s",
             transition,
             label,
-            budget,
+            stall,
             reservation.message,
         )
-        reservation = wait_for_grant(session, reservation, budget=budget)
+        reservation = wait_while_line_moves(
+            session,
+            reservation,
+            stall_seconds=stall,
+            on_poll=(
+                (lambda: _renew_run_lease(session, orchestration_run_id))
+                if orchestration_run_id
+                else None
+            ),
+        )
 
     if reservation.granted:
         return GateLease(lease_id=reservation.lease_id, env=child_environment(reservation, {}))
@@ -147,7 +162,23 @@ def acquire_gate_capacity(
         release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
     raise GateCapacityUnavailable(
         f"Gate commands for {transition} did not run: no {footprint.value} host capacity "
-        f"({reservation.error_kind or 'still queued'}) — {reservation.message}"
+        f"({reservation.error_kind or 'the line stopped moving'}) — {reservation.message}"
+    )
+
+
+def _renew_run_lease(session: Session, orchestration_run_id: str) -> None:
+    """The orchestration waiting on this gate is alive; say so on its lease.
+
+    The lease is renewed at stage boundaries only, and a gate waiting in line
+    sits between two of them with no agent run in flight to vouch for it. Past
+    `ORCHESTRATION_LEASE` the sweep would settle the run as abandoned while its
+    driver was faithfully waiting — the lease-expiry half of run_f4bf51.
+    """
+    session.exec(
+        update(OrchestrationRun)
+        .where(col(OrchestrationRun.id) == orchestration_run_id)
+        .values(last_seen_at=utcnow())
+        .execution_options(synchronize_session=False)
     )
 
 

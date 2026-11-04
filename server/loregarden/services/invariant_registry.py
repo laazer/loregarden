@@ -55,6 +55,10 @@ from loregarden.services.parallel_queue import (
 )
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
+from loregarden.services.reference_survey.carrier_settlement import (
+    carriers_behind_finished_passes,
+    finish_carriers,
+)
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
@@ -74,6 +78,10 @@ from loregarden.services.tree_publish_scheduler import (
     published_cards_held,
 )
 from loregarden.services.unasked_awaits import block_unasked_awaits, unasked_awaits
+from loregarden.services.unavailable_gate_blocks import (
+    refile_as_harness,
+    work_blocks_from_unavailable_gates,
+)
 from loregarden.services.unpublished_trees import publish_trees as _publish_unpublished_trees
 from loregarden.services.unpublished_trees import violations as _unpublished_tree_violations
 from loregarden.services.unresolved_ledger import (
@@ -1264,15 +1272,87 @@ RUNS_COMPLETE_ONCE = Invariant(
     ),
 )
 
+
+def _unavailable_gate_work_blocks(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=block.ticket.id,
+            ticket_id=block.ticket.id,
+            entered_at=block.classified_at,
+            detail=f"blocked as work on '{block.stage_key}', where the gate never ran",
+        )
+        for block in work_blocks_from_unavailable_gates(session)
+    ]
+
+
+def _refile_as_harness(session: Session, violations: Sequence[Violation]) -> int:
+    return refile_as_harness(session, [violation.subject_id for violation in violations])
+
+
+UNAVAILABLE_GATES_ARE_NOT_WORK = Invariant(
+    name="unavailable_gates_are_not_work_blocks",
+    ticket="lg-machine-resource-2112",
+    statement=(
+        "no ticket is blocked as work by a gate that never ran: an UNAVAILABLE gate graded "
+        "nothing, so its block is the machine's (harness)"
+    ),
+    detect=_unavailable_gate_work_blocks,
+    repair=_refile_as_harness,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 4),
+    prevented_by=(
+        "server/tests/test_unavailable_gate_is_not_work.py"
+        "::test_an_unavailable_gate_blocks_as_harness_with_the_true_reason"
+    ),
+)
+
+
+def _open_carriers(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=item.carrier.id,
+            ticket_id=item.carrier.id,
+            entered_at=item.survey_pass.finished_at,
+            detail=f"pass {item.survey_pass.ordinal} finished; its carrier reads "
+            f"{item.carrier.state.value} at '{item.carrier.workflow_stage_key}'",
+        )
+        for item in carriers_behind_finished_passes(session)
+    ]
+
+
+def _finish_carriers(session: Session, violations: Sequence[Violation]) -> int:
+    return finish_carriers(session, [violation.subject_id for violation in violations])
+
+
+FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
+    name="finished_survey_passes_close_their_carrier",
+    ticket="lg-reference-sources-2018",
+    statement=(
+        "no survey carrier stays open, with nothing live behind it, once its pass is "
+        "finished: the pass is the carrier's only deliverable"
+    ),
+    detect=_open_carriers,
+    repair=_finish_carriers,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 11, 4),
+    expected_because=(
+        "a carrier's run can die after its agent finished the pass (a lease sweep, a server "
+        "restart, a transition gate that could not run), and only a clean run completion "
+        "finishes the carrier; this repair is that finish"
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     HELD_REPAIRS_READ_IN_PROGRESS,
     EXHAUSTED_GATES_BLOCK,
     EVERY_BLOCK_IS_SETTLED,
+    UNAVAILABLE_GATES_ARE_NOT_WORK,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,
     SURVEY_CARDS_CLOSE,
+    FINISHED_PASSES_CLOSE_THEIR_CARRIER,
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,

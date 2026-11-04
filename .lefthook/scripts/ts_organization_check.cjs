@@ -25,7 +25,7 @@ const crypto = require("crypto");
 // Loaded the first time something actually parses: top-level, this `require`
 // cost 455ms of every run — including the common stage transition that grades
 // no `.ts`/`.tsx` file at all (808). gate_client_modules.cjs keeps it lazy.
-const { parse } = require("./gate_client_modules.cjs");
+const { EX_UNAVAILABLE, parse } = require("./gate_client_modules.cjs");
 
 const MAX_FILE_LINES = 1200;
 const MAX_TSX_FILE_LINES = 1200;
@@ -237,6 +237,15 @@ class UnexaminableError extends Error {}
  */
 class UnexaminableFileError extends UnexaminableError {}
 
+/**
+ * The scope resolver never ran far enough to answer: no Python environment, a
+ * missing interpreter, a crash before it printed JSON. That is this machine,
+ * not the change, so it leaves as EX_UNAVAILABLE (69), which the orchestration
+ * runner sends to a person. Exiting 1 read as a violation and sent the stage's
+ * agent after code with none in it (lg-workflow-integrity-2111).
+ */
+class ScopeResolverUnavailableError extends UnexaminableError {}
+
 /** git's C-quoting escapes, as `quote_c_style` writes them. */
 const C_ESCAPES = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, "\\": 92, '"': 34 };
 
@@ -425,7 +434,9 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
   );
 
   if (emitted.error) {
-    throw new UnexaminableError(`could not run the scope resolver: ${emitted.error.message}`);
+    throw new ScopeResolverUnavailableError(
+      `could not run the scope resolver: ${emitted.error.message}`,
+    );
   }
   let payload;
   try {
@@ -434,7 +445,7 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
     // Anything that is not JSON means the resolver did not get far enough to
     // answer — a missing interpreter, an import failure, a crash. None of those
     // are "nothing to examine", so none of them may become a pass.
-    throw new UnexaminableError(
+    throw new ScopeResolverUnavailableError(
       `the scope resolver produced no usable answer (exit ${emitted.status}): ` +
         `${(emitted.stderr || emitted.stdout || "").trim().split("\n").slice(-3).join(" ")}`,
     );
@@ -774,5 +785,5 @@ try {
   // One handler for the one invariant: a scope this run could not resolve, and
   // a file it could not read, are both things it did not examine.
   console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
-  process.exit(1);
+  process.exit(err instanceof ScopeResolverUnavailableError ? EX_UNAVAILABLE : 1);
 }

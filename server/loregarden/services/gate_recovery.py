@@ -25,6 +25,7 @@ from loregarden.agents.registry import DEBUGGER_AGENT_ID
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
+    BlockKind,
     BlockOrigin,
     GateFaultAttribution,
     GateFixTier,
@@ -69,6 +70,22 @@ from loregarden.services.workflow_routing import apply_stage_route
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
+
+
+#: Why a gate that never ran gets no repair turn: there was nothing to repair.
+GATE_DID_NOT_RUN_REASON = (
+    "the gate never ran, so it found nothing in the work; its cause is the machine "
+    "(capacity, a missing tool), which no agent turn can fix"
+)
+
+
+def gate_did_not_run_summary(from_stage: str) -> str:
+    """The block's pointer for a gate that examined nothing."""
+    return (
+        f"Gate at '{from_stage}' could not run, so nothing was checked; not a "
+        "finding in this ticket's code. Fix the environment it reported (Timeline "
+        "tab), then requeue."
+    )
 
 
 class GateDecision(Enum):
@@ -197,12 +214,20 @@ class GateRecovery:
         if not result.ok:
             if result.outcome is GateOutcome.UNAVAILABLE:
                 # The gate could not run — a hung command, a binary not on
-                # PATH. That is a fact about the machine, and handing it to
-                # the stage's own agent buys a full CLI run that cannot
-                # possibly fix it, then re-runs a stage that already passed.
-                # Straight to a human.
+                # PATH, a capacity line that stopped moving. That is a fact
+                # about the machine, and handing it to the stage's own agent
+                # buys a full CLI run that cannot possibly fix it, then re-runs
+                # a stage that already passed. Straight to a human, as a
+                # harness block that says so: the default pointer read "gate
+                # failed", which classified as WORK and escalated as if the
+                # code were wrong (lg-machine-resource-2112).
                 self._block_after_gate_failure(
-                    ticket, orch_run, from_stage, clean_gate_detail(result)
+                    ticket,
+                    orch_run,
+                    from_stage,
+                    clean_gate_detail(result),
+                    blocking_summary=gate_did_not_run_summary(from_stage),
+                    harness=True,
                 )
                 return GateDecision.BLOCKED
             detail = clean_gate_detail(result)
@@ -283,11 +308,8 @@ class GateRecovery:
                 orch_run,
                 from_stage,
                 detail,
-                blocking_summary=(
-                    f"Gate at '{from_stage}' could not run, so nothing was checked; not a "
-                    "finding in this ticket's code. Fix the environment it reported (Timeline "
-                    "tab), then requeue."
-                ),
+                blocking_summary=gate_did_not_run_summary(from_stage),
+                harness=True,
             )
             return GateDecision.BLOCKED
 
@@ -580,6 +602,8 @@ class GateRecovery:
         from_stage: str,
         detail: str,
         blocking_summary: str = "",
+        *,
+        harness: bool = False,
     ) -> None:
         """Automatic fixes are exhausted: block the ticket for a person.
 
@@ -599,6 +623,9 @@ class GateRecovery:
         not the one this text describes. The gate that could not run is the case
         it was added for: "the gate failed" reads as "your code is wrong", and
         the operator would go looking for a violation that was never found.
+
+        `harness` is that same case's kind and reason: the gate never ran, so no
+        fix tier was tried and none was spent, and the block is the machine's.
         """
         self.callbacks.attach_artifact(
             ticket,
@@ -617,11 +644,14 @@ class GateRecovery:
             ticket,
             origin=BlockOrigin.CONTROL_PLANE,
             repair=RepairPolicy.withheld(
-                "the gate's automatic fixes, and any agent passes it allows, are spent"
+                GATE_DID_NOT_RUN_REASON
+                if harness
+                else "the gate's automatic fixes, and any agent passes it allows, are spent"
             ),
             stage_key=from_stage,
             message=(
                 blocking_summary
                 or f"Transition gate failed at '{from_stage}' — see the Timeline tab for details."
             ),
+            declared=BlockKind.HARNESS if harness else None,
         )
