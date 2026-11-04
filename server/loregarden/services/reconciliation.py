@@ -68,10 +68,12 @@ from loregarden.services.invariant_registry import (
     LANDED_WORK_IS_COMMITTED,
     LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
+    LANDINGS_CARRY_THE_WORK,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
+    RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
@@ -248,6 +250,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
     # kept, which is a handful, not one per ticket.
     _invariant(LANDED_WORK_IS_COMMITTED),
+    # Report-only, like the one above: a done ticket whose runs wrote files and
+    # whose landing merged none of them. `land_ticket` refuses that now; this
+    # reports one that reached done some other way. Only tickets resolved since
+    # the guard, so a handful of `rev-list`s a pass.
+    _invariant(LANDINGS_CARRY_THE_WORK),
     # A branch that merged a squash of its integration branch conflicts on every
     # later checkout merge (lg-external-harness-1318). The next checkout repairs
     # it too; this catches the idle ones and reports one entering after #654.
@@ -306,6 +313,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # (lg-machine-resource-1923). EXPECTED — a SIGKILL of the server skips
     # execute()'s `finally`.
     _invariant(RUN_PARENTS_END_WITH_THEIR_RUN),
+    # A run completed after it already had a final status: the later completion
+    # rewrote the verdict and wiped its stderr (lg-run-durability-2093). The repair
+    # writes the lost history back onto the row; the status is left as acted on.
+    _invariant(RUNS_COMPLETE_ONCE),
     # Last of the invariants: the only one that reaches the network, so a slow
     # or unreachable GitHub delays nothing else in the pass.
     SweepStep(

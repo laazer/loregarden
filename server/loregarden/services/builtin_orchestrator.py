@@ -51,7 +51,7 @@ from loregarden.services.review_relens import decide_lenses, record_relens_decis
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
-from loregarden.services.run_lease import lease_renewal
+from loregarden.services.run_lease import supervised
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -867,7 +867,7 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
         )
-        with run_capacity(self.session, agent_run), lease_renewal(agent_run.id):
+        with supervised(agent_run.id, run_capacity(self.session, agent_run)):
             completed = self.executor.execute(agent_run, ticket)
         self.session.refresh(ticket)
 
@@ -1149,7 +1149,7 @@ def _run_and_collect_parallel_results(
             # working the moment it outruns AGENT_RUN_LEASE. `run_has_renewer`
             # is True for these runs (no external harness), so the fail-closed
             # branch does not cover them.
-            with host_capacity_for_run(session, run), lease_renewal(run.id):
+            with supervised(run.id, host_capacity_for_run(session, run)):
                 completed = worker.execute(
                     run,
                     worker_ticket,

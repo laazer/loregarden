@@ -44,6 +44,7 @@ from loregarden.services.land_verification import (
     land_verifier,
     record_land_verification,
 )
+from loregarden.services.landing_carried_work import empty_landing
 from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
 from loregarden.services.target_branch import (
     ensure_integration_branch,
@@ -59,7 +60,11 @@ logger = logging.getLogger(__name__)
 
 
 class LandSkip(str, Enum):
-    """Why an ok landing merged nothing."""
+    """Why an ok landing merged nothing.
+
+    `NO_BRANCH` and `ALREADY_LANDED` are ok only when nothing the ticket's runs
+    wrote is left out; otherwise the landing is refused (`landing_carried_work`).
+    """
 
     #: The ticket never had a branch in the repository — nothing ran on it.
     NO_BRANCH = "no_branch"
@@ -176,7 +181,9 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
             # has no work in git to land. Skipped, and the event says so.
             return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_REPOSITORY)
         if not rev(repo_root, f"refs/heads/{branch}"):
-            return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH)
+            return _refuse_empty(session, ticket, repo_root, landing, base) or LandResult(
+                ok=True, branch=branch, target=target, skipped=LandSkip.NO_BRANCH
+            )
         # Before either leg (local merge or the base's publish chain): both carry
         # commits only, so work left in the tree would be left behind (1237).
         left_behind = _uncommitted(session, ticket, workspace)
@@ -187,7 +194,7 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
 
         ensure_integration_branch(repo_root, target, base)
 
-        held = _held_without_shared_history(session, ticket, repo_root, landing)
+        held = _held_without_shared_history(session, ticket, repo_root, landing, base)
         if held is not None:
             return held
 
@@ -262,13 +269,20 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     target = target_branch_name(session, ticket, workspace)
     if target == base_branch(workspace):
         return False
-    source_sha = rev(repo_root, f"refs/heads/{resolve_ticket_branch(ticket)}")
+    branch = resolve_ticket_branch(ticket)
+    source_sha = rev(repo_root, f"refs/heads/{branch}")
     target_sha = rev(repo_root, f"refs/heads/{target}")
     if not source_sha or not target_sha:
         return False
     if _uncommitted(session, ticket, workspace) is not None:
         # `land_ticket` would refuse it, so a sweep retrying on this answer
         # would re-block the ticket on every pass.
+        return False
+    if empty_landing(
+        session, ticket, repo_root, branch=branch, target=target, base=base_branch(workspace)
+    ):
+        # The same: a branch that carries none of the ticket's work previews
+        # clean, and `land_ticket` would refuse it again.
         return False
     return merge_preview(repo_root, target_sha, source_sha).ok
 
@@ -308,7 +322,7 @@ def _uncommitted(session: Session, ticket: Ticket, workspace: Workspace) -> str 
 
 
 def _held_without_shared_history(
-    session: Session, ticket: Ticket, repo_root: Path, landing: _Landing
+    session: Session, ticket: Ticket, repo_root: Path, landing: _Landing, base: str
 ) -> LandResult | None:
     """An already-landed result when the target holds the branch by a squash.
 
@@ -336,6 +350,13 @@ def _held_without_shared_history(
             target=target,
             detail=f"could not tell whether {target} already holds {branch}: {exc}",
         )
+    if holder:
+        # Held either way — by ancestry or by a squash — so a branch carrying
+        # none of the ticket's work is refused here, before the ancestry exit
+        # below records it as landed.
+        refused = _refuse_empty(session, ticket, repo_root, landing, base)
+        if refused is not None:
+            return refused
     if not holder or holder == branch_sha:
         return None
     if not (ticket.landed_branch == target and ticket.landed_sha == holder):
@@ -347,6 +368,24 @@ def _held_without_shared_history(
         landed_sha=holder,
         skipped=LandSkip.ALREADY_LANDED,
     )
+
+
+def _refuse_empty(
+    session: Session, ticket: Ticket, repo_root: Path, landing: _Landing, base: str
+) -> LandResult | None:
+    """A refusal for an exit that would merge nothing the ticket's runs wrote.
+
+    Checked on every exit that reports ok without merging — no branch, a branch
+    the target already holds by ancestry or by a squash — and before anything is
+    recorded, so a refused landing stamps no `landed_sha` and owes no receipt.
+    `landing_carried_work` holds the rule.
+    """
+    reason = empty_landing(
+        session, ticket, repo_root, branch=landing.branch, target=landing.target, base=base
+    )
+    if reason is None:
+        return None
+    return LandResult(ok=False, branch=landing.branch, target=landing.target, detail=reason)
 
 
 def _refresh_branch(repo_root: Path, branch: str, target: str) -> LandResult | None:
