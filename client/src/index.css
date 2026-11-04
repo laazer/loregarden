@@ -2642,13 +2642,16 @@ label:is(
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 10px 10px 10px 14px;
+  /* The chat page's card at the bar's own sizes: a sidebar is a column of
+     ~380px, and the page's 34px field at --fs-lead made the card the bulkiest
+     thing in it. The field and Send keep the bar's 28px. */
+  padding: 5px 5px 5px 12px;
   border: 1px solid var(--bd2);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--bg1);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 22%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--shadow) 18%, transparent);
 }
 
 .app-utility-dock--right .app-action-bar-compose .lg-composer-commands--bar {
@@ -2656,20 +2659,10 @@ label:is(
   min-width: 0;
 }
 
-.app-utility-dock--right .app-action-bar-input {
-  height: 34px;
-  font-size: var(--fs-lead);
-}
-
-.app-utility-dock--right .app-action-bar-send {
-  width: 48px;
-  height: 34px;
-}
-
 /* Under the input inside the card, the way the chat page's toolbar is. */
 .app-utility-dock--right .app-action-bar-sheet {
   order: 1;
-  padding: 8px 0 0;
+  padding: 6px 0 1px;
   border-bottom: none;
   border-top: 1px solid var(--bd);
 }
