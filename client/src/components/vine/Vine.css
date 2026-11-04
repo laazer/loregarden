@@ -46,6 +46,13 @@
   fill: var(--grn);
 }
 
+.vine-leaf-stem {
+  fill: none;
+  stroke: var(--grn);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+
 .vine-leaf-rib {
   fill: none;
   stroke: var(--onac);
