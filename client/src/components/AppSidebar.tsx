@@ -44,6 +44,7 @@ import {
   useState,
   type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -60,7 +61,9 @@ import { BrandMark } from "./BrandMark";
 import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
-import { SIDEBAR_GROUPS, SIDEBAR_PAGES } from "./appSidebarPages";
+import { SIDEBAR_GROUPS, SIDEBAR_PAGES, type SidebarPageDef } from "./appSidebarPages";
+import { quickActionsFor } from "./appSidebarQuickActions";
+import { SidebarQuickActionMenu, type QuickActionMenuState } from "./SidebarQuickActionMenu";
 import { SidebarRunningSection } from "./AppSidebarRunning";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -267,6 +270,31 @@ export function AppSidebar({
   const [draggingId, setDraggingId] = useState("");
   const [newViewOpen, setNewViewOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ViewSummary | null>(null);
+  const [quickMenu, setQuickMenu] = useState<QuickActionMenuState | null>(null);
+  const closeQuickMenu = useCallback(() => setQuickMenu(null), []);
+
+  /**
+   * Right-click (or the ContextMenu key, or Shift+F10) on a page with quick
+   * actions opens them at the pointer. A keyboard-fired event reports no
+   * pointer position, so the menu then sits beside the row instead.
+   */
+  const quickMenuOpener = (page: SidebarPageDef) => {
+    const actions = quickActionsFor(page.key);
+    if (actions.length === 0) return undefined;
+    return (event: ReactMouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      const row = event.currentTarget;
+      const fromKeyboard = event.clientX === 0 && event.clientY === 0;
+      const rect = row.getBoundingClientRect();
+      setQuickMenu({
+        label: page.label,
+        actions,
+        x: fromKeyboard ? rect.right : event.clientX,
+        y: fromKeyboard ? rect.top : event.clientY,
+        origin: row,
+      });
+    };
+  };
   const dockPreferred = useUiStore((s) => s.railDocked);
   const setDocked = useUiStore((s) => s.setRailDocked);
   // Below this the page needs the 136px more than the labels do, so the rail
@@ -543,6 +571,7 @@ export function AppSidebar({
                       page={page}
                       active={activeViewId === null && page.ownsPage(activePage)}
                       count={counts[page.key]}
+                      onContextMenu={quickMenuOpener(page)}
                     />
                   ))}
                 </ul>
@@ -677,6 +706,13 @@ export function AppSidebar({
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDelete}
       />
+      {quickMenu ? (
+        <SidebarQuickActionMenu
+          menu={quickMenu}
+          onClose={closeQuickMenu}
+          onSelect={(action) => navigate(action.to)}
+        />
+      ) : null}
     </>
   );
 }
