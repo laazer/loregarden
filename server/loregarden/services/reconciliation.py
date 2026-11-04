@@ -68,6 +68,7 @@ from loregarden.services.invariant_registry import (
     LANDED_WORK_IS_COMMITTED,
     LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
+    LANDINGS_CARRY_THE_WORK,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
@@ -248,6 +249,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
     # kept, which is a handful, not one per ticket.
     _invariant(LANDED_WORK_IS_COMMITTED),
+    # Report-only, like the one above: a done ticket whose runs wrote files and
+    # whose landing merged none of them. `land_ticket` refuses that now; this
+    # reports one that reached done some other way. Only tickets resolved since
+    # the guard, so a handful of `rev-list`s a pass.
+    _invariant(LANDINGS_CARRY_THE_WORK),
     # A branch that merged a squash of its integration branch conflicts on every
     # later checkout merge (lg-external-harness-1318). The next checkout repairs
     # it too; this catches the idle ones and reports one entering after #654.
