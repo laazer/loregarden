@@ -247,7 +247,13 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   // `findings.isError`: both halves are the fix. A held failure must win over
   // the pending state the operator's own Retry re-enters, or the pane unmounts
   // into "Loading findings…" and the reason goes with it.
-  if (failure) {
+  //
+  // `!all.length` is the other half: this pane is for the read that lost
+  // nothing. A failed re-read over findings already on screen keeps the list
+  // and says so inline below. Not `findings.isSuccess` — a read that succeeded
+  // with zero findings and then failed has nothing to lose either, and
+  // "Nothing to report" would be a health claim the monitor cannot make.
+  if (failure && !all.length) {
     return (
       <Centred role="alert">
         <div className="wm-error-title">Could not load monitor findings</div>
@@ -332,6 +338,19 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
           {findings.isFetching ? "Refreshing…" : "Refresh"}
         </button>
       </header>
+
+      {/* A failed re-read over data the operator is already reading keeps the
+          list and says so here, politely: `queryClient.ts`'s `queryCache.onError`
+          suppresses the query toast whenever `data !== undefined`, so this live
+          region is the only report of the failed read. Reaching this return
+          already means data is present and the last read failed, so `failure`
+          alone is the whole condition. */}
+      {failure && (
+        <p role="status" data-testid="wm-refresh-failed" className="wm-stale">
+          This list may be out of date — the last refresh failed.{" "}
+          {endSentence(describeError(failure.error, "The monitor endpoint did not answer."))}
+        </p>
+      )}
 
       {nothingShown && (
         <Centred>
