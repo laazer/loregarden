@@ -320,18 +320,6 @@ textarea::placeholder {
   background: var(--garden-ground);
 }
 
-/* The stars thin out down the screen like a sky over a horizon: lower down,
-   a lone star beside a table row reads as a status dot. The chat thread keeps
-   the whole sky, as it had before the backdrop took it over. Only the alpha of
-   the mask counts, so any opaque token does. */
-.app-ambient .garden-sky {
-  mask-image: linear-gradient(to bottom, var(--tx), transparent 35%);
-}
-
-.app-frame:has(.baxter-chat--garden) .app-ambient .garden-sky {
-  mask-image: none;
-}
-
 /*
  * Rail on the left; topbar + body (screen + utility dock) to its right.
  *
