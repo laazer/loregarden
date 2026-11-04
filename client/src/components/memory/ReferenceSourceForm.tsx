@@ -41,13 +41,27 @@ const OUTCOME_TEXT: Record<BulkAddItem["outcome"], string> = {
 
 const LICENCE_FIRST = "Its licence is checked before anything in it is read.";
 
-function announce(result: AddSourceResult, workspace: string) {
+/** `text` with `line` on a line of its own at the end, unless it already has it. */
+function withLine(text: string, line: string): string {
+  if (!line || text.split("\n").includes(line)) return text;
+  return text.trim() ? `${text.trimEnd()}\n${line}` : line;
+}
+
+/** `text` without the lines that are exactly `line`; what was typed around them stays. */
+function withoutLine(text: string, line: string): string {
+  return text
+    .split("\n")
+    .filter((existing) => existing !== line)
+    .join("\n");
+}
+
+function announce(result: AddSourceResult, workspaces: string[]) {
   const { source } = result;
   if (result.scoped_pass) {
     pushToast({
       tone: "success",
-      title: `${source.name} now serves ${workspace}`,
-      message: `It was already surveyed, so pass ${result.scoped_pass} reads it again for this workspace.`,
+      title: `${source.name} now serves ${workspaces.join(", ")}`,
+      message: `It was already surveyed, so pass ${result.scoped_pass} reads it again for these workspaces.`,
     });
   } else {
     pushToast({ tone: "success", title: `Added ${source.name} to the review queue`, message: LICENCE_FIRST });
@@ -82,7 +96,8 @@ export function BulkResults({ items }: { items: BulkAddItem[] }) {
 }
 
 /**
- * Add repositories or sites to the review queue, for this workspace: one, or
+ * Add repositories or sites to the review queue, for this workspace (ticked to
+ * start, and untickable when the research is for another project): one, or
  * several pasted together (separated by commas, tabs or new lines, or lifted
  * out of a pasted list or article) sharing one
  * question and reason. A person adding one is its admission, so it is queued at
@@ -112,30 +127,31 @@ export function ReferenceSourceForm({
   const [bulkKind, setBulkKind] = useState<SourceKind | typeof DETECT>(DETECT);
   const [question, setQuestion] = useState("");
   const [why, setWhy] = useState("");
-  const [topic, setTopic] = useState<TopicView | null>(null);
+  const [topics, setTopics] = useState<TopicView[]>([]);
 
-  // A chip fills the question and reason; un-picking it clears only what it filled.
-  function pickTopic(next: TopicView | null) {
-    if (next) {
-      setQuestion(next.question);
-      setWhy(next.why);
-    } else if (topic) {
-      if (question === topic.question) setQuestion("");
-      if (why === topic.why) setWhy("");
+  // Each chip adds its question and reason as a line; un-picking it removes only its lines.
+  function toggleTopic(topic: TopicView, on: boolean) {
+    if (on) {
+      setQuestion((text) => withLine(text, topic.question));
+      setWhy((text) => withLine(text, topic.why));
+      setTopics((picked) => [...picked, topic]);
+    } else {
+      setQuestion((text) => withoutLine(text, topic.question));
+      setWhy((text) => withoutLine(text, topic.why));
+      setTopics((picked) => picked.filter((item) => item.id !== topic.id));
     }
-    setTopic(next);
   }
   const [failure, setFailure] = useState("");
   // The refused source a failed add named, so the warning can open it.
   const [refusedId, setRefusedId] = useState<string | null>(null);
   const { search } = useLocation();
   const [results, setResults] = useState<BulkAddItem[]>([]);
-  const [alsoFor, setAlsoFor] = useState<string[]>([]);
+  const [readFor, setReadFor] = useState<string[]>([workspace]);
   const [initiativeIds, setInitiativeIds] = useState<string[]>([]);
-  const workspaceSlugs = [
-    workspace,
-    ...alsoFor.filter((slug) => slug !== workspace),
-  ];
+  // The first is the source's home; this workspace stays first while it is ticked.
+  const workspaceSlugs = readFor.includes(workspace)
+    ? [workspace, ...readFor.filter((slug) => slug !== workspace)]
+    : readFor;
   const ids = {
     title: useId(),
     url: useId(),
@@ -198,7 +214,7 @@ export function ReferenceSourceForm({
       }),
     onSuccess: (result) => {
       setFailure("");
-      announce(result, workspace);
+      announce(result, workspaceSlugs);
       refresh();
       onDone(result);
     },
@@ -233,7 +249,8 @@ export function ReferenceSourceForm({
 
   const pending = add.isPending || addMany.isPending;
   const tooMany = several && urls.length > MAX_BULK_URLS;
-  const ready = several ? urls.length > 0 && !tooMany : Boolean(url.trim());
+  const ready =
+    workspaceSlugs.length > 0 && (several ? urls.length > 0 && !tooMany : Boolean(url.trim()));
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!ready || pending) return;
@@ -374,18 +391,21 @@ export function ReferenceSourceForm({
             </div>
           )}
           <ReferenceTargetsPicker
-            fixedWorkspaces={[workspace]}
-            workspaces={alsoFor}
-            onWorkspaces={setAlsoFor}
+            workspaces={readFor}
+            onWorkspaces={setReadFor}
             initiatives={initiativeIds}
             onInitiatives={setInitiativeIds}
           />
           <p className="rl-muted rl-optional-note">
             That is enough to review {several ? "them" : "it"}: the survey reads
-            for those workspaces and initiatives. Pick a topic, or add specifics
+            for those workspaces and initiatives. Pick topics, or add specifics
             below, to narrow it.
           </p>
-          <TopicChips selected={topic?.id ?? null} onPick={pickTopic} label="What to look for" />
+          <TopicChips
+            selected={topics.map((topic) => topic.id)}
+            onToggle={toggleTopic}
+            label="What to look for"
+          />
           <div className="rl-field">
             <label htmlFor={ids.question}>
               What should the survey answer from {several ? "them" : "it"}?

@@ -32,10 +32,13 @@ function toggle(list: string[], value: string, on: boolean): string[] {
  * Who a review is for: the workspaces it reads for (one reading serves them all)
  * and the initiatives its tickets join. Workspaces the source already serves,
  * and initiatives already following it, show as fixed so the choice reads as
- * "and also".
+ * "and also". A form that lets them be unticked passes them as
+ * `servedWorkspaces` and pre-ticks them instead: they keep their label but are
+ * a choice, and the form needs at least one workspace ticked.
  */
 export function ReferenceTargetsPicker({
-  fixedWorkspaces,
+  fixedWorkspaces = [],
+  servedWorkspaces = [],
   workspaces,
   onWorkspaces,
   fixedInitiatives = [],
@@ -45,7 +48,9 @@ export function ReferenceTargetsPicker({
   labels = REVIEW_LABELS,
 }: {
   /** Already served (or the workspace being added from): shown checked, not editable. */
-  fixedWorkspaces: string[];
+  fixedWorkspaces?: string[];
+  /** Already served, but untickable: labelled as fixed ones are, and ticked by the caller. */
+  servedWorkspaces?: string[];
   workspaces: string[];
   onWorkspaces: (next: string[]) => void;
   /** Initiative ids already following the source. */
@@ -64,6 +69,7 @@ export function ReferenceTargetsPicker({
   });
   const activeWorkspaces = (workspaceList.data ?? []).filter((w) => !w.archived_at);
   const openInitiatives = (initiativeList.data ?? []).filter((i) => !SETTLED.has(i.state));
+  const noneTicked = fixedWorkspaces.length === 0 && workspaces.length === 0;
 
   return (
     <div className="rl-targets">
@@ -75,11 +81,12 @@ export function ReferenceTargetsPicker({
         ) : workspaceList.isError ? (
           <span className="rl-warn" role="status">
             Could not list workspaces ({describeError(workspaceList.error, "the request failed")}); it reads for{" "}
-            {fixedWorkspaces.join(", ")} only.
+            {[...fixedWorkspaces, ...workspaces].join(", ") || "no workspace"} only.
           </span>
         ) : (
           activeWorkspaces.map((workspace) => {
             const fixed = fixedWorkspaces.includes(workspace.slug);
+            const already = fixed || servedWorkspaces.includes(workspace.slug);
             return (
               <label key={workspace.slug} className="rl-check-option">
                 <Input
@@ -89,12 +96,17 @@ export function ReferenceTargetsPicker({
                   onChange={(event) => onWorkspaces(toggle(workspaces, workspace.slug, event.target.checked))}
                 />
                 {workspace.slug}
-                {fixed ? <span className="rl-muted"> ({labels.fixedWorkspace})</span> : null}
+                {already ? <span className="rl-muted"> ({labels.fixedWorkspace})</span> : null}
               </label>
             );
           })
         )}
         </div>
+        {noneTicked && workspaceList.isSuccess ? (
+          <span className="rl-warn" role="status">
+            Tick at least one workspace to read it for.
+          </span>
+        ) : null}
       </fieldset>
       {showInitiatives ? (
         <fieldset className="rl-target-group">

@@ -99,7 +99,11 @@ export function ReferenceDiscoverButton({ workspace }: { workspace: string }) {
             <IconCloseButton disabled={start.isPending} onClick={close} />
           </div>
           <div className="modal-body rl-modal-body">
-            <TopicChips selected={topic?.id ?? null} onPick={setTopic} label="Topic" />
+            <TopicChips
+              selected={topic ? [topic.id] : []}
+              onToggle={(picked, on) => setTopic(on ? picked : null)}
+              label="Topic"
+            />
             {topic ? <p className="rl-muted rl-optional-note">Each find is read for: {topic.question}</p> : null}
             <div className="rl-add-row">
               <div className="rl-field rl-field--grow">

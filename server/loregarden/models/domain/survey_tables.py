@@ -195,6 +195,9 @@ class SurveyPass(SQLModel, table=True):
         sa_column=str_enum_column(SurveyPassStatus, SurveyPassStatus.QUEUED, index=True),
     )
     question: str = ""
+    #: Workspace slugs this pass reads for, when a review narrowed it to some of
+    #: those its source serves; "[]" reads for all of them (`pass_workspaces`).
+    workspaces_json: str = "[]"
     #: Map paths this pass is assigned. Bounding a pass by the map is what makes
     #: its coverage predictable rather than "whatever fit in one context".
     slice_json: str = "[]"

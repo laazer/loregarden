@@ -100,6 +100,16 @@ def target_workspaces(
     return [(w, link) for w, link in rows]
 
 
+def pass_workspaces(session: Session, survey_pass: SurveyPass) -> list[str]:
+    """The workspaces a pass reads for: its own narrowed list, else all its source serves.
+
+    A review can be for some of them only ("research this for blobert"); the
+    source keeps serving the rest, and later passes read for all of them again.
+    """
+    narrowed: list[str] = json.loads(survey_pass.workspaces_json)
+    return narrowed or [w.slug for w, _ in target_workspaces(session, survey_pass.source_id)]
+
+
 def _attach(
     session: Session, source: SurveySource, workspaces: list[Workspace], question: str, why: str
 ) -> list[str]:

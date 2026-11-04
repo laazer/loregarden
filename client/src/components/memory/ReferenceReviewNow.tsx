@@ -30,8 +30,10 @@ export function ReviewNowButton({
 
 /**
  * Review a source now, choosing who it is for: more workspaces to read for and
- * initiatives its tickets join. A surveyed source also takes the question its
- * new pass answers (its own question to start); a queued pass keeps its own.
+ * initiatives its tickets join. Workspaces it already serves start ticked and
+ * can be unticked, so a loregarden source can be read for another project
+ * alone; it keeps serving them all. A surveyed source also takes the question
+ * its new pass answers (its own question to start); a queued pass keeps its own.
  */
 export function ReviewForm({
   sourceId,
@@ -56,7 +58,7 @@ export function ReviewForm({
   const review = useReviewNow(sourceId, name);
   const [open, setOpen] = useState(false);
   const [asked, setAsked] = useState(question ?? "");
-  const [workspaces, setWorkspaces] = useState<string[]>([]);
+  const [workspaces, setWorkspaces] = useState<string[]>(served);
   const [initiatives, setInitiatives] = useState<string[]>([]);
   const ids = { title: useId(), question: useId(), reason: useId() };
   const [reason, setReason] = useState("");
@@ -64,9 +66,11 @@ export function ReviewForm({
   const needsQuestion = question !== null;
   function close() {
     setOpen(false);
-    setWorkspaces([]);
+    setWorkspaces(served);
     setInitiatives([]);
   }
+  const added = workspaces.filter((slug) => !served.includes(slug));
+  const narrowed = served.some((slug) => !workspaces.includes(slug));
   return (
     <>
       <Button variant="primary" compact aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(true)}>
@@ -77,12 +81,13 @@ export function ReviewForm({
           aria-label={`Review ${name} now`}
           onSubmit={(event) => {
             event.preventDefault();
-            if (review.isPending) return;
+            if (review.isPending || workspaces.length === 0) return;
             review.mutate(
               {
                 question: needsQuestion ? asked.trim() : "",
-                workspace_slugs: workspaces,
+                workspace_slugs: added,
                 initiative_ids: initiatives,
+                ...(narrowed ? { only_for: workspaces } : {}),
                 ...(needsReason ? { reason: reason.trim() } : {}),
               },
               { onSuccess: close },
@@ -116,7 +121,7 @@ export function ReviewForm({
               </>
             ) : null}
             <ReferenceTargetsPicker
-              fixedWorkspaces={served}
+              servedWorkspaces={served}
               workspaces={workspaces}
               onWorkspaces={setWorkspaces}
               fixedInitiatives={following}
@@ -134,7 +139,11 @@ export function ReviewForm({
             <Button variant="secondary" disabled={review.isPending} onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={review.isPending || (needsReason && !reason.trim())}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={review.isPending || workspaces.length === 0 || (needsReason && !reason.trim())}
+            >
               {review.isPending ? "Starting…" : "Review now"}
             </Button>
           </div>

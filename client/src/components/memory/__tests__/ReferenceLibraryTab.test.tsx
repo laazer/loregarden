@@ -640,7 +640,9 @@ describe("who a review is for", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
     const form = screen.getByRole("form", { name: "Add a reference" });
     const readFor = within(form).getByRole("group", { name: "Read it for" });
-    expect(await within(readFor).findByRole("checkbox", { name: /loregarden/ })).toBeDisabled();
+    const home = await within(readFor).findByRole("checkbox", { name: /loregarden/ });
+    expect(home).toBeChecked();
+    expect(home).toBeEnabled();
     expect(within(readFor).queryByRole("checkbox", { name: /old-one/ })).not.toBeInTheDocument();
     fireEvent.click(within(readFor).getByRole("checkbox", { name: "blobert" }));
     const feed = within(form).getByRole("group", { name: "Feed its tickets into" });
@@ -682,6 +684,48 @@ describe("who a review is for", () => {
         /it now reads for blobert too; init-survey-1 now follow it\./,
       ),
     );
+  });
+
+  it("adds a reference for another project alone, and needs one workspace ticked", async () => {
+    mockApi.addReferenceSource.mockResolvedValue({
+      source: row({ id: "new2", name: "retry-kit", state: "queued", approval_id: null }),
+      attached: ["blobert"], scoped_pass: null, initiatives_linked: [],
+    });  // prettier-ignore
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    const readFor = within(form).getByRole("group", { name: "Read it for" });
+    fireEvent.change(within(form).getByRole("textbox", { name: "URL" }), { target: { value: "https://github.com/acme/retry-kit" } });
+    fireEvent.click(await within(readFor).findByRole("checkbox", { name: /loregarden/ }));
+    expect(within(readFor).getByRole("status")).toHaveTextContent("Tick at least one workspace");
+    expect(within(form).getByRole("button", { name: "Add to queue" })).toBeDisabled();
+    fireEvent.click(within(readFor).getByRole("checkbox", { name: "blobert" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Add to queue" }));
+    await waitFor(() =>
+      expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
+        workspace_slugs: ["blobert"], kind: "repo", url: "https://github.com/acme/retry-kit",
+        question: "", queued_reason: "", initiative_ids: [],
+      }),
+    );  // prettier-ignore
+  });
+
+  it("reviews a source for another project alone, leaving out a workspace it serves", async () => {
+    mockApi.reviewSourceNow.mockResolvedValue({
+      started: true, ordinal: 26, carrier: "lg-survey-11", waiting: "", refused: "",
+      workspaces_added: ["blobert"], initiatives_linked: [],
+    });  // prettier-ignore
+    renderAt(`/memory/library/${DEEP.source.id}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Review again now…" }));
+    const form = screen.getByRole("form", { name: `Review ${DEEP.source.name} now` });
+    fireEvent.click(await within(form).findByRole("checkbox", { name: /loregarden/ }));
+    expect(within(form).getByRole("button", { name: "Review now" })).toBeDisabled();
+    fireEvent.click(within(form).getByRole("checkbox", { name: "blobert" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Review now" }));
+    await waitFor(() =>
+      expect(mockApi.reviewSourceNow).toHaveBeenCalledWith(DEEP.source.id, {
+        question: DEEP.source.question, workspace_slugs: ["blobert"], initiative_ids: [], only_for: ["blobert"],
+      }),
+    );  // prettier-ignore
   });
 
   it("says when workspaces could not be listed instead of offering none", async () => {
@@ -808,6 +852,24 @@ describe("quick-add topics and finding sources", () => {
     fireEvent.click(memory);
     expect(question).toHaveValue("My own question");
     expect(within(form).getByRole("textbox", { name: /Why this one\?/ })).toHaveValue("");
+  });
+
+  it("takes several topics at once, one line each, and unpicking one removes only its line", async () => {
+    renderAt("/memory/library?view=queue");
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reference" }));
+    const form = screen.getByRole("form", { name: "Add a reference" });
+    const topics = await within(form).findByRole("group", { name: "What to look for" });
+    const memory = within(topics).getByRole("button", { name: "Improved memory layer" });
+    const ux = within(topics).getByRole("button", { name: "UI/UX improvements and inspiration" });
+    fireEvent.click(memory);
+    fireEvent.click(ux);
+    expect(memory).toHaveAttribute("aria-pressed", "true");
+    expect(ux).toHaveAttribute("aria-pressed", "true");
+    const question = within(form).getByRole("textbox", { name: /What should the survey answer from it\?/ });
+    expect(question).toHaveValue(`${TOPICS[0].question}\n${TOPICS[1].question}`);
+    fireEvent.click(memory);
+    expect(question).toHaveValue(TOPICS[1].question);
+    expect(within(form).getByRole("textbox", { name: /Why this one\?/ })).toHaveValue(TOPICS[1].why);
   });
 
   it("starts a search for a topic, narrowed and sized, for more workspaces", async () => {

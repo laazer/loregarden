@@ -15,16 +15,16 @@ export function useTopics() {
 }
 
 /**
- * One pressed chip per topic. Picking one hands the caller the topic (to fill a
- * form, or to search for); picking it again hands back null.
+ * One pressed chip per topic. Pressing one hands the caller the topic and
+ * whether it is now on; the caller decides whether several may be on at once.
  */
 export function TopicChips({
   selected,
-  onPick,
+  onToggle,
   label,
 }: {
-  selected: SurveyTopic | null;
-  onPick: (topic: TopicView | null) => void;
+  selected: readonly SurveyTopic[];
+  onToggle: (topic: TopicView, on: boolean) => void;
   label: string;
 }) {
   const topics = useTopics();
@@ -42,7 +42,7 @@ export function TopicChips({
   return (
     <div className="rl-topics" role="group" aria-label={label}>
       {topics.data.map((topic) => {
-        const on = selected === topic.id;
+        const on = selected.includes(topic.id);
         return (
           <Button
             key={topic.id}
@@ -51,7 +51,7 @@ export function TopicChips({
             className={`rl-chip${on ? " rl-chip--on" : ""}`}
             aria-pressed={on}
             title={topic.question}
-            onClick={() => onPick(on ? null : topic)}
+            onClick={() => onToggle(topic, !on)}
           >
             {topic.label}
           </Button>
