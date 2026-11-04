@@ -18,6 +18,12 @@ import { WorkspacesPage } from "../WorkspacesPage";
 
 jest.mock("../../api/client");
 jest.mock("../../api/localInstancesApi");
+jest.mock("../../api/mergeQueueApi", () => ({
+  ...jest.requireActual("../../api/mergeQueueApi"),
+  mergeQueueApi: {
+    queue: jest.fn().mockResolvedValue({ workspace_slug: "blobert", entries: [], head_id: null }),
+  },
+}));
 jest.mock("../../api/workspaceDashboardApi", () => ({
   ...jest.requireActual("../../api/workspaceDashboardApi"),
   workspaceDashboardApi: {

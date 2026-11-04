@@ -5,6 +5,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from loregarden.models.domain.process_enums import AgentTransport
+from loregarden.services.gh_account_env import prime_gh_user_env
 from loregarden.services.path_resolve import (
     expand_path,
     resolve_icloud_root,
@@ -172,6 +173,13 @@ class Settings(BaseSettings):
     ci_retry_limit: int = 3  # Fix turns per ticket between passing CI results
     ci_auto_fix_timeout: int = 600  # Agent run timeout for a fix turn, in seconds
     ci_log_retention_days: int = 30  # Failed-job logs kept on a CI result this long
+    # Merge queue (`services.merge_queue_loop`), advanced on the CI poll tick.
+    # A staged commit whose required checks have not all finished within this
+    # long is timed out, visibly, rather than waited on forever. CI runs ~7-15
+    # minutes; the margin covers a queued runner and one rerun.
+    merge_queue_check_timeout_seconds: float = 5400.0
+    # Restages one entry may take (base moved, push refused) before it fails.
+    merge_queue_max_attempts: int = 6
     # Parallel Execution settings
     max_parallel_agents: int = 3  # Max concurrent agent runs (2-5)
     worktree_cleanup_delay_hours: int = 1  # Auto-cleanup after merge
@@ -284,6 +292,9 @@ def _prime_cursor_api_key_env() -> None:
 
 _prime_claude_oauth_token_env()
 _prime_cursor_api_key_env()
+# The `gh` account a publish acts as, for every launcher and not only
+# dev-server.sh in the primary checkout; see `gh_account_env`.
+prime_gh_user_env(repo_root=settings.repo_root)
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 

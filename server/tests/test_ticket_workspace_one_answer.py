@@ -62,7 +62,10 @@ MIN_FILES_SCANNED = 500
 #: `reference_survey/queue`'s SurveySource, both non-nullable). 29 since the
 #: merge of main's `worktree_receipt` (its Worktree-keyed lookup), again new
 #: code rather than new reach.
-NON_TICKET_LOOKUPS = 29
+#: 29, plus 2 from the merge queue (2026-11-03): `merge_queue.py` and
+#: `merge_queue_reports.py` read a `MergeQueueEntry`'s own workspace — the
+#: entry is the row, not a ticket — so they are out of this census by design.
+NON_TICKET_LOOKUPS = 31
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and

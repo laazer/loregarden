@@ -47,7 +47,15 @@ RECORD = os.environ.get("LOREGARDEN_RECORD_FIXTURES") == "1"
 
 #: Written at record time and therefore different on every run; pinned so the
 #: comparison is about shape and content, not the clock.
-_VOLATILE = {"checked_at", "created_at", "updated_at", "last_event_at", "since"}
+_VOLATILE = {
+    "checked_at",
+    "created_at",
+    "updated_at",
+    "last_event_at",
+    "since",
+    "enqueued_at",
+    "state_changed_at",
+}
 _PINNED = "2026-09-28T00:00:00Z"
 
 #: Ids the scenario does not fix (`make_workspace` mints a fresh one per build),
@@ -96,6 +104,9 @@ ENDPOINTS = {
         {"workspace_slug": "loregarden"},
     ),
     "reference-library-deep-source.json": ("/api/reference-library/{survey_deep}", {}),
+    # The workspace dashboard's merge queue: a head waiting on its checks, two
+    # behind it, one of each way an entry stops, and the recent merges.
+    "merge-queue-loregarden.json": ("/api/merge-queue/loregarden", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible

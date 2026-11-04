@@ -45,6 +45,9 @@ class McpTool(StrEnum):
     PIN_STAGE_AGENT = "loregarden_pin_stage_agent"
     LAND_TICKET = "loregarden_land_ticket"
     MERGE_PULL_REQUEST = "loregarden_merge_pull_request"
+    MERGE_QUEUE_STATUS = "loregarden_merge_queue_status"
+    ENQUEUE_MERGE = "loregarden_enqueue_merge"
+    DEQUEUE_MERGE = "loregarden_dequeue_merge"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
@@ -247,6 +250,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         # Names and sizes from the disk scan; `rescan` walks metadata only.
         McpTool.DISK_USAGE,
         McpTool.DOCKER_CAPACITY_STATUS,
+        # The queue's rows, plus one GitHub read of a testing entry's checks.
+        McpTool.MERGE_QUEUE_STATUS,
         McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
         McpTool.LIST_UI_ACTIONS,
@@ -385,6 +390,13 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     # its branch. Gated like any write (not auto-approved), and never a pipeline
     # stage's to call on the ticket it runs.
     McpTool.MERGE_PULL_REQUEST,
+    # The merge queue (lg-milestone-that-971): status reads; enqueue and
+    # dequeue are writes, gated like any write. Granting unattended landing
+    # without also pre-resolving every other permission is 494's to carry;
+    # these stay out of every auto-approved set until it does.
+    McpTool.MERGE_QUEUE_STATUS,
+    McpTool.ENQUEUE_MERGE,
+    McpTool.DEQUEUE_MERGE,
     McpTool.SUPERSEDE_TICKET,
     # Publishes to, and pulls from, a GitHub repository: an operator move on a
     # ticket, never something a stage does to the ticket it was dispatched for.

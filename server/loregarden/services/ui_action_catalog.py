@@ -45,6 +45,8 @@ class UiAction(StrEnum):
     QUEUE_PROMOTE = "queue.promote"
     QUEUE_CANCEL = "queue.cancel"
     CAPACITY_RELEASE = "capacity.release"
+    MERGE_QUEUE_RETRY = "merge_queue.retry"
+    MERGE_QUEUE_WITHDRAW = "merge_queue.withdraw"
     APPROVAL_RESOLVE = "approval.resolve"
     VIEW_CREATE = "view.create"
     VIEW_OPEN = "view.open"
@@ -247,6 +249,14 @@ class CapacityReleaseArgs(_Args):
     reason: str = Field(min_length=1, description="Kept on the lease, so its owner knows why.")
 
 
+class MergeQueueEntryArgs(_Args):
+    entry_id: str = Field(min_length=1)
+
+
+class MergeQueueWithdrawArgs(MergeQueueEntryArgs):
+    reason: str = Field("", description="Kept on the entry, so whoever finds it knows why.")
+
+
 class ApprovalResolveArgs(_Args):
     approval_id: str
 
@@ -438,6 +448,21 @@ CATALOG: dict[UiAction, UiActionSpec] = {
             "unaccounted, and a live waiter queues again at the back.",
             CapacityReleaseArgs,
             offered="on the Machine page, for a lease it lists (navigate.page machine)",
+        ),
+        UiActionSpec(
+            UiAction.MERGE_QUEUE_RETRY,
+            UiActionEffect.WRITE,
+            "Send a failed, timed-out or withdrawn merge queue entry to the back of the "
+            "queue, to be staged and tested again.",
+            MergeQueueEntryArgs,
+            offered="on a workspace's dashboard, for a merge queue entry it can retry",
+        ),
+        UiActionSpec(
+            UiAction.MERGE_QUEUE_WITHDRAW,
+            UiActionEffect.WRITE,
+            "Take an entry out of the merge queue. Refused once it is merging.",
+            MergeQueueWithdrawArgs,
+            offered="on a workspace's dashboard, for a merge queue entry it can withdraw",
         ),
         UiActionSpec(
             UiAction.APPROVAL_RESOLVE,

@@ -164,6 +164,8 @@ pre-push:
       # The script directories too: their ruff runs here, and their tests live
       # in server/tests (select_pytest_targets.py runs the full suite for them).
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+      skip:
+        - run: bash .lefthook/scripts/staged-push.sh server-tests
       interactive: true
       run: >-
         bash .lefthook/scripts/capacity-run.sh "pre-push server-tests"
@@ -180,6 +182,8 @@ pre-push:
     client-tests:
       name: Client tests (oxlint + tsc full + jest --changedSince)
       glob: "client/**/*.{ts,tsx,js,jsx,json}"
+      skip:
+        - run: bash .lefthook/scripts/staged-push.sh client-tests
       interactive: true
       run: >-
         bash .lefthook/scripts/capacity-run.sh "pre-push client-tests"
