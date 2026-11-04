@@ -44,19 +44,30 @@ Rules for this module:
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.main import app
-from loregarden.models.domain import BlockKind, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    BlockKind,
+    ProcessState,
+    RunStatus,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
+from loregarden.services.process_identity import liveness, record_process_identity
+from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
@@ -68,8 +79,6 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _scrubbed() -> dict:
-    import os
-
     env = dict(os.environ)
     for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
         env.pop(name, None)
@@ -251,6 +260,66 @@ _LOCKED_COMPLETION = (
     "[SQL: UPDATE artifacts SET run_id=?, content_json=?, created_at=? WHERE artifacts.id = ?]\n"
     "(Background on this error at: https://sqlalche.me/e/20/e3q8)"
 )
+
+
+@pytest.fixture
+def run_whose_identity_ps_could_not_read(db_session) -> AgentRun:
+    """A run recorded while `ps` would not answer about its pid.
+
+    The loaded-machine condition of lg-run-durability-679, made deterministic:
+    `subprocess.run` raises `TimeoutExpired` across the write, so `identify`
+    answers UNKNOWN and `record_process_identity` has no stamp to store.
+
+    In a fixture, not the test body, because `xfail` absorbs call-phase
+    failures: a broken setup here would report XFAIL and prove nothing.
+    """
+    ticket = TicketService(db_session).create_ticket(
+        workspace_slug="loregarden",
+        title="unknown identity at spawn",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    run = AgentRun(
+        run_code="rc_unknown_identity",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="backend_implementer",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    def times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    with patch("loregarden.services.process_identity.subprocess.run", times_out):
+        record_process_identity(run.id, os.getpid())
+
+    db_session.expire_all()
+    return db_session.get(AgentRun, run.id)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason='lg-run-durability-679 — open: record_process_identity stores "" on an UNKNOWN '
+    "reading and liveness() short-circuits that to GONE without probing; see the spec "
+    "document R5 for the full defect and the two candidate fixes",
+)
+def test_a_run_whose_identity_could_not_be_read_is_unknown_not_gone(
+    run_whose_identity_ps_could_not_read: AgentRun,
+) -> None:
+    """AC1's own sentence, on the write side.
+
+    `identify` distinguishes "could not tell" from "gone"; the stored column
+    does not. A `ps` that times out at the moment a run is spawned therefore
+    makes that run permanently unadoptable: every consumer reads GONE, so no
+    UNKNOWN branch fires, `runs_to_spare` will not spare it, the boot reaper
+    fails it, and `_watch` never renews. The process is alive the whole time.
+    """
+    stored = run_whose_identity_ps_could_not_read
+
+    assert stored.agent_pid == os.getpid()
+    assert liveness(stored.agent_pid, stored.agent_pid_identity) is ProcessState.UNKNOWN
 
 
 @pytest.mark.xfail(

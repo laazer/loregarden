@@ -11,6 +11,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    MergeQueueEntry,
     Ticket,
     TicketState,
     WorkItemType,
@@ -296,7 +297,7 @@ def test_a_child_landing_publishes_the_tree_before_the_root_finishes(session, wo
     assert (ms.landed_branch, ms.landed_sha) == (target, tip)
 
 
-def test_tree_switches_open_and_auto_merge_the_trees_pr_and_leave_chat_push_only(
+def test_tree_switches_open_the_trees_pr_and_queue_it_and_leave_chat_push_only(
     session, workspace, repo
 ):
     policy = {"commit": True, "push": True, "tree_open_pr": True, "tree_auto_merge": True}
@@ -317,8 +318,10 @@ def test_tree_switches_open_and_auto_merge_the_trees_pr_and_leave_chat_push_only
     assert outcome.ok and outcome.pr_url.endswith("/pull/7")
     create = next(c for c in calls if c[:2] == ["pr", "create"])
     assert create[create.index("--head") + 1] == publish_ref_for(target)
-    merge = next(c for c in calls if c[:2] == ["pr", "merge"])
-    assert "--auto" in merge and "--squash" in merge
+    assert not [c for c in calls if c[:2] == ["pr", "merge"]], "the merge queue merges, not gh"
+    [queued] = session.exec(select(MergeQueueEntry)).all()
+    assert (queued.ticket_id, queued.pr_number) == (ms.id, 7)
+    assert (queued.source_branch, queued.pr_head_branch) == (target, publish_ref_for(target))
     # The chain a chat turn runs is the plain one: no PR, no merge.
     assert enabled_steps(resolve_git_automation(workspace, ms)) == ["commit", "push"]
 

@@ -308,3 +308,40 @@ def test_the_label_names_the_branch_once(tmp_path, fake_cli, worktree, branch, p
 
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "label").read_text() == f"pre-push test · {place}"
+
+
+def test_a_command_under_a_held_parent_reserves_as_a_child_or_not_at_all(
+    tmp_path, fake_cli
+) -> None:
+    """lg-machine-resource-1923 R8c. A command run inside a held lease nests.
+
+    `loregarden capacity run` defaults `--parent-lease` to
+    `$LOREGARDEN_CAPACITY_LEASE_ID`, which is how a gate command — whose
+    environment `capacity_environment.child_environment` has stamped with the
+    gate child's lease id — reserves as a grandchild rather than queueing behind
+    its own top-level claim. That only works if this wrapper passes the variable
+    through, and it strips or rewrites several `LOREGARDEN_*` names on the way.
+
+    This pins the hang seen on lg-external-harness-1026: with the parent held by
+    the same thread, a top-level claim from inside it waits for room that only
+    its own completion frees. A child never waits, so the nesting is not an
+    optimisation — it is what stops the deadlock.
+    """
+    env = _env(tmp_path, fake_cli, LOREGARDEN_CAPACITY_LEASE_ID="lease-parent-1")
+    reader = tmp_path / "seen-lease"
+
+    result = subprocess.run(
+        _wrap("sh", "-c", f'printf "%s" "$LOREGARDEN_CAPACITY_LEASE_ID" > {reader}'),
+        env=env,
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert reader.read_text() == "lease-parent-1", (
+        "the wrapper dropped the held lease; the CLI inside it would then take a "
+        "top-level claim and wait behind the very lease that is holding it"
+    )

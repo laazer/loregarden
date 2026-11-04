@@ -57,6 +57,10 @@ NEEDS_A_WRITTEN_ARTIFACT = "loregarden_read_artifact"
 #   has neither, and its honest answer here is a refusal. test_pull_request_merge.py
 #   drives it over MCP against a fake GitHub.
 NEEDS_A_MERGEABLE_PULL_REQUEST = "loregarden_merge_pull_request"
+#   loregarden_enqueue_merge / _dequeue_merge -> enqueue needs a tree branch and an
+#   open PR GitHub answers for, and dequeue an entry enqueue made; the seed has
+#   neither. test_merge_queue_tools.py drives both over MCP.
+NEEDS_A_QUEUED_PULL_REQUEST = frozenset({"loregarden_enqueue_merge", "loregarden_dequeue_merge"})
 NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
     {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
 )
@@ -220,6 +224,7 @@ def _args_for(
         "loregarden_unlink_relation": {"ticket_id": ticket_id, "related_to": prereq_id},
         "loregarden_get_ticket_by_external": {"workspace_slug": ws, "external_id": external_id},
         "loregarden_list_tickets": {"workspace_slug": ws},
+        "loregarden_merge_queue_status": {"workspace_slug": ws},
         "loregarden_memory_status": {"workspace_slug": ws},
         "loregarden_search_memory": {"query": "smoke", "workspace_slug": ws},
         "loregarden_upsert_memory": {
@@ -470,6 +475,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_unlink_relation",
         "loregarden_get_ticket_by_external",
         "loregarden_list_tickets",
+        "loregarden_merge_queue_status",
         "loregarden_memory_status",
         "loregarden_search_memory",
         "loregarden_upsert_memory",
@@ -534,6 +540,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
         *NEEDS_A_DISPATCHED_SURVEY_PASS,
+        *NEEDS_A_QUEUED_PULL_REQUEST,
     }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"

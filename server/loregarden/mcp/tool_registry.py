@@ -43,6 +43,7 @@ from loregarden.mcp.github_issue_tool import sync_github_issues
 from loregarden.mcp.initiative_membership_tools import HANDLERS as INITIATIVE_MEMBERSHIP_HANDLERS
 from loregarden.mcp.initiative_plan_tools import HANDLERS as INITIATIVE_PLAN_HANDLERS
 from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDLERS
+from loregarden.mcp.merge_queue_tools import HANDLERS as MERGE_QUEUE_HANDLERS
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
 from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
@@ -92,5 +93,6 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **DOCUMENT_HANDLERS,
     **UX_ANSWERS_HANDLERS,
     **FIX_COVERAGE_HANDLERS,
+    **MERGE_QUEUE_HANDLERS,
     **SURVEY_HANDLERS,
 }

@@ -69,6 +69,7 @@ from loregarden.services.invariant_registry import (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
+    RUN_PARENTS_END_WITH_THEIR_RUN,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
@@ -289,6 +290,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # A recorded unresolved name that left OPEN without CLEAR/WAIVER is an
     # unaudited delete. Restore the previous OPEN; do not invent an audit row.
     _invariant(UNRESOLVED_OPEN_SHRINK_IS_AUDITED),
+    # A run-scoped host lease whose orchestration has ended: 0.5 cpu nobody is
+    # using, with a live `holder_pid` the reaper will therefore never judge
+    # (lg-machine-resource-1923). EXPECTED — a SIGKILL of the server skips
+    # execute()'s `finally`.
+    _invariant(RUN_PARENTS_END_WITH_THEIR_RUN),
     # Last of the invariants: the only one that reaches the network, so a slow
     # or unreachable GitHub delays nothing else in the pass.
     SweepStep(

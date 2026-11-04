@@ -21,7 +21,6 @@ from loregarden.models.domain import (
 )
 from loregarden.services import process_identity
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.process_identity import identify
 from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
 from loregarden.services.run_service import (
@@ -30,6 +29,7 @@ from loregarden.services.run_service import (
 )
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session
+from tests.process_probe import stamp_of
 
 
 def _ticket(session: Session) -> Ticket:
@@ -171,7 +171,7 @@ def sleeper_fixture():
 def test_the_orchestration_reaper_spares_a_run_whose_agent_process_is_alive(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     assert fail_interrupted_orchestration_runs(db_session) == []
 
@@ -182,12 +182,25 @@ def test_the_orchestration_reaper_spares_a_run_whose_agent_process_is_alive(db_s
 
 
 def test_the_orchestration_reaper_still_fails_a_run_whose_agent_process_is_gone(db_session):
+    """Not routed through `process_probe`.
+
+    This is a reaper test, not a test of the `ps -o lstart=` contract, and the
+    reading it needs is GONE. A real `ps` too busy to answer within
+    `_PS_TIMEOUT_SECONDS` reads UNKNOWN, which the reaper correctly spares — so
+    under load the assertions below go false instead of skipping. Patching `ps`
+    to the answer a dead pid gets makes GONE deterministic with no subprocess.
+    """
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
     # A pid nothing is behind: `liveness` answers GONE for it.
     child = _child(db_session, ticket, orch, pid=2**22 - 1, identity="not-a-live-process")
 
-    failed = fail_interrupted_orchestration_runs(db_session)
+    with mock.patch.object(
+        process_identity.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
+    ):
+        failed = fail_interrupted_orchestration_runs(db_session)
 
     assert [run.id for run in failed] == [orch.id]
     db_session.refresh(child)
@@ -197,7 +210,7 @@ def test_the_orchestration_reaper_still_fails_a_run_whose_agent_process_is_gone(
 def test_finishing_an_orchestration_leaves_a_live_child_process_its_row(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     OrchestrationCallbackService(db_session).complete_orchestration(
         orch, ticket, status=OrchestrationRunStatus.FAILED, message="stopped"
@@ -223,7 +236,7 @@ def _ps_times_out(args, *rest, **kwargs):
 def test_the_orchestration_reaper_spares_a_run_ps_cannot_answer_about(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
         assert fail_interrupted_orchestration_runs(db_session) == []
@@ -235,7 +248,7 @@ def test_the_orchestration_reaper_spares_a_run_ps_cannot_answer_about(db_session
 def test_finishing_an_orchestration_spares_a_child_ps_cannot_answer_about(db_session, sleeper):
     ticket = _ticket(db_session)
     orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING)
-    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=identify(sleeper.pid).stamp)
+    child = _child(db_session, ticket, orch, pid=sleeper.pid, identity=stamp_of(sleeper.pid))
 
     with mock.patch.object(process_identity.subprocess, "run", _ps_times_out):
         OrchestrationCallbackService(db_session).complete_orchestration(

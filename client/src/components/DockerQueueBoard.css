@@ -197,3 +197,48 @@
 .docker-holder-grid .queue-slot {
   min-height: 0;
 }
+
+/* The gate claims drawing on a run's parent lease, inside the parent's card.
+   Indented and rule-marked rather than drawn in the grid: the grid implies
+   peers, and a 0.5-cpu parent beside its 1-cpu child reads as 1.5 cpu of
+   machine to anyone adding the cards up. */
+.docker-child-leases {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.docker-child-lease {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docker-child-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.docker-child-what {
+  font-size: var(--fs-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-child-cost {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.docker-child-lease .docker-lease-actions {
+  flex: none;
+}
