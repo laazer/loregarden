@@ -461,10 +461,15 @@
   background: var(--bg0);
 }
 
+/* A drawn leaf (index.css's --leaf-mask), lifted off the vine; two rounded
+   corners on a square read as a pea pod. The mark keeps its 18px box so it
+   still sits on the vine where the buds do. */
 .ticket-part.is-done .ticket-part-mark {
-  border-color: var(--grn);
-  border-radius: 12px 2px 12px 2px;
+  border: 0;
+  border-radius: 0;
   background: var(--grn);
+  mask: var(--leaf-mask) center / 100% 50% no-repeat;
+  transform: rotate(-28deg);
 }
 
 .ticket-part.is-running .ticket-part-mark {
