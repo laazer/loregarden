@@ -21,6 +21,15 @@ LM Studio HTTP runner), and a kind that renews in two of them is a kind whose
 runs get killed on the third. The renewer here wraps `executor.execute` instead,
 so it measures exactly what the lease is supposed to mean — the thread
 supervising this run is still alive — for every adapter that exists now or later.
+
+**Renewed while the run waits for capacity, too.** A run is committed `RUNNING`
+before it queues for its host and docker leases, and that wait may last
+`agent_run_capacity_wait_seconds` (30 minutes) — three times the lease. Renewing
+only once capacity was granted let the sweep reap a run that was waiting its
+turn, and the waiting thread then launched the agent on the settled row anyway
+(run_f4bf51, 2026-11-03: 23 minutes in line, reaped at 10, a CLI spawned at 23).
+`supervised` is the one shape for both: renew, then wait, then check the run is
+still in flight before anything executes it.
 """
 
 from __future__ import annotations
@@ -29,7 +38,7 @@ import logging
 import os
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timedelta, timezone
 
 from loregarden.db.session import engine
@@ -215,3 +224,39 @@ def lease_renewal(
     finally:
         stop.set()
         thread.join(timeout=5)
+
+
+class RunSettledBeforeStart(RuntimeError):
+    """A run was settled while it waited to start, so nothing may execute it."""
+
+
+def ensure_still_in_flight(run_id: str) -> None:
+    """Raise unless `run_id` is still in flight.
+
+    Its own short-lived session, like `renew_agent_run_lease`: whatever settled
+    the run (a cancel, its orchestration ending) wrote on another connection,
+    and the session driving the run may not see it yet.
+    """
+    with Session(engine) as session:
+        run = session.get(AgentRun, run_id)
+        status = run.status if run is not None else None
+    if status in IN_FLIGHT:
+        return
+    raise RunSettledBeforeStart(
+        f"Run {run_id} was {status.value if status else 'deleted'} while it waited for "
+        "capacity; not starting its agent on a settled run."
+    )
+
+
+@contextmanager
+def supervised(run_id: str, capacity: AbstractContextManager[object]) -> Iterator[None]:
+    """Renew `run_id`'s lease, hold `capacity`, and refuse a run settled meanwhile.
+
+    The order is the point. The renewal wraps the capacity wait because the
+    thread waiting is the run's supervisor and is alive; the in-flight check
+    follows the wait because the run can be settled during it, and an agent
+    spawned on a settled row works for nobody.
+    """
+    with lease_renewal(run_id), capacity:
+        ensure_still_in_flight(run_id)
+        yield
