@@ -31,6 +31,10 @@ NOT_A_STAGE_KEY: frozenset[tuple[str, str]] = frozenset(
         ("queued_runs", "max_stages"),  # a count of stages, not a key
         ("tickets", "workflow_stage_status"),  # a StageStatus
         ("stage_fanout_groups", "pre_fanout_workflow_stage_status"),  # a StageStatus
+        # The merge queue's staged commit: git oids, "staged" as in cut onto the base.
+        ("merge_queue_entries", "staged_sha"),
+        ("merge_queue_entries", "staged_tree"),
+        ("merge_queue_entries", "staged_base_sha"),
     }
 )
 

@@ -37,6 +37,7 @@ from loregarden.api import (
     mcp,
     mcp_servers,
     memory,
+    merge_queue,
     orchestration,
     parallel,
     queue_events,
@@ -346,6 +347,7 @@ app.include_router(done_ticket_ship.router, prefix="/api")
 app.include_router(github_issues.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_lanes.router)
+app.include_router(merge_queue.router)
 app.include_router(queue_management.router)
 app.include_router(bulk_queue_operations.router)
 app.include_router(queue_review.router)

@@ -69,7 +69,7 @@ def merge_and_clean_up(
     """Squash-merge PR ``number`` at ``head_sha``, then remove its branch everywhere."""
     pr = _mergeable(session, ticket, workspace, number=number, head_sha=head_sha)
     repo_root = resolve_workspace_root(workspace)
-    merge_commit = _merge(repo_root, pr)
+    merge_commit = squash_merge(repo_root, pr.number, pr.head_sha)
     logger.info("Merged PR #%s for %s as %s", pr.number, ticket.external_id, merge_commit[:12])
 
     base = base_branch(workspace)
@@ -114,8 +114,14 @@ def _mergeable(
     return pr
 
 
-def _merge(repo_root: Path, pr: PullRequestStatus) -> str:
-    args = ["pr", "merge", str(pr.number), "--squash", "--match-head-commit", pr.head_sha]
+def squash_merge(repo_root: Path, number: int, head_sha: str) -> str:
+    """Squash-merge PR ``number`` pinned to ``head_sha``; GitHub's merge commit oid.
+
+    Raises `MergeFailed` unless GitHub itself then reports the PR merged. The
+    merge queue lands through this too, so the queue and the PR tab cannot
+    disagree about what "merged" means.
+    """
+    args = ["pr", "merge", str(number), "--squash", "--match-head-commit", head_sha]
     try:
         proc = run_gh(args, cwd=repo_root, timeout=GH_MERGE_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -127,7 +133,7 @@ def _merge(repo_root: Path, pr: PullRequestStatus) -> str:
     # `gh pr merge` prints little and has reported success for work it had not
     # finished; GitHub's own state is the answer.
     view = run_gh(
-        ["pr", "view", str(pr.number), "--json", "state,mergeCommit"],
+        ["pr", "view", str(number), "--json", "state,mergeCommit"],
         cwd=repo_root,
         timeout=30,
     )
@@ -135,7 +141,7 @@ def _merge(repo_root: Path, pr: PullRequestStatus) -> str:
         raise MergeFailed(f"merged, but could not confirm it: {(view.stderr or '').strip()}")
     payload = json.loads(view.stdout or "{}")
     if payload.get("state") != "MERGED":  # py-org: allow-string
-        raise MergeFailed(f"gh reported success but #{pr.number} is {payload.get('state')!r}")
+        raise MergeFailed(f"gh reported success but #{number} is {payload.get('state')!r}")
     return (payload.get("mergeCommit") or {}).get("oid", "")
 
 
