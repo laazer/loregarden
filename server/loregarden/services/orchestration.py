@@ -53,6 +53,7 @@ from loregarden.services.run_completion import (
 )
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_errors import failure_reason
+from loregarden.services.run_finality import claim_completion, refuse_late_completion
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_dispatch_prep import (
@@ -1008,6 +1009,8 @@ class OrchestrationService:
         if not stored:
             return run
         run = stored
+        if not claim_completion(self.session, run.id, status):
+            return refuse_late_completion(self.session, run, status=status)
         run.status = status
         run.stdout = stdout
         # A failure with nothing written against it is indistinguishable from a

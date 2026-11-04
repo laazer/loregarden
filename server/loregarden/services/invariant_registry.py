@@ -56,6 +56,7 @@ from loregarden.services.parallel_queue import (
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
+from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_parked_at_rows import (
     clear_vanished_parked_at,
@@ -1208,6 +1209,41 @@ RUN_PARENTS_END_WITH_THEIR_RUN = Invariant(
 )
 
 
+def _overwritten_runs(session: Session) -> list[Violation]:
+    """`entered_at` is the second completion: the moment the first verdict was lost."""
+    violations = []
+    for run in overwritten_runs(session):
+        events = completions(session, run.id)
+        violations.append(
+            Violation(
+                subject_id=run.id,
+                ticket_id=run.ticket_id,
+                entered_at=events[1].created_at if len(events) > 1 else None,
+                detail=f"{run.run_code} completed {len(events)} times; the row shows the last "
+                f"({run.status.value})",
+            )
+        )
+    return violations
+
+
+def _note_overwritten_runs(session: Session, violations: Sequence[Violation]) -> int:
+    return note_overwritten_runs(session, [violation.subject_id for violation in violations])
+
+
+RUNS_COMPLETE_ONCE = Invariant(
+    name="runs_complete_once",
+    ticket="lg-run-durability-2093",
+    statement="no agent run is completed after it already has a final status",
+    detect=_overwritten_runs,
+    repair=_note_overwritten_runs,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 4),
+    prevented_by=(
+        "server/tests/test_run_finality.py"
+        "::test_a_late_completion_leaves_the_verdict_and_publishes_nothing"
+    ),
+)
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
@@ -1233,4 +1269,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
+    RUNS_COMPLETE_ONCE,
 )

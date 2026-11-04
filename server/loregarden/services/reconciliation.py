@@ -71,6 +71,7 @@ from loregarden.services.invariant_registry import (
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
+    RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
@@ -301,6 +302,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # (lg-machine-resource-1923). EXPECTED — a SIGKILL of the server skips
     # execute()'s `finally`.
     _invariant(RUN_PARENTS_END_WITH_THEIR_RUN),
+    # A run completed after it already had a final status: the later completion
+    # rewrote the verdict and wiped its stderr (lg-run-durability-2093). The repair
+    # writes the lost history back onto the row; the status is left as acted on.
+    _invariant(RUNS_COMPLETE_ONCE),
     # Last of the invariants: the only one that reaches the network, so a slow
     # or unreachable GitHub delays nothing else in the pass.
     SweepStep(
