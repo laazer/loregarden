@@ -290,7 +290,7 @@ const SENTENCE_TERMINATORS = new Set([".", "!", "?", "\u2026", ":", ";"]);
  * parse failure, which is rendered `pre-wrap`.
  */
 export function endSentence(text: string): string {
-  const trimmed = text.replace(/\s+$/u, "");
+  const trimmed = text.trimEnd();
   if (!trimmed) return "";
   return SENTENCE_TERMINATORS.has(trimmed[trimmed.length - 1]) ? trimmed : `${trimmed}.`;
 }
