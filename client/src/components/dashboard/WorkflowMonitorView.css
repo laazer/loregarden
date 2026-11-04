@@ -327,6 +327,14 @@
   color: var(--ac2);
 }
 
+.wm-stale {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  padding-left: 10px;
+  border-left: 3px solid color-mix(in srgb, var(--rdl) 45%, transparent);
+}
+
 .wm-footnote {
   margin: 0;
   font-size: var(--fs-micro);
