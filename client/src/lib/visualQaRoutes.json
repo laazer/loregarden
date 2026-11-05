@@ -21,6 +21,7 @@
   { "name": "machine", "path": "/machine" },
   { "name": "machine-lanes", "path": "/machine/lanes" },
   { "name": "machine-disk", "path": "/machine/disk" },
+  { "name": "machine-tokens", "path": "/machine/tokens" },
   { "name": "branch-triage", "path": "/branch-triage" },
   { "name": "editor", "path": "/editor" }
 ]

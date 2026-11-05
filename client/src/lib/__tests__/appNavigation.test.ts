@@ -1,5 +1,7 @@
 import {
   artifactTabFromPath,
+  machinePath,
+  machineTabFromPath,
   canonicalArtifactTab,
   pageFromPath,
   pathForPage,
@@ -42,6 +44,12 @@ describe("appNavigation", () => {
     expect(pageFromPath("/machine/disk")).toBe("machine");
     expect(pageFromPath("/branch-triage")).toBe("branch-triage");
     expect(pageFromPath("/tickets/abc-123/diff")).toBe("dashboard");
+  });
+
+  it("round-trips every Machine tab through its path", () => {
+    expect(machineTabFromPath("/machine/tokens")).toBe("tokens");
+    expect(machinePath("tokens")).toBe("/machine/tokens");
+    expect(machineTabFromPath("/machine/tokensx")).toBe("capacity");
   });
 
   it("keeps the Workspaces page, and its old /instances address, on one sidebar item", () => {

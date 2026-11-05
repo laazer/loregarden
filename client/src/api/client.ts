@@ -113,6 +113,7 @@ import type {
   McpTelemetry,
   McpServerView,
 } from "./types";
+import type { TokenTrend, TokenTrendQuery } from "./usageTypes";
 
 
 function ticketQuery(params?: {
@@ -854,6 +855,12 @@ export const api = {
     }),
   usage: (refresh = false) =>
     request<UsageSnapshot>(`/api/usage${refresh ? "?refresh=true" : ""}`),
+  tokenTrend: (query: TokenTrendQuery) => {
+    const params = new URLSearchParams({ metric: query.metric });
+    if (query.model) params.set("model", query.model);
+    if (query.stage_key) params.set("stage_key", query.stage_key);
+    return request<TokenTrend>(`/api/runs/usage/trend?${params.toString()}`);
+  },
   memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
   setMemoryConfig: (body: MemoryConfigSettings) =>
     request<MemoryConfigResponse>("/api/memory/config", {
