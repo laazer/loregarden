@@ -41,6 +41,7 @@ const COLUMNS: IndexColumn<AgentSortKey>[] = [
   { key: "runs", label: "Runs", numeric: true, first: "descending" },
   { key: "failed", label: "Failed", numeric: true, first: "descending" },
   { key: "rate", label: "Failure rate", numeric: true, first: "descending" },
+  { key: "worst", label: "Fails most at", numeric: false, first: "descending" },
   { key: "lastRun", label: "Last run", numeric: true, first: "descending" },
 ];
 
@@ -135,6 +136,16 @@ export function AgentIndex({ agents, stats, onNewAgent, newAgentOpen }: Props) {
                 </td>
                 <td className="num" data-label="Failure rate">
                   {statsReady ? <RateCell row={row} /> : "—"}
+                </td>
+                <td className="agent-index-worst" data-label="Fails most at">
+                  {row.worstStage ? (
+                    <>
+                      <span className="agent-index-worst-stage">{row.worstStage.stage || "no stage"}</span>{" "}
+                      <span className="studio-index-muted">{row.worstStage.failed.toLocaleString()}</span>
+                    </>
+                  ) : (
+                    <span className="studio-index-muted">—</span>
+                  )}
                 </td>
                 <td className="num" data-label="Last run">
                   {row.lastRunAt ? (

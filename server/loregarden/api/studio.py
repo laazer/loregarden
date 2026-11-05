@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
+from loregarden.services.agent_run_record import AgentRunRecord, agent_run_record
 from loregarden.services.agent_run_stats import AgentRunStats, agent_run_stats
 from loregarden.services.exit_actions import requirement_catalog
 from loregarden.services.studio_agent_references import AgentDeleteRefused
@@ -79,6 +80,13 @@ def list_agent_run_stats(session: Session = Depends(get_session)) -> list[AgentR
     """Runs and failures per agent id, for Agent Studio's index. Its own path
     rather than `/agents/run-stats`, which `/agents/{slug}` would also match."""
     return agent_run_stats(session)
+
+
+@router.get("/agent-runs/{agent_id}")
+def get_agent_run_record(agent_id: str, session: Session = Depends(get_session)) -> AgentRunRecord:
+    """Where and why one agent fails, for its page in Agent Studio. Keyed by
+    agent id, as runs record it, so an agent deleted since still answers."""
+    return agent_run_record(session, agent_id)
 
 
 @router.get("/agents/{slug}")
