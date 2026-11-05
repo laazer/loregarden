@@ -906,7 +906,9 @@ export function TicketStudioPanel({
           ) : null}
         </div>
 
-        {renderDraftPanel()}
+        {/* No column of "nothing yet" beside the new-scope form: the drafts
+            panel appears once there is a session or an import preview to show. */}
+        {selectedSession || isPreview || localDraft.length ? renderDraftPanel() : null}
       </div>
 
       <TicketStudioDraftModal

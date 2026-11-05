@@ -19,27 +19,35 @@ export function WorkflowPreviewPanel({
   slug,
   stages,
   agentLabel,
+  inline = false,
 }: {
   name: string;
   slug: string;
   stages: StudioWorkflowStage[];
   agentLabel: (agentId: string) => string;
+  /** On a workflow's own page, whose header already names it: no column, no title. */
+  inline?: boolean;
 }) {
   const displayName = name.trim() || "Untitled workflow";
   const displaySlug = slug.trim() || "workflow-slug";
 
+  const Frame = inline ? "div" : "aside";
   return (
-    <aside className="studio-preview studio-preview--workflow">
-      <div className="studio-preview-live">
-        <span className="studio-preview-live-dot" aria-hidden />
-        <span className="studio-preview-live-label">Pipeline preview</span>
-      </div>
-      <div style={{ margin: "6px 0 18px" }}>
-        <div className="studio-pipeline-title">{displayName}</div>
-        <div className="studio-pipeline-meta">
-          {displaySlug} · {stages.length} stage{stages.length === 1 ? "" : "s"}
-        </div>
-      </div>
+    <Frame className={inline ? "studio-pipeline-inline" : "studio-preview studio-preview--workflow"}>
+      {inline ? null : (
+        <>
+          <div className="studio-preview-live">
+            <span className="studio-preview-live-dot" aria-hidden />
+            <span className="studio-preview-live-label">Pipeline preview</span>
+          </div>
+          <div style={{ margin: "6px 0 18px" }}>
+            <div className="studio-pipeline-title">{displayName}</div>
+            <div className="studio-pipeline-meta">
+              {displaySlug} · {stages.length} stage{stages.length === 1 ? "" : "s"}
+            </div>
+          </div>
+        </>
+      )}
       {stages.length === 0 ? (
         <p className="studio-preview-hint">Add stages to see the pipeline.</p>
       ) : (
@@ -104,6 +112,6 @@ export function WorkflowPreviewPanel({
           );
         })
       )}
-    </aside>
+    </Frame>
   );
 }

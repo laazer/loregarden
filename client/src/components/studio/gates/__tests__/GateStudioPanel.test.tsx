@@ -160,6 +160,42 @@ describe("GateStudioPanel", () => {
     await waitFor(() => expect(lastPath).toBe("/studio/gates/blobert/other-flow"));
   });
 
+  it("asks before the workspace picker discards unsaved transition edits", async () => {
+    renderAt("/studio/gates/blobert", { workspaces: [workspace(), workspace({ slug: "loregarden", name: "Loregarden" })] });
+    fireEvent.change(await screen.findByDisplayValue("ruff check {workspace_root}"), { target: { value: "edited" } });
+
+    fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "loregarden" } });
+    expect(screen.getByText(/unsaved gate changes for blobert/)).toBeInTheDocument();
+    expect(lastPath).toBe("/studio/gates/blobert");
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard and leave" }));
+    await waitFor(() => expect(lastPath).toBe("/studio/gates/loregarden"));
+  });
+
+  it("filters the workflow list once it is long", async () => {
+    const many = Array.from({ length: 10 }, (_, index) =>
+      workflow({ id: `wf-${index}`, slug: `flow-${index}`, name: `Flow ${index}` }),
+    );
+    api.studioWorkflows.mockResolvedValue([...many, workflow({ id: "wf-hot", slug: "hotfix", name: "Hotfix express" })]);
+    renderAt("/studio/gates/blobert");
+
+    const filter = await screen.findByRole("searchbox", { name: "Filter workflows" });
+    fireEvent.change(filter, { target: { value: "hotfix" } });
+    const nav = screen.getByRole("navigation", { name: "Workflows for blobert" });
+    const links = within(nav).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveTextContent("Hotfix express");
+
+    fireEvent.change(filter, { target: { value: "zzz" } });
+    expect(screen.getByText(/No workflow matches/)).toBeInTheDocument();
+  });
+
+  it("offers no filter for a short workflow list", async () => {
+    renderAt("/studio/gates/blobert");
+    await screen.findByRole("navigation", { name: "Workflows for blobert" });
+    expect(screen.queryByRole("searchbox", { name: "Filter workflows" })).toBeNull();
+  });
+
   it("reloads the editor when switching workspaces", async () => {
     api.orchestrationProfile.mockImplementation((slug: string) =>
       Promise.resolve(slug === "blobert" ? profile() : profile({ slug: "loregarden", gates_commands: ["pytest"] })),
@@ -167,7 +203,7 @@ describe("GateStudioPanel", () => {
     renderAt("/studio/gates/blobert", { workspaces: [workspace(), workspace({ slug: "loregarden", name: "Loregarden" })] });
 
     await screen.findByDisplayValue("ruff check {workspace_root}");
-    fireEvent.click(screen.getByRole("link", { name: "Loregarden" }));
+    fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "loregarden" } });
     expect(await screen.findByDisplayValue("pytest")).toBeInTheDocument();
   });
 
@@ -414,7 +450,7 @@ describe("GateStudioPanel", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain(UNREADABLE_PROFILE_PATH);
 
-    fireEvent.click(screen.getByRole("link", { name: "Loregarden" }));
+    fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "loregarden" } });
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     const page = document.body.textContent ?? "";
     expect(page).not.toContain(UNREADABLE_PROFILE_PATH);
@@ -433,7 +469,7 @@ describe("GateStudioPanel", () => {
 
     await screen.findByText(/don't have permission to read the gate settings for blobert/);
 
-    fireEvent.click(screen.getByRole("link", { name: "Loregarden" }));
+    fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "loregarden" } });
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(document.body.textContent ?? "").not.toContain("don't have permission");
   });

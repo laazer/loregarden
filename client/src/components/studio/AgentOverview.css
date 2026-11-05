@@ -1,0 +1,192 @@
+/* An agent page's Overview tab: where it fails, recent runs, configuration. */
+
+.studio-record-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.agent-record-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+
+.agent-record-table th,
+.agent-record-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  vertical-align: top;
+}
+
+.agent-record-table thead th {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--txl);
+}
+
+.agent-record-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agent-record-stage {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--tx);
+}
+
+.agent-record-failed {
+  color: var(--red);
+}
+
+.agent-record-why {
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.agent-record-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-record-run {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.agent-record-run-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--txl);
+  align-self: center;
+}
+
+.agent-record-run-mark.is-succeeded {
+  background: var(--grn);
+}
+
+.agent-record-run-mark.is-failed {
+  background: var(--red);
+}
+
+.agent-record-run-mark.is-running,
+.agent-record-run-mark.is-queued,
+.agent-record-run-mark.is-awaiting_permission {
+  background: var(--amb);
+}
+
+.agent-record-run-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-record-run-link {
+  color: var(--tx);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-record-run-link:hover,
+.agent-record-run-link:focus-visible {
+  text-decoration: underline;
+}
+
+.agent-record-run-code,
+.agent-record-mono {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+}
+
+.agent-record-run-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-record-run-age {
+  font-size: var(--fs-small);
+  color: var(--txl);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-record-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-small);
+  color: var(--red);
+}
+
+.agent-record-edit-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* Instructions tab: the role is the long field, so it gets the room. */
+.agent-role-textarea {
+  min-height: 420px;
+}
+
+/* Runtime tab: four short fields that wrap two-up on a narrow screen. */
+.agent-runtime-row {
+  flex-wrap: wrap;
+}
+
+.agent-runtime-row > .studio-field {
+  flex: 1 1 180px;
+}
+
+.agent-tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-record-more {
+  align-self: flex-start;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.agent-record-more:hover,
+.agent-record-more:focus-visible {
+  color: var(--tx);
+}
+
+.agent-version-history > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.agent-version-history > summary:hover,
+.agent-version-history > summary:focus-visible {
+  color: var(--tx);
+}
+
+.agent-version-history[open] > summary {
+  margin-bottom: 8px;
+}

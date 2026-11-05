@@ -72,3 +72,34 @@ def test_leaves_out_runs_with_no_agent_id(client: TestClient, db_session: Sessio
 def test_is_not_shadowed_by_the_agent_detail_route(client: TestClient) -> None:
     # `/agents/{slug}` would answer 404 "Agent not found" for a sibling path.
     assert client.get("/api/studio/agent-run-stats").json() == []
+
+
+def test_names_the_stage_each_agent_fails_at_most(client: TestClient, db_session: Session) -> None:
+    workspace = make_workspace(db_session, slug="run-stats-worst")
+    for index, (stage, status) in enumerate(
+        [
+            ("integration-merge", RunStatus.FAILED),
+            ("integration-merge", RunStatus.FAILED),
+            ("triage", RunStatus.FAILED),
+            ("implement", RunStatus.SUCCEEDED),
+            ("implement", RunStatus.SUCCEEDED),
+            ("implement", RunStatus.SUCCEEDED),
+        ]
+    ):
+        make_agent_run(
+            db_session,
+            workspace_id=workspace.id,
+            agent_id="repair",
+            run_code=f"worst-{index}",
+            stage_key=stage,
+            status=status,
+        )
+    _runs(db_session, "planner", RunStatus.SUCCEEDED)
+
+    stats = _by_agent(client)
+
+    assert (stats["repair"]["worst_stage"], stats["repair"]["worst_stage_failed"]) == (
+        "integration-merge",
+        2,
+    )
+    assert (stats["planner"]["worst_stage"], stats["planner"]["worst_stage_failed"]) == (None, 0)
