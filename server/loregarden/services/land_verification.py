@@ -37,8 +37,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
 from collections.abc import Callable, Iterator
@@ -56,7 +58,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import BLOCKING_ISSUE_INLINE_LIMIT
 from loregarden.services.branch_names import resolve_ticket_branch
-from loregarden.services.capacity_environment import CPUS_ENV, WORKERS_ENV, worker_count
+from loregarden.services.capacity_environment import grant_environment
 from loregarden.services.docker_capacity import CLASS_WEIGHTS, resolve_weights
 from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE, strip_ansi
@@ -210,7 +212,7 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
     """Run one configured command in `cwd` and classify how it ended.
 
     `shlex.split` raises on an unterminated quote and yields `[]` for a blank
-    string, which `subprocess.run` turns into IndexError. Both are commands that
+    string, which `subprocess.Popen` turns into IndexError. Both are commands that
     examined nothing, so both are UNAVAILABLE: "nothing to do" is not a pass,
     and letting either raise takes the landing down with no block message at
     all.
@@ -218,7 +220,9 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
     `footprint` is the size the verification was granted, and it reaches the
     command as `LOREGARDEN_CAPACITY_CPUS` / `_WORKERS` — the same two variables
     every other held command on this machine reads to size its own `-n` /
-    `--maxWorkers`. The *lease* for it is held by `_verify_candidate` around the
+    `--maxWorkers` — and as `PYTEST_XDIST_AUTO_NUM_WORKERS`, so a command
+    configured as `pytest -n auto` starts the granted count rather than one
+    worker per core. The *lease* for it is held by `_verify_candidate` around the
     whole command list, because that is where the session is and because the
     verification is one unit of host load rather than one per command.
 
@@ -246,21 +250,10 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
             detail="the command is empty, so nothing examined the tree",
         )
     cpus, _memory_mb = resolve_weights(footprint) if footprint in CLASS_WEIGHTS else (0.0, 0)
-    granted = {CPUS_ENV: f"{cpus:g}", WORKERS_ENV: str(worker_count(cpus))} if cpus > 0 else {}
+    granted = grant_environment(cpus) if cpus > 0 else {}
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            env={**scrubbed_git_env(), **granted},
-            # One stream, in the order it was written. Captured apart and joined
-            # stdout-first, `uv run`'s setup lines (stderr, written before pytest
-            # started) landed after pytest's summary, and the block's tail read
-            # "Installed 68 packages" instead of naming the failing tests.
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=LAND_VERIFY_TIMEOUT_SECONDS,
-            check=False,
+        returncode, raw_output = _run_to_deadline(
+            argv, cwd=cwd, env={**scrubbed_git_env(), **granted}
         )
     except OSError as exc:
         # Not on PATH, or there and not executable. A fact about the machine,
@@ -268,43 +261,108 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
         return VerifyOutcome(
             ok=False, outcome=GateOutcome.UNAVAILABLE, command=command, detail=str(exc)
         )
-    except subprocess.TimeoutExpired:
+
+    # The whole of it is carried: the excerpt is cut later, from the end, and the
+    # artifact wants all of it.
+    output = strip_ansi(raw_output)
+    if returncode is None:
         return VerifyOutcome(
             ok=False,
             outcome=GateOutcome.UNAVAILABLE,
             command=command,
+            output=output,
             detail=(
                 f"the command timed out after {LAND_VERIFY_TIMEOUT_SECONDS}s, so "
                 "nothing it would have found is known"
             ),
         )
-
-    # `run` reads the pipe to EOF before returning, so a suite writing a
-    # megabyte cannot fill a buffer and deadlock. The whole of it is carried:
-    # the excerpt is cut later, from the end, and the artifact wants all of it.
-    output = strip_ansi(completed.stdout or "")
-    if completed.returncode == GATE_EX_UNAVAILABLE:
+    if returncode == GATE_EX_UNAVAILABLE:
         # The command ran and said it could not do its job. Same number and same
         # meaning as the transition gates use, imported rather than re-spelled.
         return VerifyOutcome(
             ok=False,
             outcome=GateOutcome.UNAVAILABLE,
             command=command,
-            exit_code=completed.returncode,
+            exit_code=returncode,
             output=output,
             detail="the command reported that it could not run",
         )
-    if completed.returncode != 0:
+    if returncode != 0:
         return VerifyOutcome(
             ok=False,
             outcome=GateOutcome.FAILED,
             command=command,
-            exit_code=completed.returncode,
+            exit_code=returncode,
             output=output,
         )
     return VerifyOutcome(
         ok=True, outcome=GateOutcome.PASSED, command=command, exit_code=0, output=output
     )
+
+
+def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int | None, str]:
+    """Run `argv` to `LAND_VERIFY_TIMEOUT_SECONDS`: (exit code, output), code None on timeout.
+
+    Its own session, so a timeout ends the whole tree. `subprocess.run` kills
+    only the direct child, which here is `uv run`; pytest and its xdist workers
+    outlived it and kept running on a machine already too full for them, under
+    the retry that followed (lg-milestone-that-2196, 2026-11-05).
+
+    What the command printed before the deadline is kept, because it is the only
+    record of how far it got. The retried `communicate` returns everything read
+    so far as text; the first `TimeoutExpired` carries it as bytes even in text
+    mode.
+    """
+    with subprocess.Popen(
+        argv,
+        cwd=str(cwd),
+        env=env,
+        # One stream, in the order it was written. Captured apart and joined
+        # stdout-first, `uv run`'s setup lines (stderr, written before pytest
+        # started) landed after pytest's summary, and the block's tail read
+        # "Installed 68 packages" instead of naming the failing tests.
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    ) as process:
+        try:
+            # Reads the pipe to EOF, so a suite writing a megabyte cannot fill a
+            # buffer and deadlock.
+            output, _ = process.communicate(timeout=LAND_VERIFY_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            _kill_session(process)
+            return None, _drain(process)
+    return process.returncode, output or ""
+
+
+#: How long a killed tree gets to close its end of the pipe. Only a process that
+#: left the session on purpose can still hold it.
+_DRAIN_SECONDS = 10
+
+
+def _kill_session(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (
+        ProcessLookupError
+    ):  # silent-ok: the whole session already exited; nothing is left to stop
+        pass
+
+
+def _drain(process: subprocess.Popen[str]) -> str:
+    try:
+        output, _ = process.communicate(timeout=_DRAIN_SECONDS)
+    except subprocess.TimeoutExpired as held:
+        # Something started its own session and still holds the pipe. Keep what
+        # was read; the session itself is dead, so the land is refused either way.
+        logger.warning(
+            "land verification: a process outside the killed session still holds "
+            "the output pipe of %s",
+            process.args,
+        )
+        return (held.output or b"").decode(errors="replace")
+    return output or ""
 
 
 def _verify_candidate(
