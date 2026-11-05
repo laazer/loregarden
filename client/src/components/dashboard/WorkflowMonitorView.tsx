@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
@@ -14,11 +14,14 @@ import {
   type TicketFindings,
 } from "../../lib/monitorFindings";
 import { useHeldFailure } from "../../hooks/useHeldFailure";
+import { useOperatorRefetch } from "../../hooks/useOperatorRefetch";
+import { useRestoreFocusOnSettle } from "../../hooks/useRestoreFocusOnSettle";
 import { formatRelativeAge } from "../../lib/timestamps";
 import { describeError, endSentence } from "../../state/toastStore";
 import "./WorkflowMonitorView.css";
 import { TicketLink } from "../TicketLink";
 import { Button } from "../ui/Button";
+import { StaleReadNotice } from "../ui/StaleReadNotice";
 
 /**
  * Every current workflow-monitor finding, arranged around the question a
@@ -212,27 +215,34 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   // and execution would fall through to `!all.length`: the monitor reporting
   // health it never asked about.
   const failure = useHeldFailure(findings, "all");
-  const retryRef = useRef<HTMLButtonElement>(null);
   // Native `disabled` blurs a focused <button> in a real browser, so a keyboard
   // operator who pressed Enter on Retry is dumped on <body> for the length of
-  // the read. Return them to it when the retry settles with the failure still
-  // held — qualified by the hold being present when the fetch *started*, since
-  // the first load goes true → false too, and guarded on <body> so focus the
-  // operator moved elsewhere is never stolen.
-  const wasRetrying = useRef(false);
-  useEffect(() => {
-    if (findings.isFetching) {
-      wasRetrying.current = Boolean(failure);
-      return;
-    }
-    if (wasRetrying.current && failure && document.activeElement === document.body) {
-      retryRef.current?.focus();
-    }
-    wasRetrying.current = false;
-    // `failure` is read for its value at the transition, not tracked: a change
-    // of reason must not re-run the effect and re-grab focus.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findings.isFetching]);
+  // the read, and nothing puts them back.
+  //
+  // The trigger is the operator's *activation*, not the `isFetching`
+  // transition. `refetchInterval: 30_000` produces the identical true → false
+  // transition with the failure still held, and query-core gates the tick on
+  // `focusManager.isFocused()` — so a transition-keyed restore moved focus on
+  // its own every 30 seconds for the length of an outage, precisely when the
+  // window was focused and the theft felt. On a freshly loaded page nobody has
+  // clicked, `<body>` is already active, so the guard that protects moved focus
+  // cannot see the difference; only the click can say it happened.
+  //
+  // `useRestoreFocusOnSettle` is that mechanism: armed from the Retry
+  // `onClick`, cleared unconditionally on every settle, and declining on a
+  // detached node — which is how "the failure cleared" is answered without the
+  // focus path reading the held failure at all, since a successful retry
+  // unmounts this branch before the effect can focus anything.
+  //
+  // What it is fed is `retry.pending`, not `findings.isFetching`, and that is
+  // the same distinction one layer further in: the poll shares the query's
+  // fetching flag, so `isFetching` here restored focus for a read nobody
+  // started, and a poll landing on top of the operator's own settle left the
+  // keyboard operator on `<body>` for the rest of the outage. One flag drives
+  // all three bindings below — `disabled`, the label, and this `pending` — so
+  // the disabled window and the restore cannot drift apart.
+  const retry = useOperatorRefetch(findings.refetch);
+  const rememberRetry = useRestoreFocusOnSettle(retry.pending);
 
   const all = useMemo(() => findings.data ?? [], [findings.data]);
   const live = useMemo(() => all.filter(isLiveFinding), [all]);
@@ -261,7 +271,12 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
             non-JSON proxy page reaches `request()`'s `message = text` fallback
             at thousands of characters. Bounded and left-aligned by
             `.wm-error-reason` so it cannot push Retry off the viewport. */}
-        <div className="wm-muted wm-narrow wm-error-reason">
+        <div
+          className="wm-muted wm-narrow wm-error-reason"
+          role="group"
+          aria-label="Reason the monitor could not be read"
+          tabIndex={0}
+        >
           {endSentence(describeError(failure.error, "The monitor endpoint did not answer."))}
         </div>
         <div className="wm-muted wm-narrow">
@@ -271,11 +286,13 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
         <Button
           variant="plain"
           className="tab-btn"
-          ref={retryRef}
-          onClick={() => findings.refetch()}
-          disabled={findings.isFetching}
+          onClick={(event) => {
+            rememberRetry(event.currentTarget);
+            retry.start();
+          }}
+          disabled={retry.pending}
         >
-          {findings.isFetching ? "Retrying…" : "Retry"}
+          {retry.pending ? "Retrying…" : "Retry"}
         </Button>
       </Centred>
     );
@@ -344,12 +361,16 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
           suppresses the query toast whenever `data !== undefined`, so this live
           region is the only report of the failed read. Reaching this return
           already means data is present and the last read failed, so `failure`
-          alone is the whole condition. */}
+          alone is the whole condition. The notice itself is `StaleReadNotice`,
+          shared with the four other polling surfaces that report a stale read,
+          so the five do not invent five looks or five postures. */}
       {failure && (
-        <p role="status" data-testid="wm-refresh-failed" className="wm-stale">
-          This list may be out of date — the last refresh failed.{" "}
-          {endSentence(describeError(failure.error, "The monitor endpoint did not answer."))}
-        </p>
+        <StaleReadNotice
+          lead="This list may be out of date — the last refresh failed."
+          error={failure.error}
+          fallback="The monitor endpoint did not answer."
+          testId="wm-refresh-failed"
+        />
       )}
 
       {nothingShown && (

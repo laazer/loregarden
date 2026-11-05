@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 import type {
   RuntimeOptions,
@@ -99,15 +99,30 @@ export function AgentsAssembleModal({
   const [slotNumber, setSlotNumber] = useState<LaneChoice>(defaultSlotNumber);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
 
-  useEffect(() => {
-    if (!open || !ticket) return;
-    setDraftRuntime(workspaceRuntime);
-    setStopAtStageKey("");
-    setAutoApprove(false);
-    setBranch(ticket.branch || `loregarden/${ticket.external_id}`);
-    setSlotNumber(defaultSlotNumber);
-    setTimeoutSeconds("");
-  }, [open, ticket, workspaceRuntime, defaultSlotNumber]);
+  // Reset the form once per opening of the dialog for a ticket, never on a
+  // refetch: callers pass query data, so `ticket` and `workspaceRuntime` are new
+  // objects on every poll or websocket update, and resetting on identity wiped
+  // what the operator had just ticked.
+  const sessionKey = open && ticket ? ticket.id : null;
+  const [prevSessionKey, setPrevSessionKey] = useState<typeof sessionKey>(null);
+  const [prevWorkspaceRuntime, setPrevWorkspaceRuntime] = useState(workspaceRuntime);
+  if (sessionKey !== prevSessionKey) {
+    setPrevSessionKey(sessionKey);
+    setPrevWorkspaceRuntime(workspaceRuntime);
+    if (ticket && sessionKey !== null) {
+      setDraftRuntime(workspaceRuntime);
+      setStopAtStageKey("");
+      setAutoApprove(false);
+      setBranch(ticket.branch || `loregarden/${ticket.external_id}`);
+      setSlotNumber(defaultSlotNumber);
+      setTimeoutSeconds("");
+    }
+  } else if (!runtimeSettingsEqual(workspaceRuntime, prevWorkspaceRuntime)) {
+    // The workspace runtime changed underneath an open dialog (it loaded late,
+    // or was saved elsewhere). Follow it unless the operator has edited the draft.
+    setPrevWorkspaceRuntime(workspaceRuntime);
+    if (runtimeSettingsEqual(draftRuntime, prevWorkspaceRuntime)) setDraftRuntime(workspaceRuntime);
+  }
 
   if (!open || !ticket) {
     // Closed but mounted: the shell plays its exit with the last content it drew.
