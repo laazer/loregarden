@@ -5,6 +5,7 @@ Everything is re-exported here so ``from loregarden.models.domain import X``
 continues to work unchanged.
 """
 
+from loregarden.models.domain.autopilot_timing import *  # noqa: F401,F403
 from loregarden.models.domain.block_kinds import *  # noqa: F401,F403
 from loregarden.models.domain.chat_enums import *  # noqa: F401,F403
 from loregarden.models.domain.chat_tables import *  # noqa: F401,F403

@@ -71,6 +71,17 @@ class InitiativePlan(SQLModel, table=True):
     paused_reason: str = ""
     #: When autopilot was last turned on — its failure count starts here.
     autopilot_since: datetime | None = None
+    #: `list[AutopilotStop]`: what ends a run on its own. `[]` runs until turned off.
+    autopilot_stops_json: str = "[]"
+    #: `AutopilotSchedule`: when it turns itself on. `{}` is no schedule.
+    autopilot_schedule_json: str = "{}"
+    #: Opening instant of the last schedule window it acted on, so a window it
+    #: already handled (started, or found on, or found paused) is not re-entered
+    #: after a person turns it off mid-window.
+    autopilot_window_seen: datetime | None = None
+    #: The current run was started by its window, which therefore also ends it.
+    #: A run a person started is never ended by a window closing.
+    autopilot_window_owns: bool = False
     #: Provider/model override for the planner conversation, layered over the
     #: workspace it runs in (`cli_settings.apply_runtime_overrides`). `{}` is none.
     planner_runtime_json: str = "{}"

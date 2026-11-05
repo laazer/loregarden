@@ -65,6 +65,10 @@ function plan(milestones: MilestoneSchedule[]): InitiativePlan {
       next_up: [],
       available: true,
       recent: [],
+      stops: [],
+      schedule: {},
+      stops_at: null,
+      next_start: null,
     },
     generated_at: "2026-10-01T12:00:00Z",
   };

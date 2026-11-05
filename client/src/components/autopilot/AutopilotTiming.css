@@ -1,0 +1,49 @@
+.autopilot-timing-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.autopilot-timing-option,
+.autopilot-timing-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-body);
+  color: var(--tx);
+}
+
+.autopilot-timing-indent {
+  margin-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.autopilot-timing-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.autopilot-timing-day {
+  font-size: var(--fs-small);
+}
+
+.autopilot-timing-times {
+  display: flex;
+  gap: 16px;
+}
+
+.autopilot-timing-times .modal-field {
+  margin-bottom: 0;
+}
+
+.autopilot-timing-indent > select,
+.autopilot-timing-indent > input {
+  align-self: flex-start;
+  width: auto;
+}
