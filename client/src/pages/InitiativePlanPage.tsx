@@ -17,8 +17,10 @@ import { MarkdownContent } from "../components/chat/MarkdownContent";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { TicketRouteResolver } from "../components/TicketRouteResolver";
 import { Button } from "../components/ui/Button";
+import { StaleReadNotice } from "../components/ui/StaleReadNotice";
 import { planQueryKey, useInitiativePlanner } from "../hooks/useInitiativePlanner";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { usePolledReadFailure } from "../hooks/usePolledReadFailure";
 import { boardQueryKey } from "../lib/initiativeBoard";
 import { navigateToPage, ticketUuidForRef } from "../lib/useAppNavigation";
 import { scheduleToReplace } from "../lib/scheduleFormat";
@@ -190,7 +192,21 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
       targets: ordered.map<ScheduleTargetInput>((row, index) => ({ ticket_id: row.id, plan_order: index })),
     });
 
-  const notFound = plan.error instanceof ApiError && plan.error.status === 404; // ts-org: allow-instanceof — narrowing to read the status, not formatting a message
+  const failure = usePolledReadFailure(plan, initiativeId, Boolean(plan.data));
+  // Read from the HELD failure, so a 404 does not flicker back into the
+  // generic pane for the duration of the next poll: `refetch()` clears
+  // `error` on a query with no data.
+  const failedError = failure.stale?.error ?? failure.blocking?.error ?? plan.error;
+  const notFound = failedError instanceof ApiError && failedError.status === 404; // ts-org: allow-instanceof — narrowing to read the status, not formatting a message
+
+  // The operator's own click, never `plan.isFetching`: the pane now survives
+  // its own refetch, so an `isFetching` busy state would disable its one
+  // control and read "Retrying…" every 30 seconds for the background poll.
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void plan.refetch().finally(() => setRetrying(false));
+  };
 
   return (
     <div className="plan-page">
@@ -202,33 +218,51 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
         }
       />
 
-      {plan.isPending ? (
+      {/* A deleted initiative is not a transient poll failure, so this branch is
+          evaluated BEFORE any data check and renders over rows the cache still
+          holds: holding them on screen under "may be out of date" would tell
+          the operator the opposite of the truth. It is also above
+          `plan.isPending`, because `refetch()` on a query with no data returns
+          it to pending and would unmount the pane into the skeleton on the
+          operator's own Retry. */}
+      {notFound ? (
+        <div className="plan-main">
+          <div className="plan-empty" role="alert">
+            <p>This initiative no longer exists — it may have been deleted.</p>
+            <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
+              Back to initiatives
+            </Button>
+          </div>
+        </div>
+      ) : failure.blocking ? (
+        <div className="plan-main">
+          <div className="plan-empty" role="alert">
+            <p>The plan could not be loaded: {describeError(failure.blocking.error)}</p>
+            <Button variant="secondary" compact disabled={retrying} onClick={retry}>
+              {retrying ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
+        </div>
+      ) : plan.isPending ? (
         <div className="plan-main" aria-busy="true" aria-label="Loading the plan">
           <div className="plan-skeleton plan-skeleton-summary" />
           <div className="plan-skeleton plan-skeleton-table" />
         </div>
-      ) : plan.isError ? (
-        <div className="plan-main">
-          <div className="plan-empty" role="alert">
-            <p>
-              {notFound
-                ? "This initiative no longer exists — it may have been deleted."
-                : `The plan could not be loaded: ${describeError(plan.error)}`}
-            </p>
-            {notFound ? (
-              <Button variant="secondary" compact onClick={() => navigateToPage("initiatives")}>
-                Back to initiatives
-              </Button>
-            ) : (
-              <Button variant="secondary" compact onClick={() => void plan.refetch()}>
-                Retry
-              </Button>
-            )}
-          </div>
-        </div>
       ) : data ? (
         <>
           <main className="plan-main">
+            {/* First child, above the heading: it qualifies everything below it
+                and displaces no control. The board below carries its own notice
+                for its own read — two different reads, each naming its own
+                subject, which is why each is counted by its own testid. */}
+            {failure.stale && (
+              <StaleReadNotice
+                lead="This plan may be out of date — the last refresh failed."
+                error={failure.stale.error}
+                fallback="The plan endpoint did not answer."
+                testId="plan-refresh-failed"
+              />
+            )}
             <div className="plan-heading">
               <div className="plan-heading-row">
                 <span className="plan-mono plan-muted">{data.external_id}</span>

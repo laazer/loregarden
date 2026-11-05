@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -18,6 +18,7 @@ import {
   TopbarPageSlot,
   TopbarPageSlotProvider,
 } from "../../components/TopbarPageSlot";
+import { planQueryKey } from "../../hooks/useInitiativePlanner";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
@@ -726,4 +727,249 @@ test("a UUID initiative address is swapped for the shareable id", async () => {
   await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent(`/initiatives/${INIT_REF}`));
   expect(await screen.findByRole("table", { name: "Milestones in phase order" })).toBeInTheDocument();
   expect(mockApi.initiativePlan).toHaveBeenCalledWith(INIT_UUID);
+});
+
+/**
+ * lg-milestone-that-2187 R2 (AC1, AC4, AC5, UX1(c), UX2, UX3) — a failed 30s
+ * poll over a plan already on screen.
+ *
+ * This page is in scope because AC1 is literally false without it. AC1 promises
+ * that "a failed 30s poll over a board already on screen keeps the work items,
+ * the milestone filter and the selection" — and `milestoneFilter`,
+ * `workspaceFilter`, `selected` and `expanded` are `useState` INSIDE
+ * `InitiativeBoard`. The page polls the same initiative at 30s and renders its
+ * own `plan.isError` branch above the body that mounts the board, so the same
+ * failed tick unmounts the board and destroys all four. Fixing the board alone
+ * leaves AC1 unmet (spec D5); R2-2 is the assertion that makes it true.
+ *
+ * `notFound` wins over the stale notice (spec D10). A 404 means the initiative
+ * is gone, and holding its stale rows on screen under "may be out of date"
+ * tells the operator the opposite of the truth — so the 404 pane renders even
+ * when `plan.data` is present. That is the one place the pane beats content,
+ * and R2-3 pins it.
+ */
+
+/**
+ * Make every plan read from here on reject.
+ *
+ * A switch after the first read rather than `mockResolvedValueOnce` +
+ * `mockRejectedValue`: react-query issues more than one read on mount, and the
+ * extra one silently consumes a `…Once` queue — failing the test at its first
+ * `findBy` rather than at the assertion it is about.
+ */
+function failNextPlanRead(error: unknown) {
+  mockApi.initiativePlan.mockRejectedValue(error);
+}
+
+const PLAN_REASON = "the plan endpoint did not answer";
+const PLAN_LEAD = "This plan may be out of date — the last refresh failed.";
+
+/** The page's own 30s poll, with no timer. `refetchInterval: 30_000` fires exactly this. */
+function renderPollingPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const result = render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/initiatives/init1"]}>
+        <TopbarPageSlotProvider>
+          <TopbarCrumbs />
+          <TopbarPageSlot />
+          <Routes>
+            <Route path="/initiatives/:initiativeId" element={<InitiativePlanPage initiativeId="init1" />} />
+          </Routes>
+        </TopbarPageSlotProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return {
+    ...result,
+    poll: () =>
+      act(async () => {
+        await client.refetchQueries({ queryKey: planQueryKey("init1") });
+        // query-core writes the error into the cache synchronously, but the
+        // subscribed component's render lands a tick later, so a poll that
+        // returned as soon as the refetch settled would let a SYNCHRONOUS
+        // assertion read the pre-failure DOM and pass under an implementation
+        // that never renders the notice at all. Flushing a macrotask inside
+        // `act` makes the poll deterministic, which is what lets the negative
+        // assertions below ("no alert", "no empty state") be trustworthy.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }),
+  };
+}
+
+describe("a failed 30s poll over a plan already on screen", () => {
+  test("R2-1 — keeps the plan body and reports the failed read as one polite notice", async () => {
+    mockApi.initiativePlan.mockResolvedValue(plan());
+
+    const { poll } = renderPollingPage();
+    await screen.findByRole("table", { name: "Milestones in phase order" });
+
+    failNextPlanRead(new Error(PLAN_REASON));
+
+    await poll();
+
+    expect(screen.getByRole("table", { name: "Milestones in phase order" })).toBeInTheDocument();
+    const notice = screen.getByTestId("plan-refresh-failed");
+    expect(screen.getAllByTestId("plan-refresh-failed")).toHaveLength(1);
+    expect(notice).toHaveAttribute("role", "status");
+    expect(notice).toHaveTextContent(PLAN_LEAD);
+    expect(notice).toHaveTextContent(`${PLAN_REASON}.`);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/The plan could not be loaded/)).toBeNull();
+  });
+
+  test("R2-2 — the board is not unmounted: its milestone filter and ticked ticket both survive", async () => {
+    // The assertion that makes AC1 true. Both pieces of state live inside
+    // InitiativeBoard, so their survival IS "the board was not remounted".
+    mockApi.initiativePlan.mockResolvedValue(plan());
+    const user = userEvent.setup();
+
+    const { poll } = renderPollingPage();
+    await user.click(await screen.findByRole("tab", { name: "Board" }));
+    await screen.findByText("84 work items");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Filter the board by milestone" }),
+      "m0",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Select Card slice task 2" }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+    failNextPlanRead(new Error(PLAN_REASON));
+
+    await poll();
+
+    expect(screen.getByRole("combobox", { name: "Filter the board by milestone" })).toHaveValue("m0");
+    expect(screen.getByRole("checkbox", { name: "Select Card slice task 2" })).toBeChecked();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByTestId("plan-refresh-failed")).toBeInTheDocument();
+  });
+
+  test("R2-3 — a 404 on the second read says the initiative is gone, over the data it still holds (D10)", async () => {
+    // `notFound` is evaluated BEFORE any data check. Holding stale rows under
+    // "may be out of date" when the initiative has been deleted tells the
+    // operator the opposite of the truth, so this is the one place the pane
+    // beats present content.
+    mockApi.initiativePlan.mockResolvedValue(plan());
+
+    const { poll } = renderPollingPage();
+    await screen.findByRole("table", { name: "Milestones in phase order" });
+
+    failNextPlanRead(new ApiError(404, "Initiative not found: init1"));
+
+    await poll();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("no longer exists");
+    expect(screen.getByRole("button", { name: "Back to initiatives" })).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-refresh-failed")).toBeNull();
+    expect(screen.queryByRole("table", { name: "Milestones in phase order" })).toBeNull();
+  });
+
+  test("R2-5 — leaves focus where the operator left it across the failed poll (UX3(d))", async () => {
+    mockApi.initiativePlan.mockResolvedValue(plan());
+
+    const { poll } = renderPollingPage();
+    await screen.findByRole("table", { name: "Milestones in phase order" });
+    const tab = screen.getByRole("tab", { name: "Board" });
+    tab.focus();
+    const before = document.activeElement;
+
+    failNextPlanRead(new Error(PLAN_REASON));
+
+    await poll();
+
+    expect(screen.getByTestId("plan-refresh-failed")).toBeInTheDocument();
+    expect(document.activeElement).toBe(before);
+  });
+
+  test("UX2(e) — the notice is the first child of .plan-main, above the heading", async () => {
+    mockApi.initiativePlan.mockResolvedValue(plan());
+
+    const { container, poll } = renderPollingPage();
+    await screen.findByRole("table", { name: "Milestones in phase order" });
+
+    failNextPlanRead(new Error(PLAN_REASON));
+
+    await poll();
+
+    const main = container.querySelector(".plan-main");
+    const notice = screen.getByTestId("plan-refresh-failed");
+    expect(main?.firstElementChild).toBe(notice);
+    const heading = container.querySelector(".plan-heading");
+    expect(notice.compareDocumentPosition(heading!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("a plan read that had nothing to lose", () => {
+  test("R2-4 — a first-load failure keeps today's pane, copy and Retry", async () => {
+    mockApi.initiativePlan.mockRejectedValue(new ApiError(502, PLAN_REASON));
+
+    renderPollingPage();
+
+    const pane = await screen.findByRole("alert");
+    expect(pane).toHaveTextContent("The plan could not be loaded");
+    expect(pane).toHaveTextContent(PLAN_REASON);
+    expect(within(pane).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-refresh-failed")).toBeNull();
+  });
+
+  test("R2-4 — Retry does not unmount the pane into the skeleton, and the reason stays on screen", async () => {
+    // AC4. query-core clears `error` and returns a failed-with-no-data query to
+    // `status: "pending"` on `refetch()`, so a branch guarded on raw `isError`
+    // drops the operator into the two-skeleton pane and takes the reason with
+    // it (lg-milestone-that-1435's defect).
+    mockApi.initiativePlan.mockRejectedValue(new Error(PLAN_REASON));
+    const user = userEvent.setup();
+
+    renderPollingPage();
+    const pane = await screen.findByRole("alert");
+
+    // Held in flight: the hold has to outlive `refetch()`'s return to pending.
+    let settle!: (value: InitiativePlan) => void;
+    mockApi.initiativePlan.mockReturnValue(
+      new Promise<InitiativePlan>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    await user.click(within(pane).getByRole("button", { name: "Retry" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(PLAN_REASON);
+    expect(screen.queryByLabelText("Loading the plan")).toBeNull();
+
+    await act(async () => {
+      settle(plan());
+    });
+    expect(
+      await screen.findByRole("table", { name: "Milestones in phase order" }),
+    ).toBeInTheDocument();
+  });
+
+  test("R2-4 — Retry's busy state is the operator's own click, never the background poll (UX3(c))", async () => {
+    // Sibling lg-milestone-that-2196's defect, which must not be newly shipped
+    // here: keyed to raw `isFetching` this pane's one control would go disabled
+    // and read "Retrying…" every 30 seconds for the poll.
+    mockApi.initiativePlan.mockRejectedValue(new Error(PLAN_REASON));
+    const user = userEvent.setup();
+
+    renderPollingPage();
+    const pane = await screen.findByRole("alert");
+
+    let rejectClick!: (error: unknown) => void;
+    mockApi.initiativePlan.mockReturnValue(
+      new Promise<InitiativePlan>((_, reject) => {
+        rejectClick = reject;
+      }),
+    );
+    await user.click(within(pane).getByRole("button", { name: "Retry" }));
+
+    const busy = within(screen.getByRole("alert")).getByRole("button");
+    expect(busy).toHaveTextContent("Retrying…");
+    expect(busy).toBeDisabled();
+
+    await act(async () => {
+      rejectClick(new Error(PLAN_REASON));
+    });
+    await waitFor(() =>
+      expect(within(screen.getByRole("alert")).getByRole("button", { name: "Retry" })).toBeEnabled(),
+    );
+  });
 });

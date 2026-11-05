@@ -1,24 +1,17 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import fs from "fs";
+import path from "path";
 
-import { WorkflowMonitorView } from "../WorkflowMonitorView";
 import { ApiError } from "../../../api/http";
 import type { MonitorFinding } from "../../../api/types";
-
-const monitorFindings = jest.fn();
-
-jest.mock("../../../api/client", () => ({
-  api: { monitorFindings: (ticketId?: string) => monitorFindings(ticketId) },
-}));
+import {
+  deferred,
+  dropFocus,
+  finding,
+  reasonElement,
+  renderView,
+} from "./workflowMonitorFixtures";
 
 /**
  * All five states are pinned, because the one that matters most here is the one
@@ -26,101 +19,17 @@ jest.mock("../../../api/client", () => ({
  * list. "The monitor has nothing to report" and "we could not ask the monitor"
  * are opposite facts about the pipeline, and collapsing them into one blank
  * pane is the failure this whole surface exists to stop.
- */
-
-const finding = (over: Partial<MonitorFinding> = {}): MonitorFinding => ({
-  condition: "stage_thrash",
-  ticket_id: "t1",
-  stage_key: "script_review",
-  summary: "script_review attempted 12x against a baseline of 2",
-  evidence: {},
-  occurrences: 1,
-  first_seen: null,
-  last_seen: null,
-  ticket_title: "Fix the flaky review",
-  ticket_external_id: "lor-x-1",
-  ticket_state: "in_progress",
-  workspace_slug: "loregarden",
-  ...over,
-});
-
-/**
- * `setTicket` re-renders against the *same* QueryClient, which is the whole
- * point: the query key is the constant ["monitor-findings", "all"], so changing
- * the selected ticket starts no new read (lg-milestone-that-1435 AC6).
  *
- * `beside` renders a sibling control, for the one case that needs somewhere
- * else for focus to be (AC10). An <a> rather than a <button> because the theme
- * gate rejects a raw <button> on a changed line.
+ * Where focus goes across the retry lives in WorkflowMonitorView.focus.test.tsx.
  */
-function renderView(ticketId: string | null = null, beside: ReactNode = null) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
-  const tree = (id: string | null) => (
-    <MemoryRouter>
-      <QueryClientProvider client={client}>
-        {beside}
-        <WorkflowMonitorView ticketId={id} />
-      </QueryClientProvider>
-    </MemoryRouter>
-  );
-  const result = render(tree(ticketId));
-  return {
-    ...result,
-    setTicket: (id: string | null) => result.rerender(tree(id)),
-    // The background poll, with no timer. `refetchInterval: 30_000` fires
-    // exactly this call when it elapses, so a test that needs a second read
-    // on a surface that renders no Refresh control asks for one directly
-    // rather than driving jest's clock through react-query and RTL.
-    poll: () =>
-      act(async () => {
-        await client.refetchQueries({ queryKey: ["monitor-findings", "all"] });
-      }),
-  };
-}
 
-/**
- * Put focus back on <body>, standing in for what a real browser does when a
- * focused <button> is disabled.
- *
- * `activeElement.blur()` cannot do it: jsdom treats a disabled button as a
- * non-focusable area, so `blur()` on one is a no-op and the element the click
- * focused stays active — an oracle built on it can never go green under any
- * implementation. `document.body.focus()` does not move it either, because
- * jsdom will not make <body> the active element on request. Focusing a
- * throwaway anchor and blurring *that* leaves activeElement on <body>, which is
- * the state a real browser leaves behind when it disables a focused control.
- */
-function dropFocus() {
-  const pad = document.createElement("a");
-  pad.href = "#pad";
-  document.body.append(pad);
-  pad.focus();
-  pad.blur();
-  pad.remove();
-}
+const monitorFindings = jest.fn();
 
-/** A promise the test settles, so an in-flight state can be asserted on. */
-function deferred<T>() {
-  let settle!: {
-    resolve: (value: T) => void;
-    reject: (error: unknown) => void;
-  };
-  const promise = new Promise<T>((resolve, reject) => {
-    settle = { resolve, reject };
-  });
-  return { promise, ...settle };
-}
+jest.mock("../../../api/client", () => ({
+  api: { monitorFindings: (ticketId?: string) => monitorFindings(ticketId) },
+}));
 
-/** The one element the reason text lives in, and nothing else (AC8). */
-function reasonElement() {
-  const reason = screen.getByRole("alert").querySelector(".wm-error-reason");
-  if (!reason)
-    throw new Error("the error pane rendered no .wm-error-reason element");
-  return reason;
-}
-
+beforeEach(() => monitorFindings.mockReset());
 beforeEach(() => monitorFindings.mockReset());
 
 it("asks for every finding, with no ticket id", async () => {
@@ -506,73 +415,6 @@ describe("the error pane across its own retry", () => {
   });
 });
 
-/**
- * lg-milestone-that-1435 AC10 — focus, which native `disabled` takes away.
- *
- * Disabling a focused <button> blurs it in a real browser, so a keyboard
- * operator who pressed Enter on Retry is dumped on <body> for the length of the
- * read. jsdom does not do that, so the first test blurs explicitly: the blur is
- * standing in for the browser, not inventing a case.
- */
-describe("focus around the retry", () => {
-  it("returns focus to Retry when a retry settles with the failure still held", async () => {
-    const second = deferred<MonitorFinding[]>();
-    monitorFindings
-      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
-      .mockReturnValueOnce(second.promise);
-
-    renderView();
-    const retry = await screen.findByRole("button", { name: /retry/i });
-    await userEvent.click(retry);
-    expect(retry).toBeDisabled();
-
-    dropFocus();
-    expect(document.activeElement).toBe(document.body);
-
-    second.reject(new Error("monitor endpoint is down"));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /retry/i })).toBeEnabled(),
-    );
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: /retry/i }),
-    );
-  });
-
-  it("does not steal focus the operator moved elsewhere", async () => {
-    const second = deferred<MonitorFinding[]>();
-    monitorFindings
-      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
-      .mockReturnValueOnce(second.promise);
-
-    renderView(null, <a href="#elsewhere">Elsewhere</a>);
-    const retry = await screen.findByRole("button", { name: /retry/i });
-    await userEvent.click(retry);
-
-    const elsewhere = screen.getByRole("link", { name: "Elsewhere" });
-    elsewhere.focus();
-    expect(document.activeElement).toBe(elsewhere);
-
-    second.reject(new Error("monitor endpoint is down"));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /retry/i })).toBeEnabled(),
-    );
-    expect(document.activeElement).toBe(elsewhere);
-  });
-
-  it("does not take focus on a first load that failed without a retry", async () => {
-    // The condition is a retry *settling* (isFetching true → false), not the
-    // effect's first run. An effect that fires on mount would grab focus from
-    // wherever the operator was the moment the monitor tab's first read failed.
-    monitorFindings.mockRejectedValue(new Error("monitor endpoint is down"));
-
-    renderView();
-
-    await screen.findByText(/could not load monitor findings/i);
-    expect(document.activeElement).toBe(document.body);
-  });
-});
 
 /**
  * lg-milestone-that-1435, test-break — the same criteria, approached from the
@@ -718,361 +560,390 @@ describe("the error pane, adversarially", () => {
 });
 
 /**
- * lg-milestone-that-1454. The regime the block above deliberately leaves alone:
- * a read that fails when `findings.data` is ALREADY present.
+ * lg-milestone-that-1465 — the reason is a bounded scroll region, so it has to
+ * be a focus stop.
  *
- * query-core keeps `data` and sets `status: "error"` when a refetch fails over a
- * query that has loaded once, and `useHeldFailure` sets its hold unconditionally
- * on `isError`, so `failure` is truthy here too. The defect is that the failure
- * branch sat above the list render with no `!all.length` qualifier, so one failed
- * background poll replaced the findings the operator was reading — and the
- * header's own control said "Refreshing…" while it happened.
+ * `.wm-error-reason` carries `max-height: 9em; overflow: auto` (AC3 keeps all
+ * three declarations), and a scroll container that is neither focusable nor
+ * holds anything focusable cannot be driven by the arrow keys, Page Up/Down or
+ * Home/End in any engine: those keys scroll whichever scrollable ancestor has
+ * focus, and before this change nothing in the subtree could take it. The
+ * screen-reader path was never broken — the container is `role="alert"`, so the
+ * whole reason is announced — which is what made it easy to miss. The operator
+ * affected is the sighted keyboard-only one, who sees a scrollbar no key moves.
  *
- * Both tests below fail the SECOND read, which is the only way to reach the
- * data-present regime. Each asserts the notice AND the absence of the pane (or
- * the reverse), because either half alone passes under an implementation that
- * got the regime backwards.
+ * This supersedes lg-milestone-that-1435's AC10 sentence "Retry is its only
+ * focus stop": the pane now has two, the region and Retry, in that order.
  */
-describe("a failed re-read over findings already on screen", () => {
-  it("keeps the list and reports the failed read as one polite notice", async () => {
-    // AC1 + AC2 + AC4(a). The second read is started by the header's own
-    // Refresh, which the component cannot distinguish from the 30s poll: both
-    // go through `findings.refetch()` and land on the same held failure.
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
+describe("the reason as a reachable scroll region", () => {
+  const REGION_NAME = "Reason the monitor could not be read";
 
+  /**
+   * The >2000-character non-JSON body shape the AC8 oracle above already
+   * builds: `request()` falls back to `message = text`, so a gateway page
+   * arrives verbatim and the 9em box shows roughly its first six lines.
+   */
+  function proxyErrorPage() {
+    const page = `<!doctype html><html><body><h1>502 Bad Gateway</h1>${"<p>upstream connect error</p>".repeat(140)}</body></html>`;
+    expect(page.length).toBeGreaterThan(2000);
+    return page;
+  }
+
+  async function renderFailedFirstLoad() {
+    monitorFindings.mockRejectedValue(new Error(proxyErrorPage()));
     renderView();
-    await screen.findByText("Stage thrash");
+    await screen.findByText(/could not load monitor findings/i);
+  }
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Refresh monitor findings" }),
-    );
+  it("exposes the bounded element itself as a group with an accessible name", async () => {
+    // AC1, AC11. The name is pinned verbatim rather than paraphrased, and the
+    // role is load-bearing: `aria-label` on a generic `<div>` is not reliably
+    // exposed by browsers, so the name has to hang off a real role.
+    await renderFailedFirstLoad();
 
-    const notice = await screen.findByTestId("wm-refresh-failed");
-    // All three together: the list survived, the operator was told, and they
-    // were told without the alert that replaces everything.
-    expect(screen.getByText("Stage thrash")).toBeInTheDocument();
-    expect(screen.getByText(/attempted 12x/)).toBeInTheDocument();
-    expect(notice).toHaveTextContent(
-      "This list may be out of date — the last refresh failed.",
-    );
-    expect(notice).toHaveTextContent("monitor endpoint is down.");
-    expect(notice).toHaveAttribute("role", "status");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/could not load monitor findings/i),
-    ).not.toBeInTheDocument();
+    const region = screen.getByRole("group", { name: REGION_NAME });
+    // The stop must be the element that scrolls, not a wrapper around it:
+    // a focused parent does not scroll a bounded child.
+    expect(region).toBe(reasonElement());
+    expect(region).toHaveClass("wm-error-reason");
   });
 
-  it("still shows the full error pane when the read that failed had nothing to lose", async () => {
-    // AC3 + AC4(b). A successful EMPTY read followed by a failure is NOT the
-    // data-present regime: nothing was lost, so "Nothing to report" would be a
-    // health claim the monitor cannot make, and the pane's own sentence is the
-    // true one. The second read is the poll rather than a click because the
-    // `!all.length` branch renders no header and therefore no Refresh control.
-    monitorFindings
-      .mockResolvedValueOnce([])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
+  it("holds the server's text and nothing we wrote", async () => {
+    // AC6. A screen reader entering the region hears foreign text only — the
+    // title and the "Nothing is known…" sentence stay outside it.
+    await renderFailedFirstLoad();
 
-    const { poll } = renderView();
-    await screen.findByText("Nothing to report");
-
-    await poll();
-
-    expect(
-      await screen.findByText(/could not load monitor findings/i),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(reasonElement().textContent).toBe("monitor endpoint is down.");
-    expect(screen.queryByTestId("wm-refresh-failed")).not.toBeInTheDocument();
-    expect(screen.queryByText("Nothing to report")).not.toBeInTheDocument();
+    const region = screen.getByRole("group", { name: REGION_NAME });
+    expect(region.textContent).toBe(`${proxyErrorPage()}.`);
+    expect(region.textContent).not.toContain("Nothing is known about");
+    expect(region.textContent).not.toContain("Could not load monitor findings");
   });
 
-  it('shows the notice beside "Nothing on live tickets", because that block is about the scope filter', async () => {
-    // AC3's coexistence case. `nothingShown` and `failure` can be true at the
-    // same moment: every finding is on a finished ticket AND the last read
-    // failed. `all.length > 0`, so this is still the data-present regime, and
-    // the two statements are about different things — one about the scope
-    // filter, one about the read. Neither may be tidied into an either/or.
-    monitorFindings
-      .mockResolvedValueOnce([finding({ ticket_state: "done" })])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
+  it("is the first Tab stop from outside the pane, and Retry is the next", async () => {
+    // AC2, AC7: the pane's whole keyboard path is Tab → region → Tab → Retry,
+    // and Shift+Tab from Retry comes back. jsdom computes tab order from the
+    // DOM rather than from layout, so a tabbable div before a <button> is
+    // reached first here for the same reason it is in a browser.
+    await renderFailedFirstLoad();
+    const region = screen.getByRole("group", { name: REGION_NAME });
+    const retry = screen.getByRole("button", { name: /^retry$/i });
 
+    dropFocus();
+    expect(document.activeElement).toBe(document.body);
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(region);
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(retry);
+
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(region);
+  });
+
+  it("is a stop whatever the reason's length, not only when it overflows", async () => {
+    // AC10. `tabIndex={0}` is a literal: deciding it from
+    // `scrollHeight > clientHeight` needs a post-layout read jsdom cannot
+    // give, and a Tab stop that appears and disappears with the length of
+    // foreign server text is less predictable than one always there.
+    monitorFindings.mockRejectedValue(new Error("monitor endpoint is down"));
     renderView();
-    await screen.findByText("Nothing on live tickets");
+    await screen.findByText(/could not load monitor findings/i);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Refresh monitor findings" }),
-    );
+    const region = screen.getByRole("group", { name: REGION_NAME });
+    expect(region.textContent).toBe("monitor endpoint is down.");
+    dropFocus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(region);
+  });
 
-    const notice = await screen.findByTestId("wm-refresh-failed");
-    expect(screen.getByText("Nothing on live tickets")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    // Notice first: it qualifies everything below it, including that block.
+  it("adds one stop and one region, not one per failed poll", async () => {
+    // AC12 and the node-count assertion above, from the other side: the held
+    // failure keeps the same node mounted across consecutive failures, so
+    // nothing accrues and there is no scroll-position reset to make.
+    monitorFindings.mockRejectedValue(new Error(proxyErrorPage()));
+    const { startPoll } = renderView();
+    await screen.findByText(/could not load monitor findings/i);
+
+    await act(async () => {
+      await startPoll();
+    });
+
+    expect(screen.getAllByRole("group", { name: REGION_NAME })).toHaveLength(1);
     expect(
-      notice.compareDocumentPosition(
-        screen.getByText("Nothing on live tickets"),
-      ),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      screen.getByRole("alert").querySelectorAll(".wm-error-reason"),
+    ).toHaveLength(1);
+    dropFocus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("group", { name: REGION_NAME }),
+    );
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^retry$/i }),
+    );
   });
 });
 
 /**
- * lg-milestone-that-1454, adversarially. The block above proves the notice can
- * appear and the pane can stay; this one proves the notice cannot appear for
- * any other reason, cannot say the wrong thing, and cannot grow into a second
- * error surface.
+ * lg-milestone-that-1465, test-break — what the designed oracles above leave
+ * reachable.
  *
- * Every test here is written against a specific wrong implementation that the
- * three tests above pass unchanged:
- *   - a notice rendered unconditionally in the list return (nothing above
- *     asserts its ABSENCE on a healthy read, and the one test that asserts no
- *     `role="status"` is in the pane regime, which returns earlier);
- *   - a hand-written `err instanceof Error ? err.message : …` ternary in place
- *     of `describeError`, which is identical on `new Error("…")` — the only
- *     error shape the tests above use — and loses an `ApiError` status line and
- *     the fallback;
- *   - the notice placed inside `.wm-header`, which is still before "Nothing on
- *     live tickets" and so still satisfies the ordering assertion above;
- *   - a notice guarded on `!findings.isFetching`, which is true at every moment
- *     the tests above assert on, and false for the whole of the next read;
- *   - a notice carrying its own Retry or dismiss, which changes no role and no
- *     text content.
+ * Each test below holds against an implementation that passes all five tests
+ * in the block above and is still wrong:
+ *
+ * 1. `role="group" aria-label={…} tabIndex={0}` added while `className` loses
+ *    `wm-narrow`. The name resolves, the Tab path is unchanged, and AC8's
+ *    measured volume stops being true: it is `.wm-narrow`'s 380px that makes
+ *    the box ~61 characters a line, so dropping it changes what the operator
+ *    sees at the median 205-character reason without failing a thing.
+ * 2. The three attributes on a new wrapper *around* the bounded div, or the
+ *    bounded div moved below the sentence we wrote. A focused parent does not
+ *    scroll a bounded child, and AC1 pins the position — but Tab order from
+ *    <body> is region-then-Retry either way.
+ * 3. `tabIndex={1}`. From <body> inside this pane it is indistinguishable from
+ *    0, and in the app it jumps the whole page's queue: a positive tabindex is
+ *    reached before every `tabIndex={0}` stop on the screen.
+ * 4. `role="region"`, which AC11 refuses. `getByRole("group", …)` is the only
+ *    role assertion above, and a landmark injected for a transient error pane
+ *    reaches every screen-reader user's landmark list.
+ * 5. The attributes added to the `wm-stale` line as well — the branch that
+ *    kept the operator's list. AC5 says nothing else about the pane changes,
+ *    and that line is not bounded, so a stop there is a stop on nothing.
+ * 6. A reason the server gave us no words for. Every oracle above feeds an
+ *    `Error` with a message; `describeError`'s fallback branch is what stops
+ *    the region being an empty box carrying a focus ring (AC6).
+ *
+ * The last test reads the stylesheet off disk, as `AppSidebarScrolling.test.tsx`
+ * does: `jest.config.cjs:55` maps `*.css` to a stub, so `getComputedStyle`
+ * reports nothing whatever the file says, and AC3 and AC9 would otherwise ship
+ * with no oracle at all. It is weaker than a browser measurement and is not
+ * pretending otherwise — it observes the declarations, not the painted ring.
  */
-describe("the staleness notice, adversarially", () => {
-  const notice = () => screen.getByTestId("wm-refresh-failed");
-  const refresh = () =>
-    screen.getByRole("button", { name: "Refresh monitor findings" });
+describe("the reason region, adversarially", () => {
+  const NAME = "Reason the monitor could not be read";
+  const PAGE = `<!doctype html><html><body><h1>502 Bad Gateway</h1>${"<p>upstream connect error</p>".repeat(140)}</body></html>`;
 
-  it("is absent on a healthy read, and leaves again when a read succeeds", async () => {
-    // AC2's render condition is `failure`, and `useHeldFailure` clears only on a
-    // read that settles without failing. A notice with no condition, or one
-    // that never clears, tells the operator their current list is stale — the
-    // same lie as the pane, in a smaller font.
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
-      .mockResolvedValue([finding()]);
-
+  async function failedFirstLoad() {
+    monitorFindings.mockRejectedValue(new Error(PAGE));
     renderView();
-    await screen.findByText("Stage thrash");
-    expect(screen.queryByTestId("wm-refresh-failed")).not.toBeInTheDocument();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await screen.findByText(/could not load monitor findings/i);
+    return screen.getByRole("group", { name: NAME });
+  }
 
-    await userEvent.click(refresh());
-    await screen.findByTestId("wm-refresh-failed");
-    // Exactly one, however many places could have rendered it.
-    expect(screen.getAllByTestId("wm-refresh-failed")).toHaveLength(1);
+  it("keeps all three classes, and the place in the column, that AC8's measurement rests on", async () => {
+    // AC1. `wm-muted` is the tone and `wm-narrow` the 380px width; the bound is
+    // measured against both. "Exactly three new attributes and nothing else"
+    // also means the element did not move and did not acquire a wrapper.
+    const region = await failedFirstLoad();
+    const alert = screen.getByRole("alert");
 
-    await userEvent.click(refresh());
-
-    await waitFor(() =>
-      expect(screen.queryByTestId("wm-refresh-failed")).not.toBeInTheDocument(),
+    expect(Array.from(region.classList).sort()).toEqual([
+      "wm-error-reason",
+      "wm-muted",
+      "wm-narrow",
+    ]);
+    expect(region.parentElement).toBe(alert);
+    const after = (first: Element, second: Element) =>
+      Boolean(
+        first.compareDocumentPosition(second) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    expect(after(alert.querySelector(".wm-error-title")!, region)).toBe(true);
+    expect(after(region, screen.getByText(/Nothing is known about/))).toBe(
+      true,
     );
-    expect(screen.getByText("Stage thrash")).toBeInTheDocument();
-  });
-
-  it("recovers an ApiError's status line, which a hand-written ternary throws away", async () => {
-    // AC2 names `describeError` for this reason, and the pane has the same test
-    // at `new ApiError(502, "")`. A 503 with an empty body reaches the ternary
-    // as `err.message === ""`, so the operator is told a refresh failed and
-    // nothing at all about why.
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValue(new ApiError(503, "", undefined));
-
-    renderView();
-    await screen.findByText("Stage thrash");
-
-    await userEvent.click(refresh());
-
-    await waitFor(() =>
-      expect(notice()).toHaveTextContent("Request failed (503)."),
-    );
-    expect(notice()).toHaveTextContent(
-      "This list may be out of date — the last refresh failed.",
-    );
-    expect(screen.getByText("Stage thrash")).toBeInTheDocument();
-  });
-
-  it("falls back to the monitor's own sentence when the rejection is not an Error", async () => {
-    // A rejected promise carries whatever was thrown. `describeError`'s third
-    // branch and the fallback AC2 names are what stands between that and a
-    // notice whose second sentence is empty or "[object Object]".
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValue({ upstream: "ECONNRESET" });
-
-    renderView();
-    await screen.findByText("Stage thrash");
-
-    await userEvent.click(refresh());
-
-    await waitFor(() =>
-      expect(notice()).toHaveTextContent(
-        "The monitor endpoint did not answer.",
-      ),
-    );
-    expect(notice().textContent).not.toContain("object Object");
-  });
-
-  it("sits in the column under the header, not inside the header's own row", async () => {
-    // AC2 is explicit about the parent: `.wm-header` is a space-between,
-    // wrapping row holding the scope group and Refresh, and a sentence placed
-    // in it fights both at every width. The ordering assertion in the block
-    // above cannot see the difference, because a child of the header is also
-    // before everything that follows it.
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
-
-    renderView();
-    await screen.findByText("Stage thrash");
-
-    await userEvent.click(refresh());
-    const stale = await screen.findByTestId("wm-refresh-failed");
-
-    expect(stale.closest(".wm-header")).toBeNull();
-    expect(stale.parentElement).toHaveClass("wm-root");
-    expect(stale.tagName).toBe("P");
-    expect(stale).toHaveClass("wm-stale");
-    const header = refresh().closest("header");
-    expect(header).not.toBeNull();
-    expect(header!.compareDocumentPosition(stale)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(stale.compareDocumentPosition(screen.getByText("By ticket"))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-  });
-
-  it("stays on screen for the whole of the next read, beside the header saying Refreshing…", async () => {
-    // UI-DESIGN / IN-FLIGHT. `useHeldFailure` clears on a read that SETTLES
-    // without failing, so the list is still stale while the read that might fix
-    // it is in flight — which is exactly what the header was already promising
-    // and could not deliver. A notice guarded on `!findings.isFetching` passes
-    // every other test in this file and blinks out for the length of each read.
-    const third = deferred<MonitorFinding[]>();
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
-      .mockReturnValueOnce(third.promise)
-      .mockResolvedValue([finding()]);
-
-    renderView();
-    await screen.findByText("Stage thrash");
-
-    await userEvent.click(refresh());
-    await screen.findByTestId("wm-refresh-failed");
-
-    await userEvent.click(refresh());
-
-    expect(refresh()).toBeDisabled();
-    expect(refresh()).toHaveTextContent("Refreshing…");
-    expect(notice()).toBeInTheDocument();
-    expect(notice()).toHaveTextContent("monitor endpoint is down.");
-    expect(screen.getByText("Stage thrash")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-    third.resolve([finding()]);
-    await waitFor(() =>
-      expect(screen.queryByTestId("wm-refresh-failed")).not.toBeInTheDocument(),
-    );
-  });
-
-  it("adds no control of its own: Refresh stays the one action and nothing dismisses it", async () => {
-    // UI-DESIGN / ACTION. A second Retry duplicates the header's control; a
-    // dismiss asserts the list is current, which only a successful read can
-    // make true. Neither changes the notice's role or its text, so nothing
-    // above this line would notice either arriving.
-    monitorFindings
-      .mockResolvedValueOnce([finding()])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
-
-    renderView();
-    await screen.findByText("Stage thrash");
-
-    await userEvent.click(refresh());
-    const stale = await screen.findByTestId("wm-refresh-failed");
-
     expect(
-      stale.querySelector("button, a, input, [role='button'], [tabindex]"),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /retry/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /dismiss|close|hide/i }),
-    ).not.toBeInTheDocument();
-    // Scope group's two buttons and Refresh, and nothing new.
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+      after(region, screen.getByRole("button", { name: /^retry$/i })),
+    ).toBe(true);
   });
 
-  it("keeps the operator's selected scope, and takes no focus when the read settles", async () => {
-    // AC1 names the scope as well as the list, and UI-DESIGN / FOCUS says
-    // nothing in this change moves focus: the `retryRef` return belongs to the
-    // pane and must not be extended here. Focus is dropped to <body> first,
-    // standing in for the browser disabling the control the operator pressed —
-    // the one state in which that effect fires.
-    monitorFindings
-      .mockResolvedValueOnce([
-        finding(),
-        finding({
-          ticket_id: "t2",
-          ticket_external_id: "lor-x-2",
-          ticket_state: "done",
-          ticket_title: "Already finished",
-        }),
-      ])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
+  it("is a stop at tabindex 0, so it does not jump the page's queue", async () => {
+    // AC10. A positive tabindex is reached before every tabIndex={0} stop in
+    // the document, so the operator arrives here from somewhere unrelated.
+    // `beside` is the sibling control the harness renders ahead of the view.
+    monitorFindings.mockRejectedValue(new Error(PAGE));
+    renderView(null, <a href="#elsewhere">Elsewhere</a>);
+    await screen.findByText(/could not load monitor findings/i);
+    const region = screen.getByRole("group", { name: NAME });
 
-    renderView();
-    await screen.findByText("Stage thrash");
-    await userEvent.click(screen.getByRole("button", { name: /^Everything/ }));
-    expect(screen.getAllByText("Already finished").length).toBeGreaterThan(0);
+    expect(region.getAttribute("tabindex")).toBe("0");
 
-    await userEvent.click(refresh());
     dropFocus();
-    const stale = await screen.findByTestId("wm-refresh-failed");
-
-    expect(screen.getByRole("button", { name: /^Everything/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("link", { name: "Elsewhere" }),
     );
-    expect(
-      screen.getByRole("button", { name: /^Needs attention/ }),
-    ).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getAllByText("Already finished").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Fix the flaky review").length).toBeGreaterThan(
-      0,
-    );
-    await waitFor(() => expect(refresh()).toBeEnabled());
-    expect(document.activeElement).toBe(document.body);
-    expect(stale).not.toHaveAttribute("tabindex");
+    await userEvent.tab();
+    expect(document.activeElement).toBe(region);
   });
 
-  it("stays one notice across repeated failed polls, and never escalates to the pane", async () => {
-    // Determinism, and the regime's own stickiness: the defect is on a 30s
-    // timer, so the second, third and fourth consecutive failure are the
-    // normal case, not an edge one. The list must survive all of them and the
-    // notice must not accumulate.
+  it("is a group and not a landmark", async () => {
+    // AC11. `role="region"` would expose the same name to `aria-label` and put
+    // a transient error pane in the landmark list of every screen reader.
+    const region = await failedFirstLoad();
+
+    expect(region.getAttribute("role")).toBe("group");
+    expect(screen.queryAllByRole("region")).toHaveLength(0);
+  });
+
+  it("names the region even when the server gave us no words to quote", async () => {
+    // AC6. `describeError` falls through to the supplied fallback for a
+    // rejection that is neither an Error nor a string, so the region is never
+    // an empty box carrying a focus ring — and it is still a named stop.
+    monitorFindings.mockRejectedValue({ status: 502 });
+    renderView();
+    await screen.findByText(/could not load monitor findings/i);
+
+    const region = screen.getByRole("group", { name: NAME });
+    expect(region.textContent).toBe("The monitor endpoint did not answer.");
+    dropFocus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(region);
+  });
+
+  it("holds the same node across a failed poll, which is why there is nothing to reset", async () => {
+    // AC12, as the only part of it jsdom can observe: it lays nothing out, so
+    // `scrollTop` is pinned at 0 and no assertion can see a scroll position.
+    // What it can see is that the node is not replaced — a remount would reset
+    // the scroll in a browser whether or not an effect ever sets it.
+    monitorFindings.mockRejectedValue(new Error(PAGE));
+    const { startPoll } = renderView();
+    await screen.findByText(/could not load monitor findings/i);
+    const before = screen.getByRole("group", { name: NAME });
+
+    await act(async () => {
+      await startPoll();
+    });
+
+    expect(screen.getByRole("group", { name: NAME })).toBe(before);
+  });
+
+  it("leaves the pane that kept the operator's list unbounded and unstopped", async () => {
+    // AC5. A failed re-read over findings already on screen reports inline in
+    // `wm-stale`, which is not bounded and not a scroll container. A focus
+    // stop there would be a stop on nothing, and the fix must not spread.
     monitorFindings
       .mockResolvedValueOnce([finding()])
-      .mockRejectedValue(new Error("monitor endpoint is down"));
-
+      .mockRejectedValue(new Error(PAGE));
     const { poll } = renderView();
     await screen.findByText("Stage thrash");
 
-    for (let i = 0; i < 3; i += 1) {
-      await poll();
+    await poll();
+
+    expect(await screen.findByTestId("wm-refresh-failed")).toHaveTextContent(
+      /may be out of date/,
+    );
+    expect(screen.queryByRole("group", { name: NAME })).toBeNull();
+    expect(document.querySelectorAll(".wm-error-reason")).toHaveLength(0);
+  });
+
+  it("keeps the bound byte for byte, and rings the new stop inset in the theme's accent", () => {
+    // AC3 and AC9, read out of the stylesheet because jest maps it to a stub.
+    // The declarations are compared exhaustively: that is what rejects a
+    // `line-clamp`, an ellipsis, or a loosened `max-height` "to fit the
+    // typical case", none of which any rendered assertion in this file sees.
+    const rules = Array.from(
+      fs
+        .readFileSync(
+          path.resolve(__dirname, "..", "WorkflowMonitorView.css"),
+          "utf8",
+        )
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/([^{}]+)\{([^{}]*)\}/g),
+      ([, selector, body]) => ({
+        selector: selector.trim(),
+        declarations: Object.fromEntries(
+          body
+            .split(";")
+            .map((line) => line.split(":"))
+            .filter(([property]) => property.trim())
+            .map(([property, ...rest]) => [
+              property.trim(),
+              rest.join(":").trim(),
+            ]),
+        ),
+      }),
+    );
+    const index = rules.findIndex(
+      (rule) => rule.selector === ".wm-error-reason",
+    );
+
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(rules[index]!.declarations).toEqual({
+      "text-align": "left",
+      "max-height": "9em",
+      overflow: "auto",
+    });
+    // Immediately after, so the ring cannot drift away from what it rings.
+    expect(rules[index + 1]!.selector).toBe(".wm-error-reason:focus-visible");
+    expect(rules[index + 1]!.declarations).toEqual({
+      outline: "2px solid var(--ac)",
+      "outline-offset": "-2px",
+    });
+  });
+});
+
+/**
+ * lg-milestone-that-2196 AC4/AC11 — the assertive re-announce is KEPT, and
+ * this is the keep-branch's test.
+ *
+ * The 30-second cadence the ticket describes was never the reason string: it
+ * was the Retry label flipping `Retry` → `Retrying…` inside the `role="alert"`
+ * container on every poll, which AC1 removes. Once it is gone, a steady outage
+ * returning the identical message mutates no DOM inside the live region and
+ * never re-announces — what remains fires only on a *change* of message,
+ * bounded by the number of distinct failure modes during the outage rather than
+ * by the poll interval.
+ *
+ * A changed reason is a change of fact, not a report of activity: "connection
+ * refused" to "401 unauthorized" changes what the operator does next, and a
+ * screen-reader operator not told of it goes on acting on a reason that is no
+ * longer true. Suppressing it has no honest implementation either — leaving the
+ * DOM alone shows a stale reason, and updating the DOM while silencing the
+ * announce (swapping the `role`, re-mounting the region) tells sighted and
+ * screen-reader operators different things, and would also silence the
+ * operator's own retry, which AC4's last sentence forbids.
+ *
+ * The nearest existing oracle, "holds the same node across a failed poll",
+ * rejects with one value for both polls, so it cannot see this at all.
+ */
+describe("the re-announce across polls that fail differently", () => {
+  it("replaces the reason, in the same live region, when consecutive polls fail for different reasons", async () => {
+    // Two background polls, each with its own reason, and no click or keypress
+    // anywhere in the test: this is the pane under a 30s timer, not under an
+    // operator. Deferred, so each failure is a committed in-flight render
+    // rather than one act() flush.
+    const polls = [deferred<MonitorFinding[]>(), deferred<MonitorFinding[]>()];
+    monitorFindings
+      .mockRejectedValueOnce(new Error("the gateway refused the connection"))
+      .mockReturnValueOnce(polls[0].promise)
+      .mockReturnValueOnce(polls[1].promise);
+
+    const { startPoll } = renderView();
+    const alert = await screen.findByRole("alert");
+    expect(reasonElement().textContent).toBe(
+      "the gateway refused the connection.",
+    );
+
+    const reasons = ["401 unauthorized", "upstream timed out after 30s"];
+    for (const [index, reason] of reasons.entries()) {
+      const started = startPoll();
+      await act(async () => {
+        polls[index]!.reject(new Error(reason));
+        await started;
+      });
+
+      // The fact changed, so the region's text changed with it — which is the
+      // announcement, because the container is the live region.
       await waitFor(() =>
-        expect(screen.getAllByTestId("wm-refresh-failed")).toHaveLength(1),
+        expect(reasonElement().textContent).toBe(`${reason}.`),
       );
-      expect(monitorFindings).toHaveBeenCalledTimes(i + 2);
-      expect(screen.getByText("Stage thrash")).toBeInTheDocument();
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      // And it is still the same assertive container: not re-mounted, not
+      // demoted to another role to buy silence.
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(alert).toHaveAttribute("role", "alert");
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
     }
-    expect(monitorFindings).toHaveBeenCalledTimes(4);
   });
 });

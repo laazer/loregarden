@@ -1,0 +1,19 @@
+/*
+ * One look for five surfaces. These are the declarations the monitor's own
+ * notice class carried in WorkflowMonitorView.css, moved here when the monitor
+ * migrated onto this component: a shared component whose canonical treatment lives in another
+ * component's stylesheet is a shim, and this repository's posture forbids one.
+ *
+ * Deliberately absent, and asserted absent by StaleReadNotice.test.tsx: any
+ * clamp on the reason, and any motion. The reason is unbounded and wrapping on
+ * purpose, and the state change is already carried by the text appearing — at a
+ * 5s cadence an entrance transition is a flicker the operator sees all day.
+ */
+
+.stale-read-notice {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  padding-left: 10px;
+  border-left: 3px solid color-mix(in srgb, var(--rdl) 45%, transparent);
+}

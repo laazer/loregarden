@@ -1,7 +1,13 @@
+import { QueryClient } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError } from "../../../api/http";
-import { mergeQueueApi, type MergeQueueEntry, type MergeQueueView } from "../../../api/mergeQueueApi";
+import {
+  mergeQueueApi,
+  mergeQueueKeys,
+  type MergeQueueEntry,
+  type MergeQueueView,
+} from "../../../api/mergeQueueApi";
 import { uiActionRegistry } from "../../../lib/agentActions/registry";
 import { findUsabilityProblems } from "../../../lib/usabilityCheck";
 import queueFixture from "../../../test/fixtures/prod-shape/merge-queue-loregarden.json";
@@ -121,5 +127,204 @@ describe("MergeQueueSection", () => {
     await screen.findByText(/Waiting on/);
 
     expect(findUsabilityProblems(container)).toEqual([]);
+  });
+});
+
+/**
+ * lg-milestone-that-2187 R4 (AC3, AC5, UX1(b), UX2) — a failed re-read of the
+ * head entry's checks, over checks already on screen.
+ *
+ * AC3 asked whether this is a real instance of the shape. It is, and the
+ * evidence is read-only: `HeadChecks`'s query sets only `queryKey`, `queryFn`
+ * and `refetchInterval`, with no `staleTime`/`gcTime`/`retry`/`placeholderData`
+ * override, and `createQueryClient()` sets no query `defaultOptions`. So a
+ * failed refetch keeps `data` and sets `status: "error"`, and today's branch is
+ * reached with `detail.data` present — discarding the checks the operator was
+ * reading.
+ *
+ * KNOWN GAP, stated not fixed (spec D7): `MergeQueueSection:105` passes
+ * `queries={[queue]}` — the outer LIST query — to `DashboardSection`, whose
+ * `:54` `queries.find(q => q.isError)` still unmounts this row and its notice
+ * when the LIST read fails. Filed as lg-milestone-that-2246. Every test below
+ * therefore keeps `mockQueue.queue` succeeding, or it would pass for the wrong
+ * reason: the section's own error pane would have rendered and the assertion
+ * about the row's notice would be vacuous.
+ */
+
+/** Make every head-checks re-read from here on reject (see failNextRead's note in the board suite). */
+function failNextChecksRead() {
+  mockQueue.entry.mockRejectedValue(new ApiError(502, CHECKS_REASON));
+}
+
+const CHECKS_REASON = "GitHub did not answer: gh timed out";
+const CHECKS_LEAD = "These checks may be out of date — the last re-read failed.";
+
+/** The head row's own re-read, with no timer. `refetchInterval` fires exactly this. */
+function pollHeadChecks(client: QueryClient) {
+  return act(async () => {
+    await client.refetchQueries({ queryKey: mergeQueueKeys.entry(head().id) });
+    // query-core writes the error into the cache synchronously, but the
+    // subscribed component's render lands a tick later, so a poll that
+    // returned as soon as the refetch settled would let a SYNCHRONOUS
+    // assertion read the pre-failure DOM and pass under an implementation
+    // that never renders the notice at all. Flushing a macrotask inside
+    // `act` makes the poll deterministic, which is what lets the negative
+    // assertions below ("no alert", "no empty state") be trustworthy.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+function renderWithClient() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return {
+    client,
+    ...renderWithRouter(<MergeQueueSection workspaceSlug="loregarden" now={NOW} />, {
+      queryClient: client,
+    }),
+  };
+}
+
+describe("a failed re-read of the head entry's checks", () => {
+  it("R4-1 — keeps the check names and reports the failed re-read as one polite notice", async () => {
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({
+      ...head(),
+      checks: [
+        { name: "Server (Python)", outcome: "pending", url: "https://github.com/laazer/loregarden/actions/1" },
+      ],
+      checks_live: true,
+    });
+
+    const { client } = renderWithClient();
+    await screen.findByText(/Waiting on/);
+
+    failNextChecksRead();
+
+    await pollHeadChecks(client);
+
+    expect(screen.getByText(/Waiting on/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Server (Python)" })).toBeTruthy();
+    const notice = screen.getByTestId("head-checks-refresh-failed");
+    expect(screen.getAllByTestId("head-checks-refresh-failed")).toHaveLength(1);
+    expect(notice).toHaveAttribute("role", "status");
+    expect(notice).toHaveTextContent(CHECKS_LEAD);
+    expect(notice).toHaveTextContent(`${CHECKS_REASON}.`);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Could not read its checks/)).toBeNull();
+  });
+
+  it("R4-2 — keeps each check's GitHub link and its href (UX1(b))", async () => {
+    // The per-check link is the only action this row offers. A fix that keeps
+    // the check names and drops the links keeps the question and removes the
+    // answer.
+    const url = "https://github.com/laazer/loregarden/actions/1";
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({
+      ...head(),
+      checks: [{ name: "Server (Python)", outcome: "pending", url }],
+      checks_live: true,
+    });
+
+    const { client } = renderWithClient();
+    await screen.findByText(/Waiting on/);
+
+    failNextChecksRead();
+
+    await pollHeadChecks(client);
+
+    expect(screen.getByRole("link", { name: "Server (Python)" })).toHaveAttribute("href", url);
+  });
+
+  it("R4-6 — leaves focus where it was across the failed re-read (UX3(d))", async () => {
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({
+      ...head(),
+      checks: [{ name: "Server (Python)", outcome: "pending", url: "" }],
+      checks_live: true,
+    });
+
+    const { client } = renderWithClient();
+    const link = (await screen.findAllByRole("link"))[0];
+    link.focus();
+    const before = document.activeElement;
+
+    failNextChecksRead();
+
+    await pollHeadChecks(client);
+
+    expect(screen.getByTestId("head-checks-refresh-failed")).toBeInTheDocument();
+    expect(document.activeElement).toBe(before);
+  });
+
+  it("UX2(e) — the notice sits after the checks line, where today's danger line is", async () => {
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({
+      ...head(),
+      checks: [{ name: "Server (Python)", outcome: "pending", url: "" }],
+      checks_live: true,
+    });
+
+    const { client } = renderWithClient();
+    const checks = await screen.findByText(/Waiting on/);
+
+    failNextChecksRead();
+
+    await pollHeadChecks(client);
+
+    const notice = screen.getByTestId("head-checks-refresh-failed");
+    expect(checks.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("a head-checks read that had nothing to lose", () => {
+  it("R4-4 — takes the danger line when the first read succeeded with zero checks", async () => {
+    // "Every required check passed; landing next cycle." is a health claim the
+    // row cannot make while its read is failing (UX2(a)).
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({ ...head(), checks: [], checks_live: true });
+
+    const { client } = renderWithClient();
+    await screen.findByText("Every required check passed; landing next cycle.");
+
+    failNextChecksRead();
+
+    await pollHeadChecks(client);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not read its checks");
+    expect(screen.getByRole("alert")).toHaveTextContent(CHECKS_REASON);
+    expect(screen.queryByText("Every required check passed; landing next cycle.")).toBeNull();
+    expect(screen.queryByTestId("head-checks-refresh-failed")).toBeNull();
+  });
+
+  it("R4-3 — a first-load failure keeps today's danger line and its reason", async () => {
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockRejectedValue(new ApiError(502, CHECKS_REASON));
+
+    renderWithClient();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not read its checks");
+    expect(alert).toHaveTextContent(CHECKS_REASON);
+    expect(screen.queryByTestId("head-checks-refresh-failed")).toBeNull();
+  });
+
+  it("R4-5 — zero non-passing checks and no failure still reads as landing next cycle", async () => {
+    // `detail.data.checks` becomes `detail.data?.checks ?? []` because branch 2
+    // no longer narrows `data` for TypeScript. This is the assertion that the
+    // nullish default did not change the success path.
+    mockQueue.queue.mockResolvedValue(prodShape);
+    mockQueue.entry.mockResolvedValue({
+      ...head(),
+      checks: [{ name: "PR UX section", outcome: "passing", url: "" }],
+      checks_live: true,
+    });
+
+    renderWithClient();
+
+    expect(
+      await screen.findByText("Every required check passed; landing next cycle."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("head-checks-refresh-failed")).toBeNull();
   });
 });

@@ -8,10 +8,12 @@ import {
   type MergeQueueState,
   type MergeQueueWait,
 } from "../../api/mergeQueueApi";
+import { usePolledReadFailure } from "../../hooks/usePolledReadFailure";
 import { useAgentAction } from "../../lib/agentActions/useAgentAction";
 import { formatRelativeAge } from "../../lib/timestamps";
 import { describeError, toastActionFailed } from "../../state/toastStore";
 import { Button } from "../ui/Button";
+import { StaleReadNotice } from "../ui/StaleReadNotice";
 import { DashboardSection } from "./DashboardSection";
 
 /** The loop advances on the CI poll tick (120s); reading faster shows nothing new. */
@@ -206,33 +208,59 @@ function HeadChecks({ entryId }: { entryId: string }) {
     queryFn: () => mergeQueueApi.entry(entryId),
     refetchInterval: QUEUE_REFETCH_MS,
   });
+  // This query sets no `staleTime`, `retry` or `placeholderData`, and
+  // `createQueryClient()` sets no query `defaultOptions`, so a failed RE-READ
+  // keeps `data` and sets `status: "error"`. Guarded on the read's own checks,
+  // a failure over checks already on screen keeps them and says so below;
+  // guarded on `isError` it threw away the one-shot content this row exists to
+  // show, for a read that is about to be attempted again anyway.
+  const failure = usePolledReadFailure(detail, entryId, (detail.data?.checks.length ?? 0) > 0);
+
   if (detail.isPending) return <p className="wsd-row-note">Reading its checks from GitHub…</p>;
-  if (detail.isError) {
+  if (failure.blocking) {
     return (
       <p className="wsd-row-note wsd-danger" role="alert">
-        Could not read its checks: {describeError(detail.error)}
+        Could not read its checks: {describeError(failure.blocking.error)}
       </p>
     );
   }
-  const waiting = detail.data.checks.filter((check) => check.outcome !== "passing" && check.outcome !== "skipped");
-  if (waiting.length === 0) return <p className="wsd-row-note">Every required check passed; landing next cycle.</p>;
+  // `?? []` because the branch above no longer narrows `data` for TypeScript.
+  // "Every required check passed" must not render over a failing read, and the
+  // branch above is what stops it: zero checks read, then a failure, has
+  // nothing to protect and takes the pane.
+  const checks = detail.data?.checks ?? [];
+  const waiting = checks.filter((check) => check.outcome !== "passing" && check.outcome !== "skipped");
   return (
-    <p className="wsd-row-note">
-      Waiting on{" "}
-      {waiting.map((check, index) => (
-        <span key={check.name}>
-          {index > 0 ? ", " : null}
-          {check.url ? (
-            <a href={check.url} target="_blank" rel="noreferrer">
-              {check.name}
-            </a>
-          ) : (
-            check.name
-          )}{" "}
-          ({check.outcome})
-        </span>
-      ))}
-    </p>
+    <>
+      {waiting.length === 0 ? (
+        <p className="wsd-row-note">Every required check passed; landing next cycle.</p>
+      ) : (
+        <p className="wsd-row-note">
+          Waiting on{" "}
+          {waiting.map((check, index) => (
+            <span key={check.name}>
+              {index > 0 ? ", " : null}
+              {check.url ? (
+                <a href={check.url} target="_blank" rel="noreferrer">
+                  {check.name}
+                </a>
+              ) : (
+                check.name
+              )}{" "}
+              ({check.outcome})
+            </span>
+          ))}
+        </p>
+      )}
+      {failure.stale && (
+        <StaleReadNotice
+          lead="These checks may be out of date — the last re-read failed."
+          error={failure.stale.error}
+          fallback="GitHub did not answer."
+          testId="head-checks-refresh-failed"
+        />
+      )}
+    </>
   );
 }
 
