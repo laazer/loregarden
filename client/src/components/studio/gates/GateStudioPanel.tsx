@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -22,6 +23,8 @@ import { useHeldFailure } from "../../../hooks/useHeldFailure";
 import { scrollIntoScroller } from "../../../lib/scrollWithin";
 import { describeError, endSentence, errorStatus } from "../../../state/toastStore";
 import { Button } from "../../ui/Button";
+import { Input } from "../../ui/Input";
+import { Select } from "../../ui/Select";
 import { WorkspaceGatesPanel } from "../WorkspaceGatesPanel";
 import "../WorkspaceGatesPanel.css";
 import "./GateStudio.css";
@@ -72,6 +75,9 @@ interface ProfileState {
  * Back/forward cannot be intercepted: the app uses BrowserRouter, which has no
  * navigation blocker.
  */
+/** Past this many workflows the rail offers a filter; below it, the list is the filter. */
+const WORKFLOW_FILTER_AT = 8;
+
 /** A rail row's slug says nothing when it is only its name, lowercased and hyphenated. */
 function slugRepeatsName(name: string, slug: string): boolean {
   return !name || name.trim().toLowerCase().replace(/\s+/g, "-") === slug;
@@ -135,6 +141,15 @@ export function GateStudioPanel({
     [dirty],
   );
 
+  const workspacePickerId = useId();
+  const pickWorkspace = (workspaceSlug: string) => {
+    const next: GateStudioTarget = { workspaceSlug, workflowSlug: null, controlId: null };
+    // The same ask-first as a rail link: unsaved transition edits belong to
+    // the workspace being left.
+    if (dirty) setPending(next);
+    else navigate(gateStudioPath(next));
+  };
+
   const sortedWorkflows = useMemo(() => {
     const list = workflows.data ?? [];
     if (!workspace) return list;
@@ -194,37 +209,43 @@ export function GateStudioPanel({
   );
 
   return (
-    <div className="studio-shell">
+    <div className="studio-shell gate-studio-shell">
       <aside className="studio-library-rail gate-studio-rail" aria-label="Gate Studio navigation">
-        <div className="studio-library-section-label">Workspaces</div>
-        {workspacesLoading ? (
-          <p className="studio-preview-hint">Loading workspaces…</p>
-        ) : workspacesError ? (
-          <div className="gate-load-error" role="alert">
-            <p>Couldn't load the workspaces: {describeError(workspacesError, "the request failed")}</p>
-            <Button variant="secondary" onClick={onRetryWorkspaces}>
-              Try again
-            </Button>
-          </div>
-        ) : workspaces.length === 0 ? (
-          <p className="studio-preview-hint">No workspaces yet — add one from the Workspaces page.</p>
-        ) : (
-          <nav className="studio-library-list gate-studio-list" aria-label="Workspaces">
-            {workspaces.map((ws) => (
-              <div key={ws.slug}>
-                {railLink({ workspaceSlug: ws.slug, workflowSlug: null, controlId: null }, ws.name || ws.slug, {
-                  current: ws.slug === target.workspaceSlug,
-                  // Only when it says something the name does not: "loregarden"
-                  // under "loregarden" was every row's second line.
-                  slug: slugRepeatsName(ws.name, ws.slug) ? undefined : ws.slug,
-                })}
-              </div>
-            ))}
-          </nav>
-        )}
+        <div className="gate-rail-head">
+          <label htmlFor={workspacePickerId} className="studio-library-section-label">
+            Workspace
+          </label>
+          {workspacesLoading ? (
+            <p className="studio-preview-hint">Loading workspaces…</p>
+          ) : workspacesError ? (
+            <div className="gate-load-error" role="alert">
+              <p>Couldn't load the workspaces: {describeError(workspacesError, "the request failed")}</p>
+              <Button variant="secondary" onClick={onRetryWorkspaces}>
+                Try again
+              </Button>
+            </div>
+          ) : workspaces.length === 0 ? (
+            <p className="studio-preview-hint">No workspaces yet — add one from the Workspaces page.</p>
+          ) : (
+            // One picker, not one row per workspace: the list grew with every
+            // repo added and pushed the workflows below the fold.
+            <Select
+              id={workspacePickerId}
+              className="gate-workspace-picker"
+              value={target.workspaceSlug ?? ""}
+              onChange={(event) => pickWorkspace(event.target.value)}
+            >
+              {workspaces.map((ws) => (
+                <option key={ws.slug} value={ws.slug}>
+                  {ws.name || ws.slug}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
 
         {workspace && (
-          <>
+          <div className="gate-rail-scroll">
             <div className="studio-library-section-label">Workspace-wide</div>
             <nav className="studio-library-list gate-studio-list" aria-label={`Workspace-wide controls for ${workspace.slug}`}>
               {railLink({ workspaceSlug: workspace.slug, workflowSlug: null, controlId: null }, "Transition commands", {
@@ -241,7 +262,7 @@ export function GateStudioPanel({
               currentSlug={target.workflowSlug}
               railLink={railLink}
             />
-          </>
+          </div>
         )}
       </aside>
 
@@ -319,6 +340,7 @@ function WorkflowRail({
   currentSlug: string | null;
   railLink: RailLinkFn;
 }) {
+  const [filter, setFilter] = useState("");
   if (loading) return <p className="studio-preview-hint">Loading workflows for {workspace.slug}…</p>;
   if (error) {
     return (
@@ -335,9 +357,25 @@ function WorkflowRail({
   if (workflows.length === 0) {
     return <p className="studio-preview-hint">No workflows yet — create one in Workflow Studio.</p>;
   }
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? workflows.filter((wf) => `${wf.name} ${wf.slug}`.toLowerCase().includes(needle))
+    : workflows;
   return (
+    <>
+      {workflows.length > WORKFLOW_FILTER_AT ? (
+        <Input
+          type="search"
+          className="gate-workflow-filter"
+          aria-label="Filter workflows"
+          placeholder={`Filter ${workflows.length} workflows`}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+      ) : null}
+      {shown.length === 0 ? <p className="studio-preview-hint">No workflow matches “{filter.trim()}”.</p> : null}
     <nav className="studio-library-list gate-studio-list" aria-label={`Workflows for ${workspace.slug}`}>
-      {workflows.map((wf) => (
+      {shown.map((wf) => (
         <div key={wf.slug}>
           {railLink({ workspaceSlug: workspace.slug, workflowSlug: wf.slug, controlId: null }, wf.name || wf.slug, {
             current: wf.slug === currentSlug,
@@ -347,6 +385,7 @@ function WorkflowRail({
         </div>
       ))}
     </nav>
+    </>
   );
 }
 
