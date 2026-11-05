@@ -621,7 +621,7 @@ def test_no_other_workspace_changes_behaviour():
 def test_the_armed_commands_are_in_the_only_form_that_can_execute():
     """AC7, and all three of these were proposed by a planning lane.
 
-    `run_verify_command` uses `shlex.split` and `subprocess.run` with no shell,
+    `run_verify_command` uses `shlex.split` and `subprocess.Popen` with no shell,
     so `cd server && …` and `bash -c …` cannot execute at all; `_verify_candidate`
     runs with cwd at the root of a throwaway `worktree add --detach` tree that has
     no `server/.venv`, which is what `--directory server` is for; and `_holding`
@@ -681,7 +681,7 @@ def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detach
     than the 901s suite run.
     """
     launched: dict[str, object] = {}
-    real = subprocess.run
+    real = subprocess.Popen
 
     def capture(argv, **kwargs):
         launched["argv"] = argv
@@ -689,7 +689,7 @@ def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detach
         launched["env"] = kwargs.get("env") or {}
         return real([sys.executable, "-c", "print('captured')"], **kwargs)
 
-    with mock.patch("loregarden.services.land_verification.subprocess.run", side_effect=capture):
+    with mock.patch("loregarden.services.land_verification.subprocess.Popen", side_effect=capture):
         outcome = run_verify_command(command, detached, footprint=DockerFootprint.NONE)
 
     assert outcome.outcome is GateOutcome.PASSED, outcome

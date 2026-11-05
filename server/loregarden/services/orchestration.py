@@ -388,7 +388,12 @@ class OrchestrationService:
         return views
 
     def start_ticket(self, ticket: Ticket) -> Ticket:
-        choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human")
+        # Every caller is an orchestration starting a backlog ticket: a run
+        # opening, a claim turning into a run, a stage dispatch, a gate parking.
+        # This said "human", so every child a parent's run or the autopilot
+        # started read as a person's doing (lg-milestone-that-2196's siblings).
+        # Who started the orchestration is on its OrchestrationRunStarted.
+        choose(self.session, ticket, TicketState.IN_PROGRESS, actor="orchestrator")
         ticket.updated_at = datetime.now(timezone.utc)
         self.session.add(ticket)
         self.session.commit()

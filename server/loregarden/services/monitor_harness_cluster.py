@@ -19,6 +19,7 @@ from loregarden.models.domain import AgentRun, MonitorCondition, RunStatus, Work
 from loregarden.models.domain.workflow_monitor import MonitorFinding
 from loregarden.services.stage_report import harness_cause_label, is_transient_failure
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
+from sqlalchemy.orm import undefer
 from sqlmodel import Session, col, select
 
 #: Calibrated HC-5 (primary DB, 90-day weekly backtest, 2026-09-21):
@@ -63,7 +64,8 @@ def _failed_stage_runs_in_window(session: Session, *, window_start: datetime) ->
     """
     return list(
         session.exec(
-            select(AgentRun).where(
+            select(AgentRun)
+            .where(
                 col(AgentRun.status) == RunStatus.FAILED,
                 col(AgentRun.started_at) >= window_start,
                 col(AgentRun.ticket_id).is_not(None),
@@ -71,6 +73,8 @@ def _failed_stage_runs_in_window(session: Session, *, window_start: datetime) ->
                 col(AgentRun.stage_key).is_not(None),
                 col(AgentRun.stage_key) != "",
             )
+            # Every row's stdout is read below; one query, not one per run.
+            .options(undefer(AgentRun.stdout))
         ).all()
     )
 
