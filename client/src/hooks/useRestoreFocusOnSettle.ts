@@ -19,6 +19,18 @@ type ActivatedControl = HTMLElement & { disabled?: boolean };
  * without ever being focused. Keeping the `disabled` attribute is what makes a
  * second activation mid-flight impossible, so the idempotence does not move.
  *
+ * Restoring is also why focus is only handed back when `document.activeElement`
+ * is `<body>`. That is the state the browser leaves behind when it blurs the
+ * control it disabled, and the only state in which nothing of the operator's
+ * own is being taken. Focus they moved while the action was in flight — to a
+ * sibling control, a link, another dialog — is theirs, and a settle that
+ * yanked it back would be taking focus rather than restoring it. The guard is
+ * unconditional, not an option: a caller that wanted to steal focus would not
+ * be using this hook. It is also what makes the arming itself the trigger
+ * rather than the pending transition — a read nobody asked for (a background
+ * poll on a freshly loaded page) settles with `<body>` active too, and is only
+ * declined because `activated.current` was cleared by the settle before it.
+ *
  * @param pending whether the action is in flight — must be the same flag that
  *   disables the control, so the DOM is already operable when the effect runs.
  */
@@ -37,6 +49,9 @@ export function useRestoreFocusOnSettle(pending: boolean) {
     // no control to hand focus back to, and focusing a detached node moves
     // focus to the document rather than restoring it.
     if (!node || !node.isConnected || node.disabled) return;
+    // Restore, never take: anything other than <body> is focus the operator
+    // moved themselves while the action was in flight.
+    if (document.activeElement !== document.body) return;
     node.focus();
   }, [pending]);
 

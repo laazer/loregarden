@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
+import { usePolledReadFailure } from "../../hooks/usePolledReadFailure";
 import { duration } from "../../lib/duration";
+import { describeError, endSentence } from "../../state/toastStore";
+import { StaleReadNotice } from "../ui/StaleReadNotice";
 
 /** How a request was resolved, in the operator's words rather than the enum's. */
 const DECISION_LABELS: Record<string, string> = {
@@ -36,19 +39,43 @@ export function McpActivityFeed({ server }: { server?: string }) {
     refetchInterval: 5000,
   });
 
-  if (telemetry.isPending) {
-    return <div className="mcp-empty">Loading activity…</div>;
-  }
-  if (telemetry.isError) {
-    return <div className="mcp-empty">Could not load activity.</div>;
-  }
-
+  // Derived ABOVE the failure branch, so the branch is decided by what the feed
+  // has to show rather than by the read's status. `data` is already
+  // optional-chained here, so nothing about the success path changes.
   const data = telemetry.data;
   const servers = server
     ? []
     : Object.entries(data?.by_server ?? {}).sort((a, b) => b[1] - a[1]);
   const recent = (data?.recent ?? []).filter((call) => !server || call.server_name === server);
 
+  // The subject is the constant the query key is pinned to: `["mcp-telemetry"]`
+  // does not vary, and `server` filters client-side. There is no retry control
+  // here today, so the hold makes no observable difference yet — the wrapper is
+  // used so that adding one later cannot reintroduce the defect where the
+  // operator's own click unmounts the reason they clicked on.
+  const failure = usePolledReadFailure(
+    telemetry,
+    "mcp-telemetry",
+    servers.length > 0 || recent.length > 0,
+  );
+
+  if (telemetry.isPending) {
+    return <div className="mcp-empty">Loading activity…</div>;
+  }
+  if (failure.blocking) {
+    // Today's copy said only "Could not load activity." — nothing the operator
+    // can act on. The reason is the whole value of this pane.
+    return (
+      <div className="mcp-empty" role="alert">
+        Could not load activity:{" "}
+        {endSentence(describeError(failure.blocking.error, "The telemetry endpoint did not answer."))}
+      </div>
+    );
+  }
+
+  // Unreachable on a failure now, because the branch above took it: "No tool
+  // calls recorded yet" over a failing read is a health claim about the
+  // permission bridge that this surface cannot make.
   if (servers.length === 0 && recent.length === 0) {
     return (
       <div className="mcp-empty">
@@ -61,6 +88,15 @@ export function McpActivityFeed({ server }: { server?: string }) {
 
   return (
     <div >
+      {failure.stale && (
+        <StaleReadNotice
+          lead="This activity may be out of date — the last refresh failed."
+          error={failure.stale.error}
+          fallback="The telemetry endpoint did not answer."
+          testId="mcp-refresh-failed"
+        />
+      )}
+
       {servers.length > 0 && (
         <div className="mcp-activity-counts">
           {servers.map(([name, count]) => (
