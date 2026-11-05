@@ -5,6 +5,7 @@ import { api } from "../../../api/client";
 import type { MilestoneSchedule, PlanNode } from "../../../api/initiativeApi";
 import type { TicketState, TicketSummary, WaitingOnRef } from "../../../api/types";
 import { planQueryKey } from "../../../hooks/useInitiativePlanner";
+import { usePolledReadFailure } from "../../../hooks/usePolledReadFailure";
 import { boardQueryKey, buildColumns, milestoneOf } from "../../../lib/initiativeBoard";
 import { TICKET_STATE_LABELS, type BoardColumnKey } from "../../../lib/ticketStates";
 import { describeError, pushToast } from "../../../state/toastStore";
@@ -12,6 +13,7 @@ import { KanbanColumns } from "../../chat/primitives/KanbanPrimitive";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { StaleReadNotice } from "../../ui/StaleReadNotice";
 import { WaitingOnLinks } from "../../waiting/WaitingOnLinks";
 
 /** Where an operator may move cards. The server's state machine has the last word. */
@@ -88,6 +90,27 @@ export function InitiativeBoard({
     staleTime: 10_000,
     refetchInterval: 30_000,
   });
+
+  // `(board.data?.length ?? 0) > 0`, NOT `workItems.length > 0`: `workItems` is
+  // this read filtered by milestone and workspace, so the filtered reading
+  // would replace a legitimate "Nothing matches these filters." view and its
+  // Clear-filters button with the first-load error pane whenever the operator
+  // had filtered to a milestone holding nothing. The question is what the READ
+  // produced. A read that succeeded with zero rows and then failed still takes
+  // the pane, which is the same answer the filtered reading wanted.
+  const failure = usePolledReadFailure(board, initiativeId, (board.data?.length ?? 0) > 0);
+
+  // Scoped to the operator's own click, never to `board.isFetching`: the pane
+  // now survives its own refetch, so an `isFetching` busy state would disable
+  // the one control on screen and read "Retrying…" every 30 seconds for the
+  // background poll — dead at the moment it is reached for.
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    // `refetch()` resolves rather than rejecting; the reason is rendered from
+    // the held failure by the pane around this button.
+    void board.refetch().finally(() => setRetrying(false));
+  };
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: boardQueryKey(initiativeId) });
@@ -183,11 +206,26 @@ export function InitiativeBoard({
           </Select>
         ) : null}
         <span className="plan-muted" aria-live="polite">
-          {board.isSuccess ? `${workItems.length} work item${workItems.length === 1 ? "" : "s"}` : ""}
+          {/* Content-based, never the read's success status, which a failed
+              refetch over good data makes false: the count would blank out on a
+              poll that lost nothing. */}
+          {workItems.length > 0 ? `${workItems.length} work item${workItems.length === 1 ? "" : "s"}` : ""}
         </span>
       </div>
 
-      {board.isSuccess && workItems.length > 0 ? (
+      {/* Qualifies the figures below without displacing a control: a sibling
+          between two block elements, so the board shifts down and nothing moves
+          sideways. `role="status"`, because this appears on a 30s timer. */}
+      {failure.stale && (
+        <StaleReadNotice
+          lead="These work items may be out of date — the last refresh failed."
+          error={failure.stale.error}
+          fallback="The initiative's tickets could not be read."
+          testId="board-refresh-failed"
+        />
+      )}
+
+      {workItems.length > 0 ? (
         // Always on screen, so the checkboxes say what they are for before anyone ticks one.
         <div className="plan-board-toolbar" role="toolbar" aria-label="Selected tickets">
           <span className={ids.length > 0 ? undefined : "plan-muted"} aria-live="polite">
@@ -238,15 +276,19 @@ export function InitiativeBoard({
         </div>
       ) : null}
 
-      {board.isPending ? (
-        <div className="plan-skeleton plan-skeleton-board" aria-busy="true" aria-label="Loading the board" />
-      ) : board.isError ? (
+      {/* The held failure wins over the pending state, because `refetch()` on a
+          query with no data puts it BACK to `status: "pending"` — so a chain
+          that tested `isPending` first would unmount this pane into the
+          skeleton on the operator's own Retry and take the reason with it. */}
+      {failure.blocking ? (
         <div className="plan-empty" role="alert">
-          <p>The board could not be loaded: {describeError(board.error)}</p>
-          <Button variant="secondary" compact onClick={() => void board.refetch()}>
-            Retry
+          <p>The board could not be loaded: {describeError(failure.blocking.error)}</p>
+          <Button variant="secondary" compact disabled={retrying} onClick={retry}>
+            {retrying ? "Retrying…" : "Retry"}
           </Button>
         </div>
+      ) : board.isPending ? (
+        <div className="plan-skeleton plan-skeleton-board" aria-busy="true" aria-label="Loading the board" />
       ) : workItems.length === 0 ? (
         <div className="plan-empty">
           <p>

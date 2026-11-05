@@ -29,7 +29,8 @@ export type UsabilityProblemKind =
   | "unfiltered-long-list"
   | "tabular-list"
   | "key-value-table"
-  | "nested-boxes";
+  | "nested-boxes"
+  | "scrollable-region-focusable";
 
 export interface UsabilityProblem {
   kind: UsabilityProblemKind;
@@ -206,15 +207,25 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
     }
   }
 
+  // One fact about the document, asked once: is there a layout engine here at
+  // all? Not "does this element measure zero", which cannot tell a browser
+  // that lays nothing out from a browser that lays out a hidden element — the
+  // body is laid out whatever any one region reports. Both checks below need
+  // it, and both need the same answer: a sweep where half the elements are
+  // measured and half are read off declarations is two checks, not one.
+  const doc = root instanceof Document ? root : root instanceof Element ? root.ownerDocument : null;
+  const view = doc?.defaultView ?? null;
+  const body = doc?.body ?? null;
+  const laidOut = Boolean(body && view && body.getBoundingClientRect().width > 0);
+
   // Boxes inside boxes inside boxes. A box is a block that draws its own edge:
   // rounded, with a border on three sides or a fill of its own. Controls draw
   // edges too but are not regions, so they are left out, as are blocks too small
   // to be one. It needs computed styles and layout, which only a browser has;
   // under jsdom nothing is laid out, so there is nothing to measure and the
   // check stands aside rather than call every element flat.
-  const body = root instanceof Document ? root.body : root instanceof Element ? root.ownerDocument.body : null;
-  const view = body?.ownerDocument.defaultView;
-  if (body && view && body.getBoundingClientRect().width > 0) {
+  // (`view` again because `laidOut` is a boolean and does not narrow it.)
+  if (laidOut && view) {
     const CLEAR = /^(transparent|rgba\([^)]*,\s*0\))$/;
     const NOT_A_REGION = "button, input, select, textarea, a, img, code, pre, kbd, label, svg, svg *";
     const isBox = (el: Element): boolean => {
@@ -252,6 +263,88 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
       problems.push({
         kind: "nested-boxes",
         detail: `${total} ${total === 1 ? "box sits" : "boxes sit"} inside two or more others (${names}) — keep one bordered level per region; make the inner ones rows`,
+      });
+    }
+  }
+
+  // A height-bounded region with a scrolling overflow that neither takes focus
+  // nor holds anything that can: the scrollbar is visible and no key moves it,
+  // because the arrow keys, Page Up/Down and Home/End scroll whichever
+  // scrollable ancestor *has* focus. axe-core's `scrollable-region-focusable`
+  // rule and WCAG 2.1.1 are about this, and a screenshot review passes it
+  // because the reviewer already has a mouse.
+  //
+  // The branch below turns on whether a layout engine exists, not on what one
+  // element measures. Where there is one, two things are asked of the region
+  // and both are the engine's answer rather than the stylesheet's: does it
+  // actually clip (`scrollHeight > clientHeight`, axe-core's own test, which
+  // `nested-boxes` above precedents by reading geometry rather than
+  // declarations), and does the browser render it at all. A declared bound is
+  // no evidence there: `getComputedStyle().height` is the *used* height in px
+  // for every laid-out element, so "height is not none/auto" is true almost
+  // everywhere, and reading it as a bound reported 51 findings over 24 sandbox
+  // surfaces every one of which had `scrollHeight === clientHeight`.
+  //
+  // The other side is "no layout engine (jsdom)", not "this element happens to
+  // measure zero". There nothing is laid out and no stylesheet is read, both
+  // geometries are 0 and there is no overflow to measure, so the declared
+  // bound is all there is: take it, but require the region to hold something
+  // rendered, since an empty 0-height box clips nothing. Like `nested-boxes`
+  // it stands aside where there is nothing to read at all.
+  if (view) {
+    // Copied from `useDialogFocusTrap`'s FOCUSABLE_SELECTOR rather than
+    // imported: `scripts/visual-qa.mjs` evaluates this function inside a
+    // browser page where nothing else from the app exists.
+    const FOCUSABLE =
+      "a[href], area[href], button, input, select, textarea, iframe, audio[controls], video[controls], [contenteditable], [tabindex]";
+    /** No height at all to exceed, so nothing is clipped and nothing scrolls. */
+    const UNBOUND = new Set(["", "none", "auto"]);
+    const SCROLLS = new Set(["auto", "scroll"]);
+    /** An empty box carries no text a key would be needed to reach. */
+    const renders = (el: Element): boolean =>
+      el.children.length > 0 || (el.textContent ?? "").trim() !== "";
+    // `tabIndex` as the property, not the attribute: an <a href> is already a
+    // stop with nothing to fix, and `disabled`/`tabindex="-1"` take a control
+    // out of tab order, so neither gives the region a way in.
+    const tabbable = (el: Element): boolean =>
+      el.matches(FOCUSABLE) &&
+      (el as HTMLElement).tabIndex >= 0 &&
+      !(el as HTMLElement & { disabled?: boolean }).disabled;
+    /**
+     * Does the browser render this region — asked of the browser, because
+     * geometry cannot answer it. A **closed** `<details>` holding a bounded
+     * pane reports clientHeight 60 / scrollHeight 1440, laid out and clipping,
+     * the same numbers as the open one
+     * (`scripts/probe-scrollable-region.mjs` measures both). `display: none`
+     * on an ancestor is the opposite trap: geometry is 0 while
+     * `getComputedStyle` still reports the *computed* `max-height` and
+     * `overflow`, so a declaration-reading check names a region that clips
+     * nothing.
+     *
+     * `visibilityProperty` is load-bearing rather than decorative: the bare
+     * call returns `true` for a `visibility: hidden` pane and the option makes
+     * it `false`. Feature-detected because jsdom 26.1.0 implements no
+     * `checkVisibility`, and where it cannot be asked the answer is `true`: a
+     * detector whose job is to report must never go silent on "cannot tell".
+     */
+    const rendered = (el: Element): boolean =>
+      typeof el.checkVisibility !== "function" || el.checkVisibility({ visibilityProperty: true });
+    for (const el of Array.from(root.querySelectorAll("*"))) {
+      const style = view.getComputedStyle(el);
+      if (![style.overflow, style.overflowX, style.overflowY].some((value) => SCROLLS.has(value))) continue;
+      if (laidOut) {
+        if (el.scrollHeight <= el.clientHeight) continue;
+        if (!rendered(el)) continue;
+      } else {
+        if (UNBOUND.has(style.maxHeight) && UNBOUND.has(style.height)) continue;
+        if (!renders(el)) continue;
+      }
+      if (tabbable(el)) continue;
+      if (Array.from(el.querySelectorAll(FOCUSABLE)).some(tabbable)) continue;
+      const name = (el.getAttribute("class") ?? "").trim().split(/\s+/)[0] || el.tagName.toLowerCase();
+      problems.push({
+        kind: "scrollable-region-focusable",
+        detail: `.${name} clips its content and scrolls, but neither it nor anything inside it can take focus — no key reaches it`,
       });
     }
   }

@@ -27,6 +27,7 @@ export function createQueryClient(): QueryClient {
     queryCache: new QueryCache({
       onError: (error, query) => {
         if (query.meta?.suppressErrorToast) return;
+        // The other half of this policy is in `hooks/usePolledReadFailure.ts`.
         if (query.state.data !== undefined) return;
         // The one caller that bounds an error toast. A cold-cache load failure
         // carries no value for the operator to copy and re-reports itself on
