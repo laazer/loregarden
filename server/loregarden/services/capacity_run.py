@@ -52,7 +52,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.capacity_children import reserve_child
 
-# `child_environment` and the four variable names it writes moved to
+# `child_environment` and the variable names it writes moved to
 # `capacity_environment` so `gate_capacity` — and from lg-milestone-that-1238 the
 # land guard behind it — can hand a child its grant without importing the
 # queue-waiting machinery below, which reaches `docker_reaper` and from there the

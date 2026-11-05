@@ -29,6 +29,7 @@ from loregarden.services.invariant_registry import RUNS_COMPLETE_ONCE
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_finality import OVERWRITE_NOTE
 from loregarden.services.ticket_service import TicketService
+from sqlalchemy.orm import undefer
 from sqlmodel import Session, col, select
 
 
@@ -76,7 +77,9 @@ def _completed_events(session: Session, run_id: str) -> list[DomainEvent]:
 
 def _row(engine, run_id: str) -> AgentRun:
     with Session(engine) as probe:
-        row = probe.get(AgentRun, run_id)
+        # Detached before the asserts read it, so the deferred transcript has
+        # to be loaded here or not at all.
+        row = probe.get(AgentRun, run_id, options=[undefer(AgentRun.stdout)])
         probe.expunge(row)
         return row
 

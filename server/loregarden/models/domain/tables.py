@@ -38,8 +38,9 @@ from loregarden.models.domain.enums import (
 )
 from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.models.domain.work_item_types import WorkItemType
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
-from sqlmodel import Field, SQLModel
+from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint
+from sqlalchemy.orm import deferred
+from sqlmodel import AutoString, Field, SQLModel
 
 logger = logging.getLogger(__name__)
 
@@ -339,8 +340,22 @@ class OrchestrationRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+#: `agent_runs.stdout` is a run's whole stream-json transcript, stored inline:
+#: 3.5 GB over 4,855 rows on the live database (~740 KB a run, 2026-11-05).
+#: Deferred at the mapper so a plain `select(AgentRun)` stops dragging it off
+#: disk. A reader inside a session still gets it, one extra query per row; a
+#: query that reads it over many rows asks for it with `undefer(AgentRun.stdout)`.
+#: Declared through `__mapper_args__` because SQLModel ignores
+#: `mapped_column(deferred=True)`. Two consequences for callers: reading it on a
+#: detached run raises `DetachedInstanceError`, and `model_dump()` on a run whose
+#: stdout was never loaded leaves the key out.
+#: `stderr` is left eager: its writers cap it at 4,000 characters.
+_AGENT_RUN_STDOUT = Column("stdout", AutoString, nullable=False, default="")
+
+
 class AgentRun(SQLModel, table=True):
     __tablename__ = "agent_runs"
+    __mapper_args__ = {"properties": {"stdout": deferred(_AGENT_RUN_STDOUT)}}
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     run_code: str = Field(index=True)
@@ -449,7 +464,7 @@ class AgentRun(SQLModel, table=True):
     # run that failed in a knowingly broken environment can be told apart from
     # one that failed on its own merits.
     dispatch_waiver_approval_id: str = ""
-    stdout: str = ""
+    stdout: str = Field(default="", sa_column=_AGENT_RUN_STDOUT)
     stderr: str = ""
     auto_approve: bool = Field(default=False)
     timeout_override_seconds: int | None = Field(default=None)
