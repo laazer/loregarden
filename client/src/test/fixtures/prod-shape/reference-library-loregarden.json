@@ -22,6 +22,7 @@
  "sources": [
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Thinkterm: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -52,6 +53,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Agent bench: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -82,6 +84,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Agent garden: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -112,6 +115,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Agent kit: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -142,6 +146,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Agent lens: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -172,6 +177,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Agent mux: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -202,6 +208,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic deck: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -232,6 +239,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic flow: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -262,6 +270,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic forge: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -292,6 +301,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic harness: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -322,6 +332,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic ledger: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -352,6 +363,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Atomic term: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -382,6 +394,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic atlas: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -412,6 +425,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic bench: a toolkit that names the authority still needed to settle each open question.",
@@ -442,6 +456,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic deck: a toolkit that names the authority still needed to settle each open question.",
@@ -472,6 +487,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic forge: a toolkit that names the authority still needed to settle each open question.",
@@ -502,6 +518,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic garden: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -532,6 +549,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Civic ledger: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -562,6 +580,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -592,6 +611,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Drift harness: a toolkit that names the authority still needed to settle each open question.",
@@ -622,6 +642,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Drift notebook: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -652,6 +673,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Drift vault: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -682,6 +704,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Drift weave: a toolkit that names the authority still needed to settle each open question.",
@@ -712,6 +735,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Drift yard: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -742,6 +766,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember atlas: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -772,6 +797,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember bench: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -802,6 +828,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember deck: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -832,6 +859,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember flow: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -862,6 +890,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember forge: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -892,6 +921,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Ember ledger: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -922,6 +952,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow atlas: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -952,6 +983,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow deck: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -982,6 +1014,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow flow: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1012,6 +1045,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow forge: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1042,6 +1076,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow ledger: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1072,6 +1107,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Hollow term: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1102,6 +1138,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Kindle atlas: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -1132,6 +1169,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Kindle bench: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -1162,6 +1200,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Kindle deck: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -1192,6 +1231,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Kindle garden: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -1222,6 +1262,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Kindle ledger: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -1252,6 +1293,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -1282,6 +1324,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Lumen notebook: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -1312,6 +1355,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Lumen shelf: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -1342,6 +1386,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Lumen vault: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -1372,6 +1417,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Lumen weave: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -1402,6 +1448,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Lumen yard: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -1432,6 +1479,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Maple atlas: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1462,6 +1510,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Maple bench: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1492,6 +1541,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Maple deck: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1522,6 +1572,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Maple garden: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1552,6 +1603,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Maple kit: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1582,6 +1634,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North kit: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1612,6 +1665,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North lens: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1642,6 +1696,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North mux: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1672,6 +1727,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North pilot: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1702,6 +1758,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North scope: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -1732,6 +1789,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "North shelf: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -1762,6 +1820,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Open flow: a toolkit that names the authority still needed to settle each open question.",
@@ -1792,6 +1851,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Open forge: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -1822,6 +1882,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Open harness: a toolkit that names the authority still needed to settle each open question.",
@@ -1852,6 +1913,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Open ledger: a toolkit that names the authority still needed to settle each open question.",
@@ -1882,6 +1944,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Open term: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -1912,6 +1975,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -1942,6 +2006,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Orbit pilot: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -1972,6 +2037,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Orbit scope: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -2002,6 +2068,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Orbit shelf: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -2032,6 +2099,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Orbit vault: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -2062,6 +2130,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Orbit weave: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -2092,6 +2161,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch garden: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -2122,6 +2192,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch kit: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -2152,6 +2223,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch lens: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -2182,6 +2254,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch mux: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -2212,6 +2285,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch pilot: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -2242,6 +2316,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Patch scope: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -2272,6 +2347,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Pixel lens: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -2302,6 +2378,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Pixel mux: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -2332,6 +2409,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Pixel pilot: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -2362,6 +2440,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Pixel scope: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -2392,6 +2471,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Pixel shelf: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -2422,6 +2502,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -2452,6 +2533,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Quiet shelf: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -2482,6 +2564,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Quiet vault: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -2512,6 +2595,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Quiet weave: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -2542,6 +2626,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Quiet yard: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -2572,6 +2657,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -2602,6 +2688,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Rapid harness: a toolkit that stores a learning with the ticket it came from and retires it when that work is undone.",
@@ -2632,6 +2719,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Rapid notebook: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -2662,6 +2750,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Rapid term: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -2692,6 +2781,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Rapid yard: a toolkit that keeps a verdict only when a second instrument agrees with the first.",
@@ -2722,6 +2812,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -2752,6 +2843,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Relay flow: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -2782,6 +2874,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Relay harness: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -2812,6 +2905,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Relay notebook: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -2842,6 +2936,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Relay term: a toolkit that retries a failing check once and then asks a person, never a third time.",
@@ -2872,6 +2967,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Stone mux: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -2902,6 +2998,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Stone pilot: a toolkit that names the authority still needed to settle each open question.",
@@ -2932,6 +3029,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Stone scope: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -2962,6 +3060,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Stone shelf: a toolkit that names the authority still needed to settle each open question.",
@@ -2992,6 +3091,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Stone vault: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -3022,6 +3122,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Superpowers: a toolkit that reads its licence at the pinned commit before it reads anything else.",
@@ -3052,6 +3153,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift bench: a toolkit that names the authority still needed to settle each open question.",
@@ -3082,6 +3184,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift garden: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -3112,6 +3215,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift kit: a toolkit that names the authority still needed to settle each open question.",
@@ -3142,6 +3246,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift lens: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -3172,6 +3277,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift mux: a toolkit that names the authority still needed to settle each open question.",
@@ -3202,6 +3308,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Swift pilot: a toolkit that splits a long-running task at each boundary its branch carries work across.",
@@ -3232,6 +3339,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "",
@@ -3262,6 +3370,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Tiny harness: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -3292,6 +3401,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Tiny notebook: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -3322,6 +3432,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Tiny term: a toolkit that renders a table at phone width as one block per row, name first.",
@@ -3352,6 +3463,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Tiny weave: a toolkit that records every gate's corpus beside its result, so a zero names its denominator.",
@@ -3382,6 +3494,7 @@
   },
   {
    "approval_id": null,
+   "auto_rereview_excluded": false,
    "commits_since_review": null,
    "describe_error": "",
    "description": "Tiny yard: a toolkit that renders a table at phone width as one block per row, name first.",

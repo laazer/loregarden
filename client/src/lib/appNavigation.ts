@@ -349,6 +349,17 @@ export function memoryAddReferencePath(): string {
   return `${memoryPath("library")}?${MEMORY_LIBRARY_ADD_PARAM}=reference`;
 }
 
+/**
+ * The search parameter that opens one of the reference library's settings
+ * dialogs on arrival; removed once open, like `MEMORY_LIBRARY_ADD_PARAM`.
+ */
+export const MEMORY_LIBRARY_SETTINGS_PARAM = "settings";
+
+/** The reference library with its auto re-review settings open. */
+export function memoryAutoRereviewPath(): string {
+  return `${memoryPath("library")}?${MEMORY_LIBRARY_SETTINGS_PARAM}=auto-rereview`;
+}
+
 /** Where an old `/knowledge[/:nodeId]` URL now lives. */
 export function memoryPathForLegacyKnowledge(pathname: string): string {
   const match = pathname.match(LEGACY_KNOWLEDGE_PATH_RE);

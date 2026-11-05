@@ -99,6 +99,9 @@ class SurveyPassMode(StrEnum):
     CONTINUATION = "continuation"
     #: Re-read an already-surveyed source against one new question.
     SCOPED = "scoped"
+    #: Read what changed upstream since the reviewed commit, queued by auto
+    #: re-review (`reference_survey.rereview`).
+    REREVIEW = "rereview"
 
 
 class SurveyPassStatus(StrEnum):
@@ -212,6 +215,8 @@ class SurveyQueueAction(StrEnum):
     UNLINK_INITIATIVE = "unlink_initiative"
     CHECK_UPSTREAM = "check_upstream"
     REVIEW_NOW = "review_now"
+    #: Take a source out of auto re-review, or put it back (`rereview.set_excluded`).
+    SET_AUTO_REREVIEW = "set_auto_rereview"
 
 
 class SurveyPassAction(StrEnum):

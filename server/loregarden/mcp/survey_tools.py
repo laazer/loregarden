@@ -23,7 +23,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, Json, TypeAdapter
 from sqlmodel import Session
 
-from loregarden.mcp.tool_args import coerce_mapping, coerce_string_list
+from loregarden.mcp.tool_args import coerce_mapping, coerce_optional_bool, coerce_string_list
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
     boolean_prop,
@@ -47,8 +47,10 @@ from loregarden.models.domain.survey_enums import (
 from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, queue, record, report
 from loregarden.services.reference_survey.discovery import enqueue_found
+from loregarden.services.reference_survey.errors import SurveyError
 from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
 from loregarden.services.reference_survey.library import library_row
+from loregarden.services.reference_survey.rereview import set_excluded
 from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
@@ -118,7 +120,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "more) and unlink_initiative undoes that; check_upstream reads the repository's "
             "newest commit and how far it has moved since review; review_now puts the source first "
             "in line and dispatches its waiting pass now (a surveyed source first gets a scoped "
-            "pass on `question`), or says what holds it; status returns a source's whole "
+            "pass on `question`), or says what holds it; set_auto_rereview with "
+            "`excluded` takes a source out of auto re-review (withdrawing a queued re-review) or "
+            "puts it back; status returns a source's whole "
             "record (passes, tickets touched, findings, unknowns, coverage); coverage returns "
             "the directory map with what every pass read, each count with its denominator."
         ),
@@ -152,6 +156,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "discovery_id": string_prop(
                     "enqueue: the discovery run this find belongs to (from its brief); the find "
                     "then serves the run's workspaces and initiatives."
+                ),
+                "excluded": boolean_prop(
+                    "set_auto_rereview: true takes the source out of auto re-review, false puts it back."
                 ),
                 "initiative_id": string_prop(
                     "link_initiative/unlink_initiative: the initiative, by UUID or external id."
@@ -382,6 +389,17 @@ def _review_now(session: Session, args: dict[str, Any]) -> dict:
     return review_now(session, args["source_id"], body).model_dump()
 
 
+def _set_auto_rereview(session: Session, args: dict[str, Any]) -> dict:
+    if "excluded" not in args:
+        raise SurveyError(
+            "set_auto_rereview needs `excluded`: true to take the source out, false to put it back"
+        )
+    source = set_excluded(
+        session, args["source_id"], excluded=coerce_optional_bool(args["excluded"])
+    )
+    return library_row(session, source).model_dump(mode="json")
+
+
 def _unlink(session: Session, args: dict[str, Any]) -> dict:
     return unlink_initiative(session, args["source_id"], args["initiative_id"]).model_dump()
 
@@ -396,6 +414,7 @@ _QUEUE: dict[SurveyQueueAction, Handler] = {
     SurveyQueueAction.UNLINK_INITIATIVE: _unlink,
     SurveyQueueAction.CHECK_UPSTREAM: _check_upstream,
     SurveyQueueAction.REVIEW_NOW: _review_now,
+    SurveyQueueAction.SET_AUTO_REREVIEW: _set_auto_rereview,
 }
 
 

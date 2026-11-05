@@ -71,6 +71,8 @@ def _pass_view(session: Session, survey_pass: SurveyPass) -> dict:
         "slice": json.loads(survey_pass.slice_json),
         "file_budget": survey_pass.file_budget,
         "read_commit": survey_pass.read_commit,
+        "since_commit": survey_pass.since_commit,
+        "changes": survey_pass.changes,
         "outcome": survey_pass.outcome.value if survey_pass.outcome else None,
         "outcome_note": survey_pass.outcome_note,
         "stopped_at": survey_pass.stopped_at,

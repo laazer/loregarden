@@ -994,3 +994,41 @@
   font-size: var(--fs-micro);
   color: var(--vil);
 }
+
+/* Auto re-review settings (ReferenceAutoRereview.tsx) */
+.rl-rereview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-body);
+  color: var(--tx);
+}
+
+.rl-rereview-heading {
+  margin: 0 0 6px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.rl-rereview-excluded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+}
+
+.rl-rereview-excluded li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rl-rereview-note {
+  margin: 0;
+  font-size: var(--fs-small);
+}

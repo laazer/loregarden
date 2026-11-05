@@ -5,6 +5,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
 import {
   MEMORY_LIBRARY_ADD_PARAM,
+  MEMORY_LIBRARY_SETTINGS_PARAM,
   memoryLibrarySourceFromPath,
   memoryPath,
 } from "../../lib/appNavigation";
@@ -26,6 +27,7 @@ import { PageTopbar } from "../TopbarPageSlot";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { ReferenceAutoRereviewButton } from "./ReferenceAutoRereview";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
 import { ReferenceDiscoverButton } from "./ReferenceDiscover";
 import { ReferenceQueueStatus } from "./ReferenceQueueStatus";
@@ -57,18 +59,23 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
   const [sort, setSort] = useState<LibrarySort>(DEFAULT_SORT);
   const [adding, setAdding] = useState(false);
   const [pasting, setPasting] = useState(false);
+  const [rereviewOpen, setRereviewOpen] = useState(false);
 
   // A quick action elsewhere (the sidebar's right-click menu) links here with
   // `?add=reference`. Open the form and drop the parameter, so it is a one-shot
   // request rather than state the URL keeps reasserting.
+  // `?settings=auto-rereview` opens the auto re-review settings the same way.
   const addRequested = searchParams.get(MEMORY_LIBRARY_ADD_PARAM) === "reference";
+  const rereviewRequested = searchParams.get(MEMORY_LIBRARY_SETTINGS_PARAM) === "auto-rereview";
   useEffect(() => {
-    if (!addRequested) return;
-    setAdding(true);
+    if (!addRequested && !rereviewRequested) return;
+    if (addRequested) setAdding(true);
+    if (rereviewRequested) setRereviewOpen(true);
     const params = new URLSearchParams(searchParams);
     params.delete(MEMORY_LIBRARY_ADD_PARAM);
+    params.delete(MEMORY_LIBRARY_SETTINGS_PARAM);
     setSearchParams(params, { replace: true });
-  }, [addRequested, searchParams, setSearchParams]);
+  }, [addRequested, rereviewRequested, searchParams, setSearchParams]);
 
   const library = useQuery({
     queryKey: ["reference-library", slug],
@@ -207,6 +214,12 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               Paste a list
             </Button>
             <ReferenceDiscoverButton workspace={slug} />
+            <ReferenceAutoRereviewButton
+              open={rereviewOpen}
+              onOpen={() => setRereviewOpen(true)}
+              onClose={() => setRereviewOpen(false)}
+              search={location.search}
+            />
             <span className="rl-count" aria-live="polite">
               {library.data ? `${rows.length} source${rows.length === 1 ? "" : "s"}` : ""}
               {library.isFetching && library.data ? " · refreshing" : ""}

@@ -78,7 +78,14 @@ from loregarden.services.reference_survey.queue import (
     pass_workspaces,
     promote_resolved_sources,
 )
-from loregarden.services.reference_survey.upstream import refresh_stale
+from loregarden.services.reference_survey.rereview import (
+    Changes,
+    fetch_changes,
+    load_settings,
+    queue_due,
+    slice_for,
+)
+from loregarden.services.reference_survey.upstream import UpstreamUnavailable, refresh_stale
 from loregarden.services.run_concurrency import ACTIVE_ORCHESTRATION_STATUSES
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_tags import load_tags
@@ -299,6 +306,7 @@ def _brief(
                 if initiatives
                 else []
             ),
+            *([survey_pass.changes] if survey_pass.changes else []),
             f"**Licence:** {source.licence_constraint or 'unclassified'}",
             where + (f" @ `{source.pinned_commit[:12]}`" if source.pinned_commit else ""),
             f"**Slice ({len(slice_paths)} map paths, budget {survey_pass.file_budget} files):** "
@@ -358,6 +366,44 @@ def _create_carrier(
     return carrier
 
 
+def _rereview_changes(
+    session: Session, survey_pass: SurveyPass, source: SurveySource
+) -> tuple[Changes | None, str]:
+    """What a re-review pass reads, or why it cannot; (None, "") for any other pass."""
+    if survey_pass.mode is not SurveyPassMode.REREVIEW:
+        return None, ""
+    try:
+        cap = load_settings(session).max_commits_per_review
+        return fetch_changes(source, survey_pass, cap), ""
+    except UpstreamUnavailable as exc:
+        logger.warning("Re-review of %s could not read its changes: %s", source.url, exc)
+        return None, f"Could not read what changed upstream; tried again within a day: {exc}"
+
+
+def _widen_slice(
+    session: Session, survey_pass: SurveyPass, source: SurveySource, changes: Changes | None
+) -> str:
+    """Set the slice a scoped or re-review pass reads before `assign_slice`; returns
+    why the pass has nothing to read, or "" when it does."""
+    if changes is not None:
+        # A re-review reads the map leaves its commits touched.
+        survey_pass.changes = changes.render()
+        paths = slice_for(session, source.id, changes)
+        survey_pass.slice_json = json.dumps(paths)
+        if not paths:
+            return (
+                f"The {len(changes.commits)} newest commits touched no file in the map "
+                "(only deletions, or files outside it); nothing to re-read."
+            )
+    elif survey_pass.mode is SurveyPassMode.SCOPED and not json.loads(survey_pass.slice_json):
+        # A scoped pass re-reads against a new question: the whole map is in scope
+        # and the budget bounds how much of it the pass may open.
+        survey_pass.slice_json = json.dumps(
+            [r.path for r in map_leaves(coverage_rows(session, source.id))]
+        )
+    return ""
+
+
 def _dispatch(
     session: Session, survey_pass: SurveyPass, source: SurveySource, result: FeedResult
 ) -> None:
@@ -381,6 +427,13 @@ def _dispatch(
                 ),
             ),
         )
+        return
+    # Before the clone: cloning moves `pinned_commit` to the new head, and a
+    # range nobody read must not look reviewed.
+    changes, refusal = _rereview_changes(session, survey_pass, source)
+    if refusal:
+        _refuse(session, survey_pass, source, refusal, refuse_source=False)
+        result.refused = survey_pass.id
         return
     clone: Path | None = None
     if source.kind is SurveySourceKind.REPO:
@@ -441,12 +494,11 @@ def _dispatch(
         source.licence_use = LicenceUse.PATTERNS_ONLY
         source.licence_constraint = f"A {source.kind.value}'s terms are not classified by this survey. Read for patterns; copy nothing."
         source.fetched_at = utcnow()
-    if survey_pass.mode is SurveyPassMode.SCOPED and not json.loads(survey_pass.slice_json):
-        # A scoped pass re-reads against a new question: the whole map is in scope
-        # and the budget bounds how much of it the pass may open.
-        survey_pass.slice_json = json.dumps(
-            [r.path for r in map_leaves(coverage_rows(session, source.id))]
-        )
+    refusal = _widen_slice(session, survey_pass, source, changes)
+    if refusal:
+        _refuse(session, survey_pass, source, refusal, refuse_source=False)
+        result.refused = survey_pass.id
+        return
     slice_paths = assign_slice(
         session, survey_pass, file_budget=settings.reference_survey_pass_file_budget
     )
@@ -593,6 +645,9 @@ def _tick() -> None:
     # and each check records its own answer or reason (`upstream`).
     with Session(engine) as session:
         refresh_stale(session)
+    # After the check, so a source it just found moved can be queued this tick.
+    with Session(engine) as session:
+        queue_due(session)
     if result.dispatched or result.refused or result.abandoned:
         logger.info("Reference survey feed: %s", result)
 

@@ -82,6 +82,8 @@ class LibraryRow(BaseModel):
     stars: int | None
     topics: str
     describe_error: str
+    #: A person took it out of auto re-review (`rereview.set_excluded`).
+    auto_rereview_excluded: bool
     #: The topic of the discovery run that found it, when an agent did.
     discovered_by: str | None
 
@@ -322,6 +324,7 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
                 stars=source.stars,
                 topics=source.topics,
                 describe_error=source.describe_error,
+                auto_rereview_excluded=source.auto_rereview_excluded,
                 discovered_by=discovered.get(source.discovery_id) if source.discovery_id else None,
             )
         )

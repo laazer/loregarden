@@ -12,7 +12,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 
 import { AppSidebar } from "../AppSidebar";
-import { memoryAddReferencePath } from "../../lib/appNavigation";
+import { memoryAddReferencePath, memoryAutoRereviewPath } from "../../lib/appNavigation";
 import { fetchSidebarEntries, fetchViews } from "../../lib/viewsApi";
 
 jest.mock("../../lib/viewsApi", () => ({
@@ -63,6 +63,13 @@ test("right-clicking Memory offers Add Reference, which opens the library's add 
   fireEvent.click(item);
   expect(screen.getByTestId("location")).toHaveTextContent(memoryAddReferencePath());
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+});
+
+test("Memory also offers Auto Re-review, which opens the library's auto re-review settings", async () => {
+  renderSidebar();
+  fireEvent.contextMenu(await screen.findByRole("link", { name: "Memory" }), { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Auto Re-review…" }));
+  expect(screen.getByTestId("location")).toHaveTextContent(memoryAutoRereviewPath());
 });
 
 test("a page with no quick actions keeps the browser's menu", async () => {
