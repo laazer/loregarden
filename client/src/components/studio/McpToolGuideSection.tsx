@@ -1,3 +1,5 @@
+import { useId, useState } from "react";
+
 import type { StudioMcpToolGuide } from "../../api/client";
 import { Input } from "../ui/Input";
 
@@ -22,68 +24,14 @@ export function McpToolGuideSection({
 
   if (isStudio) {
     return (
-      <div className="studio-card">
-        <div className="studio-card-header tight">
-          <span className="studio-card-icon amber" aria-hidden>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.6 2.6-1.4-1.4 2.6-2.6z" />
-            </svg>
-          </span>
-          <span className="studio-card-title">Loregarden MCP tools</span>
-          {enabled && (
-            <span className="studio-tool-count-badge">{selected.length} on</span>
-          )}
-        </div>
-        <p className="studio-card-hint">
-          Enable the tools this role may call directly during a stage.
-        </p>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => onToggleEnabled(e.target.checked)}
-            style={{ accentColor: "var(--ac)" }}
-          />
-          <span style={{ fontSize: "var(--fs-small)", color: "var(--txm)" }}>Enable MCP tool access</span>
-        </label>
-        {enabled && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {stageGuides.map((guide) => (
-              <label key={guide.name} className="studio-mcp-tool-row">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(guide.name)}
-                  onChange={() => onToggleTool(guide.name)}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="studio-mcp-tool-name">{guide.name}</div>
-                  <div className="studio-mcp-tool-desc">{guide.description}</div>
-                </div>
-              </label>
-            ))}
-            {orchestratorGuides.length > 0 && (
-              <>
-                <p className="studio-card-hint" style={{ marginTop: 8, marginBottom: 0 }}>
-                  Orchestrator-only tools are usually not enabled for stage agents.
-                </p>
-                {orchestratorGuides.map((guide) => (
-                  <label key={guide.name} className="studio-mcp-tool-row" style={{ opacity: 0.85 }}>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(guide.name)}
-                      onChange={() => onToggleTool(guide.name)}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="studio-mcp-tool-name">{guide.name}</div>
-                      <div className="studio-mcp-tool-desc">{guide.description}</div>
-                    </div>
-                  </label>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      <StudioMcpTools
+        stageGuides={stageGuides}
+        orchestratorGuides={orchestratorGuides}
+        enabled={enabled}
+        selected={selected}
+        onToggleEnabled={onToggleEnabled}
+        onToggleTool={onToggleTool}
+      />
     );
   }
 
@@ -181,5 +129,91 @@ function McpToolCard({
         </div>
       </div>
     </details>
+  );
+}
+
+/**
+ * The agent page's tool picker. A count and the on/off switch say what the
+ * agent has; the list itself (seventy-odd tools) is folded and filterable,
+ * two columns of one-line rows, instead of a card per tool down the page.
+ */
+function StudioMcpTools({
+  stageGuides,
+  orchestratorGuides,
+  enabled,
+  selected,
+  onToggleEnabled,
+  onToggleTool,
+}: {
+  stageGuides: StudioMcpToolGuide[];
+  orchestratorGuides: StudioMcpToolGuide[];
+  enabled: boolean;
+  selected: string[];
+  onToggleEnabled: (enabled: boolean) => void;
+  onToggleTool: (tool: string) => void;
+}) {
+  const baseId = useId();
+  const [filter, setFilter] = useState("");
+  const needle = filter.trim().toLowerCase();
+  const matches = (guide: StudioMcpToolGuide) =>
+    !needle || guide.name.toLowerCase().includes(needle) || guide.description.toLowerCase().includes(needle);
+  const total = stageGuides.length + orchestratorGuides.length;
+
+  const rows = (guides: StudioMcpToolGuide[]) =>
+    guides.filter(matches).map((guide) => (
+      <label key={guide.name} className="studio-mcp-tool-row" title={guide.description}>
+        <Input
+          type="checkbox"
+          checked={selected.includes(guide.name)}
+          onChange={() => onToggleTool(guide.name)}
+          aria-describedby={`${baseId}-${guide.name}`}
+        />
+        <span className="studio-mcp-tool-text">
+          <span className="studio-mcp-tool-name">{guide.name}</span>
+          <span id={`${baseId}-${guide.name}`} className="studio-mcp-tool-desc">
+            {guide.description}
+          </span>
+        </span>
+      </label>
+    ));
+
+  return (
+    <section className="studio-record-section" aria-labelledby={`${baseId}-title`}>
+      <h3 id={`${baseId}-title`} className="studio-record-section-title">
+        MCP tools
+      </h3>
+      <label className="studio-mcp-switch">
+        <Input type="checkbox" checked={enabled} onChange={(e) => onToggleEnabled(e.target.checked)} />
+        <span>
+          Loregarden MCP tool access
+          {enabled ? ` · ${selected.length} of ${total} on` : " · off"}
+        </span>
+      </label>
+      {enabled ? (
+        <details className="studio-mcp-picker">
+          <summary>Choose tools</summary>
+          <Input
+            type="search"
+            className="studio-mcp-filter"
+            aria-label="Filter MCP tools"
+            placeholder="Filter tools"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          <div className="studio-mcp-grid">{rows(stageGuides)}</div>
+          {orchestratorGuides.some(matches) ? (
+            <>
+              <p className="studio-record-section-hint">
+                Orchestrator-only: usually not enabled for stage agents.
+              </p>
+              <div className="studio-mcp-grid is-dim">{rows(orchestratorGuides)}</div>
+            </>
+          ) : null}
+          {needle && !stageGuides.some(matches) && !orchestratorGuides.some(matches) ? (
+            <p className="studio-record-muted">No tool matches “{filter}”.</p>
+          ) : null}
+        </details>
+      ) : null}
+    </section>
   );
 }

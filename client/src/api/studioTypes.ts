@@ -158,6 +158,42 @@ export interface AgentRunStats {
   failed: number;
   /** When its latest run of any status was created; naive UTC. */
   last_run_at: string | null;
+  /** The stage it failed at most; null with no failure. */
+  worst_stage: string | null;
+  worst_stage_failed: number;
+}
+
+/** Who could have unblocked a failed run; null when it was never classified. */
+export type RunFailureKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
+
+/** One stage of an agent's record, from `GET /api/studio/agent-runs/{agentId}`. */
+export interface AgentStageRecord {
+  stage_key: string;
+  /** Finished runs: succeeded, failed or cancelled. */
+  runs: number;
+  failed: number;
+  /** `failed` by kind, largest first; sums to `failed`. */
+  failed_by_kind: { kind: RunFailureKind | null; count: number }[];
+}
+
+export interface AgentRecentRun {
+  id: string;
+  run_code: string;
+  status: "queued" | "running" | "awaiting_permission" | "succeeded" | "failed" | "cancelled";
+  stage_key: string;
+  failure_kind: RunFailureKind | null;
+  /** Naive UTC. */
+  created_at: string;
+  finished_at: string | null;
+  ticket_external_id: string | null;
+  ticket_title: string | null;
+}
+
+/** Where and why one agent fails: its stages, most failures first, and its latest runs. */
+export interface AgentRunRecord {
+  agent_id: string;
+  stages: AgentStageRecord[];
+  recent: AgentRecentRun[];
 }
 
 export interface StudioGeneratedAgent {

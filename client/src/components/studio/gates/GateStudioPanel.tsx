@@ -72,6 +72,11 @@ interface ProfileState {
  * Back/forward cannot be intercepted: the app uses BrowserRouter, which has no
  * navigation blocker.
  */
+/** A rail row's slug says nothing when it is only its name, lowercased and hyphenated. */
+function slugRepeatsName(name: string, slug: string): boolean {
+  return !name || name.trim().toLowerCase().replace(/\s+/g, "-") === slug;
+}
+
 export function GateStudioPanel({
   workspaces,
   workspacesLoading,
@@ -209,7 +214,9 @@ export function GateStudioPanel({
               <div key={ws.slug}>
                 {railLink({ workspaceSlug: ws.slug, workflowSlug: null, controlId: null }, ws.name || ws.slug, {
                   current: ws.slug === target.workspaceSlug,
-                  slug: ws.slug,
+                  // Only when it says something the name does not: "loregarden"
+                  // under "loregarden" was every row's second line.
+                  slug: slugRepeatsName(ws.name, ws.slug) ? undefined : ws.slug,
                 })}
               </div>
             ))}
@@ -334,7 +341,7 @@ function WorkflowRail({
         <div key={wf.slug}>
           {railLink({ workspaceSlug: workspace.slug, workflowSlug: wf.slug, controlId: null }, wf.name || wf.slug, {
             current: wf.slug === currentSlug,
-            slug: wf.slug,
+            slug: slugRepeatsName(wf.name, wf.slug) ? undefined : wf.slug,
             badge: runsHere(wf, workspace) ? "Runs here" : undefined,
           })}
         </div>

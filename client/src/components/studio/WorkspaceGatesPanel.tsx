@@ -10,6 +10,7 @@ import {
 import { describeError } from "../../state/toastStore";
 import { GateCommandList, type DraftCommand } from "./GateCommandList";
 import { GateStatusHeader } from "./GateStatusHeader";
+import { Button } from "../ui/Button";
 import { PLACEHOLDER_HELP, gateCommandLabel, hasUnbalancedQuotes, insertAt } from "./gateCommand";
 import "./WorkspaceGatesPanel.css";
 
@@ -213,21 +214,25 @@ export function WorkspaceGatesPanel({
                     <span className="gate-card-meta">run in order, stop at the first failure</span>
                   </div>
 
-                  <div className="gate-chips" role="group" aria-label="Insert a placeholder">
-                    <span className="gate-chips-label">Insert</span>
-                    {Object.keys(placeholders).map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        className="gate-chip"
-                        title={`${PLACEHOLDER_HELP[name] ?? name} — e.g. ${placeholders[name]}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => insertPlaceholder(name)}
-                      >
-                        {`{${name}}`}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Folded: eight chips over every check list read as part of
+                      each command. Open when writing one. */}
+                  <details className="gate-chips-disclosure">
+                    <summary>Insert a placeholder</summary>
+                    <div className="gate-chips" role="group" aria-label="Insert a placeholder">
+                      {Object.keys(placeholders).map((name) => (
+                        <Button
+                          variant="plain"
+                          key={name}
+                          className="gate-chip"
+                          title={`${PLACEHOLDER_HELP[name] ?? name} — e.g. ${placeholders[name]}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => insertPlaceholder(name)}
+                        >
+                          {`{${name}}`}
+                        </Button>
+                      ))}
+                    </div>
+                  </details>
 
                   <GateCommandList
                     noun="check"

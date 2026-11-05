@@ -24,7 +24,7 @@
  * change smuggled into a split is the thing a split is least able to show.
  */
 
-import { useId, type Dispatch, type SetStateAction } from "react";
+import { useId, useState, type Dispatch, type SetStateAction } from "react";
 
 import type {
   ClassifyRoute,
@@ -93,6 +93,20 @@ export function StudioStagesCard({
   selectedWorkflow,
 }: StudioStagesCardProps) {
   const fieldId = useId();
+  // Every stage folds to its header row by default: twelve open forms were the
+  // page. Kept by position, so a stage moved up or down trades open state with
+  // its neighbour; a stage just added opens.
+  const [openStages, setOpenStages] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleStage = (index: number) =>
+    setOpenStages((open) => {
+      const next = new Set(open);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  const allOpen = workflowDraft.stages.length > 0 && openStages.size >= workflowDraft.stages.length;
+  const agentName = (agentId: string) =>
+    agentId ? agentOptions.find((option) => option.id === agentId)?.label ?? agentId : "Human";
   const updateStage = (index: number, patch: Partial<StudioWorkflowStage>) => {
     setWorkflowDraft((draft) => ({
       ...draft,
@@ -147,22 +161,32 @@ export function StudioStagesCard({
               <span className="studio-card-title">Stages</span>
               <span className="studio-stage-count">{workflowDraft.stages.length}</span>
               <div style={{ flex: 1 }} />
+              <Button
+                variant="plain"
+                className="studio-stage-expand-all"
+                onClick={() =>
+                  setOpenStages(allOpen ? new Set() : new Set(workflowDraft.stages.map((_, index) => index)))
+                }
+              >
+                {allOpen ? "Collapse all" : "Expand all"}
+              </Button>
               {!isWorkflowReadOnly && (
-                <button
-                  type="button"
+                <Button
+                  variant="plain"
                   className="studio-add-stage-btn"
-                  onClick={() =>
+                  onClick={() => {
+                    setOpenStages((open) => new Set(open).add(workflowDraft.stages.length));
                     setWorkflowDraft((draft) => ({
                       ...draft,
                       stages: [...draft.stages, emptyStage(draft.stages.length + 1)],
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
                   Add stage
-                </button>
+                </Button>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -177,13 +201,29 @@ export function StudioStagesCard({
                         ? "Parallel"
                         : "Agent";
                 return (
-                  <div key={`${stage.key}-${index}`} className={`studio-stage-card ${typeClass}`}>
+                  <div
+                    key={`${stage.key}-${index}`}
+                    className={`studio-stage-card ${typeClass}${openStages.has(index) ? "" : " is-collapsed"}`}
+                  >
                     <div className="studio-stage-header">
                       <span className="studio-stage-num">{index + 1}</span>
-                      <span style={{ fontFamily: "var(--ui)", fontSize: "var(--fs-body)", fontWeight: 600, color: "var(--tx)" }}>
-                        {stage.name || `Stage ${index + 1}`}
-                      </span>
-                      <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>
+                      <Button
+                        variant="plain"
+                        className="studio-stage-toggle"
+                        aria-expanded={openStages.has(index)}
+                        onClick={() => toggleStage(index)}
+                      >
+                        <span className="studio-stage-name">{stage.name || `Stage ${index + 1}`}</span>
+                        <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>
+                        {openStages.has(index) ? null : (
+                          <span className="studio-stage-summary">
+                            {stage.stage_type === "parallel"
+                              ? stage.parallel_agents.map((member) => agentName(member.agent_id)).join(", ") ||
+                                "no agents"
+                              : agentName(stage.agent_id)}
+                          </span>
+                        )}
+                      </Button>
                       <div style={{ flex: 1 }} />
                       {!isWorkflowReadOnly && (
                         <>
