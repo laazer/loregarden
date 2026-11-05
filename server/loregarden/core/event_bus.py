@@ -79,6 +79,31 @@ class EventBus:
         # (an uncommitted stage write) and waited on the lock, and A failed
         # with "database is locked" after the full busy timeout. Sessions are
         # per-thread and SQLite serialises writers itself (lg-milestone-that-778).
+        event = self.add(
+            session,
+            event_type,
+            workspace_id=workspace_id,
+            ticket_id=ticket_id,
+            run_id=run_id,
+            artifact_id=artifact_id,
+            payload=payload,
+        )
+        session.commit()
+        return session.get(DomainEvent, event.id) or event
+
+    def add(
+        self,
+        session: Session,
+        event_type: EventType,
+        *,
+        workspace_id: str | None = None,
+        ticket_id: str | None = None,
+        run_id: str | None = None,
+        artifact_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> DomainEvent:
+        """`publish` without the commit: the event joins the caller's transaction,
+        for a writer mid-transaction that must not persist half its work."""
         event = DomainEvent(
             type=event_type,
             workspace_id=workspace_id,
@@ -88,8 +113,7 @@ class EventBus:
             payload_json=json.dumps(payload or {}),
         )
         session.add(event)
-        session.commit()
-        return session.get(DomainEvent, event.id) or event
+        return event
 
     def list_recent(
         self,

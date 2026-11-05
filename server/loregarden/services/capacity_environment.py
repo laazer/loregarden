@@ -11,7 +11,7 @@ cycle back into `orchestration` (lg-milestone-that-1238):
 
 The direction is what was wrong, not the import: deciding a child's environment
 from a granted reservation is a leaf concern, and the reaping of stale leases by
-a process that happens to be waiting in line is not. Naming the four environment
+a process that happens to be waiting in line is not. Naming the environment
 variables and translating a grant into them is the whole of this module, and it
 depends on nothing but the reservation it is handed.
 """
@@ -27,6 +27,11 @@ from loregarden.services.docker_leases import DockerReservation
 LEASE_ENV = "LOREGARDEN_CAPACITY_LEASE_ID"
 CPUS_ENV = "LOREGARDEN_CAPACITY_CPUS"
 WORKERS_ENV = "LOREGARDEN_CAPACITY_WORKERS"
+#: pytest-xdist sizes `-n auto` from this before it counts the host's cores. A
+#: command configured as `pytest -n auto` (the live loregarden landing check is)
+#: would otherwise start one worker per core whatever it was granted, on a
+#: machine already full enough to make it queue.
+XDIST_AUTO_WORKERS_ENV = "PYTEST_XDIST_AUTO_NUM_WORKERS"
 
 #: Where the caller stood before `scripts/loregarden-cli.sh` moved into
 #: `server/` to start uv. The held command runs there, so a relative path in it
@@ -50,6 +55,12 @@ def worker_count(cpus: float) -> int:
     return max(1, int(cpus))
 
 
+def grant_environment(cpus: float) -> dict[str, str]:
+    """The variables that tell a child how much of the machine it was granted."""
+    workers = str(worker_count(cpus))
+    return {CPUS_ENV: f"{cpus:g}", WORKERS_ENV: workers, XDIST_AUTO_WORKERS_ENV: workers}
+
+
 def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -> dict[str, str]:
     env = dict(base)
     env.pop(CALLER_CWD_ENV, None)
@@ -60,6 +71,5 @@ def child_environment(reservation: DockerReservation, base: Mapping[str, str]) -
         else:
             env.pop(REPO_ROOT_ENV, None)
     env[LEASE_ENV] = reservation.lease_id
-    env[CPUS_ENV] = f"{reservation.cpus:g}"
-    env[WORKERS_ENV] = str(worker_count(reservation.cpus))
+    env.update(grant_environment(reservation.cpus))
     return env

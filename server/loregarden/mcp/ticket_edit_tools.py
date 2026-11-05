@@ -10,12 +10,18 @@ growing. The dispatcher below returns ``None`` for a name it does not own, so
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from sqlmodel import Session
 
 from loregarden.mcp.tool_args import reject_truncated_call
-from loregarden.models.domain import Ticket, TicketState, UpdateTicketRequest
+from loregarden.models.domain import (
+    Ticket,
+    TicketState,
+    UpdateTicketRequest,
+    WorkflowStageView,
+)
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
     load_criteria,
@@ -39,11 +45,23 @@ from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 
 
 def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
-    """Everything an agent needs about one ticket after a write, as plain JSON."""
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(ticket_id=ticket_id)
-    active = svc.get_active_orchestration_run(ticket.id)
-    orch = OrchestrationService(session)
+    """Everything an agent needs about one ticket after a write, as plain JSON.
+
+    Reconciles and persists the stage map on the way, which is right for a
+    write tool and wrong for a read; the read tools take `_state_payload` with
+    `stage_views_for_read` instead (`resolve_ticket_payload`).
+    """
+    ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=ticket_id)
+    return _state_payload(session, ticket, OrchestrationService(session).build_stage_views)
+
+
+def _state_payload(
+    session: Session,
+    ticket: Ticket,
+    stage_views: Callable[[Ticket], list[WorkflowStageView]],
+) -> dict[str, Any]:
+    """The payload both kinds of tool return; `stage_views` decides whether it writes."""
+    active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
     return {
         "ticket_id": ticket.id,
         "external_id": ticket.external_id,
@@ -71,7 +89,7 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
             if active
             else None
         ),
-        "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],
+        "stages": [s.model_dump() for s in stage_views(ticket)],
         "tags": load_tags(ticket.tags_json),
         "hierarchy": ticket_neighbors_mcp(session, ticket),
         "depends_on": ticket_summaries(
@@ -176,11 +194,16 @@ def resolve_ticket_payload(
         external_id=external_id,
         workspace_slug=workspace_slug,
     )
+    # A read, so the stage map is derived and not persisted. Through
+    # `build_stage_views` every get_ticket committed the ticket and its workflow
+    # instance, moving `updated_at` with no event behind it; that read as a state
+    # change at 19:26 on lg-milestone-that-2196, 52 minutes after its last one.
+    stage_views = OrchestrationService(session).stage_views_for_read
     # Planning documents on this ticket and every ancestor up to its initiative,
     # for the same reason the body rides here: an agent that is not told they
     # exist will not think to list them. Read one with loregarden_read_artifact.
     return (
-        ticket_state_payload(session, ticket.id)
+        _state_payload(session, ticket, stage_views)
         | ticket_body(ticket)
         | {"documents": document_index(session, ticket)}
     )

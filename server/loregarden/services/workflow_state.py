@@ -17,7 +17,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkflowStageView,
 )
-from loregarden.services.ticket_state_service import derive
+from loregarden.services.ticket_state_service import derive, record_derived_change
 
 logger = logging.getLogger(__name__)
 
@@ -289,8 +289,8 @@ def reconcile_workflow_state(
     # template change) must not silently un-finish a ticket. `derive` owns the
     # state_locked / wont_do guards and the revision bookkeeping.
     sticky_done = ticket.state == TicketState.DONE and ticket_state != TicketState.DONE
-    if owns_state and not sticky_done:
-        derive(ticket, ticket_state, actor="workflow")
+    if owns_state and not sticky_done and derive(ticket, ticket_state, actor="workflow"):
+        record_derived_change(ticket, actor="workflow")
     ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key

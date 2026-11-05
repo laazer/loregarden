@@ -529,16 +529,9 @@ def test_a_verification_that_times_out_refuses_rather_than_passing(
     from loregarden.services import land_verification as module
 
     ticket, _, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-v-5")
-    _configure(session, ticket, land_verify_commands=[PASSING_SUITE])
+    _configure(session, ticket, land_verify_commands=["python3 -c 'import time; time.sleep(30)'"])
 
-    real = subprocess.run
-
-    def timing_out(argv, **kwargs):
-        if "python3" in str(argv):
-            raise subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout") or 1)
-        return real(argv, **kwargs)
-
-    with mock.patch.object(module.subprocess, "run", side_effect=timing_out):
+    with mock.patch.object(module, "LAND_VERIFY_TIMEOUT_SECONDS", 1):
         outcome = module.land_verifier(session, ticket, workspace)(_sha(repo, ticket.branch))
 
     assert not outcome.ok, "a timeout that passes the land is not a guard"
