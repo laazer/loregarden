@@ -139,7 +139,7 @@ describe("Lanes, once the Queue page", () => {
   it("is the tab between Capacity and Disk, with the lane board, its rail and its metrics", async () => {
     renderAt("/machine/lanes");
 
-    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Capacity", "Lanes", "Disk"]);
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Capacity", "Lanes", "Disk", "Tokens"]);
     expect(screen.getByRole("link", { name: "Lanes" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("lane-board")).toBeInTheDocument();
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([

@@ -4,6 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { DiskUsageView } from "../components/machine/DiskUsageView";
 import { MachineCapacityView } from "../components/machine/MachineCapacityView";
 import { MachineLanesView } from "../components/machine/MachineLanesView";
+import { TokenTrendView } from "../components/machine/TokenTrendView";
 import { QueueTopbarControls } from "../components/QueueTopbarControls";
 import { LocalInstancesModal } from "../components/LocalInstancesModal";
 import { PageTopbar } from "../components/TopbarPageSlot";
@@ -22,12 +23,14 @@ const TAB_LABELS: Record<MachineTab, string> = {
   capacity: "Capacity",
   lanes: "Lanes",
   disk: "Disk",
+  tokens: "Tokens",
 };
 
 const TAB_NOTES: Record<MachineTab, string> = {
   capacity: "CPU and memory for test runs, builds and containers",
   lanes: "Agent runs holding a lane, and what waits for one",
   disk: "What is using the disk, and what can safely go",
+  tokens: "Whether agent runs are getting cheaper in tokens",
 };
 
 /**
@@ -41,6 +44,19 @@ const TAB_NOTES: Record<MachineTab, string> = {
  * what this machine is running and spending, and the rail flags Machine when
  * usage nears a limit, so the warning is not lost with the button.
  */
+function MachineTabBody({ tab }: { tab: MachineTab }) {
+  switch (tab) {
+    case "disk":
+      return <DiskUsageView />;
+    case "lanes":
+      return <MachineLanesView />;
+    case "tokens":
+      return <TokenTrendView />;
+    default:
+      return <MachineCapacityView />;
+  }
+}
+
 export function MachinePage() {
   const location = useLocation();
   const tab = machineTabFromPath(location.pathname);
@@ -90,7 +106,7 @@ export function MachinePage() {
             </Link>
           ))}
         </nav>
-        {tab === "disk" ? <DiskUsageView /> : tab === "lanes" ? <MachineLanesView /> : <MachineCapacityView />}
+        <MachineTabBody tab={tab} />
       </div>
       <LocalInstancesModal open={instancesOpen} onClose={() => setInstancesOpen(false)} />
       <UsageModal
