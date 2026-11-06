@@ -32,7 +32,7 @@ from loregarden.services.integration_review import backfill_integration_reviews
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.oversized_ticket_split import (
-    MAX_ACCEPTANCE_CRITERIA,
+    SPLIT_AT_ACCEPTANCE_CRITERIA,
     TICKET_SPLIT_CLI_PROFILE,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
@@ -1525,7 +1525,7 @@ def test_oversized_ticket_is_split_and_its_parts_run_to_completion(
 ):
     """An oversized feature never runs its own stages: it is split before the
     first one, and the aggregator loop runs the parts."""
-    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    criteria = [f"criterion {n}" for n in range(1, SPLIT_AT_ACCEPTANCE_CRITERIA + 2)]
     parts = [criteria[:8], criteria[8:]]
     reply = json.dumps(
         {
@@ -1574,7 +1574,7 @@ def test_a_ticket_that_grows_oversized_after_a_stage_is_split_at_the_next_bounda
     stages, so the split is asked again after one has run — here, with "work"
     done and nothing committed, the remaining stages are never run on the
     parent; its parts carry them."""
-    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    criteria = [f"criterion {n}" for n in range(1, SPLIT_AT_ACCEPTANCE_CRITERIA + 2)]
     reply = json.dumps(
         {
             "children": [

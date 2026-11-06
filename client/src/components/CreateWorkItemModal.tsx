@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
 import { ParentTicketSelector } from "./ParentTicketSelector";
@@ -16,6 +16,8 @@ import { Select } from "./ui/Select";
 import { Textarea } from "./ui/Textarea";
 import { Button } from "./ui/Button";
 import { ModalShell } from "./ui/ModalShell";
+import { MAX_ACCEPTANCE_CRITERIA } from "../lib/criterionDrafts";
+import { parseAcceptanceCriteriaText } from "../lib/importTicketPreview";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "initiative", label: "Initiative" },
@@ -58,7 +60,7 @@ interface CreateWorkItemModalProps {
   isSaving: boolean;
   errorMessage?: string | null;
   onClose: () => void;
-  onCreate: (draft: CreateWorkItemDraft) => Promise<void>;
+  onCreate: (draft: CreateWorkItemDraft) => void;
 }
 
 function findNode(nodes: TicketTreeNode[], id: string): TicketTreeNode | null {
@@ -117,6 +119,21 @@ function initialDraft(
   };
 }
 
+/**
+ * Has the operator put anything of their own in this draft yet? Everything they
+ * type, plus the two fields they pick. `parent_ticket_id` is excluded because
+ * the coherence effects below own it, not the operator.
+ */
+function isUntouched(draft: CreateWorkItemDraft, seeded: CreateWorkItemDraft): boolean {
+  return (
+    draft.title === "" &&
+    draft.description === "" &&
+    draft.acceptance_criteria === "" &&
+    draft.work_item_type === seeded.work_item_type &&
+    draft.priority === seeded.priority
+  );
+}
+
 export function CreateWorkItemModal({
   open,
   workspaceSlug,
@@ -145,10 +162,29 @@ export function CreateWorkItemModal({
     initialDraft(tickets, selectedTicketId, ticketTree, lockedParent),
   );
 
+  // Read inside the seeding effect without making every keystroke re-run it.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const seededRef = useRef<CreateWorkItemDraft | null>(null);
+
+  // `tickets` and `ticketTree` are here because a late-arriving list is what
+  // decides the default type and parent — but they change identity on any
+  // refetch, and on the re-render that follows a *refused* create. So only a
+  // draft the operator has not touched is re-seeded; a typed draft survives,
+  // which is what makes the 400's "your draft is still here" true.
   useEffect(() => {
-    if (!open) return;
-    setDraft(initialDraft(tickets, selectedTicketId, ticketTree, lockedParent));
+    if (!open) {
+      seededRef.current = null;
+      return;
+    }
+    const seeded = seededRef.current;
+    if (seeded && !isUntouched(draftRef.current, seeded)) return;
+    const next = initialDraft(tickets, selectedTicketId, ticketTree, lockedParent);
+    seededRef.current = next;
+    setDraft(next);
   }, [open, selectedTicketId, tickets, ticketTree, lockedParent?.id, lockedParent?.type]);
+
+  const criteriaCount = parseAcceptanceCriteriaText(draft.acceptance_criteria).length;
 
   const typeOptions = useMemo(() => {
     if (lockedParent) {
@@ -207,7 +243,7 @@ export function CreateWorkItemModal({
 
   const handleCreate = () => {
     if (!canSubmit) return;
-    void onCreate(draft);
+    onCreate(draft);
   };
 
   const modalTitle = lockParent ? "Add sub-item" : "New work item";
@@ -353,6 +389,13 @@ export function CreateWorkItemModal({
             <label htmlFor={`${fieldId}-acceptance-criteria`} className="modal-field-label">
               Acceptance criteria (one per line)
             </label>
+            {/* The count the server will see, so the operator reads it before the
+                400 rather than after: blank lines and bullet markers are not
+                criteria, and `parseAcceptanceCriteriaText` is what drops them. */}
+            <span className="modal-hint" aria-live="polite">
+              {`${criteriaCount} of ${MAX_ACCEPTANCE_CRITERIA}`}
+              {criteriaCount > MAX_ACCEPTANCE_CRITERIA && " — over the cap; file the extra work as a second ticket"}
+            </span>
             <Textarea
               id={`${fieldId}-acceptance-criteria`}
               className="btn-secondary filter-select"

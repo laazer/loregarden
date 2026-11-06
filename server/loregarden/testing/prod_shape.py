@@ -101,6 +101,21 @@ class Calibration(BaseModel):
     #: read-only 2026-11-03 with `base_delivery`'s rule against origin/main: 271
     #: of 280 landed tickets; the rest are the "landed, not on main" rows.
     on_base_landed_share: float
+    #: When the acceptance-criteria and description sizes below were measured.
+    #: Its own date because the rest of this calibration is older: re-measuring
+    #: one shape must not silently re-date another (lg-milestone-that-2250).
+    criteria_measured: str
+    #: Tickets at exactly the write cap of 12 — one click from a refusal, and 13%
+    #: of all tickets, which is why the editor shows the count before the save.
+    tickets_at_the_criteria_cap: int
+    #: Already over it. Every one stays editable: the guard refuses growth.
+    tickets_over_the_criteria_cap: int
+    #: The longest criteria list in the database. The editor is rendered at it.
+    largest_criteria_list: int
+    #: Descriptions over the 15,000-character write cap, and the longest one —
+    #: a monitor-escalation bug, ten times the cap.
+    descriptions_over_the_cap: int
+    largest_description_chars: int
 
 
 #: Measured from the live database, 2026-09-28 (read-only).
@@ -154,6 +169,15 @@ CALIBRATION = Calibration(
     worked_system_share=0.40,
     landed_done_share=80 / 474,
     on_base_landed_share=271 / 280,
+    # Measured read-only on the live database 2026-11-05: 2,733 tickets; 358 at
+    # exactly 12 criteria; 78 over 12; 49 over 15; 29 at 13-15; max 62. 34
+    # descriptions over 15,000 chars; max 159,960.
+    criteria_measured="2026-11-05",
+    tickets_at_the_criteria_cap=358,
+    tickets_over_the_criteria_cap=78,
+    largest_criteria_list=62,
+    descriptions_over_the_cap=34,
+    largest_description_chars=159_960,
 )
 
 #: Live had no initiatives at calibration, with every milestone unclaimed. The
@@ -237,6 +261,13 @@ class ProdShapeSummary(BaseModel):
     survey_sources: int
     #: Merge queue entries on loregarden (`prod_shape_merge_queue`).
     merge_queue_entries: int
+
+
+#: The workspace the surfaces under test are read over: loregarden carries the
+#: live volume, so every shape that needs "the busy workspace" names this rather
+#: than respelling the slug. `prod_shape_survey` and `prod_shape_merge_queue`
+#: already each hold their own constant for the same reason.
+PRIMARY_WORKSPACE = "loregarden"
 
 
 def prod_shape_id(namespace: str, n: int | str) -> str:
@@ -362,6 +393,53 @@ def _memory(
     return count
 
 
+#: The three criteria counts the editor has to survive: under the cap, at it,
+#: and the longest list in the database. Fixed ids, so a jest render and a
+#: pytest assertion can name the same rows.
+CRITERIA_CAP_COUNTS = (11, 12, CALIBRATION.largest_criteria_list)
+
+
+def _add_criteria_cap_shape(session: Session, tickets: list) -> list:
+    """One loregarden ticket at each criteria-cap boundary.
+
+    Planted through `make_ticket`'s `acceptance_criteria` parameter rather than
+    by assigning the column here: this module sits inside the root the
+    ticket-content census scans, so an assignment would make it a writer the
+    census demands a named exception for — and the factory already is one
+    (lg-milestone-that-2250).
+
+    Every writer refuses the 62-criterion row, which is the point: the 78 live
+    tickets over the cap predate the guard and still have to be editable.
+
+    Parented beside an existing primary-workspace ticket rather than from inside
+    `build_prod_shape`'s workspace loop, so the scenario builder gains one
+    statement and no branch — it sits on its complexity cap.
+    """
+    sibling = next(row for row in tickets if row[0] == PRIMARY_WORKSPACE)
+    milestone_id = sibling[4]
+    workspace_id = session.get(Ticket, sibling[1]).workspace_id
+    planted = []
+    for count in CRITERIA_CAP_COUNTS:
+        ticket = make_ticket(
+            session,
+            workspace_id=workspace_id,
+            ticket_id=prod_shape_id("criteria-cap", count),
+            external_id=f"lg-criteria-cap-{count}",
+            title=f"Criteria cap shape — {count} acceptance criteria",
+            work_item_type=WorkItemType.FEATURE,
+            parent_ticket_id=milestone_id,
+            acceptance_criteria=[
+                f"AC{n}: the {n}th thing this ticket asks for, written out at the length a "
+                "real criterion runs to so the editor is rendered over real text"
+                for n in range(1, count + 1)
+            ],
+        )
+        planted.append(
+            (PRIMARY_WORKSPACE, ticket.id, ticket.external_id, ticket.state, milestone_id)
+        )
+    return planted
+
+
 def build_prod_shape(
     session: Session, *, graph_path: Callable[[str], Path | None] | None = None
 ) -> ProdShapeSummary:
@@ -412,6 +490,7 @@ def build_prod_shape(
                 )
                 all_tickets.append((slug, ticket.id, ticket.external_id, state, parent))
 
+    all_tickets += _add_criteria_cap_shape(session, all_tickets)
     _add_initiative(session, themed, all_tickets)
     findings = _add_findings(session, all_tickets, rng)
     documents = _add_documents(session, all_tickets, rng)
@@ -679,7 +758,7 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
         _slug, ticket_id, ext, _state, _parent = next(
             row
             for row in tickets
-            if row[0] == "loregarden"
+            if row[0] == PRIMARY_WORKSPACE
             and row[3] == TicketState.IN_PROGRESS
             and row[1] not in with_artifacts
         )
@@ -876,7 +955,7 @@ def _add_ci_history(session: Session, tickets: list) -> int:
     turns: a tree's tickets ship in its integration branch's PR.
     """
     workspace_id = session.get(
-        Ticket, next(row[1] for row in tickets if row[0] == "loregarden")
+        Ticket, next(row[1] for row in tickets if row[0] == PRIMARY_WORKSPACE)
     ).workspace_id
     ticket = make_ticket(
         session,

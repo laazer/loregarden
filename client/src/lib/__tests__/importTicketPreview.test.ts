@@ -11,7 +11,12 @@ import {
   importTicketNeedsParent,
   validateImportDraft,
 } from "../importTicketPreview";
+import { MAX_ACCEPTANCE_CRITERIA } from "../criterionDrafts";
 import type { TicketImportItem, TicketSummary } from "../../api/client";
+
+function criteria(n: number): string[] {
+  return Array.from({ length: n }, (_, i) => `criterion ${i}`);
+}
 
 describe("importTicketPreview", () => {
   const existingMilestones: TicketSummary[] = [
@@ -119,5 +124,86 @@ describe("importTicketPreview", () => {
     });
     expect(capability.work_item_type).toBe("capability");
     expect(capability.parent_external_id).toBe("f-backend");
+  });
+
+  // The import is a batch: one over-cap row must hold the whole batch client-side
+  // with the offending row named, rather than letting the server refuse it
+  // mid-import and leave half the tickets created.
+  it("an over-cap row is held with its label and count named", () => {
+    const over = MAX_ACCEPTANCE_CRITERIA + 3;
+    const issues = validateImportDraft([
+      {
+        title: "Too much work for one ticket",
+        work_item_type: "milestone",
+        source_label: "batch.md",
+        acceptance_criteria: criteria(over),
+      },
+    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("batch.md");
+    expect(issues[0]).toContain(String(over));
+    expect(issues[0]).toContain(String(MAX_ACCEPTANCE_CRITERIA));
+  });
+
+  // The batch's criteria come out of `parseAcceptanceCriteriaText`, which drops
+  // blanks and bullet markers — and the server's `normalize_criteria` drops them
+  // again. A cap check counting the raw array holds a batch the server would
+  // take, and the operator has no way to see why: the count in the issue matches
+  // nothing they can see on the row.
+  it("blank rows do not push a row over the cap", () => {
+    const withBlanks = [...criteria(MAX_ACCEPTANCE_CRITERIA), "   ", ""];
+    expect(
+      validateImportDraft([
+        {
+          title: "Twelve criteria and two blank lines",
+          work_item_type: "milestone",
+          source_label: "batch.md",
+          acceptance_criteria: withBlanks,
+        },
+      ]),
+    ).toEqual([]);
+    // And the parse the field actually feeds it agrees.
+    expect(parseAcceptanceCriteriaText("- One\r\n\r\n* Two\r\n   \r\nThree")).toEqual([
+      "One",
+      "Two",
+      "Three",
+    ]);
+  });
+
+  it("a row with no acceptance_criteria at all is not held", () => {
+    // The field is optional on every import format, so `undefined.length` is the
+    // crash the cap check adds to a batch that was importing fine.
+    expect(
+      validateImportDraft([{ title: "No criteria", work_item_type: "milestone" }]),
+    ).toEqual([]);
+  });
+
+  it("a row at the cap is not held", () => {
+    expect(
+      validateImportDraft([
+        {
+          title: "Exactly at the cap",
+          work_item_type: "milestone",
+          source_label: "batch.md",
+          acceptance_criteria: criteria(MAX_ACCEPTANCE_CRITERIA),
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  // A milestone needs no parent, so the parent check `continue`s past it. The
+  // cap check has to run before that early exit or an over-cap milestone row is
+  // never looked at.
+  it("a milestone row over the cap is still checked", () => {
+    const issues = validateImportDraft([
+      {
+        title: "Oversized milestone",
+        work_item_type: "milestone",
+        source_label: "milestone.md",
+        acceptance_criteria: criteria(MAX_ACCEPTANCE_CRITERIA + 1),
+      },
+    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("milestone.md");
   });
 });

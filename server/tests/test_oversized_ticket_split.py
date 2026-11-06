@@ -21,7 +21,7 @@ from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.hierarchy_service import build_tree
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.oversized_ticket_split import (
-    MAX_ACCEPTANCE_CRITERIA,
+    SPLIT_AT_ACCEPTANCE_CRITERIA,
     SplitOutcome,
     split_oversized_ticket,
 )
@@ -31,7 +31,7 @@ from loregarden.services.workflow_state import set_stage_status
 from loregarden.testing.factories import NO_REPO, make_ticket
 from sqlmodel import Session, select
 
-CRITERIA = [f"AC{n} — criterion number {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+CRITERIA = [f"AC{n} — criterion number {n}" for n in range(1, SPLIT_AT_ACCEPTANCE_CRITERIA + 2)]
 
 
 def _reply(groups: list[list[str]], *, work_item_type: str = "capability") -> str:
@@ -180,7 +180,7 @@ def test_a_split_ticket_says_when_where_and_why(db_session: Session, oversized: 
     assert split is not None
     assert split.stage_key == oversized.workflow_stage_key
     assert split.over_limits == [
-        f"{len(CRITERIA)} criteria, over the {MAX_ACCEPTANCE_CRITERIA} limit"
+        f"{len(CRITERIA)} criteria, over the {SPLIT_AT_ACCEPTANCE_CRITERIA} limit"
     ]
     tickets = list(
         db_session.exec(select(Ticket).where(Ticket.workspace_id == oversized.workspace_id))
@@ -202,7 +202,7 @@ def test_a_ticket_run_oversized_and_unsplit_is_not_reported_split(
 
 
 def test_a_ticket_under_the_threshold_is_left_alone(db_session: Session, oversized: Ticket):
-    oversized.acceptance_criteria_json = serialize_criteria(CRITERIA[:MAX_ACCEPTANCE_CRITERIA])
+    oversized.acceptance_criteria_json = serialize_criteria(CRITERIA[:SPLIT_AT_ACCEPTANCE_CRITERIA])
     db_session.add(oversized)
     db_session.commit()
     generate = MagicMock()

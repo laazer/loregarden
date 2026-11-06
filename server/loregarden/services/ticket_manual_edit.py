@@ -37,6 +37,7 @@ from loregarden.services.acceptance_criteria import (
 from loregarden.services.compatibility_posture import apply_compatibility_posture
 from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.hierarchy_service import reparent_ticket
+from loregarden.services.ticket_growth_guard import guard_description_growth
 from loregarden.services.ticket_rollup import reconcile_ancestors, reconcile_lineage
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
@@ -71,8 +72,9 @@ def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
 
 CRITERIA_FROZEN_MESSAGE = (
     "Acceptance criteria are frozen on a done ticket: they are the record of what "
-    "was delivered. Link follow-up work with a relation or dependency instead, or "
-    "reopen the ticket to change what it asks for."
+    "was delivered. Reopen the ticket to change what it asks for. To add follow-up "
+    "work now, file a sibling under the same parent with loregarden_create_ticket "
+    "and depends_on set to this ticket."
 )
 
 
@@ -106,23 +108,44 @@ def _guard_frozen_criteria(ticket: Ticket, body: UpdateTicketRequest) -> None:
 
 
 def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
-    """The fields whose change earns a revision bump. Returns whether any did."""
+    """The fields whose change earns a revision bump. Returns whether any did.
+
+    **Guard, then mutate**, and the order is the fix rather than a tidying.
+    Every refusal this edit can earn runs against the incoming body first, and
+    nothing is assigned until all of them have passed: `ticket.description =
+    body.description` used to run two statements *above* the criteria guard, so
+    a refused criteria write had already mutated the ORM object, and whether
+    that reached the row depended on who committed next.
+
+    The guards stay in this function rather than in a `_guard_content_edits`
+    helper on purpose: the ticket-content census
+    (`test_ticket_size_guard.py::test_every_ticket_content_writer_is_a_guarded_seam_or_a_named_exception`)
+    reads which guards the writing function itself calls, so a guard one frame
+    away reads to it — and to a reviewer — as no guard at all.
+    """
     _guard_frozen_criteria(ticket, body)
+
+    title = body.title.strip() if body.title is not None else ""
+    if body.title is not None and not title:
+        raise ValueError("Title cannot be empty")
+
+    if body.description is not None:
+        guard_description_growth(ticket.description, body.description)
+
+    if body.acceptance_criteria is not None:
+        guard_criteria_growth(
+            load_criteria(ticket.acceptance_criteria_json), body.acceptance_criteria
+        )
+
     before = _content_fields(ticket)
 
     if body.title is not None:
-        title = body.title.strip()
-        if not title:
-            raise ValueError("Title cannot be empty")
         ticket.title = title
 
     if body.description is not None:
         ticket.description = body.description
 
     if body.acceptance_criteria is not None:
-        guard_criteria_growth(
-            load_criteria(ticket.acceptance_criteria_json), body.acceptance_criteria
-        )
         ticket.acceptance_criteria_json = serialize_criteria(body.acceptance_criteria)
 
     if body.tags is not None:

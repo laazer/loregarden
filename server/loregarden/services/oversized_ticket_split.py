@@ -57,8 +57,8 @@ from loregarden.services.proposal_validator import ProposalValidationError
 from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_size_limits import (
-    MAX_ACCEPTANCE_CRITERIA,
-    MAX_DESCRIPTION_CHARS,
+    SPLIT_AT_ACCEPTANCE_CRITERIA,
+    SPLIT_AT_DESCRIPTION_CHARS,
     is_oversized,
 )
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -318,9 +318,7 @@ def _record(session: Session, callbacks, ticket: Ticket, result: SplitResult, di
     title = (
         f"Split oversized ticket — {result.detail}" if split else "Oversized ticket running unsplit"
     )
-    threshold = (
-        f"> {MAX_ACCEPTANCE_CRITERIA} criteria or > {MAX_DESCRIPTION_CHARS:,} description chars"
-    )
+    threshold = f"> {SPLIT_AT_ACCEPTANCE_CRITERIA} criteria or > {SPLIT_AT_DESCRIPTION_CHARS:,} description chars"
     rows = [
         {"k": "Outcome", "v": result.outcome.value},
         {"k": "Detail", "v": result.detail},

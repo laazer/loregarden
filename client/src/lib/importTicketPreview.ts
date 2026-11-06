@@ -1,4 +1,5 @@
 import type { TicketImportItem, TicketSummary, WorkItemType } from "../api/client";
+import { MAX_ACCEPTANCE_CRITERIA } from "./criterionDrafts";
 import { slugify } from "./slugify";
 import { isRootType } from "./workItemHierarchy";
 
@@ -262,6 +263,19 @@ export function validateImportDraft(tickets: TicketImportItem[]): string[] {
     const label = ticket.source_label || ticket.title.trim() || "Ticket";
     if (!ticket.title.trim()) {
       issues.push(`${label}: title is required`);
+    }
+    // Counted the way the column holds them, and checked before the parent
+    // check's `continue`: a milestone needs no parent, so an over-cap milestone
+    // row would otherwise never be looked at. The batch is held here, named, so
+    // the server cannot refuse it mid-import with half the tickets created.
+    const criteriaCount = (ticket.acceptance_criteria ?? []).filter(
+      (criterion) => criterion.trim().length > 0,
+    ).length;
+    if (criteriaCount > MAX_ACCEPTANCE_CRITERIA) {
+      issues.push(
+        `${label}: ${criteriaCount} acceptance criteria; the cap is ${MAX_ACCEPTANCE_CRITERIA} — ` +
+          "move the extra onto a second ticket",
+      );
     }
     if (!importTicketNeedsParent(ticket.work_item_type)) continue;
     if (!importTicketHasParent(ticket)) {
