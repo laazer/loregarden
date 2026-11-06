@@ -5,6 +5,7 @@ import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { referenceLibraryApi } from "./referenceLibraryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
+import { ticketLandingApi } from "./ticketLandingApi";
 import { ticketPullRequestApi } from "./ticketPullRequestApi";
 import type { ApprovalHistoryItem, ApprovalResolutionAction } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
@@ -503,6 +504,7 @@ export const api = {
     }),
   ...ticketEdgeApi,
   ...ticketPullRequestApi,
+  ...ticketLandingApi,
   ...initiativeApi,
   ...memoryApi,
   ...referenceLibraryApi,

@@ -10,10 +10,13 @@ and the ticket read `in_progress` with no blocking text for three hours.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 from loregarden.models.domain import (
     AgentRun,
+    Artifact,
+    ArtifactKind,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -23,13 +26,19 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
+from loregarden.services.invariant_registry import REFUSED_LANDINGS_WAIT_FOR_A_CHANGE
+from loregarden.services.land_ticket import land_ticket
+from loregarden.services.landing_refused import UNAVAILABLE_RETRY_AFTER
 from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.terminal_stage_sweep import (
     finish_parked_terminal_tickets,
     finish_tickets_whose_landing_cleared,
+    tickets_whose_landing_cleared,
 )
-from sqlmodel import Session
+from sqlmodel import Session, col, select
+from tests.land_receipt_helpers import FAILING_SUITE, configure
 from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
 
 
@@ -218,3 +227,95 @@ def test_the_cleared_landing_sweep_skips_a_blocked_initiative(session):
     session.commit()
 
     assert finish_tickets_whose_landing_cleared(session) == []
+
+
+# --- a landing land verification refused (2284) -----------------------------
+
+#: `sysexits.h` EX_UNAVAILABLE: the suite never ran (a timeout, a missing tool).
+NEVER_RAN = f"python3 -c 'import sys; sys.exit({GATE_EX_UNAVAILABLE})'"
+
+
+def _refused(session, parked, command: str) -> Ticket:
+    """Land the parked ticket through the sweep with `command` as its suite, and
+    check the suite refused it: blocked on its terminal stage, nothing landed."""
+    configure(session, parked, land_verify_commands=[command])
+    finish_parked_terminal_tickets(session)
+    session.refresh(parked)
+    assert parked.state == TicketState.BLOCKED, "the suite refused the landing"
+    assert parked.landed_sha == ""
+    return parked
+
+
+def _receipts(session, ticket) -> list[Artifact]:
+    return list(
+        session.exec(
+            select(Artifact)
+            .where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.LAND_VERIFICATION)
+            .order_by(col(Artifact.created_at).desc())
+        ).all()
+    )
+
+
+def test_a_landing_its_tests_refused_is_not_retried_on_the_same_tips(session, parked):
+    """The merge previews clean, so the sweep used to re-land it every pass,
+    holding a heavy lease for a suite that refused the same tree last time."""
+    _refused(session, parked, FAILING_SUITE)
+
+    assert tickets_whose_landing_cleared(session) == []
+    assert finish_tickets_whose_landing_cleared(session) == []
+    assert len(_receipts(session, parked)) == 1, "the suite was not run again"
+
+
+def test_a_new_commit_on_the_branch_earns_the_landing_another_attempt(session, repo, parked):
+    _refused(session, parked, FAILING_SUITE)
+
+    commit_on(repo, parked.branch, "fix.txt", "fixed\n")
+
+    assert [t.id for t in tickets_whose_landing_cleared(session)] == [parked.id]
+
+
+def test_a_new_commit_on_the_target_earns_the_landing_another_attempt(
+    session, workspace, repo, parked
+):
+    _refused(session, parked, FAILING_SUITE)
+
+    commit_on(repo, _target(session, parked, workspace, repo), "sibling.txt", "sibling\n")
+
+    assert [t.id for t in tickets_whose_landing_cleared(session)] == [parked.id]
+
+
+def test_tests_that_never_ran_are_retried_only_once_the_wait_is_over(session, parked):
+    """A timeout is about the machine at the time, not the tree: it stands for a
+    while, then the same tips get another try."""
+    _refused(session, parked, NEVER_RAN)
+    assert tickets_whose_landing_cleared(session) == [], "inside the wait"
+
+    (receipt,) = _receipts(session, parked)
+    receipt.created_at = receipt.created_at - UNAVAILABLE_RETRY_AFTER - timedelta(minutes=1)
+    session.add(receipt)
+    session.commit()
+
+    assert [t.id for t in tickets_whose_landing_cleared(session)] == [parked.id]
+
+
+def test_a_landing_verified_again_on_refused_tips_is_reported(session, workspace, parked):
+    """The re-entry detector: whatever writer retries a refused landing on
+    unchanged tips (here `land_ticket` called directly), it is reported."""
+    _refused(session, parked, FAILING_SUITE)
+    assert REFUSED_LANDINGS_WAIT_FOR_A_CHANGE.detect(session) == []
+
+    land_ticket(session, parked, workspace)
+
+    (violation,) = REFUSED_LANDINGS_WAIT_FOR_A_CHANGE.detect(session)
+    assert violation.ticket_id == parked.id
+    assert "failed refusal at the same tips" in violation.detail
+
+
+def test_a_retry_after_a_new_commit_is_not_reported(session, workspace, repo, parked):
+    _refused(session, parked, FAILING_SUITE)
+    commit_on(repo, parked.branch, "fix.txt", "still broken\n")
+
+    land_ticket(session, parked, workspace)
+
+    assert len(_receipts(session, parked)) == 2
+    assert REFUSED_LANDINGS_WAIT_FOR_A_CHANGE.detect(session) == []

@@ -74,6 +74,7 @@ from loregarden.services.invariant_registry import (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     PUBLISH_CARDS_CLOSE,
+    REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
@@ -201,6 +202,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # merge preview says the landing would now succeed, so a conflict that is
     # still there is never retried (928).
     _invariant(LANDING_BLOCKS_CLEAR, at_startup=False),
+    # Right after it: a landing that step retried on tips land verification had
+    # already refused is the state its guard exists to prevent (2284).
+    _invariant(REFUSED_LANDINGS_WAIT_FOR_A_CHANGE, at_startup=False),
     SweepStep("reconcile_all_parents", reconcile_all_parents),
     # After the parents settle, so a feature ticket finished this pass is read
     # as done: its chat loop marks the round met and starts the queued one.

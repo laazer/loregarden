@@ -68,6 +68,7 @@ from loregarden.services.git_merge_noco import merge_tips, read_branch_tips
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.land_verification import (
+    LAND_BASE_ENV,
     LAND_VERIFY_TIMEOUT_SECONDS,
     VerifyOutcome,
     land_verifier,
@@ -585,9 +586,10 @@ def test_the_receipt_has_a_kind_of_its_own():
 # ---------------------------------------------------------------------------
 
 JEST_COMMAND = "npm --prefix client test -- --ci"
-PYTEST_COMMAND = "uv run --directory server pytest -q -n auto"
+PYTEST_COMMAND = "bash .lefthook/scripts/server-tests.sh"
 #: Cheaper first: the first refusal decides, so the client suite (49s measured)
-#: runs before the server suite (901s measured).
+#: runs before the server tests (901s measured for all of them; the script runs
+#: the files the landing's diff reaches).
 ARMED_COMMANDS = [JEST_COMMAND, PYTEST_COMMAND]
 
 
@@ -637,8 +639,11 @@ def test_the_armed_commands_are_in_the_only_form_that_can_execute():
             "`_holding` already holds the lease for the whole list; wrapping it double-books"
         )
     # Each names its project from the repository root, the cwd it is given.
-    assert shlex.split(PYTEST_COMMAND)[:4] == ["uv", "run", "--directory", "server"]
+    script = shlex.split(PYTEST_COMMAND)
+    assert script[0] == "bash" and (REPO_ROOT / script[1]).is_file(), script
     assert shlex.split(JEST_COMMAND)[:3] == ["npm", "--prefix", "client"]
+    # The base `_verify_candidate` exports is the one the script narrows by.
+    assert f'"${{{LAND_BASE_ENV}:-}}"' in (REPO_ROOT / script[1]).read_text(encoding="utf-8")
     assert LAND_VERIFY_TIMEOUT_SECONDS > 901, (
         f"the measured suite is 901s and the timeout is {LAND_VERIFY_TIMEOUT_SECONDS}s; "
         "a timeout REFUSES the land"
@@ -702,22 +707,39 @@ def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detach
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not on PATH on this machine")
-def test_uv_resolves_the_server_project_from_the_detached_worktrees_root(detached):
-    """AC7's measured constraint, exercised for real rather than reasoned about.
-
-    `--directory server` is the whole reason the command is in this form: the
-    tree is a fresh `worktree add --detach` with no `server/.venv` and cwd at the
-    repository root. This runs the configured command's first four tokens with a
-    trivial payload, so it proves uv resolves the project there without paying
-    for the suite.
+def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root(detached):
+    """The armed server command, run for real where it will run: a fresh
+    `worktree add --detach` tree with no `server/.venv`, cwd at the repository
+    root, and the target's tip as `LAND_BASE_ENV`. The "landing" touches one
+    small test file, so the script must narrow to it rather than run the full
+    suite that timed out lg-milestone-that-2250's landing seven times.
     """
-    prefix = shlex.split(PYTEST_COMMAND)[:4]
-    probe = shlex.join([*prefix, "python", "-c", "import pytest; print('resolved')"])
+    touched = detached / "server" / "tests" / "test_pytest_target_selection.py"
+    touched.write_text(
+        touched.read_text(encoding="utf-8") + "\n\n# the landing\n", encoding="utf-8"
+    )
+    # Plumbing, the way `merge_tips` writes a candidate: `git commit` would run
+    # this repository's own pre-commit hook inside the throwaway tree.
+    identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
 
-    outcome = run_verify_command(probe, detached, footprint=DockerFootprint.NONE)
+    def git_out(*args: str) -> str:
+        done = run_git(list(args), cwd=str(detached), check=False, capture_output=True, text=True)
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
 
-    assert outcome.outcome is GateOutcome.PASSED, f"{outcome.detail}\n{outcome.output}"
-    assert "resolved" in outcome.output
+    git_out("add", str(touched))
+    landed = git_out(*identity, "commit-tree", git_out("write-tree"), "-p", "HEAD", "-m", "landing")
+    git_out("update-ref", "--no-deref", "HEAD", landed)
+
+    outcome = run_verify_command(
+        PYTEST_COMMAND,
+        detached,
+        footprint=DockerFootprint.NONE,
+        extra_env={LAND_BASE_ENV: "HEAD~1"},
+    )
+
+    assert outcome.outcome is GateOutcome.PASSED, f"{outcome.detail}\n{outcome.output[-3000:]}"
+    assert "1 test file(s) reach the pushed changes" in outcome.output, outcome.output[-3000:]
 
 
 @pytest.mark.skipif(shutil.which("npm") is None, reason="npm is not on PATH on this machine")

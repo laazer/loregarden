@@ -65,6 +65,7 @@ from unittest import mock
 
 import pytest
 from loregarden.agents.registry import REPAIR_AGENT_ID
+from loregarden.config import settings
 from loregarden.models.domain import (
     Artifact,
     ArtifactKind,
@@ -91,7 +92,7 @@ from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.target_branch import resolve_target_branch
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 from tests.worktree_helpers import (
     at_terminal_stage,
     blocking_text,
@@ -680,9 +681,9 @@ def test_the_configured_footprint_is_what_the_verification_claims(
     claimed: list[DockerFootprint] = []
     real = module.run_verify_command
 
-    def recording(command, cwd, *, footprint):
+    def recording(command, cwd, *, footprint, extra_env=None):
         claimed.append(footprint)
-        return real(command, cwd, footprint=footprint)
+        return real(command, cwd, footprint=footprint, extra_env=extra_env)
 
     with mock.patch.object(module, "run_verify_command", side_effect=recording):
         outcome = module.land_verifier(session, ticket, workspace)(
@@ -692,6 +693,66 @@ def test_the_configured_footprint_is_what_the_verification_claims(
     assert outcome.ok, outcome
     assert claimed == [DockerFootprint.STACK], (
         f"the workspace's footprint must reach the runner, not {claimed}"
+    )
+
+
+def test_the_commands_get_the_target_tip_as_their_diff_base(session, workspace, repo, milestone):
+    """A landing runs the tests its diff reaches, so the commands must be told
+    what it adds to: the target's tip, the candidate's first parent. The full
+    suite ran past the timeout and refused lg-milestone-that-2250 seven times."""
+    from loregarden.services.land_verification import LAND_BASE_ENV, land_verifier
+
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-v-base")
+    target_tip = _sha(repo, target)
+    _configure(
+        session,
+        ticket,
+        land_verify_commands=[
+            "python3 -c 'import os,sys;"
+            f'sys.exit(0 if os.environ.get("{LAND_BASE_ENV}") == "{target_tip}" else 3)\''
+        ],
+    )
+
+    outcome = land_verifier(session, ticket, workspace)(
+        _merge_candidate(repo, target, ticket.branch)
+    )
+
+    assert outcome.ok, f"the base did not reach the command: exit={outcome.exit_code}"
+
+
+def test_what_the_commands_report_lands_on_the_lease_anyone_can_read(
+    session, workspace, repo, milestone
+):
+    """The lease is how the ticket page learns which check a landing is on and
+    how far through it is; the command's own report must reach the row."""
+    from loregarden.models.domain import DockerLease
+    from loregarden.services import land_verification as module
+
+    ticket, target, _ = _ticket_with_work(session, workspace, repo, milestone, "lg-v-prog")
+    write_report = (
+        "python3 -c 'import json,os,pathlib;"
+        'pathlib.Path(os.environ["LOREGARDEN_PROGRESS_FILE"]).write_text('
+        'json.dumps({"step": "pytest on 3 file(s)", "done": 7, "total": 9}))\''
+    )
+    _configure(session, ticket, land_verify_commands=[write_report])
+
+    with mock.patch.object(settings, "docker_capacity_enabled", True):
+        outcome = module.land_verifier(session, ticket, workspace)(
+            _merge_candidate(repo, target, ticket.branch)
+        )
+
+    assert outcome.ok, outcome
+    session.expire_all()
+    lease = session.exec(
+        select(DockerLease).where(
+            DockerLease.ticket_id == ticket.id,
+            col(DockerLease.holder_label).contains(module.LAND_VERIFY_TRANSITION),
+        )
+    ).one()
+    assert (lease.progress_step, lease.progress_done, lease.progress_total) == (
+        "pytest on 3 file(s)",
+        7,
+        9,
     )
 
 
