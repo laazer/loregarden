@@ -45,6 +45,7 @@ from loregarden.services.land_verification import (
     record_land_verification,
 )
 from loregarden.services.landing_carried_work import empty_landing
+from loregarden.services.landing_refused import refused_at_tips
 from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
 from loregarden.services.target_branch import (
     ensure_integration_branch,
@@ -283,6 +284,11 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     ):
         # The same: a branch that carries none of the ticket's work previews
         # clean, and `land_ticket` would refuse it again.
+        return False
+    if refused_at_tips(session, ticket, repo_root, target_sha=target_sha, source_sha=source_sha):
+        # The same again (2284): land verification already refused this exact
+        # merge. It previews clean, and re-running the suite on unchanged tips
+        # only holds a heavy lease to refuse it once more.
         return False
     return merge_preview(repo_root, target_sha, source_sha).ok
 

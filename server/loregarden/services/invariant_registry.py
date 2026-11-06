@@ -39,6 +39,7 @@ from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
+from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.orchestration_capacity import (
     release_terminal_run_parent,
@@ -158,6 +159,27 @@ def _finish_landings(session: Session, violations: Sequence[Violation]) -> int:
     wanted = {v.subject_id for v in violations}
     tickets = [t for t in tickets_whose_landing_cleared(session) if t.id in wanted]
     return len(finish_cleared_landings(session, tickets))
+
+
+def _retried_refusals(session: Session) -> list[Violation]:
+    """Blocked landings verified again at tips a standing refusal already named.
+
+    Shells out to `rev-parse` (four calls) per blocked ticket with a receipt: a
+    handful of rows, and no suite runs. `entered_at` is the retry's receipt.
+    """
+    return [
+        Violation(
+            subject_id=item.ticket.id,
+            ticket_id=item.ticket.id,
+            entered_at=item.retry.at,
+            detail=(
+                f"{item.ticket.external_id}'s landing was verified again at "
+                f"{item.retry.source_sha[:12]} onto {item.retry.target_sha[:12]} after a "
+                f"{item.first.outcome.value} refusal at the same tips"
+            ),
+        )
+        for item in landings_retried_on_refused_tips(session)
+    ]
 
 
 def _held_cards(session: Session) -> list[Violation]:
@@ -533,6 +555,26 @@ LANDING_BLOCKS_CLEAR = Invariant(
     expected_because=(
         "a landing conflict is cleared outside the control plane: resolved and merged by "
         "hand, or the target branch moved under it"
+    ),
+)
+
+REFUSED_LANDINGS_WAIT_FOR_A_CHANGE = Invariant(
+    name="refused_landings_wait_for_a_change",
+    ticket="lg-milestone-that-2284",
+    statement="no landing is verified again at tips its standing refusal already named",
+    detect=_retried_refusals,
+    # Report-only: the ticket is rightly blocked, and only a new commit on the
+    # branch or the target (or a person) gives the landing another answer.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 7),
+    prevented_by=(
+        "server/tests/test_terminal_stage_sweep.py"
+        "::test_a_landing_its_tests_refused_is_not_retried_on_the_same_tips"
+    ),
+    unrepaired_action=(
+        "Read the refusal on the ticket's Outputs tab, fix the branch (or wait out a "
+        "timeout), then land it again"
     ),
 )
 
@@ -1374,6 +1416,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     LANDING_BLOCKS_CLEAR,
+    REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     PUBLISH_CARDS_CLOSE,
     SURVEY_CARDS_CLOSE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
