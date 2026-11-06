@@ -54,6 +54,7 @@ from loregarden.api import (
     ticket_autopilot,
     ticket_conversation,
     ticket_handoff,
+    ticket_landing,
     ticket_pull_request,
     ticket_studio,
     tickets,
@@ -308,6 +309,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 app.include_router(tickets.router, prefix="/api")
 app.include_router(ticket_conversation.router, prefix="/api")
 app.include_router(ticket_pull_request.router, prefix="/api")
+app.include_router(ticket_landing.router, prefix="/api")
 app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(ticket_handoff.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")

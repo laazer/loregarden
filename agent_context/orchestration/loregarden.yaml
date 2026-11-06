@@ -134,9 +134,19 @@ git:
   #   wrapping this in `capacity-run.sh` would double-book the ledger.
   #
   # `land_verify_capacity_footprint` keeps its `heavy` default, and
-  # LAND_VERIFY_TIMEOUT_SECONDS (1800) is above the measured 901s suite — a
-  # timeout is UNAVAILABLE, and UNAVAILABLE refuses the land. `default.yaml`
+  # LAND_VERIFY_TIMEOUT_SECONDS (1800) was set above the measured 901s suite —
+  # a timeout is UNAVAILABLE, and UNAVAILABLE refuses the land. `default.yaml`
   # keeps its empty list, so no other workspace changes behaviour.
+  #
+  # The server half is `server-tests.sh`, the pre-push runner, not a bare
+  # `pytest -n auto`. The 901s was idle; under a 4-cpu grant on a loaded machine
+  # the full suite ran past 1800s, and lg-milestone-that-2250 was refused seven
+  # times in a row on 2026-11-06, every refusal a timeout. `_verify_candidate`
+  # exports the target's tip as LOREGARDEN_TESTS_BASE, so the script runs the
+  # test files the landing's diff reaches (`select_pytest_targets.py`), widening
+  # to the full suite whenever it cannot map the change. `bash` because there is
+  # no shell; the path is relative to the throwaway tree's root, so it is the
+  # CANDIDATE's own copy of the script that runs. CI still runs everything.
   #
   # jest runs first: it is the cheaper of the two (49s for 4847 tests on 4 cpus,
   # measured 2026-11-03, against the 901s server suite), and the
@@ -148,7 +158,7 @@ git:
   # its workers from the grant (`LOREGARDEN_CAPACITY_WORKERS`).
   land_verify_commands:
     - npm --prefix client test -- --ci
-    - uv run --directory server pytest -q -n auto
+    - bash .lefthook/scripts/server-tests.sh
   # A branch per acting turn, pushed, is a branch per conversation accumulating
   # forever. The sweep removes one only once its content is in the base branch —
   # the bar at which the ref was keeping nothing reachable — and leaves anything
