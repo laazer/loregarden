@@ -24,11 +24,12 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services import docker_leases
-from loregarden.services.docker_leases import (
+from loregarden.services.stage_docker_capacity import (
     DockerCapacityUnavailable,
     docker_capacity_for_stage,
+    stage_def_for_run,
+    stage_docker_capacity,
 )
-from loregarden.services.stage_docker_capacity import stage_def_for_run, stage_docker_capacity
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_workspace
 

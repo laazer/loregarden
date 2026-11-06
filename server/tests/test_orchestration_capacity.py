@@ -41,7 +41,9 @@ from loregarden.models.domain import (
     AuthorityRequirement,
     AutopilotAction,
     AutopilotEvent,
+    BlockKind,
     CapacityPool,
+    CliAdapter,
     DockerFootprint,
     DockerHolderKind,
     DockerLease,
@@ -554,6 +556,44 @@ def _held_parents(session) -> list[DockerLease]:
         and lease.parent_lease_id is None
         and lease.status in OCCUPYING
     ]
+
+
+def test_a_run_that_could_not_get_capacity_blocks_as_harness_not_work(
+    session, workspace, runnable, monkeypatch
+) -> None:
+    """No agent ran, so nothing about the work is known: the block is the machine's.
+
+    lg-milestone-that-1431 was blocked as WORK under "Stage 'test-design' hit a
+    blocking issue" when its run's host lease never came. Driven through the real
+    lease: the pool is full, nothing ahead finishes, and the stall window is short.
+    """
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from tests.test_capacity_host_pool import _reserve
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", CliAdapter.CLAUDE.value)
+    monkeypatch.setattr("loregarden.config.settings.agent_run_capacity_wait_seconds", 0.3)
+    assert _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=7.0).granted
+
+    def never_runs(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        pytest.fail("the agent ran without its host lease")
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", never_runs)
+    # The message classifier also knows the capacity prefix; blind it here so only
+    # the boundary's declared kind can make this block HARNESS. Each guard has its
+    # own test (test_capacity_blocks covers the classifier).
+    monkeypatch.setattr(
+        "loregarden.services.block_classification.classify_block_message",
+        lambda _message: BlockKind.WORK,
+    )
+
+    orchestrator = BuiltinOrchestrator(session)
+    orchestrator.execute(
+        runnable, OrchestrationProfile(slug="no-capacity", gates=GatesConfig(enabled=False))
+    )
+
+    session.refresh(runnable)
+    assert runnable.state is TicketState.BLOCKED
+    assert runnable.block_kind is BlockKind.HARNESS
 
 
 @pytest.mark.parametrize("exit_path", EXECUTE_EXITS)

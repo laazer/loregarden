@@ -40,8 +40,10 @@ absence needs a corpus recorded complete; "not found in X" is another claim.
 2. **Map the whole tree before reading any of it** — every top-level directory
    with a file count. Pick where to go deep from that map and keep it: it is what
    you report coverage against, and the first interesting file is not the survey.
-   Then read for **mechanisms**, not features: a decision carrying a number or a
-   failure mode beats a feature list.
+   Then read for **mechanisms**, not feature lists: a decision carrying a number or
+   a failure mode beats "it has tabs". A component or feature we lack *is* a
+   finding when you name the file that implements it and what adopting it takes;
+   filing those is what an adoption read is for.
 3. **Match the backlog before writing anything.** Most findings answer a ticket
    that exists. See [references/backlog-match.md](references/backlog-match.md).
 4. **Write, then verify byte-exact.** See

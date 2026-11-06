@@ -254,6 +254,32 @@ def test_an_agent_reviews_now_through_the_queue_tool(ctx):
     assert "tagged `reference-survey-carrier`" in answer["waiting"]
 
 
+def test_an_agent_reopens_a_refused_source_through_the_queue_tool_with_a_reason(ctx):
+    session, world, _ = ctx
+    source = _source(session, world, "busl", status=SurveySourceStatus.REFUSED, queued=False)
+    source.refused_reason = "Licence gate: BUSL-1.1 restricts commercial or competing use."
+    session.add(source)
+    session.commit()
+    _untag_carrier_parent(session, world)
+    raw = execute_tool(
+        session,
+        "loregarden_survey_queue",
+        {
+            "action": "review_now",
+            "source_id": source.id,
+            "queued_reason": "Source-available licences are read for patterns now.",
+        },
+        orchestrated=True,
+        run_id="",
+    )
+    assert json.loads(raw)["ordinal"] == 1
+    session.refresh(source)
+    assert source.status is not SurveySourceStatus.REFUSED
+    assert "Reason to read it now: Source-available licences are read for patterns now." in (
+        source.notes
+    )
+
+
 def test_a_server_with_no_loop_says_so_and_review_now_still_can_start(ctx):
     session, world, _ = ctx
     _source(session, world, "waiting")

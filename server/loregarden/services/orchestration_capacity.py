@@ -56,12 +56,12 @@ from loregarden.models.domain import (
 )
 from loregarden.services.autopilot_sign_off import self_and_ancestors, signer_for_gate
 from loregarden.services.capacity_children import reserve_child
+from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
     DockerReservation,
     release_lease,
     reserve,
-    wait_for_grant,
 )
 from loregarden.services.docker_ledger import OCCUPYING, as_utc
 from sqlmodel import Session, col, select
@@ -218,13 +218,20 @@ def acquire_or_find_parent(
                     settings.gate_capacity_wait_seconds if wait_seconds is None else wait_seconds
                 )
                 logger.warning(
-                    "Run %s is waiting up to %.0fs for its %g-cpu parent host lease: %s",
+                    "Run %s is waiting in line for its %g-cpu parent host lease (giving up "
+                    "only if nothing ahead finishes for %.0fs): %s",
                     orch_run.run_code,
-                    budget,
                     cpus,
+                    budget,
                     reservation.message,
                 )
-                reservation = wait_for_grant(session, reservation, budget=budget)
+                orch_run_id = orch_run.id
+                reservation = wait_while_line_moves(
+                    session,
+                    reservation,
+                    stall_seconds=budget,
+                    on_poll=lambda: renew_orchestration_lease(session, orch_run_id),
+                )
 
         if not reservation.granted:
             if reservation.lease_id:
@@ -305,7 +312,7 @@ def _unavailable_message(
     held = ", ".join(holders) if holders else "nothing the ledger can see"
     return (
         f"no {cpus:g}-cpu host capacity for this run's parent lease "
-        f"({reservation.error_kind or 'still queued'}) — held now by: {held}. "
+        f"({reservation.error_kind or 'the line stopped moving'}) — held now by: {held}. "
         f"{reservation.message} Nothing an agent can fix: this clears when those "
         "finish, or when a person releases one on Machine → Capacity."
     )

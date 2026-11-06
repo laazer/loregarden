@@ -43,6 +43,8 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.capacity_children import reserve_child
+from loregarden.services.capacity_errors import CapacityUnavailable
+from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     resolve_effective_adapter,
@@ -51,7 +53,6 @@ from loregarden.services.docker_leases import (
     DockerReservation,
     release_lease,
     reserve,
-    wait_for_grant,
 )
 from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from sqlmodel import Session
@@ -78,8 +79,10 @@ RUNTIME_WEIGHTS: dict[CliAdapter, tuple[float, int] | None] = {
 }
 
 
-class HostCapacityUnavailable(RuntimeError):
-    """A run could not get its host lease. Raised so the run fails, naming why."""
+class HostCapacityUnavailable(CapacityUnavailable):
+    """A run could not get its host lease because the line stopped moving: nothing
+    ahead of it finished for `agent_run_capacity_wait_seconds`. Raised so the run
+    fails, naming who holds the line. A long wait in a moving line is not this."""
 
 
 def runtime_for_run(session: Session, run: AgentRun) -> CliAdapter:
@@ -172,16 +175,27 @@ def _acquire(
     else:
         reservation = reserve(session, pool=CapacityPool.HOST, takes_slot=False, **common)
         if reservation.state is DockerGrantState.QUEUED:
-            budget = (
+            stall = (
                 settings.agent_run_capacity_wait_seconds if wait_seconds is None else wait_seconds
             )
             logger.warning(
-                "Run %s is waiting up to %.0fs for host capacity: %s",
+                "Run %s is waiting in line for host capacity (giving up only if nothing "
+                "ahead finishes for %.0fs): %s",
                 run.id,
-                budget,
+                stall,
                 reservation.message,
             )
-            reservation = wait_for_grant(session, reservation, budget=budget)
+            orchestration_run_id = run.orchestration_run_id
+            reservation = wait_while_line_moves(
+                session,
+                reservation,
+                stall_seconds=stall,
+                on_poll=(
+                    (lambda: renew_orchestration_lease(session, orchestration_run_id))
+                    if orchestration_run_id
+                    else None
+                ),
+            )
 
     if reservation.granted:
         return reservation
@@ -190,5 +204,5 @@ def _acquire(
         release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
     raise HostCapacityUnavailable(
         f"Run {run.id} ({label}) did not get {cpus:g} cpus / {memory_mb} MB of host "
-        f"capacity: {reservation.error_kind or 'still queued'} — {reservation.message}"
+        f"capacity: {reservation.error_kind or 'the line stopped moving'} — {reservation.message}"
     )

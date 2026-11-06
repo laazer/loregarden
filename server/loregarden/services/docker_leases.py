@@ -31,14 +31,11 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from loregarden.config import settings
 from loregarden.models.domain import (
-    AgentRun,
     CapacityPool,
     DockerCapacityPool,
     DockerFootprint,
@@ -48,7 +45,6 @@ from loregarden.models.domain import (
     DockerLeaseEndReason,
     DockerLeaseStatus,
     DockerWaitBasis,
-    WorkflowStageDef,
 )
 from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID, POOL_ROW_IDS
 from loregarden.services.docker_capacity import (
@@ -67,7 +63,6 @@ from loregarden.services.docker_ledger import (
     pool_ceiling,
     shortfalls,
 )
-from loregarden.services.docker_poll_guard import note_poll
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.docker_wait_estimate import (
     UNKNOWN_WAIT,
@@ -90,9 +85,6 @@ logger = logging.getLogger(__name__)
 #: spinning forever under pathological contention, and is seconds, not tries.
 CLAIM_CONTENTION_BUDGET_SECONDS = 5.0
 
-#: How often a stage waiting for capacity re-checks its place in line.
-_STAGE_POLL_SECONDS = 2.0
-
 #: Why a request could not be granted, as a closed set the payloads quote.
 REJECT_DISABLED = "capacity_ledger_disabled"
 REJECT_DOCKER_UNAVAILABLE = "docker_unavailable"
@@ -103,16 +95,6 @@ REJECT_LEASE_NOT_HELD = "lease_not_held"
 REJECT_PARENT_NOT_HELD = "parent_not_held"
 REJECT_PARENT_POOL_MISMATCH = "parent_pool_mismatch"
 REJECT_EXCEEDS_PARENT_GRANT = "exceeds_parent_grant"
-
-
-class DockerCapacityUnavailable(RuntimeError):
-    """A stage that declared a docker footprint could not get one.
-
-    Raised rather than returned, and rather than letting the stage run
-    anyway: a ledger a caller may ignore when it is inconvenient is a report,
-    not a limit. The run fails with a message naming what it wanted, which
-    the existing stage-retry path handles as a dispatch failure.
-    """
 
 
 def _now() -> datetime:
@@ -966,73 +948,6 @@ def _return_cover(session: Session, child: DockerLease) -> None:
     )
 
 
-@contextmanager
-def docker_capacity_for_stage(
-    session: Session,
-    run: AgentRun,
-    stage: WorkflowStageDef,
-    *,
-    wait_seconds: float | None = None,
-) -> Iterator[DockerReservation | None]:
-    """Hold docker capacity for as long as this stage's agent is executing.
-
-    Yields `None` — immediately, and after one enum comparison — for a stage
-    that declared no footprint. That is nearly every stage, and it is why the
-    opt-in is per stage rather than per workspace: a lease held by a planning
-    stage is capacity taken from the test stage waiting behind it.
-
-    Scoped to the same block `run_lease.lease_renewal` wraps, deliberately. That
-    contextmanager exists because the supervising thread is the one thing that
-    means "this run is alive" across all three execution paths; a docker lease
-    with the same lifetime inherits that liveness instead of carrying a second
-    heartbeat that can drift out of step with the first. The reaper knows: a
-    lease bound to a live run is extended without asking docker at all.
-
-    **The stage waits, bounded, and then fails rather than proceeding.** The
-    orchestrator is a background thread, so it may block where an MCP handler
-    may not — but running the stage anyway when capacity was refused would make
-    the ledger advisory, and a ledger nobody has to obey is a report, not a
-    limit.
-    """
-    footprint = stage.docker_footprint
-    if footprint is DockerFootprint.NONE or not settings.docker_capacity_enabled:
-        yield None
-        return
-
-    budget = settings.docker_stage_wait_seconds if wait_seconds is None else wait_seconds
-    reservation = reserve(
-        session,
-        holder_label=f"stage {stage.key} ({run.agent_id})",
-        footprint=footprint,
-        cpus=stage.docker_cpus,
-        memory_mb=stage.docker_memory_mb,
-        holder_kind=DockerHolderKind.AGENT_RUN,
-        agent_run_id=run.id,
-        orchestration_run_id=run.orchestration_run_id,
-        ticket_id=run.ticket_id,
-        workspace_id=run.workspace_id,
-    )
-
-    if reservation.state is DockerGrantState.QUEUED:
-        reservation = wait_for_grant(session, reservation, budget=budget)
-
-    if not reservation.granted:
-        # Give the place in line back rather than leaving a waiter nobody will
-        # ever poll for — it would sit at the head of the queue until the
-        # reaper's abandonment sweep, blocking everything behind it.
-        if reservation.lease_id:
-            release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
-        raise DockerCapacityUnavailable(
-            f"Stage {stage.key} needs {footprint.value} docker capacity and did not get it "
-            f"within {budget:.0f}s: {reservation.message}"
-        )
-
-    try:
-        yield reservation
-    finally:
-        reservation.release(reason=DockerLeaseEndReason.RUN_COMPLETED)
-
-
 def holder_gone(lease: DockerLease) -> bool:
     """Whether the lease names a holder process that no longer exists. Decisive, and free."""
     return lease.holder_pid is not None and not pid_alive(lease.holder_pid)
@@ -1058,30 +973,3 @@ def reclaim_dead_holders(session: Session) -> list[str]:
     if dead:
         logger.warning("Reclaimed %d lease(s) whose holder process is gone: %s", len(dead), dead)
     return dead
-
-
-def wait_for_grant(
-    session: Session, reservation: DockerReservation, *, budget: float
-) -> DockerReservation:
-    """Poll our own place in line until it is granted or the budget runs out.
-
-    Each pass is recorded as a poll, which is what the abandonment sweep reads:
-    a wait longer than `docker_waiting_ttl_seconds` is otherwise dropped from the
-    line as abandoned while it is still faithfully waiting.
-    """
-    deadline = time.monotonic() + budget
-    while time.monotonic() < deadline:
-        time.sleep(min(_STAGE_POLL_SECONDS, max(0.1, budget / 10)))
-        reclaim_dead_holders(session)
-        drain_waiters(session)
-        session.expire_all()
-        lease = session.get(DockerLease, reservation.lease_id)
-        if lease is not None and lease.status is DockerLeaseStatus.WAITING:
-            note_poll(session, lease, min_interval=0)
-        if lease is not None and lease.status is DockerLeaseStatus.HELD:
-            reservation.state = DockerGrantState.GRANTED
-            reservation.position = None
-            reservation.expires_at = as_utc(lease.expires_at)
-            reservation.message = f"Granted {lease.cpus} cpus / {lease.memory_mb} MB."
-            return reservation
-    return reservation

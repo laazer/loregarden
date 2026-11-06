@@ -249,14 +249,15 @@ def test_a_note_that_does_not_open_with_a_licence_leaves_it_unclassified(ctx):
 @pytest.mark.parametrize(
     "name, licence, use",
     [
-        ("fsl", "FSL-1.1", LicenceUse.EXCLUDED),
-        ("polyform", "PolyForm-Noncommercial-1.0.0", LicenceUse.EXCLUDED),
+        ("fsl", "FSL-1.1", LicenceUse.PATTERNS_ONLY),
+        ("polyform", "PolyForm-Noncommercial-1.0.0", LicenceUse.PATTERNS_ONLY),
         ("triple", "GPL-3.0-or-later", LicenceUse.PATTERNS_ONLY),
     ],
 )
 def test_a_licence_written_as_prose_is_still_recorded(ctx, name, licence, use):
     """Ivy-Tendril (FSL-1.1) and mellowyak (PolyForm NC) were excluded by hand;
-    their notes spell the licence out rather than as an identifier."""
+    their notes spell the licence out rather than as an identifier. Source-available
+    licences are patterns-only now, so the recorded use says so."""
     session, directory = ctx
     import_legacy(session, directory, workspace_slug="loregarden")
     source = _source(session, name)

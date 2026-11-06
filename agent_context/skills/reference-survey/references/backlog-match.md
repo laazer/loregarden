@@ -50,9 +50,13 @@ and leave a pointer behind instead.
 ## When it is genuinely new
 
 Create a ticket when nothing covers the premise — not when nothing shares the
-vocabulary. `loregarden_create_ticket` needs a `parent` for anything below a
-milestone, and acceptance criteria belong in `acceptance_criteria`, never
-appended to the description.
+vocabulary. Name a `parent` when one genuinely owns the work. When none does — a
+component or pattern we simply do not have — `survey_write` with `action=create`
+and **no `parent`** files it as a capability under "Adopt from <source>" in the
+workspace's "Adopt from other projects" milestone, both made on first use. Do not
+force a finding onto an unrelated parent to get it filed, and do not drop it for
+want of one. Acceptance criteria belong in `acceptance_criteria`, never appended
+to the description.
 
 Before filing a gap as a defect, prove it against `origin/main`:
 

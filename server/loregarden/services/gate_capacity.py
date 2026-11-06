@@ -38,14 +38,12 @@ from loregarden.models.domain import (
     DockerHolderKind,
     DockerLease,
     DockerLeaseEndReason,
-    OrchestrationRun,
     Ticket,
     Workspace,
 )
-from loregarden.models.domain.enums import utcnow
 from loregarden.services.capacity_children import reserve_child
 from loregarden.services.capacity_environment import child_environment
-from loregarden.services.capacity_line import wait_while_line_moves
+from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
     DockerReservation,
@@ -53,7 +51,7 @@ from loregarden.services.docker_leases import (
     reserve,
 )
 from loregarden.services.docker_ledger import OCCUPYING
-from sqlmodel import Session, col, select, update
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +148,7 @@ def acquire_gate_capacity(
             reservation,
             stall_seconds=stall,
             on_poll=(
-                (lambda: _renew_run_lease(session, orchestration_run_id))
+                (lambda: renew_orchestration_lease(session, orchestration_run_id))
                 if orchestration_run_id
                 else None
             ),
@@ -163,22 +161,6 @@ def acquire_gate_capacity(
     raise GateCapacityUnavailable(
         f"Gate commands for {transition} did not run: no {footprint.value} host capacity "
         f"({reservation.error_kind or 'the line stopped moving'}) — {reservation.message}"
-    )
-
-
-def _renew_run_lease(session: Session, orchestration_run_id: str) -> None:
-    """The orchestration waiting on this gate is alive; say so on its lease.
-
-    The lease is renewed at stage boundaries only, and a gate waiting in line
-    sits between two of them with no agent run in flight to vouch for it. Past
-    `ORCHESTRATION_LEASE` the sweep would settle the run as abandoned while its
-    driver was faithfully waiting — the lease-expiry half of run_f4bf51.
-    """
-    session.exec(
-        update(OrchestrationRun)
-        .where(col(OrchestrationRun.id) == orchestration_run_id)
-        .values(last_seen_at=utcnow())
-        .execution_options(synchronize_session=False)
     )
 
 

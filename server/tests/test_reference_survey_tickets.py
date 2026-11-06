@@ -6,6 +6,9 @@ import json
 from unittest import mock
 
 import pytest
+from loregarden.mcp.survey_tools import TOOL_DEFINITIONS
+from loregarden.mcp.tool_ids import McpTool
+from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import (
     Approval,
     Artifact,
@@ -306,3 +309,82 @@ def test_a_ticket_outside_the_sources_workspaces_is_not_found(ctx):
     make_ticket(session, workspace_id=elsewhere.id, external_id="else-1", title="x")
     with pytest.raises(SurveyError, match="No ticket 'else-1' in loregarden"):
         _write(session, survey_pass, finding, ticket="else-1")
+
+
+def _adopt(session, survey_pass, finding, title, **spec):
+    return _write(
+        session, survey_pass, finding,
+        create={"title": title, "work_item_type": "feature", "description": "Their palette."} | spec,
+    )  # fmt: skip
+
+
+def test_a_finding_no_ticket_owns_is_filed_under_adopt_from_its_source(ctx):
+    session, world, survey_pass, finding = ctx
+    first = _adopt(session, survey_pass, finding, "Command palette with fuzzy ranking")
+    second = _adopt(session, survey_pass, finding, "Split-pane terminal layout")
+
+    assert first.action is SurveyTicketAction.CREATED
+    feature = session.get(Ticket, first.ticket.parent_ticket_id)
+    home = session.get(Ticket, feature.parent_ticket_id)
+    assert (feature.title, feature.work_item_type) == ("Adopt from widget", WorkItemType.FEATURE)
+    assert (home.title, home.work_item_type) == (
+        "Adopt from other projects",
+        WorkItemType.MILESTONE,
+    )
+    assert first.ticket.work_item_type is WorkItemType.CAPABILITY, "a feature cannot hold a feature"
+    assert second.ticket.parent_ticket_id == feature.id, "one feature per source, made once"
+    assert len(session.exec(select(Ticket).where(Ticket.title == home.title)).all()) == 1
+
+
+def test_a_parentless_bug_stays_a_bug_and_another_source_gets_its_own_feature(ctx, tmp_path):
+    session, world, survey_pass, finding = ctx
+    bug = _adopt(session, survey_pass, finding, "Their gate misreads a zero", work_item_type="bug")
+    assert bug.ticket.work_item_type is WorkItemType.BUG
+
+    other_source, other_pass = running_pass(
+        session, world, write_tree(tmp_path / "other", {"a.py": "x"}),
+        url="https://github.com/acme/gadget",
+    )  # fmt: skip
+    ev = record_evidence(
+        session,
+        EvidenceIn(
+            source_id=other_source.id, pass_id=other_pass.id, epistemic=SurveyEpistemic.OBSERVED,
+            operation="read a.py", corpus=["a.py"],
+        ),
+    )  # fmt: skip
+    other_finding = record_finding(
+        session,
+        FindingIn(
+            source_id=other_source.id, pass_id=other_pass.id, claim=SurveyFindingClaim.ASSERTION,
+            epistemic=SurveyEpistemic.OBSERVED, statement="A virtualised log view.", evidence_ids=[ev.id],
+        ),
+    )  # fmt: skip
+    other = _adopt(session, other_pass, other_finding, "Virtualised log viewer")
+    mine = session.get(Ticket, bug.ticket.parent_ticket_id)
+    theirs = session.get(Ticket, other.ticket.parent_ticket_id)
+    assert theirs.id != mine.id, "same name 'widget', different URL: separate features"
+    assert theirs.parent_ticket_id == mine.parent_ticket_id, "both under the one home"
+
+
+def test_the_mcp_tool_files_a_parentless_finding_under_its_source(ctx):
+    """The agent's client enforces the advertised schema, not the server, so the
+    schema must not require a parent either."""
+    session, world, survey_pass, finding = ctx
+    write_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == McpTool.SURVEY_WRITE)
+    create_schema = write_tool["inputSchema"]["properties"]["create"]
+    assert "parent" not in create_schema["required"]
+    raw = execute_tool(
+        session,
+        "loregarden_survey_write",
+        {
+            "pass_id": survey_pass.id,
+            "finding_ids": [finding.id],
+            "block": "Their palette ranks by recency and fuzzy score.",
+            "create": {"title": "Command palette", "description": "Adopt their palette."},
+        },
+        orchestrated=True,
+        run_id="",
+    )
+    created = session.exec(select(Ticket).where(Ticket.title == "Command palette")).one()
+    parent = session.get(Ticket, created.parent_ticket_id)
+    assert parent.title == "Adopt from widget", raw[:400]

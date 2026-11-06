@@ -1,11 +1,15 @@
 """Waiting in the capacity line for as long as it keeps moving.
 
-`docker_leases.wait_for_grant` waits a fixed budget, then gives up its place.
-That suits a caller that would rather fail fast than sit in line. A gate is not
-one of those: lg-reference-sources-2018's survey→done gate waited its full 30
-minutes behind an orderly line of test suites on 2026-11-04, gave its place
-up, and the transition was blocked as if its work were wrong
-(lg-machine-resource-2112). Nothing was wrong except the time.
+This is the only in-process wait for capacity. There used to be a second,
+`docker_leases.wait_for_grant`, which waited a fixed budget and then gave up its
+place. lg-reference-sources-2018's survey→done gate waited its full 30 minutes
+behind an orderly line of test suites on 2026-11-04, gave its place up, and the
+transition was blocked as if its work were wrong (lg-machine-resource-2112).
+Nothing was wrong except the time. That fix moved the gate here and left three
+callers on the fixed budget: an agent run's host lease, an orchestration's parent
+lease and a stage's docker lease. On 2026-11-06 a survey pass's agent run waited
+its 30 minutes behind a moving line and was blocked the same way. The fixed-budget
+wait is gone now, so no new caller can pick it.
 
 So the limit here is on the line *not moving*, as `capacity_run` puts it for
 the pre-push wrapper: the clock restarts whenever a lease ahead of this one
@@ -22,7 +26,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from loregarden.models.domain import DockerGrantState, DockerLease, DockerLeaseStatus
+from loregarden.models.domain import (
+    DockerGrantState,
+    DockerLease,
+    DockerLeaseStatus,
+    OrchestrationRun,
+)
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.docker_leases import (
     DockerReservation,
     drain_waiters,
@@ -30,9 +40,9 @@ from loregarden.services.docker_leases import (
 )
 from loregarden.services.docker_ledger import OCCUPYING, as_utc
 from loregarden.services.docker_poll_guard import note_poll
-from sqlmodel import Session, col, or_, select
+from sqlmodel import Session, col, or_, select, update
 
-#: Between polls of our own place in line; what `wait_for_grant` uses too.
+#: Between polls of our own place in line.
 POLL_SECONDS = 2.0
 
 
@@ -100,3 +110,19 @@ def wait_while_line_moves(
             on_poll()
         session.commit()  # end any read transaction before sleeping on it
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
+
+
+def renew_orchestration_lease(session: Session, orchestration_run_id: str) -> None:
+    """The orchestration waiting in line is alive; say so on its lease.
+
+    The lease is renewed at stage boundaries only, and a gate or a run
+    waiting in line sits between two of them with no agent run in flight to vouch for it. Past
+    `ORCHESTRATION_LEASE` the sweep would settle the run as abandoned while its
+    driver was faithfully waiting — the lease-expiry half of run_f4bf51.
+    """
+    session.exec(
+        update(OrchestrationRun)
+        .where(col(OrchestrationRun.id) == orchestration_run_id)
+        .values(last_seen_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )

@@ -78,6 +78,11 @@ byte-exact, splits at the 12-criterion cap, and routes criteria away from a done
 ticket. If it refuses because similar tickets exist, append to one of them unless
 none fits; then say why in `force_new_reason`.
 
+A finding worth adopting that no ticket owns (a component, a pattern we lack) is
+filed with `create` and **no `parent`**: it lands as a capability under "Adopt
+from <source>" in the workspace's "Adopt from other projects" milestone. Never
+record such a finding "rather than forced" and leave it unfiled.
+
 When you hit a defect in **our own tooling** (a script that dies, a gate no fix can
 satisfy), file it with `loregarden_survey_write create=... self_defect=true` rather
 than working around it silently.
