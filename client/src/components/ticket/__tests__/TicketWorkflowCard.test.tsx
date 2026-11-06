@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../../api/client";
 import type { TicketDetail } from "../../../api/client";
@@ -117,7 +118,9 @@ function renderCard(detail = ticket(), w = work()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <TicketWorkflowCard ticket={detail} work={w} />
+      <MemoryRouter>
+        <TicketWorkflowCard ticket={detail} work={w} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return w;
@@ -177,4 +180,47 @@ it("points a ticket with no workflow at the settings that give it one", () => {
   expect(within(card).queryByRole("list", { name: "Stages" })).toBeNull();
   fireEvent.click(within(card).getAllByRole("button", { name: "Workflow settings" })[1]);
   expect(screen.getByRole("dialog", { name: "Workflow settings" })).toBeInTheDocument();
+});
+
+it("asks what a blocked landing is waiting on, though no orchestration is landing it", async () => {
+  mockApi.ticketLanding.mockResolvedValue({
+    phase: "verifying",
+    target: "integration/lg-milestone-that-491",
+    since: new Date().toISOString(),
+    timeout_seconds: 1800,
+    progress: "",
+    progress_done: null,
+    progress_total: null,
+    ahead: [],
+    ahead_count: 0,
+    refused_attempts: 1,
+    last_refusal: null,
+  });
+  renderCard(
+    ticket({
+      stages: [stage("spec", "Specification", { status: "done" }), stage("done", "Done", { status: "blocked" })],
+      workflow_stage_key: "done",
+      workflow_stage_status: "blocked",
+      state: "blocked",
+      active_orchestration: null,
+    }),
+  );
+
+  expect(await screen.findByRole("region", { name: "What this landing is waiting on" })).toHaveTextContent(
+    "Running the landing tests",
+  );
+  expect(mockApi.ticketLanding).toHaveBeenCalledWith("t1");
+});
+
+it("does not ask once the ticket is done", () => {
+  renderCard(
+    ticket({
+      stages: [stage("spec", "Specification", { status: "done" }), stage("done", "Done", { status: "done" })],
+      workflow_stage_key: "done",
+      workflow_stage_status: "done",
+      state: "done",
+    }),
+  );
+
+  expect(mockApi.ticketLanding).not.toHaveBeenCalled();
 });

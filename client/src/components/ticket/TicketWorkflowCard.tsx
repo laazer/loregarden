@@ -5,7 +5,13 @@ import { api } from "../../api/client";
 import type { TicketDetail, WorkflowStageView } from "../../api/client";
 import type { TicketWork } from "../../hooks/useTicketWork";
 import { DEFAULT_ORCHESTRATION_RUNTIME } from "../../hooks/useTicketWork";
-import { currentStageRunLabel, stageAgentMeta, stageKindLabel, stageStatusMeta } from "../../lib/stageDisplay";
+import {
+  currentStageRunLabel,
+  isDoneStage,
+  stageAgentMeta,
+  stageKindLabel,
+  stageStatusMeta,
+} from "../../lib/stageDisplay";
 import { canRunStage } from "../../lib/stageRunPolicy";
 import { stageRowMeta, stageRunSummaries } from "../../lib/stageSummary";
 import { copyStageTerminalHandoffCommand } from "../../lib/terminalCommands";
@@ -224,6 +230,10 @@ function CurrentStage({
   const posture = ticket.resolved_compatibility_posture || "—";
   // No agent runs the terminal stage, so "Running…" named nothing; the work is landing.
   const landing = isLanding(ticket);
+  // Not only while an orchestration is landing it: a blocked landing is retried
+  // by the terminal-stage sweep with no run at all, and its refusals are the
+  // answer to "why is this not done?".
+  const awaitingDone = isDoneStage(stage) && stage.status !== "done" && ticket.state !== "done";
 
   return (
     <>
@@ -273,7 +283,7 @@ function CurrentStage({
           </>
         ) : null}
       </dl>
-      {landing ? <TicketLandingPanel ticketId={ticket.id} /> : null}
+      {awaitingDone ? <TicketLandingPanel ticketId={ticket.id} /> : null}
       {stage.note ? (
         <p className="twf-note" data-status={stage.status}>
           {stage.note}

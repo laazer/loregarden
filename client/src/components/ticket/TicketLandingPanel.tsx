@@ -11,8 +11,10 @@ import { formatDuration } from "../../lib/queueRunFormat";
 import { formatRelativeAge, parseTimestamp } from "../../lib/timestamps";
 import { describeError } from "../../state/toastStore";
 
-/** The ledger changes every couple of seconds while tests run; the elapsed clock every second. */
+/** The ledger changes every couple of seconds while tests run; the elapsed clock every second.
+ * With nothing landing, a retry is minutes apart, so the poll slows down. */
 const POLL_MS = 3000;
+const IDLE_POLL_MS = 15000;
 const TICK_MS = 1000;
 
 function useNow(intervalMs: number): Date {
@@ -39,7 +41,7 @@ function headline(status: TicketLandingStatus): string {
     case "merging":
       return `Merging onto ${status.target}`;
     case "not_landing":
-      return "Finishing the landing";
+      return "";
   }
 }
 
@@ -52,7 +54,7 @@ export function TicketLandingPanel({ ticketId }: { ticketId: string }) {
   const landing = useQuery({
     queryKey: ticketLandingKey(ticketId),
     queryFn: () => api.ticketLanding(ticketId),
-    refetchInterval: POLL_MS,
+    refetchInterval: (query) => (query.state.data?.phase === "not_landing" ? IDLE_POLL_MS : POLL_MS),
   });
   const now = useNow(TICK_MS);
 
@@ -69,13 +71,19 @@ export function TicketLandingPanel({ ticketId }: { ticketId: string }) {
   }
 
   const status = landing.data;
+  // Nothing landing and nothing refused: the stage note and the block (if any)
+  // already say everything there is.
+  if (status.phase === "not_landing" && !status.last_refusal) return null;
+  const head = headline(status);
   return (
     <section className="twf-landing" aria-label="What this landing is waiting on">
       {/* Only the phase is live: the progress below changes every few seconds
           and would talk over everything else. */}
-      <p className="twf-landing-head" aria-live="polite">
-        {headline(status)}
-      </p>
+      {head ? (
+        <p className="twf-landing-head" aria-live="polite">
+          {head}
+        </p>
+      ) : null}
       {status.phase === "verifying" || status.phase === "waiting_for_capacity" ? (
         <p className="twf-landing-line">
           Marked done once these tests pass and the merge onto {status.target} is published.

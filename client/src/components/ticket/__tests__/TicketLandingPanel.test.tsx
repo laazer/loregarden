@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api, ApiError } from "../../../api/client";
@@ -132,4 +132,24 @@ it("says the status could not be read, naming the failure, instead of going blan
   const message = await screen.findByRole("status");
   expect(message).toHaveTextContent("Could not read what this landing is waiting on");
   expect(message).toHaveTextContent("database is locked");
+});
+
+it("renders nothing when nothing is landing and nothing was refused", async () => {
+  renderPanel(status());
+
+  await waitFor(() => expect(mockApi.ticketLanding).toHaveBeenCalled());
+  expect(screen.queryByRole("region", { name: "What this landing is waiting on" })).not.toBeInTheDocument();
+});
+
+it("still names the refusals on a blocked landing nothing is retrying", async () => {
+  renderPanel(
+    status({
+      refused_attempts: 1,
+      last_refusal: { at: minutesAgo(30), outcome: "failed", command: "x", exit_code: 1, artifact_id: "a" },
+    }),
+  );
+
+  const panel = await screen.findByRole("region", { name: "What this landing is waiting on" });
+  expect(panel).toHaveTextContent("The last attempt was refused: the tests failed (exit 1)");
+  expect(panel).not.toHaveTextContent("Running the landing tests");
 });
