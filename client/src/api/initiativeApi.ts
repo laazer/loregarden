@@ -161,7 +161,49 @@ export type AutopilotAction =
   | "signed_off"
   | "held"
   | "released"
-  | "retried";
+  | "retried"
+  | "stopped";
+
+/** Stop at a fixed instant ("run until 07:00"); spent once it fires. */
+export interface DeadlineStop {
+  kind: "deadline";
+  /** ISO instant with a zone. */
+  at: string;
+}
+
+/** Stop once it has been on this long, counted from each switch-on. */
+export interface RunForStop {
+  kind: "run_for";
+  minutes: number;
+}
+
+/** What ends an autopilot run on its own. Spend-based kinds join this union later. */
+export type AutopilotStop = DeadlineStop | RunForStop;
+
+/** A weekly window: on when it opens, off when it closes (if it opened the run). */
+export interface AutopilotWindow {
+  /** Weekdays it opens on, 0 = Monday. */
+  days: number[];
+  /** Wall-clock "HH:MM" (the server answers "HH:MM:SS") in `timezone`; an end at or before the start closes the next day. */
+  start: string;
+  end: string;
+  /** IANA zone, e.g. "Europe/Berlin". */
+  timezone: string;
+}
+
+export interface AutopilotSchedule {
+  /** Turn on once at this ISO instant; cleared once it has. */
+  start_at?: string | null;
+  window?: AutopilotWindow | null;
+}
+
+/** A change to the autopilot; omitted fields stay as they are. `stops: []` and `schedule: {}` clear. */
+export interface AutopilotChange {
+  enabled?: boolean;
+  max_parallel?: number;
+  stops?: AutopilotStop[];
+  schedule?: AutopilotSchedule;
+}
 
 export interface AutopilotView {
   enabled: boolean;
@@ -173,6 +215,12 @@ export interface AutopilotView {
   next_up: string[];
   /** False on a sandbox server, where the loop never runs. */
   available: boolean;
+  stops: AutopilotStop[];
+  schedule: AutopilotSchedule;
+  /** While on: when a time stop or its scheduled window ends it. */
+  stops_at: string | null;
+  /** While off: when its schedule next turns it on. */
+  next_start: string | null;
   recent: {
     action: AutopilotAction;
     ticket_id: string | null;
@@ -330,14 +378,14 @@ export const initiativeApi = {
     request<InitiativePlan>(`/api/initiatives/${id}/plan/proposals/${proposalId}/${action}`, {
       method: "POST",
     }),
-  setAutopilot: (id: string, body: { enabled?: boolean; max_parallel?: number }) =>
+  setAutopilot: (id: string, body: AutopilotChange) =>
     request<InitiativePlan>(`/api/initiatives/${id}/autopilot`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
   /** The autopilot of a milestone or parent ticket (an initiative's is on its plan). */
   ticketAutopilot: (id: string) => request<SubtreeAutopilot>(`/api/tickets/${id}/autopilot`),
-  setTicketAutopilot: (id: string, body: { enabled?: boolean; max_parallel?: number }) =>
+  setTicketAutopilot: (id: string, body: AutopilotChange) =>
     request<SubtreeAutopilot>(`/api/tickets/${id}/autopilot`, {
       method: "PATCH",
       body: JSON.stringify(body),

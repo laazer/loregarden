@@ -106,6 +106,7 @@ export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   held: "Held until turned on",
   released: "Put back in its lane",
   retried: "Retried a blocked ticket",
+  stopped: "Stopped on its timer or schedule",
 };
 
 /** "Oct 2, 14:05" — when an autopilot event happened. */

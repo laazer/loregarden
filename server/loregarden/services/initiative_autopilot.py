@@ -40,18 +40,21 @@ turned on are blocked, it turns itself off and says why: something is wrong
 with the work or the harness, and starting more only makes more of it. A block
 it has yet to retry does not count; one it retried that blocked again does.
 
+**Timer and schedule.** A run ends on its own when one of its stops is
+reached (`autopilot_timing`): the tick checks them before it starts anything.
+The clock (`autopilot_schedule`) turns a plan on at its scheduled start or
+window, and off when a window it opened closes.
+
 Everything it does is an `AutopilotEvent`, shown on the page and returned to the
 planner, so "why did this start?" always has an answer.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 
 from loregarden.config import settings
-from loregarden.db.session import engine
 from loregarden.models.domain import (
     Approval,
     ApprovalKind,
@@ -75,6 +78,16 @@ from loregarden.services.autopilot_sign_off import (
     autopilot_may_sign_off,
     record_autopilot_sign_off,
     self_and_ancestors,
+)
+from loregarden.services.autopilot_timing import (
+    AutopilotTimingError,
+    apply_timing,
+    drop_spent_stops,
+    load_schedule,
+    load_stops,
+    next_start,
+    stop_reason,
+    stops_at,
 )
 from loregarden.services.child_readiness import subtree_start_hold
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
@@ -224,6 +237,7 @@ def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticke
 
 def _pause(session: Session, plan: InitiativePlan, reason: str) -> None:
     plan.autopilot = False
+    plan.autopilot_window_owns = False
     plan.paused_reason = reason
     plan.updated_at = utcnow()
     session.add(plan)
@@ -383,10 +397,30 @@ def _sign_off_parked_gates(session: Session, plan: InitiativePlan) -> set[str]:
     return answered
 
 
+def stop_autopilot(session: Session, plan: InitiativePlan, reason: str, now: datetime) -> None:
+    """Turn it off because its timer or schedule says so — not a fault, so no
+    `paused_reason`. Off is off however it is reached: what it queued and has
+    not started is held, exactly as a person's "Turn off" holds it."""
+    plan.autopilot = False
+    plan.autopilot_window_owns = False
+    drop_spent_stops(plan, now)
+    plan.updated_at = now
+    session.add(plan)
+    _record(session, plan.initiative_id, AutopilotAction.STOPPED, detail=reason)
+    session.commit()
+    logger.info("Autopilot stopped for %s: %s", plan.initiative_id, reason)
+    hold_queued_work(session, plan)
+
+
 def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None = None) -> int:
     """One tick for one initiative. Returns how many tickets it queued."""
     plan = session.get(InitiativePlan, initiative_id)
     if plan is None or not plan.autopilot:
+        return 0
+    at = now or utcnow()
+    reason = stop_reason(plan, at)
+    if reason is not None:
+        stop_autopilot(session, plan, reason, at)
         return 0
     blocked = _blocked_since_enabled(session, plan)
     if len(blocked) >= BREAKER_LIMIT:
@@ -449,16 +483,23 @@ def set_autopilot(
             f"{root.external_id} has no sub-items for the autopilot to run; add some first"
         )
     plan = session.get(InitiativePlan, initiative_id) or InitiativePlan(initiative_id=initiative_id)
+    now = utcnow()
     if update.max_parallel is not None:
         plan.max_parallel = update.max_parallel
+    try:
+        apply_timing(plan, update, now)
+    except AutopilotTimingError as exc:
+        raise AutopilotRefusedError(str(exc)) from exc
     switched = update.enabled is not None and update.enabled != plan.autopilot
     # When it was last turned on: every hold its turn-off made since then is
     # one this turn-on releases.
     previous_since = plan.autopilot_since
     if switched:
         plan.autopilot = bool(update.enabled)
+        # Whoever switched it now owns the run; the clock re-claims it after.
+        plan.autopilot_window_owns = False
         if update.enabled:
-            plan.autopilot_since = utcnow()
+            plan.autopilot_since = now
             plan.paused_reason = ""
         _record(
             session,
@@ -466,7 +507,17 @@ def set_autopilot(
             AutopilotAction.ENABLED if update.enabled else AutopilotAction.DISABLED,
             detail=f"by {actor}",
         )
-    plan.updated_at = utcnow()
+        if update.enabled:
+            # A stop time that passed while it was off would end this run on
+            # its first tick; say it went rather than drop it quietly.
+            for spent in drop_spent_stops(plan, now):
+                _record(
+                    session,
+                    initiative_id,
+                    AutopilotAction.STOPPED,
+                    detail=f"dropped a stop already past when turned on: {spent}",
+                )
+    plan.updated_at = now
     session.add(plan)
     session.commit()
     if switched and plan.autopilot:
@@ -482,7 +533,9 @@ def set_autopilot(
 def autopilot_view(
     session: Session, ctx: PlanContext, plan: InitiativePlan | None
 ) -> AutopilotView:
-    max_parallel = plan.max_parallel if plan is not None else InitiativePlan().max_parallel
+    timing_plan = plan if plan is not None else InitiativePlan(initiative_id=ctx.initiative.id)
+    max_parallel = timing_plan.max_parallel
+    now = utcnow()
     events = session.exec(
         select(AutopilotEvent)
         .where(AutopilotEvent.initiative_id == ctx.initiative.id)
@@ -514,48 +567,11 @@ def autopilot_view(
             )
             for e in events
         ],
+        stops=load_stops(timing_plan),
+        schedule=load_schedule(timing_plan),
+        stops_at=stops_at(timing_plan, now),
+        next_start=next_start(timing_plan, now),
     )
-
-
-# ---- the clock -----------------------------------------------------------
-
-
-def _tick() -> int:
-    """Every initiative with autopilot on, each in its own session."""
-    with Session(engine) as session:
-        ids = list(
-            session.exec(
-                select(InitiativePlan.initiative_id).where(col(InitiativePlan.autopilot).is_(True))
-            ).all()
-        )
-    total = 0
-    for initiative_id in ids:
-        try:
-            with Session(engine) as session:
-                total += run_autopilot(session, initiative_id)
-        except Exception:  # noqa: BLE001 — one initiative's failure must not stop the others
-            logger.exception("Autopilot tick failed for initiative %s; continuing", initiative_id)
-    return total
-
-
-async def run_autopilot_loop(interval_seconds: float) -> None:
-    while True:
-        try:
-            await asyncio.sleep(interval_seconds)
-            await asyncio.to_thread(_tick)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 — the loop outliving a bad tick is the point
-            logger.exception("Autopilot loop iteration failed; continuing")
-
-
-def start_autopilot_loop(interval_seconds: float | None = None) -> asyncio.Task | None:
-    """Start the loop, or None when the interval is non-positive (the off switch)."""
-    if interval_seconds is None:
-        interval_seconds = settings.autopilot_interval_seconds
-    if interval_seconds <= 0:
-        return None
-    return asyncio.create_task(run_autopilot_loop(interval_seconds), name="initiative-autopilot")
 
 
 # ---- what the planner agent can do directly ------------------------------

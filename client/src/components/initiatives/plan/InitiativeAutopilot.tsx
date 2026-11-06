@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-import type { InitiativePlan, PlanNode } from "../../../api/initiativeApi";
+import type { AutopilotChange, InitiativePlan, PlanNode } from "../../../api/initiativeApi";
 import { AUTOPILOT_ACTION_LABEL, AUTOPILOT_PARALLEL_CHOICES, formatWhen } from "../../../lib/scheduleFormat";
+import { AutopilotTimingButton, AutopilotTimingSummary } from "../../autopilot/AutopilotTiming";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
 import { InitiativeNow } from "./InitiativeNow";
@@ -61,11 +62,14 @@ export function InitiativeAutopilot({
   plan,
   busy,
   onAutopilot,
+  onAutopilotTiming,
   onNeedsPerson,
 }: {
   plan: InitiativePlan;
   busy: boolean;
-  onAutopilot: (change: { enabled?: boolean; max_parallel?: number }) => void;
+  onAutopilot: (change: AutopilotChange) => void;
+  /** Saves the timer and schedule; rejects so the dialog can keep its fields and say why. */
+  onAutopilotTiming: (change: AutopilotChange) => Promise<unknown>;
   onNeedsPerson: (ticketIds: string[], needsPerson: boolean) => void;
 }) {
   const { autopilot } = plan;
@@ -140,8 +144,10 @@ export function InitiativeAutopilot({
               Turn on
             </Button>
           )}
+          <AutopilotTimingButton view={autopilot} busy={busy} onSave={onAutopilotTiming} />
         </div>
         <p className="plan-pilot-status">{statusLine(plan)}</p>
+        <AutopilotTimingSummary view={autopilot} className="plan-pilot-status" />
       </header>
 
       {autopilot.available ? null : (
