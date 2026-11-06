@@ -1,6 +1,12 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import { MarkdownContent } from './chat/MarkdownContent';
-import { draftCriteria, newCriterionDraft, type CriterionDraft } from '../lib/criterionDrafts';
+import { Button } from './ui/Button';
+import {
+  MAX_ACCEPTANCE_CRITERIA,
+  draftCriteria,
+  newCriterionDraft,
+  type CriterionDraft,
+} from '../lib/criterionDrafts';
 
 function progressLabel(done: number, total: number): string {
   return `${done} of ${total} done`;
@@ -64,12 +70,29 @@ export interface TicketCriteriaEditorProps {
   disabled?: boolean;
   /** Why the criteria cannot change, shown under the heading; absent when they can. */
   lockedHint?: string;
+  /**
+   * How many criteria the ticket already holds, normalized the way the column
+   * holds them. The save is refused only when it would *grow* a ticket past the
+   * cap, so this is the second half of the pre-flight: the 78 live tickets
+   * already over the cap stay editable and shortenable, and a draft cut below
+   * the cap can be added to again.
+   */
+  storedCount: number;
 }
 
 /** Edit mode: every criterion is a text field, and still a checkbox. */
-export function TicketCriteriaEditor({ rows, onChange, disabled = false, lockedHint }: TicketCriteriaEditorProps) {
+export function TicketCriteriaEditor({ rows, onChange, disabled = false, lockedHint, storedCount }: TicketCriteriaEditorProps) {
   const inputs = useRef(new Map<number, HTMLTextAreaElement>());
+  // The normalized list, not the row count: `normalize_criteria` drops blanks on
+  // the way to the column, so 13 rows holding 12 criteria save as 12. Counting
+  // rows would pre-empt a save the server takes.
   const criteriaCount = draftCriteria(rows).length;
+  const overCap = criteriaCount > MAX_ACCEPTANCE_CRITERIA;
+  // Exactly the server's refusal predicate for one more criterion:
+  // `after > cap and after > before`, with `after === criteriaCount + 1`.
+  const addWouldBeRefused =
+    criteriaCount >= MAX_ACCEPTANCE_CRITERIA && criteriaCount >= storedCount;
+  const reasonId = useId();
 
   // Grow each field to its text: real criteria run past one line, and a
   // single-line input hid the end of most of them.
@@ -113,8 +136,9 @@ export function TicketCriteriaEditor({ rows, onChange, disabled = false, lockedH
     <div className="state-card">
       <div className="ticket-ac-heading">
         <div className="state-label">Acceptance Criteria</div>
-        <span className="ticket-ac-progress">
-          {criteriaCount === 1 ? '1 criterion' : `${criteriaCount} criteria`}
+        <span className="ticket-ac-progress" aria-live="polite">
+          {`${criteriaCount} of ${MAX_ACCEPTANCE_CRITERIA}`}
+          {overCap && ' — over the cap'}
         </span>
       </div>
       {lockedHint && <p className="modal-hint">{lockedHint}</p>}
@@ -169,14 +193,22 @@ export function TicketCriteriaEditor({ rows, onChange, disabled = false, lockedH
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        className="btn-secondary btn-compact ticket-ac-add"
-        disabled={disabled}
+      <Button
+        variant="secondary"
+        compact
+        className="ticket-ac-add"
+        disabled={disabled || addWouldBeRefused}
+        aria-describedby={addWouldBeRefused ? reasonId : undefined}
         onClick={() => insertAfter(rows.length - 1)}
       >
         + Add criterion
-      </button>
+      </Button>
+      {addWouldBeRefused && (
+        <p id={reasonId} className="modal-hint" style={{ marginTop: 4 }}>
+          {`This ticket holds ${criteriaCount} acceptance criteria and the limit is ${MAX_ACCEPTANCE_CRITERIA}. `}
+          Remove a criterion, or open a new ticket under this one&apos;s parent for the extra work.
+        </p>
+      )}
       {!lockedHint && (
         <p className="modal-hint" style={{ marginTop: 4 }}>Enter adds a criterion below; Backspace on an empty one removes it.</p>
       )}

@@ -59,6 +59,7 @@ from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.requeue import requeue_stage
 from loregarden.services.run_service import schedule_orchestration
 from loregarden.services.ticket_activity import activity_for
+from loregarden.services.ticket_growth_guard import would_grow_past
 from loregarden.services.ticket_ids import resolve
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -211,7 +212,10 @@ def _check_capacity(ticket: Ticket, queued: int, adding: int) -> None:
     """
     on_ticket = len(load_criteria(ticket.acceptance_criteria_json))
     total = on_ticket + queued + adding
-    if total > MAX_ACCEPTANCE_CRITERIA:
+    # The same predicate the write seam refuses on, rather than this module's own
+    # arithmetic: a pre-flight that disagrees with the guard either strands
+    # criteria the operator already said yes to, or refuses a write the seam takes.
+    if would_grow_past(on_ticket, total, MAX_ACCEPTANCE_CRITERIA):
         raise FeatureLoopError(
             f"The ticket holds at most {MAX_ACCEPTANCE_CRITERIA} criteria: it has {on_ticket}, "
             f"{queued} are queued, and this would add {adding}. Finish this feature, then "

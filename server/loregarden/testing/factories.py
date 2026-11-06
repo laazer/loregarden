@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     Workspace,
     utcnow,
 )
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_service import RESOLVED_STATES
@@ -92,6 +93,14 @@ def make_ticket(
     #: When a resolved ticket closed. Defaults to now for a resolved `state`,
     #: as `ticket_state_service` would stamp it; schedule forecasts read it.
     resolved_at: datetime | None = None,
+    #: Planted straight onto the column, past the write-time cap if asked. This
+    #: factory is how a suite plants the over-cap rows the guard exists to
+    #: refuse — every writer refuses them, which is the point — so it is a
+    #: parameter here rather than an `.acceptance_criteria_json` assignment at
+    #: each call site: the census in `test_ticket_size_guard.py` counts every
+    #: module that writes that column, and one named exception is cheaper to
+    #: keep honest than one per caller (lg-milestone-that-2250).
+    acceptance_criteria: list[str] | None = None,
 ) -> Ticket:
     if ticket_id:
         existing = session.get(Ticket, ticket_id)
@@ -104,6 +113,7 @@ def make_ticket(
         work_item_type=work_item_type,
         parent_ticket_id=parent_ticket_id,
         description=description,
+        acceptance_criteria_json=serialize_criteria(acceptance_criteria),
     )
     if ticket_id:
         ticket.id = ticket_id

@@ -424,6 +424,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               tags={draftTags}
               disabled={isSaving}
               criteriaLocked={editLocked}
+              storedCriteriaCount={criteria.length}
               onChange={patchDraft}
             />
           )}
@@ -528,10 +529,12 @@ interface TicketEditFormProps {
   disabled: boolean;
   /** Done and staying done: the criteria and their checks are read-only. */
   criteriaLocked: boolean;
+  /** What the ticket already holds, so the editor can tell a growing save from a shrinking one. */
+  storedCriteriaCount: number;
   onChange: (patch: Partial<EditDraft>) => void;
 }
 
-function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: TicketEditFormProps) {
+function TicketEditForm({ draft, tags, disabled, criteriaLocked, storedCriteriaCount, onChange }: TicketEditFormProps) {
   return (
     <>
       <div className="state-card">
@@ -587,6 +590,7 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, onChange }: Tic
         onChange={(criteria) => onChange({ criteria })}
         disabled={disabled || criteriaLocked}
         lockedHint={criteriaLocked ? DONE_CRITERIA_HINT : undefined}
+        storedCount={storedCriteriaCount}
       />
 
       <div className="state-card">
