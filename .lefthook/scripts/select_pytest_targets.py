@@ -16,6 +16,17 @@ much:
   (`lefthook.yml`, `agent_context/`) that no import graph can see.
 * Selecting *zero* tests means the full suite, not a fast pass. "Nothing reaches
   this module" is more often a hole in the graph than a fact about the code.
+* A change under `client/` selects the server test files that name the client
+  tree in a string constant (`REPO / "client"`, `"client/package.json"`). About
+  fifty read it — the UI action catalog, the prod-shape fixtures, the gates — so
+  a client-only diff is not "no server test can break". Before this it selected
+  zero and so ran all of them, which made a one-component ticket's land
+  verification a full-suite run that timed out (lg-milestone-that-2197).
+  Package modules that name `client` are deliberately NOT followed: every one
+  of them names it as a path inside *some workspace's* tree (agent scopes, the
+  code map, the toolchain link), not to read this repo's client, and following
+  them selected 529 of 691 files. A test that reads the client only through a
+  helper is the miss this leaves, and CI's full run is what catches it.
 * String constants naming a package module count as imports, so the MCP tool
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
@@ -36,6 +47,7 @@ import ast
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
@@ -60,6 +72,7 @@ EXIT_SELECTED = 0
 EXIT_RUN_EVERYTHING = 2
 
 PACKAGE = "loregarden"
+CLIENT_DIR = "client"
 
 #: Changing one of these changes how every test runs, so nothing narrower is honest.
 _SHARED_TEST_FILES = frozenset({"conftest.py", "factories.py", "worktree_helpers.py"})
@@ -133,6 +146,42 @@ def _imported_modules(tree: ast.AST) -> set[str]:
     return found
 
 
+def _is_client_path(value: str) -> bool:
+    """`client`, `client/…`, `…/client/…` or `…/client`: the path segment, so
+    `"client_id"` and `"api client"` do not count."""
+    return (
+        value == CLIENT_DIR
+        or value.startswith(f"{CLIENT_DIR}/")
+        or f"/{CLIENT_DIR}/" in value
+        or value.endswith(f"/{CLIENT_DIR}")
+    )
+
+
+class _ClientPathFinder(ast.NodeVisitor):
+    """Finds a string constant naming the client tree.
+
+    How a server test reads `client/`: by path, never by import, so the
+    import graph cannot see it.
+    """
+
+    def __init__(self) -> None:
+        self.found = False
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        value = node.value
+        # A literal's value is any of str/bytes/int/float/complex/None/Ellipsis:
+        # a stdlib union this repo does not own, and only a str can be a path.
+        if isinstance(value, str) and _is_client_path(value):  # py-org: allow-isinstance
+            self.found = True
+
+
+def _names_client_tree(tree: ast.AST) -> bool:
+    """Does this file name the client tree in a string constant?"""
+    finder = _ClientPathFinder()
+    finder.visit(tree)
+    return finder.found
+
+
 def _parse(path: Path) -> ast.AST:
     """The module's AST, or `UnexaminableFileError` naming why there is none.
 
@@ -149,10 +198,19 @@ def _parse(path: Path) -> ast.AST:
         ) from exc
 
 
-def build_graph(
-    package_root: Path, test_root: Path
-) -> tuple[dict[str, set[str]], dict[Path, set[str]]]:
-    """(module -> modules it imports, test file -> modules it imports)."""
+@dataclass(frozen=True)
+class ImportGraph:
+    """The package and its tests as edges, plus the tests that read the client tree."""
+
+    #: module -> package modules it imports
+    module_edges: dict[str, set[str]]
+    #: test file -> package modules it imports
+    test_edges: dict[Path, set[str]]
+    #: test files that name the client tree themselves
+    client_tests: frozenset[Path]
+
+
+def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
     known: dict[str, Path] = {}
     for py in package_root.rglob("*.py"):
         name = module_name(py, package_root)
@@ -165,11 +223,18 @@ def build_graph(
         module_edges[name] = {m for m in _imported_modules(tree) if m in known}
 
     test_edges: dict[Path, set[str]] = {}
+    client_tests: set[Path] = set()
     for py in sorted(test_root.rglob("test_*.py")):
         tree = _parse(py)
         test_edges[py] = {m for m in _imported_modules(tree) if m in known}
+        if _names_client_tree(tree):
+            client_tests.add(py)
 
-    return module_edges, test_edges
+    return ImportGraph(
+        module_edges=module_edges,
+        test_edges=test_edges,
+        client_tests=frozenset(client_tests),
+    )
 
 
 def reachable(seeds: set[str], module_edges: dict[str, set[str]]) -> set[str]:
@@ -185,34 +250,54 @@ def reachable(seeds: set[str], module_edges: dict[str, set[str]]) -> set[str]:
     return seen
 
 
-def select(repo: Path, paths: list[str]) -> list[Path]:
-    """Test files that import a changed module, plus changed tests themselves."""
+@dataclass(frozen=True)
+class ChangeSet:
+    """A diff's paths, sorted by what each one asks of the server tests."""
+
+    #: changed test files that still exist (a deleted one cannot be run)
+    tests: frozenset[Path]
+    #: changed package modules, dotted
+    modules: frozenset[str]
+    #: anything under `client/` changed
+    client: bool
+
+
+def classify(repo: Path, paths: list[str]) -> ChangeSet:
     package_root = repo / "server" / PACKAGE
-    test_root = repo / "server" / "tests"
-
-    changed_tests: list[Path] = []
-    changed_modules: set[str] = set()
+    tests: set[Path] = set()
+    modules: set[str] = set()
+    client = False
     for rel in paths:
-        if not rel.startswith("server/") or not rel.endswith(".py"):
+        if rel.startswith(f"{CLIENT_DIR}/"):
+            client = True
+        elif not rel.startswith("server/") or not rel.endswith(".py"):
             continue
-        path = repo / rel
-        if rel.startswith("server/tests/"):
+        elif rel.startswith("server/tests/"):
             # A deleted test file cannot be run; its absence is not a gap.
-            if path.exists():
-                changed_tests.append(path)
-            continue
-        name = module_name(path, package_root)
-        if name:
-            changed_modules.add(name)
+            if (repo / rel).exists():
+                tests.add(repo / rel)
+        elif name := module_name(repo / rel, package_root):
+            modules.add(name)
+    return ChangeSet(tests=frozenset(tests), modules=frozenset(modules), client=client)
 
-    if not changed_modules:
-        return sorted(set(changed_tests))
 
-    module_edges, test_edges = build_graph(package_root, test_root)
-    selected = set(changed_tests)
-    for test_file, imports in test_edges.items():
-        if reachable(imports, module_edges) & changed_modules:
-            selected.add(test_file)
+def select(repo: Path, paths: list[str]) -> list[Path]:
+    """Test files that import a changed module, plus changed tests themselves,
+    plus — when the client changed — the tests that read the client tree."""
+    changes = classify(repo, paths)
+    if not changes.modules and not changes.client:
+        return sorted(changes.tests)
+
+    graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
+    selected = set(changes.tests)
+    if changes.client:
+        selected |= graph.client_tests
+    if changes.modules:
+        selected |= {
+            test_file
+            for test_file, imports in graph.test_edges.items()
+            if reachable(imports, graph.module_edges) & changes.modules
+        }
     return sorted(selected)
 
 
