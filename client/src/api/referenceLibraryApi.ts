@@ -41,6 +41,8 @@ export interface LibraryRow {
   topics: string;
   /** Why the last read of the description failed; "" when it did not. */
   describe_error: string;
+  /** A person took it out of auto re-review: never queued again on its own. */
+  auto_rereview_excluded: boolean;
   /** The topic of the discovery run that found it, when an agent did. */
   discovered_by: string | null;
 }
@@ -300,7 +302,41 @@ export interface LibraryDetail {
   };
 }
 
+/** Auto re-review for the whole library (`reference_survey.rereview`). */
+export interface AutoRereviewSettings {
+  enabled: boolean;
+  /** A reviewed repository is queued again once it is this many commits ahead. */
+  min_new_commits: number;
+  /** A re-review reads at most this many of the newest commits. */
+  max_commits_per_review: number;
+  /** The largest `max_commits_per_review` the server accepts. */
+  max_commits_ceiling: number;
+  /** Reviewed repositories that are due now; queued one at a time while it is on. */
+  due: number;
+  /** The re-review queued or running now. */
+  in_flight: { source_id: string; name: string; ordinal: number; status: string } | null;
+  /** Sources a person took out. */
+  excluded: { id: string; name: string }[];
+  updated_at: string | null;
+}
+
+export type AutoRereviewSettingsRequest = Pick<
+  AutoRereviewSettings,
+  "enabled" | "min_new_commits" | "max_commits_per_review"
+>;
+
 export const referenceLibraryApi = {
+  autoRereviewSettings: () => request<AutoRereviewSettings>("/api/reference-library/auto-rereview"),
+  saveAutoRereviewSettings: (body: AutoRereviewSettingsRequest) =>
+    request<AutoRereviewSettings>("/api/reference-library/auto-rereview", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  setSourceAutoRereview: (sourceId: string, excluded: boolean) =>
+    request<LibraryRow>(`/api/reference-library/${encodeURIComponent(sourceId)}/auto-rereview`, {
+      method: "PUT",
+      body: JSON.stringify({ excluded }),
+    }),
   referenceLibrary: (workspaceSlug: string) =>
     request<LibraryList>(
       `/api/reference-library?${new URLSearchParams({ workspace_slug: workspaceSlug })}`,

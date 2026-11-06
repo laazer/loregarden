@@ -63,6 +63,7 @@ __all__ = [
     "SurveySourceWorkspace",
     "SurveyUnknown",
     "SurveyUnknownEvidence",
+    "ReferenceRereviewSettings",
 ]
 
 
@@ -134,6 +135,9 @@ class SurveySource(SQLModel, table=True):
     described_at: datetime | None = None
     #: Why the last read of the description failed; "" when it did not.
     describe_error: str = ""
+    #: A person took it out of auto re-review (`reference_survey.rereview`):
+    #: it is never queued again on its own, whatever moves upstream.
+    auto_rereview_excluded: bool = False
     #: The discovery run that found it, when an agent searched for it on a topic.
     discovery_id: str | None = Field(default=None, foreign_key="survey_discoveries.id")
     created_at: datetime = Field(default_factory=utcnow)
@@ -203,6 +207,10 @@ class SurveyPass(SQLModel, table=True):
     slice_json: str = "[]"
     file_budget: int = 0
     read_commit: str = ""
+    #: A re-review pass: the commit it reads changes since (the reviewed one when
+    #: it was queued), and the commits and files it was given at dispatch.
+    since_commit: str = ""
+    changes: str = ""
     outcome: SurveyPassOutcome | None = Field(
         default=None, sa_column=str_enum_column(SurveyPassOutcome, nullable=True)
     )
@@ -393,3 +401,19 @@ class SurveyLegacySection(SQLModel, table=True):
     body: str
     sha256: str
     imported_at: datetime = Field(default_factory=utcnow)
+
+
+class ReferenceRereviewSettings(SQLModel, table=True):
+    """Auto re-review for the whole reference library. One row, keyed `default`;
+    absent until someone changes a setting, and read as the defaults until then
+    (`reference_survey.rereview.load_settings`)."""
+
+    __tablename__ = "reference_rereview_settings"
+
+    id: str = Field(default="default", primary_key=True)
+    enabled: bool = False
+    #: A reviewed repository is queued again once it is this many commits ahead.
+    min_new_commits: int = 25
+    #: A re-review reads at most this many of the newest commits.
+    max_commits_per_review: int = 50
+    updated_at: datetime = Field(default_factory=utcnow)

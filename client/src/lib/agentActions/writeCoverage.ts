@@ -47,6 +47,14 @@ export const API_WRITE_COVERAGE = {
   // A read of GitHub stored on the source (action check_upstream); the
   // background refresh does the same daily.
   checkSourceUpstream: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // action set_auto_rereview, the same service write.
+  setSourceAutoRereview: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  // Turning auto re-review on starts unattended agent runs across the whole
+  // library: the operator's budget call.
+  saveAutoRereviewSettings: {
+    kind: "human_only",
+    reason: "starts unattended agent runs across the whole library; the operator's budget call",
+  },
   addReferenceSource: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   addReferenceSources: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   reviewSourceNow: { kind: "mcp_tool", tool: "loregarden_survey_queue" },

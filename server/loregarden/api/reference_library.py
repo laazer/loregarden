@@ -41,6 +41,13 @@ from loregarden.services.reference_survey.queue import (
     keep_source,
     promote_resolved_sources,
 )
+from loregarden.services.reference_survey.rereview import (
+    RereviewSettingsIn,
+    RereviewSettingsView,
+    save_settings,
+    set_excluded,
+    settings_view,
+)
 from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
 from loregarden.services.reference_survey.topics import TopicView, topic_list
@@ -177,6 +184,24 @@ def add_sources(body: BulkSourceIn, session: Session = Depends(get_session)) -> 
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/auto-rereview", response_model=RereviewSettingsView)
+def get_auto_rereview(session: Session = Depends(get_session)) -> RereviewSettingsView:
+    """Auto re-review for the whole library: the switch, both numbers, what is due,
+    what is running, and the sources a person took out."""
+    return settings_view(session)
+
+
+@router.put("/auto-rereview", response_model=RereviewSettingsView)
+def put_auto_rereview(
+    body: RereviewSettingsIn, session: Session = Depends(get_session)
+) -> RereviewSettingsView:
+    return save_settings(session, body)
+
+
+class AutoRereviewExclusion(BaseModel):
+    excluded: bool
+
+
 @router.get("/topics", response_model=list[TopicView])
 def topics() -> list[TopicView]:
     """What people commonly survey for: each fills the add form, or starts a discovery."""
@@ -279,5 +304,16 @@ def check_upstream(source_id: str, session: Session = Depends(get_session)) -> L
     returns 200 with the reason in `upstream_check_error`: the row is the answer."""
     try:
         return library_row(session, check_upstream_by_id(session, source_id))
+    except SurveyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/{source_id}/auto-rereview", response_model=LibraryRow)
+def exclude_from_auto_rereview(
+    source_id: str, body: AutoRereviewExclusion, session: Session = Depends(get_session)
+) -> LibraryRow:
+    """Take the source out of auto re-review (withdrawing a queued re-review), or put it back."""
+    try:
+        return library_row(session, set_excluded(session, source_id, excluded=body.excluded))
     except SurveyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

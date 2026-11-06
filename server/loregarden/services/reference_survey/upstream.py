@@ -70,7 +70,7 @@ class UpstreamUnavailable(Exception):
     """The check could not answer; the message says why, in words."""
 
 
-def _gh_json(path: str) -> str:
+def gh_api_json(path: str) -> str:
     try:
         result = run_gh(["api", path], cwd=settings.repo_root, timeout=_TIMEOUT_SECONDS)
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
@@ -86,7 +86,7 @@ def _gh_json(path: str) -> str:
 M = TypeVar("M", bound=BaseModel)
 
 
-def _parse(model: type[M], raw: str) -> M:
+def parse_github(model: type[M], raw: str) -> M:
     try:
         return model.model_validate(json.loads(raw))
     except (ValueError, ValidationError) as exc:
@@ -122,7 +122,7 @@ def _check(source: SurveySource) -> None:
             f"Only GitHub repositories are checked; {parsed.host} is not one."
         )
     repo = f"repos/{parsed.owner}/{parsed.name}"
-    about = _parse(_Repo, _gh_json(repo))
+    about = parse_github(_Repo, gh_api_json(repo))
     branch = about.default_branch
     # The same read says what the repository is; kept so nobody has to visit it.
     source.description = (about.description or "").strip()
@@ -131,7 +131,7 @@ def _check(source: SurveySource) -> None:
     source.topics = ", ".join(about.topics)
     source.described_at = utcnow()
     source.describe_error = ""
-    head = _parse(_Commit, _gh_json(f"{repo}/commits/{branch}"))
+    head = parse_github(_Commit, gh_api_json(f"{repo}/commits/{branch}"))
     source.upstream_branch = branch
     source.upstream_head = head.sha
     source.upstream_committed_at = head.commit.committer.date.replace(tzinfo=None)
@@ -140,8 +140,8 @@ def _check(source: SurveySource) -> None:
         # The reviewed commit may be gone (a force-push) or recorded too short to
         # resolve; the head and its date still answer, so this part alone fails.
         try:
-            compare = _parse(
-                _Compare, _gh_json(f"{repo}/compare/{source.pinned_commit}...{head.sha}")
+            compare = parse_github(
+                _Compare, gh_api_json(f"{repo}/compare/{source.pinned_commit}...{head.sha}")
             )
             source.commits_since_review = compare.ahead_by
         except UpstreamUnavailable as exc:

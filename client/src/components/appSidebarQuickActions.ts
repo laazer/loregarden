@@ -7,7 +7,7 @@
  * A page with no entry here keeps the browser's own context menu.
  */
 
-import { memoryAddReferencePath, type AppPage } from "../lib/appNavigation";
+import { memoryAddReferencePath, memoryAutoRereviewPath, type AppPage } from "../lib/appNavigation";
 
 export interface SidebarQuickAction {
   /** Stable, for keys and tests: `<page>.<action>`. */
@@ -18,7 +18,10 @@ export interface SidebarQuickAction {
 }
 
 export const SIDEBAR_QUICK_ACTIONS: Partial<Record<AppPage, readonly SidebarQuickAction[]>> = {
-  memory: [{ id: "memory.add-reference", label: "Add Reference", to: memoryAddReferencePath() }],
+  memory: [
+    { id: "memory.add-reference", label: "Add Reference", to: memoryAddReferencePath() },
+    { id: "memory.auto-rereview", label: "Auto Re-review…", to: memoryAutoRereviewPath() },
+  ],
 };
 
 export function quickActionsFor(page: AppPage): readonly SidebarQuickAction[] {

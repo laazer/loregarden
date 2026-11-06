@@ -405,3 +405,6 @@ export function refusedSourceId(error: unknown): string | null {
   const detail = error.detail as { source_id?: unknown } | undefined;
   return typeof detail?.source_id === "string" ? detail.source_id : null;
 }
+
+/** The auto re-review settings query, shared by the dialog, its button and each source page. */
+export const AUTO_REREVIEW_QUERY_KEY = ["reference-auto-rereview"] as const;
