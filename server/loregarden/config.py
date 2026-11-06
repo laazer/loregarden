@@ -237,8 +237,10 @@ class Settings(BaseSettings):
     host_reserved_cpus: float = 1.0
     host_reserved_memory_mb: int = 4096
     # Every agent run holds a small host lease for its lifetime (see
-    # services/run_capacity.py). A run that cannot get one waits this long in
-    # line, then fails naming the wait.
+    # services/run_capacity.py). A run waits in line while it moves; when nothing
+    # ahead has finished for this long it fails naming who holds the line
+    # (services/capacity_line.py). It once failed after this long however fast the
+    # line moved, which blocked a survey pass behind an orderly queue of suites.
     agent_run_capacity_enabled: bool = True
     agent_run_capacity_wait_seconds: float = 1800.0
     # A transition's gate commands keep their place in line while it moves; when

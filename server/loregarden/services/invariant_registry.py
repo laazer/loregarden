@@ -26,7 +26,12 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
+from loregarden.services.capacity_blocks import (
+    refile_capacity_blocks,
+    work_blocks_from_capacity_waits,
+)
 from loregarden.services.checkouts_without_their_branch import checkouts_without_their_branch
 from loregarden.services.cleaned_worktree_rows import cleaned_rows_with_their_checkout
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
@@ -61,6 +66,7 @@ from loregarden.services.reference_survey.carrier_settlement import (
     finish_carriers,
 )
 from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
+from loregarden.services.reference_survey.map_repair import remap_from_clone, unsplit_maps
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_parked_at_rows import (
@@ -1308,6 +1314,40 @@ UNAVAILABLE_GATES_ARE_NOT_WORK = Invariant(
 )
 
 
+def _capacity_work_blocks(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=block.ticket.id,
+            ticket_id=block.ticket.id,
+            entered_at=block.blocked_at,
+            detail=f"blocked as work on '{block.stage_key}', where its run never got capacity",
+        )
+        for block in work_blocks_from_capacity_waits(session)
+    ]
+
+
+def _refile_capacity_blocks(session: Session, violations: Sequence[Violation]) -> int:
+    return refile_capacity_blocks(session, [violation.subject_id for violation in violations])
+
+
+CAPACITY_WAITS_ARE_NOT_WORK = Invariant(
+    name="capacity_waits_are_not_work_blocks",
+    ticket="lg-milestone-that-1431",
+    statement=(
+        "no ticket is blocked as work by a run that never got machine capacity: no agent "
+        "looked at the work, so the block is the machine's (harness)"
+    ),
+    detect=_capacity_work_blocks,
+    repair=_refile_capacity_blocks,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 6),
+    prevented_by=(
+        "server/tests/test_orchestration_capacity.py"
+        "::test_a_run_that_could_not_get_capacity_blocks_as_harness_not_work"
+    ),
+)
+
+
 def _open_carriers(session: Session) -> list[Violation]:
     return [
         Violation(
@@ -1343,6 +1383,43 @@ FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
     ),
 )
 
+
+def _unsplit_maps(session: Session) -> list[Violation]:
+    """`entered_at` is the source's last fetch, which every map is taken in."""
+    return [
+        Violation(
+            subject_id=item.source.id,
+            ticket_id=None,
+            entered_at=item.source.fetched_at,
+            detail=f"{item.source.name}'s map at {item.source.mapped_commit[:12]} keeps "
+            f"{', '.join(item.leaves)} whole, over the pass budget",
+        )
+        for item in unsplit_maps(session)
+    ]
+
+
+def _remap_unsplit(session: Session, violations: Sequence[Violation]) -> int:
+    sources = (session.get(SurveySource, violation.subject_id) for violation in violations)
+    return sum(remap_from_clone(session, source) for source in sources if source is not None)
+
+
+SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD = Invariant(
+    name="survey_maps_split_what_no_pass_can_hold",
+    ticket="lg-reference-sources-2283",
+    statement=(
+        "no admitted survey source's map keeps a directory larger than the pass budget as "
+        "one leaf: no slice can take it, so no pass ever reads it"
+    ),
+    detect=_unsplit_maps,
+    repair=_remap_unsplit,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 6),
+    prevented_by=(
+        "server/tests/test_reference_survey_slicing.py"
+        "::test_every_map_the_feeder_stores_splits_what_no_pass_can_hold"
+    ),
+)
+
 TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS = Invariant(
     name="tickets_are_created_under_the_size_caps",
     ticket="lg-milestone-that-2250",
@@ -1373,10 +1450,12 @@ INVARIANTS: tuple[Invariant, ...] = (
     EXHAUSTED_GATES_BLOCK,
     EVERY_BLOCK_IS_SETTLED,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
+    CAPACITY_WAITS_ARE_NOT_WORK,
     LANDING_BLOCKS_CLEAR,
     PUBLISH_CARDS_CLOSE,
     SURVEY_CARDS_CLOSE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
+    SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
     TICKET_BRANCHES_HOLD_HISTORY,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,

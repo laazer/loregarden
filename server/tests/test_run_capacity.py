@@ -8,8 +8,9 @@ Acceptance criteria (lg-machine-resource-859):
    date (`run_capacity.RUNTIME_WEIGHTS`).
 
 Decided with the operator: an agent's own pushes queue normally, so a run's
-lease takes no lease-count slot; a run waits up to
-`agent_run_capacity_wait_seconds` for its lease, then fails naming the wait.
+lease takes no lease-count slot; a run waits in line while it moves, and fails
+naming who holds it only when nothing ahead finishes for
+`agent_run_capacity_wait_seconds` (test_capacity_waits_follow_the_line.py).
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services import docker_leases, docker_reaper, run_capacity
-from loregarden.services.docker_leases import docker_capacity_for_stage
 from loregarden.services.docker_ledger import load_pool
 from loregarden.services.run_capacity import (
     RUNTIME_WEIGHTS,
@@ -40,6 +40,7 @@ from loregarden.services.run_capacity import (
     runtime_for_run,
 )
 from loregarden.services.run_service import RunService
+from loregarden.services.stage_docker_capacity import docker_capacity_for_stage
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_ticket, make_workspace
 from tests.test_capacity_host_pool import _reserve, _set_ceiling
@@ -120,7 +121,7 @@ def test_an_agents_push_still_gets_the_only_slot(session, pools, run) -> None:
 def test_a_full_machine_makes_the_run_wait_then_fail_naming_the_wait(session, pools, run) -> None:
     _reserve(session, CapacityPool.HOST, label="pre-push", cpus=4)
 
-    with pytest.raises(HostCapacityUnavailable, match="host capacity: still queued"):
+    with pytest.raises(HostCapacityUnavailable, match="host capacity: the line stopped moving"):
         with host_capacity_for_run(session, run, wait_seconds=0.3):
             pytest.fail("the run started without its lease")
 

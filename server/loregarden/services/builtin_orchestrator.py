@@ -48,6 +48,7 @@ from loregarden.services.parallel_stage import (
 )
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.review_relens import decide_lenses, record_relens_decisions
+from loregarden.services.run_boundary import boundary_block
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
@@ -307,16 +308,16 @@ class BuiltinOrchestrator:
 
             self._complete_run(orch_run, ticket)
         except Exception as exc:  # noqa: BLE001 - run boundary; the ticket is blocked with this message
+            # An exception this driver caught at the run boundary; `run_boundary`
+            # decides by its type whose block it is.
+            block = boundary_block(exc)
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,
-                # An exception this driver caught at the run boundary.
                 origin=BlockOrigin.CONTROL_PLANE,
-                repair=RepairPolicy.withheld(
-                    f"The orchestrator itself stopped with {type(exc).__name__}; a repair "
-                    "turn runs inside the orchestrator, so this one is for a person."
-                ),
+                repair=block.repair,
                 message=str(exc),
+                declared=block.declared,
             )
         finally:
             # The run's standing host lease, handed back at every exit from this

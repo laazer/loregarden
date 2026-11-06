@@ -48,6 +48,7 @@ from loregarden.services.acceptance_criteria import (
 )
 from loregarden.services.hierarchy_service import validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.reference_survey.adoption_home import adoption_parent, adoption_type
 from loregarden.services.reference_survey.errors import (
     SurveyError,
     SurveyNotFound,
@@ -270,9 +271,21 @@ def _relate(session: Session, a: Ticket, b: Ticket) -> None:
 
 
 def _create(
-    session: Session, workspace: Workspace, spec: NewTicketIn, criteria: list[str]
+    session: Session,
+    workspace: Workspace,
+    spec: NewTicketIn,
+    criteria: list[str],
+    source: SurveySource | None = None,
 ) -> Ticket:
-    parent = resolve_one(session, spec.parent, workspace_id=workspace.id)
+    if spec.parent:
+        parent = resolve_one(session, spec.parent, workspace_id=workspace.id)
+    elif source is not None:
+        # Nothing covers its premise and the pass named no parent: it is something
+        # to adopt, filed with what else this source offered (`adoption_home`).
+        parent = adoption_parent(session, workspace, source)
+        spec = spec.model_copy(update={"work_item_type": adoption_type(spec.work_item_type)})
+    else:
+        raise SurveyError("A ticket filed here needs a parent: name one in create.parent.")
     try:
         validate_parent_assignment(spec.work_item_type, parent.work_item_type)
     except ValueError as exc:
@@ -397,7 +410,7 @@ def _choose_target(
                 f"created beside {', '.join(t.external_id for t in similar)}: {body.force_new_reason}"
             )
         action = SurveyTicketAction.SELF_DEFECT if body.self_defect else SurveyTicketAction.CREATED
-        return _create(session, workspace, body.create, []), action, None, notes
+        return _create(session, workspace, body.create, [], source), action, None, notes
     target = _resolve_across(session, body.ticket or "", targets)
     workspace = next(w for w in targets if w.id == target.workspace_id)
     if target.state in _CLOSED and body.criteria:

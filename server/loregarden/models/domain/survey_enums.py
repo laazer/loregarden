@@ -84,9 +84,9 @@ class LicenceUse(StrEnum):
 
     #: Code may be quoted and reimplemented closely.
     FULL = "full"
-    #: Copyleft, unlicensed or manifest-only: read for patterns, copy nothing.
+    #: Copyleft, source-available, unlicensed or manifest-only: read for patterns, copy nothing.
     PATTERNS_ONLY = "patterns_only"
-    #: Not read at all (non-commercial, source-available, or unreadable terms).
+    #: Not read at all: licence terms the classifier cannot read.
     EXCLUDED = "excluded"
 
 

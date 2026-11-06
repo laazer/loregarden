@@ -124,6 +124,22 @@ def leaf_states(
     it is partial, unless those reads add up to every file it holds."""
     leaves = map_leaves(rows)
     result = {leaf.path: states[leaf.path] for leaf in leaves if leaf.path in states}
+    # A read recorded on a path the map has since split covers the leaves under
+    # it: whole when it was read in full, or deliberately skipped. A partial read
+    # of the parent says nothing about which leaf it touched, so it passes on nothing.
+    ancestors = {
+        row.path: states[row.path]
+        for row in rows
+        if row.in_map
+        and states.get(row.path) in (SurveyReadState.READ, SurveyReadState.SKIPPED)
+        and row not in leaves
+    }
+    for leaf in leaves:
+        if leaf.path in result:
+            continue
+        inherited = [state for path, state in ancestors.items() if leaf.path.startswith(path + "/")]
+        if inherited:
+            result[leaf.path] = max(inherited, key=lambda state: _RANK[state])
     covered: dict[str, int] = {}
     for row in rows:
         if row.in_map or row.path not in states or states[row.path] is SurveyReadState.SKIPPED:
@@ -146,12 +162,37 @@ def finer_files_read(session: Session, source_id: str) -> dict[str, int]:
     return most
 
 
+def _expand_ranked(
+    rows: list[SurveyCoverage],
+    ranked: list[SurveyCoverage],
+    leaves: dict[str, SurveyReadState],
+) -> list[SurveyCoverage]:
+    """Ranked entries, with any that the map has since split replaced by their
+    unread leaves in path order. A pass ranks the paths it saw, and a map taken
+    later may have broken one of them up (`coverage.map_tree`'s `split_over`)."""
+    mapped_leaves = map_leaves(rows)
+    out: list[SurveyCoverage] = []
+    for row in ranked:
+        if not row.in_map or row in mapped_leaves:
+            out.append(row)
+            continue
+        prefix = row.path + "/"
+        out.extend(
+            leaf
+            for leaf in mapped_leaves
+            if leaf.path.startswith(prefix) and leaf.path not in leaves and (leaf.file_count or 0)
+        )
+    return out
+
+
 def assign_slice(session: Session, survey_pass: SurveyPass, *, file_budget: int) -> list[str]:
     """Choose the pass's paths up to the budget: ranked unread entries first (the
     list a pass left behind, finer entries included), then unread map leaves.
 
-    A pass given paths explicitly keeps them. At least one entry is assigned even
-    when it alone is over budget; that pass then records it as partial.
+    A pass given paths explicitly keeps them. A leaf larger than the whole budget
+    (loose files the map could not split) takes what budget is left when its turn
+    comes, and that pass records it partial; one that fits whole waits for a slice
+    with room for it.
     """
     survey_pass.file_budget = file_budget
     explicit = json.loads(survey_pass.slice_json)
@@ -172,12 +213,18 @@ def assign_slice(session: Session, survey_pass: SurveyPass, *, file_budget: int)
     ]
     chosen: list[str] = []
     used = 0
-    for row in [*ranked, *unread]:
-        size = row.file_count or 1
-        if chosen and used + size > file_budget:
+    for row in _expand_ranked(rows, ranked, leaves) + unread:
+        if row.path in chosen:
             continue
+        size = row.file_count or 1
+        room = file_budget - used
+        if chosen and size > room and size <= file_budget:
+            continue  # it fits whole in a later pass
+        # A leaf no budget can hold (loose files the map cannot split) takes
+        # what is left rather than waiting for an empty slice that ranked
+        # leftovers never leave it; the pass reads part and records it partial.
         chosen.append(row.path)
-        used += size
+        used += min(size, room)
         if used >= file_budget:
             break
     survey_pass.slice_json = json.dumps(chosen)

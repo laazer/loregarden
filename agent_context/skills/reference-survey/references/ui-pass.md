@@ -4,6 +4,20 @@ A UI finding is not a screenshot impression. If you cannot run the thing, say so
 in the append, then read the interface source — component files carry the states
 a screenshot cannot show.
 
+## Two reads, not one
+
+A UI pass has two halves, and stopping after the first is how a survey of a
+component-rich repo comes back with eight state-hygiene notes and none of the
+components the operator went looking for:
+
+1. **Inventory.** List the components and surfaces it has that we do not, or
+   that do the same job better: a command palette, a split-pane terminal, a diff
+   viewer, a virtualised log. Each one that would be worth adopting in
+   loregarden, `lore-eden` or loremaker is a finding: name the file, what it
+   depends on, and where it would live here. One with no ticket goes in with no
+   `parent` (see backlog-match).
+2. **States**, below, over the components you inventoried.
+
 ## What to read for
 
 **States, not layouts.** The questions worth answering are the ones our own

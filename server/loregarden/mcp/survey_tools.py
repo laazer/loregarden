@@ -98,12 +98,16 @@ _NEW_TICKET = {
         "workspace_slug": string_prop(
             "Which of the source's workspaces the ticket belongs to; required when it serves several."
         ),
-        "parent": string_prop("Parent ticket external id. Hierarchy is checked before creating."),
+        "parent": string_prop(
+            "Parent ticket external id. Hierarchy is checked before creating. Omit it for "
+            "something to adopt that no ticket covers: it is filed under 'Adopt from <source>' "
+            "in the workspace's findings milestone, made if absent."
+        ),
         "work_item_type": enum_string_prop("Work item type (default task).", _values(WorkItemType)),
         "description": string_prop("The spec. The finding itself goes in block, not here."),
         "priority": integer_prop("1-3, 1 highest (default 3)."),
     },
-    "required": ["title", "parent", "description"],
+    "required": ["title", "description"],
 }
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -142,7 +146,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Optional: without one, a pass reads for what would serve the workspaces and "
                     "initiatives it serves (review_now: only for a surveyed source)."
                 ),
-                "queued_reason": string_prop("enqueue: why it is worth reading now (optional)."),
+                "queued_reason": string_prop(
+                    "enqueue: why it is worth reading now (optional). review_now: why a refused "
+                    "source should be read after all (required to reopen one; the licence gate "
+                    "still runs first)."
+                ),
                 "priority": integer_prop("enqueue: lower runs first (default 100)."),
                 "source_id": _SOURCE_ID,
                 "mode": enum_string_prop(
@@ -385,7 +393,7 @@ def _check_upstream(session: Session, args: dict[str, Any]) -> dict:
 
 
 def _review_now(session: Session, args: dict[str, Any]) -> dict:
-    body = ReviewNowIn(question=args.get("question") or "")
+    body = ReviewNowIn(question=args.get("question") or "", reason=args.get("queued_reason") or "")
     return review_now(session, args["source_id"], body).model_dump()
 
 

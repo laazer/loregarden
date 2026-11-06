@@ -33,6 +33,7 @@ from loregarden.models.domain import (
     RunStatus,
 )
 from loregarden.services import docker_leases, docker_reaper
+from loregarden.services.capacity_line import wait_while_line_moves
 from loregarden.services.docker_probe import DockerLiveness
 from sqlmodel import Session
 from tests.factories import make_agent_run, make_workspace
@@ -360,11 +361,8 @@ def test_a_waiter_takes_back_capacity_from_a_holder_whose_process_is_gone(sessio
     )
     assert queued.position is not None
 
-    with (
-        mock.patch.object(docker_leases, "pid_alive", return_value=False),
-        mock.patch.object(docker_leases.time, "sleep"),
-    ):
-        granted = docker_leases.wait_for_grant(session, queued, budget=5.0)
+    with mock.patch.object(docker_leases, "pid_alive", return_value=False):
+        granted = wait_while_line_moves(session, queued, stall_seconds=5.0, sleep=lambda _: None)
 
     assert granted.granted
     session.refresh(dead)

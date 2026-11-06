@@ -32,6 +32,7 @@ from loregarden.models.domain import (
     TicketState,
     UpdateTicketRequest,
 )
+from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.interruption_messages import (
     DISPATCH_REFUSED_TERMINAL_PARENT_PREFIX,
     INTERRUPTED_RUN_MESSAGE,
@@ -96,6 +97,7 @@ _HARNESS_SIGNATURES = (
     "Workspace Trust Required",
     "usage limit",
     "could not examine",
+    CAPACITY_UNAVAILABLE_PREFIX,
 )
 
 #: What a decision approval is called in the inbox; the same shape a CLI

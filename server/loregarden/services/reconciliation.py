@@ -55,6 +55,7 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     AWAITING_STAGES_ARE_ASKED,
+    CAPACITY_WAITS_ARE_NOT_WORK,
     CHECKOUTS_KEEP_THEIR_BRANCH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
@@ -76,6 +77,7 @@ from loregarden.services.invariant_registry import (
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
+    SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
     TICKET_BRANCHES_HOLD_HISTORY,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
@@ -221,6 +223,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After the classifier, which is what could file a gate that never ran as
     # work: re-filed as harness in the same pass (lg-machine-resource-2112).
     _invariant(UNAVAILABLE_GATES_ARE_NOT_WORK),
+    _invariant(CAPACITY_WAITS_ARE_NOT_WORK),
     # Periodic by the same rule: it acts only on tickets still blocked on the
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
@@ -255,6 +258,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # Lands work (finalize_workflow), so periodic only, like the terminal sweep
     # it hands each carrier to (lg-reference-sources-2018).
     _invariant(FINISHED_PASSES_CLOSE_THEIR_CARRIER, at_startup=False),
+    # A map with a directory no slice can take starves it through every pass
+    # (beluga's 895-file `packages/mac`). Detection is a DB read; a repair walks
+    # one local clone per map that needs it (47 on the first pass, 2026-11-06),
+    # so periodic only, off the boot path.
+    _invariant(SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD, at_startup=False),
     # Report-only: work left in a finished ticket's tree is a person's call to
     # commit or discard. Reads `git status` of the trees `worktree_lifecycle`
     # kept, which is a handful, not one per ticket.

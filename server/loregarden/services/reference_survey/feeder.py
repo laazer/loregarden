@@ -66,6 +66,7 @@ from loregarden.services.reference_survey.initiatives import (
     open_question,
 )
 from loregarden.services.reference_survey.licence import LicenceVerdict, classify_tree
+from loregarden.services.reference_survey.map_repair import unsplit_leaves
 from loregarden.services.reference_survey.passes import (
     assign_slice,
     coverage_rows,
@@ -270,9 +271,18 @@ def _prepare_repo(session: Session, source: SurveySource) -> tuple[Path, Licence
         {SurveyCardKind.CLONE_FAILED},
         reason=f"{source.name} cloned at {head[:12]}.",
     )
-    if verdict.use is not LicenceUse.EXCLUDED and source.mapped_commit != head:
-        store_map(session, source, map_tree(path), head)
+    if verdict.use is not LicenceUse.EXCLUDED:
+        _refresh_map(session, source, path, head)
     return path, verdict
+
+
+def _refresh_map(session: Session, source: SurveySource, path: Path, head: str) -> None:
+    """Map the tree at `head`, splitting any directory too big for one pass, and
+    re-take a map at the same commit that still has one (`map_repair`)."""
+    budget = settings.reference_survey_pass_file_budget
+    if source.mapped_commit == head and not unsplit_leaves(session, source, budget):
+        return
+    store_map(session, source, map_tree(path, split_over=budget), head)
 
 
 def _brief(

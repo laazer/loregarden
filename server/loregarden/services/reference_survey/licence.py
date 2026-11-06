@@ -3,8 +3,12 @@
 The gate this feeds runs before a pass is dispatched, so the only files a refused
 source ever has opened are the ones named in `LicenceVerdict.files_read`. Every
 licence call the survey made by hand (serena GPL and itsaplan AGPL to
-patterns-only; mellowyak PolyForm-NC and Ivy-Tendril FSL-1.1 excluded; tau flagged
-because its only grant was a `package.json` field) is a rule here.
+patterns-only; tau flagged because its only grant was a `package.json` field) is a
+rule here. Source-available licences (BUSL, FSL, PolyForm, Elastic, SSPL, NC) were
+once excluded outright, which refused mellowyak, Ivy-Tendril and nodeterm while an
+unlicensed repo, all rights reserved and stricter than any of them, was read for
+patterns. They restrict using or deploying the software, not reading it, so they are
+patterns-only now too. Only terms the classifier cannot read are still refused.
 
 Pattern from CypherSisters/PuffPAIBuildBot @63c8a03 `run_licence.py` (Apache-2.0),
 reimplemented: four kinds with the stricter reading winning, an identifier, an
@@ -64,8 +68,9 @@ COPYLEFT_PREFIXES: tuple[str, ...] = (
     "AGPL-", "CC-BY-SA-", "CDDL-", "EPL-", "EUPL-", "GPL-", "LGPL-", "MPL-", "OSL-",
 )  # fmt: skip
 
-#: Non-commercial and source-available: not read at all.
-EXCLUDING_PREFIXES: tuple[str, ...] = (
+#: Non-commercial and source-available: they restrict use, not reading. Read for
+#: patterns, copy nothing, and say which licence the finding came from.
+SOURCE_AVAILABLE_PREFIXES: tuple[str, ...] = (
     "BUSL-", "CC-BY-NC", "Commons-Clause", "Elastic-", "FSL-", "PolyForm-", "SSPL-",
 )  # fmt: skip
 
@@ -163,13 +168,13 @@ class LicenceVerdict:
 class _Reading:
     kind: LicenceKind
     name: str
-    excluding: bool = False
+    source_available: bool = False
 
 
 #: SPDX matching is case-insensitive ("APACHE-2.0" is Apache-2.0); names are
 #: compared lowercased and reported in their canonical spelling.
 _OPEN_BY_LOWER = {name.lower(): name for name in OPEN_IDS}
-_EXCLUDING_LOWER = tuple(p.lower() for p in EXCLUDING_PREFIXES)
+_SOURCE_AVAILABLE_LOWER = tuple(p.lower() for p in SOURCE_AVAILABLE_PREFIXES)
 _COPYLEFT_LOWER = tuple(p.lower() for p in COPYLEFT_PREFIXES)
 
 
@@ -181,8 +186,8 @@ def _id_reading(identifier: str) -> _Reading:
         return _Reading(
             LicenceKind.OPEN, _OPEN_BY_LOWER.get(lower) or _OPEN_BY_LOWER.get(base, ident)
         )
-    if lower.startswith(_EXCLUDING_LOWER):
-        return _Reading(LicenceKind.LIMITED, ident, excluding=True)
+    if lower.startswith(_SOURCE_AVAILABLE_LOWER):
+        return _Reading(LicenceKind.LIMITED, ident, source_available=True)
     if lower.startswith(_COPYLEFT_LOWER) or f"{lower}-" in _COPYLEFT_LOWER:
         # A bare family name ("GPL", as package.json often says) is copyleft at
         # any version, so it reads as the family without needing one.
@@ -193,7 +198,7 @@ def _id_reading(identifier: str) -> _Reading:
 def _stricter(a: _Reading, b: _Reading) -> _Reading:
     if _RANK[a.kind] != _RANK[b.kind]:
         return a if _RANK[a.kind] < _RANK[b.kind] else b
-    return a if a.excluding or not b.excluding else b
+    return a if a.source_available or not b.source_available else b
 
 
 def strictest_name(readings: list[_Reading]) -> str:
@@ -254,13 +259,13 @@ def expression_reading(expr: str) -> _Reading:
         result = expression_reading(ors[0])
         for part in ors[1:]:
             result = _looser(result, expression_reading(part))
-        return _Reading(result.kind, text, result.excluding)
+        return _Reading(result.kind, text, result.source_available)
     ands = _split_top(text, "AND")
     if len(ands) > 1:
         result = expression_reading(ands[0])
         for part in ands[1:]:
             result = _stricter(result, expression_reading(part))
-        return _Reading(result.kind, text, result.excluding)
+        return _Reading(result.kind, text, result.source_available)
     # `X WITH exception` keeps X's terms.
     return _id_reading(text.split(" WITH ", 1)[0])
 
@@ -377,10 +382,11 @@ def _use_for(reading: _Reading, basis: LicenceBasis | None) -> tuple[LicenceUse,
             f"Licence terms this classifier cannot read ({name}). Not surveyed until a "
             "person records the licence by hand.",
         )
-    if reading.kind is LicenceKind.LIMITED and reading.excluding:
+    if reading.kind is LicenceKind.LIMITED and reading.source_available:
         return (
-            LicenceUse.EXCLUDED,
-            f"{name} restricts commercial or competing use. Not surveyed.",
+            LicenceUse.PATTERNS_ONLY,
+            f"{name} is source-available: it restricts commercial or competing use of the "
+            "software, not reading it. Read for patterns and reimplement; copy no code or text.",
         )
     if reading.kind is LicenceKind.LIMITED:
         return (

@@ -183,7 +183,10 @@ class NewTicketIn(_In):
     #: Which of the source's workspaces the ticket belongs to; needed when it serves several.
     workspace_slug: str | None = None
     #: The parent, by external id. Hierarchy is checked before anything is created.
-    parent: str = Field(min_length=1)
+    #: Empty files it under "Adopt from <source>" in the workspace's findings
+    #: milestone, as a capability (a bug stays a bug): the home for a finding no
+    #: ticket covers (`adoption_home`).
+    parent: str = ""
     work_item_type: WorkItemType = WorkItemType.TASK
     description: str = Field(min_length=1)
     priority: int = Field(default=3, ge=1, le=3)

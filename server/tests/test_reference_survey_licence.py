@@ -21,6 +21,7 @@ from loregarden.models.domain.survey_tables import SurveyCoverage, SurveyPass, S
 from loregarden.services.reference_survey import feeder
 from loregarden.services.reference_survey.licence import (
     MAX_LICENCE_BYTES,
+    SOURCE_AVAILABLE_PREFIXES,
     classify_tree,
     expression_reading,
     recorded_verdict,
@@ -32,6 +33,9 @@ GPL3 = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "terms " * 50
 AGPL3 = "GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3\n" + "GNU General Public License " * 5
 POLYFORM_NC = "# PolyForm Noncommercial License 1.0.0\n" + "terms " * 50
 FSL = "Functional Source License, Version 1.1, MIT Future License\n" + "terms " * 50
+#: nodeterm's licence, refused outright before source-available became patterns-only.
+BUSL = "Business Source License 1.1\n\nParameters\n\nLicensor: Acme\n" + "terms " * 50
+UNREADABLE = "All yours, sort of. Ask me first.\n"
 
 
 @pytest.mark.parametrize(
@@ -53,10 +57,21 @@ FSL = "Functional Source License, Version 1.1, MIT Future License\n" + "terms " 
         (
             {"LICENSE": POLYFORM_NC},
             LicenceKind.LIMITED,
-            LicenceUse.EXCLUDED,
+            LicenceUse.PATTERNS_ONLY,
             LicenceBasis.FILE_AT_COMMIT,
         ),
-        ({"LICENSE": FSL}, LicenceKind.LIMITED, LicenceUse.EXCLUDED, LicenceBasis.FILE_AT_COMMIT),
+        (
+            {"LICENSE": FSL},
+            LicenceKind.LIMITED,
+            LicenceUse.PATTERNS_ONLY,
+            LicenceBasis.FILE_AT_COMMIT,
+        ),
+        (
+            {"LICENSE": BUSL},
+            LicenceKind.LIMITED,
+            LicenceUse.PATTERNS_ONLY,
+            LicenceBasis.FILE_AT_COMMIT,
+        ),
         (
             {"licence.txt": "All yours, sort of. Ask me first.\n"},
             LicenceKind.CUSTOM,
@@ -95,7 +110,7 @@ def test_classifies_trees(tmp_path, files, kind, use, basis):
 
 
 @pytest.mark.parametrize(
-    "expr, kind, excluded",
+    "expr, kind, source_available",
     [
         ("MIT OR GPL-3.0-only", LicenceKind.OPEN, False),
         ("MIT AND GPL-3.0-only", LicenceKind.LIMITED, False),
@@ -109,10 +124,10 @@ def test_classifies_trees(tmp_path, files, kind, use, basis):
         ("((MIT))", LicenceKind.OPEN, False),
     ],
 )
-def test_expressions_are_resolved_not_string_matched(expr, kind, excluded):
+def test_expressions_are_resolved_not_string_matched(expr, kind, source_available):
     reading = expression_reading(expr)
     assert reading.kind is kind
-    assert reading.excluding is excluded
+    assert reading.source_available is source_available
 
 
 def test_a_permissive_looking_text_with_terms_of_its_own_fails_closed(tmp_path):
@@ -168,7 +183,7 @@ REUSE_POINTER = (
         (
             {"LICENSE": "Core is MIT; the enterprise folder is PolyForm-Shield-1.0.0.\n"},
             LicenceKind.LIMITED,
-            LicenceUse.EXCLUDED,
+            LicenceUse.PATTERNS_ONLY,
             "PolyForm-Shield-1.0.0",
         ),
         (
@@ -217,13 +232,13 @@ def test_a_hand_recorded_licence_is_the_weakest_basis():
     assert recorded_verdict("none").kind is LicenceKind.NONE
 
 
-def test_the_gate_refuses_a_non_permissive_source_before_any_other_file_is_read(
+def test_the_gate_refuses_an_unreadable_licence_before_any_other_file_is_read(
     isolated_db, tmp_path
 ):
     """Only the licence file is opened; the tree is never mapped; no carrier exists."""
     tree = write_tree(
         tmp_path / "clone",
-        {"LICENSE": POLYFORM_NC, "src/secret.py": "print('x')", "docs/a.md": "a", "README.md": "r"},
+        {"LICENSE": UNREADABLE, "src/secret.py": "print('x')", "docs/a.md": "a", "README.md": "r"},
     )
     with Session(isolated_db) as session:
         world = build_world(session)
@@ -261,7 +276,7 @@ def test_the_gate_refuses_a_non_permissive_source_before_any_other_file_is_read(
             select(SurveyPass).where(SurveyPass.source_id == source.id)
         ).one()
         assert refused_pass.status is SurveyPassStatus.REFUSED
-        assert "PolyForm" in refused_pass.refused_reason
+        assert "cannot read" in refused_pass.refused_reason
         assert session.get(SurveySource, source.id).status is SurveySourceStatus.REFUSED
         assert session.exec(select(SurveyCoverage)).all() == []
         assert len(session.exec(select(Ticket)).all()) == tickets_before
@@ -269,3 +284,26 @@ def test_the_gate_refuses_a_non_permissive_source_before_any_other_file_is_read(
             select(Approval).where(Approval.title.contains("refused by licence"))
         ).all()
         assert len(cards) == 1
+
+
+#: One real identifier for each source-available family the gate reads for patterns.
+SOURCE_AVAILABLE_IDS = {
+    "BUSL-": "BUSL-1.1",
+    "CC-BY-NC": "CC-BY-NC-4.0",
+    "Commons-Clause": "Commons-Clause",
+    "Elastic-": "Elastic-2.0",
+    "FSL-": "FSL-1.1-MIT",
+    "PolyForm-": "PolyForm-Noncommercial-1.0.0",
+    "SSPL-": "SSPL-1.0",
+}
+
+
+def test_every_source_available_family_is_read_for_patterns_not_refused() -> None:
+    """nodeterm (BUSL) was refused although a survey copies nothing: these licences
+    restrict using the software, not reading it. A family added to the list without
+    an identifier here fails, so each one is exercised."""
+    assert set(SOURCE_AVAILABLE_IDS) == set(SOURCE_AVAILABLE_PREFIXES)
+    for spdx in SOURCE_AVAILABLE_IDS.values():
+        verdict = recorded_verdict(spdx)
+        assert verdict.use is LicenceUse.PATTERNS_ONLY, spdx
+        assert "copy no code" in verdict.constraint, spdx
