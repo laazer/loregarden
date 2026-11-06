@@ -11,6 +11,7 @@ import {
   ComposerAttachmentTray,
 } from "../components/chat/ComposerAttachments";
 import { HomeActivity } from "../components/home/HomeActivity";
+import { HomeMachineCapacity } from "../components/home/HomeMachineCapacity";
 import { HomeNeedsYou } from "../components/home/HomeNeedsYou";
 import { HomeRunningNow } from "../components/home/HomeRunningNow";
 import { StudioChatComposer } from "../components/studio/StudioChat";
@@ -286,6 +287,7 @@ export function HomePage() {
             error={queue.error}
             onOpenTicket={openTicket}
           />
+          <HomeMachineCapacity />
         </div>
         <HomeActivity
           runs={runs}
