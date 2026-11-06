@@ -5,6 +5,7 @@ import type { MonitorFinding } from "../../../api/types";
 import {
   deferred,
   dropFocus,
+  finding,
   reasonElement,
   renderView,
 } from "./workflowMonitorFixtures";
@@ -768,5 +769,406 @@ describe("the operator's settle that a poll lands on top of", () => {
       await started;
     });
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+});
+
+/**
+ * lg-milestone-that-2197 — the settle that *succeeds*.
+ *
+ * Everything above is the failed settle: the pane is still on screen, the
+ * failure is still held, and the control the operator pressed is still in the
+ * tree, so "put them back" means the same element. A retry that works is the
+ * opposite shape, and it is the common one, because an operator presses Retry
+ * expecting it to work. `useHeldFailure` clears, `failure && !all.length` stops
+ * matching, the pane unmounts, and the node the hook armed is detached — which
+ * `useRestoreFocusOnSettle` declines on, correctly, since focusing a detached
+ * node moves focus to the document rather than restoring it. Nothing else puts
+ * focus anywhere, so the operator who just fixed the outage is on <body>,
+ * paying the full Tab traverse of the app chrome to reach the findings they
+ * were waiting for.
+ *
+ * The landing is decided per rendered shape (D1, D2), and all three shapes a
+ * successful settle out of this pane can reach are driven below:
+ *
+ *   (a) `[]`                        → "Nothing to report"   → that pane itself
+ *   (b) findings all on done tickets → `nothingShown`        → "Needs attention"
+ *   (c) findings on a live ticket    → the full grouped list → "Needs attention"
+ *
+ * Shape (a) is unreachable on the live database (418 persisted findings, never
+ * zero), so this oracle is the only thing that covers it — which is exactly
+ * why the `[]` resolution is driven explicitly rather than left to the two
+ * shapes a real workspace produces.
+ *
+ * Oracles (b) and (c) find the scope button by **accessible name**, never by
+ * position: the implementation reaches it through `.wm-scope` plus
+ * `querySelector("button")`, which returns `Needs attention` only because it is
+ * first in that group, so anything inserted ahead of it must go red here rather
+ * than silently change where the operator lands.
+ */
+describe("the landing after a retry that succeeds", () => {
+  /**
+   * A keyboard operator on the cold failed pane, mid-retry.
+   *
+   * Enter on the focused control, then the blur a real browser performs when
+   * the native `disabled` attribute goes on — jsdom does neither, so
+   * `dropFocus()` stands in for the browser rather than inventing a case. The
+   * returned promise is the read the caller settles.
+   */
+  async function retryFromTheKeyboard() {
+    const retry = await coldFailedPane();
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+    await userEvent.keyboard("{Enter}");
+    expect(retry).toBeDisabled();
+    dropFocus();
+    expect(document.activeElement).toBe(document.body);
+    return retry;
+  }
+
+  it("lands on the “Nothing to report” pane when the retry succeeds with nothing to report", async () => {
+    // AC2 (a) / D2. No scope control and no findings list exist in this shape,
+    // so the pane itself is the target: `role="group"` plus an accessible name
+    // plus `tabIndex={-1}`, which is the pattern this same file already uses
+    // for the error reason. Focusing it reads the group's name and then
+    // "Nothing to report", which is the whole answer.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView();
+    const retry = await retryFromTheKeyboard();
+
+    await act(async () => {
+      second.resolve([]);
+    });
+
+    await screen.findByText("Nothing to report");
+    expect(retry.isConnected).toBe(false);
+    const pane = screen.getByRole("group", { name: "Monitor findings" });
+    expect(document.activeElement).toBe(pane);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("lands on the Needs attention scope button when every restored finding is on a finished ticket", async () => {
+    // AC2 (b) / D1 — `nothingShown`: the header and the scope control are
+    // present, every <Section> is absent. The scope button is still the first
+    // interactive element of the restored surface, and its name carries the
+    // recovery and the volume in one, so the landing does not move just
+    // because this shape renders no rows.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView();
+    await retryFromTheKeyboard();
+
+    await act(async () => {
+      second.resolve([finding({ ticket_state: "done" })]);
+    });
+
+    await screen.findByText("Nothing on live tickets");
+    const scope = screen.getByRole("button", { name: /^Needs attention/ });
+    expect(document.activeElement).toBe(scope);
+    expect(document.activeElement).not.toBe(document.body);
+    // The default scope is untouched by the landing: it is still "attention",
+    // which is why this shape rendered at all.
+    expect(scope).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("lands on the Needs attention scope button when the retry restores the findings list", async () => {
+    // AC2 (c) / D1 — the common recovery. On the live database the default
+    // scope renders 55 findings over 50 live tickets; one live ticket is the
+    // same shape, and the shape is what decides the landing.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView();
+    await retryFromTheKeyboard();
+
+    await act(async () => {
+      second.resolve([finding()]);
+    });
+
+    await screen.findByText("Fix the flaky review");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Needs attention/ }),
+    );
+  });
+
+  it("does not take focus the operator moved elsewhere while their retry was in flight", async () => {
+    // The <body> guard is unconditional and applies to the landing path too,
+    // which is lg-milestone-that-1464's rule intact: focus the operator moved
+    // themselves mid-flight is theirs, and a settle that yanked it onto the
+    // restored surface would be taking focus rather than restoring it. Note
+    // this is the *successful* settle — the pane the operator was on is gone,
+    // and that still does not make their own focus available.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView(null, <a href="#elsewhere">Elsewhere</a>);
+    const retry = await coldFailedPane();
+    await userEvent.click(retry);
+
+    const elsewhere = screen.getByRole("link", { name: "Elsewhere" });
+    elsewhere.focus();
+    expect(document.activeElement).toBe(elsewhere);
+
+    await act(async () => {
+      second.resolve([finding()]);
+    });
+
+    await screen.findByText("Fix the flaky review");
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("moves nothing when a background poll succeeds and clears the pane", async () => {
+    // AC3. The trigger is the operator's activation, not the settle: a poll
+    // the operator never asked for produces the identical "pane unmounts, armed
+    // node detaches" transition, and query-core gates the tick on
+    // `focusManager.isFocused()`, so it fires precisely when a stolen focus is
+    // felt. There is no click and no keypress anywhere in this test.
+    //
+    // This must hold because nothing was armed — `rememberRetry` is called only
+    // from the Retry `onClick`, so `activated.current` is null and the effect
+    // returns on the first of its three facts, before a landing can be
+    // consulted. An implementation that needs a *second* arming ref or a new
+    // guard to pass this has put the behaviour in the wrong place.
+    const poll = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(poll.promise);
+
+    const { startPoll } = renderView();
+    await coldFailedPane();
+    // Nobody has clicked, so <body> is active by default — which is exactly
+    // why the <body> guard cannot distinguish this case on its own.
+    expect(document.activeElement).toBe(document.body);
+
+    const { started } = await pollInFlight(startPoll, 2);
+
+    await act(async () => {
+      poll.resolve([finding()]);
+      await started;
+    });
+
+    await screen.findByText("Fix the flaky review");
+    expect(screen.getByRole("button", { name: /^Needs attention/ })).toBeInTheDocument();
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+/**
+ * UX2 and AC4 — the landing is only useful if the next action is forward of it.
+ *
+ * A target that needs Shift+Tab to reach the findings, or that sits after them,
+ * costs the traverse this ticket exists to remove. These two drive the tab
+ * order out of each decided landing rather than asserting an attribute and
+ * calling it reachable.
+ */
+describe("the restored surface, from the landing", () => {
+  it("reaches the findings by Tab alone from the scope button", async () => {
+    // UX2: "Needs attention" → "Everything" → Refresh → the first TicketLink.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView();
+    const retry = await coldFailedPane();
+    await userEvent.click(retry);
+    dropFocus();
+
+    await act(async () => {
+      second.resolve([finding()]);
+    });
+    await screen.findByText("Fix the flaky review");
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Needs attention/ }),
+    );
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Everything/ }),
+    );
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Refresh monitor findings" }),
+    );
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole("link"));
+  });
+
+  it("keeps the “Nothing to report” pane named, and out of the tab order", async () => {
+    // AC4, for the one shape where the landing is a container rather than a
+    // control. It must be focusable programmatically and skipped by Tab:
+    // `tabIndex={-1}`, so the operator's own traverse of the page does not
+    // acquire a stop that answers nothing. This shape renders no control at
+    // all, so "forward rather than back into the chrome" is discharged by the
+    // pane not holding focus against a Tab — the chrome link below sits
+    // *before* the view, and Tab out of the pane must not land on it.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView(null, <a href="#chrome">Chrome</a>);
+    const retry = await coldFailedPane();
+    await userEvent.click(retry);
+    dropFocus();
+
+    await act(async () => {
+      second.resolve([]);
+    });
+    await screen.findByText("Nothing to report");
+
+    const pane = screen.getByRole("group", { name: "Monitor findings" });
+    expect(document.activeElement).toBe(pane);
+    expect(pane).toHaveAttribute("tabindex", "-1");
+    // Tabbing out of it does not go back to the chrome that precedes the view.
+    await userEvent.tab();
+    expect(document.activeElement).not.toBe(
+      screen.getByRole("link", { name: "Chrome" }),
+    );
+    // And the operator's own forward traverse never stops on it.
+    screen.getByRole("link", { name: "Chrome" }).focus();
+    await userEvent.tab();
+    expect(document.activeElement).not.toBe(pane);
+  });
+});
+
+/**
+ * The same landing, adversarially — the orders a single happy-path settle does
+ * not reach.
+ *
+ * Each of these three is a state the operator produces by ordinary use (a retry
+ * that fails before it works, re-reading the reason while the retry runs, the
+ * 30s poll arriving after the recovery), and each goes green under a correct
+ * implementation while catching a different wrong one: a one-shot landing, a
+ * landing gated on a focus snapshot taken at activation, and a landing that
+ * re-fires on a settle nobody armed.
+ */
+describe("the landing, adversarially", () => {
+  it("arms again, so the landing fires on the retry that finally works", async () => {
+    // Order dependency: the first settle consumes the arming and restores
+    // focus to Retry (lg-milestone-that-1435), and the second must land. An
+    // implementation that latches "already landed", or arms once per mount
+    // rather than per press, is green on a single retry and dead on the
+    // second — which on a real outage is the common one.
+    const second = deferred<MonitorFinding[]>();
+    const third = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise)
+      .mockReturnValueOnce(third.promise);
+
+    renderView();
+    const first = await coldFailedPane();
+    await userEvent.click(first);
+    dropFocus();
+
+    await act(async () => {
+      second.reject(new Error("the gateway refused the connection"));
+    });
+    const again = await waitFor(() => {
+      const control = screen.getByRole("button", { name: "Retry" });
+      expect(control).toBeEnabled();
+      return control;
+    });
+    // The failed settle is lg-milestone-that-1464's, unchanged: the pane is
+    // still up and focus is back on the control the operator pressed.
+    expect(document.activeElement).toBe(again);
+
+    await userEvent.click(again);
+    expect(again).toBeDisabled();
+    dropFocus();
+
+    await act(async () => {
+      third.resolve([finding()]);
+    });
+
+    await screen.findByText("Fix the flaky review");
+    expect(again.isConnected).toBe(false);
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Needs attention/ }),
+    );
+  });
+
+  it("lands when the operator's own focus was inside the pane the retry replaced", async () => {
+    // The <body> guard is read at the settle, not snapshotted at activation.
+    // An operator who presses Retry and then Shift+Tabs back to re-read the
+    // reason has moved their focus — but into the pane that is about to be
+    // replaced, so the browser drops them on <body> when it unmounts and the
+    // landing is owed. An implementation that remembered "they moved focus"
+    // from activation time declines this settle and costs the traverse.
+    const second = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise);
+
+    renderView();
+    const retry = await coldFailedPane();
+    await userEvent.click(retry);
+
+    const reason = reasonElement() as HTMLElement;
+    reason.focus();
+    expect(document.activeElement).toBe(reason);
+
+    await act(async () => {
+      second.resolve([finding()]);
+    });
+
+    await screen.findByText("Fix the flaky review");
+    // The browser's own doing: the element holding focus left the tree.
+    expect(reason.isConnected).toBe(false);
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Needs attention/ }),
+    );
+  });
+
+  it("does not land a second time when a poll settles over the restored surface", async () => {
+    // Cadence, not rows: once the operator has recovered, `refetchInterval:
+    // 30_000` keeps settling behind them — 20 times across a ten-minute read.
+    // The operator has moved on to "Everything" by then, and a landing that is
+    // remembered rather than consumed drags them back to "Needs attention"
+    // every half minute. Nothing is armed here, so nothing may move.
+    const second = deferred<MonitorFinding[]>();
+    const poll = deferred<MonitorFinding[]>();
+    monitorFindings
+      .mockRejectedValueOnce(new Error("monitor endpoint is down"))
+      .mockReturnValueOnce(second.promise)
+      .mockReturnValueOnce(poll.promise);
+
+    const { startPoll } = renderView();
+    const retry = await coldFailedPane();
+    await userEvent.click(retry);
+    dropFocus();
+
+    await act(async () => {
+      second.resolve([finding()]);
+    });
+    await screen.findByText("Fix the flaky review");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Needs attention/ }),
+    );
+
+    const everything = screen.getByRole("button", { name: /^Everything/ });
+    await userEvent.click(everything);
+    expect(document.activeElement).toBe(everything);
+
+    const started = startPoll();
+    await act(async () => {
+      poll.resolve([finding()]);
+      await started;
+    });
+
+    expect(monitorFindings).toHaveBeenCalledTimes(3);
+    expect(document.activeElement).toBe(everything);
   });
 });

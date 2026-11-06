@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import type { MonitorFinding } from "../../api/types";
@@ -242,7 +242,23 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   // all three bindings below — `disabled`, the label, and this `pending` — so
   // the disabled window and the restore cannot drift apart.
   const retry = useOperatorRefetch(findings.refetch);
-  const rememberRetry = useRestoreFocusOnSettle(retry.pending);
+  // Where the operator lands when their retry *works*. The pane holding Retry
+  // is gone by then, so this is read at the settle rather than at the press,
+  // and it answers for whichever of the three shapes a successful read mounted:
+  // the scope control's first button where there is one (`Needs attention
+  // <n>`, already named and already first in the restored surface's tab
+  // order), and the "Nothing to report" pane itself where there is not.
+  //
+  // The ref is on the `.wm-scope` group, never inside a scope `<button>`:
+  // `ts_theme_check.cjs` spans the whole opening element, so a line touched
+  // anywhere in one makes the gate reject the raw element.
+  const scopeRef = useRef<HTMLDivElement | null>(null);
+  const emptyPaneRef = useRef<HTMLDivElement | null>(null);
+  const landing = useCallback(
+    () => emptyPaneRef.current ?? scopeRef.current?.querySelector("button") ?? null,
+    [],
+  );
+  const rememberRetry = useRestoreFocusOnSettle(retry.pending, landing);
 
   const all = useMemo(() => findings.data ?? [], [findings.data]);
   const live = useMemo(() => all.filter(isLiveFinding), [all]);
@@ -309,15 +325,26 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   }
 
   if (!all.length) {
+    // Inlined rather than a `Centred`, because this pane is the landing for a
+    // retry that succeeded with nothing to report: it has no scope control and
+    // no findings list, so the container itself is the target. Named, and
+    // `tabIndex={-1}` so it is focusable programmatically without acquiring a
+    // Tab stop that answers nothing — the pattern the error reason above uses.
     return (
-      <Centred>
+      <div
+        className="wm-centred"
+        ref={emptyPaneRef}
+        role="group"
+        aria-label="Monitor findings"
+        tabIndex={-1}
+      >
         <div className="wm-empty-title">Nothing to report</div>
         <div className="wm-muted wm-narrow">
           The workflow monitor runs on the reconcile timer and records what it notices — a stage attempted far more
           than its baseline, a run still going long past what that stage has ever taken, a ticket cursor pointing at
           a stage its workflow does not have. Findings appear here as they are written.
         </div>
-      </Centred>
+      </div>
     );
   }
 
@@ -327,7 +354,7 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   return (
     <div className="wm-root">
       <header className="wm-header">
-        <div className="wm-scope" role="group" aria-label="Which findings to show">
+        <div className="wm-scope" ref={scopeRef} role="group" aria-label="Which findings to show">
           <button
             type="button"
             className={`wm-scope-btn${scope === "attention" ? " active" : ""}`}
