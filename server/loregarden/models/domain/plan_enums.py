@@ -133,6 +133,23 @@ class AutopilotAction(StrEnum):
     RELEASED = "released"
     #: Unblocked a ticket whose block a re-run can still clear, and queued it.
     RETRIED = "retried"
+    #: Turned off by its timer or schedule: a stop condition was reached, or
+    #: the scheduled window it started in ended. Not a fault, unlike PAUSED.
+    STOPPED = "stopped"
+
+
+class AutopilotStopKind(StrEnum):
+    """What ends an autopilot run on its own (`AutopilotStop`).
+
+    Time-based today. Spend-based kinds (tokens spent since it was turned on,
+    usage change, usage-cap percent) join this list as new members with their
+    own model; the engine evaluates every kind the same way.
+    """
+
+    #: Stop at a fixed instant; dropped once it fires or is already past.
+    DEADLINE = "deadline"
+    #: Stop once it has been on this long, counted from each switch-on.
+    RUN_FOR = "run_for"
 
 
 class SuggestionKind(StrEnum):

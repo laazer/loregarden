@@ -70,7 +70,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.baxter_chat_run_service.engine",
     "loregarden.services.ticket_studio_run_service.engine",
     "loregarden.services.initiative_planner_service.engine",
-    "loregarden.services.initiative_autopilot.engine",
+    "loregarden.services.autopilot_schedule.engine",
     # Its loop ticks inside any TestClient that lives past the interval; unbound,
     # it reconciled whatever database the checkout defaults to.
     "loregarden.services.reconcile_timer.engine",

@@ -37,6 +37,7 @@ import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
 import { describeError, pushToast } from "../../state/toastStore";
 import { ImportTicketsModal } from "../ImportTicketsModal";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Textarea } from "../ui/Textarea";
 import { ReferenceRepoPicker, ReferenceReposSection } from "./ReferenceRepos";
@@ -45,12 +46,31 @@ import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
 import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { errorDetail } from "../../utils/errorDetail";
+import { MAX_ACCEPTANCE_CRITERIA } from "../../lib/criterionDrafts";
+
+/** The criteria this draft would actually save, counted the way the column holds them. */
+function draftCriteriaCount(item: TicketStudioDraftItem): number {
+  return (item.acceptance_criteria ?? []).filter((criterion) => criterion.trim().length > 0)
+    .length;
+}
+
+function draftIsOverCap(item: TicketStudioDraftItem): boolean {
+  return draftCriteriaCount(item) > MAX_ACCEPTANCE_CRITERIA;
+}
 
 function draftSummaryLine(item: TicketStudioDraftItem): string {
   const parts: string[] = [];
   if (item.parent_ref) parts.push(`parent: ${item.parent_ref}`);
-  if (item.acceptance_criteria.length > 0) {
-    parts.push(`${item.acceptance_criteria.length} AC`);
+  const criteriaCount = draftCriteriaCount(item);
+  if (criteriaCount > 0) {
+    // The mark goes beside the count that is already here: Studio commits the
+    // whole batch at once, so without it the server's refusal names a row the
+    // operator cannot see.
+    parts.push(
+      criteriaCount > MAX_ACCEPTANCE_CRITERIA
+        ? `${criteriaCount} AC — over the cap of ${MAX_ACCEPTANCE_CRITERIA}`
+        : `${criteriaCount} AC`,
+    );
   }
   if (item.priority !== 3) parts.push(`P${item.priority}`);
   return parts.join(" · ");
@@ -432,6 +452,15 @@ export function TicketStudioPanel({
 
   const isReadOnly = propsIsReadOnly || selectedSession?.status === "committed";
   const selectedCount = localDraft.filter((item) => item.selected).length;
+  // The commit is one batch, so one over-cap draft is refused server-side with
+  // nothing on screen saying which row. Named here instead, before the request.
+  const overCapDrafts = localDraft.filter(draftIsOverCap);
+  const overCapTitle =
+    overCapDrafts.length > 0
+      ? `${overCapDrafts
+          .map((item) => `"${item.title}"`)
+          .join(", ")} holds more than ${MAX_ACCEPTANCE_CRITERIA} acceptance criteria. Remove some, or split the extra onto a second ticket, before committing.`
+      : undefined;
   const runtime = selectedSession?.runtime ?? DEFAULT_RUNTIME;
   const modelLabel = runtimeSummaryLabel(runtime, runtimeOptions);
   const hasOpenQuestions = (selectedSession?.clarifying_questions.length ?? 0) > 0;
@@ -592,10 +621,14 @@ export function TicketStudioPanel({
         !commitSession.isPending &&
         !commitSession.isSuccess &&
         (localDraft.length > 0 || isPreview) && (
-          <button
-            type="button"
+          <Button
+            variant="plain"
             className="studio-library-cta ticket-studio-commit-btn btn-focus-ring"
-            disabled={draftDirty || (Boolean(selectedSession) && selectedCount === 0)}
+            disabled={
+              draftDirty ||
+              overCapDrafts.length > 0 ||
+              (Boolean(selectedSession) && selectedCount === 0)
+            }
             onClick={() => {
               if (isPreview && !previewConfirmed) {
                 setPreviewConfirmed(true);
@@ -603,7 +636,10 @@ export function TicketStudioPanel({
                 commitSession.mutate();
               }
             }}
-            title={draftDirty ? "Save draft edits before committing" : undefined}
+            title={
+              overCapTitle ??
+              (draftDirty ? "Save draft edits before committing" : undefined)
+            }
           >
             {isPreview && !previewConfirmed
               ? `Confirm to finalize`
@@ -611,7 +647,7 @@ export function TicketStudioPanel({
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
-          </button>
+          </Button>
         )}
       {(commitSession.isPending || commitSession.isSuccess || commitSession.isError) && (
         <FinalizationConfirmation
@@ -906,7 +942,9 @@ export function TicketStudioPanel({
           ) : null}
         </div>
 
-        {renderDraftPanel()}
+        {/* No column of "nothing yet" beside the new-scope form: the drafts
+            panel appears once there is a session or an import preview to show. */}
+        {selectedSession || isPreview || localDraft.length ? renderDraftPanel() : null}
       </div>
 
       <TicketStudioDraftModal

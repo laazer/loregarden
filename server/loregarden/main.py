@@ -52,6 +52,7 @@ from loregarden.api import (
     system,
     terminal,
     ticket_autopilot,
+    ticket_conversation,
     ticket_handoff,
     ticket_pull_request,
     ticket_studio,
@@ -70,6 +71,7 @@ from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.core.open_file_limit import raise_open_file_limit
 from loregarden.db.session import engine, init_db
+from loregarden.services.autopilot_schedule import start_autopilot_loop
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.btw_run_service import fail_interrupted_asides
@@ -80,7 +82,6 @@ from loregarden.services.ci_poll_scheduler import start_ci_poll_loop
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
-from loregarden.services.initiative_autopilot import start_autopilot_loop
 from loregarden.services.initiative_planner_service import fail_interrupted_planner_turns
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
@@ -305,6 +306,7 @@ async def validation_error_response(request: Request, exc: RequestValidationErro
 
 
 app.include_router(tickets.router, prefix="/api")
+app.include_router(ticket_conversation.router, prefix="/api")
 app.include_router(ticket_pull_request.router, prefix="/api")
 app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(ticket_handoff.router, prefix="/api")

@@ -43,6 +43,7 @@ from loregarden.services.hierarchy_service import child_count, validate_parent_a
 from loregarden.services.initiative_coverage import initiatives_tracking
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_growth_guard import guard_description_growth
 from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_lineage
 from loregarden.services.ticket_workspace_binding import validate_workspace_binding
@@ -259,6 +260,7 @@ class TicketService:
         if priority < 1 or priority > 3:
             raise ValueError("Priority must be between 1 and 3")
         guard_criteria_growth([], acceptance_criteria)
+        guard_description_growth(None, description)
 
         ws, workspace_id = self._resolve_create_workspace(
             workspace_slug=workspace_slug,

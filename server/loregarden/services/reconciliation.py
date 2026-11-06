@@ -77,6 +77,7 @@ from loregarden.services.invariant_registry import (
     RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
     TICKET_BRANCHES_HOLD_HISTORY,
+    TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
@@ -325,6 +326,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # rewrote the verdict and wiped its stderr (lg-run-durability-2093). The repair
     # writes the lost history back onto the row; the status is left as acted on.
     _invariant(RUNS_COMPLETE_ONCE),
+    # A ticket created over a write-time size cap: the write guards make that
+    # unreachable, so a violation dated after they landed is a writer that
+    # walked around one (lg-milestone-that-2250). Report-only — only a person
+    # decides what a too-large ticket splits into.
+    _invariant(TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS),
     # Last of the invariants: the only one that reaches the network, so a slow
     # or unreachable GitHub delays nothing else in the pass.
     SweepStep(

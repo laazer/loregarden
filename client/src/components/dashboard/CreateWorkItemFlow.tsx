@@ -91,8 +91,11 @@ export function CreateWorkItemFlow({
       isSaving={create.isPending}
       errorMessage={errorDetail(create.error)}
       onClose={onClose}
-      onCreate={async (draft) => {
-        await create.mutateAsync(draft);
+      onCreate={(draft) => {
+        // `mutate`, not `mutateAsync`: a refusal is already on screen through
+        // `create.error` -> errorMessage and toasted by the query client, and
+        // awaiting the rejection here only adds an uncaught pageerror.
+        create.mutate(draft);
       }}
     />
   );

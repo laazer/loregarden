@@ -15,6 +15,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import guard_criteria_growth, serialize_criteria
 from loregarden.services.hierarchy_service import validate_parent_assignment
 from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
+from loregarden.services.ticket_growth_guard import guard_description_growth
 from loregarden.services.ticket_ids import (
     assign_external_id,
     assign_initiative_external_id,
@@ -96,6 +97,7 @@ def _build_ticket(
     if not ext_id:
         raise ValueError("external_id is required")
     guard_criteria_growth([], item.acceptance_criteria)
+    guard_description_growth(None, item.description)
 
     is_initiative = item.work_item_type == WorkItemType.INITIATIVE
     workspace_id = None if is_initiative else ws.id

@@ -48,6 +48,7 @@ from loregarden.services.orphaned_worktree_rows import (
     rows_without_their_checkout,
     settle_rows_without_their_checkout,
 )
+from loregarden.services.oversized_ticket_census import tickets_over_a_write_cap
 from loregarden.services.parallel_queue import (
     last_lane_entry,
     record_ghost_reclaim,
@@ -1342,6 +1343,29 @@ FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
     ),
 )
 
+TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS = Invariant(
+    name="tickets_are_created_under_the_size_caps",
+    ticket="lg-milestone-that-2250",
+    statement="no ticket is created over a write-time size cap",
+    detect=tickets_over_a_write_cap,
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 5),
+    prevented_by=(
+        "server/tests/test_ticket_size_guard.py"
+        "::test_every_ticket_content_writer_is_a_guarded_seam_or_a_named_exception"
+    ),
+    unrepaired_action=(
+        "Split the ticket the finding names: file a sibling under the same parent with "
+        "loregarden_create_ticket and depends_on set to it, move the overflowing criteria or "
+        "description text onto the sibling, then shorten this one. Never truncated "
+        "automatically — only a person decides what a too-large ticket splits into, which is "
+        "why this invariant reports rather than repairs; lg-milestone-that-2251 carries the "
+        "existing population."
+    ),
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
@@ -1371,4 +1395,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     RUN_PARENTS_END_WITH_THEIR_RUN,
     LANDED_WORK_REACHES_THE_BASE,
     RUNS_COMPLETE_ONCE,
+    TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
 )

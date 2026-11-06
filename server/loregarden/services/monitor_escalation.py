@@ -18,6 +18,7 @@ currency filter would never see two at once.
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -31,11 +32,20 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.ticket_growth_guard import (
+    MAX_DESCRIPTION_CHARS,
+    DescriptionCapError,
+    guard_description_growth,
+)
 from loregarden.services.ticket_ids import resolve as resolve_ticket_id
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, col, select
 
+logger = logging.getLogger(__name__)
+
 ESCALATION_THRESHOLD = 2
+#: Characters held back from the cap for the "N more omitted" footer.
+_OMITTED_FOOTER_BUDGET = 400
 MILESTONE_LEGACY_ID = "monitor-escalations"
 _EXTERNAL_ID_EXISTS_PREFIX = "external_id already exists"
 _DEFAULT_TEMPLATE_SLUG = "loregarden-tdd"
@@ -338,6 +348,25 @@ def _create_bug(
 
 
 def _refresh_bug(session: Session, bug: Ticket, *, description: str) -> None:
+    """Rewrite the escalation bug's prose, or say why it was left alone.
+
+    `_build_description` already keeps its output under the cap, so this is the
+    backstop rather than the defence: if the guard ever refuses here, the sweep
+    must not die and must not swallow it either. `warning` because `debug` and
+    `info` are below the default handler level — a failure reported there is
+    reported nowhere. The existing description is left intact, which is the
+    honest outcome: a truncation decided here would throw away prose this
+    function has no rule for cutting.
+    """
+    try:
+        guard_description_growth(bug.description, description)
+    except DescriptionCapError as refused:
+        logger.warning(
+            "monitor escalation %s: description not refreshed, %s",
+            bug.external_id or bug.id,
+            refused,
+        )
+        return
     bug.description = description
     # Preserve report-only: never clear workflow_disabled on refresh.
     session.add(bug)
@@ -352,7 +381,29 @@ def _disable_workflow(session: Session, ticket: Ticket) -> Ticket:
     return ticket
 
 
+def _finding_lines(finding: _CurrentFinding) -> list[str]:
+    """One source ticket's block in the generated prose."""
+    ticket = finding.ticket
+    label = ticket.external_id or ticket.id
+    lines = [f"- {label} ({ticket.id}): {finding.summary or '(no summary)'}"]
+    if finding.evidence:
+        evidence_bits = ", ".join(f"{k}={v}" for k, v in sorted(finding.evidence.items()))
+        lines.append(f"  evidence: {evidence_bits}")
+    return lines
+
+
 def _build_description(*, title: str, findings: list[_CurrentFinding]) -> str:
+    """The escalation bug's prose, built to fit under the write-time cap.
+
+    The source-ticket list is truncated rather than allowed to run past
+    `MAX_DESCRIPTION_CHARS`, because this prose is machine-built from monitor
+    findings and rewritten every sweep — it is nobody's only copy, unlike an
+    agent's own description, so dropping the tail is honest here provided the
+    output says what it dropped. Measured read-only 2026-11-05: the largest
+    description in the whole database, 159,960 characters, was one of these,
+    ten times the cap. The full set stays in the monitor findings the bug is
+    built from.
+    """
     # Stable order for readable diffs between sweeps.
     by_ticket: dict[str, _CurrentFinding] = {}
     for finding in findings:
@@ -362,12 +413,21 @@ def _build_description(*, title: str, findings: list[_CurrentFinding]) -> str:
         "",
         "Source tickets:",
     ]
-    for ticket_id in sorted(by_ticket):
-        finding = by_ticket[ticket_id]
-        ticket = finding.ticket
-        label = ticket.external_id or ticket.id
-        lines.append(f"- {label} ({ticket.id}): {finding.summary or '(no summary)'}")
-        if finding.evidence:
-            evidence_bits = ", ".join(f"{k}={v}" for k, v in sorted(finding.evidence.items()))
-            lines.append(f"  evidence: {evidence_bits}")
+    # Room kept back for the footer, which has to fit whatever the list costs.
+    budget = MAX_DESCRIPTION_CHARS - _OMITTED_FOOTER_BUDGET
+    used = sum(len(line) + 1 for line in lines)
+    ordered = sorted(by_ticket)
+    for index, ticket_id in enumerate(ordered):
+        block = _finding_lines(by_ticket[ticket_id])
+        cost = sum(len(line) + 1 for line in block)
+        if used + cost > budget:
+            omitted = len(ordered) - index
+            lines.append("")
+            lines.append(
+                f"{omitted} more source tickets omitted to keep this description under the "
+                f"{MAX_DESCRIPTION_CHARS:,}-character cap; the full set is in monitor findings."
+            )
+            break
+        lines.extend(block)
+        used += cost
     return "\n".join(lines)

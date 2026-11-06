@@ -23,6 +23,14 @@ from loregarden.services.run_token_usage import (
     usage_by_model,
     usage_by_stage,
 )
+from loregarden.services.token_usage_trend import (
+    DEFAULT_WEEKS,
+    MAX_WEEKS,
+    TokenTrend,
+    TrendFilter,
+    TrendMetric,
+    token_trend,
+)
 from sqlmodel import Session, col, select
 
 _IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
@@ -139,6 +147,58 @@ def get_ticket_usage(
         "by_model": [_totals_payload(row) for row in usage_by_model(runs)],
         "unattributed_runs": unattributed_runs(runs),
     }
+
+
+def _trend_payload(trend: TokenTrend, trend_metric: TrendMetric) -> dict:
+    cmp = trend.comparison
+    return {
+        "weeks": [
+            {
+                "week_start": week.week_start.isoformat(),
+                "partial": week.partial,
+                "tickets": week.tickets,
+                "median_tokens_per_run": week.median_tokens_per_run,
+                **_totals_payload(week.totals),
+            }
+            for week in trend.weeks
+        ],
+        "comparison": {
+            "recent_start": cmp.recent_start.isoformat(),
+            "prior_start": cmp.prior_start.isoformat(),
+            "recent_measured_runs": cmp.recent_measured_runs,
+            "prior_measured_runs": cmp.prior_measured_runs,
+            "recent_median": cmp.recent_median,
+            "prior_median": cmp.prior_median,
+            "change_percent": cmp.change_percent,
+            "direction": cmp.direction.value,
+        },
+        "metric": trend_metric.value,
+        "models": trend.models,
+        "stages": trend.stages,
+    }
+
+
+@router.get("/usage/trend")
+def get_usage_trend(
+    weeks: int = Query(DEFAULT_WEEKS, ge=1, le=MAX_WEEKS),
+    metric: TrendMetric = Query(TrendMetric.TOTAL),
+    workspace_id: str | None = Query(None),
+    model: str | None = Query(None),
+    stage_key: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Weekly token usage across all runs, and whether tokens per run are falling.
+
+    Declared above ``/{run_id}`` for the same reason as ``/usage``.
+    """
+    flt = TrendFilter(
+        weeks=weeks,
+        metric=metric,
+        workspace_id=workspace_id,
+        model=model,
+        stage_key=stage_key,
+    )
+    return _trend_payload(token_trend(session, flt), metric)
 
 
 @router.get("/{run_id}/log")

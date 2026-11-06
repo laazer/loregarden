@@ -76,6 +76,7 @@ import type {
   StudioExitActionRequirementCatalog,
   StudioAgentPreview,
   StudioDefaults,
+  AgentRunRecord,
   AgentRunStats,
   WorkflowUsageStats,
   StudioGeneratedAgent,
@@ -112,6 +113,7 @@ import type {
   McpTelemetry,
   McpServerView,
 } from "./types";
+import type { TokenTrend, TokenTrendQuery } from "./usageTypes";
 
 
 function ticketQuery(params?: {
@@ -680,6 +682,8 @@ export const api = {
     }),
   studioAgents: () => request<StudioAgent[]>("/api/studio/agents"),
   studioAgentRunStats: () => request<AgentRunStats[]>("/api/studio/agent-run-stats"),
+  studioAgentRunRecord: (agentId: string) =>
+    request<AgentRunRecord>(`/api/studio/agent-runs/${encodeURIComponent(agentId)}`),
   studioWorkflowUsage: () => request<WorkflowUsageStats[]>("/api/studio/workflow-usage"),
   studioAgent: (slug: string) => request<StudioAgent>(`/api/studio/agents/${slug}`),
   createStudioAgent: (body: Partial<StudioAgent> & { slug: string; name: string }) =>
@@ -851,6 +855,12 @@ export const api = {
     }),
   usage: (refresh = false) =>
     request<UsageSnapshot>(`/api/usage${refresh ? "?refresh=true" : ""}`),
+  tokenTrend: (query: TokenTrendQuery) => {
+    const params = new URLSearchParams({ metric: query.metric });
+    if (query.model) params.set("model", query.model);
+    if (query.stage_key) params.set("stage_key", query.stage_key);
+    return request<TokenTrend>(`/api/runs/usage/trend?${params.toString()}`);
+  },
   memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
   setMemoryConfig: (body: MemoryConfigSettings) =>
     request<MemoryConfigResponse>("/api/memory/config", {

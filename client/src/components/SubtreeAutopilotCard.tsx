@@ -4,9 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import type { AutopilotTicketRef, SubtreeAutopilot, WorkItemType } from "../api/client";
+import type { AutopilotChange } from "../api/initiativeApi";
 import { AUTOPILOT_ACTION_LABEL, AUTOPILOT_PARALLEL_CHOICES, formatWhen } from "../lib/scheduleFormat";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { describeError } from "../state/toastStore";
+import { AutopilotTimingButton, AutopilotTimingSummary } from "./autopilot/AutopilotTiming";
 import { Button } from "./ui/Button";
 import { Select } from "./ui/Select";
 import "./SubtreeAutopilotCard.css";
@@ -101,7 +103,7 @@ export function SubtreeAutopilotCard({
 
   const change = useMutation({
     meta: { errorTitle: "Change the autopilot" },
-    mutationFn: (body: { enabled?: boolean; max_parallel?: number }) => api.setTicketAutopilot(ticketId, body),
+    mutationFn: (body: AutopilotChange) => api.setTicketAutopilot(ticketId, body),
     onSuccess: (next) => qc.setQueryData(subtreeAutopilotKey(ticketId), next),
   });
 
@@ -147,6 +149,7 @@ export function SubtreeAutopilotCard({
             Autopilot {autopilot.enabled ? "· on" : ""}
           </h3>
           <p className="subtree-autopilot-muted">{statusLine(view, kind)}</p>
+          <AutopilotTimingSummary view={autopilot} className="subtree-autopilot-muted" />
         </div>
         <div className="subtree-autopilot-controls">
           <Select
@@ -187,6 +190,7 @@ export function SubtreeAutopilotCard({
           >
             Turn off
           </Button>
+          <AutopilotTimingButton view={autopilot} busy={busy} onSave={(next) => change.mutateAsync(next)} />
         </div>
       </div>
 

@@ -11,6 +11,69 @@
   margin-bottom: 14px;
 }
 
+/* The rail is a column: the workspace picker stays put and the workflow list
+   under it scrolls, however many workspaces or workflows there are. */
+.gate-studio-rail {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.gate-rail-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.gate-rail-head .studio-library-section-label {
+  margin: 0;
+}
+
+.gate-workspace-picker,
+.gate-workflow-filter {
+  width: 100%;
+}
+
+.gate-workflow-filter {
+  margin-bottom: 8px;
+}
+
+.gate-rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+
+.gate-studio-shell .studio-editor {
+  min-height: 0;
+}
+
+/* A narrow pane has no room for a side rail: stack it above the editor and
+   let the whole panel scroll as one page. */
+@media (max-width: 860px) {
+  .gate-studio-shell {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .gate-studio-shell .gate-studio-rail {
+    width: auto;
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .gate-studio-shell .studio-editor {
+    flex: none;
+    overflow-y: visible;
+    padding: 18px 16px 48px;
+  }
+}
+
 /* In-content links: the breadcrumb, the control list, inline prose links. */
 .gate-studio-link {
   display: flex;

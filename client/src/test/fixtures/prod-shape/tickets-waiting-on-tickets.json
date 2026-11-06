@@ -53,11 +53,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-59",
-    "id": "88bc464a-abc6-5ad1-b54a-2b964b986fe9",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -69,11 +69,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-59",
-    "id": "88bc464a-abc6-5ad1-b54a-2b964b986fe9",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -100,11 +100,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-66",
-    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+    "external_id": "lg-m6-59",
+    "id": "88bc464a-abc6-5ad1-b54a-2b964b986fe9",
     "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Retry stage timeout budgets",
+    "state": "backlog",
+    "title": "Stop stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -116,11 +116,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-66",
-    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+    "external_id": "lg-m6-59",
+    "id": "88bc464a-abc6-5ad1-b54a-2b964b986fe9",
     "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Retry stage timeout budgets",
+    "state": "backlog",
+    "title": "Stop stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -147,11 +147,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -163,11 +163,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -183,7 +183,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m30-83",
   "id": "66cc36d5-9da8-50ec-8bfa-439b61cac757",
@@ -194,11 +194,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m23-76",
-    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "external_id": "lg-m25-78",
+    "id": "2d7f2b14-b93b-52bd-8ec3-aad8e4d5a518",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Route the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -210,11 +210,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m23-76",
-    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "external_id": "lg-m25-78",
+    "id": "2d7f2b14-b93b-52bd-8ec3-aad8e4d5a518",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Route the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -230,7 +230,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m33-86",
   "id": "8bf88d75-9ed6-52c1-974c-d6855cc85380",
@@ -241,11 +241,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -257,6 +257,53 @@
   "waiting_on": [
    {
     "blocked_on": null,
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Surface worktree isolation for chat turns",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 2,
+  "current_stage_agent": "",
+  "external_id": "lg-m36-89",
+  "id": "d906d518-ad44-504b-9586-03cf907c1e89",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "a81c26c5-000b-5b4a-b633-5326b88db529",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Surface the queue board's stalled lane",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Make the rework ledger's loop cap",
+  "waiting_on": [
+   {
+    "blocked_on": null,
     "external_id": "lg-m10-63",
     "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
@@ -279,53 +326,6 @@
   "branch": "",
   "child_count": 1,
   "current_stage_agent": "",
-  "external_id": "lg-m36-89",
-  "id": "d906d518-ad44-504b-9586-03cf907c1e89",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "a81c26c5-000b-5b4a-b633-5326b88db529",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Make the rework ledger's loop cap",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 3,
-  "current_stage_agent": "",
   "external_id": "lg-m41-94",
   "id": "f40196ce-93b1-52aa-90df-5ac6f1ebc24d",
   "legacy_external_id": "",
@@ -335,11 +335,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m40-93",
+    "id": "6d06eb9b-255c-5a70-8213-20456a7516d1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Fix the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -351,11 +351,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m40-93",
+    "id": "6d06eb9b-255c-5a70-8213-20456a7516d1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Fix the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -382,11 +382,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -398,11 +398,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "external_id": "lg-m17-70",
+    "id": "821b09db-9ae2-5c63-8c2f-6ca417a8bf6c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Fix GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -418,7 +418,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 2,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m46-99",
   "id": "d2eaf1b9-560a-574d-87ee-3cbe8e11f377",
@@ -429,11 +429,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -445,11 +445,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m29-82",
-    "id": "c96c3464-228a-5bfe-84b6-79bb0315bb16",
+    "external_id": "lg-m42-95",
+    "id": "da6f586a-470c-5ab7-9213-7d407ac949ef",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the approval inbox for parked stages",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -476,11 +476,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-68",
-    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry memory recall ranking",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -492,11 +492,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-68",
-    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry memory recall ranking",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -523,11 +523,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m34-87",
-    "id": "32aa772b-0bf6-591a-abf7-77352ed2132a",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry branch cleanup after a squash merge",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -539,58 +539,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m34-87",
-    "id": "32aa772b-0bf6-591a-abf7-77352ed2132a",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry branch cleanup after a squash merge",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 2,
-  "current_stage_agent": "",
-  "external_id": "lg-m6-113",
-  "id": "dfdc3898-e879-5b2e-aa0d-0e36f0f87163",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "171baf2b-05cf-57f2-8380-63ccf5fec6d2",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Stop the approval inbox for parked stages",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m42-95",
-    "id": "da6f586a-470c-5ab7-9213-7d407ac949ef",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -608,6 +561,53 @@
   "branch": "",
   "child_count": 0,
   "current_stage_agent": "",
+  "external_id": "lg-m6-113",
+  "id": "dfdc3898-e879-5b2e-aa0d-0e36f0f87163",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "171baf2b-05cf-57f2-8380-63ccf5fec6d2",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-76",
+    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Show memory recall ranking",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Stop the approval inbox for parked stages",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-76",
+    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Show memory recall ranking",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 1,
+  "current_stage_agent": "",
   "external_id": "lg-m7-114",
   "id": "59bd335b-3ab5-5ca1-a236-8af0a795fbff",
   "legacy_external_id": "",
@@ -617,11 +617,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-106",
-    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
+    "external_id": "lg-m51-104",
+    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the queue board's stalled lane",
+    "title": "Cache initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -633,11 +633,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-106",
-    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
+    "external_id": "lg-m51-104",
+    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the queue board's stalled lane",
+    "title": "Cache initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -664,11 +664,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
+    "external_id": "lg-m9-116",
+    "id": "3f8a56e7-7694-5249-a253-bedb20556fcc",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Route branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -680,58 +680,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
+    "external_id": "lg-m9-116",
+    "id": "3f8a56e7-7694-5249-a253-bedb20556fcc",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m25-132",
-  "id": "41d55739-f657-5e69-8af1-2ac871929f80",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "c3613fd7-8655-5b19-bf88-28ded6868d2a",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Add the queue board's stalled lane",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Route branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -758,11 +711,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-98",
-    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
+    "external_id": "lg-m53-106",
+    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Make the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -774,11 +727,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-98",
-    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
+    "external_id": "lg-m53-106",
+    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Make the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -805,11 +758,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-106",
-    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the queue board's stalled lane",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -821,11 +774,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-106",
-    "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
+    "external_id": "lg-m9-62",
+    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the queue board's stalled lane",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -852,11 +805,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
+    "external_id": "lg-m22-75",
+    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -868,11 +821,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-62",
-    "id": "f3153076-60f6-5957-99f2-4f90d580d629",
+    "external_id": "lg-m22-75",
+    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -899,53 +852,6 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Add the run log's live tail",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m40-147",
-  "id": "0dbd09c8-6390-5db2-8e35-5ff28a01a9ce",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "ed49589c-1d5d-5f22-b6a1-44c54fba0262",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
     "external_id": "lg-m14-67",
     "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
@@ -958,7 +864,7 @@
   "stages": [],
   "state": "backlog",
   "tags": [],
-  "title": "Make docker capacity leases",
+  "title": "Add the run log's live tail",
   "waiting_on": [
    {
     "blocked_on": null,
@@ -984,11 +890,11 @@
   "branch": "",
   "child_count": 1,
   "current_stage_agent": "",
-  "external_id": "lg-m52-159",
-  "id": "7233eb55-122e-56e6-9439-c3cd36eb6135",
+  "external_id": "lg-m40-147",
+  "id": "0dbd09c8-6390-5db2-8e35-5ff28a01a9ce",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "3c7a0631-745b-55b3-9761-6654bc332fed",
+  "parent_ticket_id": "ed49589c-1d5d-5f22-b6a1-44c54fba0262",
   "priority": 3,
   "root_blockers": [
    {
@@ -1005,7 +911,7 @@
   "stages": [],
   "state": "backlog",
   "tags": [],
-  "title": "Cache the rework ledger's loop cap",
+  "title": "Make docker capacity leases",
   "waiting_on": [
    {
     "blocked_on": null,
@@ -1014,6 +920,53 @@
     "reason": "prerequisite",
     "state": "backlog",
     "title": "Split memory recall ranking",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 2,
+  "current_stage_agent": "",
+  "external_id": "lg-m52-159",
+  "id": "7233eb55-122e-56e6-9439-c3cd36eb6135",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "3c7a0631-745b-55b3-9761-6654bc332fed",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-76",
+    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Show memory recall ranking",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Cache the rework ledger's loop cap",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-76",
+    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Show memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1040,11 +993,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m27-80",
-    "id": "82a91017-1238-5e30-8545-dd1142d33676",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split memory recall ranking",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1056,11 +1009,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-159",
-    "id": "7233eb55-122e-56e6-9439-c3cd36eb6135",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache the rework ledger's loop cap",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1087,11 +1040,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m23-76",
-    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "external_id": "lg-m44-97",
+    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Route stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1103,11 +1056,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m23-76",
-    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "external_id": "lg-m44-97",
+    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Route stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1123,7 +1076,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m8-169",
   "id": "a3e94bec-8d2c-5562-a69e-1f5a5b200428",
@@ -1134,11 +1087,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
+    "external_id": "lg-m2-163",
+    "id": "d6c681b1-9d5f-500b-9bfc-ab17ef29fccf",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Cache memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1150,11 +1103,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
+    "external_id": "lg-m2-163",
+    "id": "d6c681b1-9d5f-500b-9bfc-ab17ef29fccf",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Cache memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1228,11 +1181,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-163",
-    "id": "d6c681b1-9d5f-500b-9bfc-ab17ef29fccf",
+    "external_id": "lg-m16-69",
+    "id": "40f40e94-aa10-5c6e-ae49-0cd24ec88505",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache memory recall ranking",
+    "title": "Make docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1244,11 +1197,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-163",
-    "id": "d6c681b1-9d5f-500b-9bfc-ab17ef29fccf",
+    "external_id": "lg-m16-69",
+    "id": "40f40e94-aa10-5c6e-ae49-0cd24ec88505",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache memory recall ranking",
+    "title": "Make docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1275,11 +1228,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m44-97",
-    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
+    "external_id": "lg-m50-157",
+    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route stage timeout budgets",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1291,11 +1244,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m44-97",
-    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
+    "external_id": "lg-m50-157",
+    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route stage timeout budgets",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1322,11 +1275,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-69",
-    "id": "40f40e94-aa10-5c6e-ae49-0cd24ec88505",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make docker capacity leases",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1338,11 +1291,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-69",
-    "id": "40f40e94-aa10-5c6e-ae49-0cd24ec88505",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make docker capacity leases",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1369,11 +1322,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-157",
-    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
+    "external_id": "lg-m22-75",
+    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1385,11 +1338,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-157",
-    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
+    "external_id": "lg-m22-75",
+    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1416,11 +1369,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-91",
-    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add GitHub issue two-way sync",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1432,11 +1385,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-91",
-    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
+    "external_id": "lg-m36-89",
+    "id": "d906d518-ad44-504b-9586-03cf907c1e89",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add GitHub issue two-way sync",
+    "title": "Make the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1454,6 +1407,53 @@
   "branch": "",
   "child_count": 0,
   "current_stage_agent": "",
+  "external_id": "lg-m47-208",
+  "id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "6212bbf4-560f-508a-9a0f-83d09b32d55f",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-130",
+    "id": "45abb628-41a0-530e-9fe3-171476981612",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Stop gate outcomes on stage transitions",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Route GitHub issue two-way sync",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m23-130",
+    "id": "45abb628-41a0-530e-9fe3-171476981612",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Stop gate outcomes on stage transitions",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 1,
+  "current_stage_agent": "",
   "external_id": "lg-m3-218",
   "id": "8d5e8e75-984d-574e-95da-2da57a979d7d",
   "legacy_external_id": "",
@@ -1463,11 +1463,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m15-68",
+    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Retry memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1479,11 +1479,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m15-68",
+    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Retry memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1510,11 +1510,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-123",
-    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1526,11 +1526,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-123",
-    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1557,11 +1557,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m41-202",
-    "id": "df1a1a29-f339-51b1-9db3-840949e1d53f",
+    "external_id": "lg-m15-68",
+    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop memory recall ranking",
+    "title": "Retry memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1573,11 +1573,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m41-202",
-    "id": "df1a1a29-f339-51b1-9db3-840949e1d53f",
+    "external_id": "lg-m3-218",
+    "id": "8d5e8e75-984d-574e-95da-2da57a979d7d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop memory recall ranking",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1630,7 +1630,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m21-236",
   "id": "c2722b47-afbc-532b-8179-fdf56c217e73",
@@ -1641,11 +1641,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-68",
-    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
+    "external_id": "lg-m38-199",
+    "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry memory recall ranking",
+    "title": "Split GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1657,11 +1657,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-68",
-    "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
+    "external_id": "lg-m38-199",
+    "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry memory recall ranking",
+    "title": "Split GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1688,11 +1688,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m21-128",
+    "id": "8dccf859-e143-566e-b2df-d2ee69247521",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1704,11 +1704,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m21-128",
+    "id": "8dccf859-e143-566e-b2df-d2ee69247521",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1724,7 +1724,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m32-247",
   "id": "a0674e76-b880-5348-818b-6ca575e0649e",
@@ -1735,11 +1735,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1751,11 +1751,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m3-218",
-    "id": "8d5e8e75-984d-574e-95da-2da57a979d7d",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1771,7 +1771,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m34-249",
   "id": "f68e896c-85fa-57de-b2ac-646c51535859",
@@ -1782,11 +1782,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-199",
-    "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split GitHub issue two-way sync",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1798,11 +1798,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-199",
-    "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
+    "external_id": "lg-m54-161",
+    "id": "37fa3713-e894-55f0-ac7c-ee10cc5920f0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split GitHub issue two-way sync",
+    "title": "Retry the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1829,11 +1829,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m21-128",
-    "id": "8dccf859-e143-566e-b2df-d2ee69247521",
+    "external_id": "lg-m16-123",
+    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
+    "title": "Stop stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1845,11 +1845,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m21-128",
-    "id": "8dccf859-e143-566e-b2df-d2ee69247521",
+    "external_id": "lg-m16-123",
+    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
+    "title": "Stop stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1865,7 +1865,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m49-264",
   "id": "455898fb-ffdc-5062-bbb2-1cf633a0b028",
@@ -1876,11 +1876,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-253",
-    "id": "3f59f2f9-4eb8-51f6-a573-b014ccb469a2",
+    "external_id": "lg-m20-235",
+    "id": "9d81906f-90c7-58cb-a9fd-a0e2a4dae870",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache memory recall ranking",
+    "title": "Surface initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1892,11 +1892,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-253",
-    "id": "3f59f2f9-4eb8-51f6-a573-b014ccb469a2",
+    "external_id": "lg-m20-235",
+    "id": "9d81906f-90c7-58cb-a9fd-a0e2a4dae870",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache memory recall ranking",
+    "title": "Surface initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1923,11 +1923,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-91",
-    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
+    "external_id": "lg-m6-167",
+    "id": "393a73e4-dc5d-5671-92d3-7bcf419065e6",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add GitHub issue two-way sync",
+    "title": "Fix memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1939,11 +1939,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-91",
-    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
+    "external_id": "lg-m6-167",
+    "id": "393a73e4-dc5d-5671-92d3-7bcf419065e6",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add GitHub issue two-way sync",
+    "title": "Fix memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1959,7 +1959,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m1-270",
   "id": "ba36f476-1d42-57b6-91c2-eadc02b6471d",
@@ -1970,11 +1970,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m35-250",
-    "id": "cb0808c5-1321-514c-a807-1ac205da9c04",
+    "external_id": "lg-m31-84",
+    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix the queue board's stalled lane",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -1986,11 +1986,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m35-250",
-    "id": "cb0808c5-1321-514c-a807-1ac205da9c04",
+    "external_id": "lg-m31-84",
+    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix the queue board's stalled lane",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2017,11 +2017,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-258",
-    "id": "f434ed8d-aedf-5c10-b37c-636bf3c73f95",
+    "external_id": "lg-m23-130",
+    "id": "45abb628-41a0-530e-9fe3-171476981612",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make memory recall ranking",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2033,11 +2033,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-258",
-    "id": "f434ed8d-aedf-5c10-b37c-636bf3c73f95",
+    "external_id": "lg-m47-208",
+    "id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make memory recall ranking",
+    "title": "Route GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2064,11 +2064,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m27-80",
-    "id": "82a91017-1238-5e30-8545-dd1142d33676",
+    "external_id": "lg-m50-157",
+    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split memory recall ranking",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2080,11 +2080,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m54-161",
-    "id": "37fa3713-e894-55f0-ac7c-ee10cc5920f0",
+    "external_id": "lg-m25-186",
+    "id": "61adeff2-32a9-5c9e-bc56-22e02e9df4b0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry the run log's live tail",
+    "title": "Show memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2100,7 +2100,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m8-277",
   "id": "584e1758-0a28-5038-824a-48aed7999cf0",
@@ -2111,11 +2111,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-123",
-    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
+    "external_id": "lg-m23-76",
+    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Show memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2127,11 +2127,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m16-123",
-    "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
+    "external_id": "lg-m6-113",
+    "id": "dfdc3898-e879-5b2e-aa0d-0e36f0f87163",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop stage timeout budgets",
+    "title": "Stop the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2158,11 +2158,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m20-235",
-    "id": "9d81906f-90c7-58cb-a9fd-a0e2a4dae870",
+    "external_id": "lg-m39-254",
+    "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface initiative progress rollup",
+    "title": "Cache branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2174,11 +2174,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m20-235",
-    "id": "9d81906f-90c7-58cb-a9fd-a0e2a4dae870",
+    "external_id": "lg-m39-254",
+    "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface initiative progress rollup",
+    "title": "Cache branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2205,11 +2205,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-167",
-    "id": "393a73e4-dc5d-5671-92d3-7bcf419065e6",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix memory recall ranking",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2221,11 +2221,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-167",
-    "id": "393a73e4-dc5d-5671-92d3-7bcf419065e6",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix memory recall ranking",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2241,7 +2241,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m17-286",
   "id": "bd4aa3ed-4e05-55f2-9230-89295751e403",
@@ -2252,11 +2252,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m31-84",
-    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
+    "external_id": "lg-m4-219",
+    "id": "7cb17322-4118-5810-aece-7778b080ae17",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2268,11 +2268,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m31-84",
-    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
+    "external_id": "lg-m4-219",
+    "id": "7cb17322-4118-5810-aece-7778b080ae17",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2299,11 +2299,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m47-208",
-    "id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
+    "external_id": "lg-m54-215",
+    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route GitHub issue two-way sync",
+    "title": "Show GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2315,11 +2315,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m47-208",
-    "id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
+    "external_id": "lg-m54-215",
+    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route GitHub issue two-way sync",
+    "title": "Show GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2346,11 +2346,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m44-97",
-    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
+    "external_id": "lg-m40-93",
+    "id": "6d06eb9b-255c-5a70-8213-20456a7516d1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route stage timeout budgets",
+    "title": "Fix the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2362,11 +2362,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m25-186",
-    "id": "61adeff2-32a9-5c9e-bc56-22e02e9df4b0",
+    "external_id": "lg-m41-94",
+    "id": "f40196ce-93b1-52aa-90df-5ac6f1ebc24d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Split the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2393,11 +2393,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2409,11 +2409,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-113",
-    "id": "dfdc3898-e879-5b2e-aa0d-0e36f0f87163",
+    "external_id": "lg-m12-65",
+    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop the approval inbox for parked stages",
+    "title": "Stop worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2429,7 +2429,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 3,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m39-308",
   "id": "c00ff4b7-e4ea-55ce-9d7c-480c2261c885",
@@ -2440,11 +2440,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m39-254",
-    "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
+    "external_id": "lg-m52-213",
+    "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache branch cleanup after a squash merge",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2456,11 +2456,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m39-254",
-    "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
+    "external_id": "lg-m52-213",
+    "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache branch cleanup after a squash merge",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2487,11 +2487,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m10-117",
+    "id": "f2052494-e0df-59cd-9154-2bcdc3123938",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Route the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2503,11 +2503,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m10-117",
+    "id": "f2052494-e0df-59cd-9154-2bcdc3123938",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Route the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2523,7 +2523,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m53-322",
   "id": "68a2bc3b-0196-5ec8-b919-b5c5f0b84a27",
@@ -2534,11 +2534,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m4-219",
-    "id": "7cb17322-4118-5810-aece-7778b080ae17",
+    "external_id": "lg-m19-72",
+    "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Fix worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2550,11 +2550,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m4-219",
-    "id": "7cb17322-4118-5810-aece-7778b080ae17",
+    "external_id": "lg-m19-72",
+    "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Fix worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2581,11 +2581,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m39-254",
-    "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
+    "external_id": "lg-m14-283",
+    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache branch cleanup after a squash merge",
+    "title": "Add the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2597,11 +2597,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m39-308",
-    "id": "c00ff4b7-e4ea-55ce-9d7c-480c2261c885",
+    "external_id": "lg-m14-283",
+    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make gate outcomes on stage transitions",
+    "title": "Add the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2628,11 +2628,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m54-215",
-    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show GitHub issue two-way sync",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2644,11 +2644,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m54-215",
-    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show GitHub issue two-way sync",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2664,7 +2664,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m8-331",
   "id": "a7922329-e4d8-5442-8488-1b4d3967f21f",
@@ -2675,11 +2675,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m44-97",
+    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Route stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2691,11 +2691,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m41-94",
-    "id": "f40196ce-93b1-52aa-90df-5ac6f1ebc24d",
+    "external_id": "lg-m5-166",
+    "id": "ec8ab6cf-600b-5829-b16f-990557b3b7f2",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split the rework ledger's loop cap",
+    "title": "Show the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2722,11 +2722,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m12-65",
-    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
+    "external_id": "lg-m16-285",
+    "id": "e79e4129-cb3c-566e-9b7a-dab8b89a8158",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Stop the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2738,11 +2738,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m12-65",
-    "id": "262e3a0a-b675-52d9-895b-53f506a39750",
+    "external_id": "lg-m16-285",
+    "id": "e79e4129-cb3c-566e-9b7a-dab8b89a8158",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop worktree isolation for chat turns",
+    "title": "Stop the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2769,11 +2769,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-213",
-    "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2785,11 +2785,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-213",
-    "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
+    "external_id": "lg-m32-247",
+    "id": "a0674e76-b880-5348-818b-6ca575e0649e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
+    "title": "Cache GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2816,11 +2816,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-117",
-    "id": "f2052494-e0df-59cd-9154-2bcdc3123938",
+    "external_id": "lg-m1-324",
+    "id": "245aab90-7354-517f-9a14-bc2691ae8a0b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route the run log's live tail",
+    "title": "Show the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2832,11 +2832,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-117",
-    "id": "f2052494-e0df-59cd-9154-2bcdc3123938",
+    "external_id": "lg-m1-324",
+    "id": "245aab90-7354-517f-9a14-bc2691ae8a0b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route the run log's live tail",
+    "title": "Show the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2863,11 +2863,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m19-72",
-    "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
+    "external_id": "lg-m31-300",
+    "id": "e7412179-0701-5733-9a10-93f028f40210",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Fix worktree isolation for chat turns",
+    "state": "in_progress",
+    "title": "Route memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2879,11 +2879,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m19-72",
-    "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
+    "external_id": "lg-m31-300",
+    "id": "e7412179-0701-5733-9a10-93f028f40210",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Fix worktree isolation for chat turns",
+    "state": "in_progress",
+    "title": "Route memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2910,11 +2910,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-283",
-    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
+    "external_id": "lg-m54-215",
+    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the rework ledger's loop cap",
+    "title": "Show GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2926,11 +2926,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-283",
-    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
+    "external_id": "lg-m54-215",
+    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the rework ledger's loop cap",
+    "title": "Show GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2957,11 +2957,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m45-260",
+    "id": "cac96818-1638-5c2e-b42c-70be2db0b3b5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Retry the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -2973,11 +2973,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m45-260",
+    "id": "cac96818-1638-5c2e-b42c-70be2db0b3b5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Retry the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3004,11 +3004,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m23-76",
-    "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
+    "external_id": "lg-m35-142",
+    "id": "f3c526a3-b984-56bf-a2e0-7762fd4c3a0a",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show memory recall ranking",
+    "title": "Retry worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3020,11 +3020,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m5-166",
-    "id": "ec8ab6cf-600b-5829-b16f-990557b3b7f2",
+    "external_id": "lg-m35-142",
+    "id": "f3c526a3-b984-56bf-a2e0-7762fd4c3a0a",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show the run log's live tail",
+    "title": "Retry worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3051,11 +3051,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m41-202",
-    "id": "df1a1a29-f339-51b1-9db3-840949e1d53f",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop memory recall ranking",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3067,11 +3067,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-230",
-    "id": "2ba9146f-33ce-5075-b470-a4f4b8904930",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route the approval inbox for parked stages",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3098,11 +3098,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
+    "external_id": "lg-m9-224",
+    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Stop GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3114,11 +3114,58 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
+    "external_id": "lg-m9-224",
+    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Stop GitHub issue two-way sync",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 1,
+  "current_stage_agent": "",
+  "external_id": "lg-m9-386",
+  "id": "2714f764-9d10-5cee-8939-ad1d99b22afa",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "628f03db-3d44-534b-9fd7-dfc8a8641a38",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Surface the queue board's stalled lane",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Split worktree isolation for chat turns",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m6-329",
+    "id": "c243c97d-c591-5c31-a7e8-1259ed90ad79",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Surface branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3145,11 +3192,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-224",
-    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
+    "external_id": "lg-m38-361",
+    "id": "fbddc78b-e02b-5060-bc9d-9b58eb3be91b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop GitHub issue two-way sync",
+    "title": "Make branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3161,11 +3208,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m9-224",
-    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
+    "external_id": "lg-m38-361",
+    "id": "fbddc78b-e02b-5060-bc9d-9b58eb3be91b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop GitHub issue two-way sync",
+    "title": "Make branch cleanup after a squash merge",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3181,7 +3228,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m13-390",
   "id": "2e2d9a8b-a24d-5b98-a0d1-77766de9339d",
@@ -3192,11 +3239,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m54-215",
-    "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
+    "external_id": "lg-m3-326",
+    "id": "7faedc07-0469-547b-80aa-fb11e254b158",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show GitHub issue two-way sync",
+    "title": "Fix stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3208,11 +3255,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m6-329",
-    "id": "c243c97d-c591-5c31-a7e8-1259ed90ad79",
+    "external_id": "lg-m3-326",
+    "id": "7faedc07-0469-547b-80aa-fb11e254b158",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface branch cleanup after a squash merge",
+    "title": "Fix stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3228,7 +3275,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m14-391",
   "id": "d8ef6034-0a0f-5ad7-9246-5cdc5a8fd07a",
@@ -3239,11 +3286,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-361",
-    "id": "fbddc78b-e02b-5060-bc9d-9b58eb3be91b",
+    "external_id": "lg-m9-224",
+    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make branch cleanup after a squash merge",
+    "title": "Stop GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3255,11 +3302,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m38-361",
-    "id": "fbddc78b-e02b-5060-bc9d-9b58eb3be91b",
+    "external_id": "lg-m54-377",
+    "id": "4710484d-330c-5224-a7ae-0d3cf0465c36",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make branch cleanup after a squash merge",
+    "title": "Add the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3286,11 +3333,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m3-326",
-    "id": "7faedc07-0469-547b-80aa-fb11e254b158",
+    "external_id": "lg-m13-174",
+    "id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix stage timeout budgets",
+    "title": "Show stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3302,11 +3349,58 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m3-326",
-    "id": "7faedc07-0469-547b-80aa-fb11e254b158",
+    "external_id": "lg-m13-174",
+    "id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix stage timeout budgets",
+    "title": "Show stage timeout budgets",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "feature",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 1,
+  "current_stage_agent": "",
+  "external_id": "lg-m16-393",
+  "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "e9a3ee2c-f9d8-52b3-a282-75b1a85ab3ea",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m31-84",
+    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Make GitHub issue two-way sync",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Show stage timeout budgets",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m1-270",
+    "id": "ba36f476-1d42-57b6-91c2-eadc02b6471d",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Show stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3324,20 +3418,20 @@
   "branch": "",
   "child_count": 2,
   "current_stage_agent": "",
-  "external_id": "lg-m16-393",
-  "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
+  "external_id": "lg-m17-394",
+  "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "e9a3ee2c-f9d8-52b3-a282-75b1a85ab3ea",
+  "parent_ticket_id": "f875a16b-d92a-537e-b619-48b5febc8348",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
+    "external_id": "lg-m24-131",
+    "id": "d6fe1dd7-b307-5b2b-9976-90c8711a7c5d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Retry the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3345,15 +3439,15 @@
   "stages": [],
   "state": "backlog",
   "tags": [],
-  "title": "Show stage timeout budgets",
+  "title": "Make initiative progress rollup",
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m54-377",
-    "id": "4710484d-330c-5224-a7ae-0d3cf0465c36",
+    "external_id": "lg-m24-131",
+    "id": "d6fe1dd7-b307-5b2b-9976-90c8711a7c5d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the rework ledger's loop cap",
+    "title": "Retry the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3369,7 +3463,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 1,
   "current_stage_agent": "",
   "external_id": "lg-m19-396",
   "id": "daf5c4fd-7d77-52f0-99ae-3516b7930ed4",
@@ -3380,11 +3474,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-174",
-    "id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
+    "external_id": "lg-m49-318",
+    "id": "d1e3d81b-c57c-56e7-a4c6-aa8dad475c6e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show stage timeout budgets",
+    "title": "Retry docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3396,11 +3490,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-174",
-    "id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
+    "external_id": "lg-m49-318",
+    "id": "d1e3d81b-c57c-56e7-a4c6-aa8dad475c6e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show stage timeout budgets",
+    "title": "Retry docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3427,11 +3521,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m35-250",
-    "id": "cb0808c5-1321-514c-a807-1ac205da9c04",
+    "external_id": "lg-m21-128",
+    "id": "8dccf859-e143-566e-b2df-d2ee69247521",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix the queue board's stalled lane",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3443,11 +3537,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m1-270",
-    "id": "ba36f476-1d42-57b6-91c2-eadc02b6471d",
+    "external_id": "lg-m24-239",
+    "id": "40e8f82b-9d8c-531c-8e2f-cc1a69aeebc7",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show stage timeout budgets",
+    "title": "Make the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3474,11 +3568,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m24-131",
-    "id": "d6fe1dd7-b307-5b2b-9976-90c8711a7c5d",
+    "external_id": "lg-m51-158",
+    "id": "adc3a787-7fa9-5f40-92c7-edefb3eedfed",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry the rework ledger's loop cap",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3490,11 +3584,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m24-131",
-    "id": "d6fe1dd7-b307-5b2b-9976-90c8711a7c5d",
+    "external_id": "lg-m51-158",
+    "id": "adc3a787-7fa9-5f40-92c7-edefb3eedfed",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry the rework ledger's loop cap",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3510,7 +3604,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m32-409",
   "id": "ce509ca2-d091-54d4-bb83-8f68d2e130e9",
@@ -3521,11 +3615,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m49-318",
-    "id": "d1e3d81b-c57c-56e7-a4c6-aa8dad475c6e",
+    "external_id": "lg-m50-319",
+    "id": "e1f08b66-6d8e-5d96-9712-9dcc8829c0df",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry docker capacity leases",
+    "title": "Split stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3537,11 +3631,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m49-318",
-    "id": "d1e3d81b-c57c-56e7-a4c6-aa8dad475c6e",
+    "external_id": "lg-m50-319",
+    "id": "e1f08b66-6d8e-5d96-9712-9dcc8829c0df",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry docker capacity leases",
+    "title": "Split stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3568,11 +3662,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m43-150",
+    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Add worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3584,11 +3678,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m24-239",
-    "id": "40e8f82b-9d8c-531c-8e2f-cc1a69aeebc7",
+    "external_id": "lg-m48-371",
+    "id": "51706a49-855e-58d5-be6b-19a16ce419f9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the queue board's stalled lane",
+    "title": "Cache memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3604,7 +3698,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
+  "child_count": 2,
   "current_stage_agent": "",
   "external_id": "lg-m41-418",
   "id": "cc0947bc-0de9-5c0a-a786-1f8fe3633aa3",
@@ -3615,11 +3709,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-158",
-    "id": "adc3a787-7fa9-5f40-92c7-edefb3eedfed",
+    "external_id": "lg-m2-271",
+    "id": "cae4fdbe-6579-51d5-9f6b-b079aacc4f99",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Split GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3631,11 +3725,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-158",
-    "id": "adc3a787-7fa9-5f40-92c7-edefb3eedfed",
+    "external_id": "lg-m2-271",
+    "id": "cae4fdbe-6579-51d5-9f6b-b079aacc4f99",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Split GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3662,11 +3756,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-319",
-    "id": "e1f08b66-6d8e-5d96-9712-9dcc8829c0df",
+    "external_id": "lg-m31-84",
+    "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split stage timeout budgets",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3678,11 +3772,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-319",
-    "id": "e1f08b66-6d8e-5d96-9712-9dcc8829c0df",
+    "external_id": "lg-m16-393",
+    "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split stage timeout budgets",
+    "title": "Show stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3709,11 +3803,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m41-202",
-    "id": "df1a1a29-f339-51b1-9db3-840949e1d53f",
+    "external_id": "lg-m1-216",
+    "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop memory recall ranking",
+    "title": "Split worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3725,11 +3819,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m48-371",
-    "id": "51706a49-855e-58d5-be6b-19a16ce419f9",
+    "external_id": "lg-m1-216",
+    "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache memory recall ranking",
+    "title": "Split worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3756,11 +3850,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-271",
-    "id": "cae4fdbe-6579-51d5-9f6b-b079aacc4f99",
+    "external_id": "lg-m41-364",
+    "id": "e7deb468-a03b-5410-bb54-9b10468d3b94",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Split GitHub issue two-way sync",
+    "state": "in_progress",
+    "title": "Cache the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3772,58 +3866,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-271",
-    "id": "cae4fdbe-6579-51d5-9f6b-b079aacc4f99",
+    "external_id": "lg-m41-364",
+    "id": "e7deb468-a03b-5410-bb54-9b10468d3b94",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Split GitHub issue two-way sync",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m11-442",
-  "id": "5cafda79-a6bd-5895-a11f-bd1ea3ff7edf",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "581bf2d7-06fd-53c7-af9a-cc9ee5b24d5e",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m43-150",
-    "id": "3c1700de-da14-5082-b9df-a015d73d764e",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Route the run log's live tail",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m16-393",
-    "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Show stage timeout budgets",
+    "state": "in_progress",
+    "title": "Cache the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3850,11 +3897,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m1-216",
-    "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
+    "external_id": "lg-m43-96",
+    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split worktree isolation for chat turns",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3866,11 +3913,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m1-216",
-    "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
+    "external_id": "lg-m43-96",
+    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split worktree isolation for chat turns",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3886,54 +3933,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m24-455",
-  "id": "d6bb715e-6d85-5e2a-9fa5-865ea7dd0b93",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "84ec349e-dd65-5a9e-b23f-9217eb894cab",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m41-364",
-    "id": "e7deb468-a03b-5410-bb54-9b10468d3b94",
-    "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Cache the queue board's stalled lane",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Add the run log's live tail",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m41-364",
-    "id": "e7deb468-a03b-5410-bb54-9b10468d3b94",
-    "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Cache the queue board's stalled lane",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "feature",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 2,
+  "child_count": 3,
   "current_stage_agent": "",
   "external_id": "lg-m31-462",
   "id": "5c73ee92-d1de-5ca6-bddc-e6e683f5c5b0",
@@ -3944,11 +3944,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m12-335",
+    "id": "f0868f78-c822-5837-ad72-c3e924c4943a",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Split gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3960,11 +3960,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m12-335",
+    "id": "f0868f78-c822-5837-ad72-c3e924c4943a",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Split gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -3991,11 +3991,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m12-335",
-    "id": "f0868f78-c822-5837-ad72-c3e924c4943a",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split gate outcomes on stage transitions",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4007,11 +4007,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m12-335",
-    "id": "f0868f78-c822-5837-ad72-c3e924c4943a",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split gate outcomes on stage transitions",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4033,16 +4033,16 @@
   "id": "5ea69931-00bf-5655-a7e3-79c29eb332fb",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "d6c681b1-9d5f-500b-9bfc-ab17ef29fccf",
+  "parent_ticket_id": "2c92531a-394a-58c7-89a3-76425dc55f73",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-482",
-    "id": "07c80f91-1af8-5cfa-8ce6-e81ecbf899ae",
+    "external_id": "lg-m30-461",
+    "id": "9358c4de-7494-5ee4-987e-e3075919f57d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix docker capacity leases",
+    "title": "Retry memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4054,11 +4054,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-482",
-    "id": "07c80f91-1af8-5cfa-8ce6-e81ecbf899ae",
+    "external_id": "lg-m30-461",
+    "id": "9358c4de-7494-5ee4-987e-e3075919f57d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix docker capacity leases",
+    "title": "Retry memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4080,16 +4080,16 @@
   "id": "10dc35f9-71c0-57cd-afe4-3f668197fc50",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "a7922329-e4d8-5442-8488-1b4d3967f21f",
+  "parent_ticket_id": "d66e5ea1-a917-5cb7-bd0c-afe12e9cd110",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "external_id": "lg-m20-397",
+    "id": "0e9ea748-88c6-5106-9aec-edc0ac398bc4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Route GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4101,11 +4101,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-67",
-    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
+    "external_id": "lg-m20-397",
+    "id": "0e9ea748-88c6-5106-9aec-edc0ac398bc4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface worktree isolation for chat turns",
+    "title": "Route GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4127,16 +4127,16 @@
   "id": "f7d8a11c-2d51-553f-9699-cbfb188fc663",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "c2722b47-afbc-532b-8179-fdf56c217e73",
+  "parent_ticket_id": "24aa5af3-725b-59a6-b4cc-10c5a186f634",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m50-265",
+    "id": "b4fb3dc4-bd4e-54ff-8dd8-d9fb88ad33cd",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Stop the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4148,11 +4148,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m31-462",
-    "id": "5c73ee92-d1de-5ca6-bddc-e6e683f5c5b0",
+    "external_id": "lg-m50-265",
+    "id": "b4fb3dc4-bd4e-54ff-8dd8-d9fb88ad33cd",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show gate outcomes on stage transitions",
+    "title": "Stop the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4179,11 +4179,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m20-397",
-    "id": "0e9ea748-88c6-5106-9aec-edc0ac398bc4",
+    "external_id": "lg-m28-243",
+    "id": "77a61691-950a-5df9-9562-adf97ad8aafc",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route GitHub issue two-way sync",
+    "title": "Make docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4195,11 +4195,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m20-397",
-    "id": "0e9ea748-88c6-5106-9aec-edc0ac398bc4",
+    "external_id": "lg-m28-243",
+    "id": "77a61691-950a-5df9-9562-adf97ad8aafc",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Route GitHub issue two-way sync",
+    "title": "Make docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4221,16 +4221,16 @@
   "id": "61b38b8e-508b-58f0-82a6-c473b8023c13",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "39102f82-68e3-5511-b13b-cef9d34d46b7",
+  "parent_ticket_id": "91a96c54-def3-56cb-be42-e0f230fee383",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-265",
-    "id": "b4fb3dc4-bd4e-54ff-8dd8-d9fb88ad33cd",
+    "external_id": "lg-m45-368",
+    "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop the queue board's stalled lane",
+    "title": "Make memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4242,11 +4242,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-265",
-    "id": "b4fb3dc4-bd4e-54ff-8dd8-d9fb88ad33cd",
+    "external_id": "lg-m45-368",
+    "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop the queue board's stalled lane",
+    "title": "Make memory recall ranking",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4268,16 +4268,16 @@
   "id": "338b117d-ff85-51f6-88ac-77a989abe204",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "ce509ca2-d091-54d4-bb83-8f68d2e130e9",
+  "parent_ticket_id": "a0674e76-b880-5348-818b-6ca575e0649e",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m28-243",
-    "id": "77a61691-950a-5df9-9562-adf97ad8aafc",
+    "external_id": "lg-m9-224",
+    "id": "f7ce1c55-c0f9-5029-add5-107a3b1ce0b0",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make docker capacity leases",
+    "title": "Stop GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4289,11 +4289,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m28-243",
-    "id": "77a61691-950a-5df9-9562-adf97ad8aafc",
+    "external_id": "lg-m54-377",
+    "id": "4710484d-330c-5224-a7ae-0d3cf0465c36",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make docker capacity leases",
+    "title": "Add the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4315,16 +4315,16 @@
   "id": "2d7ff6be-bdb8-588e-b117-50b5bd08482f",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "c00ff4b7-e4ea-55ce-9d7c-480c2261c885",
+  "parent_ticket_id": "beffc3b2-335b-5926-babf-61db61303eb7",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-368",
-    "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
+    "external_id": "lg-m10-63",
+    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make memory recall ranking",
+    "title": "Surface the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4336,11 +4336,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-368",
-    "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
+    "external_id": "lg-m15-284",
+    "id": "e8aab1f5-2b9e-5db8-820b-ef2af736ba13",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make memory recall ranking",
+    "title": "Surface initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4362,16 +4362,16 @@
   "id": "f813d6ee-42d9-50f0-bf31-601b23a55f8d",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "6212bbf4-560f-508a-9a0f-83d09b32d55f",
+  "parent_ticket_id": "4016c818-d779-5c7d-a8f5-61182796c815",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-376",
-    "id": "1f6e3375-a565-5626-8e38-253d9fb2ecaf",
+    "external_id": "lg-m13-66",
+    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Show the rework ledger's loop cap",
+    "state": "in_progress",
+    "title": "Retry stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4383,11 +4383,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m53-376",
-    "id": "1f6e3375-a565-5626-8e38-253d9fb2ecaf",
+    "external_id": "lg-m13-66",
+    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Show the rework ledger's loop cap",
+    "state": "in_progress",
+    "title": "Retry stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4409,16 +4409,16 @@
   "id": "da5a713b-4f3d-521a-bef0-e3f3c8d7db29",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "3c7a0631-745b-55b3-9761-6654bc332fed",
+  "parent_ticket_id": "7233eb55-122e-56e6-9439-c3cd36eb6135",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-283",
-    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
+    "external_id": "lg-m37-252",
+    "id": "535be1c9-772a-5f76-8856-429d8d68b957",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add the rework ledger's loop cap",
+    "state": "in_progress",
+    "title": "Show the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4430,11 +4430,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-283",
-    "id": "bcc2658e-5d61-54ec-931e-ceaa9cf51830",
+    "external_id": "lg-m37-252",
+    "id": "535be1c9-772a-5f76-8856-429d8d68b957",
     "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Add the rework ledger's loop cap",
+    "state": "in_progress",
+    "title": "Show the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4456,16 +4456,16 @@
   "id": "8241c4f2-5a74-582f-ad4e-bcb17a9ee05b",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "68e9a739-8152-5c57-9146-e121fbc48d0b",
+  "parent_ticket_id": "f320fed8-46eb-577b-9d87-4112beb9bba8",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-66",
-    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+    "external_id": "lg-m2-379",
+    "id": "6406f95a-4ce3-5cb1-9180-16236ea487b3",
     "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Retry stage timeout budgets",
+    "state": "backlog",
+    "title": "Surface stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4477,11 +4477,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m13-66",
-    "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
+    "external_id": "lg-m2-379",
+    "id": "6406f95a-4ce3-5cb1-9180-16236ea487b3",
     "reason": "prerequisite",
-    "state": "in_progress",
-    "title": "Retry stage timeout budgets",
+    "state": "backlog",
+    "title": "Surface stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4503,16 +4503,16 @@
   "id": "8d8064c2-e6a7-5c26-98c8-d98d442132db",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "c243c97d-c591-5c31-a7e8-1259ed90ad79",
+  "parent_ticket_id": "171baf2b-05cf-57f2-8380-63ccf5fec6d2",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m36-251",
-    "id": "9bef3ac7-a6c4-51ee-9f22-ff08570eefe8",
+    "external_id": "lg-m4-219",
+    "id": "7cb17322-4118-5810-aece-7778b080ae17",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix the queue board's stalled lane",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4524,11 +4524,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m36-251",
-    "id": "9bef3ac7-a6c4-51ee-9f22-ff08570eefe8",
+    "external_id": "lg-m17-286",
+    "id": "bd4aa3ed-4e05-55f2-9230-89295751e403",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix the queue board's stalled lane",
+    "title": "Retry gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4550,16 +4550,16 @@
   "id": "0260942e-04f7-5720-94c8-75d2e48f9cc9",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "fa811dbe-e47d-59cd-aad2-d29d4460a0ba",
+  "parent_ticket_id": "125bd62e-9888-5bd9-9dd5-17fa6e363af6",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-379",
-    "id": "6406f95a-4ce3-5cb1-9180-16236ea487b3",
+    "external_id": "lg-m4-219",
+    "id": "7cb17322-4118-5810-aece-7778b080ae17",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface stage timeout budgets",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4571,11 +4571,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-379",
-    "id": "6406f95a-4ce3-5cb1-9180-16236ea487b3",
+    "external_id": "lg-m4-219",
+    "id": "7cb17322-4118-5810-aece-7778b080ae17",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface stage timeout budgets",
+    "title": "Stop gate outcomes on stage transitions",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4597,16 +4597,16 @@
   "id": "211558e7-1042-5cdc-8e59-31184fee0aa4",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "b95cbf2d-798f-557f-8e0e-3067196d455e",
+  "parent_ticket_id": "98044ca7-9a2b-57ab-adcd-da3ddba72702",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m18-287",
-    "id": "2bbd7e96-7e45-574f-983f-c7d70d2988bc",
+    "external_id": "lg-m19-180",
+    "id": "35777652-f2d7-5fa3-8d34-20e70b76c4bb",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split the rework ledger's loop cap",
+    "title": "Split initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4618,11 +4618,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m18-287",
-    "id": "2bbd7e96-7e45-574f-983f-c7d70d2988bc",
+    "external_id": "lg-m19-180",
+    "id": "35777652-f2d7-5fa3-8d34-20e70b76c4bb",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split the rework ledger's loop cap",
+    "title": "Split initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4649,11 +4649,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m4-219",
-    "id": "7cb17322-4118-5810-aece-7778b080ae17",
+    "external_id": "lg-m5-274",
+    "id": "275661f9-58ee-5fdd-8ac0-582282474a14",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4665,11 +4665,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m4-219",
-    "id": "7cb17322-4118-5810-aece-7778b080ae17",
+    "external_id": "lg-m5-274",
+    "id": "275661f9-58ee-5fdd-8ac0-582282474a14",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop gate outcomes on stage transitions",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4696,11 +4696,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m19-180",
-    "id": "35777652-f2d7-5fa3-8d34-20e70b76c4bb",
+    "external_id": "lg-m50-157",
+    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split initiative progress rollup",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4712,11 +4712,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m19-180",
-    "id": "35777652-f2d7-5fa3-8d34-20e70b76c4bb",
+    "external_id": "lg-m50-157",
+    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Split initiative progress rollup",
+    "title": "Show docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4738,16 +4738,16 @@
   "id": "eacd10e9-dc80-56c4-80c5-a62327c53d16",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
+  "parent_ticket_id": "39aa6b34-1f3c-5e0b-b4b2-c6686597d163",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m5-274",
-    "id": "275661f9-58ee-5fdd-8ac0-582282474a14",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4759,11 +4759,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m5-274",
-    "id": "275661f9-58ee-5fdd-8ac0-582282474a14",
+    "external_id": "lg-m36-143",
+    "id": "b31570ba-ea71-5d79-a2d4-003d24f2453d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4790,11 +4790,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-157",
-    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
+    "external_id": "lg-m14-553",
+    "id": "98c8f231-0705-5338-913b-45a0029d68da",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Cache GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4806,11 +4806,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m50-157",
-    "id": "0366f958-c23e-5535-9379-58ad98fa42b9",
+    "external_id": "lg-m14-553",
+    "id": "98c8f231-0705-5338-913b-45a0029d68da",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Cache GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4832,16 +4832,16 @@
   "id": "a9cfebdb-a8c3-5e9d-bbbc-ff04fffcd96a",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "045cb2f2-be50-5e21-9d25-0c3ae6a0d6ac",
+  "parent_ticket_id": "6406f95a-4ce3-5cb1-9180-16236ea487b3",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m22-75",
-    "id": "511bf306-8f9f-51d6-8312-4d629e046d53",
+    "external_id": "lg-m46-369",
+    "id": "9a849058-440b-5f21-ae54-3e8881352da4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add worktree isolation for chat turns",
+    "title": "Show the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4853,58 +4853,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m36-143",
-    "id": "b31570ba-ea71-5d79-a2d4-003d24f2453d",
+    "external_id": "lg-m46-369",
+    "id": "9a849058-440b-5f21-ae54-3e8881352da4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "bug",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m8-601",
-  "id": "b8abfef9-976e-5fa6-a4b2-f5f9f5087c90",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "d66e5ea1-a917-5cb7-bd0c-afe12e9cd110",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m14-553",
-    "id": "98c8f231-0705-5338-913b-45a0029d68da",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Cache GitHub issue two-way sync",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Route stage timeout budgets",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m14-553",
-    "id": "98c8f231-0705-5338-913b-45a0029d68da",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Cache GitHub issue two-way sync",
+    "title": "Show the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4926,16 +4879,16 @@
   "id": "4477ab97-2b08-5abe-80d6-8aa9a78b07b9",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "98044ca7-9a2b-57ab-adcd-da3ddba72702",
+  "parent_ticket_id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m46-369",
-    "id": "9a849058-440b-5f21-ae54-3e8881352da4",
+    "external_id": "lg-m51-104",
+    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show the approval inbox for parked stages",
+    "title": "Cache initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4947,11 +4900,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m46-369",
-    "id": "9a849058-440b-5f21-ae54-3e8881352da4",
+    "external_id": "lg-m51-104",
+    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show the approval inbox for parked stages",
+    "title": "Cache initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4973,16 +4926,16 @@
   "id": "f98866a0-6211-5102-b886-61f15b83f376",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "c3613fd7-8655-5b19-bf88-28ded6868d2a",
+  "parent_ticket_id": "2d7f2b14-b93b-52bd-8ec3-aad8e4d5a518",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-104",
-    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
+    "external_id": "lg-m4-489",
+    "id": "2bfcd57b-19d5-5db9-b5d0-2834c6fc158c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache initiative progress rollup",
+    "title": "Cache the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -4994,11 +4947,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-104",
-    "id": "aa8e562e-9f4d-5a73-93ed-e0e28c13f9a5",
+    "external_id": "lg-m4-489",
+    "id": "2bfcd57b-19d5-5db9-b5d0-2834c6fc158c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache initiative progress rollup",
+    "title": "Cache the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5020,16 +4973,16 @@
   "id": "aa96a94b-7464-5426-9f1f-47129e580a21",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "9ce491d6-0f07-5516-b1d3-db34654da6a9",
+  "parent_ticket_id": "e3e98eb1-1b04-509e-a9a7-0d0635819862",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m51-482",
-    "id": "07c80f91-1af8-5cfa-8ce6-e81ecbf899ae",
+    "external_id": "lg-m19-72",
+    "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Fix docker capacity leases",
+    "title": "Fix worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5041,11 +4994,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m2-487",
-    "id": "5ea69931-00bf-5655-a7e3-79c29eb332fb",
+    "external_id": "lg-m53-322",
+    "id": "68a2bc3b-0196-5ec8-b919-b5c5f0b84a27",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache worktree isolation for chat turns",
+    "title": "Show worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5072,11 +5025,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-321",
-    "id": "f36056eb-a737-5dbd-9ac3-a93a93e3c2ed",
+    "external_id": "lg-m53-160",
+    "id": "82ef63c7-4413-5fec-83ce-9c8727e2b41e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the run log's live tail",
+    "title": "Split docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5088,11 +5041,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-321",
-    "id": "f36056eb-a737-5dbd-9ac3-a93a93e3c2ed",
+    "external_id": "lg-m53-160",
+    "id": "82ef63c7-4413-5fec-83ce-9c8727e2b41e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the run log's live tail",
+    "title": "Split docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5108,54 +5061,7 @@
   "block_kind": null,
   "blocked_on": "tickets",
   "branch": "",
-  "child_count": 1,
-  "current_stage_agent": "",
-  "external_id": "lg-m41-634",
-  "id": "e3f769de-8864-53a1-a17b-0c6e97cc7ef8",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "73b736a3-c79a-542e-939a-cee93f7883bb",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m53-160",
-    "id": "82ef63c7-4413-5fec-83ce-9c8727e2b41e",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Split docker capacity leases",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Cache the run log's live tail",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m53-160",
-    "id": "82ef63c7-4413-5fec-83ce-9c8727e2b41e",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Split docker capacity leases",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "capability",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 1,
+  "child_count": 0,
   "current_stage_agent": "",
   "external_id": "lg-m17-664",
   "id": "b041b8a8-c27b-5a6f-a15a-d2b042669305",
@@ -5213,11 +5119,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m52-213",
-    "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
+    "external_id": "lg-m38-91",
+    "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Add the run log's live tail",
+    "title": "Add GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5392,6 +5298,53 @@
   "branch": "",
   "child_count": 1,
   "current_stage_agent": "",
+  "external_id": "lg-m11-712",
+  "id": "bfe63a4a-a76e-5596-88bd-b393c3f2b62e",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "f2e769cf-3d6a-56d8-b492-a0c9993df36c",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m24-131",
+    "id": "d6fe1dd7-b307-5b2b-9976-90c8711a7c5d",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Retry the rework ledger's loop cap",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Show the rework ledger's loop cap",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m17-394",
+    "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Make initiative progress rollup",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "capability",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 1,
+  "current_stage_agent": "",
   "external_id": "lg-m14-715",
   "id": "22e9b8ac-756a-597b-9cd1-c42d57ddfd12",
   "legacy_external_id": "",
@@ -5401,11 +5354,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m17-394",
-    "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
+    "external_id": "lg-m50-265",
+    "id": "b4fb3dc4-bd4e-54ff-8dd8-d9fb88ad33cd",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make initiative progress rollup",
+    "title": "Stop the queue board's stalled lane",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5417,11 +5370,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m17-394",
-    "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
+    "external_id": "lg-m21-506",
+    "id": "f7d8a11c-2d51-553f-9699-cbfb188fc663",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make initiative progress rollup",
+    "title": "Stop the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5448,11 +5401,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m43-96",
-    "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
+    "external_id": "lg-m44-97",
+    "id": "551fac54-4f98-5867-983b-d62a2ebf1dc1",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Show docker capacity leases",
+    "title": "Route stage timeout budgets",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5464,11 +5417,58 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m21-506",
-    "id": "f7d8a11c-2d51-553f-9699-cbfb188fc663",
+    "external_id": "lg-m8-331",
+    "id": "a7922329-e4d8-5442-8488-1b4d3967f21f",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Stop the approval inbox for parked stages",
+    "title": "Make the run log's live tail",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "work_item_type": "capability",
+  "workflow_stage_key": "",
+  "workflow_stage_name": "",
+  "workflow_stage_status": "pending",
+  "workspace_slug": "loregarden"
+ },
+ {
+  "activity": "idle",
+  "agent_retry": null,
+  "block_kind": null,
+  "blocked_on": "tickets",
+  "branch": "",
+  "child_count": 0,
+  "current_stage_agent": "",
+  "external_id": "lg-m45-746",
+  "id": "0dba70f4-3997-5b46-ba09-27fabddf43c2",
+  "legacy_external_id": "",
+  "milestone": "",
+  "parent_ticket_id": "38dfadce-d478-5e18-bcb2-aebd84d1d762",
+  "priority": 3,
+  "root_blockers": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m15-176",
+    "id": "17e04c79-049a-5f61-bb1d-060c040bf5f7",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Cache GitHub issue two-way sync",
+    "workspace_slug": "loregarden"
+   }
+  ],
+  "run_code": "",
+  "stages": [],
+  "state": "backlog",
+  "tags": [],
+  "title": "Add worktree isolation for chat turns",
+  "waiting_on": [
+   {
+    "blocked_on": null,
+    "external_id": "lg-m15-176",
+    "id": "17e04c79-049a-5f61-bb1d-060c040bf5f7",
+    "reason": "prerequisite",
+    "state": "backlog",
+    "title": "Cache GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5486,20 +5486,20 @@
   "branch": "",
   "child_count": 1,
   "current_stage_agent": "",
-  "external_id": "lg-m45-746",
-  "id": "0dba70f4-3997-5b46-ba09-27fabddf43c2",
+  "external_id": "lg-m47-748",
+  "id": "53cb8b88-2eda-5e8a-a759-64dec14e617c",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "38dfadce-d478-5e18-bcb2-aebd84d1d762",
+  "parent_ticket_id": "e54db182-f530-5446-9bc0-c0afcd37c9aa",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m10-63",
-    "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
+    "external_id": "lg-m45-98",
+    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Surface the queue board's stalled lane",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5507,15 +5507,15 @@
   "stages": [],
   "state": "backlog",
   "tags": [],
-  "title": "Add worktree isolation for chat turns",
+  "title": "Make worktree isolation for chat turns",
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m8-331",
-    "id": "a7922329-e4d8-5442-8488-1b4d3967f21f",
+    "external_id": "lg-m45-98",
+    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make the run log's live tail",
+    "title": "Make GitHub issue two-way sync",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5542,11 +5542,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-176",
-    "id": "17e04c79-049a-5f61-bb1d-060c040bf5f7",
+    "external_id": "lg-m39-416",
+    "id": "09fc711a-6437-56af-8e16-06120683e3ba",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache GitHub issue two-way sync",
+    "title": "Surface initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5558,11 +5558,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m15-176",
-    "id": "17e04c79-049a-5f61-bb1d-060c040bf5f7",
+    "external_id": "lg-m39-416",
+    "id": "09fc711a-6437-56af-8e16-06120683e3ba",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Cache GitHub issue two-way sync",
+    "title": "Surface initiative progress rollup",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5589,11 +5589,11 @@
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-769",
-    "id": "951cffb0-5409-5600-a920-f50ffb42fa75",
+    "external_id": "lg-m45-260",
+    "id": "cac96818-1638-5c2e-b42c-70be2db0b3b5",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Retry the approval inbox for parked stages",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5605,11 +5605,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m14-769",
-    "id": "951cffb0-5409-5600-a920-f50ffb42fa75",
+    "external_id": "lg-m39-362",
+    "id": "4ea80cbb-3544-5683-bbce-bc2df14d2cd4",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Surface docker capacity leases",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5627,20 +5627,20 @@
   "branch": "",
   "child_count": 0,
   "current_stage_agent": "",
-  "external_id": "lg-m32-787",
-  "id": "ebe6a3fc-2235-5f9f-8e02-2673bf366b87",
+  "external_id": "lg-m46-801",
+  "id": "390e0c83-5f71-5e1a-b540-a5953b5a979d",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "6f8532f4-ddb9-597c-afb1-6dd0047c8980",
+  "parent_ticket_id": "f80f3eb4-f7d8-512b-b66f-d64a4591f13c",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-98",
-    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
+    "external_id": "lg-m4-489",
+    "id": "2bfcd57b-19d5-5db9-b5d0-2834c6fc158c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
+    "title": "Cache the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5648,62 +5648,15 @@
   "stages": [],
   "state": "backlog",
   "tags": [],
-  "title": "Split the run log's live tail",
+  "title": "Route docker capacity leases",
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m45-98",
-    "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
+    "external_id": "lg-m4-489",
+    "id": "2bfcd57b-19d5-5db9-b5d0-2834c6fc158c",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Make GitHub issue two-way sync",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "work_item_type": "task",
-  "workflow_stage_key": "",
-  "workflow_stage_name": "",
-  "workflow_stage_status": "pending",
-  "workspace_slug": "loregarden"
- },
- {
-  "activity": "idle",
-  "agent_retry": null,
-  "block_kind": null,
-  "blocked_on": "tickets",
-  "branch": "",
-  "child_count": 0,
-  "current_stage_agent": "",
-  "external_id": "lg-m33-788",
-  "id": "7bd1409e-e0c3-5254-91f3-2ced4545a1e6",
-  "legacy_external_id": "",
-  "milestone": "",
-  "parent_ticket_id": "ae75e89b-ebda-519f-9757-1067f4644866",
-  "priority": 3,
-  "root_blockers": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m39-416",
-    "id": "09fc711a-6437-56af-8e16-06120683e3ba",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Surface initiative progress rollup",
-    "workspace_slug": "loregarden"
-   }
-  ],
-  "run_code": "",
-  "stages": [],
-  "state": "backlog",
-  "tags": [],
-  "title": "Retry docker capacity leases",
-  "waiting_on": [
-   {
-    "blocked_on": null,
-    "external_id": "lg-m39-416",
-    "id": "09fc711a-6437-56af-8e16-06120683e3ba",
-    "reason": "prerequisite",
-    "state": "backlog",
-    "title": "Surface initiative progress rollup",
+    "title": "Cache the rework ledger's loop cap",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5725,16 +5678,16 @@
   "id": "5c17cd91-6f45-5052-b3e4-5b31036d0c0e",
   "legacy_external_id": "",
   "milestone": "",
-  "parent_ticket_id": "58aff30b-a577-56bd-aaa2-ac2b97a86478",
+  "parent_ticket_id": "c91272f3-e826-53f2-aee4-24169ac6400d",
   "priority": 3,
   "root_blockers": [
    {
     "blocked_on": null,
-    "external_id": "lg-m40-363",
-    "id": "e57e7e8e-3755-598a-8b16-737f6a249764",
+    "external_id": "lg-m14-67",
+    "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry the queue board's stalled lane",
+    "title": "Surface worktree isolation for chat turns",
     "workspace_slug": "loregarden"
    }
   ],
@@ -5746,11 +5699,11 @@
   "waiting_on": [
    {
     "blocked_on": null,
-    "external_id": "lg-m40-363",
-    "id": "e57e7e8e-3755-598a-8b16-737f6a249764",
+    "external_id": "lg-m36-143",
+    "id": "b31570ba-ea71-5d79-a2d4-003d24f2453d",
     "reason": "prerequisite",
     "state": "backlog",
-    "title": "Retry the queue board's stalled lane",
+    "title": "Add the run log's live tail",
     "workspace_slug": "loregarden"
    }
   ],

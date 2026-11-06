@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from loregarden.models.domain.autopilot_timing import AutopilotSchedule, AutopilotStop
 from loregarden.models.domain.enums import TicketState
 from loregarden.models.domain.plan_enums import (
     AutopilotAction,
@@ -219,11 +220,23 @@ class AutopilotView(BaseModel):
     #: False on a sandbox server, where the loop never runs.
     available: bool
     recent: list[AutopilotEventView]
+    #: What ends a run on its own (`autopilot_timing`); empty runs until turned off.
+    stops: list[AutopilotStop] = Field(default_factory=list)
+    schedule: AutopilotSchedule = Field(default_factory=AutopilotSchedule)
+    #: While on: the earliest instant a time stop or its scheduled window ends it.
+    stops_at: datetime | None = None
+    #: While off: the next instant its schedule turns it on.
+    next_start: datetime | None = None
 
 
 class AutopilotUpdate(BaseModel):
+    """Omitted fields are left as they are. `stops=[]` clears the stops, and an
+    empty `schedule` clears the schedule."""
+
     enabled: bool | None = None
     max_parallel: int | None = Field(default=None, ge=1, le=12)
+    stops: list[AutopilotStop] | None = None
+    schedule: AutopilotSchedule | None = None
 
 
 class AutopilotTicketRef(BaseModel):

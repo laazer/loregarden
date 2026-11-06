@@ -370,10 +370,10 @@ export function memoryPathForLegacyKnowledge(pathname: string): string {
  * The Machine page's tabs: what the machine's CPU and memory are rationed to,
  * and what its disk holds. Capacity is the page's own root.
  */
-export const MACHINE_TABS = ["capacity", "lanes", "disk"] as const;
+export const MACHINE_TABS = ["capacity", "lanes", "disk", "tokens"] as const;
 export type MachineTab = (typeof MACHINE_TABS)[number];
 
-const MACHINE_TAB_PATH_RE = /^\/machine\/(lanes|disk)(?:\/|$)/;
+const MACHINE_TAB_PATH_RE = /^\/machine\/(lanes|disk|tokens)(?:\/|$)/;
 
 export function machinePath(tab: MachineTab): string {
   return tab === "capacity" ? "/machine" : `/machine/${tab}`;

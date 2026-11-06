@@ -11,7 +11,7 @@ function agent(slug: string, extra: Partial<StudioAgent> = {}): StudioAgent {
 }
 
 function stat(agent_id: string, runs: number, failed: number, last = "2026-10-28T12:00:00"): AgentRunStats {
-  return { agent_id, runs, failed, last_run_at: last };
+  return { agent_id, runs, failed, last_run_at: last, worst_stage: null, worst_stage_failed: 0 };
 }
 
 const names = (rows: ReturnType<typeof agentIndexRows>) => rows.map((row) => row.agent.slug);

@@ -1,0 +1,216 @@
+/* One Studio record's page: header (back, name, how it has fared, actions),
+   a tab strip, one panel. Sits on the app's night ground like the indexes. */
+
+.studio-record {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.studio-record-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 24px 10px;
+  background: var(--garden-veil);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.studio-record-back {
+  align-self: flex-start;
+  font-size: var(--fs-small);
+  color: var(--txl);
+  text-decoration: none;
+}
+
+.studio-record-back:hover,
+.studio-record-back:focus-visible {
+  color: var(--tx);
+}
+
+.studio-record-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.studio-record-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.studio-record-slug {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.studio-record-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.studio-record-tag--warn {
+  border-color: color-mix(in srgb, var(--amb) 45%, transparent);
+  color: var(--amb);
+}
+
+.studio-record-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.studio-record-summary {
+  font-size: var(--fs-small);
+  color: var(--txm);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-record-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.studio-record-tab {
+  padding: 8px 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-size: var(--fs-body);
+  color: var(--txl);
+}
+
+.studio-record-tab:hover {
+  color: var(--tx);
+}
+
+.studio-record-tab.is-active {
+  color: var(--tx);
+  border-bottom-color: var(--ac);
+}
+
+.studio-record-panel {
+  padding: 18px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1080px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.studio-record-description {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--txm);
+  max-width: 72ch;
+  line-height: 1.5;
+}
+
+/* A section of a panel: a small heading, then its content on the ground. */
+.studio-record-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.studio-record-section-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.studio-record-section-hint {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.studio-record-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .studio-record-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-record-head,
+  .studio-record-panel {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .studio-record-tabs {
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+}
+
+/* Label/value details: Configuration, Usage. */
+.studio-record-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  font-size: var(--fs-body);
+}
+
+.studio-record-dl dt {
+  color: var(--txl);
+}
+
+.studio-record-dl dd {
+  margin: 0;
+  color: var(--tx);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.studio-record-muted {
+  color: var(--txl);
+}
+
+/* A workflow's pipeline on its own page: the same stage list as the old
+   preview column, at the panel's width. */
+.studio-pipeline-inline {
+  max-width: 640px;
+}
+
+/* The sections the record pages reuse from the old editor (Tool access,
+   gate/hand-off checks, a workflow's stages) were bordered cards; on a page
+   that is already one record, they read as sections on the ground. */
+.studio-record-panel .studio-card {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.studio-record-panel .studio-card-title {
+  font-size: var(--fs-lead);
+}

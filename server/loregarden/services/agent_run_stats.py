@@ -23,6 +23,10 @@ class AgentRunStats(BaseModel):
     failed: int
     #: When its latest run of any status was created (naive UTC, as stored).
     last_run_at: datetime | None
+    #: The stage where it failed most, and how often; None and 0 with no failure.
+    #: A tie goes to the stage named first, so the answer is stable.
+    worst_stage: str | None = None
+    worst_stage_failed: int = 0
 
 
 def agent_run_stats(session: Session) -> list[AgentRunStats]:
@@ -38,7 +42,29 @@ def agent_run_stats(session: Session) -> list[AgentRunStats]:
         .where(col(AgentRun.agent_id) != "")
         .group_by(AgentRun.agent_id)
     )
+    worst = _worst_stages(session)
     return [
-        AgentRunStats(agent_id=agent_id, runs=runs or 0, failed=failed or 0, last_run_at=last)
+        AgentRunStats(
+            agent_id=agent_id,
+            runs=runs or 0,
+            failed=failed or 0,
+            last_run_at=last,
+            worst_stage=worst[agent_id][0] if agent_id in worst else None,
+            worst_stage_failed=worst[agent_id][1] if agent_id in worst else 0,
+        )
         for agent_id, runs, failed, last in session.exec(stmt).all()
     ]
+
+
+def _worst_stages(session: Session) -> dict[str, tuple[str, int]]:
+    """Each agent's most-failed stage. One more grouped scan; agents x stages rows."""
+    stmt = (
+        select(AgentRun.agent_id, AgentRun.stage_key, func.count())
+        .where(col(AgentRun.agent_id) != "", col(AgentRun.status) == RunStatus.FAILED)
+        .group_by(AgentRun.agent_id, AgentRun.stage_key)
+        .order_by(AgentRun.agent_id, func.count().desc(), AgentRun.stage_key)
+    )
+    worst: dict[str, tuple[str, int]] = {}
+    for agent_id, stage_key, count in session.exec(stmt).all():
+        worst.setdefault(agent_id, (stage_key, count))
+    return worst

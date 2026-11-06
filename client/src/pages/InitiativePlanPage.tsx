@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
-import type { InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
+import type { AutopilotChange, InitiativePlan, MilestoneSchedule, ScheduleTargetInput } from "../api/initiativeApi";
 import { InitiativeAutopilot } from "../components/initiatives/plan/InitiativeAutopilot";
 import { InitiativeBoard } from "../components/initiatives/plan/InitiativeBoard";
 import { InitiativeGantt } from "../components/initiatives/plan/InitiativeGantt";
@@ -155,7 +155,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
 
   const autopilot = useMutation({
     meta: { errorTitle: "Change the autopilot" },
-    mutationFn: (change: { enabled?: boolean; max_parallel?: number }) => api.setAutopilot(initiativeId, change),
+    mutationFn: (change: AutopilotChange) => api.setAutopilot(initiativeId, change),
     onSuccess: applyPlan,
   });
 
@@ -304,6 +304,7 @@ export function InitiativePlanPage({ initiativeId }: { initiativeId: string }) {
               plan={data}
               busy={busy}
               onAutopilot={(change) => autopilot.mutate(change)}
+              onAutopilotTiming={(change) => autopilot.mutateAsync(change)}
               onNeedsPerson={(ids, value) => needsPerson.mutate({ ids, value })}
             />
 

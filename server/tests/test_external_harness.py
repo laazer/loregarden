@@ -38,7 +38,7 @@ from loregarden.services.external_harness import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.oversized_ticket_split import (
-    MAX_ACCEPTANCE_CRITERIA,
+    SPLIT_AT_ACCEPTANCE_CRITERIA,
     TICKET_SPLIT_CLI_PROFILE,
     split_child_type,
 )
@@ -1074,7 +1074,7 @@ def test_an_oversized_ticket_is_split_when_a_harness_asks_for_its_stage(
     ticket = _ticket(db_session)
     # A bug, the type 32 of the live database's 67 oversized tickets have.
     ticket.work_item_type = WorkItemType.BUG
-    criteria = [f"criterion {n}" for n in range(1, MAX_ACCEPTANCE_CRITERIA + 2)]
+    criteria = [f"criterion {n}" for n in range(1, SPLIT_AT_ACCEPTANCE_CRITERIA + 2)]
     ticket.acceptance_criteria_json = serialize_criteria(criteria)
     db_session.add(ticket)
     db_session.commit()

@@ -314,6 +314,22 @@
   color: var(--txl);
 }
 
+.gate-chips-disclosure > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.gate-chips-disclosure > summary:hover,
+.gate-chips-disclosure > summary:focus-visible {
+  color: var(--tx);
+}
+
+.gate-chips-disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+
 .gate-chip,
 .gate-suggestion {
   padding: 3px 8px;

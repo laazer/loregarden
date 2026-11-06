@@ -59,6 +59,7 @@ from loregarden.services.reference_survey.queue import target_workspaces
 from loregarden.services.reference_survey.record import finding_evidence, render_finding
 from loregarden.services.reference_survey.schemas import NewTicketIn, TicketWriteIn
 from loregarden.services.ticket_documents import write_document
+from loregarden.services.ticket_growth_guard import would_grow_past
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
@@ -410,7 +411,9 @@ def _choose_target(
         return new, SurveyTicketAction.ROUTED_FROM_DONE, target, notes
     stored = load_criteria(target.acceptance_criteria_json)
     merged = merge_criteria(stored, body.criteria, "append")
-    if len(merged) > MAX_ACCEPTANCE_CRITERIA and len(merged) > len(stored):
+    # The guard's own predicate, so the overflow route opens on exactly the
+    # writes `update_ticket_manual` would refuse — never one more, never one less.
+    if would_grow_past(len(stored), len(merged), MAX_ACCEPTANCE_CRITERIA):
         spec = _overflow_spec(
             session,
             target,
