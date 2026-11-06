@@ -250,9 +250,10 @@ export type ChatModeName = "act" | "advisory";
 /**
  * Why a rail cannot act. One member per real cause — see `services/chat_mode`.
  *
- * `aside_observer` and `surface_is_read_only` are not faults: they are rails
- * that answer from the record on purpose, and the UI labels them rather than
- * offering a fix.
+ * `aside_observer`, `surface_is_read_only` and `stage_run_in_flight` are not
+ * faults: the rail answers read-only on purpose (the last only until the
+ * ticket's running stage finishes), and the UI labels them rather than offering
+ * a fix.
  */
 export type ChatAdvisoryCause =
   | "adapter_cannot_execute"
@@ -260,7 +261,8 @@ export type ChatAdvisoryCause =
   | "branch_not_checked_out"
   | "no_run_for_approvals"
   | "surface_is_read_only"
-  | "aside_observer";
+  | "aside_observer"
+  | "stage_run_in_flight";
 
 /**
  * The mode of the rail's next turn, with the reason and the way out.

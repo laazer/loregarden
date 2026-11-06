@@ -183,14 +183,33 @@ def test_triage_turn_reaps_stale_handoff_instead_of_conflicting(isolated_db):
         assert stale.status == RunStatus.FAILED
 
 
-def test_triage_turn_still_conflicts_with_live_handoff(isolated_db):
+def test_triage_turn_runs_beside_live_stage_handoff(isolated_db):
+    """A live stage run no longer refuses Baxter: the turn is queued and later
+    runs read-only (see test_triage.py), so the operator is not routed to the
+    stage agent's log just because the ticket is working."""
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = _ticket(session)
-        _handoff_run(session, ticket)
+        live = _handoff_run(session, ticket)
+
+        _, turn = start_triage_run(session, ticket, "hello?")
+
+        assert turn.status == RunStatus.QUEUED
+        session.refresh(live)
+        assert live.status == RunStatus.RUNNING
+
+
+def test_triage_turn_still_conflicts_with_an_in_flight_triage_turn(isolated_db):
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = _ticket(session)
+        _, first = start_triage_run(session, ticket, "hello?")
+        first.status = RunStatus.RUNNING
+        session.add(first)
+        session.commit()
 
         with pytest.raises(TriageConflictError):
-            start_triage_run(session, ticket, "hello?")
+            start_triage_run(session, ticket, "still there?")
 
 
 def test_handoff_checkin_records_shell_pid(client: TestClient, db_session: Session):

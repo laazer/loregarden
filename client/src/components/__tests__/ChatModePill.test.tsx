@@ -21,14 +21,6 @@ const BRANCH: ChatMode = {
   remediable: true,
 };
 
-const ASIDE: ChatMode = {
-  mode: "advisory",
-  cause: "aside_observer",
-  reason: "An aside is answered by reading the running agent's log.",
-  advice: "Nothing to fix.",
-  remediable: false,
-};
-
 const INTERNAL: ChatMode = {
   mode: "advisory",
   cause: "no_run_for_approvals",
@@ -68,11 +60,6 @@ describe("ChatModePill", () => {
     render(<ChatModePill mode={INTERNAL} onFix={jest.fn()} />);
     expect(screen.getByText("advisory")).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("renders nothing during an aside, which has its own label", () => {
-    const { container } = render(<ChatModePill mode={ASIDE} asideMode />);
-    expect(container).toBeEmptyDOMElement();
   });
 
   it("renders nothing before the snapshot has resolved a mode", () => {

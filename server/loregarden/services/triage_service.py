@@ -32,7 +32,7 @@ from loregarden.services.agent_turn_runner import (
     resolve_chat_intent,
 )
 from loregarden.services.approval_views import approval_to_view
-from loregarden.services.chat_mode import resolve_chat_mode
+from loregarden.services.chat_mode import ChatModeView, resolve_chat_mode, stage_run_in_flight
 from loregarden.services.chat_primitives import cli_card_corrector, load_parts_json, settle_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.chat_wait import outstanding_for, wait_payload
@@ -50,6 +50,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
@@ -170,18 +171,36 @@ def resolve_chat_capabilities(override_json: str = "") -> tuple[AdapterCapabilit
     return adapter_capabilities(adapter), resolve_chat_intent(adapter)
 
 
+def resolve_ticket_chat_mode(session: Session, ticket: Ticket, adapter: str) -> ChatModeView:
+    """The mode the ticket rail's next turn runs in — snapshot and turn alike.
+
+    An acting turn writes into the ticket's worktree, which is where a running
+    stage agent writes too, so while one is in flight Baxter answers read-only.
+    One function for the badge and the executor, so the panel cannot promise an
+    edit the turn then declines.
+    """
+    mode = resolve_chat_mode(adapter)
+    if not mode.can_act:
+        return mode
+    stage_run = find_active_stage_run(session, ticket.id)
+    if stage_run is None:
+        return mode
+    return stage_run_in_flight(stage_run.agent_id, stage_run.stage_key)
+
+
 def triage_snapshot(session: Session, ticket: Ticket) -> dict:
     pending, recent = list_ticket_approvals(session, ticket.id)
     messages = list_triage_messages(session, ticket.id)
     run_status, active_run_id = triage_run_status(session, ticket.id)
     capabilities, intent = resolve_chat_capabilities(ticket.triage_runtime_json)
+    mode = resolve_ticket_chat_mode(session, ticket, capabilities.adapter)
     wait = outstanding_for(session, ChatSurface.TICKET_TRIAGE, ticket.id)
     return {
         "pending_approvals": pending,
         "recent_approvals": recent,
         "adapter_capabilities": capabilities.as_dict(),
-        "chat_intent": intent,
-        "chat_mode": resolve_chat_mode(capabilities.adapter).as_dict(),
+        "chat_intent": intent if mode.can_act else "advisory",
+        "chat_mode": mode.as_dict(),
         "messages": [
             {
                 "id": msg.id,

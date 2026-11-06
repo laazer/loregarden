@@ -27,7 +27,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
-    chat_advisory_reason,
+    TurnIntent,
     resolve_chat_intent,
     run_agent_turn,
 )
@@ -51,7 +51,11 @@ from loregarden.services.cli_settings import resolve_chat_adapter
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_cancellation import request_cancel
 from loregarden.services.run_capacity import host_capacity_for_run
-from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY, find_active_run, new_run_code
+from loregarden.services.run_concurrency import (
+    TRIAGE_STAGE_KEY,
+    find_active_run,
+    new_run_code,
+)
 from loregarden.services.run_lease import supervised
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -62,6 +66,7 @@ from loregarden.services.triage_service import (
     apply_triage_runtime_overrides,
     build_triage_prompt,
     list_triage_messages,
+    resolve_ticket_chat_mode,
 )
 from sqlmodel import Session, col, select
 
@@ -100,9 +105,15 @@ def start_triage_run(
     # phantom run cannot lock the operator out of chat.
     fail_stale_handoff_runs(session, ticket_id=ticket.id)
 
-    if find_active_run(session, ticket.id):
+    # Only another Baxter turn blocks this one. A stage run on the ticket does
+    # not: the operator is talking to Baxter, not to whichever agent the
+    # pipeline happens to be running, and refusing here is what pushed every
+    # message onto that agent's log (the aside channel) for as long as the
+    # ticket was working. The turn still cannot collide with the stage — it is
+    # forced read-only at execution time, see `_intent_beside_stage`.
+    if find_active_run(session, ticket.id, only_agent_id=TRIAGE_AGENT_ID):
         raise TriageConflictError(
-            "Another run is already active for this ticket — wait for it to finish."
+            f"{TRIAGE_AGENT_NAME} is still answering on this ticket — wait for that reply."
         )
     if outstanding_for(session, ChatSurface.TICKET_TRIAGE, ticket.id) is not None:
         raise TriageConflictError(
@@ -160,6 +171,19 @@ def start_triage_continuation(
     return run
 
 
+def _intent_beside_stage(session: Session, ticket: Ticket, adapter: str) -> tuple[TurnIntent, str]:
+    """This turn's intent and, when advisory, the operator-facing reason.
+
+    Decided at execution rather than when the message was queued: that is when
+    the overlap with a stage run would happen, and the stage may have started
+    or finished in between. See ``resolve_ticket_chat_mode``.
+    """
+    mode = resolve_ticket_chat_mode(session, ticket, adapter)
+    if mode.can_act:
+        return resolve_chat_intent(adapter), ""
+    return "advisory", mode.reason
+
+
 class TriageTurnExecutor:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -188,7 +212,7 @@ class TriageTurnExecutor:
         )
         # Capability map — not adapter name. Codex/Cursor/LM Studio execute via
         # writable oneshot; Claude via the permission bridge.
-        intent = resolve_chat_intent(selected)
+        intent, advisory_reason = _intent_beside_stage(self.session, ticket, selected)
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
         # Bound once: three sites downstream turn on it, and the third was
@@ -210,7 +234,7 @@ class TriageTurnExecutor:
             session=self.session,
             agent=agent,
             interactive=acting,
-            advisory_reason=chat_advisory_reason(selected),
+            advisory_reason=advisory_reason,
             extra_sections=extra,
         )
         try:

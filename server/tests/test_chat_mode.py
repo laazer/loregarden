@@ -8,7 +8,7 @@ saw. So the parity tests here matter more than the enumeration ones.
 from __future__ import annotations
 
 from loregarden.models.domain.enums import ChatAdvisoryCause, ChatMode
-from loregarden.services.chat_mode import aside_mode, resolve_chat_mode
+from loregarden.services.chat_mode import aside_mode, resolve_chat_mode, stage_run_in_flight
 
 #: Adapters with neither a bridge nor a writable oneshot. See adapter_capabilities.
 ADVISORY_ADAPTERS = ["local", "an-adapter-that-does-not-exist"]
@@ -67,6 +67,7 @@ class TestEveryCauseIsReachable:
             resolve_chat_mode("claude", has_run_for_approvals=False).cause,
             resolve_chat_mode("claude", read_only_surface=True).cause,
             aside_mode().cause,
+            stage_run_in_flight("implementer", "implement").cause,
         }
         assert produced == set(ChatAdvisoryCause)
 
@@ -85,6 +86,7 @@ class TestTheOperatorIsToldSomethingUseful:
             resolve_chat_mode("claude", has_run_for_approvals=False),
             resolve_chat_mode("claude", read_only_surface=True),
             aside_mode(),
+            stage_run_in_flight("implementer", "implement"),
         ):
             assert mode.reason, mode.cause
             assert mode.advice, mode.cause
@@ -96,6 +98,7 @@ class TestTheOperatorIsToldSomethingUseful:
         assert not resolve_chat_mode("claude", has_run_for_approvals=False).remediable
         assert not resolve_chat_mode("claude", read_only_surface=True).remediable
         assert not aside_mode().remediable
+        assert not stage_run_in_flight("implementer", "implement").remediable
 
     def test_the_most_fundamental_block_is_reported_first(self):
         """An unusable adapter is named ahead of a missing worktree: fixing the

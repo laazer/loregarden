@@ -126,44 +126,55 @@ function mockTicket(activity: "running" | "awaiting" | "queued" | "idle") {
 }
 
 describe("the composer while a run is working", () => {
-  it("routes to the aside channel while a stage run works", async () => {
-    // The case the channel exists for. `session.isBusy` is false here — it is
-    // derived from triage turns only — so keying on it would have missed this.
+  it("sends to Baxter, not the running agent, while a stage run works", async () => {
+    // The server answers read-only beside a stage run instead of refusing, so
+    // there is no reason to hand the question to the pipeline's agent.
+    const bound = session({ isBusy: false });
+    mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
+    mockTicket("running");
+
+    renderWithClient(<AppActionBar />);
+    const input = await screen.findByLabelText("Message this conversation");
+    fireEvent.change(input, { target: { value: "what is blocking this?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(bound.send).toHaveBeenCalledWith("what is blocking this?", {
+      autoApprove: false,
+      skill: "",
+    });
+    expect(mockApi.askAside).not.toHaveBeenCalled();
+  });
+
+  it("asks the running agent's log only when /btw says so", async () => {
     const bound = session({ isBusy: false });
     mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
     mockTicket("running");
     mockApi.askAside.mockResolvedValue(exchange({ status: "pending", answer: "" }));
 
     renderWithClient(<AppActionBar />);
-    const input = await screen.findByLabelText(/ask an aside/i);
-    fireEvent.change(input, { target: { value: "what are you doing?" } });
-    fireEvent.click(screen.getByRole("button", { name: /ask aside/i }));
+    const input = await screen.findByLabelText("Message this conversation");
+    fireEvent.change(input, { target: { value: "/btw what are you doing?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(mockApi.askAside).toHaveBeenCalledWith("t1", "what are you doing?"));
-    // The chat is left alone — sending there is what the server refuses.
     expect(bound.send).not.toHaveBeenCalled();
   });
 
-  it("routes to the aside channel while a run waits on an approval", async () => {
-    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
-    mockTicket("awaiting");
-
-    renderWithClient(<AppActionBar />);
-
-    expect(await screen.findByLabelText(/ask an aside/i)).toBeTruthy();
-  });
-
-  it("covers the gap between a chat turn being sent and activity catching up", async () => {
-    // `isBusy` flips on the POST; `activity` waits for the next poll. A message
-    // sent into that gap would otherwise reach the chat and come back a 409.
-    mockResolver.mockReturnValue(
-      bind({ session: session({ isBusy: true }), label: "Ticket triage" }),
-    );
+  it("holds a message behind a Baxter turn that is still answering", async () => {
+    // The server refuses a second Baxter turn, so sending would come back a
+    // 409; the composer queue sends it once the turn settles.
+    const bound = session({ isBusy: true });
+    mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
     mockTicket("idle");
 
     renderWithClient(<AppActionBar />);
+    const input = await screen.findByLabelText("Message this conversation");
+    fireEvent.change(input, { target: { value: "and the tests?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(await screen.findByLabelText(/ask an aside/i)).toBeTruthy();
+    expect(bound.send).not.toHaveBeenCalled();
+    expect(mockApi.askAside).not.toHaveBeenCalled();
+    expect(await screen.findByText("and the tests?")).toBeTruthy();
   });
 
   it("sends through the chat as usual when nothing is running", async () => {
@@ -183,32 +194,16 @@ describe("the composer while a run is working", () => {
     expect(mockApi.askAside).not.toHaveBeenCalled();
   });
 
-  it("leaves a queued ticket on the ordinary chat, which still accepts it", async () => {
-    // `find_active_run` counts RUNNING and AWAITING_PERMISSION only, so a queued
-    // ticket takes a normal message — diverting it would be a downgrade.
-    const bound = session();
-    mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
-    mockTicket("queued");
-
-    renderWithClient(<AppActionBar />);
-    const input = await screen.findByLabelText("Message this conversation");
-    fireEvent.change(input, { target: { value: "why is this queued?" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    expect(bound.send).toHaveBeenCalled();
-    expect(mockApi.askAside).not.toHaveBeenCalled();
-  });
-
-  it("drops the log-excerpt toggle, which the observer is handed server-side", async () => {
+  it("keeps the Run logs and Auto-approve controls while a stage run works", async () => {
     mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
     mockTicket("running");
 
     renderWithClient(<AppActionBar />);
+    const input = await screen.findByLabelText("Message this conversation");
+    fireEvent.focus(input);
 
-    await screen.findByLabelText(/ask an aside/i);
-    expect(screen.queryByRole("button", { name: "Run logs" })).toBeNull();
-    // Nor auto-approve: an aside runs read-only, so there is nothing to approve.
-    expect(screen.queryByRole("button", { name: "Auto-approve" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Run logs" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Auto-approve" })).toBeTruthy();
   });
 });
 

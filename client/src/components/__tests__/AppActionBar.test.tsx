@@ -368,7 +368,7 @@ function waitingSession(overrides = {}) {
   });
 }
 
-it("keeps Stop on a ticket-triage wait instead of entering aside-ask", () => {
+it("keeps Stop on a ticket-triage wait", () => {
   const stop = jest.fn().mockResolvedValue({});
   mockApi.ticket.mockResolvedValue({
     id: "t1",
@@ -400,7 +400,7 @@ it("keeps Stop on a ticket-triage wait instead of entering aside-ask", () => {
   );
 });
 
-it("still uses aside while a pipeline run is working, even if a wait exists", async () => {
+it("keeps Stop on a wait while a pipeline run is working", async () => {
   mockApi.ticket.mockResolvedValue({
     id: "t1",
     external_id: "LG-1",
@@ -413,8 +413,8 @@ it("still uses aside while a pipeline run is working, even if a wait exists", as
 
   renderBar();
 
-  expect(await screen.findByLabelText(/ask an aside/i)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Stop" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Message this conversation")).toBeInTheDocument();
 });
 
 it("stops a wait on empty Enter the way StudioChat stops an in-flight turn", () => {
