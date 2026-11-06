@@ -12,9 +12,16 @@ function agent(slug: string, extra: Partial<StudioAgent> = {}): StudioAgent {
 
 const AGENTS = [agent("planner"), agent("repair"), agent("blog_post"), agent("my-agent", { built_in: false })];
 const STATS: AgentRunStats[] = [
-  { agent_id: "planner", runs: 660, failed: 32, last_run_at: "2026-10-28T12:00:00" },
-  { agent_id: "repair", runs: 149, failed: 96, last_run_at: "2026-10-28T12:00:00" },
-  { agent_id: "my-agent", runs: 3, failed: 0, last_run_at: "2026-10-20T12:00:00" },
+  { agent_id: "planner", runs: 660, failed: 32, last_run_at: "2026-10-28T12:00:00", worst_stage: "plan", worst_stage_failed: 20 },
+  {
+    agent_id: "repair",
+    runs: 149,
+    failed: 96,
+    last_run_at: "2026-10-28T12:00:00",
+    worst_stage: "integration-merge",
+    worst_stage_failed: 80,
+  },
+  { agent_id: "my-agent", runs: 3, failed: 0, last_run_at: "2026-10-20T12:00:00", worst_stage: null, worst_stage_failed: 0 },
 ];
 
 function ok<T>(data: T) {

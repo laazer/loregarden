@@ -24,9 +24,11 @@ export interface AgentIndexRow {
   /** True when `rate` rests on enough runs to rank and alert on. */
   rateReliable: boolean;
   lastRunAt: string | null;
+  /** Where it fails most, and how often; null with no failure. */
+  worstStage: { stage: string; failed: number } | null;
 }
 
-export type AgentSortKey = "name" | "runs" | "failed" | "rate" | "lastRun";
+export type AgentSortKey = "name" | "runs" | "failed" | "rate" | "worst" | "lastRun";
 
 export function agentIndexRows(
   agents: readonly StudioAgent[],
@@ -44,6 +46,10 @@ export function agentIndexRows(
       rate: runs > 0 ? failed / runs : null,
       rateReliable: runs >= MIN_RUNS_FOR_RATE,
       lastRunAt: row?.last_run_at ?? null,
+      worstStage:
+        row?.worst_stage != null && row.worst_stage_failed > 0
+          ? { stage: row.worst_stage, failed: row.worst_stage_failed }
+          : null,
     };
   });
 }
@@ -74,6 +80,8 @@ const COMPARE: Record<AgentSortKey, (a: AgentIndexRow, b: AgentIndexRow) => numb
   runs: (a, b) => a.runs - b.runs,
   failed: (a, b) => a.failed - b.failed,
   rate: (a, b) => rankedRate(a) - rankedRate(b),
+  // By how often it failed there, so the worst single hotspot ranks first.
+  worst: (a, b) => (a.worstStage?.failed ?? 0) - (b.worstStage?.failed ?? 0),
   lastRun: (a, b) => (a.lastRunAt ?? "").localeCompare(b.lastRunAt ?? ""),
 };
 

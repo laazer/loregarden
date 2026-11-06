@@ -42,9 +42,13 @@ export function AgentVersionHistory({ slug, currentVersion }: Props) {
   const rows = versions.data ?? [];
   const head = currentVersion ?? (rows[0]?.version ?? 1);
 
+  // Folded by default on the agent's Overview: every edit is a version, and a
+  // long list under Configuration buried the record above it.
   return (
-    <div className="studio-card">
-      <h3 className="studio-card-title">Version history</h3>
+    <details className="agent-version-history">
+      <summary>
+        Version history{rows.length ? ` · ${rows.length} versions, v${head} current` : ""}
+      </summary>
       {versions.isLoading && <p className="studio-muted">Loading…</p>}
       {!versions.isLoading && rows.length === 0 && (
         <p className="studio-muted">No versions recorded yet.</p>
@@ -98,6 +102,6 @@ export function AgentVersionHistory({ slug, currentVersion }: Props) {
           );
         })}
       </ul>
-    </div>
+    </details>
   );
 }

@@ -149,6 +149,9 @@ beforeEach(() => {
       always_apply: null,
     },
   });
+  mockApi.studioAgentRunRecord.mockResolvedValue({ agent_id: AGENT.slug, stages: [], recent: [] });
+  mockApi.studioAgentRunStats.mockResolvedValue([]);
+  mockApi.studioWorkflowUsage.mockResolvedValue([]);
   mockApi.studioAgentVersions.mockResolvedValue([]);
   mockApi.updateStudioAgent.mockResolvedValue(AGENT);
   mockApi.createStudioAgent.mockResolvedValue(AGENT);
@@ -179,8 +182,19 @@ function renderStudio(path: string) {
  */
 async function existingAgent() {
   const result = renderStudio(`/studio/agents/${AGENT.slug}`);
+  // The page opens on Overview, which has no fields; the draft lives on the
+  // Instructions tab.
+  fireEvent.click(await screen.findByRole("tab", { name: "Instructions" }));
   await screen.findByDisplayValue(AGENT.name);
   return result;
+}
+
+/** Save is disabled until the draft differs from the saved agent. */
+async function saveAgent() {
+  fireEvent.change(await screen.findByLabelText("Description"), {
+    target: { value: "Changed so there is something to save." },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: /^save agent$/i }));
 }
 
 async function slugField(): Promise<HTMLInputElement> {
@@ -207,7 +221,7 @@ describe("the Slug field on an existing agent", () => {
     expect(describedBy).toBeTruthy();
     const help = document.getElementById(describedBy!);
     expect(help).toHaveTextContent(/fixed after creation/i);
-    expect(help).toHaveTextContent(/duplicate to custom/i);
+    expect(help).toHaveTextContent(/duplicate/i);
   });
 
   it("offers the control its help text names", async () => {
@@ -217,7 +231,7 @@ describe("the Slug field on an existing agent", () => {
     await existingAgent();
 
     expect(
-      await screen.findByRole("button", { name: /duplicate to custom/i }),
+      await screen.findByRole("button", { name: /^duplicate$/i }),
     ).toBeInTheDocument();
   });
 
@@ -238,7 +252,7 @@ describe("the save payload", () => {
     await existingAgent();
     await slugField();
 
-    fireEvent.click(await screen.findByRole("button", { name: /^save agent$/i }));
+    await saveAgent();
 
     await waitFor(() => expect(mockApi.updateStudioAgent).toHaveBeenCalled());
     const [slug, body] = mockApi.updateStudioAgent.mock.calls[0];
@@ -250,7 +264,7 @@ describe("the save payload", () => {
     await existingAgent();
     await slugField();
 
-    fireEvent.click(await screen.findByRole("button", { name: /^save agent$/i }));
+    await saveAgent();
 
     await waitFor(() => expect(mockApi.updateStudioAgent).toHaveBeenCalled());
     const [, body] = mockApi.updateStudioAgent.mock.calls[0];
@@ -360,7 +374,7 @@ describe("when the delete is refused", () => {
     // And it lands on the draft that published the template, not on the
     // template id, which Workflow Studio does not address: that redirects to
     // the blank new-workflow form and 404s its drift request.
-    expect(await screen.findByDisplayValue(DRAFT.name)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: DRAFT.name })).toBeInTheDocument();
   });
 
   it("reports a template with no draft behind it as text, not as a control", async () => {

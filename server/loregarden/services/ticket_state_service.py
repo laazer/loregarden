@@ -34,6 +34,7 @@ import logging
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import EventType, Ticket, TicketState, utcnow
+from sqlalchemy.orm import object_session
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -184,12 +185,43 @@ def choose(
     return True
 
 
+def record_derived_change(ticket: Ticket, *, actor: str) -> None:
+    """Log `TicketStateChanged` for a state `derive` just wrote, in the same transaction.
+
+    `derive` writes no event, so every close through the stage map, which is
+    nearly every close, left the event log silent: no ticket's history ever
+    showed it reaching `done`. `event_bus.publish` commits, which is why
+    `derive` could not call it, so `event_bus.add` puts the row in the session
+    that holds the ticket instead, and it commits with the state or not at all.
+    """
+    session = object_session(ticket)
+    if session is None:
+        # The write this would describe is not in any transaction either, so it
+        # persists only if a caller adds the ticket later, and that caller is
+        # what has to be found.
+        logger.warning(
+            "Ticket %s: derived state %s is not in a session; its TicketStateChanged was not logged",
+            ticket.external_id or ticket.id,
+            ticket.state.value,
+        )
+        return
+    event_bus.add(
+        session,
+        EventType.TICKET_STATE_CHANGED,
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        payload={"state": ticket.state.value, "actor": actor},
+    )
+
+
 def derive(ticket: Ticket, target: TicketState, *, actor: str) -> bool:
     """Recompute a ticket's state from its stages or children. False if unchanged.
 
-    No session, because it needs none: a recomputation announces nothing, and
-    the ticket it is handed is already tracked by whichever transaction will
-    commit it. Unvalidated on purpose — see the module docstring. Refuses two
+    No session, because it needs none: the ticket it is handed is already
+    tracked by whichever transaction will commit it. It logs no event itself,
+    because its two callers announce differently: the stage map through
+    `record_derived_change`, in its transaction, and the parent rollup after its
+    commit (`ticket_rollup._announce_rollup`). Unvalidated on purpose — see the module docstring. Refuses two
     things the inputs have no authority over:
 
     - a `state_locked` ticket, which is how an operator says "I decided this"

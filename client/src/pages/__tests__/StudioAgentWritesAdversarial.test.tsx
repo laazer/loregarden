@@ -133,6 +133,9 @@ beforeEach(() => {
       always_apply: null,
     },
   });
+  mockApi.studioAgentRunRecord.mockResolvedValue({ agent_id: AGENT.slug, stages: [], recent: [] });
+  mockApi.studioAgentRunStats.mockResolvedValue([]);
+  mockApi.studioWorkflowUsage.mockResolvedValue([]);
   mockApi.studioAgentVersions.mockResolvedValue([]);
   mockApi.updateStudioAgent.mockResolvedValue(AGENT);
   mockApi.createStudioAgent.mockResolvedValue(AGENT);
@@ -156,11 +159,25 @@ function renderStudio(path: string) {
 
 async function existingAgent(agent: StudioAgent = AGENT) {
   const result = renderStudio(`/studio/agents/${agent.slug}`);
+  fireEvent.click(await screen.findByRole("tab", { name: "Instructions" }));
   await screen.findByDisplayValue(agent.name);
   return result;
 }
 
-function saveButton() {
+/** Leave this agent for another through the index, as an operator does now
+ * that the page has no list rail. */
+async function selectAgent(agent: StudioAgent) {
+  fireEvent.click(await screen.findByRole("link", { name: /← Agents/ }));
+  fireEvent.click(await screen.findByRole("link", { name: agent.name }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Instructions" }));
+  await screen.findByDisplayValue(agent.name);
+}
+
+/** Save is disabled until the draft differs from the saved agent, so the
+ * button is found after an edit. */
+async function saveButton() {
+  const description = (await screen.findByLabelText("Description")) as HTMLInputElement;
+  fireEvent.change(description, { target: { value: `${description.value} (edited)` } });
   return screen.findByRole("button", { name: /^save agent$|^saving…$/i });
 }
 
@@ -286,9 +303,7 @@ describe("the refusal notice's lifetime", () => {
     // selection and names the previous agent's references under the new one.
     await refuseDelete();
 
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(OTHER_AGENT.name) }));
-
-    await screen.findByDisplayValue(OTHER_AGENT.name);
+    await selectAgent(OTHER_AGENT);
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
@@ -367,8 +382,7 @@ describe("the Slug field", () => {
     // condition written against the first render's agent leaves the field
     // editable after a selection change, and the save then sends a slug.
     await existingAgent();
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(OTHER_AGENT.name) }));
-    await screen.findByDisplayValue(OTHER_AGENT.name);
+    await selectAgent(OTHER_AGENT);
 
     const slug = (await screen.findByLabelText("Slug")) as HTMLInputElement;
     expect(slug).toHaveValue(OTHER_AGENT.slug);
@@ -377,8 +391,7 @@ describe("the Slug field", () => {
 
   it("does not send a slug after a selection change either", async () => {
     await existingAgent();
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(OTHER_AGENT.name) }));
-    await screen.findByDisplayValue(OTHER_AGENT.name);
+    await selectAgent(OTHER_AGENT);
 
     fireEvent.click(await saveButton());
 

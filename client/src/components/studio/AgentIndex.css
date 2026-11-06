@@ -36,3 +36,14 @@
   color: var(--txm);
   opacity: 0.7;
 }
+
+/* Where each agent fails most: the stage its page breaks down by cause. */
+.agent-index-worst {
+  white-space: nowrap;
+}
+
+.agent-index-worst-stage {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
