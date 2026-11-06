@@ -28,6 +28,7 @@ from loregarden.models.domain import (
     TicketState,
 )
 from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
+from loregarden.services.invariants import Violation
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from sqlmodel import Session, col, select
 
@@ -113,3 +114,19 @@ def refile_capacity_blocks(session: Session, ticket_ids: Sequence[str]) -> int:
         refiled += 1
     session.commit()
     return refiled
+
+
+def capacity_block_violations(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=block.ticket.id,
+            ticket_id=block.ticket.id,
+            entered_at=block.blocked_at,
+            detail=f"blocked as work on '{block.stage_key}', where its run never got capacity",
+        )
+        for block in work_blocks_from_capacity_waits(session)
+    ]
+
+
+def refile_capacity_violations(session: Session, violations: Sequence[Violation]) -> int:
+    return refile_capacity_blocks(session, [violation.subject_id for violation in violations])
