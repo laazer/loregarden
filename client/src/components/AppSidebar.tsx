@@ -56,14 +56,16 @@ import { railCounts } from "../lib/railCounts";
 import { runningTickets } from "../lib/runningTickets";
 import type { SidebarEntry, ViewSummary } from "../lib/viewsApi";
 import { useQueueStatus } from "../state/QueueStatusContext";
+import { pushToast } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 import { BrandMark } from "./BrandMark";
 import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { SIDEBAR_GROUPS, SIDEBAR_PAGES, type SidebarPageDef } from "./appSidebarPages";
-import { quickActionsFor } from "./appSidebarQuickActions";
+import { quickActionsFor, type SidebarQuickAction, type SidebarQuickDialog } from "./appSidebarQuickActions";
 import { SidebarQuickActionMenu, type QuickActionMenuState } from "./SidebarQuickActionMenu";
+import { SidebarQuickDialogHost } from "./SidebarQuickDialogHost";
 import { SidebarRunningSection } from "./AppSidebarRunning";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -272,6 +274,13 @@ export function AppSidebar({
   const [pendingDelete, setPendingDelete] = useState<ViewSummary | null>(null);
   const [quickMenu, setQuickMenu] = useState<QuickActionMenuState | null>(null);
   const closeQuickMenu = useCallback(() => setQuickMenu(null), []);
+  const [quickDialog, setQuickDialog] = useState<SidebarQuickDialog | null>(null);
+  const runQuickAction = (action: SidebarQuickAction) => {
+    if (!action.dialog) navigate(action.to);
+    else if (workspaceSlug === "") {
+      pushToast({ tone: "warning", title: `${action.label.replace("…", "")} needs a workspace`, message: "Choose a workspace first." });
+    } else setQuickDialog(action.dialog);
+  };
 
   /**
    * Right-click (or the ContextMenu key, or Shift+F10) on a page with quick
@@ -710,9 +719,14 @@ export function AppSidebar({
         <SidebarQuickActionMenu
           menu={quickMenu}
           onClose={closeQuickMenu}
-          onSelect={(action) => navigate(action.to)}
+          onSelect={runQuickAction}
         />
       ) : null}
+      <SidebarQuickDialogHost
+        dialog={quickDialog}
+        workspaceSlug={workspaceSlug}
+        onClose={() => setQuickDialog(null)}
+      />
     </>
   );
 }
