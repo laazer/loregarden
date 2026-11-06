@@ -26,11 +26,10 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
 from loregarden.services.capacity_blocks import (
-    refile_capacity_blocks,
-    work_blocks_from_capacity_waits,
+    capacity_block_violations,
+    refile_capacity_violations,
 )
 from loregarden.services.checkouts_without_their_branch import checkouts_without_their_branch
 from loregarden.services.cleaned_worktree_rows import cleaned_rows_with_their_checkout
@@ -62,12 +61,14 @@ from loregarden.services.parallel_queue import (
 )
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
-from loregarden.services.reference_survey.carrier_settlement import (
-    carriers_behind_finished_passes,
-    finish_carriers,
+from loregarden.services.reference_survey.invariant_checks import (
+    cleared_card_violations,
+    close_cleared_card_violations,
+    finish_carrier_violations,
+    open_carrier_violations,
+    remap_unsplit_violations,
+    unsplit_map_violations,
 )
-from loregarden.services.reference_survey.inbox import cleared_cards, close_cards
-from loregarden.services.reference_survey.map_repair import remap_from_clone, unsplit_maps
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_parked_at_rows import (
@@ -610,30 +611,6 @@ EVERY_BUSY_LANE_HAS_AN_OCCUPANT = Invariant(
 )
 
 
-def _cleared_survey_cards(session: Session) -> list[Violation]:
-    """`entered_at` is the later clone or dispatch that cleared the card's cause."""
-    return [
-        Violation(
-            subject_id=item.card.id,
-            ticket_id=None,
-            entered_at=item.cleared_at,
-            detail=f"{item.card.title}: {item.because}",
-        )
-        for item in cleared_cards(session)
-    ]
-
-
-def _close_survey_cards(session: Session, violations: Sequence[Violation]) -> int:
-    wanted = {v.subject_id for v in violations}
-    closed = 0
-    for item in cleared_cards(session):
-        if item.card.id in wanted:
-            closed += close_cards(
-                session, [item.card], reason=f"Closed by the survey: {item.because}."
-            )
-    return closed
-
-
 SURVEY_CARDS_CLOSE = Invariant(
     name="survey_cards_close_with_their_cause",
     ticket="lg-reference-sources-1613",
@@ -641,8 +618,8 @@ SURVEY_CARDS_CLOSE = Invariant(
         "no reference-survey exception card stays pending once a later clone or dispatch "
         "on its source cleared what it reported"
     ),
-    detect=_cleared_survey_cards,
-    repair=_close_survey_cards,
+    detect=cleared_card_violations,
+    repair=close_cleared_card_violations,
     reentry=InvariantReentry.DEFECT,
     since=date(2026, 10, 27),
     prevented_by=(
@@ -1356,22 +1333,6 @@ UNAVAILABLE_GATES_ARE_NOT_WORK = Invariant(
 )
 
 
-def _capacity_work_blocks(session: Session) -> list[Violation]:
-    return [
-        Violation(
-            subject_id=block.ticket.id,
-            ticket_id=block.ticket.id,
-            entered_at=block.blocked_at,
-            detail=f"blocked as work on '{block.stage_key}', where its run never got capacity",
-        )
-        for block in work_blocks_from_capacity_waits(session)
-    ]
-
-
-def _refile_capacity_blocks(session: Session, violations: Sequence[Violation]) -> int:
-    return refile_capacity_blocks(session, [violation.subject_id for violation in violations])
-
-
 CAPACITY_WAITS_ARE_NOT_WORK = Invariant(
     name="capacity_waits_are_not_work_blocks",
     ticket="lg-milestone-that-1431",
@@ -1379,8 +1340,8 @@ CAPACITY_WAITS_ARE_NOT_WORK = Invariant(
         "no ticket is blocked as work by a run that never got machine capacity: no agent "
         "looked at the work, so the block is the machine's (harness)"
     ),
-    detect=_capacity_work_blocks,
-    repair=_refile_capacity_blocks,
+    detect=capacity_block_violations,
+    repair=refile_capacity_violations,
     reentry=InvariantReentry.DEFECT,
     since=date(2026, 11, 6),
     prevented_by=(
@@ -1390,23 +1351,6 @@ CAPACITY_WAITS_ARE_NOT_WORK = Invariant(
 )
 
 
-def _open_carriers(session: Session) -> list[Violation]:
-    return [
-        Violation(
-            subject_id=item.carrier.id,
-            ticket_id=item.carrier.id,
-            entered_at=item.survey_pass.finished_at,
-            detail=f"pass {item.survey_pass.ordinal} finished; its carrier reads "
-            f"{item.carrier.state.value} at '{item.carrier.workflow_stage_key}'",
-        )
-        for item in carriers_behind_finished_passes(session)
-    ]
-
-
-def _finish_carriers(session: Session, violations: Sequence[Violation]) -> int:
-    return finish_carriers(session, [violation.subject_id for violation in violations])
-
-
 FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
     name="finished_survey_passes_close_their_carrier",
     ticket="lg-reference-sources-2018",
@@ -1414,8 +1358,8 @@ FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
         "no survey carrier stays open, with nothing live behind it, once its pass is "
         "finished: the pass is the carrier's only deliverable"
     ),
-    detect=_open_carriers,
-    repair=_finish_carriers,
+    detect=open_carrier_violations,
+    repair=finish_carrier_violations,
     reentry=InvariantReentry.EXPECTED,
     since=date(2026, 11, 4),
     expected_because=(
@@ -1426,25 +1370,6 @@ FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
 )
 
 
-def _unsplit_maps(session: Session) -> list[Violation]:
-    """`entered_at` is the source's last fetch, which every map is taken in."""
-    return [
-        Violation(
-            subject_id=item.source.id,
-            ticket_id=None,
-            entered_at=item.source.fetched_at,
-            detail=f"{item.source.name}'s map at {item.source.mapped_commit[:12]} keeps "
-            f"{', '.join(item.leaves)} whole, over the pass budget",
-        )
-        for item in unsplit_maps(session)
-    ]
-
-
-def _remap_unsplit(session: Session, violations: Sequence[Violation]) -> int:
-    sources = (session.get(SurveySource, violation.subject_id) for violation in violations)
-    return sum(remap_from_clone(session, source) for source in sources if source is not None)
-
-
 SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD = Invariant(
     name="survey_maps_split_what_no_pass_can_hold",
     ticket="lg-reference-sources-2283",
@@ -1452,8 +1377,8 @@ SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD = Invariant(
         "no admitted survey source's map keeps a directory larger than the pass budget as "
         "one leaf: no slice can take it, so no pass ever reads it"
     ),
-    detect=_unsplit_maps,
-    repair=_remap_unsplit,
+    detect=unsplit_map_violations,
+    repair=remap_unsplit_violations,
     reentry=InvariantReentry.DEFECT,
     since=date(2026, 11, 6),
     prevented_by=(
