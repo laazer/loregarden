@@ -96,6 +96,27 @@ it("leads with the failing stage, which attempt it was, and that run's own outpu
   expect(within(panel).getByRole("button", { name: "Copy the failure output" })).toBeInTheDocument();
 });
 
+it("collapses the run output behind its title and opens it again", async () => {
+  renderPanel({
+    detail: ticket({ state: "blocked", block_message: "Agent launch failed" } as Partial<TicketDetail>),
+    visits: [visit("test_design", [attempt({ run_id: "d1", run_code: "run_d1", error_tail: LAUNCH })])],
+  });
+
+  const panel = await screen.findByRole("region", { name: "Blocking issue" });
+  const toggle = within(panel).getByRole("button", { name: "Agent run output" });
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByRole("list", { name: "Failure output" })).toBeVisible();
+
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(within(panel).queryByRole("list", { name: "Failure output" })).not.toBeInTheDocument();
+  // Copy and the log stay reachable while the output is folded away.
+  expect(within(panel).getByRole("button", { name: "Full log" })).toBeInTheDocument();
+
+  fireEvent.click(toggle);
+  expect(within(panel).getByRole("list", { name: "Failure output" })).toBeVisible();
+});
+
 it("shows the ticket's message when the run recorded no output, opening the log by its run code", async () => {
   const { onOpenRunLog } = renderPanel({
     detail: ticket({
