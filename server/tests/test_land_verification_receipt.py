@@ -716,10 +716,18 @@ def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root
     """
     touched = detached / "server" / "tests" / "test_pytest_target_selection.py"
     touched.write_text(touched.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-    identity = ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
-    for args in (["add", str(touched)], [*identity, "commit", "-qm", "the landing"]):
-        done = run_git(args, cwd=str(detached), check=False, capture_output=True, text=True)
+    # Plumbing, the way `merge_tips` writes a candidate: `git commit` would run
+    # this repository's own pre-commit hook inside the throwaway tree.
+    identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+
+    def git_out(*args: str) -> str:
+        done = run_git(list(args), cwd=str(detached), check=False, capture_output=True, text=True)
         assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
+    git_out("add", str(touched))
+    landed = git_out(*identity, "commit-tree", git_out("write-tree"), "-p", "HEAD", "-m", "landing")
+    git_out("update-ref", "--no-deref", "HEAD", landed)
 
     outcome = run_verify_command(
         PYTEST_COMMAND,
