@@ -10,6 +10,7 @@ import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useTicketAsides } from "../hooks/useTicketAsides";
 import { isChatThinking } from "../lib/chatSession";
 import { COMPOSER_PLACEHOLDER, followUpPrompts } from "../lib/dockChatPrompts";
+import { useComposerQueueStore } from "../state/composerQueueStore";
 import { useUiStore, useUtilityDockEdge } from "../state/uiStore";
 import { checkoutBranchTriage } from "../lib/branchTriageApi";
 import { describeError } from "../state/toastStore";
@@ -126,32 +127,12 @@ export function AppActionBar() {
     setAttachLogs(false);
   }, [ticketId]);
 
+  // Asides are opt-in: `/btw` asks the running agent's log without
+  // interrupting it. Every other message goes to Baxter, running or not — the
+  // server answers read-only beside a stage run rather than refusing, so there
+  // is no reason to hand the operator's question to whichever agent the
+  // pipeline happens to be running.
   const asides = useTicketAsides(ticketId ?? undefined);
-  // Asking a busy ticket chat is refused outright by `start_triage_run`, which
-  // is the moment an operator most wants to ask something. The composer stays
-  // open and the message routes to the aside channel instead: answered by an
-  // observer reading the run's log, costing the run nothing.
-  //
-  // Keyed on the ticket's activity rather than `session.isBusy` alone: the
-  // latter is derived from `triage_run_status`, which counts only triage turns,
-  // so it is false during exactly the stage run this channel exists for.
-  // `queued` is excluded deliberately — `find_active_run` looks at RUNNING and
-  // AWAITING_PERMISSION only, so a queued ticket still takes an ordinary
-  // message and should get one.
-  //
-  // `isBusy` is still read, because it turns true the moment a chat turn is
-  // POSTed while `activity` waits on the next poll. Without it, a second message
-  // sent into that gap goes to the chat and comes back a 409.
-  //
-  // A chat wait is a finished turn's child, not an in-flight agent or pipeline
-  // turn: Stop stays the composer control, and aside-ask is not entered.
-  const chatWaiting = session?.runStatus === "waiting";
-  const asideMode =
-    Boolean(ticketId) &&
-    session?.kind === "ticket-triage" &&
-    (ticket?.activity === "running" ||
-      ticket?.activity === "awaiting" ||
-      (session.isBusy && !chatWaiting));
 
   const expanded = chatOpen && Boolean(session);
   // With no conversation and no model to set, the sheet would open empty; the
@@ -159,12 +140,10 @@ export function AppActionBar() {
   const hasSheet = Boolean(session || model);
   const sendable = Boolean(session) && !session?.loadError && !composerBlocked;
   // Every surface exposes stop now, so the only question left is whether this
-  // one is busy — and aside mode, which routes a busy composer to a read-only
-  // question instead of a turn to stop.
-  const canStop = Boolean(session?.isBusy && !asideMode);
-  // Only the Baxter thread has an attachments endpoint, and an aside is a
-  // read-only question to an observer, which takes no files either.
-  const canAttach = session?.kind === "baxter-home" && !asideMode;
+  // one is busy.
+  const canStop = Boolean(session?.isBusy);
+  // Only the Baxter thread has an attachments endpoint.
+  const canAttach = session?.kind === "baxter-home";
   const files = canAttach ? attachments.items.map((item) => item.file) : [];
 
   // A conversation's files belong to it; carried over, they would go out with
@@ -174,6 +153,11 @@ export function AppActionBar() {
     clearAttachments();
   }, [session?.kind, session?.id, clearAttachments]);
 
+  const queueKey = session
+    ? composerQueueKey(session.kind, session.id, terminal.workspaceSlug)
+    : null;
+  const enqueueMessage = useComposerQueueStore((s) => s.enqueue);
+
   const send = (content: string, skill = "") => {
     if (!session) return;
     const question = content.trim();
@@ -182,10 +166,10 @@ export function AppActionBar() {
     // Open the thread on the way out: a reply arriving behind a collapsed dock
     // is a message the operator never sees.
     setChatOpen(true);
-    if (asideMode) {
-      // No excerpt is attached here — the observer is handed the run's log tail
-      // server-side, so pasting one would send the same lines twice.
-      asides.ask.mutate(question);
+    // A turn is already in flight, so the server would refuse a second one:
+    // hold this behind it in the composer queue, which sends it on idle.
+    if (session.isBusy && queueKey && !files.length) {
+      enqueueMessage(queueKey, question, skill);
       return;
     }
     const excerpt = attachLogs && hasLogs ? formatLogExcerpt(logLines, liveLog).trim() : "";
@@ -218,7 +202,7 @@ export function AppActionBar() {
     ticketId,
     pendingApprovals,
     archive,
-    session: asideMode ? null : session,
+    session,
     onBtw: ticketId ? onBtw : undefined,
     onAfterNewChat,
   });
@@ -227,12 +211,7 @@ export function AppActionBar() {
     value: draft,
     onChange: setDraft,
     workspaceSlug: terminal.workspaceSlug,
-    // An aside is answered by an observer reading the log, not by the thread —
-    // there is no turn to wait on, so there is nothing to queue behind.
-    queueKey:
-      session && !asideMode
-        ? composerQueueKey(session.kind, session.id, terminal.workspaceSlug)
-        : null,
+    queueKey,
     isBusy: Boolean(session?.isBusy),
     onSend: send,
     onSendInNewChat: archive
@@ -244,7 +223,7 @@ export function AppActionBar() {
           });
         }
       : undefined,
-    skillsEnabled: session?.kind === "baxter-home" && !asideMode,
+    skillsEnabled: session?.kind === "baxter-home",
     actions: commandActions,
   });
 
@@ -385,16 +364,14 @@ export function AppActionBar() {
             value={draft}
             disabled={!sendable}
             placeholder={
-              asideMode
-                ? "btw — ask about the run without interrupting it"
-                : composerBlocked
-                  ? composerBlocked
+              composerBlocked
+                ? composerBlocked
                 : session
                   ? (COMPOSER_PLACEHOLDER[promptKind] ??
                     "Ask anything, or tell an agent what to do — without leaving this screen")
                   : NO_SESSION_PLACEHOLDER
             }
-            aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
+            aria-label="Message this conversation"
             onChange={(e) => commands.handleChange(e.target.value, e.target)}
             onFocus={() => session && setChatOpen(true)}
             onBlur={() => commands.close()}
@@ -437,9 +414,7 @@ export function AppActionBar() {
               ? session?.isStopping
                 ? "Stopping…"
                 : "Stop"
-              : asideMode
-                ? "Ask aside"
-                : "Send"
+              : "Send"
           }
           disabled={
             canStop
@@ -478,8 +453,7 @@ export function AppActionBar() {
                 <ComposerAttachButton onFiles={attachments.add} disabled={!sendable} />
               ) : null}
               {modelControl}
-              {/* An aside runs read-only, so there is nothing for this to approve. */}
-              {session && !asideMode ? (
+              {session ? (
                 <Button
                   variant="plain"
                   className={`app-action-bar-auto${autoApprove ? " is-on" : ""}`}
@@ -490,8 +464,7 @@ export function AppActionBar() {
                   Auto-approve
                 </Button>
               ) : null}
-              {/* Redundant in aside mode: the observer is given the log tail server-side. */}
-              {ticketId && !asideMode ? (
+              {ticketId ? (
                 <Button
                   variant="plain"
                   className={`app-action-bar-logs${attachLogs ? " is-on" : ""}`}
@@ -537,25 +510,11 @@ export function AppActionBar() {
         runStatus={session?.runStatus}
       />
 
-      {asideMode ? (
-        <span
-          className="app-action-bar-pill"
-          title={
-            "This ticket is running, so your message is asked as an aside: answered " +
-            "by Baxter reading the run's log, without touching the run itself."
-          }
-        >
-          btw
-        </span>
-      ) : null}
-
       {/* Always on: "can act" is as worth knowing as "cannot", and a badge that
-          only appears on failure reads as "still loading" the rest of the time.
-          Suppressed for an aside, which carries its own label above. */}
+          only appears on failure reads as "still loading" the rest of the time. */}
       <ChatModePill
         mode={session?.chatMode}
         canAct={session?.canAct}
-        asideMode={asideMode}
         onFix={applyChatModeFix}
       />
 
