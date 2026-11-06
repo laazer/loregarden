@@ -715,7 +715,9 @@ def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root
     suite that timed out lg-milestone-that-2250's landing seven times.
     """
     touched = detached / "server" / "tests" / "test_pytest_target_selection.py"
-    touched.write_text(touched.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    touched.write_text(
+        touched.read_text(encoding="utf-8") + "\n\n# the landing\n", encoding="utf-8"
+    )
     # Plumbing, the way `merge_tips` writes a candidate: `git commit` would run
     # this repository's own pre-commit hook inside the throwaway tree.
     identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"]

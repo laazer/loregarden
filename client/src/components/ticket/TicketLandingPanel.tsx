@@ -5,11 +5,13 @@ import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import type { RefusedAttempt, TicketLandingStatus } from "../../api/ticketLandingApi";
 import { ticketLandingKey } from "../../api/ticketLandingApi";
+import { usePolledReadFailure } from "../../hooks/usePolledReadFailure";
 import { machinePath, ticketPath } from "../../lib/appNavigation";
 import { refusalReason } from "../../lib/landingStatus";
 import { formatDuration } from "../../lib/queueRunFormat";
 import { formatRelativeAge, parseTimestamp } from "../../lib/timestamps";
 import { describeError } from "../../state/toastStore";
+import { StaleReadNotice } from "../ui/StaleReadNotice";
 
 /** The ledger changes every couple of seconds while tests run; the elapsed clock every second.
  * With nothing landing, a retry is minutes apart, so the poll slows down. */
@@ -57,23 +59,35 @@ export function TicketLandingPanel({ ticketId }: { ticketId: string }) {
     refetchInterval: (query) => (query.state.data?.phase === "not_landing" ? IDLE_POLL_MS : POLL_MS),
   });
   const now = useNow(TICK_MS);
+  // A failed re-read keeps the last answer on screen and says so beside it;
+  // only a read that never succeeded takes the pane.
+  const failure = usePolledReadFailure(landing, ticketId, landing.data !== undefined);
 
   // Loading renders nothing: the "landing on …" line above already says what
   // is happening, and the first answer arrives well inside a poll.
-  if (landing.isPending) return null;
-  if (landing.isError) {
+  if (landing.isPending && !failure.blocking) return null;
+  if (failure.blocking || !landing.data) {
     return (
       <p className="twf-landing-error" role="status">
-        Could not read what this landing is waiting on: {describeError(landing.error, "the request failed")}. Trying
-        again every few seconds.
+        Could not read what this landing is waiting on:{" "}
+        {describeError(failure.blocking?.error ?? landing.error, "the request failed")}. Trying again every few
+        seconds.
       </p>
     );
   }
 
   const status = landing.data;
+  const staleNotice = failure.stale ? (
+    <StaleReadNotice
+      lead="This may be out of date — the last re-read failed."
+      error={failure.stale.error}
+      fallback="The server did not answer."
+      testId="landing-refresh-failed"
+    />
+  ) : null;
   // Nothing landing and nothing refused: the stage note and the block (if any)
   // already say everything there is.
-  if (status.phase === "not_landing" && !status.last_refusal) return null;
+  if (status.phase === "not_landing" && !status.last_refusal) return staleNotice;
   const head = headline(status);
   return (
     <section className="twf-landing" aria-label="What this landing is waiting on">
@@ -97,6 +111,7 @@ export function TicketLandingPanel({ ticketId }: { ticketId: string }) {
       {status.last_refusal ? (
         <Refusals ticketId={ticketId} count={status.refused_attempts} last={status.last_refusal} now={now} />
       ) : null}
+      {staleNotice}
     </section>
   );
 }

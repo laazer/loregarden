@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api, ApiError } from "../../../api/client";
@@ -152,4 +152,23 @@ it("still names the refusals on a blocked landing nothing is retrying", async ()
   const panel = await screen.findByRole("region", { name: "What this landing is waiting on" });
   expect(panel).toHaveTextContent("The last attempt was refused: the tests failed (exit 1)");
   expect(panel).not.toHaveTextContent("Running the landing tests");
+});
+
+it("keeps the last answer on screen when a re-read fails, and says it may be stale", async () => {
+  mockApi.ticketLanding.mockResolvedValueOnce(status({ phase: "verifying", since: minutesAgo(5), timeout_seconds: 1800 }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <TicketLandingPanel ticketId="t-1" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const panel = await screen.findByRole("region", { name: "What this landing is waiting on" });
+
+  mockApi.ticketLanding.mockRejectedValueOnce(new ApiError(503, "database is locked"));
+  await act(() => client.refetchQueries({ queryKey: ["ticket-landing", "t-1"] }));
+
+  expect(panel).toHaveTextContent("Running the landing tests");
+  expect(await screen.findByTestId("landing-refresh-failed")).toHaveTextContent("database is locked");
 });
