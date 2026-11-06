@@ -94,6 +94,34 @@
   font-size: var(--fs-small);
 }
 
+.tf-out.is-collapsed .tf-out-head {
+  border-bottom: 0;
+}
+
+.tf-out-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 2px;
+  margin-left: -2px;
+  border-radius: 6px;
+}
+
+.tf-out-toggle:hover {
+  background: var(--bg2);
+}
+
+.tf-out-chevron {
+  display: inline-block;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.tf-out-toggle[aria-expanded="true"] .tf-out-chevron {
+  transform: rotate(90deg);
+}
+
 .tf-out-title {
   white-space: nowrap;
   font-weight: 600;
