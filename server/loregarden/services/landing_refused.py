@@ -26,10 +26,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from loregarden.core.timestamps import as_utc
-from loregarden.models.domain import Artifact, ArtifactKind, Ticket, TicketState, Workspace
+from loregarden.models.domain import Artifact, ArtifactKind, Ticket, TicketState
 from loregarden.models.domain.enums import GateOutcome, utcnow
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.land_verification import RECEIPT_FAILED
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
@@ -186,7 +187,7 @@ def landings_retried_on_refused_tips(session: Session) -> Sequence[RetriedRefusa
     ).all()
     retried: list[RetriedRefusal] = []
     for ticket in blocked:
-        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace = workspace_for_ticket(session, ticket)
         if workspace is None:
             continue
         pair = recent_refusals(session, ticket, resolve_workspace_root(workspace), limit=2)
