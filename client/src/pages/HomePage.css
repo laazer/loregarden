@@ -439,3 +439,17 @@
     display: none;
   }
 }
+
+/* The Machine page's capacity board, flattened to a Home section: sized to its
+   content rather than the full-height column it fills there, and aligned with
+   the sections above it instead of inset as a card. */
+.home-capacity .queue-panel {
+  height: auto;
+  padding: 0;
+}
+
+.home-capacity .queue-panel-head {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bd);
+}

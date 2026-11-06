@@ -3,8 +3,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api, type Approval, type TicketSummary } from "../../api/client";
+import { dockerApi } from "../../api/dockerApi";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
 import { peekTicket } from "../../state/ticketPeekStore";
+import { capacityStatus, lease } from "../../test/dockerFixtures";
 import { useUiStore } from "../../state/uiStore";
 import { HomePage } from "../HomePage";
 
@@ -25,6 +27,10 @@ jest.mock("../../api/client", () => {
   };
 });
 
+jest.mock("../../api/dockerApi", () => ({
+  dockerApi: { capacity: jest.fn(), releaseLease: jest.fn() },
+}));
+
 jest.mock("../../state/ticketPeekStore", () => ({
   ...jest.requireActual("../../state/ticketPeekStore"),
   peekTicket: jest.fn(),
@@ -32,6 +38,7 @@ jest.mock("../../state/ticketPeekStore", () => ({
 
 const mockedApi = api as jest.Mocked<typeof api> & { doneTicketShip: jest.Mock };
 const mockedPeek = peekTicket as jest.MockedFunction<typeof peekTicket>;
+const mockedCapacity = dockerApi.capacity as jest.MockedFunction<typeof dockerApi.capacity>;
 
 const EMPTY_SHIPS = {
   probes: [
@@ -105,6 +112,7 @@ describe("HomePage", () => {
     mockedApi.studioWorkflows.mockResolvedValue([]);
     mockedApi.runs.mockResolvedValue([]);
     mockedApi.doneTicketShip.mockResolvedValue(EMPTY_SHIPS);
+    mockedCapacity.mockResolvedValue(capacityStatus());
     mockedPeek.mockClear();
     useUiStore.getState().setWorkspace("all");
   });
@@ -630,5 +638,35 @@ describe("HomePage", () => {
     );
     expect(screen.queryByText("Baxter chat")).not.toBeInTheDocument();
     expect(sessionStorage.getItem(HOME_BAXTER_PROMPT_KEY)).toBeNull();
+  });
+
+  it("shows who holds machine capacity and who waits, with a way to the Machine page", async () => {
+    mockedCapacity.mockResolvedValue(
+      capacityStatus({
+        holders: [lease({ lease_id: "h1", holder_label: "server tests for landing scope" })],
+        waiting: [
+          lease({
+            lease_id: "w1",
+            status: "waiting",
+            position: 1,
+            holder_label: "full jest for landing panel",
+          }),
+        ],
+      }),
+    );
+    renderHome();
+
+    const panel = await screen.findByLabelText("Machine capacity");
+    expect(await within(panel).findByTestId("docker-waiting-w1")).toBeInTheDocument();
+    expect(within(panel).getByText("Waiting for capacity (1)")).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: "Machine →" })).toHaveAttribute("href", "/machine");
+  });
+
+  it("says when the capacity ledger could not be read", async () => {
+    mockedCapacity.mockRejectedValue(new Error("ledger down"));
+    renderHome();
+
+    const panel = await screen.findByLabelText("Machine capacity");
+    expect(await within(panel).findByText(/ledger down/)).toBeInTheDocument();
   });
 });
