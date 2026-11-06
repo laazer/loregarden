@@ -7,9 +7,6 @@ import type { ChatMode } from "../api/client";
  * are both facts the operator wants before typing, and a badge that only
  * appears when something is wrong teaches people to read its absence as
  * "loading" rather than as "fine".
- *
- * An aside gets its own `btw` pill next door, so this renders nothing for it —
- * an aside is read-only by design and labelling it a limitation would be a lie.
  */
 
 /** Fixes the operator can apply from here. Only for causes marked remediable. */
@@ -31,7 +28,6 @@ function fixFor(mode: ChatMode): ChatModeFix | null {
 export function ChatModePill({
   mode,
   canAct,
-  asideMode = false,
   onFix,
 }: {
   mode: ChatMode | undefined;
@@ -42,12 +38,9 @@ export function ChatModePill({
    * regression dressed as a redesign.
    */
   canAct?: boolean;
-  /** Suppressed during a BTW aside, which carries its own label. */
-  asideMode?: boolean;
   /** Omit to render the reason without an action. */
   onFix?: (fix: ChatModeFix) => void;
 }) {
-  if (asideMode) return null;
   const resolved: ChatMode | undefined =
     mode ??
     (canAct === undefined

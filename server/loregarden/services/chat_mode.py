@@ -59,6 +59,10 @@ _ADVICE: dict[ChatAdvisoryCause, str] = {
         "Nothing to fix — this view answers from the record. Use the ticket or Home "
         "conversation to ask for a change."
     ),
+    ChatAdvisoryCause.STAGE_RUN_IN_FLIGHT: (
+        "Nothing to fix — Baxter still answers, it just will not edit while that run "
+        "is writing. Ask again once the run finishes to make changes."
+    ),
     ChatAdvisoryCause.ASIDE_OBSERVER: (
         "Nothing to fix — an aside is answered by reading the running agent's log, on "
         "purpose. Use Escalate to put the question to the agent itself."
@@ -175,4 +179,19 @@ def aside_mode() -> ChatModeView:
     return advisory(
         ChatAdvisoryCause.ASIDE_OBSERVER,
         "An aside is answered by reading the running agent's log, without touching its run.",
+    )
+
+
+def stage_run_in_flight(agent_id: str, stage_key: str) -> ChatModeView:
+    """Ticket triage beside a running stage: read-only until that run finishes.
+
+    Separate from ``resolve_chat_mode`` because it is not a capability question
+    and only ticket triage has a stage to share a worktree with. Callers apply
+    it after ``resolve_chat_mode``, so an adapter that cannot act at all is
+    still named first.
+    """
+    return advisory(
+        ChatAdvisoryCause.STAGE_RUN_IN_FLIGHT,
+        f"{agent_id} is running the {stage_key} stage in this ticket's worktree, so "
+        "this turn is read-only to avoid colliding with it.",
     )

@@ -1411,6 +1411,10 @@ class ChatAdvisoryCause(StrEnum):
     #: A BTW aside — answered by an observer reading the run's log. Read-only by
     #: design, and the one advisory state that is working as intended.
     ASIDE_OBSERVER = "aside_observer"
+    #: Ticket triage while a stage agent is writing in the same worktree. The
+    #: turn answers but does not act, so the two cannot collide. Clears itself
+    #: when that run finishes.
+    STAGE_RUN_IN_FLIGHT = "stage_run_in_flight"
 
 
 class ClassifyBasis(StrEnum):

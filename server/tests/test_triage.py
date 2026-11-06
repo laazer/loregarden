@@ -297,12 +297,14 @@ def _seed_active_run(
         session.commit()
 
 
-def test_triage_concurrency_guard_rejects_overlapping_stage_run(client: TestClient):
+def test_triage_message_is_accepted_beside_a_running_stage_run(client: TestClient):
+    """Only another Baxter turn refuses one; a stage run gets a read-only turn
+    instead of a 409 that pushed the operator onto the stage agent's log."""
     ticket_id = _ticket_id(client)
     _seed_active_run(client, ticket_id, agent_id="planner", status=RunStatus.RUNNING)
 
     res = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "hello"})
-    assert res.status_code == 409
+    assert res.is_success, res.text
 
 
 def test_triage_concurrency_guard_rejects_overlapping_triage_run(client: TestClient):
@@ -405,6 +407,53 @@ def test_triage_execute_intent_for_codex_uses_writable_oneshot(
     assert "real tool access" in prompt
     assert "advisory only" not in prompt
     assert "callable directly" in prompt
+
+
+def test_triage_turn_beside_a_running_stage_is_read_only_and_says_why(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    """Baxter answers while a stage agent works, but does not write into the
+    worktree that agent is writing in — and the snapshot says so before asking."""
+    from loregarden.services import agent_turn_runner, triage_run_service, triage_service
+    from loregarden.services.agent_turn_runner import AgentTurnResult
+    from loregarden.services.orchestration import OrchestrationService
+    from loregarden.services.triage_run_service import TriageTurnExecutor, start_triage_run
+    from loregarden.services.triage_service import triage_snapshot
+
+    captured: dict[str, object] = {}
+
+    def fake_turn(request):
+        captured["intent"] = request.intent
+        captured["prompt"] = request.prompt
+        captured["ticket"] = request.ticket
+        return AgentTurnResult(
+            reply="it is in implement",
+            strategy="advisory_oneshot",
+            adapter="claude",
+            run_id=request.run_id,
+        )
+
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(triage_run_service, "resolve_chat_adapter", lambda **_: "claude")
+    monkeypatch.setattr(triage_service, "resolve_chat_adapter", lambda **_: "claude")
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(triage_run_service, "run_agent_turn", fake_turn)
+
+    ticket = db_session.get(Ticket, _ticket_id(client))
+    assert ticket is not None
+    stage_run = OrchestrationService(db_session).start_run(ticket, stage_key="testing")
+    assert stage_run.status == RunStatus.RUNNING
+
+    snapshot = triage_snapshot(db_session, ticket)
+    assert snapshot["chat_intent"] == "advisory"
+    assert snapshot["chat_mode"]["cause"] == "stage_run_in_flight"
+
+    _, run = start_triage_run(db_session, ticket, "where is this at?")
+    TriageTurnExecutor(db_session).execute(run, ticket)
+
+    assert captured["intent"] == "advisory"
+    assert captured["ticket"] is None
+    assert "read-only to avoid colliding" in str(captured["prompt"])
 
 
 def test_triage_message_endpoint_accepts_auto_approve(

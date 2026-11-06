@@ -4,6 +4,19 @@ import { useCallback, useEffect, useRef } from "react";
 type ActivatedControl = HTMLElement & { disabled?: boolean };
 
 /**
+ * Focus `target`, unless the operator is somewhere of their own.
+ *
+ * Restore, never take: anything other than `<body>` is focus the operator
+ * moved while the action was in flight, and that holds for the landing exactly
+ * as it holds for the armed control.
+ */
+function focusIfIdle(target: HTMLElement | null | undefined) {
+  if (!target) return;
+  if (document.activeElement !== document.body) return;
+  target.focus();
+}
+
+/**
  * Keep focus on the control the operator activated across a pending action.
  *
  * A control disabled for the duration of its own mutation is blurred by the
@@ -31,10 +44,22 @@ type ActivatedControl = HTMLElement & { disabled?: boolean };
  * poll on a freshly loaded page) settles with `<body>` active too, and is only
  * declined because `activated.current` was cleared by the settle before it.
  *
+ * A surface that is *replaced* by its own settle is the one case restoring
+ * cannot answer: the armed control is detached, so there is nothing to hand
+ * focus back to, and the operator whose retry just worked is left on `<body>`
+ * paying the same traverse this hook was written about. `landing` is the
+ * caller's answer to "where instead" — a getter, not an element or a ref,
+ * because the replacement surface does not exist at activation time and can
+ * only be read inside the effect, after it has committed. `null` is a legal
+ * "nothing focusable mounted", and no landing at all leaves the hook exactly
+ * as its three other callers use it.
+ *
  * @param pending whether the action is in flight — must be the same flag that
  *   disables the control, so the DOM is already operable when the effect runs.
+ * @param landing read when, and only when, the armed control has left the tree
+ *   by the time the action settles; the element focus lands on instead.
  */
-export function useRestoreFocusOnSettle(pending: boolean) {
+export function useRestoreFocusOnSettle(pending: boolean, landing?: () => HTMLElement | null) {
   const activated = useRef<ActivatedControl | null>(null);
 
   const rememberActivated = useCallback((node: ActivatedControl | null) => {
@@ -45,15 +70,26 @@ export function useRestoreFocusOnSettle(pending: boolean) {
     if (pending) return;
     const node = activated.current;
     activated.current = null;
-    // Still disabled (nothing left to act on) or gone from the tree: there is
-    // no control to hand focus back to, and focusing a detached node moves
-    // focus to the document rather than restoring it.
-    if (!node || !node.isConnected || node.disabled) return;
-    // Restore, never take: anything other than <body> is focus the operator
-    // moved themselves while the action was in flight.
-    if (document.activeElement !== document.body) return;
-    node.focus();
-  }, [pending]);
+    // Three different states, and the order between the last two is
+    // load-bearing. Nothing was armed: this settle is not an operator's — a
+    // background poll shares the same flag on some callers — so neither a
+    // restore nor a landing is owed.
+    if (!node) return;
+    // Gone from the tree: the surface that held the control was replaced, and
+    // focusing a detached node would move focus to the document rather than
+    // restoring it. This, and only this, is what the landing answers. It is
+    // tested *before* `disabled` because React unmounts a control bound
+    // `disabled={pending}` with that attribute still true, so the detached
+    // node is both — and a `disabled`-first guard makes the landing dead code.
+    if (!node.isConnected) {
+      focusIfIdle(landing?.());
+      return;
+    }
+    // Still in the tree and still releasing: it remains the right target, so
+    // move nothing rather than take focus off the surface the operator is on.
+    if (node.disabled) return;
+    focusIfIdle(node);
+  }, [pending, landing]);
 
   return rememberActivated;
 }
