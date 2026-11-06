@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import type { TicketDetail } from "../../api/client";
@@ -36,6 +36,8 @@ export function TicketFailurePanel({
   isActive: boolean;
   onOpenRunLog: (runId: string) => void;
 }) {
+  const [outputOpen, setOutputOpen] = useState(true);
+  const outputId = useId();
   // Same key and cadence as the Timeline's, so the two share one fetch.
   const ledger = useQuery({
     queryKey: ["ticket-ledger", ticket.id],
@@ -96,9 +98,20 @@ export function TicketFailurePanel({
       {blocked && headline.meaning ? <p className="tf-sub">{headline.meaning}</p> : null}
 
       {lines.length > 0 ? (
-        <div className="tf-out">
+        <div className={outputOpen ? "tf-out" : "tf-out is-collapsed"}>
           <div className="tf-out-head">
-            <span className="tf-out-title">{attempt?.error_tail ? "Agent run output" : "What stopped it"}</span>
+            <Button
+              variant="plain"
+              className="tf-out-toggle"
+              aria-expanded={outputOpen}
+              aria-controls={outputId}
+              onClick={() => setOutputOpen((open) => !open)}
+            >
+              <span className="tf-out-chevron" aria-hidden>
+                ▸
+              </span>
+              <span className="tf-out-title">{attempt?.error_tail ? "Agent run output" : "What stopped it"}</span>
+            </Button>
             {runCode ? <span className="tf-out-run">{runCode}</span> : null}
             <span className="tf-out-actions">
               <CopyValueButton value={output} what="the failure output" className="tf-out-action">
@@ -112,7 +125,7 @@ export function TicketFailurePanel({
             </span>
           </div>
           {/* Scrolls when a long message overflows it, so it takes focus for the keys. */}
-          <ol className="tf-lines" tabIndex={0} aria-label="Failure output">
+          <ol id={outputId} className="tf-lines" tabIndex={0} aria-label="Failure output" hidden={!outputOpen}>
             {lines.map((line, index) => (
               <li key={index} className={isErrorLine(line) ? "is-error" : undefined}>
                 {line || " "}
