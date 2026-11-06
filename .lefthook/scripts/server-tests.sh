@@ -14,6 +14,10 @@
 # suite on every PR, so a miss costs a slower signal, not an unguarded merge.
 # LOREGARDEN_FULL_TESTS=1 forces the full run; LOREGARDEN_TESTS_BASE=<ref>
 # overrides the base, to ask what a given range would run.
+#
+# Land verification runs this too (agent_context/orchestration/loregarden.yaml),
+# in a detached tree at the candidate merge, with LOREGARDEN_TESTS_BASE set to
+# the target's tip — so a landing runs the tests its own diff reaches.
 set -euo pipefail
 
 # shellcheck source=hook-noninteractive.sh

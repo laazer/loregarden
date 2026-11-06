@@ -794,7 +794,7 @@ def test_the_armed_workspace_is_armed_in_the_profile_the_detector_reads(workspac
     predicate could be silencing everything."""
     assert resolve_git_automation(workspace).land_verify_commands == [
         "npm --prefix client test -- --ci",
-        "uv run --directory server pytest -q -n auto",
+        "bash .lefthook/scripts/server-tests.sh",
     ]
 
 

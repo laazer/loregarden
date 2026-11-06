@@ -17,6 +17,7 @@ import { StageOverflowMenu } from "../StageOverflowMenu";
 import { Button } from "../ui/Button";
 import { VineNode } from "../vine/VineNode";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
+import { TicketLandingPanel } from "./TicketLandingPanel";
 import { WorkflowSettingsModal } from "./WorkflowSettingsModal";
 
 import "./TicketWorkflowCard.css";
@@ -272,6 +273,7 @@ function CurrentStage({
           </>
         ) : null}
       </dl>
+      {landing ? <TicketLandingPanel ticketId={ticket.id} /> : null}
       {stage.note ? (
         <p className="twf-note" data-status={stage.status}>
           {stage.note}

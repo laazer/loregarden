@@ -126,6 +126,53 @@ def test_deleted_test_file_is_not_selected(fake_repo: Path):
     assert selected == []
 
 
+@pytest.fixture
+def client_reader_repo(fake_repo: Path) -> Path:
+    """`fake_repo` plus tests that read the client tree, and one that only says the word."""
+    tests = fake_repo / "server" / "tests"
+    (tests / "test_reads_client.py").write_text(
+        "from pathlib import Path\n\n"
+        'ROOT = Path(__file__).parents[2] / "client"\n\n'
+        "def test_c():\n    assert ROOT\n",
+        encoding="utf-8",
+    )
+    (tests / "test_reads_package_json.py").write_text(
+        'def test_p():\n    assert "client/package.json"\n', encoding="utf-8"
+    )
+    (tests / "test_says_client_id.py").write_text(
+        'def test_i():\n    assert {"client_id": 1, "who": "api client"}\n', encoding="utf-8"
+    )
+    # A package module naming the client tree is NOT followed: in this repo
+    # every such module names some workspace's tree, not this repo's client.
+    (fake_repo / "server" / "loregarden" / "services" / "unrelated.py").write_text(
+        'OTHER = 2\nSCOPE = ("client",)\n', encoding="utf-8"
+    )
+    return fake_repo
+
+
+def test_client_change_selects_the_tests_that_read_the_client_tree(client_reader_repo: Path):
+    """A client-only diff once selected zero, which meant the whole server suite."""
+    selected = selector.select(client_reader_repo, ["client/src/App.tsx"])
+    assert _names(selected) == {"test_reads_client.py", "test_reads_package_json.py"}
+
+
+def test_client_and_server_change_selects_both(client_reader_repo: Path):
+    selected = selector.select(
+        client_reader_repo, ["client/src/App.tsx", "server/loregarden/services/leaf.py"]
+    )
+    assert _names(selected) == {
+        "test_reads_client.py",
+        "test_reads_package_json.py",
+        "test_middle.py",
+        "test_dynamic.py",
+    }
+
+
+def test_server_only_change_does_not_pull_in_client_readers(client_reader_repo: Path):
+    selected = selector.select(client_reader_repo, ["server/loregarden/services/leaf.py"])
+    assert "test_reads_client.py" not in _names(selected)
+
+
 # --------------------------------------------------------------------------- #
 # the CLI contract the hook depends on
 # --------------------------------------------------------------------------- #

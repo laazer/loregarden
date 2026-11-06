@@ -59,8 +59,13 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import BLOCKING_ISSUE_INLINE_LIMIT
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.capacity_environment import grant_environment
+from loregarden.services.capacity_progress import PROGRESS_ENV, LeaseProgress, ProgressSync
 from loregarden.services.docker_capacity import CLASS_WEIGHTS, resolve_weights
-from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
+from loregarden.services.gate_capacity import (
+    GateCapacityUnavailable,
+    GateLease,
+    acquire_gate_capacity,
+)
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE, strip_ansi
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
@@ -86,6 +91,19 @@ LAND_VERIFY_TIMEOUT_SECONDS = 1800
 
 #: How long the capacity lease is held for, with the same reasoning.
 _LEASE_TTL_SECONDS = LAND_VERIFY_TIMEOUT_SECONDS + 300
+
+#: The gate transition a land verification's capacity lease is held under. The
+#: lease is how anyone outside this thread learns a landing is in line or
+#: running its tests (`landing_status`), so the name is shared, not re-spelled.
+LAND_VERIFY_TRANSITION = "land-verify"
+
+#: Where the configured commands learn what the land adds: the target's tip,
+#: which is the candidate merge's first parent. `server-tests.sh` reads it as
+#: the base of `select_pytest_targets.py`, so a landing runs the tests its diff
+#: can break rather than all of them. A full suite under a 4-cpu grant on a busy
+#: machine ran past `LAND_VERIFY_TIMEOUT_SECONDS`; lg-milestone-that-2250 was
+#: refused seven times in a row on 2026-11-06, every refusal a timeout.
+LAND_BASE_ENV = "LOREGARDEN_TESTS_BASE"
 
 #: AC14's inline excerpt: at most the LAST twenty lines. A suite puts its
 #: platform banner, its rootdir and its plugin list first and what failed last,
@@ -208,7 +226,13 @@ def land_verifier(session: Session, ticket: Ticket, workspace: Workspace) -> Lan
     return LandVerifier(note="", verify=verify)
 
 
-def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -> VerifyOutcome:
+def run_verify_command(
+    command: str,
+    cwd: Path,
+    *,
+    footprint: DockerFootprint,
+    extra_env: dict[str, str] | None = None,
+) -> VerifyOutcome:
     """Run one configured command in `cwd` and classify how it ended.
 
     `shlex.split` raises on an unterminated quote and yields `[]` for a blank
@@ -232,6 +256,10 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
     which is every test selector this repo has — would otherwise read the shared
     checkout and exit 0: a pass over a tree nobody read, which is the channel
     this module closes.
+
+    `extra_env` is what `_verify_candidate` adds for this landing: the diff
+    base (`LAND_BASE_ENV`) and the progress file the lease copies
+    (`PROGRESS_ENV`).
     """
     try:
         argv = shlex.split(command)
@@ -253,7 +281,7 @@ def run_verify_command(command: str, cwd: Path, *, footprint: DockerFootprint) -
     granted = grant_environment(cpus) if cpus > 0 else {}
     try:
         returncode, raw_output = _run_to_deadline(
-            argv, cwd=cwd, env={**scrubbed_git_env(), **granted}
+            argv, cwd=cwd, env={**scrubbed_git_env(), **granted, **(extra_env or {})}
         )
     except OSError as exc:
         # Not on PATH, or there and not executable. A fact about the machine,
@@ -411,9 +439,22 @@ def _verify_candidate(
         # (lg-milestone-that-1419).
         said: list[str] = []
         ran = ""
-        with _holding(session, ticket, workspace, footprint, candidate=candidate):
-            for command in commands:
-                outcome = run_verify_command(command, tree, footprint=footprint)
+        progress = holder / "progress.json"
+        extra_env = {PROGRESS_ENV: str(progress)}
+        base = _land_base(repo_root, candidate)
+        if base:
+            extra_env[LAND_BASE_ENV] = base
+        with (
+            _holding(session, ticket, workspace, footprint, candidate=candidate) as lease,
+            _syncing_progress(session, lease, progress),
+        ):
+            for index, command in enumerate(commands, start=1):
+                # Ours first, so the lease names the command even when it never
+                # reports; a command that does (server-tests.sh) overwrites it.
+                _announce(progress, f"{command} ({index}/{len(commands)})")
+                outcome = run_verify_command(
+                    command, tree, footprint=footprint, extra_env=extra_env
+                )
                 said.append(outcome.output)
                 if not outcome.ok:
                     return _refusal(outcome, lead=lead)
@@ -463,7 +504,7 @@ def _holding(
     footprint: DockerFootprint,
     *,
     candidate: str,
-) -> Iterator[None]:
+) -> Iterator[GateLease]:
     """Hold host capacity for the whole verification, and give it back.
 
     A land verification is a test suite on the orchestration thread, so it
@@ -476,13 +517,66 @@ def _holding(
         footprint,
         ticket=ticket,
         workspace=workspace,
-        transition=f"land-verify {candidate[:12]}",
+        transition=f"{LAND_VERIFY_TRANSITION} {candidate[:12]}",
         ttl_seconds=_LEASE_TTL_SECONDS,
     )
     try:
-        yield
+        yield lease
     finally:
         lease.release(session)
+
+
+@contextmanager
+def _syncing_progress(session: Session, lease: GateLease, path: Path) -> Iterator[None]:
+    """Copy the commands' progress file onto the lease while they run.
+
+    No lease (capacity accounting off) is no row to copy onto, so nothing runs.
+    Its own sessions on the verifying session's engine: the copy happens on
+    another thread, and a session is not shared across threads.
+    """
+    if not lease.lease_id:
+        yield
+        return
+    bind = session.get_bind()
+    with ProgressSync(lambda: Session(bind), lease.lease_id, path, _report_progress_problem):
+        yield
+
+
+def _report_progress_problem(message: str) -> None:
+    # A lease with stale progress still reads as held, with its elapsed time;
+    # the verification itself is unaffected, so this is a warning, not a refusal.
+    logger.warning("land verification: %s", message)
+
+
+def _announce(path: Path, step: str) -> None:
+    """Write a progress report the way the commands do: whole file, by rename."""
+    report = LeaseProgress(step=step)
+    staging = path.with_suffix(".tmp")
+    staging.write_text(report.model_dump_json(exclude_none=True), encoding="utf-8")
+    staging.replace(path)
+
+
+def _land_base(repo_root: Path, candidate: str) -> str:
+    """The target's tip: the candidate merge's first parent (`merge_tips` writes
+    it `-p target -p source`). "" when git cannot say, and the commands then fall
+    back to a base of their own choosing — broader, never narrower."""
+    parent = run_git(
+        ["rev-parse", "--verify", "--quiet", f"{candidate}^1"],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if parent.returncode != 0:
+        logger.warning(
+            "land verification: could not read the first parent of %s in %s (%s); "
+            "the commands will choose their own diff base",
+            candidate,
+            repo_root,
+            (parent.stderr or "git gave no reason").strip(),
+        )
+        return ""
+    return parent.stdout.strip()
 
 
 def _refusal(outcome: VerifyOutcome, *, lead: int) -> VerifyOutcome:
