@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import type { AutoRereviewSettings, AutoRereviewSettingsRequest } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
+import { recordFocusIntent } from "../../lib/focusIntent";
 import { AUTO_REREVIEW_QUERY_KEY } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { IconCloseButton } from "../IconCloseButton";
@@ -225,7 +226,10 @@ function RereviewStatus({ settings, search }: { settings: AutoRereviewSettings; 
   return (
     <p className="rl-muted rl-rereview-note">
       {due} Now {run.status}:{" "}
-      <Link to={{ pathname: memoryPath("library", run.source_id), search }}>
+      <Link
+        to={{ pathname: memoryPath("library", run.source_id), search }}
+        onClick={(event) => recordFocusIntent(run.source_id, event.currentTarget)}
+      >
         {run.name} pass {run.ordinal}
       </Link>
       .
@@ -257,7 +261,12 @@ function ExcludedList({
       <ul className="rl-rereview-excluded">
         {settings.excluded.map((source) => (
           <li key={source.id}>
-            <Link to={{ pathname: memoryPath("library", source.id), search }}>{source.name}</Link>
+            <Link
+              to={{ pathname: memoryPath("library", source.id), search }}
+              onClick={(event) => recordFocusIntent(source.id, event.currentTarget)}
+            >
+              {source.name}
+            </Link>
             <Button
               variant="plain"
               compact

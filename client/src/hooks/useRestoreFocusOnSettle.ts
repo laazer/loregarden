@@ -1,20 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { focusIfIdle } from "../lib/focusIntent";
+
 /** A control that can be disabled while its own action is in flight. */
 type ActivatedControl = HTMLElement & { disabled?: boolean };
-
-/**
- * Focus `target`, unless the operator is somewhere of their own.
- *
- * Restore, never take: anything other than `<body>` is focus the operator
- * moved while the action was in flight, and that holds for the landing exactly
- * as it holds for the armed control.
- */
-function focusIfIdle(target: HTMLElement | null | undefined) {
-  if (!target) return;
-  if (document.activeElement !== document.body) return;
-  target.focus();
-}
 
 /**
  * Keep focus on the control the operator activated across a pending action.
@@ -31,6 +20,10 @@ function focusIfIdle(target: HTMLElement | null | undefined) {
  * refusal block stays `role="status"` / `aria-live="polite"` and is announced
  * without ever being focused. Keeping the `disabled` attribute is what makes a
  * second activation mid-flight impossible, so the idempotence does not move.
+ *
+ * The idle guard itself is `focusIfIdle` in `lib/focusIntent`, shared with the
+ * surfaces that focus a heading on open rather than a control on settle — one
+ * rule, one copy, which is what lg-milestone-that-2205 is about.
  *
  * Restoring is also why focus is only handed back when `document.activeElement`
  * is `<body>`. That is the state the browser leaves behind when it blurs the

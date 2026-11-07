@@ -23,6 +23,7 @@ import {
   type ArtifactTab,
   type StudioSection,
 } from "./appNavigation";
+import { recordFocusIntent } from "./focusIntent";
 
 export type { AppPage, ArtifactTab, StudioSection } from "./appNavigation";
 export {
@@ -61,6 +62,13 @@ export function navigateToPage(page: AppPage, replace = false) {
 export function navigateToReferenceSource(sourceId: string, replace = false) {
   const navigate = getRouterNavigate();
   if (!navigate) return;
+  // The one site with no event to read `currentTarget` from. Stamping
+  // `document.activeElement` is sound here because its only caller is a chat
+  // action button that stays mounted across the navigation; a `<Link>` would
+  // not, which is why the other eight sites pass their own element. Stamped
+  // after the guard above, so a navigation that never happened leaves no live
+  // intent for whatever mounts next.
+  recordFocusIntent(sourceId, document.activeElement as HTMLElement | null);
   navigate(memoryPath("library", sourceId), { replace });
 }
 
