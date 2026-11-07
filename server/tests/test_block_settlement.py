@@ -338,9 +338,7 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:advance_stage_after_run": "settles",
     "services/run_completion.py:_block_on_report": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",
-    "services/scope_round.py:open_round_or_block": (
-        "delegates: orchestration_callbacks.block_ticket"
-    ),
+    "services/criterion_gate.py:_block": "delegates: orchestration_callbacks.block_ticket",
     "services/stage_retry_budget.py:enforce_stage_retry_budget": (
         "delegates: orchestration_callbacks.block_ticket"
     ),

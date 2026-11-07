@@ -12,6 +12,8 @@ SPEC_AGENT_ID = "spec"
 #: Decides a ticket's user-facing surfaces; its passing run must leave the UX
 #: answers the ticket's PR is built from (`services.ux_answers`).
 UI_DESIGN_AGENT_ID = "ui-design-decision"
+#: Proves a ticket's acceptance criteria met, one by one (`services.criterion_ledger`).
+VERIFIER_AGENT_ID = "verifier"
 
 AGENTS: dict[str, dict] = {
     "planner": {

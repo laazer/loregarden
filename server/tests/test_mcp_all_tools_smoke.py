@@ -50,6 +50,10 @@ NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
 #   still-undecided ticket, which this seed never produces. test_scope_round drives it
 #   end to end through execute_tool, as the spec run and as an operator.
 NEEDS_AN_UNDECIDED_FINDING = "loregarden_decide_finding"
+#   loregarden_settle_criterion -> its met path reads the ticket's checkout HEAD and its
+#   delegated path needs a second ticket; test_criterion_tools drives both, as the
+#   owning stage's run and as an operator.
+NEEDS_A_TICKET_CHECKOUT = "loregarden_settle_criterion"
 #   loregarden_begin_external_stage / _finish_external_stage -> only meaningful on an
 #   orchestration run opened with external_harness set, and they check a real stage out
 #   to a caller outside this process. test_external_harness.py drives both over MCP.
@@ -541,6 +545,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
         NEEDS_A_SECOND_WORKSPACE,
         NEEDS_AN_UNDECIDED_FINDING,
+        NEEDS_A_TICKET_CHECKOUT,
         NEEDS_A_WRITTEN_ARTIFACT,
         NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,

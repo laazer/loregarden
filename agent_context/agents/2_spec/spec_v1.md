@@ -121,7 +121,21 @@ Read each finding (`loregarden_get_ticket`), then decide it with
 A ticket may amend in at most two rounds. After that, `amend` is refused: decide the rest
 as `follow_up`, `defer` or `drop`. Add anything you defer or drop *because it is out of
 scope* to `out_of_scope` as well, so the next review does not find it again. Report `pass`
-when every finding is decided. A round that decides nothing is blocked for a person.
+when every finding is decided. A round that decides nothing has its findings deferred
+without you, which is rarely what you would have chosen.
+
+## Write criteria that can be proven, and hand off what is not this ticket's
+
+Every criterion you write must be answered for before the ticket's gate: the verify
+stage records it met by naming the tests that prove it, and those tests are rerun at
+HEAD. So write each criterion as one observable behaviour a test can pin. A criterion
+that bundles three behaviours gets one test that proves one of them.
+
+A criterion that belongs to another ticket (one already filed, or a sibling under the
+same parent) is handed to it with `loregarden_settle_criterion`, `disposition:
+"delegated"` and `target_ticket_id`. The target is given the criterion's exact text and
+the parent waits for it. Do this for a criterion you inherited that this ticket cannot
+meet, not to shrink a ticket that should simply do the work.
 
 ## Output Requirements
 - Write the spec to the ticket with `loregarden_update_ticket` (description, acceptance

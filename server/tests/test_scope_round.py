@@ -23,12 +23,14 @@ from loregarden.models.domain import (
     WorkItemType,
 )
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.scope_round import (
     MAX_AMEND_ROUNDS,
     ScopeRoundStuck,
     decide_finding,
     open_round,
+    open_round_or_defer,
     round_due,
 )
 from loregarden.services.seed import seed_database
@@ -265,3 +267,21 @@ def test_the_spec_records_what_it_rules_out_and_every_reader_sees_it(db_session,
         )
     )
     assert read["out_of_scope"] == ruled_out
+
+
+def test_findings_a_spec_will_not_decide_are_deferred_not_blocked(db_session, source):
+    """The second identical round defers the findings and the ticket goes on; no person is asked."""
+    finding = _file(
+        db_session, _run(db_session, source, "architecture_reviewer", "r1"), "F", parent=source
+    )
+    instance, stages = _stages(db_session, source)
+    open_round(db_session, source, instance, stages, stages[-1])
+    set_stage_status(source, instance, stages, "spec", StageStatus.DONE)  # spec decided nothing
+    db_session.commit()
+
+    open_round_or_defer(db_session, source, stages[-1])
+
+    db_session.refresh(source)
+    assert source.state is not TicketState.BLOCKED
+    assert undecided(db_session, finding.id) is None
+    assert not round_due(db_session, source, stages, stages[-1])

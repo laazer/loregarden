@@ -102,3 +102,17 @@ class OrchestratorDecision(StrEnum):
     #: holds no children, or its branch already carries work a split would strand.
     #: Recorded once per content, so a ticket that grows again is tried again.
     RAN_OVERSIZED_UNSPLIT = "ran_oversized_unsplit"
+    #: Criteria a ticket could not meet within its rework budget moved to a new
+    #: sibling the parent waits for, and the ticket went on with the rest
+    #: (`criterion_split`). Each criterion is split at most once.
+    SPLIT_CRITERIA = "split_criteria"
+    #: The check before the gate found criteria not answered for (unsettled,
+    #: failing at HEAD, or delegated to a ticket that dropped them), and sent
+    #: the ticket back to its verify stage with the list (`criterion_gate`).
+    CRITERIA_SENT_TO_VERIFY = "criteria_sent_to_verify"
+    #: Every criterion was answered for at the check before the gate. The
+    #: evidence says which tests were rerun and which only checked to exist.
+    CRITERIA_CHECKED = "criteria_checked"
+    #: A scope round's spec decided none of the findings it was asked to, twice,
+    #: so the remaining findings were deferred rather than blocking for a person.
+    DEFERRED_UNDECIDED_FINDINGS = "deferred_undecided_findings"

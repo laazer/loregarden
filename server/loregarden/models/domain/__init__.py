@@ -12,6 +12,7 @@ from loregarden.models.domain.chat_tables import *  # noqa: F401,F403
 from loregarden.models.domain.chat_wait_enums import *  # noqa: F401,F403
 from loregarden.models.domain.chat_wait_tables import *  # noqa: F401,F403
 from loregarden.models.domain.checkout_enums import *  # noqa: F401,F403
+from loregarden.models.domain.criterion_tables import *  # noqa: F401,F403
 from loregarden.models.domain.discovery_tables import *  # noqa: F401,F403
 from loregarden.models.domain.disk_tables import *  # noqa: F401,F403
 from loregarden.models.domain.docker_tables import *  # noqa: F401,F403

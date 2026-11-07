@@ -22,7 +22,10 @@ from loregarden.models.domain import (
 
 # Imported for its side effect: installs the splitter a spec's operation-criteria
 # decision calls (`operation_criteria`). Every entry point imports this module.
-from loregarden.services import operation_split  # noqa: F401
+from loregarden.services import (
+    criterion_split_creator,  # noqa: F401
+    operation_split,  # noqa: F401
+)
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_settlement import settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator

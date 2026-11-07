@@ -18,6 +18,7 @@ from loregarden.mcp.admission import (
 )
 from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
+from loregarden.mcp.criterion_tools import CRITERION_TOOL_DEFINITIONS, settle_criterion_tool
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
 from loregarden.mcp.discovery_tools import DISCOVERY_TOOL_DEFINITIONS, decide_finding_tool
 from loregarden.mcp.disk_usage_tool import TOOL_DEFINITION as DISK_USAGE_TOOL_DEFINITION
@@ -1103,6 +1104,7 @@ TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(CRITERION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
@@ -1200,11 +1202,18 @@ def _decide_finding(
     return decide_finding_tool(session, arguments, orchestrated=orchestrated, run_id=run_id)
 
 
+def _settle_criterion(
+    session: Session, _svc, arguments: dict[str, Any], *, orchestrated: bool, run_id: str
+) -> str:
+    return settle_criterion_tool(session, arguments, orchestrated=orchestrated, run_id=run_id)
+
+
 #: Tools whose answer depends on which run is calling: who filed a ticket, and
-#: whether the caller is the spec that may decide a finding.
+#: whether the caller is the stage that may decide a finding or settle a criterion.
 _RUN_AWARE_HANDLERS = {
     "loregarden_create_ticket": _create_ticket,
     McpTool.DECIDE_FINDING.value: _decide_finding,
+    McpTool.SETTLE_CRITERION.value: _settle_criterion,
 }
 
 

@@ -50,6 +50,7 @@ from loregarden.services.autopilot_sign_off import (
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.block_repair import conflict_refusal, record_repair_outcome
 from loregarden.services.block_settlement import BlockSettlement, settle_block
+from loregarden.services.criterion_split import split_instead_of_pausing
 from loregarden.services.dependency_hold import (
     holding_prerequisites,
     link_reported_prerequisites,
@@ -203,6 +204,16 @@ def _reroute_or_block_for_rework(
         run_id=run.id,
     )
     if exhausted is not ReworkStopReason.NONE:
+        split = split_instead_of_pausing(
+            orch.session,
+            ticket,
+            instance,
+            stages,
+            stage_key=run.stage_key,
+            unmet=report.unmet_criteria,
+        )
+        if split.split:
+            return
         count = rework_reroute_count(orch.session, ticket, target_stage)
         if exhausted is ReworkStopReason.STUCK:
             reason = (
@@ -218,6 +229,8 @@ def _reroute_or_block_for_rework(
                 f"'{run.stage_key}'. Paused for a human — see the accumulated rework feedback "
                 f"before re-running."
             )
+        if split.refusal:
+            reason = f"{reason} {split.refusal}"
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, reason)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)

@@ -60,6 +60,7 @@ from loregarden.services.invariant_registry import (
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
+    DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     EVERY_BLOCK_IS_SETTLED,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
@@ -301,6 +302,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
     _invariant(UNDECIDED_FINDINGS_DO_NOT_RUN),
+    # A ticket that finished past the criteria check without answering for its
+    # criteria. Report-only; reopening it is a person's call.
+    _invariant(DONE_TICKETS_HAVE_SETTLED_CRITERIA),
     # A race lost to a run already doing the work is never the ticket's block
     # (lg-milestone-that-1216). Report-only: it says which run finished the work.
     _invariant(NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN),

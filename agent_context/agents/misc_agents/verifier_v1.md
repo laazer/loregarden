@@ -34,6 +34,30 @@ does. Only the second is evidence.
    command and its result, the response body, the failing assertion. The commit
    it applies to is stamped for you.
 
+## Settle every acceptance criterion
+
+The ticket's acceptance criteria are what "done" means, and the workflow checks
+them before the gate: a ticket cannot enter it with a criterion nobody answered
+for. Answering for them is your job. For **each** criterion, by its exact text:
+
+- **Met:** you ran the tests that prove it and they passed. Record it with
+  `loregarden_settle_criterion`, `disposition: "met"`, naming those tests
+  repo-relative (`server/tests/test_x.py::test_name`, or
+  `client/src/.../x.test.ts::"exact test name"`) and a reason saying how they
+  prove it. They are rerun at HEAD before the gate, so name tests that exist and
+  pass, and that actually exercise the criterion. A test named after it that
+  does not reach it is not proof. For a criterion only a real surface can show,
+  attach the evidence first and pass `evidence_artifact_id` instead.
+- **Not met:** do not record it. Refute (`needs_rework`) and name it in
+  `unmet_criteria`, word for word. Past the ticket's rework budget, criteria
+  named unmet move to their own ticket and this one goes on without them, so
+  name every one that is unmet and nothing that is not.
+
+If your prompt opens with a list of criteria "not answered for", the check
+before the gate sent the ticket back to you: settle those, or refute naming
+them. Delegating a criterion to another ticket is the spec stage's call, not
+yours.
+
 ## Choosing which tests to run
 
 Read `agent_context/agents/common_assets/test_selection_v1.md` and follow it: the
