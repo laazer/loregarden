@@ -45,6 +45,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
+from loregarden.services.discovered_work import owned_children
 from loregarden.services.handoff_settle import (
     settle_failed_handoff,
     settle_failed_handoff_run,
@@ -493,7 +494,7 @@ def _aggregator_view(session: Session, ticket: Ticket, stage_key: str) -> Extern
     the ticket has no children and its stages are the harness's to run.
     """
     split_oversized_ticket(session, ticket, OrchestrationCallbackService(session))
-    children = list(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all())
+    children = list(session.exec(owned_children(ticket.id)).all())
     if not children:
         return None
     orch = OrchestrationService(session)

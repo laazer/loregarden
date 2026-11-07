@@ -49,6 +49,7 @@ class McpTool(StrEnum):
     ENQUEUE_MERGE = "loregarden_enqueue_merge"
     DEQUEUE_MERGE = "loregarden_dequeue_merge"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
+    TRIAGE_DISCOVERY = "loregarden_triage_discovery"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
     UPSERT_MEMORY = "loregarden_upsert_memory"
@@ -398,6 +399,9 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.ENQUEUE_MERGE,
     McpTool.DEQUEUE_MERGE,
     McpTool.SUPERSEDE_TICKET,
+    # Promotes a run's finding into its parent's work, or closes it: a triage
+    # decision, never a stage's to make about what its own run filed.
+    McpTool.TRIAGE_DISCOVERY,
     # Publishes to, and pulls from, a GitHub repository: an operator move on a
     # ticket, never something a stage does to the ticket it was dispatched for.
     McpTool.SYNC_GITHUB_ISSUES,

@@ -19,6 +19,7 @@ from loregarden.mcp.admission import (
 from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
+from loregarden.mcp.discovery_tools import DISCOVERY_TOOL_DEFINITIONS
 from loregarden.mcp.disk_usage_tool import TOOL_DEFINITION as DISK_USAGE_TOOL_DEFINITION
 from loregarden.mcp.docker_capacity_tool import (
     TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
@@ -1092,6 +1093,7 @@ TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)

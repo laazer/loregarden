@@ -99,6 +99,7 @@ from loregarden.services.unresolved_ledger import (
 from loregarden.services.unresolved_ledger import (
     repair_unaudited_open_shrink as _repair_open_shrink_findings,
 )
+from loregarden.services.untriaged_discovery_runs import untriaged_discoveries_that_ran
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -700,6 +701,19 @@ HELD_TICKETS_RESUME = Invariant(
         "a prerequisite landing is the event the hold waits for; nothing resumes the held "
         "ticket at that moment, so every release starts here"
     ),
+)
+
+UNTRIAGED_FINDINGS_DO_NOT_RUN = Invariant(
+    name="untriaged_findings_do_not_run",
+    ticket="lg-milestone-that-1216",
+    statement="no open ticket a run filed is driven before triage promotes it",
+    detect=untriaged_discoveries_that_ran,
+    # Report-only: the run already happened; promote or close is a person's call.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 7),
+    prevented_by="server/tests/test_discovered_work.py::test_no_dispatcher_can_start_an_untriaged_finding",
+    unrepaired_action="Triage it: loregarden_triage_discovery action=promote or action=close",
 )
 
 
@@ -1429,6 +1443,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     AWAITING_STAGES_ARE_ASKED,
     HELD_TICKETS_RESUME,
+    UNTRIAGED_FINDINGS_DO_NOT_RUN,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
     LANDINGS_CARRY_THE_WORK,

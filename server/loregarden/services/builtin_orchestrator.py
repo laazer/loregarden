@@ -31,6 +31,7 @@ from loregarden.services.child_readiness import (
     partition_children,
 )
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
+from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.hold_line import render_hold_line
@@ -639,12 +640,8 @@ class BuiltinOrchestrator:
         return None
 
     def _has_child_tickets(self, ticket: Ticket) -> bool:
-        return (
-            self.session.exec(
-                select(Ticket.id).where(Ticket.parent_ticket_id == ticket.id).limit(1)
-            ).first()
-            is not None
-        )
+        # An untriaged finding filed under it is not its work (`discovered_work`).
+        return has_owned_children(self.session, ticket.id)
 
     def _finalize_aggregator_parent(
         self, orch_run: OrchestrationRun, ticket: Ticket

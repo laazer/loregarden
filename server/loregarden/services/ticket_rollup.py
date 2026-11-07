@@ -40,6 +40,7 @@ import logging
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import BlockKind, EventType, Ticket, TicketState, WorkItemType
+from loregarden.services.discovered_work import has_owned_children, owned_children
 from loregarden.services.initiative_coverage import (
     initiative_roots,
     initiatives_tracking,
@@ -78,12 +79,10 @@ def has_children(session: Session, ticket_id: str) -> bool:
 
     The predicate the workflow side asks before deriving a state from stages: a
     parent's stages are never run, so deriving from them answers `backlog`
-    forever and overwrites whatever the rollup just worked out.
+    forever and overwrites whatever the rollup just worked out. An untriaged
+    finding filed under it does not make it one (`discovered_work`).
     """
-    return (
-        session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == ticket_id).limit(1)).first()
-        is not None
-    )
+    return has_owned_children(session, ticket_id)
 
 
 def _child_states(session: Session, parent_id: str) -> list[TicketState]:
@@ -91,9 +90,7 @@ def _child_states(session: Session, parent_id: str) -> list[TicketState]:
     if parent is not None and parent.work_item_type == WorkItemType.INITIATIVE:
         # Its children and its members (`initiative_coverage`).
         return [t.state for t in initiative_roots(session, [parent_id])[parent_id].roots]
-    return list(
-        session.exec(select(Ticket.state).where(Ticket.parent_ticket_id == parent_id)).all()
-    )
+    return [child.state for child in session.exec(owned_children(parent_id)).all()]
 
 
 def reconcile_parent(session: Session, parent: Ticket) -> bool:

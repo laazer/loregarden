@@ -23,6 +23,7 @@ from loregarden.mcp.chat_wait_tool import (
     TOOL_DEFINITIONS as CHAT_WAIT_TOOL_DEFINITIONS,  # noqa: F401 — re-export for tools.py
 )
 from loregarden.mcp.devdocs_tool import search_reference_tool
+from loregarden.mcp.discovery_tools import HANDLERS as DISCOVERY_HANDLERS
 from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
     docker_capacity_status_tool,
@@ -93,6 +94,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **DOCUMENT_HANDLERS,
     **UX_ANSWERS_HANDLERS,
     **FIX_COVERAGE_HANDLERS,
+    **DISCOVERY_HANDLERS,
     **MERGE_QUEUE_HANDLERS,
     **SURVEY_HANDLERS,
 }

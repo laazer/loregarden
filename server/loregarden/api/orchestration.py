@@ -9,6 +9,7 @@ from loregarden.models.domain import (
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
+    DiscoveryTriage,
     GateOutcome,
     GatesConfigUpdate,
     GateTestCommandResult,
@@ -28,6 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.discovered_work import triage, untriaged
 from loregarden.services.gate_runner import (
     dry_run_gate_commands,
     gates_can_run,
@@ -237,6 +239,11 @@ def start_orchestration(
     driver = body.driver or profile.driver
     if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
         raise HTTPException(400, "Use POST /api/tickets/{id}/start for manual_stage driver")
+    if untriaged(session, ticket.id) is not None:
+        # A run's finding is held out of the work until triaged. A person
+        # pressing Run on it is that triage; there is no other start to wait for.
+        triage(session, ticket, DiscoveryTriage.PROMOTE, actor="operator")
+        session.commit()
     active = svc.get_active_orchestration_run(ticket.id)
     if active is not None:
         # Before the reservation and the claim: `claim_orchestration_run` hands

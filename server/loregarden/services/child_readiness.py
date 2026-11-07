@@ -33,17 +33,18 @@ from loregarden.services.dependency_readiness import (
     UnmetReason,
     unmet_prerequisites_for_start,
 )
+from loregarden.services.discovered_work import owned_children
 from loregarden.services.hold_line import HeldChild, render_hold_line
 from loregarden.services.subtree_auto_run import order_children_for_subtree
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import parse_stage_map
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 
 def ordered_children(session: Session, ticket: Ticket) -> list[Ticket]:
     """``ticket``'s direct children, in the order a subtree pass would run them."""
-    children = list(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all())
+    children = list(session.exec(owned_children(ticket.id)).all())
     prereqs = TicketDependencyService(session).prerequisites_map([c.id for c in children])
     return order_children_for_subtree(children, prereqs)
 
