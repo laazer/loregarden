@@ -2,14 +2,15 @@
 
 Both drivers call `before_next_stage` before choosing a stage, the same step
 the scope round takes (`scope_round.open_round_if_due`). When the stage they
-are about to enter is the ticket's gate, which is its first gate-type stage
-(or its terminal stage when it has none), the criteria are checked
-(`criterion_check`):
+are about to enter is the one the check guards (`criterion_gate_stages.check_due`:
+the gate after a verify stage, or the stage after a gate that settles its own
+criteria), the criteria are checked (`criterion_check`):
 
 - All answered for: the gate runs, and the history records which tests were
   rerun and which were only checked to exist.
-- Gaps: the verify stage reopens, with the gaps as its brief, to settle them.
-- The same gaps again after verify had its turn: the criteria behind them
+- Gaps: the stage that settles criteria (verify, or the AC gate) reopens,
+  with the gaps as its brief, to settle them.
+- The same gaps again after it had its turn: the criteria behind them
   move to a sibling (`criterion_split`), and the ticket goes on with the rest.
 - The tests could not run at all: an environment block, not rework.
 
@@ -31,7 +32,7 @@ from loregarden.models.domain import (
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.criterion_check import CriteriaCheck, check_criteria
-from loregarden.services.criterion_gate_stages import check_due, verify_of
+from loregarden.services.criterion_gate_stages import check_due, settler_of
 from loregarden.services.criterion_split import SplitRefused, split_criteria
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -66,15 +67,15 @@ def _send_back(
     ticket: Ticket,
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
-    verify: WorkflowStageDef,
+    settler: WorkflowStageDef,
     target: WorkflowStageDef,
     brief: str,
 ) -> None:
     record_rework_feedback(
-        session, ticket, target_stage=verify.key, from_stage=target.key, context=brief
+        session, ticket, target_stage=settler.key, from_stage=target.key, context=brief
     )
     set_stage_status(
-        ticket, instance, stages, verify.key, StageStatus.PENDING, note="criteria check"
+        ticket, instance, stages, settler.key, StageStatus.PENDING, note="criteria check"
     )
     reconcile_workflow_state(ticket, instance, stages, persist=False)
     session.add_all([ticket, instance])
@@ -113,14 +114,17 @@ def _answer_gaps(
     target: WorkflowStageDef,
     check: CriteriaCheck,
 ) -> bool:
-    """Send the gaps to verify, or split them off when verify already had them. True if blocked."""
-    verify = verify_of(stages)
+    """Send the gaps to the stage that settles criteria, or split them off when it already had them.
+
+    True if blocked.
+    """
+    settler = settler_of(stages)
     instance = workflow_instance_for(session, ticket.id)
     brief = _brief(ticket, target, check)
-    if verify is None or instance is None:
+    if settler is None or instance is None:
         return False
-    if latest_rework_context(session, ticket, verify.key) != brief:
-        _send_back(session, ticket, instance, stages, verify, target, brief)
+    if latest_rework_context(session, ticket, settler.key) != brief:
+        _send_back(session, ticket, instance, stages, settler, target, brief)
         return False
     try:
         split_criteria(
@@ -128,7 +132,7 @@ def _answer_gaps(
             ticket,
             [gap.criterion for gap in check.gaps],
             stage_key=target.key,
-            why="its verify stage was asked to answer for them and could not.",
+            why=f"its {settler.key} stage was asked to answer for them and could not.",
         )
     except SplitRefused as exc:
         return _block(session, orch_run, ticket, str(exc), BlockKind.DECISION)
@@ -161,14 +165,15 @@ def _record_checked(
 
 
 def check_criteria_if_due(session: Session, orch_run: OrchestrationRun, ticket: Ticket) -> bool:
-    """Check the criteria if the stage this ticket runs next is its gate. True when it blocked."""
+    """Check the criteria if the stage this ticket runs next is the one the check guards. True when it blocked."""
     instance = workflow_instance_for(session, ticket.id)
     _, stages = resolve_ticket_stages(session, ticket)
     if instance is None or not stages:
         return False
-    target_key = next_executable_stage(stages, parse_stage_map(instance, stages))
+    stage_map = parse_stage_map(instance, stages)
+    target_key = next_executable_stage(stages, stage_map)
     target = next((s for s in stages if s.key == target_key), None)
-    if target is None or not check_due(stages, target):
+    if target is None or not check_due(stages, stage_map, target):
         return False
     check = check_criteria(session, ticket)
     if check.unavailable:

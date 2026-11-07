@@ -32,10 +32,12 @@ from loregarden.models.domain import (
     UpdateTicketRequest,
 )
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.criterion_gate_stages import settler_of
 from loregarden.services.criterion_ledger import record_delegation, settle_met
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.workflow_service import resolve_ticket_stages
 
 CRITERION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -71,11 +73,21 @@ CRITERION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     }
 ]
 
-#: The agent each disposition belongs to, when a pipeline run records it.
-_SETTLER = {
-    CriterionDisposition.MET: VERIFIER_AGENT_ID,
-    CriterionDisposition.DELEGATED: SPEC_AGENT_ID,
-}
+
+def _owners(session: Session, ticket: Ticket, disposition: CriterionDisposition) -> list[str]:
+    """The agents a disposition belongs to on this ticket, when a pipeline run records it.
+
+    Delegating is the spec stage's. Met is the verifier's, and also the stage
+    that settles criteria in the ticket's own workflow (`settler_of`) when that
+    is another agent: Blobert TDD has no verify stage, and its AC gate settles them.
+    """
+    if disposition is CriterionDisposition.DELEGATED:
+        return [SPEC_AGENT_ID]
+    _, stages = resolve_ticket_stages(session, ticket)
+    settler = settler_of(stages)
+    if settler is None or settler.agent_id == VERIFIER_AGENT_ID:
+        return [VERIFIER_AGENT_ID]
+    return [VERIFIER_AGENT_ID, settler.agent_id]
 
 
 def _settler(
@@ -90,10 +102,10 @@ def _settler(
     if not orchestrated:
         return "operator"
     run = session.get(AgentRun, run_id) if run_id else None
-    owner = _SETTLER[disposition]
-    if run is None or run.agent_id != owner or run.ticket_id != ticket.id:
+    owners = _owners(session, ticket, disposition)
+    if run is None or run.agent_id not in owners or run.ticket_id != ticket.id:
         raise ValueError(
-            f"A criterion is recorded {disposition.value} by the {owner} stage of its own "
+            f"A criterion is recorded {disposition.value} by the {' or '.join(owners)} stage of its own "
             "ticket. Name it in your stage report instead (unmet_criteria)."
         )
     return f"run:{run.id}"
