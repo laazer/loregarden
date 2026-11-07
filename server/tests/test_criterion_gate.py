@@ -8,6 +8,7 @@ was not rerun is never reported as one that was.
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ from loregarden.models.domain import (
 from loregarden.services import criterion_split_creator  # noqa: F401 — installs the creator
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.auto_decisions import auto_decisions_under
+from loregarden.services.criterion_check import _render, _runner_for
 from loregarden.services.criterion_gate import check_criteria_if_due, check_due, gate_of
 from loregarden.services.criterion_ledger import (
     record_delegation,
@@ -44,6 +46,8 @@ from loregarden.services.orchestration_profile import (
     CriterionTestCommand,
     GatesConfig,
     OrchestrationProfile,
+    load_profile_from_path,
+    orchestration_dir,
 )
 from loregarden.services.seed import seed_database
 from loregarden.services.unsettled_criteria_runs import done_tickets_with_unsettled_criteria
@@ -362,3 +366,16 @@ def test_a_test_no_command_reruns_must_still_exist(db_session, ticket, env):
     _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_never_written")
     check_criteria_if_due(db_session, _orch_run(db_session, ticket), ticket)
     assert _next(db_session, ticket) == "verify"
+
+
+def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():
+    profile = load_profile_from_path(orchestration_dir() / "loregarden.yaml")
+    commands = profile.gates.criterion_test_commands
+    test_id = 'client/src/lib/__tests__/criterionJest.test.ts::"refuses an id with no test name"'
+
+    runner = _runner_for(test_id, commands)
+
+    assert runner is not None and runner.prefix == "client/"
+    argv = shlex.split(_render(runner, [test_id]))
+    assert argv == ["node", "client/scripts/criterion-jest.cjs", test_id]
+    assert (orchestration_dir().parents[1] / argv[1]).is_file()

@@ -40,13 +40,18 @@ gates:
     - bash -c "cd client && npx --no-install oxlint --fix ."
   autofix_agent_fallback: true
   # The check before the gate reruns the tests each acceptance criterion names
-  # (`criterion_gate`). Server tests only: a ticket worktree has no
-  # client/node_modules, so jest there is UNAVAILABLE, and client test ids are
-  # checked to exist and reported as not rerun. No shell, cwd at the checkout
-  # root, so `--directory server` is what resolves the project.
+  # (`criterion_gate`). No shell, cwd at the checkout root, so `--directory
+  # server` is what resolves the project. Client tests go through
+  # `criterion-jest.cjs`, which fails unless every named test ran and passed
+  # (`jest -t` alone exits 0 on a name that matched nothing) and exits 69,
+  # UNAVAILABLE, when the worktree has no client/node_modules; ticket worktrees
+  # link the parent checkout's (`worktree_service.link_ignored_toolchains`).
   criterion_test_commands:
     - prefix: server/
       command: uv run --directory server pytest -q -p no:cacheprovider {tests}
+    - prefix: client/
+      command: node client/scripts/criterion-jest.cjs {tests}
+      strip_prefix: false
   # Every gate here is static analysis whose mechanical fixer (ruff --fix /
   # oxlint --fix) already ran best-effort before an agent is ever spawned, so
   # what reaches an agent is a real code issue rather than formatting. That was
