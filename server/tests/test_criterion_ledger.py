@@ -78,6 +78,9 @@ def test_rewording_a_criterion_voids_its_settlement(db_session, ticket):
     db_session.add(ticket)
     db_session.commit()
     assert unsettled(db_session, ticket)[0] == "Every layout arm reads width"
+    assert CRITERIA[0] not in settlements_of(db_session, ticket), (
+        "the old wording's proof is not this one's"
+    )
 
 
 def test_met_needs_proof_a_reason_and_the_exact_text(db_session, ticket):

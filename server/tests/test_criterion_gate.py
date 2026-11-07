@@ -354,3 +354,11 @@ def test_a_split_shows_in_the_digest_of_the_tree_above_it(db_session, ticket, en
     assert [(d.external_id, d.decision.value, d.related_external_id) for d in digest] == [
         (ticket.external_id, "split_criteria", split.external_id)
     ]
+
+
+def test_a_test_no_command_reruns_must_still_exist(db_session, ticket, env):
+    env.return_value = _profile([])
+    _met(db_session, ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_never_written")
+    check_criteria_if_due(db_session, _orch_run(db_session, ticket), ticket)
+    assert _next(db_session, ticket) == "verify"
