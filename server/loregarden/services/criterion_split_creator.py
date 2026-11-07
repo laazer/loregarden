@@ -6,9 +6,10 @@ that call `criterion_split` (see `operation_split`, the same wiring).
 
 from __future__ import annotations
 
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.criterion_split import SPLIT_BY, set_split_ticket_creator
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session
 
 
@@ -21,7 +22,7 @@ def _create_split_ticket(
     description: str,
     criteria: list[str],
 ) -> Ticket:
-    workspace = session.get(Workspace, source.workspace_id)
+    workspace = workspace_for_ticket(session, source)
     return TicketService(session).create_ticket(
         workspace_slug=workspace.slug if workspace else None,
         title=title,
