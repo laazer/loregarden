@@ -277,7 +277,10 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   // The branch below turns on whether a layout engine exists, not on what one
   // element measures. Where there is one, two things are asked of the region
   // and both are the engine's answer rather than the stylesheet's: does it
-  // actually clip (`scrollHeight > clientHeight`, axe-core's own test, which
+  // actually clip, on an axis that actually scrolls (axe-core's own test,
+  // asked per axis — `scrollHeight > clientHeight` where the vertical axis has
+  // a scrollbar, `scrollWidth > clientWidth` where the horizontal one does,
+  // since a region clipped sideways is reachable by no key either, which
   // `nested-boxes` above precedents by reading geometry rather than
   // declarations), and does the browser render it at all. A declared bound is
   // no evidence there: `getComputedStyle().height` is the *used* height in px
@@ -329,11 +332,38 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
      */
     const rendered = (el: Element): boolean =>
       typeof el.checkVisibility !== "function" || el.checkVisibility({ visibilityProperty: true });
+    /**
+     * Does *this* axis have a scrollbar — the question each geometry
+     * comparison below has to be gated on, because the admission test above
+     * takes either axis and a region bounded sideways is not thereby bounded
+     * downwards. `hidden`, `clip` and `visible` are the three spellings of
+     * "no scrollbar here", so a 1440px `scrollHeight` under `overflow-y:
+     * hidden` is content cut off rather than content a key could reach.
+     *
+     * The per-axis computed property answers it wherever there is one, which
+     * in a browser is always: Chromium expands the shorthand, so
+     * `overflow-x: auto; overflow-y: hidden` computes `overflowX` `"auto"`
+     * and `overflowY` `"hidden"` and the fallback below never runs.
+     */
+    const axisScrolls = (style: CSSStyleDeclaration, axis: "x" | "y"): boolean => {
+      const own = axis === "x" ? style.overflowX : style.overflowY;
+      if (own !== "") return SCROLLS.has(own);
+      // Only reachable under jsdom 26.1.0, which expands nothing: `overflow:
+      // auto hidden` computes the shorthand to `"auto hidden"` with BOTH axis
+      // properties `""`. Hence the per-axis *word* rather than the shorthand
+      // as one value — `SCROLLS.has("auto hidden")` is false, which would read
+      // both axes as unscrollable in the one engine this arm exists for. One
+      // word applies to both axes; two are `[x, y]`.
+      const words = style.overflow.trim().split(/\s+/);
+      return SCROLLS.has((axis === "x" ? words[0] : (words[1] ?? words[0])) ?? "");
+    };
     for (const el of Array.from(root.querySelectorAll("*"))) {
       const style = view.getComputedStyle(el);
       if (![style.overflow, style.overflowX, style.overflowY].some((value) => SCROLLS.has(value))) continue;
       if (laidOut) {
-        if (el.scrollHeight <= el.clientHeight) continue;
+        const clipsVertically = axisScrolls(style, "y") && el.scrollHeight > el.clientHeight;
+        const clipsHorizontally = axisScrolls(style, "x") && el.scrollWidth > el.clientWidth;
+        if (!clipsVertically && !clipsHorizontally) continue;
         if (!rendered(el)) continue;
       } else {
         if (UNBOUND.has(style.maxHeight) && UNBOUND.has(style.height)) continue;
