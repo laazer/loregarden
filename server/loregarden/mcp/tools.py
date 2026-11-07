@@ -19,6 +19,7 @@ from loregarden.mcp.admission import (
 from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
+from loregarden.mcp.discovery_tools import DISCOVERY_TOOL_DEFINITIONS, decide_finding_tool
 from loregarden.mcp.disk_usage_tool import TOOL_DEFINITION as DISK_USAGE_TOOL_DEFINITION
 from loregarden.mcp.docker_capacity_tool import (
     TOOL_DEFINITIONS as DOCKER_CAPACITY_TOOL_DEFINITIONS,
@@ -733,6 +734,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Read the ticket first if you mean to replace.",
                     list(CRITERIA_MODES),
                 ),
+                "out_of_scope": {
+                    "type": "array",
+                    "description": (
+                        "What the spec rules out of this ticket's scope, one entry each, "
+                        "written as '<what> — <why>'. Replaces the stored list; read the "
+                        "ticket first. Reviewers check findings against it."
+                    ),
+                    "items": {"type": "string"},
+                },
                 "tags": {
                     "type": "array",
                     "description": (
@@ -1092,6 +1102,7 @@ TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCKER_CAPACITY_TOOL_DEFINITIONS)
@@ -1183,6 +1194,20 @@ def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> st
     return json.dumps(_run_view(run), indent=2)
 
 
+def _decide_finding(
+    session: Session, _svc, arguments: dict[str, Any], *, orchestrated: bool, run_id: str
+) -> str:
+    return decide_finding_tool(session, arguments, orchestrated=orchestrated, run_id=run_id)
+
+
+#: Tools whose answer depends on which run is calling: who filed a ticket, and
+#: whether the caller is the spec that may decide a finding.
+_RUN_AWARE_HANDLERS = {
+    "loregarden_create_ticket": _create_ticket,
+    McpTool.DECIDE_FINDING.value: _decide_finding,
+}
+
+
 def execute_tool(
     session: Session,
     name: str,
@@ -1266,8 +1291,9 @@ def execute_tool(
     if delegated is not None:
         return delegated
 
-    if name == "loregarden_create_ticket":
-        return _create_ticket(session, svc, arguments, orchestrated=orchestrated, run_id=run_id)
+    run_aware = _RUN_AWARE_HANDLERS.get(name)
+    if run_aware is not None:
+        return run_aware(session, svc, arguments, orchestrated=orchestrated, run_id=run_id)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff

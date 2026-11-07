@@ -178,6 +178,8 @@ export interface TicketDetail extends TicketSummary {
   acceptance_criteria: string[];
   /** The subset of `acceptance_criteria` an operator has checked off. */
   checked_acceptance_criteria: string[];
+  /** What the spec ruled out of scope, each entry with its reason. */
+  out_of_scope?: string[];
   /** Tickets this one waits for (its prerequisites). */
   dependencies?: TicketDependencyRef[];
   /** Tickets waiting on this one. */

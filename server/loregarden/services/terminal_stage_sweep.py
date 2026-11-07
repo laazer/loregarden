@@ -41,6 +41,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.land_ticket import landing_would_succeed
 from loregarden.services.landing import parked_on_failed_landing
 from loregarden.services.orchestration import (
@@ -91,10 +92,7 @@ def _parked_on_terminal_stage(session: Session, ticket: Ticket) -> bool:
 
 
 def _has_children(session: Session, ticket: Ticket) -> bool:
-    return (
-        session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == ticket.id).limit(1)).first()
-        is not None
-    )
+    return has_owned_children(session, ticket.id)
 
 
 def finish_parked_terminal_tickets(

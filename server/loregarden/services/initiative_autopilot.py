@@ -91,6 +91,7 @@ from loregarden.services.autopilot_timing import (
 )
 from loregarden.services.child_readiness import subtree_start_hold
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
+from loregarden.services.discovered_work import has_owned_children, undecided
 from loregarden.services.initiative_graph import (
     NEEDS_PERSON_TAG,
     PlanContext,
@@ -279,6 +280,14 @@ def _dispatch(
             detail="ticket has no workspace",
         )
         return False
+    if undecided(session, ticket.id) is not None:
+        _record_once(
+            session,
+            plan.initiative_id,
+            ticket.id,
+            "waiting for its scope decision: a run filed it as a finding, and its source's spec decides it",
+        )
+        return False
     running_above = find_driving_ancestor(session, ticket)
     if running_above is not None:
         _record_once(
@@ -461,10 +470,7 @@ class AutopilotRefusedError(ValueError):
 def _has_children(session: Session, root: Ticket) -> bool:
     if root.work_item_type == WorkItemType.INITIATIVE:
         return True  # members count too; an empty initiative just has nothing ready
-    return (
-        session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == root.id)).first()
-        is not None
-    )
+    return has_owned_children(session, root.id)
 
 
 def set_autopilot(

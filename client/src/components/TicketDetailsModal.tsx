@@ -465,6 +465,18 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                 lockedHint={viewLocked ? DONE_CRITERIA_HINT : undefined}
               />
 
+              {/* Written by the spec; a finding on one of these is not new scope. */}
+              {asStringArray(ticket.out_of_scope).length > 0 && (
+                <div className="state-card">
+                  <div className="state-label" id="ticket-out-of-scope-label">Out of scope</div>
+                  <ul className="ticket-out-of-scope" aria-labelledby="ticket-out-of-scope-label">
+                    {asStringArray(ticket.out_of_scope).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {asStringArray(ticket.tags).length > 0 && (
                 <div className="state-card">
                   <div className="state-label">Tags</div>

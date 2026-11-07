@@ -39,6 +39,7 @@ from loregarden.services.dependency_hold import (
     latest_hold_at,
     ran_since,
 )
+from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_recovery import (
     InterruptionResume,
@@ -151,8 +152,13 @@ def _release_parked(session: Session, ticket: Ticket) -> InterruptionResume | No
     plan = None
     # Under an ancestor's live drive, unparking is enough: that drive's child
     # pass starts it. A resume of its own would race the pass (see
-    # `_held_and_releasable`).
-    if _ever_ran(session, ticket.id) and find_driving_ancestor(session, ticket) is None:
+    # `_held_and_releasable`). An undecided finding is unparked but not resumed
+    # either: nothing may start it until its scope is decided (`discovered_work`).
+    if (
+        _ever_ran(session, ticket.id)
+        and find_driving_ancestor(session, ticket) is None
+        and undecided(session, ticket.id) is None
+    ):
         plan = requeue_and_plan_resume(
             session, ticket, ticket.workflow_stage_key, reason=RELEASE_REASON
         )
@@ -194,6 +200,8 @@ def _held_and_releasable(session: Session, ticket: Ticket) -> bool:
         return False
     if find_active_orchestration_run(session, ticket.id) is not None:
         return False
+    if undecided(session, ticket.id) is not None:
+        return False  # resuming it would only meet `refuse_undecided`
     if find_driving_ancestor(session, ticket) is not None:
         # The ancestor's drive reaches this ticket in its own child pass.
         # Resuming it here as well raced that pass to the same start: the

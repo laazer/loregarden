@@ -45,6 +45,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
+from loregarden.services.discovered_work import owned_children
 from loregarden.services.handoff_settle import (
     settle_failed_handoff,
     settle_failed_handoff_run,
@@ -77,6 +78,7 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
+from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.stage_retry_budget import (
     refund_stage_dispatch_charged_since,
     stage_dispatch_marker_ids,
@@ -493,7 +495,7 @@ def _aggregator_view(session: Session, ticket: Ticket, stage_key: str) -> Extern
     the ticket has no children and its stages are the harness's to run.
     """
     split_oversized_ticket(session, ticket, OrchestrationCallbackService(session))
-    children = list(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all())
+    children = list(session.exec(owned_children(ticket.id)).all())
     if not children:
         return None
     orch = OrchestrationService(session)
@@ -536,6 +538,14 @@ def begin_external_stage(
     ticket = session.get(Ticket, orch_run.ticket_id)
     if not ticket:
         raise ValueError(f"Ticket not found: {orch_run.ticket_id}")
+    # The builtin driver's rule: findings are decided by the spec before the
+    # ticket reaches a gate or finishes (`scope_round`). A named stage is the
+    # harness's explicit choice and is served as asked.
+    if orch_run.external_harness is not None and not stage_key:
+        if open_round_if_due(session, orch_run, ticket):
+            return ExternalStageView(
+                stage_key=ticket.workflow_stage_key, message=ticket.blocking_issues
+            )
     view = _begin_external_stage(session, orch_run, ticket, stage_key=stage_key)
     stage = ticket_stage_definition(session, ticket, view.stage_key) if view.stage_key else None
     if stage is not None:

@@ -194,6 +194,9 @@ class Ticket(SQLModel, table=True):
     acceptance_criteria_json: str = "[]"
     #: The criteria an operator has ticked off, by text (services.acceptance_criteria).
     checked_criteria_json: str = "[]"
+    #: What the spec ruled out of this ticket's scope, each entry with its reason;
+    #: same shape as the criteria. Reviewers check findings against it (scope_round).
+    out_of_scope_json: str = "[]"
     #: Free-form labels, a JSON array of strings (see services.ticket_tags for the
     #: one place they are normalized). Not a table: tags carry no attributes of
     #: their own and are only ever read alongside the ticket that owns them.

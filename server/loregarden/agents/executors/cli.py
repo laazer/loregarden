@@ -60,6 +60,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
@@ -1064,6 +1065,12 @@ class CliAgentExecutor:
                 "## Acceptance Criteria",
                 *[f"- {item}" for item in ac],
             ],
+            # Ruled out by the spec, with reasons. A finding on one of these is
+            # not new scope unless its reason is wrong (scope_round).
+            titled_block(
+                "## Out of scope",
+                "\n".join(f"- {item}" for item in load_criteria(ticket.out_of_scope_json)),
+            ),
             # High in the prompt: these govern whether the agent runs or re-runs
             # work, so they must land before the role text that tells it to.
             titled_block("## Full test suite", full_suite_note),

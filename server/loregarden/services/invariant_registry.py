@@ -92,6 +92,7 @@ from loregarden.services.unavailable_gate_blocks import (
     refile_as_harness,
     work_blocks_from_unavailable_gates,
 )
+from loregarden.services.undecided_finding_runs import undecided_findings_that_ran
 from loregarden.services.unpublished_trees import publish_trees as _publish_unpublished_trees
 from loregarden.services.unpublished_trees import violations as _unpublished_tree_violations
 from loregarden.services.unresolved_ledger import (
@@ -701,6 +702,19 @@ HELD_TICKETS_RESUME = Invariant(
         "a prerequisite landing is the event the hold waits for; nothing resumes the held "
         "ticket at that moment, so every release starts here"
     ),
+)
+
+UNDECIDED_FINDINGS_DO_NOT_RUN = Invariant(
+    name="undecided_findings_do_not_run",
+    ticket="lg-milestone-that-1216",
+    statement="no open ticket a run filed is driven before triage promotes it",
+    detect=undecided_findings_that_ran,
+    # Report-only: the run already happened; promote or close is a person's call.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 7),
+    prevented_by="server/tests/test_discovered_work.py::test_no_dispatcher_can_start_an_undecided_finding",
+    unrepaired_action="Decide it: loregarden_decide_finding, from its source ticket's spec or as an operator",
 )
 
 
@@ -1451,6 +1465,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     AWAITING_STAGES_ARE_ASKED,
     HELD_TICKETS_RESUME,
+    UNDECIDED_FINDINGS_DO_NOT_RUN,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
     LANDINGS_CARRY_THE_WORK,

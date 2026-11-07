@@ -12,21 +12,41 @@ So the tool is the sanctioned path again, with the two things the curl lacked:
 
 - **Provenance.** The filed ticket is related to the ticket the run was
   working on, and that relation names the run (`created_by="run:<id>"`).
-- **A budget.** A run may file `MAX_TICKETS_PER_RUN`. The relation is the
-  count, so the record and the limit cannot disagree. A reviewer that wants
+- **A budget.** A run may file `MAX_TICKETS_PER_RUN`. A reviewer that wants
   more is enumerating a defect family, which is one ticket, not many.
+
+lg-milestone-that-1216 added the rest. A filing is also recorded as a directed,
+undecided finding (`services.discovered_work`): its parent neither runs it nor
+waits for it until its source ticket's spec decides its scope (`scope_round`). The budget counts those rows, not the
+relation: a relation is stored once per *pair*, so a filing against a ticket
+the run's own ticket was already related to wrote no row and went uncounted.
+Two more caps stop a fan-out a per-run limit cannot: one per drive, and one on
+the undecided findings a single ticket may hold.
 """
 
 from __future__ import annotations
 
-from loregarden.models.domain import AgentRun, Ticket, TicketRelation
+from loregarden.models.domain import AgentRun, Ticket, TicketDiscovery
+from loregarden.services.discovered_work import record_discovery
 from loregarden.services.ticket_relations import TicketRelationService
 from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 #: Tickets one agent run may file. Three covers a review that found a defect,
 #: its sibling, and the follow-up both point at.
 MAX_TICKETS_PER_RUN = 3
+#: Tickets one drive (one orchestration run's stages together) may file. The
+#: most any drive had filed was 8 (live database, 2026-11-07), all of them
+#: review findings on one milestone child.
+MAX_TICKETS_PER_DRIVE = 6
+#: Undecided findings one ticket may hold at once. The most any ticket had
+#: accumulated was 9. Past this, the findings are a family.
+MAX_UNTRIAGED_PER_SOURCE = 5
+
+_FAMILY = (
+    "If the findings are instances of one defect, add them to a ticket already filed with "
+    "loregarden_update_ticket; otherwise name them in your stage report."
+)
 
 
 class FilingRefused(ValueError):
@@ -53,21 +73,40 @@ def filing_run(session: Session, run_id: str) -> AgentRun:
     return run
 
 
+def _filed(session: Session, *where) -> int:
+    return session.exec(select(func.count()).select_from(TicketDiscovery).where(*where)).one()
+
+
 def check_filing_budget(session: Session, run: AgentRun) -> None:
-    """Refuse a run's filing past `MAX_TICKETS_PER_RUN`."""
-    filed = session.exec(
-        select(func.count())
-        .select_from(TicketRelation)
-        .where(TicketRelation.created_by == filed_by(run))
-    ).one()
-    if filed >= MAX_TICKETS_PER_RUN:
+    """Refuse a run's filing past any of the three caps, naming which one."""
+    by_run = _filed(session, TicketDiscovery.agent_run_id == run.id)
+    if by_run >= MAX_TICKETS_PER_RUN:
         raise FilingRefused(
-            f"This run has already filed {filed} tickets, the most one run may file. If the "
-            "findings are instances of one defect, add them to a ticket you already filed "
-            "with loregarden_update_ticket; otherwise name them in your stage report."
+            f"This run has already filed {by_run} tickets, the most one run may file. {_FAMILY}"
         )
+    if run.orchestration_run_id:
+        by_drive = _filed(session, TicketDiscovery.orchestration_run_id == run.orchestration_run_id)
+        if by_drive >= MAX_TICKETS_PER_DRIVE:
+            raise FilingRefused(
+                f"This drive has already filed {by_drive} tickets, the most one drive may "
+                f"file. {_FAMILY}"
+            )
+    if run.ticket_id:
+        waiting = _filed(
+            session,
+            TicketDiscovery.source_ticket_id == run.ticket_id,
+            col(TicketDiscovery.decision).is_(None),
+        )
+        if waiting >= MAX_UNTRIAGED_PER_SOURCE:
+            raise FilingRefused(
+                f"This ticket already has {waiting} findings waiting for a scope decision, the most one "
+                f"ticket may hold. {_FAMILY}"
+            )
 
 
 def record_filing(session: Session, run: AgentRun, filed: Ticket) -> None:
-    """Relate the filed ticket to the one the run was working on, naming the run."""
+    """Record the filing as an undecided finding, and relate the two tickets."""
+    record_discovery(session, run, filed)
     TicketRelationService(session).add_relation(run.ticket_id, filed.id, created_by=filed_by(run))
+    # `add_relation` returns an existing pair without committing.
+    session.commit()

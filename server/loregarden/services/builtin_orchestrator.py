@@ -32,6 +32,7 @@ from loregarden.services.child_readiness import (
 )
 from loregarden.services.child_run_wait import await_child_run
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
+from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.hold_line import render_hold_line
@@ -55,6 +56,7 @@ from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_concurrency import OrchestrationAlreadyRunning
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import supervised
+from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -412,6 +414,12 @@ class BuiltinOrchestrator:
         # (the pause above returns otherwise), so finalize the parent and stop.
         if self._has_child_tickets(ticket):
             return self._finalize_aggregator_parent(orch_run, ticket)
+        # Findings filed against it are decided by its spec before it reaches a
+        # gate or finishes; a round reopens the spec stage, which the loop then
+        # picks like any pending stage (`scope_round`).
+        if open_round_if_due(self.session, orch_run, ticket):
+            self.session.refresh(orch_run)
+            return orch_run
         return None
 
     def _settle_finished_stage(
@@ -642,12 +650,8 @@ class BuiltinOrchestrator:
         return None
 
     def _has_child_tickets(self, ticket: Ticket) -> bool:
-        return (
-            self.session.exec(
-                select(Ticket.id).where(Ticket.parent_ticket_id == ticket.id).limit(1)
-            ).first()
-            is not None
-        )
+        # An undecided or deferred finding filed under it is not its work (`discovered_work`).
+        return has_owned_children(self.session, ticket.id)
 
     def _finalize_aggregator_parent(
         self, orch_run: OrchestrationRun, ticket: Ticket

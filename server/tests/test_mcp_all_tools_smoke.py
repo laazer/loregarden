@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
-from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
+from loregarden.mcp.tools import _RUN_AWARE_HANDLERS, TOOL_DEFINITIONS, normalize_tool_arguments
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
@@ -46,6 +46,10 @@ SPAWNS_AGENTS_WITH_BUILTIN_DRIVER = "loregarden_start_orchestration"
 #   workspace, so there is no well-formed call to make here; test_mcp_ticket_ops
 #   builds the destination and covers it.
 NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
+#   loregarden_decide_finding -> decides a finding a run filed, so it needs a run-filed,
+#   still-undecided ticket, which this seed never produces. test_scope_round drives it
+#   end to end through execute_tool, as the spec run and as an operator.
+NEEDS_AN_UNDECIDED_FINDING = "loregarden_decide_finding"
 #   loregarden_begin_external_stage / _finish_external_stage -> only meaningful on an
 #   orchestration run opened with external_harness set, and they check a real stage out
 #   to a caller outside this process. test_external_harness.py drives both over MCP.
@@ -93,15 +97,15 @@ def _advertised(client: TestClient) -> set[str]:
 def _dispatched() -> set[str]:
     """Tool names the dispatcher actually routes — by branch or by handler table.
 
-    Three spellings count: the `name == "loregarden_x"` literal, the
-    `name == McpTool.X` form the organization gate requires of new branches, and
-    the EXTENDED_TOOLS table a tool registers in instead of growing
+    Four spellings count: the `name == "loregarden_x"` literal, the
+    `name == McpTool.X` form the organization gate requires of new branches, the
+    run-aware handler table in tools.py, and the EXTENDED_TOOLS table a tool registers in instead of growing
     `execute_tool`'s chain. Reading the table through its import rather than by
     regex is deliberate: its keys are enum members, so pattern-matching the
     source would miss them and report a routed tool as undispatched — the
     detector would be enforcing the anti-pattern.
     """
-    names: set[str] = set(EXTENDED_TOOLS)
+    names: set[str] = set(EXTENDED_TOOLS) | set(_RUN_AWARE_HANDLERS)
     for src in MCP_DISPATCH_SRCS:
         text = src.read_text()
         names |= set(re.findall(r'name == "(loregarden_[a-z_]+)"', text))
@@ -536,6 +540,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     exempt = {
         SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
         NEEDS_A_SECOND_WORKSPACE,
+        NEEDS_AN_UNDECIDED_FINDING,
         NEEDS_A_WRITTEN_ARTIFACT,
         NEEDS_A_MERGEABLE_PULL_REQUEST,
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,

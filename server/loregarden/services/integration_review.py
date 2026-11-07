@@ -11,6 +11,7 @@ draft items, so the scope preview and imports are left untouched.
 from __future__ import annotations
 
 from loregarden.models.domain import Ticket, TicketDependency, WorkItemType
+from loregarden.services.discovered_work import owned_children
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -46,11 +47,9 @@ def link_review_to_siblings(
     review = session.get(Ticket, review_ticket_id)
     if not review or not review.parent_ticket_id:
         return []
+    # An undecided or deferred finding is not a sibling's work: the review never waits on it.
     siblings = session.exec(
-        select(Ticket).where(
-            Ticket.parent_ticket_id == review.parent_ticket_id,
-            Ticket.id != review.id,
-        )
+        owned_children(review.parent_ticket_id).where(Ticket.id != review.id)
     ).all()
     dep_svc = TicketDependencyService(session)
     edges: list[TicketDependency] = []
@@ -70,7 +69,7 @@ def ensure_review_child(session: Session, parent: Ticket, *, created_by: str = "
     review_type = review_child_type(parent.work_item_type)
     if review_type is None or parent.is_integration_review:
         return None
-    children = session.exec(select(Ticket).where(Ticket.parent_ticket_id == parent.id)).all()
+    children = session.exec(owned_children(parent.id)).all()
     if not any(not c.is_integration_review for c in children):
         return None
     existing = [c for c in children if c.is_integration_review]

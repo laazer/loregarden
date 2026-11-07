@@ -164,6 +164,9 @@ def ticket_body(ticket: Ticket) -> dict[str, Any]:
         "title": ticket.title,
         "description": ticket.description,
         "acceptance_criteria": load_criteria(ticket.acceptance_criteria_json),
+        # What the spec ruled out, with reasons: a finding on one of these is
+        # not new scope unless the reason is wrong.
+        "out_of_scope": load_criteria(ticket.out_of_scope_json),
     }
 
 
@@ -258,6 +261,9 @@ def _collect_update_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[st
     if "tags" in arguments:
         fields["tags"] = normalize_tags(arguments["tags"])
 
+    if "out_of_scope" in arguments:
+        fields["out_of_scope"] = arguments["out_of_scope"]
+
     if "priority" in arguments:
         priority = arguments["priority"]
         if priority < 1 or priority > 3:
@@ -285,7 +291,7 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     if not fields:
         raise ValueError(
             "Nothing to update — supply at least one of: state, auto_state, title, "
-            "description, priority, acceptance_criteria, tags, parent."
+            "description, priority, acceptance_criteria, out_of_scope, tags, parent."
         )
 
     # Read straight off the arguments: the token is an edge concern and must not
@@ -377,7 +383,7 @@ def normalize_update_ticket_args(
         # Checked after coercion so the message names the text that will be
         # stored, not the raw argument.
         reject_truncated_call(payload["description"], field="description")
-    for field in ("acceptance_criteria", "tags"):
+    for field in ("acceptance_criteria", "out_of_scope", "tags"):
         if args.get(field) is not None:
             payload[field] = coerce_string_list(args.get(field), field=field)
     if args.get("priority") is not None:
