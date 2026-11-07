@@ -24,7 +24,7 @@ missing, and the backfill skips a ticket already recorded.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import index_exists, table_exists
+from loregarden.db.migration_utils import index_exists, table_columns, table_exists
 from loregarden.db.versions import migration
 from sqlalchemy import Connection, text
 
@@ -88,6 +88,15 @@ ORDER BY r.created_at
 """
 
 
+#: What the backfill reads. A schema missing any of it predates run filings.
+_BACKFILL_SOURCES = {
+    "ticket_relations": {"ticket_id", "related_ticket_id", "created_by", "created_at"},
+    "agent_runs": {"id", "ticket_id", "orchestration_run_id"},
+    "tickets": {"id", "state", "updated_at"},
+    "ticket_dependencies": {"depends_on_ticket_id"},
+}
+
+
 @migration("20261107_ticket_discoveries", after="20261105_autopilot_timing")
 def m_ticket_discoveries(conn: Connection) -> None:
     if not table_exists(conn, "ticket_discoveries"):
@@ -110,4 +119,10 @@ def m_ticket_discoveries(conn: Connection) -> None:
     for name, ddl in _INDEXES.items():
         if not index_exists(conn, name):
             conn.execute(text(ddl))
-    conn.execute(text(_BACKFILL))
+    # A database that predates any of the backfill's sources holds no run filings to
+    # recover; the tables arrive empty with create_all after the migrations run.
+    if all(
+        table_exists(conn, table) and columns <= table_columns(conn, table)
+        for table, columns in _BACKFILL_SOURCES.items()
+    ):
+        conn.execute(text(_BACKFILL))
