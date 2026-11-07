@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * Measure, in a real browser, which shapes the `scrollable-region-focusable`
- * detector fires on — one page, nine shapes, the real `src/lib/usabilityCheck.ts`.
+ * detector fires on — one page, thirteen shapes, the real
+ * `src/lib/usabilityCheck.ts`.
  *
  * The detector's question is "can a keyboard reach this scrollbar", and six of
- * the nine shapes below have no scrollbar at all because the browser never
+ * the thirteen shapes below have no scrollbar at all because the browser never
  * renders them. Counting cannot replace measuring here, for two reasons that
  * are only visible in an engine:
  *
@@ -25,9 +26,18 @@
  *
  *   node scripts/probe-scrollable-region.mjs
  *
+ * Four of the thirteen are the horizontal axis (lg-milestone-that-2230). The
+ * laid-out arm admitted an element on `overflowX` and then measured only
+ * `scrollHeight/clientHeight`, so a region that clips sideways and not
+ * downwards was dropped as "does not clip" while no key reached it. Nothing in
+ * jsdom can carry that assertion: it lays nothing out, so `scrollWidth` and
+ * `clientWidth` are both 0 there and every axis case has to be stubbed. This
+ * is the only place the browser answers.
+ *
  * One JSON row per shape is printed carrying `{ shape, selector, expected,
- * findings, clientHeight, scrollHeight, checkVisibility, checkVisibilityDefault,
- * computedMaxHeight, computedOverflow, ok }`.
+ * findings, clientHeight, scrollHeight, clientWidth, scrollWidth,
+ * checkVisibility, checkVisibilityDefault, computedMaxHeight, computedOverflow,
+ * computedOverflowX, computedOverflowY, ok }`.
  *
  * Exits non-zero when any shape disagrees with `expected`, **including a
  * control that fails to fire**: a probe whose controls are silent proves
@@ -35,7 +45,7 @@
  * altogether would print. It also exits non-zero rather than printing a
  * reasonable-looking zero when the measurement cannot be trusted at all: no
  * layout engine in the page, no `Element.prototype.checkVisibility` to ask, or
- * a control pane whose geometry says it is not clipping.
+ * a pane whose declared clip axis says it is not clipping on that axis.
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -55,6 +65,16 @@ const LINE_PX = 60;
  * modelled on.
  */
 const LINES = 24;
+/**
+ * The horizontal fixture's content: one unwrapped line far wider than its box.
+ * ~3,000 characters of the same 502 line, which measures clientWidth 200 /
+ * scrollWidth ~20,000 against clientHeight === scrollHeight === 40 — a clip on
+ * one axis and not the other, which is the shape the vertical-only comparison
+ * could not see.
+ */
+const WIDE_LINE = "502 Bad Gateway: upstream connect error or disconnect/reset before headers. ".repeat(40);
+/** Clips sideways only. `overflow-y: hidden` so the vertical axis cannot carry the finding. */
+const HPANE = "width: 200px; height: 40px; overflow-x: auto; overflow-y: hidden; white-space: nowrap;";
 
 /**
  * Stop with a non-zero exit. Thrown rather than exited so a failure found
@@ -81,8 +101,15 @@ const pane = (cls, extra = "") => `<div class="${cls}" style="${PANE}${extra}">$
 
 /**
  * `expected` is the number of `scrollable-region-focusable` findings whose
- * detail names this shape's pane. Six zeros and two ones is the whole point:
- * the zeros are the defect, the ones are the proof the detector still works.
+ * detail names this shape's pane. The zeros are the defect, the ones are the
+ * proof the detector still works, and a probe of zeros alone would prove
+ * nothing because a deleted detector prints the same page.
+ *
+ * `clipAxis` is the axis this fixture is BUILT to clip on — `"y"`,
+ * `"x"`, or absent where the shape is not meant to be laid out and clipping at
+ * all (the hidden shapes) or is the unclipped control. It is checked against
+ * the geometry after the run: a fixture that does not clip on the axis it
+ * claims never reaches the branch under test, whichever number it printed.
  */
 const SHAPES = [
   {
@@ -126,6 +153,7 @@ const SHAPES = [
     selector: ".g-pane",
     expected: 0,
     control: true,
+    clipAxis: "y",
     html: `<div class="g-pane" style="${PANE}" tabindex="0">${lines}</div>`,
   },
   {
@@ -133,6 +161,7 @@ const SHAPES = [
     selector: ".h-pane",
     expected: 1,
     control: true,
+    clipAxis: "y",
     html: `<details open><summary>Log</summary>${pane("h-pane")}</details>`,
   },
   {
@@ -140,12 +169,49 @@ const SHAPES = [
     selector: ".i-pane",
     expected: 1,
     control: true,
+    clipAxis: "y",
     html: pane("i-pane"),
+  },
+  {
+    shape: "region that clips HORIZONTALLY only, no focus stop",
+    selector: ".j-pane",
+    expected: 1,
+    control: true,
+    clipAxis: "x",
+    html: `<div class="j-pane" style="${HPANE}">${WIDE_LINE}</div>`,
+  },
+  {
+    shape: "the same horizontal clip, now a focus stop",
+    selector: ".k-pane",
+    expected: 0,
+    clipAxis: "x",
+    html: `<div class="k-pane" style="${HPANE}" tabindex="0">${WIDE_LINE}</div>`,
+  },
+  {
+    shape: "overflow-x: hidden with a large scrollWidth — clipped, but no scrollbar",
+    selector: ".l-pane",
+    expected: 0,
+    clipAxis: "x",
+    html: `<div class="l-pane" style="width: 200px; height: 40px; overflow-x: hidden; overflow-y: auto; white-space: nowrap;">${WIDE_LINE}</div>`,
+  },
+  {
+    shape: "scrolling region that clips on neither axis (silent control)",
+    selector: ".m-pane",
+    expected: 0,
+    html: `<div class="m-pane" style="width: 200px; height: 40px; overflow: auto;">short</div>`,
   },
 ];
 
-/** The two shapes whose geometry proves the fixture really clips. */
-const CLIPPING_CONTROLS = [".h-pane", ".i-pane"];
+/**
+ * A fixture only measures what it claims while it clips on the axis it claims.
+ * Vertical-only was enough while the detector only measured that axis; a
+ * horizontal shape whose text happened to wrap would print `expected 1, got 1`
+ * for the vertical reason, or `expected 0, got 0` because it clips nowhere.
+ */
+const CLIP_AXIS_TESTS = {
+  y: (row) => row.clientHeight > 0 && row.scrollHeight > row.clientHeight,
+  x: (row) => row.clientWidth > 0 && row.scrollWidth > row.clientWidth,
+};
 
 /**
  * test-break — the measurements the zeros above REST ON, asserted rather than
@@ -203,6 +269,75 @@ const CLAIMS = [
     claim: "this hidden shape is silent because the browser says it does not render",
     holds: (row) => row.checkVisibility === false,
   })),
+  // lg-milestone-that-2230 — the measurements the four horizontal rows rest on.
+  {
+    selector: ".j-pane",
+    claim:
+      "the horizontal fixture clips on the horizontal axis and ONLY there " +
+      "(scrollWidth > clientWidth with scrollHeight === clientHeight), so its " +
+      "finding cannot be the vertical comparison answering for it",
+    holds: (row) =>
+      row.clientWidth > 0 && row.scrollWidth > row.clientWidth && row.scrollHeight === row.clientHeight,
+  },
+  {
+    selector: ".k-pane",
+    claim:
+      "the tabbable copy of the horizontal fixture clips the same way, so its " +
+      "zero is the focus stop and not a fixture that stopped clipping",
+    holds: (row) =>
+      row.scrollWidth > row.clientWidth && row.scrollHeight === row.clientHeight,
+  },
+  {
+    selector: ".l-pane",
+    claim:
+      "the overflow-x: hidden shape really does overflow its box " +
+      "(scrollWidth > clientWidth), so its zero is the axis gate rather than a " +
+      "fixture that does not clip",
+    holds: (row) => row.clientWidth > 0 && row.scrollWidth > row.clientWidth,
+  },
+  {
+    selector: ".l-pane",
+    claim: "the overflow-x: hidden shape computes overflowX to a value that cannot scroll",
+    holds: (row) => !["auto", "scroll"].includes(row.computedOverflowX),
+  },
+  {
+    selector: ".m-pane",
+    claim:
+      "the silent control clips on NEITHER axis while still declaring a " +
+      "scrolling overflow, so a check that fired on every admitted element " +
+      "would be caught here",
+    holds: (row) =>
+      row.scrollHeight === row.clientHeight &&
+      row.scrollWidth === row.clientWidth &&
+      ["auto", "scroll"].includes(row.computedOverflowX) &&
+      ["auto", "scroll"].includes(row.computedOverflowY),
+  },
+  {
+    selector: ".i-pane",
+    claim:
+      "Chromium COLLAPSES the shorthand back to one word where both axes agree " +
+      "(`overflow: auto` computes overflow \"auto\" with overflowX and overflowY " +
+      "both \"auto\"), so `SCROLLS.has(style.overflow)` is not harmlessly false " +
+      "in a browser either — it is right here by accident and wrong on the " +
+      "asymmetric shape below, which is why the axis test reads the per-axis " +
+      "property and never the shorthand whole",
+    holds: (row) =>
+      row.computedOverflow === "auto" &&
+      row.computedOverflowX === "auto" &&
+      row.computedOverflowY === "auto",
+  },
+  {
+    selector: ".j-pane",
+    claim:
+      "Chromium expands the overflow shorthand per axis — `overflow-x: auto; " +
+      "overflow-y: hidden` computes overflowX \"auto\" / overflowY \"hidden\" — " +
+      "which is why the shorthand-word fallback is inert in a browser and why " +
+      "`SCROLLS.has(style.overflow)` as a single value is never the axis test",
+    holds: (row) =>
+      row.computedOverflowX === "auto" &&
+      row.computedOverflowY === "hidden" &&
+      !["auto", "scroll"].includes(row.computedOverflow),
+  },
 ];
 
 // Transpiled and evaluated exactly the way `scripts/visual-qa.mjs` does, so
@@ -272,10 +407,14 @@ try {
           allFindings: found,
           clientHeight: el.clientHeight,
           scrollHeight: el.scrollHeight,
+          clientWidth: el.clientWidth,
+          scrollWidth: el.scrollWidth,
           checkVisibility: supported ? el.checkVisibility({ visibilityProperty: true }) : null,
           checkVisibilityDefault: supported ? el.checkVisibility() : null,
           computedMaxHeight: style.maxHeight,
           computedOverflow: style.overflow,
+          computedOverflowX: style.overflowX,
+          computedOverflowY: style.overflowY,
         };
       },
       { html: subject.html, selector: subject.selector, check: usabilityCheck },
@@ -285,6 +424,7 @@ try {
       shape: subject.shape,
       selector: subject.selector,
       expected: subject.expected,
+      clipAxis: subject.clipAxis ?? null,
       ...row,
       ok: row.findings === subject.expected,
     });
@@ -304,16 +444,13 @@ for (const row of rows) console.log(JSON.stringify(row));
 // The fixture has to be the shape this claims to measure before its zeros mean
 // anything. A control pane that is not clipping would make every shape silent
 // for a reason that has nothing to do with the predicate under test.
-const notClipping = rows.filter(
-  (row) =>
-    CLIPPING_CONTROLS.includes(row.selector) &&
-    !(row.clientHeight > 0 && row.scrollHeight > row.clientHeight),
-);
+const notClipping = rows.filter((row) => row.clipAxis && !CLIP_AXIS_TESTS[row.clipAxis](row));
 for (const row of notClipping) {
   console.error(
-    `probe-scrollable-region: ${row.selector} reports clientHeight ` +
-      `${row.clientHeight} / scrollHeight ${row.scrollHeight} — it is not clipping, ` +
-      "so this fixture never reaches the branch under test",
+    `probe-scrollable-region: ${row.selector} declares a ${row.clipAxis} clip but reports ` +
+      `clientHeight ${row.clientHeight} / scrollHeight ${row.scrollHeight}, ` +
+      `clientWidth ${row.clientWidth} / scrollWidth ${row.scrollWidth} — it is not ` +
+      `clipping on that axis, so this fixture never reaches the branch under test`,
   );
 }
 
@@ -327,8 +464,11 @@ for (const { selector, claim, holds } of CLAIMS) {
   if (!holds(row)) {
     broken.push(
       `${selector} no longer shows that ${claim} — clientHeight ${row.clientHeight}, ` +
-        `scrollHeight ${row.scrollHeight}, checkVisibility({visibilityProperty:true}) ` +
-        `${row.checkVisibility}, checkVisibility() ${row.checkVisibilityDefault}`,
+        `scrollHeight ${row.scrollHeight}, clientWidth ${row.clientWidth}, scrollWidth ` +
+        `${row.scrollWidth}, overflow ${row.computedOverflow}, overflow-x ` +
+        `${row.computedOverflowX}, overflow-y ${row.computedOverflowY}, ` +
+        `checkVisibility({visibilityProperty:true}) ${row.checkVisibility}, ` +
+        `checkVisibility() ${row.checkVisibilityDefault}`,
     );
   }
 }
@@ -339,9 +479,11 @@ for (const row of mismatched) {
   console.error(
     `probe-scrollable-region: ${row.selector} (${row.shape}) expected ` +
       `${row.expected} finding(s), got ${row.findings} — clientHeight ` +
-      `${row.clientHeight}, scrollHeight ${row.scrollHeight}, ` +
+      `${row.clientHeight}, scrollHeight ${row.scrollHeight}, clientWidth ` +
+      `${row.clientWidth}, scrollWidth ${row.scrollWidth}, ` +
       `checkVisibility({visibilityProperty:true}) ${row.checkVisibility}, ` +
-      `computed max-height ${row.computedMaxHeight}`,
+      `computed max-height ${row.computedMaxHeight}, overflow-x ` +
+      `${row.computedOverflowX}, overflow-y ${row.computedOverflowY}`,
   );
 }
 if (notClipping.length > 0 || broken.length > 0 || mismatched.length > 0) process.exit(1);

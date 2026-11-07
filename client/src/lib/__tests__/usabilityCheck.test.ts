@@ -497,4 +497,360 @@ describe("scrollable-region-focusable", () => {
       ).toEqual([]);
     });
   });
+
+  /**
+   * lg-milestone-that-2230 — the laid-out arm measures ONE axis. `overflowX:
+   * auto` admits an element to the check and then only `scrollHeight >
+   * clientHeight` is asked, so a region that clips horizontally and not
+   * vertically is dropped as "does not clip" though no key reaches it. Measured
+   * in Chromium (`scripts/probe-scrollable-region.mjs`): a
+   * `width:200px; height:40px; overflow-x:auto; overflow-y:hidden` pane holding
+   * ~3,000 characters of nowrap text reports clientWidth 200 / scrollWidth
+   * 20023 with clientHeight === scrollHeight === 40, and the detector is
+   * silent.
+   *
+   * `laidOut` is a document-level fact, so in a browser EVERY element takes
+   * this arm and none takes the declared-bound fallback below it. The cases
+   * here are therefore the only jest coverage of the branch that runs on every
+   * real surface, and they need both axes' geometry stubbed rather than only
+   * the vertical pair `laidOutAndClipping` supplies.
+   */
+  function laidOutMeasuring<T>(
+    geometry: {
+      clientHeight: number;
+      scrollHeight: number;
+      clientWidth: number;
+      scrollWidth: number;
+    },
+    body: () => T,
+  ): T {
+    const spies: { mockRestore: () => void }[] = [
+      jest
+        .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+        .mockReturnValue({ width: 400, height: 80 } as DOMRect),
+      jest.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(geometry.clientHeight),
+      jest.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(geometry.scrollHeight),
+      jest.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(geometry.clientWidth),
+      jest.spyOn(Element.prototype, "scrollWidth", "get").mockReturnValue(geometry.scrollWidth),
+    ];
+    try {
+      return body();
+    } finally {
+      for (const spy of spies.reverse()) spy.mockRestore();
+    }
+  }
+
+  /** 24 lines of 60px in a 60px box: clips vertically, nothing to scroll sideways. */
+  const CLIPS_Y = { clientHeight: 60, scrollHeight: 1440, clientWidth: 200, scrollWidth: 200 };
+  /** The Chromium numbers for the nowrap fixture: clips horizontally and NOT vertically. */
+  const CLIPS_X = { clientHeight: 40, scrollHeight: 40, clientWidth: 200, scrollWidth: 20023 };
+  const CLIPS_BOTH = { clientHeight: 60, scrollHeight: 1440, clientWidth: 200, scrollWidth: 20023 };
+  const CLIPS_NEITHER = { clientHeight: 60, scrollHeight: 60, clientWidth: 200, scrollWidth: 200 };
+
+  /**
+   * Declarations chosen for what jsdom 26.1.0 *computes* from them, which is
+   * what the detector reads. Pinned by the premise case below, because every
+   * axis assertion in this block is about one of these three shapes and a
+   * jsdom that started expanding the shorthand would quietly move them all to
+   * a different branch.
+   */
+  /** computes to `overflow: "auto"`, overflowX `""`, overflowY `""`. */
+  const BOTH_AXES = "max-height: 9em; overflow: auto;";
+  /** computes to `overflow: ""`, overflowX `"auto"`, overflowY `"hidden"`. */
+  const X_ONLY = "max-height: 9em; overflow-x: auto; overflow-y: hidden;";
+  /** computes to `overflow: ""`, overflowX `"hidden"`, overflowY `"auto"`. */
+  const Y_ONLY = "max-height: 9em; overflow-x: hidden; overflow-y: auto;";
+
+  it("computes the axis properties this block's cases are built on", () => {
+    // Not a tautology and not a test of jsdom for its own sake: the fallback
+    // in AC2 exists BECAUSE jsdom leaves both axis properties empty for a
+    // shorthand, and three of the cases below only reach the branch they are
+    // written for while that is true. If a later jsdom expands the shorthand,
+    // this is the case that says so, instead of the axis assertions going
+    // green for a reason that is no longer the one under test.
+    const read = (style: string) => {
+      const el = document.createElement("div");
+      el.setAttribute("style", style);
+      document.body.appendChild(el);
+      try {
+        const computed = window.getComputedStyle(el);
+        return { overflow: computed.overflow, x: computed.overflowX, y: computed.overflowY };
+      } finally {
+        el.remove();
+      }
+    };
+    expect(read(BOTH_AXES)).toEqual({ overflow: "auto", x: "", y: "" });
+    expect(read(X_ONLY)).toEqual({ overflow: "", x: "auto", y: "hidden" });
+    expect(read(Y_ONLY)).toEqual({ overflow: "", x: "hidden", y: "auto" });
+  });
+
+  it("flags a region that clips only horizontally", () => {
+    // The defect, at its narrowest. Both axes scroll, nothing is clipped
+    // vertically, and 20023px of content sits behind a 200px box that no key
+    // reaches. axe-core's `scrollable-region-focusable` covers both axes.
+    laidOutMeasuring(CLIPS_X, () => {
+      const found = scrollable(`<div class="hscroll" style="${BOTH_AXES}">${LONG}</div>`);
+      expect(found).toHaveLength(1);
+      expect(found[0]!.detail).toContain("hscroll");
+    });
+  });
+
+  it("flags a region that clips only vertically, and one that clips on both axes", () => {
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="vscroll" style="${BOTH_AXES}">${LONG}</div>`)).toHaveLength(1);
+    });
+    laidOutMeasuring(CLIPS_BOTH, () => {
+      expect(scrollable(`<div class="bscroll" style="${BOTH_AXES}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  it("stands aside where a scrolling region clips on neither axis", () => {
+    // The silent control for the two above: a check that fired on every
+    // admitted element would pass them and fail here.
+    laidOutMeasuring(CLIPS_NEITHER, () => {
+      expect(scrollable(`<div class="fits" style="${BOTH_AXES}">${LONG}</div>`)).toEqual([]);
+    });
+  });
+
+  it("does not read a large scrollHeight as a vertical clip when overflow-y cannot scroll", () => {
+    // `overflow-x: auto` admits the element; the vertical comparison must then
+    // be gated on the vertical axis actually scrolling. `hidden`, `visible`
+    // and `clip` are the three spellings of "no scrollbar here".
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="x" style="${X_ONLY}">${LONG}</div>`)).toEqual([]);
+      expect(
+        scrollable(`<div class="x" style="max-height: 9em; overflow-x: auto; overflow-y: visible;">${LONG}</div>`),
+      ).toEqual([]);
+      expect(
+        scrollable(`<div class="x" style="max-height: 9em; overflow-x: auto; overflow-y: clip;">${LONG}</div>`),
+      ).toEqual([]);
+    });
+  });
+
+  it("does not read a large scrollWidth as a horizontal clip when overflow-x cannot scroll", () => {
+    laidOutMeasuring(CLIPS_X, () => {
+      expect(scrollable(`<div class="y" style="${Y_ONLY}">${LONG}</div>`)).toEqual([]);
+      expect(
+        scrollable(`<div class="y" style="max-height: 9em; overflow-x: clip; overflow-y: auto;">${LONG}</div>`),
+      ).toEqual([]);
+    });
+  });
+
+  it("flags each axis on the axis it actually clips on", () => {
+    // The pair that makes the gate per-axis rather than a single either/or:
+    // the same two fixtures swap verdicts when the geometry swaps axes.
+    laidOutMeasuring(CLIPS_X, () => {
+      expect(scrollable(`<div class="x" style="${X_ONLY}">${LONG}</div>`)).toHaveLength(1);
+    });
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="y" style="${Y_ONLY}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  it("passes a horizontally clipping region that can be reached by keyboard", () => {
+    // AC1 keeps the focus-stop tests after the clip test and in their order,
+    // so the fix lg-milestone-that-1465 shipped still answers the horizontal
+    // case: a `tabindex="0"` on the region, or a control inside it.
+    laidOutMeasuring(CLIPS_X, () => {
+      expect(
+        scrollable(`<div class="hscroll" style="${BOTH_AXES}" tabindex="0">${LONG}</div>`),
+      ).toEqual([]);
+      expect(
+        scrollable(`<div class="hscroll" style="${BOTH_AXES}"><button>Copy</button>${LONG}</div>`),
+      ).toEqual([]);
+      expect(
+        scrollable(`<div class="hscroll" style="${BOTH_AXES}"><button disabled>Copy</button>${LONG}</div>`),
+      ).toHaveLength(1);
+    });
+  });
+
+  /**
+   * AC2 — the axis is decided per-axis, and the `overflow` shorthand is never
+   * tested as one value. These four declarations are the ones where those two
+   * rules disagree, and each computes in jsdom 26.1.0 to a shape no amount of
+   * reading the shorthand whole gets right:
+   *
+   * | declaration                              | overflow      | X     | Y     |
+   * |------------------------------------------|---------------|-------|-------|
+   * | `overflow: auto`                         | `auto`        | `""`  | `""`  |
+   * | `overflow: auto; overflow-y: hidden`     | `auto`        | `""`  | `hidden` |
+   * | `overflow: hidden; overflow-x: auto`     | `hidden`      | `auto`| `""`  |
+   * | `overflow: auto hidden; overflow-y: scroll` | `auto hidden` | `""` | `scroll` |
+   * | `overflow: hidden auto; overflow-x: auto`   | `hidden auto` | `auto` | `""` |
+   *
+   * Chromium expands every one of them, so these rows are jsdom's and the
+   * fallback is inert in a browser — which is exactly why it has no witness
+   * anywhere else and why dropping it turns the two `laidOutAndClipping` cases
+   * above red rather than these.
+   */
+  it("takes the per-axis property over the shorthand when both are present", () => {
+    // `overflow: auto; overflow-y: hidden` computes overflow `"auto"` with
+    // overflowY `"hidden"`. Reading the shorthand as one value would call the
+    // vertical axis scrollable and fire on the first assertion.
+    const SHORTHAND_THEN_Y = "max-height: 9em; overflow: auto; overflow-y: hidden;";
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="pane" style="${SHORTHAND_THEN_Y}">${LONG}</div>`)).toEqual([]);
+    });
+    laidOutMeasuring(CLIPS_X, () => {
+      // ...and the empty overflowX still resolves, from the shorthand's word.
+      expect(scrollable(`<div class="pane" style="${SHORTHAND_THEN_Y}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  it("applies a one-word shorthand to the axis whose property is empty", () => {
+    // `overflow: hidden; overflow-x: auto` computes overflow `"hidden"` with
+    // overflowY `""`. One word applies to both axes, so the vertical axis is
+    // hidden and a 1440px scrollHeight is not a clip. An implementation that
+    // treated an empty axis property as "scrolls" fires on the first
+    // assertion; one with no fallback at all is silent on the second.
+    const SHORTHAND_THEN_X = "max-height: 9em; overflow: hidden; overflow-x: auto;";
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="pane" style="${SHORTHAND_THEN_X}">${LONG}</div>`)).toEqual([]);
+    });
+    laidOutMeasuring(CLIPS_X, () => {
+      expect(scrollable(`<div class="pane" style="${SHORTHAND_THEN_X}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  it("splits a two-word shorthand into [x, y] rather than testing it whole", () => {
+    // The row that makes the word split necessary instead of merely tidy.
+    // jsdom keeps `overflow: auto hidden` as two words with both axis
+    // properties empty, so `SCROLLS.has(style.overflow)` reads `"auto hidden"`
+    // as NEITHER axis scrolling — wrong, in the one engine the fallback exists
+    // for. The first word is the horizontal axis and the second the vertical.
+    const X_WORD = "max-height: 9em; overflow: auto hidden; overflow-y: scroll;";
+    const Y_WORD = "max-height: 9em; overflow: hidden auto; overflow-x: auto;";
+    laidOutMeasuring(CLIPS_X, () => {
+      // overflow `"auto hidden"`, overflowX `""` → the first word scrolls.
+      expect(scrollable(`<div class="pane" style="${X_WORD}">${LONG}</div>`)).toHaveLength(1);
+      // overflow `"hidden auto"`, overflowX `"auto"` → the property, so it fires too;
+      // reading the shorthand whole would make this one silent.
+      expect(scrollable(`<div class="pane" style="${Y_WORD}">${LONG}</div>`)).toHaveLength(1);
+    });
+    laidOutMeasuring(CLIPS_Y, () => {
+      // overflow `"hidden auto"`, overflowY `""` → the SECOND word scrolls.
+      expect(scrollable(`<div class="pane" style="${Y_WORD}">${LONG}</div>`)).toHaveLength(1);
+      // overflow `"auto hidden"`, overflowY `"scroll"` → the property scrolls.
+      expect(scrollable(`<div class="pane" style="${X_WORD}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  /**
+   * test-break — three mutants the cases above leave alive. Each is an
+   * implementation of AC1/AC2 that reads as correct, passes every assertion
+   * written at test-design, and is wrong in markup this tree can actually
+   * produce. The declarations are measured against jsdom 26.1.0 the same way
+   * the premise case above measures its three.
+   */
+  it("reads `scroll` as a scrolling word of the shorthand, not only `auto`", () => {
+    // AC2's fallback resolves the axis from the shorthand's WORD, and the
+    // vocabulary of a scrolling value is `SCROLLS` — `auto` AND `scroll`. A
+    // fallback that tests the word against `"auto"` alone (rather than the
+    // same set the per-axis property is tested against) passes every case
+    // above, because all of them spell the fallback axis `auto`.
+    //
+    // Measured in jsdom 26.1.0: `overflow: scroll hidden; overflow-y: auto`
+    // computes overflow `"scroll hidden"`, overflowX `""`, overflowY
+    // `"auto"` — admitted on the Y property, with the X axis resolvable only
+    // from the first word.
+    const X_SCROLL_WORD = "max-height: 9em; overflow: scroll hidden; overflow-y: auto;";
+    const Y_SCROLL_WORD = "max-height: 9em; overflow: hidden scroll; overflow-x: auto;";
+    laidOutMeasuring(CLIPS_X, () => {
+      expect(scrollable(`<div class="pane" style="${X_SCROLL_WORD}">${LONG}</div>`)).toHaveLength(1);
+    });
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="pane" style="${Y_SCROLL_WORD}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  it("splits the shorthand on runs of whitespace, not on a single space", () => {
+    // AC2 prescribes `style.overflow.trim().split(/\s+/)`, and the regex is
+    // load-bearing rather than tidy: measured in jsdom 26.1.0, the computed
+    // shorthand keeps its author's internal whitespace verbatim, so
+    // `overflow: hidden  auto` computes to the two-space string `"hidden
+    // auto"`. A `split(" ")` yields `["hidden", "", "auto"]`, whose second
+    // element is the empty string, and the vertical axis then resolves to "no
+    // scrollbar" for a pane that has one. Two spaces in a stylesheet is
+    // ordinary formatting, not a corrupted input.
+    const read = (style: string) => {
+      const el = document.createElement("div");
+      el.setAttribute("style", style);
+      document.body.appendChild(el);
+      try {
+        return window.getComputedStyle(el).overflow;
+      } finally {
+        el.remove();
+      }
+    };
+    const DOUBLE_SPACED = "max-height: 9em; overflow: hidden  auto; overflow-x: auto;";
+    expect(read(DOUBLE_SPACED)).toBe("hidden  auto");
+    laidOutMeasuring(CLIPS_Y, () => {
+      expect(scrollable(`<div class="pane" style="${DOUBLE_SPACED}">${LONG}</div>`)).toHaveLength(1);
+    });
+  });
+
+  /**
+   * jsdom 26.1.0 implements no `checkVisibility`, so under jest the
+   * rendered-ness predicate always answers `true` and the whole of it — the
+   * call, the `visibilityProperty` option, and its position after the clip
+   * test — has no witness in the only suite CI runs. The probe covers it in
+   * Chromium, and the probe needs playwright and is run by hand.
+   *
+   * This stub is the browser's documented behaviour rather than a recording of
+   * calls: `checkVisibility()` reports a `visibility: hidden` element as
+   * visible, and only `{ visibilityProperty: true }` reports it hidden. So a
+   * detector that drops the predicate, and one that calls it without the
+   * option, are both wrong against it for the reason they are wrong in a
+   * browser.
+   */
+  function withCheckVisibility<T>(body: () => T): T {
+    const impl = function (this: Element, options?: { visibilityProperty?: boolean }): boolean {
+      if (options?.visibilityProperty !== true) return true;
+      return window.getComputedStyle(this).visibility !== "hidden";
+    };
+    Object.defineProperty(Element.prototype, "checkVisibility", {
+      value: impl,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      return body();
+    } finally {
+      delete (Element.prototype as { checkVisibility?: unknown }).checkVisibility;
+    }
+  }
+
+  it("asks the engine whether a horizontally clipping region renders at all", () => {
+    // AC1 keeps `rendered(el)` in its position and order, after the clip test,
+    // on the horizontal path as much as the vertical one. A region 20023px
+    // wide behind a 200px box is not a finding when the browser does not draw
+    // it: there is no scrollbar for a key to miss. Both halves are asserted,
+    // because a predicate that suppressed everything would also print `[]`.
+    withCheckVisibility(() => {
+      expect(typeof Element.prototype.checkVisibility).toBe("function");
+      laidOutMeasuring(CLIPS_X, () => {
+        expect(
+          scrollable(`<div class="hscroll" style="${BOTH_AXES} visibility: hidden;">${LONG}</div>`),
+        ).toEqual([]);
+        expect(scrollable(`<div class="hscroll" style="${BOTH_AXES}">${LONG}</div>`)).toHaveLength(1);
+      });
+      laidOutMeasuring(CLIPS_Y, () => {
+        expect(
+          scrollable(`<div class="vscroll" style="${BOTH_AXES} visibility: hidden;">${LONG}</div>`),
+        ).toEqual([]);
+        expect(scrollable(`<div class="vscroll" style="${BOTH_AXES}">${LONG}</div>`)).toHaveLength(1);
+      });
+    });
+    expect(Element.prototype.checkVisibility).toBeUndefined();
+  });
+
+  it("leaves the no-layout arm axis-agnostic", () => {
+    // AC1 touches only the laid-out arm. With no layout engine every geometry
+    // is 0, there is nothing to compare on either axis, and the declared bound
+    // is all there is — which is why `reads a bound and an overflow on either
+    // axis` above stays green without an axis gate reaching it.
+    expect(document.body.getBoundingClientRect().width).toBe(0);
+    expect(scrollable(`<div class="pane" style="${X_ONLY}">${LONG}</div>`)).toHaveLength(1);
+    expect(scrollable(`<div class="pane" style="${Y_ONLY}">${LONG}</div>`)).toHaveLength(1);
+  });
 });
