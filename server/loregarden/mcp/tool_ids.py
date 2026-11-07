@@ -49,7 +49,7 @@ class McpTool(StrEnum):
     ENQUEUE_MERGE = "loregarden_enqueue_merge"
     DEQUEUE_MERGE = "loregarden_dequeue_merge"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
-    TRIAGE_DISCOVERY = "loregarden_triage_discovery"
+    DECIDE_FINDING = "loregarden_decide_finding"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
     UPSERT_MEMORY = "loregarden_upsert_memory"
@@ -176,6 +176,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.RECORD_UX_ANSWERS,
     # A bug ticket's spec stage cannot pass without its fix coverage record.
     McpTool.RECORD_FIX_COVERAGE,
+    # The spec stage's scope round decides the findings filed against its
+    # ticket. Offered to every stage like the fix coverage record; the handler
+    # refuses any run but the source ticket's own spec (`mcp.discovery_tools`).
+    McpTool.DECIDE_FINDING,
     McpTool.REQUEST_APPROVAL,
     # Stage work reads library documentation. Offering the cache means the raw
     # HTML is paid for once per URL rather than once per run, and a stage that
@@ -287,6 +291,10 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
         McpTool.RECORD_FIX_COVERAGE,
+        # A scope round runs unattended, so an inbox card per finding would
+        # stall it. The handler admits only the finding's own spec run, and
+        # every decision carries a reason on the record.
+        McpTool.DECIDE_FINDING,
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,
@@ -399,9 +407,6 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.ENQUEUE_MERGE,
     McpTool.DEQUEUE_MERGE,
     McpTool.SUPERSEDE_TICKET,
-    # Promotes a run's finding into its parent's work, or closes it: a triage
-    # decision, never a stage's to make about what its own run filed.
-    McpTool.TRIAGE_DISCOVERY,
     # Publishes to, and pulls from, a GitHub repository: an operator move on a
     # ticket, never something a stage does to the ticket it was dispatched for.
     McpTool.SYNC_GITHUB_ISSUES,

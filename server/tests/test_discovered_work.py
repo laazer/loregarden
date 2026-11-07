@@ -1,10 +1,10 @@
-"""Work a run discovers stays where it was filed until someone triages it.
+"""A finding a run files stays out of its parent's work until its scope is decided.
 
 lg-milestone-that-1216's review lanes filed their findings as its children,
 its child pass ran them, their review lanes filed more, and the milestone
 could not finish until 37 run-filed tickets did. A finding is recorded against
-the ticket it came from and held out of that ticket's work until triage
-promotes it or closes it.
+the ticket it came from and held out of that ticket's work until its source's
+spec decides it (`test_scope_round` covers the decision).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
     AgentRun,
-    DiscoveryTriage,
+    FindingDecision,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -35,9 +35,10 @@ from loregarden.services.agent_ticket_filing import (
 )
 from loregarden.services.child_readiness import ordered_children
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.scope_round import decide_finding
 from loregarden.services.seed import seed_database
 from loregarden.services.ticket_rollup import derive_parent_state, has_children, reconcile_parent
-from loregarden.services.untriaged_discovery_runs import untriaged_discoveries_that_ran
+from loregarden.services.undecided_finding_runs import undecided_findings_that_ran
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
 
@@ -99,19 +100,11 @@ def _file(
     return session.get(Ticket, created["id"])
 
 
-def _triage(session: Session, ticket: Ticket, action: str) -> dict:
-    return json.loads(
-        execute_tool(
-            session,
-            "loregarden_triage_discovery",
-            normalize_tool_arguments(
-                "loregarden_triage_discovery", {"ticket_id": ticket.id, "action": action}
-            ),
-        )
-    )
+def _decide(session: Session, ticket: Ticket, decision: FindingDecision) -> None:
+    decide_finding(session, ticket, decision, reason="test decision", decided_by="operator")
 
 
-def test_a_filing_records_where_it_came_from_and_starts_untriaged(db_session, family):
+def test_a_filing_records_where_it_came_from_and_starts_undecided(db_session, family):
     parent, child, run = family
     finding = _file(db_session, run, "A finding", parent=parent)
 
@@ -120,15 +113,15 @@ def test_a_filing_records_where_it_came_from_and_starts_untriaged(db_session, fa
     ).one()
     assert (row.source_ticket_id, row.agent_run_id) == (child.id, run.id)
     assert row.orchestration_run_id == run.orchestration_run_id
-    assert discovered_work.untriaged(db_session, finding.id) is not None
+    assert discovered_work.undecided(db_session, finding.id) is not None
 
 
-def test_the_child_pass_skips_an_untriaged_finding_until_it_is_promoted(db_session, family):
+def test_the_child_pass_skips_a_finding_until_it_is_its_parents_work(db_session, family):
     parent, child, run = family
     finding = _file(db_session, run, "A finding", parent=parent)
     assert [t.id for t in ordered_children(db_session, parent)] == [child.id]
 
-    assert _triage(db_session, finding, "promote")["triaged_by"].endswith("promote")
+    _decide(db_session, finding, FindingDecision.FOLLOW_UP)
     assert {t.id for t in ordered_children(db_session, parent)} == {child.id, finding.id}
 
 
@@ -150,11 +143,11 @@ def test_a_ticket_whose_only_children_are_findings_owns_its_own_stages(db_sessio
     assert not has_children(db_session, child.id)
 
 
-def test_no_dispatcher_can_start_an_untriaged_finding(db_session, family):
+def test_no_dispatcher_can_start_an_undecided_finding(db_session, family):
     parent, _, run = family
     finding = _file(db_session, run, "A finding", parent=parent)
 
-    with pytest.raises(discovered_work.UntriagedDiscovery, match="triage"):
+    with pytest.raises(discovered_work.UndecidedFinding, match="scope"):
         OrchestrationCallbackService(db_session).start_orchestration_run(
             finding, driver=OrchestrationDriver.EXTERNAL_MCP, profile_slug="default"
         )
@@ -163,19 +156,12 @@ def test_no_dispatcher_can_start_an_untriaged_finding(db_session, family):
     ).first()
 
 
-def test_closing_a_finding_closes_its_ticket(db_session, family):
-    parent, _, run = family
+def test_a_deferred_finding_stays_out_of_its_parents_work(db_session, family):
+    parent, child, run = family
     finding = _file(db_session, run, "A finding", parent=parent)
-    _triage(db_session, finding, "close")
-    db_session.refresh(finding)
-    assert finding.state is TicketState.WONT_DO
-    assert discovered_work.untriaged(db_session, finding.id) is None
-
-
-def test_triage_refuses_a_ticket_no_run_filed(db_session, family):
-    parent, _, _ = family
-    with pytest.raises(ValueError, match="not an untriaged discovery"):
-        _triage(db_session, parent, "promote")
+    _decide(db_session, finding, FindingDecision.DEFER)
+    assert [t.id for t in ordered_children(db_session, parent)] == [child.id]
+    assert discovered_work.undecided(db_session, finding.id) is None
 
 
 def test_a_drive_files_at_most_its_budget(db_session, family):
@@ -193,15 +179,14 @@ def test_a_drive_files_at_most_its_budget(db_session, family):
         db_session.add(sibling)
         db_session.commit()
         finding = _file(db_session, sibling, f"Finding {index}", parent=parent)
-        # Promoted, so the per-source cap is not the one that trips.
-        discovered_work.triage(db_session, finding, DiscoveryTriage.PROMOTE, actor="test")
-        db_session.commit()
+        # Decided, so the per-source cap is not the one that trips.
+        _decide(db_session, finding, FindingDecision.FOLLOW_UP)
 
     with pytest.raises(FilingRefused, match="drive has already filed"):
         check_filing_budget(db_session, run)
 
 
-def test_a_ticket_holds_at_most_its_untriaged_budget(db_session, family):
+def test_a_ticket_holds_at_most_its_undecided_budget(db_session, family):
     parent, child, run = family
     for index in range(MAX_UNTRIAGED_PER_SOURCE):
         db_session.add(
@@ -224,14 +209,14 @@ def test_a_ticket_holds_at_most_its_untriaged_budget(db_session, family):
     db_session.add(fresh)
     db_session.commit()
 
-    with pytest.raises(FilingRefused, match="waiting for triage"):
+    with pytest.raises(FilingRefused, match="waiting for a scope decision"):
         check_filing_budget(db_session, fresh)
 
 
-def test_an_untriaged_finding_that_ran_is_reported(db_session, family):
+def test_an_undecided_finding_that_ran_is_reported(db_session, family):
     parent, _, run = family
     finding = _file(db_session, run, "A finding", parent=parent)
-    assert untriaged_discoveries_that_ran(db_session) == []
+    assert undecided_findings_that_ran(db_session) == []
 
     db_session.add(
         OrchestrationRun(
@@ -245,5 +230,5 @@ def test_an_untriaged_finding_that_ran_is_reported(db_session, family):
     )
     db_session.commit()
 
-    (violation,) = untriaged_discoveries_that_ran(db_session)
+    (violation,) = undecided_findings_that_ran(db_session)
     assert violation.subject_id == finding.id

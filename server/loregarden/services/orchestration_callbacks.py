@@ -38,7 +38,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
 from loregarden.services.dependency_hold import refuse_held_dispatch
-from loregarden.services.discovered_work import refuse_untriaged
+from loregarden.services.discovered_work import refuse_undecided
 from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
@@ -312,8 +312,8 @@ class OrchestrationCallbackService:
         # somebody had looked at it. Removing that write (606) put the
         # initialisation here, where a write belongs.
         # Every dispatcher reaches this, so the one guard here covers them all:
-        # a run's untriaged finding is not work yet (`discovered_work`).
-        refuse_untriaged(self.session, ticket)
+        # a run's finding is not work until its scope is decided (`discovered_work`).
+        refuse_undecided(self.session, ticket)
         self.orch.ensure_workflow_instance(ticket, commit=True)
 
         active = self.get_active_orchestration_run(ticket.id)

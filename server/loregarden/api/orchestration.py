@@ -9,7 +9,7 @@ from loregarden.models.domain import (
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
-    DiscoveryTriage,
+    FindingDecision,
     GateOutcome,
     GatesConfigUpdate,
     GateTestCommandResult,
@@ -29,7 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
-from loregarden.services.discovered_work import triage, untriaged
+from loregarden.services.discovered_work import undecided
 from loregarden.services.gate_runner import (
     dry_run_gate_commands,
     gates_can_run,
@@ -51,6 +51,7 @@ from loregarden.services.orchestration_profile import (
     update_git_config,
 )
 from loregarden.services.queue_admission import QueueAdmissionService
+from loregarden.services.scope_round import decide_finding
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, select
@@ -239,11 +240,16 @@ def start_orchestration(
     driver = body.driver or profile.driver
     if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
         raise HTTPException(400, "Use POST /api/tickets/{id}/start for manual_stage driver")
-    if untriaged(session, ticket.id) is not None:
-        # A run's finding is held out of the work until triaged. A person
-        # pressing Run on it is that triage; there is no other start to wait for.
-        triage(session, ticket, DiscoveryTriage.PROMOTE, actor="operator")
-        session.commit()
+    if undecided(session, ticket.id) is not None:
+        # A run's finding is held out of the work until its scope is decided.
+        # A person pressing Run on it has decided: it is work, its parent's.
+        decide_finding(
+            session,
+            ticket,
+            FindingDecision.FOLLOW_UP,
+            reason="An operator started it.",
+            decided_by="operator",
+        )
     active = svc.get_active_orchestration_run(ticket.id)
     if active is not None:
         # Before the reservation and the claim: `claim_orchestration_run` hands

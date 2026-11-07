@@ -78,6 +78,7 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
+from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.stage_retry_budget import (
     refund_stage_dispatch_charged_since,
     stage_dispatch_marker_ids,
@@ -537,6 +538,14 @@ def begin_external_stage(
     ticket = session.get(Ticket, orch_run.ticket_id)
     if not ticket:
         raise ValueError(f"Ticket not found: {orch_run.ticket_id}")
+    # The builtin driver's rule: findings are decided by the spec before the
+    # ticket reaches a gate or finishes (`scope_round`). A named stage is the
+    # harness's explicit choice and is served as asked.
+    if orch_run.external_harness is not None and not stage_key:
+        if open_round_if_due(session, orch_run, ticket):
+            return ExternalStageView(
+                stage_key=ticket.workflow_stage_key, message=ticket.blocking_issues
+            )
     view = _begin_external_stage(session, orch_run, ticket, stage_key=stage_key)
     stage = ticket_stage_definition(session, ticket, view.stage_key) if view.stage_key else None
     if stage is not None:

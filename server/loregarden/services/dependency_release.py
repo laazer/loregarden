@@ -39,7 +39,7 @@ from loregarden.services.dependency_hold import (
     latest_hold_at,
     ran_since,
 )
-from loregarden.services.discovered_work import untriaged
+from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_recovery import (
     InterruptionResume,
@@ -147,9 +147,9 @@ def _release_parked(session: Session, ticket: Ticket) -> InterruptionResume | No
     _record_release(session, ticket)
     session.commit()
     plan = None
-    # An untriaged finding is unparked but not resumed: nothing may start it
+    # An undecided finding is unparked but not resumed: nothing may start it
     # until triage (`discovered_work`).
-    if _ever_ran(session, ticket.id) and untriaged(session, ticket.id) is None:
+    if _ever_ran(session, ticket.id) and undecided(session, ticket.id) is None:
         plan = requeue_and_plan_resume(
             session, ticket, ticket.workflow_stage_key, reason=RELEASE_REASON
         )
@@ -191,8 +191,8 @@ def _held_and_releasable(session: Session, ticket: Ticket) -> bool:
         return False
     if find_active_orchestration_run(session, ticket.id) is not None:
         return False
-    if untriaged(session, ticket.id) is not None:
-        return False  # resuming it would only meet `refuse_untriaged`
+    if undecided(session, ticket.id) is not None:
+        return False  # resuming it would only meet `refuse_undecided`
     return not _stopped_by_a_person(session, ticket) and not holding_prerequisites(session, ticket)
 
 

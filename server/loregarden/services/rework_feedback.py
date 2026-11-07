@@ -155,6 +155,12 @@ def _entries(session: Session, ticket: Ticket, target_stage: str) -> list[Artifa
     )
 
 
+def latest_rework_context(session: Session, ticket: Ticket, target_stage: str) -> str:
+    """The newest round's context for ``target_stage``, or "" when there is none."""
+    entries = _entries(session, ticket, target_stage)
+    return _context_of(entries[-1]) if entries else ""
+
+
 def _newest_reset_at(session: Session, ticket: Ticket, target_stage: str) -> datetime | None:
     """When this target's reroute budget was last given back, if it ever was."""
     marker = session.exec(

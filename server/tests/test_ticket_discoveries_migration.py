@@ -3,7 +3,7 @@
 Until `ticket_discoveries`, a run's filing was one symmetric relation stamped
 ``run:<id>``, stored sorted, so which side was filed is recovered from the
 run's own ticket. Closed findings, and open ones other work already depends
-on, are recorded triaged; every other open one is untriaged.
+on, are recorded decided; every other open one is undecided.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import pytest
 from loregarden.db.versions.ticket_discoveries import m_ticket_discoveries
 from loregarden.models.domain import (
     AgentRun,
+    FindingDecision,
     RunStatus,
     Ticket,
     TicketDependency,
@@ -76,13 +77,12 @@ def test_each_filing_is_recorded_once_from_its_source(db_session, filings):
     assert {row.source_ticket_id for row in rows.values()} == {filings["source"].id}
 
 
-def test_only_an_open_finding_nothing_depends_on_starts_untriaged(db_session, filings):
+def test_only_an_open_finding_nothing_depends_on_starts_undecided(db_session, filings):
     rows = _backfill(db_session)
-    assert rows["bf-open"].triaged_at is None
-    assert rows["bf-closed"].triaged_by == "backfill: closed"
-    assert rows["bf-depended"].triaged_by == "backfill: depended on"
-    assert rows["bf-closed"].triaged_at is not None
-    assert rows["bf-depended"].triaged_at is not None
+    assert rows["bf-open"].decision is None
+    assert rows["bf-closed"].decision is FindingDecision.DROP
+    assert rows["bf-depended"].decision is FindingDecision.FOLLOW_UP
+    assert {rows["bf-closed"].decided_by, rows["bf-depended"].decided_by} == {"backfill"}
 
 
 def test_a_rerun_adds_nothing(db_session, filings):

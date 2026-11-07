@@ -79,7 +79,7 @@ def has_children(session: Session, ticket_id: str) -> bool:
 
     The predicate the workflow side asks before deriving a state from stages: a
     parent's stages are never run, so deriving from them answers `backlog`
-    forever and overwrites whatever the rollup just worked out. An untriaged
+    forever and overwrites whatever the rollup just worked out. An undecided or deferred
     finding filed under it does not make it one (`discovered_work`).
     """
     return has_owned_children(session, ticket_id)

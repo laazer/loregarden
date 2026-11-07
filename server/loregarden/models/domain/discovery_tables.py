@@ -1,18 +1,26 @@
-"""Work an agent run discovered and filed, kept apart until someone triages it.
+"""Findings an agent run filed about a ticket's work, and the scope decision on each.
 
 lg-milestone-that-1216 was a milestone whose fan-out never ended: its review
 lanes filed findings as new tickets, those tickets landed as its children, its
 child pass ran them, their review lanes filed more, and 37 run-filed tickets
-accumulated under one root. The parent could not finish until every one of
-them did.
+accumulated under one root.
 
-A ticket a run files is a *finding about* the work, not part of it. That is
-beads' ``discovered-from`` edge (steveyegge/beads) and an SRE postmortem's
-action items: recorded with where they came from, and never holding the
-incident open. So each filing writes one directed row here. While
-``triaged_at`` is null the ticket is *untriaged*: it stays where it was filed,
-no parent waits for it and no dispatcher starts it, until triage promotes it
-into the work or closes it (`services.discovered_work`).
+The filing itself was not the defect. Nothing decided whether a finding was
+part of the ticket's work. The reviewer who noticed it filed it, and the only
+outcome a filing had was "new ticket". So each filing writes one directed row
+here, *undecided* until the ticket's spec owner makes the scope decision
+(`services.scope_round`):
+
+- ``AMEND``: it was this ticket's work. It becomes an acceptance criterion of
+  the source ticket, and the finding is closed into it.
+- ``FOLLOW_UP``: real work beyond this ticket's criteria that its parent owns.
+  The parent waits for it.
+- ``DEFER``: real, but not this tree's work. It stays where it was filed and
+  no parent waits for it.
+- ``DROP``: not worth doing. The ticket is closed ``wont_do``.
+
+Until it is decided, a finding is held out of its parent's work like a
+deferred one, and its source ticket cannot reach its gate.
 """
 
 from __future__ import annotations
@@ -21,17 +29,17 @@ from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
-from loregarden.models.domain.enums import utcnow
+from loregarden.models.domain.enums import str_enum_column, utcnow
 from sqlmodel import Field, SQLModel
 
 
-class DiscoveryTriage(str, Enum):
-    """What triage decided about a run's finding."""
+class FindingDecision(str, Enum):
+    """The spec owner's scope decision on one finding."""
 
-    #: It is its parent's work from here on.
-    PROMOTE = "promote"
-    #: It is not work; the ticket is closed ``wont_do``.
-    CLOSE = "close"
+    AMEND = "amend"
+    FOLLOW_UP = "follow_up"
+    DEFER = "defer"
+    DROP = "drop"
 
 
 class TicketDiscovery(SQLModel, table=True):
@@ -40,7 +48,7 @@ class TicketDiscovery(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     #: The ticket the run filed. A ticket is filed once, so this is unique.
     filed_ticket_id: str = Field(foreign_key="tickets.id", unique=True)
-    #: The ticket the run was working on when it filed it.
+    #: The ticket the run was working on when it filed it: whose scope it questions.
     source_ticket_id: str = Field(foreign_key="tickets.id", index=True)
     agent_run_id: str = Field(foreign_key="agent_runs.id", index=True)
     #: The drive the filing run belonged to, when it had one: the per-drive cap
@@ -49,10 +57,15 @@ class TicketDiscovery(SQLModel, table=True):
         default=None, foreign_key="orchestration_runs.id", index=True
     )
     filed_at: datetime = Field(default_factory=utcnow)
-    #: Null while untriaged. Set when triage promotes or closes the ticket.
-    triaged_at: datetime | None = Field(default=None, index=True)
-    #: Who triaged it, and how: ``"<actor>: promote"`` / ``"<actor>: close"``.
-    triaged_by: str = ""
+    #: Null while undecided.
+    decision: FindingDecision | None = Field(
+        default=None, sa_column=str_enum_column(FindingDecision, None, nullable=True, index=True)
+    )
+    decided_at: datetime | None = None
+    #: The spec run that decided it, or ``operator`` / ``backfill``.
+    decided_by: str = ""
+    #: Why, in the decider's words. Required for every decision.
+    decision_reason: str = ""
 
 
-__all__ = ["DiscoveryTriage", "TicketDiscovery"]
+__all__ = ["FindingDecision", "TicketDiscovery"]

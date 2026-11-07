@@ -16,12 +16,12 @@ So the tool is the sanctioned path again, with the two things the curl lacked:
   more is enumerating a defect family, which is one ticket, not many.
 
 lg-milestone-that-1216 added the rest. A filing is also recorded as a directed,
-untriaged discovery (`services.discovered_work`), so its parent neither runs it
-nor waits for it until triage decides. The budget counts those rows, not the
+undecided finding (`services.discovered_work`): its parent neither runs it nor
+waits for it until its source ticket's spec decides its scope (`scope_round`). The budget counts those rows, not the
 relation: a relation is stored once per *pair*, so a filing against a ticket
 the run's own ticket was already related to wrote no row and went uncounted.
 Two more caps stop a fan-out a per-run limit cannot: one per drive, and one on
-the untriaged findings a single ticket may hold.
+the undecided findings a single ticket may hold.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ MAX_TICKETS_PER_RUN = 3
 #: most any drive had filed was 8 (live database, 2026-11-07), all of them
 #: review findings on one milestone child.
 MAX_TICKETS_PER_DRIVE = 6
-#: Untriaged findings one ticket may hold at once. The most any ticket had
+#: Undecided findings one ticket may hold at once. The most any ticket had
 #: accumulated was 9. Past this, the findings are a family.
 MAX_UNTRIAGED_PER_SOURCE = 5
 
@@ -95,17 +95,17 @@ def check_filing_budget(session: Session, run: AgentRun) -> None:
         waiting = _filed(
             session,
             TicketDiscovery.source_ticket_id == run.ticket_id,
-            col(TicketDiscovery.triaged_at).is_(None),
+            col(TicketDiscovery.decision).is_(None),
         )
         if waiting >= MAX_UNTRIAGED_PER_SOURCE:
             raise FilingRefused(
-                f"This ticket already has {waiting} findings waiting for triage, the most one "
+                f"This ticket already has {waiting} findings waiting for a scope decision, the most one "
                 f"ticket may hold. {_FAMILY}"
             )
 
 
 def record_filing(session: Session, run: AgentRun, filed: Ticket) -> None:
-    """Record the filing as an untriaged discovery, and relate the two tickets."""
+    """Record the filing as an undecided finding, and relate the two tickets."""
     record_discovery(session, run, filed)
     TicketRelationService(session).add_relation(run.ticket_id, filed.id, created_by=filed_by(run))
     # `add_relation` returns an existing pair without committing.

@@ -1,9 +1,12 @@
-"""`loregarden_triage_discovery`: promote a run's finding into the work, or close it.
+"""`loregarden_decide_finding`: the scope decision on a finding a run filed.
 
-A ticket an agent run files is held out of its parent's work until triaged
-(`services.discovered_work`). This is the triage: promoting makes it ordinary
-work its parent's drive will run and wait for; closing sets it ``wont_do``
-through the same path any manual state change takes.
+A ticket an agent run files is undecided until its source ticket's spec owner
+decides whether it is that ticket's work (`services.scope_round`). The spec
+stage decides during a scope round. An operator may decide any finding.
+
+Who may call it is checked against the run, not the request: an orchestrated
+call must come from a spec run on the finding's own source ticket. A reviewer
+that could decide its own findings would put the decision back where it was.
 """
 
 from __future__ import annotations
@@ -13,52 +16,83 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.agents.registry import SPEC_AGENT_ID
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import enum_string_prop, string_prop, tool_schema
-from loregarden.models.domain import DiscoveryTriage, TicketState, UpdateTicketRequest
-from loregarden.services.discovered_work import triage
-from loregarden.services.orchestration import OrchestrationService
+from loregarden.models.domain import AgentRun, FindingDecision, Ticket
+from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.scope_round import decide_finding
 
 DISCOVERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
-        "name": McpTool.TRIAGE_DISCOVERY,
+        "name": McpTool.DECIDE_FINDING,
         "description": (
-            "Triage a ticket an agent run filed as a finding. Until triaged it stays where it "
-            "was filed, its parent neither runs it nor waits for it, and nothing may start it. "
-            "action=promote makes it its parent's work; action=close sets it wont_do. A "
-            "finding worth keeping but not now: promote it and leave it in the backlog."
+            "Decide the scope of a finding an agent run filed against a ticket. Called by that "
+            "ticket's spec stage during a scope round, or by an operator. amend: it is the "
+            "ticket's own work; give the criterion it will be held to, and every stage after "
+            "spec reruns. follow_up: real work beyond the criteria that the ticket's parent "
+            "owns and waits for. defer: real, but not this tree's work; it stays in the "
+            "backlog and nothing waits for it. drop: not worth doing; closed wont_do. A reason "
+            "is always required. Findings about the tests, guards or fixtures the ticket "
+            "itself built are its own work: amend."
         ),
         "inputSchema": tool_schema(
             properties={
-                "ticket_id": string_prop("The filed ticket (UUID or external_id)."),
-                "action": enum_string_prop("promote or close.", [a.value for a in DiscoveryTriage]),
+                "ticket_id": string_prop("The finding (UUID or external_id)."),
+                "decision": enum_string_prop(
+                    "The scope decision.", [d.value for d in FindingDecision]
+                ),
+                "reason": string_prop("Why, in a sentence a person can check."),
+                "criterion": string_prop(
+                    "amend only: the acceptance criterion the source ticket is held to."
+                ),
             },
-            required=["ticket_id", "action"],
+            required=["ticket_id", "decision", "reason"],
         ),
     }
 ]
 
 
-def _triage_discovery(session: Session, arguments: dict[str, Any]) -> str:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    action = DiscoveryTriage(arguments["action"])
-    discovery = triage(session, ticket, action, actor="triage")
-    if action is DiscoveryTriage.CLOSE:
-        OrchestrationService(session).update_ticket_manual(
-            ticket, UpdateTicketRequest(state=TicketState.WONT_DO)
+def _decider(session: Session, finding: Ticket, *, orchestrated: bool, run_id: str) -> str:
+    """Who is deciding, refused unless it is the finding's spec owner or an operator."""
+    if not orchestrated:
+        return "operator"
+    run = session.get(AgentRun, run_id) if run_id else None
+    discovery = undecided(session, finding.id)
+    if run is None or discovery is None:
+        raise ValueError(
+            "loregarden_decide_finding from a pipeline agent must come from a supervised run, "
+            "on a finding still waiting for its scope decision."
         )
-    session.commit()
+    if run.agent_id != SPEC_AGENT_ID or run.ticket_id != discovery.source_ticket_id:
+        raise ValueError(
+            "Only the spec stage of the ticket a finding was filed against decides its scope. "
+            "Name the finding in your stage report instead."
+        )
+    return f"run:{run.id}"
+
+
+def decide_finding_tool(
+    session: Session, arguments: dict[str, Any], *, orchestrated: bool, run_id: str
+) -> str:
+    finding = OrchestrationCallbackService(session).resolve_ticket(ticket_id=arguments["ticket_id"])
+    decided_by = _decider(session, finding, orchestrated=orchestrated, run_id=run_id)
+    discovery = decide_finding(
+        session,
+        finding,
+        FindingDecision(arguments["decision"]),
+        reason=arguments.get("reason") or "",
+        decided_by=decided_by,
+        criterion=arguments.get("criterion") or "",
+    )
+    session.refresh(finding)
     return json.dumps(
         {
-            "ticket": ticket.external_id,
-            "state": ticket.state.value,
-            "triaged_by": discovery.triaged_by,
+            "finding": finding.external_id,
+            "decision": discovery.decision.value if discovery.decision else None,
+            "state": finding.state.value,
+            "decided_by": discovery.decided_by,
         },
         indent=2,
     )
-
-
-#: Registered in `tool_registry.EXTENDED_TOOLS`, not `execute_tool`'s chain.
-HANDLERS = {McpTool.TRIAGE_DISCOVERY.value: _triage_discovery}

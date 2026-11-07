@@ -47,7 +47,7 @@ def link_review_to_siblings(
     review = session.get(Ticket, review_ticket_id)
     if not review or not review.parent_ticket_id:
         return []
-    # An untriaged finding is not a sibling's work: the review never waits on it.
+    # An undecided or deferred finding is not a sibling's work: the review never waits on it.
     siblings = session.exec(
         owned_children(review.parent_ticket_id).where(Ticket.id != review.id)
     ).all()
