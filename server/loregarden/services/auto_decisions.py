@@ -1,8 +1,9 @@
 """The digest of what the control plane decided without a person, across a ticket tree.
 
-A milestone that runs unattended makes two decisions a person would have made
-before: it splits criteria a ticket could not meet into a new ticket, and it
-defers findings a spec would not decide. Each one is on its ticket's history,
+A milestone that runs unattended makes three decisions a person would have made
+before: it splits criteria a ticket could not meet into a new ticket, it
+defers findings a spec would not decide, and it signs a ticket's gate on its
+criteria check. Each one is on its ticket's history,
 but nobody reads the history of every ticket under a milestone, so this lists
 them for the whole tree in one place, newest first, for a person to review
 after the fact.
@@ -25,7 +26,11 @@ from sqlmodel import Session, col, select
 
 #: The decisions that stand in for a person's. Routine ones (a ticket sent back
 #: to verify, criteria checked) are on the history and not worth a review.
-REVIEWABLE = (OrchestratorDecision.SPLIT_CRITERIA, OrchestratorDecision.DEFERRED_UNDECIDED_FINDINGS)
+REVIEWABLE = (
+    OrchestratorDecision.SPLIT_CRITERIA,
+    OrchestratorDecision.DEFERRED_UNDECIDED_FINDINGS,
+    OrchestratorDecision.SIGNED_OFF_ON_CRITERIA,
+)
 _REVIEWABLE_VALUES = frozenset(d.value for d in REVIEWABLE)
 
 #: Enough for the largest tree's history; the tree's newest decisions first.

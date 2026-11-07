@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from loregarden.models.domain import OrchestrationRun, Ticket, TicketState
-from loregarden.services.criterion_gate import check_due, gate_of
+from loregarden.services.criterion_gate_stages import check_due, gate_of
 from loregarden.services.criterion_ledger import delegation_gaps, unsettled
 from loregarden.services.invariants import Violation
 from loregarden.services.workflow_service import resolve_ticket_stages

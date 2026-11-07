@@ -23,8 +23,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.autopilot_sign_off import (
     RESOLVED_BY_AUTOMATION,
-    record_auto_approve_sign_off,
-    record_autopilot_sign_off,
+    record_sign_off,
     signer_for_gate,
 )
 from loregarden.services.design_plan_gate import (
@@ -156,7 +155,6 @@ def resolve_gate_if_permitted(
     if not approval:
         return False
     signer = None if design_plan else signer_for_gate(session, ticket, orch_run, approval)
-    autopilot = signer.plan if signer is not None else None
     if not design_plan and signer is None:
         return False
     # Operator judgment only: an authority grant or a recheck is never made
@@ -172,10 +170,8 @@ def resolve_gate_if_permitted(
         session.commit()
     if design_plan:
         record_design_plan_sign_off(session, ticket, orch_run, stage.key)
-    elif approval is not None and autopilot is not None:
-        record_autopilot_sign_off(session, ticket, autopilot, approval)
-    elif approval is not None:
-        record_auto_approve_sign_off(session, ticket, orch_run, approval)
+    elif approval is not None and signer is not None:
+        record_sign_off(session, ticket, orch_run, approval, signer)
     session.refresh(ticket)
     return True
 
