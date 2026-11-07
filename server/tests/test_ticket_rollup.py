@@ -23,7 +23,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services import ticket_rollup
+from loregarden.services import discovered_work, ticket_rollup
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_rollup import (
     derive_parent_state,
@@ -565,12 +565,15 @@ def test_r5_rollup_child_parent_queries_have_no_workspace_id_predicate():
             "reconcile_all_parents",
         )
     }
+    # The child walk itself lives in discovered_work, shared by every reader.
+    sources["owned_children"] = inspect.getsource(discovered_work.owned_children)
     for name, src in sources.items():
         # Strip comments and string literals loosely: reject any where() predicate
         # that names workspace_id. parent_ticket_id walks must remain.
         assert "workspace_id" not in src, f"{name} must not filter on workspace_id; got:\n{src}"
-        if name in ("_child_states", "has_children"):
-            assert "parent_ticket_id" in src
+    assert "parent_ticket_id" in sources["owned_children"]
+    assert "owned_children" in sources["_child_states"]
+    assert "has_owned_children" in sources["has_children"]
 
 
 def _child_states_filtered_by_parent_workspace(
