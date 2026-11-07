@@ -6,6 +6,7 @@ import { ticketStateChip } from '../lib/ticketStates';
 import { IconCloseButton } from './IconCloseButton';
 import { TicketDependencies } from './TicketDependencies';
 import { TicketGithubIssue } from './TicketGithubIssue';
+import { AutoDecisionsPanel } from './ticket/AutoDecisionsPanel';
 import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
@@ -476,6 +477,12 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                   </ul>
                 </div>
               )}
+
+              {/* The tree's decisions taken without a person; a root shows an empty list too. */}
+              <AutoDecisionsPanel
+                ticketId={ticket.id}
+                alwaysShow={ticket.work_item_type === 'milestone' || ticket.work_item_type === 'initiative'}
+              />
 
               {asStringArray(ticket.tags).length > 0 && (
                 <div className="state-card">

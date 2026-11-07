@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import criterion_split_creator  # noqa: F401 — installs the creator
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
+from loregarden.services.auto_decisions import auto_decisions_under
 from loregarden.services.criterion_gate import check_criteria_if_due, check_due, gate_of
 from loregarden.services.criterion_ledger import (
     record_delegation,
@@ -332,3 +333,24 @@ def test_the_detector_reports_a_ticket_done_with_a_criterion_unanswered(db_sessi
 
     _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_names_the_arm")
     assert done_tickets_with_unsettled_criteria(db_session) == []
+
+
+def test_a_split_shows_in_the_digest_of_the_tree_above_it(db_session, ticket, env):
+    _met(db_session, ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    run = _orch_run(db_session, ticket)
+    check_criteria_if_due(db_session, run, ticket)
+    instance = workflow_instance_for(db_session, ticket.id)
+    _, stages = resolve_ticket_stages(db_session, ticket)
+    set_stage_status(ticket, instance, stages, "verify", StageStatus.DONE)
+    db_session.add_all([ticket, instance])
+    db_session.commit()
+    check_criteria_if_due(db_session, run, ticket)
+
+    milestone = db_session.get(Ticket, ticket.parent_ticket_id)
+    digest = auto_decisions_under(db_session, milestone)
+    split = db_session.get(
+        Ticket, settlements_of(db_session, ticket)[CRITERIA[1]].delegated_to_ticket_id
+    )
+    assert [(d.external_id, d.decision.value, d.related_external_id) for d in digest] == [
+        (ticket.external_id, "split_criteria", split.external_id)
+    ]

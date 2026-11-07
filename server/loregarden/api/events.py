@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from loregarden.core.event_bus import event_bus
 from loregarden.db.session import get_session
 from loregarden.models.domain import EventType, EventView, Ticket
+from loregarden.services.auto_decisions import AutoDecisionView, auto_decisions_under
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from sqlmodel import Session
 
@@ -56,3 +57,19 @@ def ticket_history(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
     return [_view(event) for event in event_bus.ticket_history(session, ticket.id, limit=limit)]
+
+
+@router.get("/ticket/{ticket_id}/auto-decisions", response_model=list[AutoDecisionView])
+def ticket_auto_decisions(
+    ticket_id: str, session: Session = Depends(get_session)
+) -> list[AutoDecisionView]:
+    """What the control plane decided without a person on this ticket and every one under it.
+
+    Newest first: criteria split off to a new ticket, findings deferred
+    because a spec would not decide them. Each is on its own ticket's history
+    too; this is the one place to review a whole tree's.
+    """
+    ticket = resolve_external_id(session, ticket_id) or session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail=f"Ticket not found: {ticket_id}")
+    return auto_decisions_under(session, ticket)
