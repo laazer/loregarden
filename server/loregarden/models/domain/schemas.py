@@ -366,6 +366,8 @@ class TicketDetail(TicketSummary):
     acceptance_criteria: list[str]
     #: The subset of `acceptance_criteria` an operator has checked off.
     checked_acceptance_criteria: list[str]
+    #: What the spec ruled out of scope, each with its reason.
+    out_of_scope: list[str] = Field(default_factory=list)
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
     dependencies: list[TicketDependencyRef] = Field(default_factory=list)
     dependents: list[TicketDependencyRef] = Field(default_factory=list)
@@ -845,6 +847,8 @@ class UpdateTicketRequest(SQLModel):
     #: Replaces which criteria are checked off; omit to leave them alone. Any
     #: text the ticket's criteria do not contain is dropped.
     checked_acceptance_criteria: list[str] | None = None
+    #: Replaces what the spec ruled out of scope; omit to leave it, [] to clear it.
+    out_of_scope: list[str] | None = None
     #: Replaces the stored tags; omit to leave them alone, [] to clear them.
     tags: list[str] | None = None
     state: TicketState | None = None

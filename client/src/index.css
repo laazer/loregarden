@@ -3929,6 +3929,13 @@ button.send-leaf:hover:not(:disabled) {
   font-weight: 600;
 }
 
+.ticket-out-of-scope {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
 .stage-row {
   display: flex;
   gap: 13px;

@@ -734,6 +734,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Read the ticket first if you mean to replace.",
                     list(CRITERIA_MODES),
                 ),
+                "out_of_scope": {
+                    "type": "array",
+                    "description": (
+                        "What the spec rules out of this ticket's scope, one entry each, "
+                        "written as '<what> — <why>'. Replaces the stored list; read the "
+                        "ticket first. Reviewers check findings against it."
+                    ),
+                    "items": {"type": "string"},
+                },
                 "tags": {
                     "type": "array",
                     "description": (

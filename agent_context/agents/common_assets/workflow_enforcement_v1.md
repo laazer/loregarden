@@ -71,9 +71,15 @@ Field rules:
 - **Reject only for an unmet acceptance criterion.** `fail` and `needs_rework` mean *this
   ticket's stated criteria are not satisfied yet*. They do not mean "I found something real".
   Before rejecting, name the acceptance criterion your finding makes false, and put it in
-  `unmet_criteria`. If you cannot name one, the work in front of you is done and your finding
-  is a **new ticket** — file it with `loregarden_create_ticket` and report `pass`, saying in
-  your response what you filed and why it did not block. If the new ticket cannot start until
+  `unmet_criteria`. If you cannot name one, first check the ticket's **Out of scope** list: a
+  finding the spec already ruled out, for a reason that still holds, is not a finding, so say
+  so and move on. Otherwise the work in front of you is done and your finding is filed with
+  `loregarden_create_ticket`, then you report `pass`, saying what you filed and why it did not
+  block. You are not deciding that it is separate work: a ticket you file is recorded as a
+  finding against this ticket, and this ticket's spec decides, before the gate, whether it is
+  this ticket's work (amend), its parent's (follow-up), deferred, or dropped. Write the
+  finding so that decision is easy: what is wrong, where, and which criterion or exclusion
+  it sits next to. If the new ticket cannot start until
   other work lands, pass those tickets in `depends_on` when you create it: a dependency written
   only in the description holds nothing, and the ticket is dispatched straight into the wall.
   A run may file three tickets; findings that are instances of one defect are one ticket.

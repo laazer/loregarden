@@ -246,3 +246,22 @@ def test_a_finding_amended_from_under_its_source_does_not_finish_the_source(db_s
     _decide(db_session, _run(db_session, source, "spec", "s1"), finding, "amend", criterion="c")
     db_session.refresh(source)
     assert source.state is not TicketState.DONE
+
+
+def test_the_spec_records_what_it_rules_out_and_every_reader_sees_it(db_session, source):
+    ruled_out = ["The no-layout arm — this ticket covers laid-out regions only"]
+    execute_tool(
+        db_session,
+        "loregarden_update_ticket",
+        normalize_tool_arguments(
+            "loregarden_update_ticket", {"ticket_id": source.id, "out_of_scope": ruled_out}
+        ),
+    )
+    read = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_get_ticket",
+            normalize_tool_arguments("loregarden_get_ticket", {"ticket_id": source.id}),
+        )
+    )
+    assert read["out_of_scope"] == ruled_out

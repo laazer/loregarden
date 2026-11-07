@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from loregarden.services.orchestration import OrchestrationService
 
 
-def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
+def _content_fields(ticket: Ticket) -> tuple[str, str, str, str, str]:
     """The stored form of every field a content edit can touch.
 
     Snapshotting once before and once after is what lets each field below be a
@@ -66,6 +66,7 @@ def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
         ticket.title,
         ticket.description,
         ticket.acceptance_criteria_json,
+        ticket.out_of_scope_json,
         ticket.tags_json,
     )
 
@@ -147,6 +148,10 @@ def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
 
     if body.acceptance_criteria is not None:
         ticket.acceptance_criteria_json = serialize_criteria(body.acceptance_criteria)
+
+    if body.out_of_scope is not None:
+        # Same shape as the criteria, so the same normalizer.
+        ticket.out_of_scope_json = serialize_criteria(body.out_of_scope)
 
     if body.tags is not None:
         ticket.tags_json = serialize_tags(body.tags)

@@ -755,6 +755,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         description=ticket.description,
         acceptance_criteria=criteria,
         checked_acceptance_criteria=load_checked(ticket.checked_criteria_json, criteria),
+        out_of_scope=load_criteria(ticket.out_of_scope_json),
         dependencies=_prerequisite_refs(session, ticket, prereq_ids),
         dependents=_dependency_refs(session, dependent_ids),
         related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),

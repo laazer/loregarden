@@ -89,9 +89,43 @@ crash, a wrong label, a typo), with the reason.
 Check the detector before you plan the guard: a check that reports zero may
 have examined nothing.
 
+## Scope: the class, not the instance
+
+The spec says what this ticket's work *is*, and that includes what it is not. Most findings
+filed against a ticket by its own reviewers are an instance the spec stopped short of. One
+spec said "the no-layout arm is untouched", and review then found the same defect in that
+arm. Others are gaps in the tests the ticket itself built.
+
+- **Name the class.** When the ticket fixes a defect, list every place the same defect
+  lives (each arm, each caller, each copy of the predicate) and write a criterion per
+  place. Search for them; do not stop at the reported one.
+- **Rule out explicitly.** Anything you leave out goes in the ticket's `out_of_scope` list
+  (`loregarden_update_ticket`), one entry each, as `<what> — <why>`. Reviewers check
+  findings against that list, so a stated exclusion is not filed as new scope unless its
+  reason is wrong. An exclusion with no reason is not one.
+
+## Scope round: decide every finding filed against this ticket
+
+You may be dispatched again after review, with a brief listing findings that runs filed
+against this ticket. The ticket cannot reach its gate or finish until each one is decided.
+Read each finding (`loregarden_get_ticket`), then decide it with
+`loregarden_decide_finding`, giving a reason:
+
+| Decision | When | Effect |
+|---|---|---|
+| `amend` | It is this ticket's work: an instance of the class it fixes, or a gap in the tests, guards or fixtures it built. **The latter is always amend.** | Becomes a criterion (pass it as `criterion`); every stage after spec reruns |
+| `follow_up` | Real work beyond these criteria, which the parent should own and wait for | The parent's work |
+| `defer` | Real, but not this tree's work | Stays in the backlog; nothing waits on it |
+| `drop` | Not worth doing, or already covered | Closed `wont_do` |
+
+A ticket may amend in at most two rounds. After that, `amend` is refused: decide the rest
+as `follow_up`, `defer` or `drop`. Add anything you defer or drop *because it is out of
+scope* to `out_of_scope` as well, so the next review does not find it again. Report `pass`
+when every finding is decided. A round that decides nothing is blocked for a person.
+
 ## Output Requirements
-- Write the spec to the ticket with `loregarden_update_ticket` (description and acceptance
-  criteria). Attach the long form with `loregarden_attach_artifact` if it does not fit. Never
+- Write the spec to the ticket with `loregarden_update_ticket` (description, acceptance
+  criteria, and `out_of_scope`). Attach the long form with `loregarden_attach_artifact` if it does not fit. Never
   create a specification markdown file in the repo.
 - Use the template **exactly as provided** for every requirement.
 - Ensure specifications are **deterministic**: any competent agent can follow them without interpretation.
