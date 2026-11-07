@@ -68,6 +68,21 @@ class OrchestratorConfig(BaseModel):
     pipeline: str = "agents/common_assets/pipeline_stages_v1.md"
 
 
+class CriterionTestCommand(BaseModel):
+    """How to rerun the tests a ticket named as proof of its criteria (`criterion_gate`).
+
+    A test id is repo-relative, ``path::name``: a pytest node id, or a jest file
+    and the test's exact name in quotes. The first entry whose ``prefix`` the id
+    starts with runs it, with ``prefix`` stripped when ``strip_prefix`` is set.
+    ``{tests}`` becomes the ids and ``{files}`` the distinct files, each shell
+    quoted. The command runs with no shell, from the ticket's checkout root.
+    """
+
+    prefix: str
+    command: str
+    strip_prefix: bool = True
+
+
 class GatesConfig(BaseModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
@@ -112,6 +127,11 @@ class GatesConfig(BaseModel):
     # leases, exactly as they did before lg-machine-resource-1923. It is still
     # metered; it just pays the line per transition.
     parent_capacity_footprint: DockerFootprint = DockerFootprint.LIGHT
+    # How the check before a ticket's gate reruns the tests each acceptance
+    # criterion names as its proof. Empty means those tests are only checked to
+    # exist, and the check says so on the ticket's history rather than passing
+    # them as rerun.
+    criterion_test_commands: list[CriterionTestCommand] = Field(default_factory=list)
 
 
 class GitAutomationConfig(BaseModel):
@@ -486,7 +506,7 @@ AUTOFIX_GATE_KEYS = frozenset(
 #: Keys a gates editor that does not send them must not overwrite: the autofix
 #: policy, and the gate lease size — both usually hand-set in the YAML, and
 #: neither shown by the editor that saves enabled/commands/transition_script.
-PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {"capacity_footprint"}
+PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {"capacity_footprint", "criterion_test_commands"}
 
 
 def update_gates_config(

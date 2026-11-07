@@ -18,17 +18,17 @@ finding (`decide_finding`), and its pass is the round's end:
 
 Rounds converge for two reasons. `MAX_AMEND_ROUNDS` bounds how many times a
 ticket may widen itself. And a round whose brief repeats the last one's word
-for word is blocked for a person, because that is what a spec agent that
-decides nothing looks like.
+for word is what a spec agent that decides nothing looks like, so its findings
+are deferred, recorded on the ticket's history, and the ticket goes on.
 """
 
 from __future__ import annotations
 
 from loregarden.agents.registry import SPEC_AGENT_ID
 from loregarden.models.domain import (
-    BlockOrigin,
     FindingDecision,
     OrchestrationRun,
+    OrchestratorDecision,
     StageStatus,
     Ticket,
     TicketDiscovery,
@@ -38,13 +38,11 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     utcnow,
 )
-from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.stage_types import StageType
 from loregarden.services.acceptance_criteria import load_criteria
-from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.discovered_work import undecided, undecided_findings_of
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.rework_feedback import latest_rework_context, record_rework_feedback
 from loregarden.services.studio_routing import is_terminal_stage
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
@@ -61,6 +59,9 @@ from sqlmodel import Session, col, func, select
 #: the first amendment exposed. Past that, a finding is a follow-up, a
 #: deferral or a drop: the ticket has said what it is.
 MAX_AMEND_ROUNDS = 2
+
+#: Who defers findings a spec would not decide.
+DEFERRED_BY = "control_plane"
 
 
 class ScopeRoundStuck(ValueError):
@@ -227,16 +228,46 @@ def _same_round(session: Session, source_id: str, decided_by: str) -> bool:
     )
 
 
-def open_round_or_block(
+def _defer_undecided(session: Session, ticket: Ticket, target: WorkflowStageDef) -> None:
+    """Defer every finding the spec would not decide, and say so on the history. Commits."""
+    findings = undecided_findings_of(session, ticket)
+    for _, filed in findings:
+        decide_finding(
+            session,
+            filed,
+            FindingDecision.DEFER,
+            reason=(
+                "Deferred by the control plane: the spec was asked twice to decide it and "
+                "decided nothing. A person can still promote it."
+            ),
+            decided_by=DEFERRED_BY,
+        )
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.DEFERRED_UNDECIDED_FINDINGS,
+        stage_key=target.key,
+        reason=(
+            f"The spec decided none of {len(findings)} findings in two scope rounds, so they "
+            f"were deferred and {ticket.external_id} went on to '{target.key}'."
+        ),
+        evidence={"findings": [filed.external_id for _, filed in findings]},
+    )
+    session.commit()
+
+
+def open_round_or_defer(
     session: Session,
-    orch_run: OrchestrationRun,
     ticket: Ticket,
     target: WorkflowStageDef,
-) -> bool:
-    """Open a round before ``target``; True when it could not and the ticket is blocked.
+) -> None:
+    """Open a round before ``target``, or defer its findings when the last round decided none.
 
     Shared by both drivers, so the builtin loop and an external harness hand the
-    ticket back to its spec by the same rule.
+    ticket back to its spec by the same rule. A spec that decides nothing twice
+    will not decide on a third ask either, and the findings are not this
+    ticket's work until someone decides they are, so they are deferred rather
+    than holding the ticket for a person.
     """
     instance = workflow_instance_for(session, ticket.id)
     _, stages = resolve_ticket_stages(session, ticket)
@@ -244,26 +275,18 @@ def open_round_or_block(
         raise ValueError(f"{ticket.external_id} has no workflow instance")
     try:
         open_round(session, ticket, instance, stages, target)
-    except ScopeRoundStuck as exc:
+    except ScopeRoundStuck:
         session.rollback()
-        OrchestrationCallbackService(session).block_ticket(
-            orch_run,
-            ticket,
-            origin=BlockOrigin.CONTROL_PLANE,
-            repair=RepairPolicy.withheld(
-                "The spec decided none of the findings it was asked to twice; another agent "
-                "turn would ask it a third time."
-            ),
-            message=str(exc),
-            declared=BlockKind.DECISION,
-        )
-        return True
+        _defer_undecided(session, ticket, target)
+        return
     session.commit()
-    return False
 
 
 def open_round_if_due(session: Session, orch_run: OrchestrationRun, ticket: Ticket) -> bool:
-    """Open a round if the stage this ticket runs next needs one; True when it blocked.
+    """Open a round if the stage this ticket runs next needs one. Never blocks: False.
+
+    Kept returning a bool, and taking the run, so both drivers' "blocked?" step
+    reads the same as the criteria check that follows it (`criterion_gate`).
 
     The step both drivers take before choosing a stage. When a round opens,
     the spec stage is the next pending one, so the caller's own pick finds it.
@@ -276,4 +299,5 @@ def open_round_if_due(session: Session, orch_run: OrchestrationRun, ticket: Tick
     target = next((s for s in stages if s.key == target_key), None)
     if target is None or not round_due(session, ticket, stages, target):
         return False
-    return open_round_or_block(session, orch_run, ticket, target)
+    open_round_or_defer(session, ticket, target)
+    return False

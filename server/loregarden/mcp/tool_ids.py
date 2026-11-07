@@ -50,6 +50,7 @@ class McpTool(StrEnum):
     DEQUEUE_MERGE = "loregarden_dequeue_merge"
     SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     DECIDE_FINDING = "loregarden_decide_finding"
+    SETTLE_CRITERION = "loregarden_settle_criterion"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
     UPSERT_MEMORY = "loregarden_upsert_memory"
@@ -180,6 +181,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # ticket. Offered to every stage like the fix coverage record; the handler
     # refuses any run but the source ticket's own spec (`mcp.discovery_tools`).
     McpTool.DECIDE_FINDING,
+    # The verify stage settles each criterion met; the spec delegates. Offered
+    # to every stage; the handler admits only that stage on its own ticket
+    # (`mcp.criterion_tools`), so no implementer grades its own work.
+    McpTool.SETTLE_CRITERION,
     McpTool.REQUEST_APPROVAL,
     # Stage work reads library documentation. Offering the cache means the raw
     # HTML is paid for once per URL rather than once per run, and a stage that
@@ -295,6 +300,9 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         # stall it. The handler admits only the finding's own spec run, and
         # every decision carries a reason on the record.
         McpTool.DECIDE_FINDING,
+        # Verify settles criteria unattended; the handler admits only the
+        # disposition's own stage on its own ticket, and each carries a reason.
+        McpTool.SETTLE_CRITERION,
         McpTool.WRITE_DOCUMENT,
         McpTool.ATTACH_EVIDENCE,
         McpTool.SEARCH_PRIOR_WORK,

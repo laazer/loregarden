@@ -173,6 +173,12 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "split_oversized_ticket",
         # Failed tone, the default: an oversized ticket running whole.
         "ran_oversized_unsplit",
+        # Normal, all four (client tone()): the pipeline carrying on without a
+        # person, recorded so a person can review it after.
+        "split_criteria",
+        "criteria_sent_to_verify",
+        "criteria_checked",
+        "deferred_undecided_findings",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

@@ -38,6 +38,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.branch_takes_target import MergeTurnSeat
+from loregarden.services.criterion_split import split_instead_of_pausing
 from loregarden.services.dependency_hold import link_reported_prerequisites
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
@@ -550,6 +551,16 @@ def _link_reported_waits(
     return "; ".join(problems)
 
 
+def _unmet_named(results: list[ParallelMemberResult]) -> list[str]:
+    """Every criterion any lens named unmet, once each, in the order first named."""
+    named: list[str] = []
+    for result in results:
+        for criterion in result.report.unmet_criteria if result.report else []:
+            if criterion not in named:
+                named.append(criterion)
+    return named
+
+
 def _route_parallel_stage_failures(
     session: Session,
     ticket: Ticket,
@@ -658,6 +669,12 @@ def _route_parallel_stage_failures(
             context=agent_context or message,
         )
         if stop is not ReworkStopReason.NONE:
+            split = split_instead_of_pausing(
+                session, ticket, instance, stages, stage_key=stage_key, unmet=_unmet_named(results)
+            )
+            if split.split:
+                session.refresh(ticket)
+                return True, ""
             # Either the loop cap ran out, or two rounds running asked for the
             # same thing against the same tree. The second is worth saying
             # differently: it means re-running cannot help, rather than that we
@@ -681,7 +698,7 @@ def _route_parallel_stage_failures(
                 ticket,
                 stage_key=stage_key,
                 target_stage=target_stage,
-                message=stop_message,
+                message=f"{stop_message} {split.refusal}".strip(),
             )
             session.refresh(ticket)
             return False, message

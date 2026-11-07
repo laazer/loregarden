@@ -31,6 +31,7 @@ from loregarden.services.child_readiness import (
     partition_children,
 )
 from loregarden.services.child_run_wait import await_child_run
+from loregarden.services.criterion_gate import before_next_stage
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.exit_actions import resolve_exit_actions
@@ -56,7 +57,6 @@ from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_concurrency import OrchestrationAlreadyRunning
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import supervised
-from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -417,7 +417,7 @@ class BuiltinOrchestrator:
         # Findings filed against it are decided by its spec before it reaches a
         # gate or finishes; a round reopens the spec stage, which the loop then
         # picks like any pending stage (`scope_round`).
-        if open_round_if_due(self.session, orch_run, ticket):
+        if before_next_stage(self.session, orch_run, ticket):
             self.session.refresh(orch_run)
             return orch_run
         return None

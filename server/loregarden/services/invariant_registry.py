@@ -71,6 +71,10 @@ from loregarden.services.reference_survey.invariant_checks import (
     unsplit_map_violations,
 )
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
+from loregarden.services.scope_invariants import (
+    DONE_TICKETS_HAVE_SETTLED_CRITERIA,
+    UNDECIDED_FINDINGS_DO_NOT_RUN,
+)
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_parked_at_rows import (
     clear_vanished_parked_at,
@@ -92,7 +96,6 @@ from loregarden.services.unavailable_gate_blocks import (
     refile_as_harness,
     work_blocks_from_unavailable_gates,
 )
-from loregarden.services.undecided_finding_runs import undecided_findings_that_ran
 from loregarden.services.unpublished_trees import publish_trees as _publish_unpublished_trees
 from loregarden.services.unpublished_trees import violations as _unpublished_tree_violations
 from loregarden.services.unresolved_ledger import (
@@ -703,20 +706,6 @@ HELD_TICKETS_RESUME = Invariant(
         "ticket at that moment, so every release starts here"
     ),
 )
-
-UNDECIDED_FINDINGS_DO_NOT_RUN = Invariant(
-    name="undecided_findings_do_not_run",
-    ticket="lg-milestone-that-1216",
-    statement="no open ticket a run filed is driven before triage promotes it",
-    detect=undecided_findings_that_ran,
-    # Report-only: the run already happened; promote or close is a person's call.
-    repair=None,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 11, 7),
-    prevented_by="server/tests/test_discovered_work.py::test_no_dispatcher_can_start_an_undecided_finding",
-    unrepaired_action="Decide it: loregarden_decide_finding, from its source ticket's spec or as an operator",
-)
-
 
 NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN = Invariant(
     name="no_ticket_is_blocked_by_a_live_run_refusal",
@@ -1466,6 +1455,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     AWAITING_STAGES_ARE_ASKED,
     HELD_TICKETS_RESUME,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
+    DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
     LANDINGS_CARRY_THE_WORK,

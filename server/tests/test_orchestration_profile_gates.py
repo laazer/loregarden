@@ -60,6 +60,9 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         # The run-scoped parent lease's size (lg-machine-resource-1923), written
         # with the rest of the gate config so retuning it is a profile edit.
         "parent_capacity_footprint": GatesConfig().parent_capacity_footprint.value,
+        # How the check before the gate reruns the tests criteria name; empty
+        # means they are only checked to exist (`criterion_check`).
+        "criterion_test_commands": [],
     }
 
 
@@ -94,6 +97,9 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         # The run-scoped parent lease's size (lg-machine-resource-1923), written
         # with the rest of the gate config so retuning it is a profile edit.
         "parent_capacity_footprint": GatesConfig().parent_capacity_footprint.value,
+        # How the check before the gate reruns the tests criteria name; empty
+        # means they are only checked to exist (`criterion_check`).
+        "criterion_test_commands": [],
     }
 
     profile = resolve_orchestration_profile(ws)

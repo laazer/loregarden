@@ -39,6 +39,14 @@ gates:
     - bash -c "cd server && uv run ruff format ."
     - bash -c "cd client && npx --no-install oxlint --fix ."
   autofix_agent_fallback: true
+  # The check before the gate reruns the tests each acceptance criterion names
+  # (`criterion_gate`). Server tests only: a ticket worktree has no
+  # client/node_modules, so jest there is UNAVAILABLE, and client test ids are
+  # checked to exist and reported as not rerun. No shell, cwd at the checkout
+  # root, so `--directory server` is what resolves the project.
+  criterion_test_commands:
+    - prefix: server/
+      command: uv run --directory server pytest -q -p no:cacheprovider {tests}
   # Every gate here is static analysis whose mechanical fixer (ruff --fix /
   # oxlint --fix) already ran best-effort before an agent is ever spawned, so
   # what reaches an agent is a real code issue rather than formatting. That was

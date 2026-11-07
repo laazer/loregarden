@@ -146,7 +146,14 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "released_on_prerequisites" ||
     // Splitting is the orchestrator shrinking the work, not trouble; running
     // oversized and unsplit is trouble and stays the "failed" default.
-    decision === "split_oversized_ticket"
+    decision === "split_oversized_ticket" ||
+    // Criteria moving to a sibling, a ticket sent back to prove its criteria,
+    // and findings deferred on their own are the pipeline carrying on without
+    // a person; each is on the history rail so a person can review it after.
+    decision === "split_criteria" ||
+    decision === "criteria_sent_to_verify" ||
+    decision === "criteria_checked" ||
+    decision === "deferred_undecided_findings"
     ? "normal"
     : "failed";
   }

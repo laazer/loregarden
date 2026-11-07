@@ -44,6 +44,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.block_repair import repair_pinned
+from loregarden.services.criterion_gate import before_next_stage
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import owned_children
 from loregarden.services.handoff_settle import (
@@ -78,7 +79,6 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
-from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.stage_retry_budget import (
     refund_stage_dispatch_charged_since,
     stage_dispatch_marker_ids,
@@ -542,7 +542,7 @@ def begin_external_stage(
     # ticket reaches a gate or finishes (`scope_round`). A named stage is the
     # harness's explicit choice and is served as asked.
     if orch_run.external_harness is not None and not stage_key:
-        if open_round_if_due(session, orch_run, ticket):
+        if before_next_stage(session, orch_run, ticket):
             return ExternalStageView(
                 stage_key=ticket.workflow_stage_key, message=ticket.blocking_issues
             )

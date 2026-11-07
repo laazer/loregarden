@@ -7,6 +7,8 @@ reads), so a verifier's precise fix direction reached the implementer as only
 "see the Errors tab for details" and the implementer re-guessed every round.
 """
 
+import json
+
 import pytest
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
@@ -22,18 +24,25 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services import criterion_split_creator  # noqa: F401 — installs the creator
+from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.block_classification import (
     BLOCKING_POINTER_PHRASE,
     LEGACY_BLOCKING_POINTER_PHRASE,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.criterion_ledger import settlements_of
 from loregarden.services.rework_feedback import (
     MAX_REWORK_REROUTES,
     record_rework_feedback,
     render_rework_feedback,
     rework_reroute_count,
 )
-from loregarden.services.workflow_state import initial_stages_json, stages_up_to_done_json
+from loregarden.services.workflow_state import (
+    initial_stages_json,
+    parse_stage_map,
+    stages_up_to_done_json,
+)
 from sqlmodel import Session, select
 
 # A finding longer than record_blocking_issue's 200-char inline cap — the exact
@@ -437,3 +446,128 @@ def test_parallel_reroute_blocks_for_human_at_cap(db_session: Session, monkeypat
     db_session.refresh(ticket)
     assert ticket.state == TicketState.BLOCKED
     assert "rework loop" in ticket.blocking_issues.lower()
+
+
+# --------------------------------------------------------------------------- #
+# At the cap, criteria named unmet split off instead of pausing for a person   #
+# --------------------------------------------------------------------------- #
+
+UNMET = "Errors name the arm"
+
+
+def _report_unmet(status: str, reroute_to_stage: str, criteria: list[str]) -> str:
+    payload = {
+        "status": status,
+        "confidence": 0.9,
+        "reroute_to_stage": reroute_to_stage,
+        "reroute_context": "same finding again",
+        "unmet_criteria": criteria,
+    }
+    return f"Narrative.\n<<<LOREGARDEN_STAGE_REPORT>>>\n{json.dumps(payload)}\n<<<END_STAGE_REPORT>>>\n"
+
+
+def _under_a_capability(db_session: Session, ticket: Ticket) -> Ticket:
+    """Give the ticket a parent and two criteria, so a split has somewhere to go."""
+    parent = Ticket(
+        external_id=f"{ticket.external_id}-parent",
+        workspace_id=ticket.workspace_id,
+        title="Parent",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.CAPABILITY,
+    )
+    db_session.add(parent)
+    db_session.flush()
+    ticket.parent_ticket_id = parent.id
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).one()
+    workspace.workflow_template_id = instance.template_id  # the split ticket gets a workflow
+    db_session.add(workspace)
+    ticket.acceptance_criteria_json = serialize_criteria(["Width is read on every arm", UNMET])
+    db_session.add(ticket)
+    db_session.commit()
+    return parent
+
+
+def _assert_split(db_session: Session, ticket: Ticket, parent: Ticket) -> None:
+    db_session.refresh(ticket)
+    assert ticket.state is not TicketState.BLOCKED, ticket.blocking_issues
+    row = settlements_of(db_session, ticket)[UNMET]
+    split = db_session.get(Ticket, row.delegated_to_ticket_id)
+    assert row.by_split and split.parent_ticket_id == parent.id
+    assert load_criteria(split.acceptance_criteria_json) == [UNMET]
+
+
+def test_at_the_cap_unmet_criteria_split_off_and_the_stage_passes(
+    db_session: Session, monkeypatch, tmp_path
+):
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.services.orchestration_profile import OrchestrationProfile
+
+    ticket, stages = _setup_single_stage(
+        db_session, tmp_path, stage_key="test-break", next_agent="test_breaker"
+    )
+    parent = _under_a_capability(db_session, ticket)
+    for i in range(MAX_REWORK_REROUTES):
+        record_rework_feedback(
+            db_session,
+            ticket,
+            target_stage="test-design",
+            from_stage="test-break",
+            context=f"prior {i}",
+        )
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=_report_unmet("needs_rework", "test-design", [UNMET]),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="rework-int"), max_stages=1
+    )
+
+    _assert_split(db_session, ticket, parent)
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).one()
+    assert parse_stage_map(instance, stages)["test-break"] is StageStatus.DONE
+
+
+def test_at_the_cap_a_parallel_stage_splits_what_its_lenses_named(db_session: Session, monkeypatch):
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    ticket, orch_run, review_def = _setup_parallel_review(db_session)
+    parent = _under_a_capability(db_session, ticket)
+    for i in range(MAX_REWORK_REROUTES):
+        record_rework_feedback(
+            db_session,
+            ticket,
+            target_stage="implement",
+            from_stage="script_review",
+            context=f"prior {i}",
+        )
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        run.status = RunStatus.SUCCEEDED
+        run.stdout = (
+            _report_unmet("needs_rework", "implement", [UNMET])
+            if run.agent_id == "static_qa"
+            else _report("pass", 0.95)
+        )
+        run.stderr = ""
+        self.session.add(run)
+        self.session.commit()
+        return run
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    ok, _ = BuiltinOrchestrator(db_session)._execute_parallel_stage(
+        ticket, orch_run, review_def, "script_review"
+    )
+
+    assert ok is True
+    _assert_split(db_session, ticket, parent)
