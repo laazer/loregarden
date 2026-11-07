@@ -45,6 +45,7 @@ from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
 from loregarden.services.orchestration_capacity import (
     release_terminal_run_parent,
     terminal_run_parents,
@@ -699,6 +700,27 @@ HELD_TICKETS_RESUME = Invariant(
     expected_because=(
         "a prerequisite landing is the event the hold waits for; nothing resumes the held "
         "ticket at that moment, so every release starts here"
+    ),
+)
+
+
+NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN = Invariant(
+    name="no_ticket_is_blocked_by_a_live_run_refusal",
+    ticket="lg-milestone-that-1216",
+    statement=("no ticket is blocked because a start met an orchestration already doing the work"),
+    detect=tickets_blocked_by_a_live_run_refusal,
+    # Report-only: restarting a drive spends agent turns, and whether the
+    # subtree should run on is the operator's call (1216's should not have).
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 7),
+    prevented_by=(
+        "server/tests/test_child_run_wait.py"
+        "::test_the_pass_waits_for_the_other_run_and_judges_the_child_by_it"
+    ),
+    unrepaired_action=(
+        "The run it names finished the work. Requeue the ticket, then start its drive "
+        "again if its subtree should run on"
     ),
 )
 

@@ -274,3 +274,61 @@ def test_unparking_by_hand_drops_the_tag(db_session, running):
     db_session.refresh(ticket)
     assert WAITING_TAG not in load_tags(ticket.tags_json)
     assert db_session.exec(select(Ticket).where(Ticket.id == ticket.id)).one()
+
+
+def _under_a_driving_parent(db_session: Session, ticket: Ticket) -> OrchestrationRun:
+    """Put ``ticket`` under a parent whose own drive is live; return that drive."""
+    parent = make_workspace_ticket(db_session, "release-parent")
+    ticket.parent_ticket_id = parent.id
+    db_session.add(ticket)
+    drive = OrchestrationRun(
+        run_code="orch_parent_drive",
+        ticket_id=parent.id,
+        workspace_id=parent.workspace_id,
+        status=OrchestrationRunStatus.RUNNING,
+        driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
+    )
+    db_session.add(drive)
+    db_session.commit()
+    db_session.refresh(drive)
+    return drive
+
+
+def test_a_held_ticket_under_a_live_parent_drive_is_left_to_that_drive(db_session, running):
+    """The parent's child pass starts it; a second start raced that pass (lg-milestone-that-1216)."""
+    ticket, _, prerequisite = running
+    _held_in_progress(db_session, ticket, prerequisite)
+    drive = _under_a_driving_parent(db_session, ticket)
+    prerequisite.state = TicketState.WONT_DO
+    db_session.add(prerequisite)
+    db_session.commit()
+
+    assert releasable_tickets(db_session) == []
+
+    drive.status = OrchestrationRunStatus.SUCCEEDED
+    db_session.add(drive)
+    db_session.commit()
+    assert [t.id for t in releasable_tickets(db_session)] == [ticket.id]
+
+
+def test_a_parked_ticket_under_a_live_parent_drive_is_unparked_without_a_resume(
+    db_session, running
+):
+    ticket, _, prerequisite = running
+    TicketDependencyService(db_session).add_dependency(ticket.id, prerequisite.id)
+    ticket.state = TicketState.PARKED
+    db_session.add(ticket)
+    db_session.commit()
+    mark_parked_waits(db_session)
+    _under_a_driving_parent(db_session, ticket)
+    prerequisite.state = TicketState.WONT_DO
+    db_session.add(prerequisite)
+    db_session.commit()
+
+    with patch("loregarden.services.dependency_release.schedule_interrupted_resumes") as start:
+        assert release_tickets(db_session, releasable_tickets(db_session)) == [ticket.external_id]
+
+    (requests,) = start.call_args.args
+    assert requests == [], "the parent's drive starts it; a resume of its own would race that"
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.BACKLOG

@@ -49,7 +49,10 @@ from loregarden.services.orchestration_recovery import (
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.requeue import requeue_stage
-from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.run_concurrency import (
+    find_active_orchestration_run,
+    find_driving_ancestor,
+)
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from sqlalchemy import func
 from sqlmodel import Session, col, select
@@ -146,7 +149,10 @@ def _release_parked(session: Session, ticket: Ticket) -> InterruptionResume | No
     _record_release(session, ticket)
     session.commit()
     plan = None
-    if _ever_ran(session, ticket.id):
+    # Under an ancestor's live drive, unparking is enough: that drive's child
+    # pass starts it. A resume of its own would race the pass (see
+    # `_held_and_releasable`).
+    if _ever_ran(session, ticket.id) and find_driving_ancestor(session, ticket) is None:
         plan = requeue_and_plan_resume(
             session, ticket, ticket.workflow_stage_key, reason=RELEASE_REASON
         )
@@ -187,6 +193,12 @@ def _held_and_releasable(session: Session, ticket: Ticket) -> bool:
     if held_at is None or ran_since(session, ticket.id, held_at):
         return False
     if find_active_orchestration_run(session, ticket.id) is not None:
+        return False
+    if find_driving_ancestor(session, ticket) is not None:
+        # The ancestor's drive reaches this ticket in its own child pass.
+        # Resuming it here as well raced that pass to the same start: the
+        # loser's refusal blocked lg-milestone-that-1216 for a person. A later
+        # pass releases it if that drive ends without running it.
         return False
     return not _stopped_by_a_person(session, ticket) and not holding_prerequisites(session, ticket)
 
