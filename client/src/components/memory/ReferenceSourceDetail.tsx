@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../../api/http";
 import type { LibraryDetail, LibraryPass, LibraryTicket, SourceKind } from "../../api/referenceLibraryApi";
 import { api } from "../../api/client";
+import { useFocusOnOperatorIntent } from "../../hooks/useFocusOnOperatorIntent";
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
 import { recordTitle } from "../../lib/memoryInferred";
 import {
@@ -454,8 +455,14 @@ function Body({ detail, workspace, position }: { detail: LibraryDetail; workspac
 
 /**
  * One source: what to do next, the facts that decide it, and what it changed.
- * Focus moves to its heading when it opens; Escape or "Back to sources"
- * closes it and returns to the list.
+ * Escape or "Back to sources" closes it and returns to the list.
+ *
+ * Focus moves to its heading when an operator asked for this source — a row
+ * link, a queue link, a chat action — or when nothing of theirs holds focus (a
+ * cold deep link, a reload, a successful Retry whose button unmounted). It
+ * declines otherwise, so a window-focus refetch, a list-poll re-render or a
+ * first load that resolved after the operator moved the keyboard take nothing.
+ * `lib/focusIntent` holds that rule.
  */
 export function ReferenceSourceDetail({
   sourceId,
@@ -486,9 +493,9 @@ export function ReferenceSourceDetail({
     }
   }, [source.isError, source.error, missing]);
 
-  useEffect(() => {
-    if (source.data) heading.current?.focus();
-  }, [source.data]);
+  // Keyed on the library's own status, never the payload: a background refetch
+  // changes `fetchStatus`, not `isSuccess`, so it cannot re-run this.
+  useFocusOnOperatorIntent(sourceId, source.isSuccess, heading);
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {

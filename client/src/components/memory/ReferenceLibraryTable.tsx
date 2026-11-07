@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import type { LibraryRow } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
+import { recordFocusIntent } from "../../lib/focusIntent";
 import {
   STATE_LABELS,
   licenceUse,
@@ -90,6 +91,7 @@ export function ReferenceLibraryTable({
                   className="rl-name"
                   to={{ pathname: memoryPath("library", row.id), search }}
                   aria-current={selected ? "true" : undefined}
+                  onClick={(event) => recordFocusIntent(row.id, event.currentTarget)}
                 >
                   {row.name}
                 </Link>

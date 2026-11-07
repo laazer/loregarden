@@ -9,6 +9,7 @@ import {
   memoryLibrarySourceFromPath,
   memoryPath,
 } from "../../lib/appNavigation";
+import { recordFocusIntent } from "../../lib/focusIntent";
 import {
   DEFAULT_SORT,
   LIBRARY_VIEWS,
@@ -231,6 +232,11 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               onCancel={() => setAdding(false)}
               onDone={(result) => {
                 setAdding(false);
+                // No activation element: the form's own submit button is on its
+                // way out, so a stamp naming it would arm an intent arm (a)
+                // must then reject on `isConnected`. This site relies on arm
+                // (b) — the panel mounts with focus on `<body>`.
+                recordFocusIntent(result.source.id, null);
                 navigate({ pathname: memoryPath("library", result.source.id), search: location.search });
               }}
             />

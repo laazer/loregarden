@@ -10,6 +10,7 @@ import type {
   TopicView,
 } from "../../api/referenceLibraryApi";
 import { memoryPath } from "../../lib/appNavigation";
+import { recordFocusIntent } from "../../lib/focusIntent";
 import { refusedSourceId, splitUrls, urlsFromPaste } from "../../lib/referenceLibrary";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
@@ -81,6 +82,7 @@ export function BulkResults({ items }: { items: BulkAddItem[] }) {
             <Link
               className="rl-bulk-url"
               to={{ pathname: memoryPath("library", item.source.id), search }}
+              onClick={(event) => recordFocusIntent(item.source!.id, event.currentTarget)}
             >
               {item.url}
             </Link>
@@ -438,7 +440,13 @@ export function ReferenceSourceForm({
               {refusedId ? (
                 <>
                   {" "}
-                  <Link to={{ pathname: memoryPath("library", refusedId), search }} onClick={onCancel}>
+                  <Link
+                    to={{ pathname: memoryPath("library", refusedId), search }}
+                    onClick={(event) => {
+                      recordFocusIntent(refusedId, event.currentTarget);
+                      onCancel();
+                    }}
+                  >
                     Open it in the library
                   </Link>
                 </>

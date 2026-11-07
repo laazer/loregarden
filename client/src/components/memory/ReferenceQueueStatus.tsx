@@ -5,6 +5,7 @@ import type { DiscoveryView, QueueSchedule } from "../../api/referenceLibraryApi
 /** A run is over once its ticket is settled. */
 const SETTLED = new Set(["done", "wont_do"]);
 import { memoryPath, ticketPath } from "../../lib/appNavigation";
+import { recordFocusIntent } from "../../lib/focusIntent";
 import { nextCheckText } from "../../lib/referenceLibrary";
 import { ReviewNowButton } from "./ReferenceReviewNow";
 
@@ -43,7 +44,12 @@ export function ReferenceQueueStatus({
       {running.map((pass) => (
         <p key={`${pass.source_id}-${pass.ordinal}`}>
           <span className="rl-queue-label">Reading now</span>{" "}
-          <Link to={{ pathname: memoryPath("library", pass.source_id), search }}>{pass.name}</Link>, pass {pass.ordinal}
+          <Link
+            to={{ pathname: memoryPath("library", pass.source_id), search }}
+            onClick={(event) => recordFocusIntent(pass.source_id, event.currentTarget)}
+          >
+            {pass.name}
+          </Link>, pass {pass.ordinal}
           {pass.carrier ? (
             <>
               {" "}
@@ -56,7 +62,12 @@ export function ReferenceQueueStatus({
         <div className="rl-queue-next">
           <p>
             <span className="rl-queue-label">Next review</span>{" "}
-            <Link to={{ pathname: memoryPath("library", next.source_id), search }}>{next.name}</Link>, pass {next.ordinal}
+            <Link
+              to={{ pathname: memoryPath("library", next.source_id), search }}
+              onClick={(event) => recordFocusIntent(next.source_id, event.currentTarget)}
+            >
+              {next.name}
+            </Link>, pass {next.ordinal}
             {queued > 1 ? ` (${queued - 1} more after it)` : ""}
             {next.waiting ? (
               <span className="rl-queue-held"> — held: {next.waiting.replace(/`/g, "")}.</span>
