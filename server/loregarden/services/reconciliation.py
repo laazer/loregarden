@@ -73,6 +73,7 @@ from loregarden.services.invariant_registry import (
     LANDINGS_CARRY_THE_WORK,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
+    NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN,
     PUBLISH_CARDS_CLOSE,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
@@ -300,6 +301,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
     _invariant(UNDECIDED_FINDINGS_DO_NOT_RUN),
+    # A race lost to a run already doing the work is never the ticket's block
+    # (lg-milestone-that-1216). Report-only: it says which run finished the work.
+    _invariant(NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN),
     # After holds resume: dropping a parent-edge must not unpark a ticket whose
     # only remaining wait was the illegal one (release requires an edge).
     _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),

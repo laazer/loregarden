@@ -30,6 +30,7 @@ from loregarden.services.child_readiness import (
     ordered_children,
     partition_children,
 )
+from loregarden.services.child_run_wait import await_child_run
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.exit_actions import resolve_exit_actions
@@ -52,6 +53,7 @@ from loregarden.services.review_relens import decide_lenses, record_relens_decis
 from loregarden.services.run_boundary import boundary_block
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
+from loregarden.services.run_concurrency import OrchestrationAlreadyRunning
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import supervised
 from loregarden.services.scope_round import open_round_if_due
@@ -393,6 +395,7 @@ class BuiltinOrchestrator:
                 self,
                 ticket,
                 profile,
+                parent_run=orch_run,
                 auto_approve=auto_approve,
                 timeout_seconds=agent_timeout,
                 subtree_budget=budget,
@@ -1059,6 +1062,7 @@ def _orchestrate_incomplete_children(
     ticket: Ticket,
     profile: OrchestrationProfile,
     *,
+    parent_run: OrchestrationRun,
     auto_approve: bool = False,
     timeout_seconds: int | None = None,
     subtree_budget: SubtreeBudget | None = None,
@@ -1078,14 +1082,23 @@ def _orchestrate_incomplete_children(
         builtin.orch.ensure_workflow_instance(child, commit=True)
         if ticket_workflow_complete(builtin.orch, child):
             continue
-        child_run = BuiltinOrchestrator(builtin.session).execute(
-            child,
-            profile,
-            max_stages=None,
-            auto_approve=auto_approve,
-            timeout_seconds=timeout_seconds,
-            _subtree_budget=subtree_budget,
-        )
+        try:
+            child_run = BuiltinOrchestrator(builtin.session).execute(
+                child,
+                profile,
+                max_stages=None,
+                auto_approve=auto_approve,
+                timeout_seconds=timeout_seconds,
+                _subtree_budget=subtree_budget,
+            )
+        except OrchestrationAlreadyRunning as running:
+            # Another dispatcher started this child first; its run is the
+            # child's work, so wait it out rather than block the parent on it
+            # (`services.child_run_wait`).
+            settled = await_child_run(builtin.session, parent_run, running)
+            if settled is None:
+                return f"Stopped while waiting on {child.title} ({running.run_code})"
+            child_run = settled
         builtin.session.refresh(ticket)
         builtin.session.refresh(child)
         if child.state == TicketState.BLOCKED:

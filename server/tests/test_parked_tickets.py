@@ -89,7 +89,7 @@ def test_a_parked_child_does_not_stop_its_siblings(db_session, workspace):
     with mock.patch.object(mod, "ticket_workflow_complete", _complete):
         builtin = mod.BuiltinOrchestrator(db_session)
         reason = _orchestrate_incomplete_children(
-            builtin, parent, mod.OrchestrationProfile(slug="park")
+            builtin, parent, mod.OrchestrationProfile(slug="park"), parent_run=mock.Mock()
         )
 
     assert sibling.title in reached, "the parked child stopped its sibling being reached"
