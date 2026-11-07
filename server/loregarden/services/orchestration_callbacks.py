@@ -51,7 +51,11 @@ from loregarden.services.prepared_action import (
 from loregarden.services.process_identity import liveness
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
-from loregarden.services.run_concurrency import find_active_orchestration_run, find_active_run
+from loregarden.services.run_concurrency import (
+    OrchestrationAlreadyRunning,
+    find_active_orchestration_run,
+    find_active_run,
+)
 from loregarden.services.run_interruption import (
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     blocked_by_interruption,
@@ -325,7 +329,7 @@ class OrchestrationCallbackService:
                 external_harness=external_harness,
             )
         if active:
-            raise ValueError(f"Orchestration already running: {active.run_code}")
+            raise OrchestrationAlreadyRunning(active)
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             now = datetime.now(timezone.utc)

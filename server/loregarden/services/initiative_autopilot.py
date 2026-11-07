@@ -101,7 +101,10 @@ from loregarden.services.initiative_service import load_plan_root
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.queue_lanes import QueueLaneService, least_busy_lane
 from loregarden.services.queue_repair import prepare_rerun
-from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.run_concurrency import (
+    find_active_orchestration_run,
+    find_driving_ancestor,
+)
 from loregarden.services.ticket_tags import load_tags, serialize_tags
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
@@ -203,14 +206,6 @@ def _record_once(session: Session, plan_id: str, ticket_id: str, detail: str) ->
         _record(session, plan_id, AutopilotAction.REFUSED, ticket_id=ticket_id, detail=detail)
 
 
-def _ancestor_running(session: Session, ticket: Ticket) -> Ticket | None:
-    """The nearest ancestor with its own orchestration running, if any."""
-    for ancestor_id in self_and_ancestors(session, ticket)[1:]:
-        if find_active_orchestration_run(session, ancestor_id) is not None:
-            return session.get(Ticket, ancestor_id)
-    return None
-
-
 def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticket]:
     """Tickets it started since it was turned on that are now blocked, less the
     ones it has yet to retry: a block a re-run may clear is not yet evidence
@@ -284,7 +279,7 @@ def _dispatch(
             detail="ticket has no workspace",
         )
         return False
-    running_above = _ancestor_running(session, ticket)
+    running_above = find_driving_ancestor(session, ticket)
     if running_above is not None:
         _record_once(
             session,

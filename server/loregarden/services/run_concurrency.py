@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
+    Ticket,
 )
 from loregarden.services import hierarchy_service
 from sqlmodel import Session, col, select
@@ -182,6 +183,43 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
         .where(col(OrchestrationRun.status).in_(ACTIVE_ORCHESTRATION_STATUSES))
         .order_by(col(OrchestrationRun.created_at).desc())
     ).first()
+
+
+#: How a start refused for a live run begins; also how the block it left reads.
+ALREADY_RUNNING_PREFIX = "Orchestration already running: "
+
+
+class OrchestrationAlreadyRunning(ValueError):
+    """A start refused because the ticket already has an orchestration executing.
+
+    A ``ValueError`` so every caller that already reports a refused start keeps
+    doing so; typed so the one caller that can *wait* for that run instead (a
+    parent's child fanout) can tell it from every other refusal.
+    """
+
+    def __init__(self, run: OrchestrationRun) -> None:
+        super().__init__(f"{ALREADY_RUNNING_PREFIX}{run.run_code}")
+        self.run_code = run.run_code
+
+
+def find_driving_ancestor(session: Session, ticket: Ticket) -> Ticket | None:
+    """The nearest ancestor with its own orchestration active, if any.
+
+    An ancestor's drive works through its children (`_orchestrate_incomplete_children`),
+    so a ticket under one is that drive's to start. A second dispatcher starting
+    it too races the parent to the same start, and the loser's refusal used to
+    block the parent for a person (lg-milestone-that-1216, 2026-11-07).
+    A cycle stops the walk.
+    """
+    seen = {ticket.id}
+    parent_id = ticket.parent_ticket_id
+    while parent_id and parent_id not in seen:
+        seen.add(parent_id)
+        if find_active_orchestration_run(session, parent_id) is not None:
+            return session.get(Ticket, parent_id)
+        parent = session.get(Ticket, parent_id)
+        parent_id = parent.parent_ticket_id if parent else None
+    return None
 
 
 #: How long an orchestration may go without a single control-plane write before
