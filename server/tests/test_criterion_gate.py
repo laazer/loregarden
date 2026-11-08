@@ -33,7 +33,8 @@ from loregarden.models.domain import (
 from loregarden.services import criterion_split_creator  # noqa: F401 — installs the creator
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.auto_decisions import auto_decisions_under
-from loregarden.services.criterion_gate import check_criteria_if_due, check_due, gate_of
+from loregarden.services.criterion_gate import check_criteria_if_due
+from loregarden.services.criterion_gate_stages import check_due, gate_of
 from loregarden.services.criterion_ledger import (
     record_delegation,
     settle_met,

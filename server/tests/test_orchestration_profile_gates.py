@@ -63,6 +63,7 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         # How the check before the gate reruns the tests criteria name; empty
         # means they are only checked to exist (`criterion_check`).
         "criterion_test_commands": [],
+        "sign_off_when_criteria_checked": True,
     }
 
 
@@ -100,6 +101,7 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         # How the check before the gate reruns the tests criteria name; empty
         # means they are only checked to exist (`criterion_check`).
         "criterion_test_commands": [],
+        "sign_off_when_criteria_checked": True,
     }
 
     profile = resolve_orchestration_profile(ws)

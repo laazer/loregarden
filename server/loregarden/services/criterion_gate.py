@@ -19,7 +19,6 @@ a criterion fails in a second ticket after being split into it.
 
 from __future__ import annotations
 
-from loregarden.agents.registry import VERIFIER_AGENT_ID
 from loregarden.models.domain import (
     BlockOrigin,
     OrchestrationRun,
@@ -30,15 +29,15 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.models.domain.block_kinds import BlockKind
-from loregarden.models.domain.stage_types import StageType
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.criterion_check import CriteriaCheck, check_criteria
+from loregarden.services.criterion_gate_stages import check_due, verify_of
 from loregarden.services.criterion_split import SplitRefused, split_criteria
+from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.rework_feedback import latest_rework_context, record_rework_feedback
 from loregarden.services.scope_round import open_round_if_due
-from loregarden.services.studio_routing import is_terminal_stage
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import (
     next_executable_stage,
@@ -47,29 +46,6 @@ from loregarden.services.workflow_state import (
     set_stage_status,
 )
 from sqlmodel import Session
-
-
-def gate_of(stages: list[WorkflowStageDef]) -> WorkflowStageDef | None:
-    """The stage a ticket's criteria are checked before: its first gate, else its terminal."""
-    ordered = sorted(stages, key=lambda s: s.order)
-    return next((s for s in ordered if s.stage_type == StageType.GATE), None) or next(
-        (s for s in ordered if is_terminal_stage(s)), None
-    )
-
-
-def verify_of(stages: list[WorkflowStageDef]) -> WorkflowStageDef | None:
-    return next((s for s in stages if s.agent_id == VERIFIER_AGENT_ID), None)
-
-
-def check_due(stages: list[WorkflowStageDef], target: WorkflowStageDef) -> bool:
-    """Whether entering ``target`` needs the check: it is the gate, after a verify stage."""
-    gate, verify = gate_of(stages), verify_of(stages)
-    return (
-        gate is not None
-        and verify is not None
-        and gate.key == target.key
-        and verify.order < gate.order
-    )
 
 
 def _brief(ticket: Ticket, target: WorkflowStageDef, check: CriteriaCheck) -> str:
@@ -173,7 +149,13 @@ def _record_checked(
         decision=OrchestratorDecision.CRITERIA_CHECKED,
         stage_key=target.key,
         reason=f"Every acceptance criterion is answered for; {len(check.rerun)} tests passed a rerun at HEAD.{unrerun}",
-        evidence={"rerun": check.rerun, "not_rerun": check.not_rerun},
+        evidence={
+            "rerun": check.rerun,
+            "not_rerun": check.not_rerun,
+            # The commit the check answered for; the gate is signed on it only
+            # while the ticket is still there (`criteria_sign_off`).
+            "commit_sha": resolve_head_sha(session, ticket),
+        },
     )
     session.commit()
 
