@@ -180,6 +180,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "criteria_checked",
         "deferred_undecided_findings",
         "signed_off_on_criteria",
+        "stage_inputs_missing",
+        "carried_forward_pass",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 
