@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from loregarden.agents.executors import cli as cli_module
+from loregarden.agents.executors import stage_turn
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.models.domain import (
     AgentRun,
@@ -273,7 +273,7 @@ def test_a_refused_dispatch_parks_files_the_paths_and_starts_no_agent(db_session
     db_session.add(run)
     db_session.commit()
 
-    with mock.patch.object(cli_module, "run_print_mode") as spawned:
+    with mock.patch.object(stage_turn, "run_print_mode") as spawned:
         completed = CliAgentExecutor(db_session).execute(run, ticket)
 
     assert not spawned.called, "no agent CLI may start on a refused checkout"

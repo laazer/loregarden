@@ -28,6 +28,7 @@ from unittest import mock
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.agents.executors import cli as cli_module
+from loregarden.agents.executors import stage_turn
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.run_evidence import record_run_evidence
 from loregarden.config import settings
@@ -346,7 +347,7 @@ def test_a_tree_changed_after_the_snapshot_is_recorded_as_changed(
         (repo_root / "README.md").write_text(_LATER_TEXT)
 
     with (
-        mock.patch.object(cli_module, "run_print_mode", side_effect=agent),
+        mock.patch.object(stage_turn, "run_print_mode", side_effect=agent),
         mock.patch.object(cli_module, "record_run_evidence", side_effect=evidence_then_change),
     ):
         CliAgentExecutor(db_session).execute(run, ticket)

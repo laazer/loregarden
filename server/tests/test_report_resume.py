@@ -15,8 +15,7 @@ from unittest import mock
 import pytest
 from loregarden.agents import cli_adapters
 from loregarden.agents.cli_adapters import CliInvocation, cursor_resume_invocation
-from loregarden.agents.executors import cli as cli_module
-from loregarden.agents.executors import report_resume
+from loregarden.agents.executors import report_resume, stage_turn
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.report_resume import (
     FOLLOW_UP,
@@ -206,7 +205,7 @@ def test_the_executor_offers_every_print_mode_run_a_resume(db_session):
     db_session.commit()
 
     no_report = (_stream("Attaching the plan next."), "", RunStatus.SUCCEEDED)
-    with mock.patch.object(cli_module, "run_print_mode", return_value=no_report):
+    with mock.patch.object(stage_turn, "run_print_mode", return_value=no_report):
         completed = CliAgentExecutor(db_session).execute(run, ticket)
 
     assert "no resume attempted: the local adapter" in completed.stderr

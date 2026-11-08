@@ -499,6 +499,15 @@ class AgentRun(SQLModel, table=True):
         default=None,
         sa_column=str_enum_column(BlockKind, nullable=True),
     )
+    #: The CLI session this run's turn ran in, read from its `result` envelope
+    #: (claude, cursor). "" when it reported none. A rework round may resume it.
+    cli_session_id: str = ""
+    #: Set on a rework round (`services/rework_resume`): the rework finding it
+    #: answers, and either the run whose session it resumed or why it ran fresh.
+    #: All three "" means the run was not a rework round.
+    rework_feedback_id: str = ""
+    resumed_from_run_id: str = ""
+    resume_skip_reason: str = ""
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None
