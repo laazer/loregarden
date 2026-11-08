@@ -1,0 +1,302 @@
+/* Merge queue entries, wherever they are shown: the workspace dashboard, the
+   Lanes page, Home and a ticket's own page. A stopped entry's reason and log
+   tail sit under its row, full width. */
+
+.mq-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mq-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--bd);
+  min-width: 0;
+}
+
+.mq-row:first-child {
+  border-top: 0;
+}
+
+.mq-row-link {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.mq-row-title {
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  color: var(--tx);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
+}
+
+a.mq-row-link:hover .mq-row-title,
+a.mq-row-link:focus-visible .mq-row-title,
+.mq-row-title--button:hover,
+.mq-row-title--button:focus-visible {
+  color: var(--ac2);
+}
+
+.mq-row-aside {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  max-width: 50%;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.mq-where {
+  color: var(--txl);
+}
+
+.mq-id {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ac2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.mq-id:hover,
+a.mq-id:focus-visible {
+  text-decoration: underline;
+}
+
+.mq-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.mq-reason {
+  flex-basis: 100%;
+}
+
+.mq-reason p {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.mq-muted {
+  color: var(--txm);
+}
+
+.mq-danger {
+  color: var(--rdl);
+}
+
+.mq-landed > summary {
+  padding: 8px 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.mq-log {
+  max-height: 16em;
+  margin: 4px 0 0;
+  padding: 8px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  white-space: pre-wrap;
+  color: var(--txm);
+  background: var(--bg3);
+  border-radius: 6px;
+}
+
+.mq-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  color: var(--txm);
+  background: var(--bg3);
+}
+
+.mq-tag--merged {
+  color: var(--grl);
+  background: color-mix(in srgb, var(--grn) 18%, transparent);
+}
+
+.mq-tag--staging,
+.mq-tag--testing,
+.mq-tag--merging {
+  color: var(--bll);
+  background: color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+.mq-tag--timed_out {
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 18%, transparent);
+}
+
+.mq-tag--failed {
+  color: var(--rdl);
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+}
+
+@media (max-width: 640px) {
+  .mq-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mq-row-aside {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+
+/* A ticket's own line about its tree's entry, under the ticket header. */
+
+.mq-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--blue);
+  border-radius: 8px;
+  background: var(--bg2);
+  font-size: var(--fs-small);
+}
+
+.mq-strip--merged {
+  border-left-color: var(--grn);
+}
+
+.mq-strip--failed,
+.mq-strip--error {
+  border-left-color: var(--red);
+}
+
+.mq-strip--timed_out,
+.mq-strip--withdrawn {
+  border-left-color: var(--amb);
+}
+
+.mq-strip--error {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--rdl);
+}
+
+.mq-strip-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.mq-strip-lead {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.mq-strip-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The Lanes page's section: every workspace's queue. */
+
+.mq-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.mq-section-header h2 {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.mq-section-count {
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--txm);
+}
+
+.mq-section-empty {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.mq-section-error {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--rdl);
+  font-size: var(--fs-small);
+}
+
+.mq-section-error p {
+  margin: 0;
+}
+
+.mq-workspace {
+  padding: 10px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg2);
+}
+
+.mq-workspace-name {
+  margin: 0 0 4px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.mq-workspace-name a {
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.mq-workspace-name a:hover,
+.mq-workspace-name a:focus-visible {
+  color: var(--ac2);
+  text-decoration: underline;
+}
+
+/* A tree's title is a plain button (it opens the ticket); line it up with the link rows. */
+.mq-row .mq-row-title--button {
+  padding: 0;
+}
+
+.mq-reason summary {
+  font-size: var(--fs-small);
+  color: var(--txm);
+  cursor: pointer;
+}

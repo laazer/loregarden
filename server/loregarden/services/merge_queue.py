@@ -163,19 +163,25 @@ def head_entry(session: Session, workspace_id: str) -> MergeQueueEntry | None:
     return live[0] if live else None
 
 
+def candidate_label(ticket: Ticket | None, pr_number: int) -> str:
+    """How a candidate is named in words: its ticket, else its pull request."""
+    return ticket.external_id if ticket is not None else f"PR #{pr_number}"
+
+
 def enqueue(
-    session: Session, ticket: Ticket, workspace: Workspace, candidate: Candidate
+    session: Session, ticket: Ticket | None, workspace: Workspace, candidate: Candidate
 ) -> Admission:
-    """Admit ``candidate`` for ``ticket``, or say exactly why not."""
+    """Admit ``candidate`` for ``ticket`` (None for a PR admitted by number), or say why not."""
+    label = candidate_label(ticket, candidate.pr_number)
     if candidate.pr_number <= 0:
         return Admission(
             MergeQueueAdmission.NO_PULL_REQUEST,
-            f"{ticket.external_id} has no open pull request to queue; publish it first",
+            f"{label} has no open pull request to queue; publish it first",
         )
     if not candidate.head_sha:
         return Admission(
             MergeQueueAdmission.NO_PULL_REQUEST,
-            f"PR #{candidate.pr_number} for {ticket.external_id} names no head commit",
+            f"PR #{candidate.pr_number} for {label} names no head commit",
         )
     duplicate = _live_with_head(session, workspace.id, candidate.head_sha)
     if duplicate is not None:
@@ -218,11 +224,14 @@ def _take_new_head(session: Session, entry: MergeQueueEntry, candidate: Candidat
     if not moved:
         # The loop moved it in the meantime (to merging, or to a terminal
         # state). Admit the new head as its own candidate instead.
-        return enqueue(
-            session, session.get(Ticket, entry.ticket_id), _workspace(session, entry), candidate
-        )
+        return enqueue(session, entry_ticket(session, entry), _workspace(session, entry), candidate)
     session.refresh(entry)
     return Admission(MergeQueueAdmission.UPDATED, entry.detail, entry)
+
+
+def entry_ticket(session: Session, entry: MergeQueueEntry) -> Ticket | None:
+    """The entry's ticket; None for a PR admitted by number."""
+    return session.get(Ticket, entry.ticket_id) if entry.ticket_id else None
 
 
 def _workspace(session: Session, entry: MergeQueueEntry) -> Workspace:
@@ -233,12 +242,12 @@ def _workspace(session: Session, entry: MergeQueueEntry) -> Workspace:
 
 
 def _insert(
-    session: Session, ticket: Ticket, workspace: Workspace, candidate: Candidate
+    session: Session, ticket: Ticket | None, workspace: Workspace, candidate: Candidate
 ) -> Admission:
     for _ in range(_POSITION_ATTEMPTS):
         entry = MergeQueueEntry(
             workspace_id=workspace.id,
-            ticket_id=ticket.id,
+            ticket_id=ticket.id if ticket is not None else None,
             pr_number=candidate.pr_number,
             pr_url=candidate.pr_url,
             pr_head_branch=candidate.pr_head_branch,
@@ -267,7 +276,7 @@ def _insert(
             "Merge queue %s: admitted PR #%s (%s) at position %s",
             workspace.slug,
             entry.pr_number,
-            ticket.external_id,
+            candidate_label(ticket, entry.pr_number),
             entry.position,
         )
         return Admission(

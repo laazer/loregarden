@@ -19,11 +19,19 @@ from typing import Any
 from sqlmodel import Session, select
 
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import boolean_prop, enum_string_prop, string_prop, tool_schema
+from loregarden.mcp.tool_schemas import (
+    boolean_prop,
+    enum_string_prop,
+    integer_prop,
+    string_prop,
+    tool_schema,
+)
 from loregarden.models.domain import MergeQueueAction, Workspace
 from loregarden.services import merge_queue
+from loregarden.services.merge_queue import Admission
 from loregarden.services.merge_queue_requests import (
     admitted_or_refuse,
+    enqueue_pull_request,
     enqueue_ticket,
     entry_detail,
     queue_view,
@@ -54,17 +62,24 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.ENQUEUE_MERGE,
         "description": (
-            "Put a tree's open pull request in the merge queue. Any ticket in the tree will "
-            "do; its root's integration branch is what is staged on the base, tested by the "
-            "required checks, and landed. Refused when the tree has no open PR (publish it "
-            "with loregarden_land_ticket first). A write: gated."
+            "Put an open pull request in the merge queue, which merges it onto the tip of "
+            "main, waits for the required checks on that result, and lands exactly it. Use "
+            "this instead of `gh pr merge --auto`. Pass `ticket_id` for a tree's PR (any "
+            "ticket in the tree; refused when it has no open PR, so publish it with "
+            "loregarden_land_ticket first), or `pr_number` plus `workspace_slug` for any "
+            "other PR, such as an interactive session's branch. A PR's branch is its "
+            "author's: the queue pushes its staged commit there, and adopts a push the "
+            "author makes while it waits. A write: gated."
         ),
         "inputSchema": tool_schema(
             properties={
-                "ticket_id": string_prop("Ticket UUID or external id."),
-                "workspace_slug": string_prop("Workspace, when ticket_id is an external id."),
+                "ticket_id": string_prop("Ticket UUID or external id, for a tree's PR."),
+                "pr_number": integer_prop("Pull request number, for a PR with no ticket."),
+                "workspace_slug": string_prop(
+                    "Workspace; required with pr_number, or when ticket_id is an external id."
+                ),
             },
-            required=["ticket_id"],
+            required=[],
         ),
     },
     {
@@ -105,14 +120,30 @@ def _read_merge_queue(session: Session, arguments: dict[str, Any]) -> str:
     return _dump(queue_view(session, workspace))
 
 
-def _enqueue_merge(session: Session, arguments: dict[str, Any]) -> str:
+def _admit(session: Session, arguments: dict[str, Any]) -> Admission:
+    ticket_id = arguments.get("ticket_id") or ""
+    pr_number = int(arguments.get("pr_number") or 0)
+    slug = arguments.get("workspace_slug") or ""
+    if bool(ticket_id) == bool(pr_number):
+        raise ValueError("Pass exactly one of ticket_id or pr_number")
+    if pr_number:
+        if not slug:
+            raise ValueError("Pass workspace_slug with pr_number")
+        workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+        if workspace is None:
+            raise ValueError(f"No workspace {slug}")
+        return enqueue_pull_request(session, workspace, pr_number)
     ticket = OrchestrationCallbackService(session).resolve_ticket(
-        ticket_id=arguments["ticket_id"], workspace_slug=arguments.get("workspace_slug") or None
+        ticket_id=ticket_id, workspace_slug=slug or None
     )
     workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
         raise ValueError(f"{ticket.external_id} has no workspace")
-    admission = admitted_or_refuse(enqueue_ticket(session, ticket, workspace))
+    return enqueue_ticket(session, ticket, workspace)
+
+
+def _enqueue_merge(session: Session, arguments: dict[str, Any]) -> str:
+    admission = admitted_or_refuse(_admit(session, arguments))
     detail = entry_detail(session, admission.entry.id, live=False)
     return json.dumps(
         {

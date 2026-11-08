@@ -685,6 +685,12 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
   `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
 
+- **Land a PR through the merge queue, not `gh pr merge`.** `loregarden_enqueue_merge
+  pr_number=<n> workspace_slug=loregarden` merges it onto main's tip, waits for the required
+  checks on that result, and lands it, so nobody updates a stale branch by hand. A `PreToolUse`
+  hook (`.claude/hooks/pr_merge_queue_precheck.py`) refuses `gh pr merge` and names the call.
+  The queue pushes its staged commit onto the PR's branch, and adopts any push you make there.
+
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
 ## A gate you tripped is yours to fix

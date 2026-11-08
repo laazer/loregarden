@@ -220,7 +220,7 @@ export const KNOWN_DIVERGENT_POSTURES: Record<string, string> = {
 const FIXED_BY_THIS_TICKET = [
   "components/initiatives/plan/InitiativeBoard.tsx",
   "components/mcp/McpActivityFeed.tsx",
-  "components/workspaceDashboard/MergeQueueSection.tsx",
+  "components/mergeQueue/MergeQueueRow.tsx",
   "pages/InitiativePlanPage.tsx",
 ];
 
@@ -576,7 +576,7 @@ describe("the four migrated surfaces are still polled, and still share the predi
   const MIGRATED = [
     "components/initiatives/plan/InitiativeBoard.tsx",
     "components/mcp/McpActivityFeed.tsx",
-    "components/workspaceDashboard/MergeQueueSection.tsx",
+    "components/mergeQueue/MergeQueueRow.tsx",
     "pages/InitiativePlanPage.tsx",
   ];
 

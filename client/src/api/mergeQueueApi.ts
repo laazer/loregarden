@@ -33,7 +33,8 @@ export type MergeQueueWait =
 /** Mirrors `services/merge_queue_requests.EntryView`. */
 export interface MergeQueueEntry {
   id: string;
-  ticket_id: string;
+  /** Null for a pull request admitted by number, with no ticket behind it. */
+  ticket_id: string | null;
   ticket_external_id: string;
   ticket_title: string;
   position: number;
@@ -78,16 +79,38 @@ export interface MergeQueueView {
   head_id: string | null;
 }
 
+/** Mirrors `QueueOverview`: each workspace whose queue has ever held an entry. */
+export interface MergeQueueOverview {
+  queues: MergeQueueView[];
+}
+
+/** Mirrors `TicketQueueView`: a ticket's tree in the queue (a tree lands as one PR, under its root). */
+export interface TicketMergeQueueView {
+  root_ticket_id: string;
+  root_external_id: string;
+  /** Null when the tree has never been queued. */
+  entry: MergeQueueEntry | null;
+  /** Live entries in line before `entry`; 0 for the head and a finished one. */
+  ahead: number;
+}
+
 const entryPath = (entryId: string) => `/api/merge-queue/entries/${encodeURIComponent(entryId)}`;
 
 export const mergeQueueKeys = {
-  queue: (workspaceSlug: string) => ["merge-queue", workspaceSlug] as const,
+  /** Every merge-queue read: what an action that moves an entry invalidates. */
+  all: ["merge-queue"] as const,
+  queue: (workspaceSlug: string) => ["merge-queue", "workspace", workspaceSlug] as const,
+  overview: ["merge-queue", "overview"] as const,
+  ticket: (ticketId: string) => ["merge-queue", "ticket", ticketId] as const,
   entry: (entryId: string) => ["merge-queue", "entry", entryId] as const,
 };
 
 export const mergeQueueApi = {
   queue: (workspaceSlug: string): Promise<MergeQueueView> =>
     request<MergeQueueView>(`/api/merge-queue/${encodeURIComponent(workspaceSlug)}`),
+  overview: (): Promise<MergeQueueOverview> => request<MergeQueueOverview>("/api/merge-queue"),
+  forTicket: (ticketId: string): Promise<TicketMergeQueueView> =>
+    request<TicketMergeQueueView>(`/api/merge-queue/tickets/${encodeURIComponent(ticketId)}`),
   /** A testing entry's checks are read from GitHub; that read failing is a 502, not an empty list. */
   entry: (entryId: string): Promise<MergeQueueEntryDetail> => request<MergeQueueEntryDetail>(entryPath(entryId)),
   retry: (entryId: string): Promise<MergeQueueEntry> =>

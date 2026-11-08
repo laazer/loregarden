@@ -13,29 +13,44 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from loregarden.db.session import get_session
-from loregarden.models.domain import MergeQueueAdmission, Workspace
+from loregarden.models.domain import MergeQueueAdmission, Ticket, Workspace
 from loregarden.services import merge_queue
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import QueueRefusal
 from loregarden.services.merge_queue_requests import (
     EntryDetail,
     EntryView,
+    QueueOverview,
     QueueView,
+    TicketQueueView,
     admitted_or_refuse,
+    enqueue_pull_request,
     enqueue_ticket,
     entry_detail,
+    queue_overview,
     queue_view,
+    ticket_queue_view,
 )
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/merge-queue", tags=["merge-queue"])
 
 
 class EnqueueRequest(BaseModel):
+    """Exactly one of the two: a tree's PR by its ticket, or any other PR by number."""
+
     #: Any ticket in the tree; its root's PR is what is queued.
-    ticket_id: str = Field(min_length=1)
+    ticket_id: str = ""
+    #: A pull request with no ticket behind it, such as an interactive session's.
+    pr_number: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _one_candidate(self) -> EnqueueRequest:
+        if bool(self.ticket_id) == bool(self.pr_number):
+            raise ValueError("pass exactly one of ticket_id or pr_number")
+        return self
 
 
 class WithdrawRequest(BaseModel):
@@ -61,6 +76,26 @@ def _entry_view(session: Session, entry_id: str) -> EntryView:
         return entry_detail(session, entry_id, live=False)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("", response_model=QueueOverview)
+def read_merge_queues(
+    limit: int = Query(10, ge=1, le=100, description="Finished entries per workspace."),
+    session: Session = Depends(get_session),
+) -> QueueOverview:
+    """Every workspace's queue that has held an entry: what is landing anywhere."""
+    return queue_overview(session, limit=limit)
+
+
+@router.get("/tickets/{ticket_id}", response_model=TicketQueueView)
+def read_ticket_merge_queue(
+    ticket_id: str, session: Session = Depends(get_session)
+) -> TicketQueueView:
+    """Where a ticket's tree stands in the queue: its latest entry, or none."""
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(404, f"No ticket {ticket_id}")
+    return ticket_queue_view(session, ticket)
 
 
 @router.get("/{slug}", response_model=QueueView)
@@ -94,11 +129,14 @@ def enqueue_merge(
     body: EnqueueRequest = Body(...),
     session: Session = Depends(get_session),
 ) -> EnqueueResponse:
-    """Queue the open PR of the tree the ticket belongs to."""
+    """Queue a tree's open PR by any ticket in it, or any other open PR by number."""
     workspace = _workspace(session, slug)
     try:
-        ticket = resolve_one(session, body.ticket_id, workspace_id=workspace.id)
-        admission = admitted_or_refuse(enqueue_ticket(session, ticket, workspace))
+        if body.pr_number:
+            admission = admitted_or_refuse(enqueue_pull_request(session, workspace, body.pr_number))
+        else:
+            ticket = resolve_one(session, body.ticket_id, workspace_id=workspace.id)
+            admission = admitted_or_refuse(enqueue_ticket(session, ticket, workspace))
     except TicketNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     except QueueRefusal as exc:
@@ -107,7 +145,7 @@ def enqueue_merge(
         # An ambiguous ticket reference: it names the candidates.
         raise HTTPException(400, str(exc)) from exc
     except GitHubReadError as exc:
-        raise HTTPException(502, f"Could not find the tree's PR on GitHub: {exc}") from exc
+        raise HTTPException(502, f"Could not read the PR from GitHub: {exc}") from exc
     return EnqueueResponse(
         outcome=admission.outcome,
         detail=admission.detail,
