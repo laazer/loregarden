@@ -52,6 +52,7 @@ from loregarden.services.run_service import (
 )
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
+from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
 
 TICKET_SLUG = "03-wire-cli-agent-runner"
@@ -182,7 +183,7 @@ def test_a_stage_report_that_rejects_reroutes_the_same_way(db_session: Session):
         run,
         transcript=(
             "<<<LOREGARDEN_STAGE_REPORT>>>\n"
-            '{"status": "needs_rework", "reroute_context": "tests miss the reported case"}\n'
+            f'{{"status": "needs_rework", "reroute_context": "tests miss the reported case"{findings_fragment("needs_rework")}}}\n'
             "<<<END_STAGE_REPORT>>>\n"
         ),
     )

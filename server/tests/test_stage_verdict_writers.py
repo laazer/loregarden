@@ -47,6 +47,7 @@ from loregarden.services.rework_feedback import render_rework_feedback, rework_r
 from loregarden.services.stage_verdict import StageVerdict, routing_outcome
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
+from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[1] / "loregarden"
@@ -102,7 +103,7 @@ def _pass_stdout() -> str:
 def _fail_stdout() -> str:
     return (
         "Narrative.\n<<<LOREGARDEN_STAGE_REPORT>>>\n"
-        '{"status": "fail", "confidence": 0.9, "reroute_to_stage": "plan"}\n'
+        f'{{"status": "fail", "confidence": 0.9, "reroute_to_stage": "plan"{findings_fragment("fail")}}}\n'
         "<<<END_STAGE_REPORT>>>\n"
     )
 
@@ -1147,3 +1148,67 @@ def test_parallel_drivers_and_hotspots_do_not_call_derive_verdict():
         called = _called_names(_tree(relative))
         assert "derive_verdict" not in called, relative
         assert "collect_signals" not in called, relative
+
+
+# --------------------------------------------------------------------------- #
+# A judging agent's reject through the tool meets the finding bar (finding_bar)
+# --------------------------------------------------------------------------- #
+
+_COMPLETE_FINDING = {
+    "summary": "verify passes on an empty diff",
+    "blocking": True,
+    "trigger": "a ticket whose implement run changed nothing",
+    "path": "services/verify.py:check -> no files -> pass",
+    "impact": "an unimplemented ticket reaches the gate",
+}
+
+
+def _tool_reject(session: Session, tmp_path, findings):
+    ticket, orch, stage, _ = _running_ticket(
+        session, tmp_path, stage_key="verify", agent_id="verifier", stage_type="verify"
+    )
+    _agent_run(
+        session, ticket, orch, agent_id="verifier", stage_key=stage.key, status=RunStatus.RUNNING
+    )
+    from loregarden.mcp.tools import execute_tool
+
+    arguments = {"run_id": orch.id, "stage_key": stage.key, "outcome": "reject"}
+    if findings is not None:
+        arguments["findings"] = findings
+    execute_tool(session, "loregarden_complete_stage", arguments)
+    session.refresh(ticket)
+    return ticket
+
+
+def test_a_tool_reject_with_a_complete_blocking_finding_routes_back(db_session, tmp_path):
+    ticket = _tool_reject(db_session, tmp_path, [_COMPLETE_FINDING])
+    assert ticket.workflow_stage_key == "plan"
+
+
+def test_a_tool_reject_with_no_complete_finding_completes_as_passed(db_session, tmp_path):
+    from loregarden.services.orchestrator_decisions import decisions_of
+
+    ticket = _tool_reject(db_session, tmp_path, [{**_COMPLETE_FINDING, "trigger": ""}])
+    assert ticket.workflow_stage_key == "implement"
+    [payload] = [
+        payload
+        for _, payload in decisions_of(db_session, [ticket.id])
+        if payload["decision"] == "reject_not_admitted"
+    ]
+    assert "gives no trigger" in payload["reason"] and payload["claimed"] == "reject"
+
+
+def test_a_tool_reject_with_no_findings_argument_is_held_to_the_bar(db_session, tmp_path):
+    assert _tool_reject(db_session, tmp_path, None).workflow_stage_key == "implement"
+
+
+def test_an_internal_complete_stage_reject_is_not_held_to_the_bar(db_session, tmp_path):
+    """A person's inbox reject reaches complete_stage with no findings at all."""
+    ticket, orch, stage, _ = _running_ticket(
+        db_session, tmp_path, stage_key="verify", agent_id="verifier", stage_type="verify"
+    )
+    OrchestrationCallbackService(db_session).complete_stage(
+        orch, ticket, stage_key=stage.key, outcome="reject"
+    )
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == "plan"

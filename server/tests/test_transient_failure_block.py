@@ -25,6 +25,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.rework_feedback import rework_reroute_count
 from loregarden.services.stage_report import is_transient_failure
 from loregarden.services.workflow_state import initial_stages_json
+from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
 
@@ -94,7 +95,7 @@ def _report(status: str, confidence: float, reroute_to_stage="", reroute_context
         extra += f', "reroute_context": "{reroute_context}"'
     return (
         "Narrative.\n<<<LOREGARDEN_STAGE_REPORT>>>\n"
-        f'{{"status": "{status}", "confidence": {confidence}{extra}}}\n'
+        f'{{"status": "{status}", "confidence": {confidence}{extra}{findings_fragment(status)}}}\n'
         "<<<END_STAGE_REPORT>>>\n"
     )
 

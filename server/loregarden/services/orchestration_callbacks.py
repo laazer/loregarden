@@ -39,6 +39,7 @@ from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.discovered_work import refuse_undecided
+from loregarden.services.finding_bar import settle_stage_claim
 from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
@@ -63,7 +64,7 @@ from loregarden.services.run_interruption import (
     blocked_by_interruption,
 )
 from loregarden.services.run_lease import SUPERVISED
-from loregarden.services.stage_report import parse_stage_report
+from loregarden.services.stage_report import Finding
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
     guard_standalone_stage_dispatch,
@@ -509,6 +510,7 @@ class OrchestrationCallbackService:
         outcome: str = "pass",
         blocking_issues: str = "",
         advance: bool = True,
+        findings: list[Finding] | None = None,
     ) -> Ticket:
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -528,8 +530,16 @@ class OrchestrationCallbackService:
 
         stage_def = next(s for s in stages if s.key == stage_key)
         run = self._latest_stage_run(ticket.id, stage_key)
-        report = parse_stage_report(run.stdout or "") if run else None
         agent_id = (run.agent_id if run else "") or stage_def.agent_id
+        report, outcome = settle_stage_claim(
+            self.session,
+            ticket,
+            stage_def,
+            run,
+            agent_id=agent_id,
+            outcome=outcome,
+            findings=findings,
+        )
         tool_claim = claim_from_tool_outcome(outcome)
         claimed_reject = tool_claim is not StageReportStatus.PASS
         verdict = derive_verdict(

@@ -30,6 +30,7 @@ from loregarden.models.domain import (
     OperatorJudgmentRequirement,
     OrchestrationRun,
     QueuedRun,
+    StageReportStatus,
     Ticket,
     TicketState,
     WorkflowExitAction,
@@ -317,3 +318,21 @@ def operator_judgment_gate_payload(stage_name: str = "stage") -> str:
         human_required_actions=resolution.human_required_actions,
         allowed_actions=resolution.allowed_actions,
     ).model_dump_json()
+
+
+#: A blocking finding with its trigger, path and impact: what a review, verify or
+#: gate reject needs to stand (`services/finding_bar`).
+COMPLETE_BLOCKING_FINDING = {
+    "summary": "the reported case is not handled",
+    "blocking": True,
+    "trigger": "the input the reviewer names",
+    "path": "the function the reviewer names",
+    "impact": "the person sees the wrong result",
+}
+
+
+def findings_fragment(status: StageReportStatus) -> str:
+    """`, "findings": [...]` for a reject status, else "": spliced into a hand-written report."""
+    if status not in (StageReportStatus.FAIL, StageReportStatus.NEEDS_REWORK):
+        return ""
+    return f', "findings": {json.dumps([COMPLETE_BLOCKING_FINDING])}'

@@ -48,6 +48,7 @@ from loregarden.services.rework_feedback import (
     rework_reroute_count,
 )
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
+from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
 
 
@@ -56,7 +57,7 @@ def _report(status: str, confidence: float, **extra: str) -> str:
     return (
         "Narrative output.\n"
         "<<<LOREGARDEN_STAGE_REPORT>>>\n"
-        f'{{"status": "{status}", "confidence": {confidence}{fields}}}\n'
+        f'{{"status": "{status}", "confidence": {confidence}{fields}{findings_fragment(status)}}}\n'
         "<<<END_STAGE_REPORT>>>\n"
     )
 

@@ -79,3 +79,19 @@ class StageReportStatus(StrEnum):
     FAIL = "fail"
     NEEDS_REWORK = "needs_rework"
     BLOCKED = "blocked"
+
+
+class FindingDisposition(StrEnum):
+    """What becomes of a review, verify or gate finding that does not block.
+
+    A blocking finding carries no disposition: it is the reject. Every other
+    finding says where it went, so it is recorded rather than dropped
+    (`finding_bar`).
+    """
+
+    #: Known and accepted as it is, with the reason on the finding.
+    DOCUMENTED_EXCEPTION = "documented_exception"
+    #: Already covered by planned work; the finding names the ticket.
+    ASSIGNED_TICKET = "assigned_ticket"
+    #: Real, but outside what this ticket set out to do.
+    OUT_OF_SCOPE = "out_of_scope"

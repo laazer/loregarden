@@ -40,6 +40,7 @@ from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.criterion_split import split_instead_of_pausing
 from loregarden.services.dependency_hold import link_reported_prerequisites
+from loregarden.services.finding_bar import admitted
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -123,7 +124,13 @@ def member_result(
     stdout pass is derived (handoff_expected=False). Callers without a ticket
     (infrastructure tests) still judge the envelope alone.
     """
-    report = parse_stage_report(stdout)
+    # Pure: the lane is re-judged on every reconcile; the decision was
+    # recorded once, when the run completed (`finding_bar.admit_run_report`).
+    report, _ = admitted(
+        parse_stage_report(stdout),
+        agent_id=agent_id,
+        stage=stage_def,
+    )
     if status != RunStatus.SUCCEEDED:
         return ParallelMemberResult(
             agent_id=agent_id,

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 from loregarden.models.domain.block_kinds import BlockKind
+from loregarden.models.domain.enums_exit_actions import FindingDisposition
 from loregarden.services.interruption_messages import (
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
@@ -40,6 +41,32 @@ class WaiverItem:
 
     name: str
     reason: str
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One finding a review, verify or gate stage reported (`finding_bar`).
+
+    A blocking finding is a reject only when it says how the defect is reached
+    (`trigger`), what runs between there and the defect (`path`), and what a
+    person using the system would meet (`impact`). Any other finding says where
+    it went (`disposition`, and `ticket` for `assigned_ticket`).
+    """
+
+    summary: str
+    blocking: bool = False
+    trigger: str = ""
+    path: str = ""
+    impact: str = ""
+    disposition: FindingDisposition | None = None
+    ticket: str = ""
+    #: The disposition as the agent wrote it, when it was not one we know.
+    disposition_as_written: str = ""
+
+    def missing_parts(self) -> list[str]:
+        """Which of trigger, path and impact a blocking finding leaves empty."""
+        parts = {"trigger": self.trigger, "path": self.path, "impact": self.impact}
+        return [name for name, value in parts.items() if not value]
 
 
 @dataclass(frozen=True)
@@ -78,6 +105,10 @@ class StageReport:
     #: Producer-owned unresolved names this finishing persist asks to waive.
     #: Parsed apart from the verdict so a malformed list cannot discard status.
     waivers: list[WaiverItem] = field(default_factory=list)
+    #: What a review, verify or gate stage found, blocking or not. Parsed apart
+    #: from the verdict like the criteria: a malformed list cannot cost the
+    #: report its status.
+    findings: list[Finding] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -217,6 +248,74 @@ def _waivers_of(payload: str) -> list[WaiverItem]:
     return items
 
 
+class _FindingsPayload(BaseModel):
+    """`findings` alone, parsed apart from the verdict like the waivers."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    findings: list[Any] | None = Field(default=None)
+
+
+class _FindingPayload(BaseModel):
+    """One finding as an agent wrote it. Every field is optional text: a
+    finding with a missing part is still a finding, recorded as such."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    summary: str | None = ""
+    blocking: bool | None = False
+    trigger: str | None = ""
+    path: str | None = ""
+    impact: str | None = ""
+    disposition: str | None = ""
+    ticket: str | None = ""
+
+
+def _finding_of(item: _FindingPayload) -> Finding:
+    written = (item.disposition or "").strip()
+    try:
+        disposition = FindingDisposition(written.lower()) if written else None
+    except ValueError:
+        disposition = None
+    return Finding(
+        summary=(item.summary or "").strip(),
+        blocking=bool(item.blocking),
+        trigger=(item.trigger or "").strip(),
+        path=(item.path or "").strip(),
+        impact=(item.impact or "").strip(),
+        disposition=disposition,
+        ticket=(item.ticket or "").strip(),
+        disposition_as_written=written if disposition is None else "",
+    )
+
+
+def findings_from(raw_items: list[Any]) -> list[Finding]:
+    """Findings from items an agent wrote; one it got wrong is skipped, and logged.
+
+    Shared by the report block and `loregarden_complete_stage(findings=...)`.
+    """
+    findings: list[Finding] = []
+    for raw in raw_items:
+        try:
+            item = _FindingPayload.model_validate(raw)
+        except ValidationError:
+            logger.warning("stage report finding %r could not be parsed", raw)
+            continue
+        finding = _finding_of(item)
+        if finding.summary or finding.trigger or finding.impact:
+            findings.append(finding)
+    return findings
+
+
+def _findings_of(payload: str) -> list[Finding]:
+    try:
+        parsed = _FindingsPayload.model_validate_json(payload)
+    except ValidationError:
+        logger.warning("stage report findings could not be parsed", exc_info=True)
+        return []
+    return findings_from(parsed.findings or [])
+
+
 class _WaiverItemPayload(BaseModel):
     """One waiver object as an agent wrote it."""
 
@@ -291,6 +390,7 @@ def _build_report(payload: str) -> StageReport | None:
         kind_as_written=block.kind_as_written,
         waiting_on=block.waiting_on,
         waivers=_waivers_of(payload),
+        findings=_findings_of(payload),
     )
 
 

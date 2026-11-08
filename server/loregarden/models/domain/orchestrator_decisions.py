@@ -135,3 +135,11 @@ class OrchestratorDecision(StrEnum):
     #: A review, verify or gate run passed having read none of the diff's files,
     #: or with no tool calls at all, so the pass was refused (`read_evidence`).
     REFUSED_UNREAD_PASS = "refused_unread_pass"
+    #: A review, verify or gate stage reported fail or needs_rework with no
+    #: blocking finding that states its trigger, path and impact, so it was not
+    #: treated as a reject: the stage proceeded as passed (`finding_bar`). The
+    #: evidence carries every finding it reported.
+    REJECT_NOT_ADMITTED = "reject_not_admitted"
+    #: A review, verify or gate stage reported findings that do not block, each
+    #: with its disposition, and they are on record rather than dropped.
+    FINDINGS_RECORDED = "findings_recorded"

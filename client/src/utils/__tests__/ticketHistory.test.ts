@@ -355,3 +355,18 @@ describe("read evidence", () => {
     expect(line.detail).toBeUndefined();
   });
 });
+
+describe("historyLines — findings that do not block", () => {
+  it("reads a reject with no complete blocking finding, and findings put on record, as normal", () => {
+    const lines = historyLines([
+      decision(
+        "reject_not_admitted",
+        "verifier reported needs_rework on 'verify', which is not a reject: it named no blocking finding.",
+        "verify",
+      ),
+      decision("findings_recorded", "static_qa recorded 2 finding(s) on 'review' that do not block.", "review"),
+    ]);
+
+    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal"]);
+  });
+});
