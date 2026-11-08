@@ -80,6 +80,7 @@ from loregarden.services.operation_criteria import (
     pending_operation_criteria,
 )
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.read_evidence import record_read_evidence
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
@@ -102,7 +103,6 @@ from loregarden.services.stage_transient_retry import (
     transient_failure_reason,
 )
 from loregarden.services.stage_verdict import (
-    StageVerdict,
     collect_signals,
     derive_verdict,
     handoff_expected_for,
@@ -447,6 +447,12 @@ def complete_run_tail(
         # (lg-workflow-integrity-95).
         run.verdict_channel = StageVerdictChannel.SENTINEL
         orch.session.add(run)
+    if (
+        status is RunStatus.SUCCEEDED
+        and report is not None
+        and report.status == StageReportStatus.PASS
+    ):
+        record_read_evidence(orch.session, ticket, run)
     if advance_workflow:
         derived = advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
         if derived is not None:
@@ -793,13 +799,7 @@ def _pass_held(
         current_stage_key=run.stage_key,
         run_id=run.id,
     )
-    if remaining:
-        status = (
-            StageReportStatus.NEEDS_REWORK
-            if verdict.status is StageReportStatus.PASS
-            else verdict.status
-        )
-        verdict = StageVerdict(status=status, unresolved=remaining)
+    verdict = verdict.after_settle(remaining)
     if verdict.status is StageReportStatus.PASS:
         return None
     derived = report_with_verdict(report, verdict, current_stage=run.stage_key)
@@ -1248,13 +1248,7 @@ def _stamp_derived_report(
         current_stage_key=run.stage_key,
         run_id=run.id,
     )
-    if remaining:
-        status = (
-            StageReportStatus.NEEDS_REWORK
-            if verdict.status is StageReportStatus.PASS
-            else verdict.status
-        )
-        verdict = StageVerdict(status=status, unresolved=remaining)
+    verdict = verdict.after_settle(remaining)
     return report_with_verdict(report, verdict, current_stage=run.stage_key)
 
 

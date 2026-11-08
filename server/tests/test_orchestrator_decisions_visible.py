@@ -179,6 +179,10 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "criteria_sent_to_verify",
         "criteria_checked",
         "deferred_undecided_findings",
+        # Normal (client tone()): a review passed with what it read on record.
+        "read_evidence_checked",
+        # Failed tone, the default: a pass that read nothing of the diff.
+        "refused_unread_pass",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

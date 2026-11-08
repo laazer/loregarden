@@ -116,3 +116,9 @@ class OrchestratorDecision(StrEnum):
     #: A scope round's spec decided none of the findings it was asked to, twice,
     #: so the remaining findings were deferred rather than blocking for a person.
     DEFERRED_UNDECIDED_FINDINGS = "deferred_undecided_findings"
+    #: A review, verify or gate run passed, and its own tool calls show how much
+    #: of the diff it read (`read_evidence`): every file, or only some.
+    READ_EVIDENCE_CHECKED = "read_evidence_checked"
+    #: A review, verify or gate run passed having read none of the diff's files,
+    #: or with no tool calls at all, so the pass was refused (`read_evidence`).
+    REFUSED_UNREAD_PASS = "refused_unread_pass"

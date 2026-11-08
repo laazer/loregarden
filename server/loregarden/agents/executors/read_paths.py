@@ -102,6 +102,8 @@ class TranscriptEvent(BaseModel):
     """
 
     type: str = ""
+    #: Cursor writes each tool call twice, `started` and `completed`.
+    subtype: str = ""
     message: TranscriptMessage | None = None
     tool_call: dict[str, object] = Field(default_factory=dict)
 

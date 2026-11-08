@@ -82,6 +82,11 @@ function requeueText(event: TicketHistoryEvent): string {
  */
 function decisionDetail(event: TicketHistoryEvent): string | undefined {
   const decision = str(event.payload.decision);
+  // A review's read evidence: the line says how many files; the detail names them.
+  const filesRead = event.payload.files_read;
+  if (Array.isArray(filesRead) && filesRead.length > 0) {
+    return `Read: ${filesRead.map(str).join(", ")}`;
+  }
   const detail =
     decision === "requeued"
       ? str(event.payload.reason)
@@ -153,7 +158,11 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "split_criteria" ||
     decision === "criteria_sent_to_verify" ||
     decision === "criteria_checked" ||
-    decision === "deferred_undecided_findings"
+    decision === "deferred_undecided_findings" ||
+    // A review that passed with what it read on record. Reading only some of
+    // the diff is a lens keeping to its remit, not trouble; reading none is
+    // `refused_unread_pass`, which stays "failed".
+    decision === "read_evidence_checked"
     ? "normal"
     : "failed";
   }

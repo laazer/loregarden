@@ -58,7 +58,6 @@ from loregarden.services.stage_report import (
     stage_report_artifact_content,
 )
 from loregarden.services.stage_verdict import (
-    StageVerdict,
     collect_signals,
     derive_verdict,
     report_with_verdict,
@@ -171,19 +170,16 @@ def member_result(
             waivers=tuple(report.waivers),
             current_stage_key=stage_def.key,
         )
-        if remaining:
-            status = (
-                StageReportStatus.NEEDS_REWORK
-                if verdict.status is StageReportStatus.PASS
-                else verdict.status
-            )
-            verdict = StageVerdict(status=status, unresolved=remaining)
+        verdict = verdict.after_settle(remaining)
         report = report_with_verdict(report, verdict, current_stage=stage_def.key)
         if verdict.status is not StageReportStatus.PASS:
             return ParallelMemberResult(
                 agent_id=agent_id,
                 failure=f"{agent_id}: {report.reroute_context or 'agent reported failure'}",
                 report=report,
+                # A member that could not have done the work (no tool calls) is
+                # the harness failing, routed to the same pause as an API limit.
+                transient=verdict.block_kind is BlockKind.HARNESS,
             )
         return ParallelMemberResult(agent_id=agent_id, report=report)
     if report.status in _REJECTING_REPORT_STATUSES:
