@@ -35,8 +35,9 @@ from loregarden.services.criterion_check import CriteriaCheck, check_criteria
 from loregarden.services.criterion_gate_stages import check_due, settler_of
 from loregarden.services.criterion_split import SplitRefused, split_criteria
 from loregarden.services.evidence import resolve_head_sha
+from loregarden.services.gate_dispatch_check import GateCriteriaUnanswered, set_gate_check
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.orchestrator_decisions import decisions_of, record_orchestrator_decision
 from loregarden.services.rework_feedback import latest_rework_context, record_rework_feedback
 from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
@@ -90,9 +91,18 @@ def _send_back(
 
 
 def _block(
-    session: Session, orch_run: OrchestrationRun, ticket: Ticket, message: str, kind: BlockKind
+    session: Session,
+    orch_run: OrchestrationRun | None,
+    ticket: Ticket,
+    message: str,
+    kind: BlockKind,
 ) -> bool:
+    """Block the ticket under ``orch_run``. With no run (a stage started by hand,
+    the terminal sweep) there is nothing to block under: the start is refused
+    with the same message, which reaches the person or sweep that asked."""
     session.rollback()
+    if orch_run is None:
+        raise GateCriteriaUnanswered(message)
     OrchestrationCallbackService(session).block_ticket(
         orch_run,
         ticket,
@@ -108,7 +118,7 @@ def _block(
 
 def _answer_gaps(
     session: Session,
-    orch_run: OrchestrationRun,
+    orch_run: OrchestrationRun | None,
     ticket: Ticket,
     stages: list[WorkflowStageDef],
     target: WorkflowStageDef,
@@ -175,19 +185,87 @@ def check_criteria_if_due(session: Session, orch_run: OrchestrationRun, ticket: 
     target = next((s for s in stages if s.key == target_key), None)
     if target is None or not check_due(stages, stage_map, target):
         return False
+    return _check_at(session, orch_run, ticket, stages, target)[1]
+
+
+def _check_at(
+    session: Session,
+    orch_run: OrchestrationRun | None,
+    ticket: Ticket,
+    stages: list[WorkflowStageDef],
+    target: WorkflowStageDef,
+) -> tuple[CriteriaCheck, bool]:
+    """Run the check before ``target`` and act on it. Returns it, and whether it blocked."""
     check = check_criteria(session, ticket)
     if check.unavailable:
-        return _block(
-            session,
-            orch_run,
-            ticket,
-            f"The criteria check could not run: {check.unavailable}",
-            BlockKind.HARNESS,
-        )
+        message = f"The criteria check could not run: {check.unavailable}"
+        return check, _block(session, orch_run, ticket, message, BlockKind.HARNESS)
     if check.passed:
         _record_checked(session, ticket, target, check)
-        return False
-    return _answer_gaps(session, orch_run, ticket, stages, target, check)
+        return check, False
+    return check, _answer_gaps(session, orch_run, ticket, stages, target, check)
+
+
+#: The decisions that end one criteria check, whichever way it went.
+_CHECK_OUTCOMES = frozenset(
+    {
+        OrchestratorDecision.CRITERIA_CHECKED.value,
+        OrchestratorDecision.CRITERIA_SENT_TO_VERIFY.value,
+        OrchestratorDecision.SPLIT_CRITERIA.value,
+    }
+)
+
+
+def _passed_at_head(session: Session, ticket: Ticket, stage_key: str) -> bool:
+    """Whether the newest check on ``ticket`` passed before ``stage_key``, at the commit it is at now.
+
+    The drivers check before they choose the stage, and `start_run` asks again
+    when it starts it; this keeps that second ask from rerunning every test.
+    """
+    head = resolve_head_sha(session, ticket)
+    for _event, payload in decisions_of(session, [ticket.id]):
+        if payload.get("decision") not in _CHECK_OUTCOMES:
+            continue
+        return (
+            payload.get("decision") == OrchestratorDecision.CRITERIA_CHECKED.value
+            and payload.get("stage_key") == stage_key
+            and bool(head)
+            and payload.get("commit_sha") == head
+        )
+    return False
+
+
+def check_before_dispatch(
+    session: Session, ticket: Ticket, stage_key: str, orch_run: OrchestrationRun | None
+) -> None:
+    """The check for a path that starts ``stage_key`` itself (`gate_dispatch_check`).
+
+    Nothing happens unless ``stage_key`` is the stage the check guards. Then it
+    runs, unless it already passed there at HEAD, with the drivers' outcomes:
+    checked, the gaps sent back, split off, or the ticket blocked. Anything but
+    checked refuses the start.
+    """
+    instance = workflow_instance_for(session, ticket.id)
+    _, stages = resolve_ticket_stages(session, ticket)
+    target = next((s for s in stages if s.key == stage_key), None)
+    if instance is None or target is None:
+        return
+    if not check_due(stages, parse_stage_map(instance, stages), target):
+        return
+    if _passed_at_head(session, ticket, stage_key):
+        return
+    check, _blocked = _check_at(session, orch_run, ticket, stages, target)
+    if not check.passed:
+        raise GateCriteriaUnanswered(
+            f"'{stage_key}' of {ticket.external_id} did not start: {len(check.gaps)} "
+            "acceptance criteria are not answered for. The criteria check sent them back "
+            "to the stage that settles them, split them off, or blocked the ticket; its "
+            "history says which."
+        )
+
+
+# Installed here rather than imported by the dispatchers: see `gate_dispatch_check`.
+set_gate_check(check_before_dispatch)
 
 
 def before_next_stage(session: Session, orch_run: OrchestrationRun, ticket: Ticket) -> bool:

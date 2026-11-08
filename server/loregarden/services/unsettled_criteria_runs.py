@@ -31,9 +31,10 @@ def _checked_by_workflow(session: Session, ticket: Ticket) -> bool:
 def done_tickets_with_unsettled_criteria(session: Session) -> list[Violation]:
     """Done tickets, driven since the check landed, with a criterion not answered for.
 
-    The check before the gate refuses such a ticket, so one here finished by a
-    path that skips it (a stage started by hand, a terminal sweep), or had a
-    delegate dropped after it finished. Entered at the ticket's last update,
+    The check refuses such a ticket on every path that starts or finishes the
+    stage it guards (`gate_dispatch_check`), so one here was finished by a path
+    that test missed, had a criterion added after it passed, or had a delegate
+    dropped after it finished. Entered at the ticket's last update,
     the closest record of when it finished.
     """
     tickets = session.exec(
