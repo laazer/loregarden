@@ -14,6 +14,20 @@ gates:
   # Python lives under asset_generation/, not server/.
   commands:
     - bash {loregarden_root}/.lefthook/scripts/workspace-gates.sh --repo {workspace_root} --scope worktree
+  # The criteria check after the AC gate reruns the tests each acceptance
+  # criterion names (`criterion_gate`). No shell, cwd at the checkout root.
+  # Both pytest suites run through ci/scripts/asset_python.sh, the environment
+  # blobert's own hooks use (its .venv, else `uv run --project`). The asset
+  # suite's ids keep their prefix: `-c` points pytest at its pyproject, so
+  # `pythonpath` resolves there while the ids stay repo-relative. Godot tests
+  # (`tests/**/*.gd`) have no per-test runner, so they are only checked to exist.
+  criterion_test_commands:
+    - prefix: asset_generation/python/
+      command: bash ci/scripts/asset_python.sh -m pytest -q -p no:cacheprovider --rootdir asset_generation/python -c asset_generation/python/pyproject.toml {tests}
+      strip_prefix: false
+    - prefix: tests/ci/
+      command: bash ci/scripts/asset_python.sh -m pytest -q -p no:cacheprovider {tests}
+      strip_prefix: false
 subagents:
   spawn_via: cli
 callbacks:
