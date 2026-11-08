@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.config import settings
+from loregarden.db.migration_utils import table_exists
 from loregarden.db.migrations_block_kind_prompts import AUTOMATED_EDITORS
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -36,7 +37,12 @@ def _editors(conn: Connection, agent_id: str) -> set[str]:
 def refresh_role_from_seed(
     conn: Connection, *, migration_id: str, slug: str, role_file: str, marker: str
 ) -> bool:
-    """Copy `role_file` into `slug`'s role body; return whether it wrote."""
+    """Copy `role_file` into `slug`'s role body; return whether it wrote.
+
+    A database with no agent tables yet has nothing to refresh.
+    """
+    if not (table_exists(conn, "studio_agents") and table_exists(conn, "studio_agent_versions")):
+        return False
     row = (
         conn.execute(
             text("SELECT id, version, role_body FROM studio_agents WHERE slug=:s"), {"s": slug}
