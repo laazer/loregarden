@@ -102,7 +102,7 @@ export const mergeQueueKeys = {
   queue: (workspaceSlug: string) => ["merge-queue", "workspace", workspaceSlug] as const,
   overview: ["merge-queue", "overview"] as const,
   ticket: (ticketId: string) => ["merge-queue", "ticket", ticketId] as const,
-  entry: (entryId: string) => ["merge-queue", "entry", entryId] as const,
+  entry: (entryId: string, live = true) => ["merge-queue", "entry", entryId, live] as const,
 };
 
 export const mergeQueueApi = {
@@ -111,8 +111,13 @@ export const mergeQueueApi = {
   overview: (): Promise<MergeQueueOverview> => request<MergeQueueOverview>("/api/merge-queue"),
   forTicket: (ticketId: string): Promise<TicketMergeQueueView> =>
     request<TicketMergeQueueView>(`/api/merge-queue/tickets/${encodeURIComponent(ticketId)}`),
-  /** A testing entry's checks are read from GitHub; that read failing is a 502, not an empty list. */
-  entry: (entryId: string): Promise<MergeQueueEntryDetail> => request<MergeQueueEntryDetail>(entryPath(entryId)),
+  /**
+   * `live` reads a testing entry's checks from GitHub now, and that read failing
+   * is a 502, not an empty list; otherwise they are what the loop recorded on
+   * its last cycle (no GitHub call).
+   */
+  entry: (entryId: string, live = true): Promise<MergeQueueEntryDetail> =>
+    request<MergeQueueEntryDetail>(live ? entryPath(entryId) : `${entryPath(entryId)}?live=false`),
   retry: (entryId: string): Promise<MergeQueueEntry> =>
     request<MergeQueueEntry>(`${entryPath(entryId)}/retry`, { method: "POST" }),
   withdraw: (entryId: string, reason = ""): Promise<MergeQueueEntry> =>

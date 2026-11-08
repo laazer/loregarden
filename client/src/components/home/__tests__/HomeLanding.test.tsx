@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 
 import { ApiError } from "../../../api/http";
 import { mergeQueueApi, type MergeQueueOverview } from "../../../api/mergeQueueApi";
@@ -39,6 +39,17 @@ describe("HomeLanding", () => {
     const shown = screen.getAllByRole("listitem").length;
     const expected = entries.filter((entry) => ["queued", "staging", "testing", "merging", "failed", "timed_out"].includes(entry.state));
     expect(shown).toBe(expected.length);
+  });
+
+  it("shows the head's recorded checks without asking GitHub", async () => {
+    mockQueue.overview.mockResolvedValue(prodShape);
+    render();
+    const head = entries.find((entry) => entry.is_head);
+    if (!head) throw new Error("the fixture has no head");
+
+    await screen.findByRole("region", { name: "Landing on main" });
+    await waitFor(() => expect(mockQueue.entry).toHaveBeenCalled());
+    expect(mockQueue.entry.mock.calls).toEqual([[head.id, false]]);
   });
 
   it("opens a tree's ticket from its name", async () => {

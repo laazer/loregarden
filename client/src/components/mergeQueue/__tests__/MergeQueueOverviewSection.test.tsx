@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError } from "../../../api/http";
 import { mergeQueueApi, type MergeQueueOverview } from "../../../api/mergeQueueApi";
@@ -33,6 +33,9 @@ describe("MergeQueueOverviewSection", () => {
 
     const group = await screen.findByRole("group", { name: /loregarden/ });
     expect(group.textContent).toContain("3 in line");
+    // Lanes is open all day across workspaces: the head's checks come from the loop's record, not GitHub.
+    await waitFor(() => expect(mockQueue.entry).toHaveBeenCalled());
+    expect(mockQueue.entry.mock.calls.every(([, live]) => live === false)).toBe(true);
     expect(within(group).getByRole("link", { name: "loregarden" }).getAttribute("href")).toBe("/workspaces/loregarden");
   });
 

@@ -118,6 +118,7 @@ function WorkspaceQueue({
               busy={actions.busy.get(entry.id)}
               onAct={actions.run}
               onOpenTicket={onOpenTicket}
+              liveChecks={false}
             />
           ))}
         </ul>

@@ -57,6 +57,7 @@ export function HomeLanding({ now, onOpenTicket }: { now: Date; onOpenTicket: (t
               busy={actions.busy.get(entry.id)}
               onAct={actions.run}
               onOpenTicket={onOpenTicket}
+              liveChecks={false}
             />
           ))}
         </ul>

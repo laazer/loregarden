@@ -21,10 +21,16 @@ interface MergeQueueRowProps {
    * opens the PR.
    */
   onOpenTicket?: (ticketId: string) => void;
+  /**
+   * Read the head's checks from GitHub every poll (true), or show what the loop
+   * recorded on its last cycle (false). Surfaces that are open all the time and
+   * span every workspace (Home, Lanes) use the record, so they never ask GitHub.
+   */
+  liveChecks?: boolean;
 }
 
 /** One entry: its name opens it; the head can be withdrawn, a stopped entry retried. */
-export function MergeQueueRow({ entry, now, busy, onAct, onOpenTicket }: MergeQueueRowProps) {
+export function MergeQueueRow({ entry, now, busy, onAct, onOpenTicket, liveChecks = true }: MergeQueueRowProps) {
   const ticketId = entry.ticket_id;
   const opensTicket = onOpenTicket !== undefined && ticketId !== null;
   return (
@@ -53,7 +59,7 @@ export function MergeQueueRow({ entry, now, busy, onAct, onOpenTicket }: MergeQu
         <span className="mq-where">{formatRelativeAge(entry.state_changed_at, now) || "just now"}</span>
         <MergeQueueEntryActions entry={entry} busy={busy} onAct={onAct} />
       </span>
-      {entry.is_head && entry.state === "testing" ? <HeadChecks entryId={entry.id} /> : null}
+      {entry.is_head && entry.state === "testing" ? <HeadChecks entryId={entry.id} live={liveChecks} /> : null}
       {isStopped(entry.state) ? <StoppedReason entry={entry} /> : null}
     </li>
   );
@@ -103,11 +109,11 @@ export function MergeQueueEntryActions({
   );
 }
 
-/** The required checks the head is waiting on, read from GitHub. */
-export function HeadChecks({ entryId }: { entryId: string }) {
+/** The required checks the head is waiting on: from GitHub when `live`, else as the loop last recorded them. */
+export function HeadChecks({ entryId, live = true }: { entryId: string; live?: boolean }) {
   const detail = useQuery({
-    queryKey: mergeQueueKeys.entry(entryId),
-    queryFn: () => mergeQueueApi.entry(entryId),
+    queryKey: mergeQueueKeys.entry(entryId, live),
+    queryFn: () => mergeQueueApi.entry(entryId, live),
     refetchInterval: QUEUE_REFETCH_MS,
   });
   // This query sets no `staleTime`, `retry` or `placeholderData`, and
@@ -135,7 +141,11 @@ export function HeadChecks({ entryId }: { entryId: string }) {
   return (
     <>
       {waiting.length === 0 ? (
-        <p className="mq-note">Every required check passed; landing next cycle.</p>
+        <p className="mq-note">
+          {checks.length === 0 && !live
+            ? "Its checks have not been recorded yet; the next cycle reads them."
+            : "Every required check passed; landing next cycle."}
+        </p>
       ) : (
         <p className="mq-note">
           Waiting on{" "}
