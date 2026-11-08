@@ -36,6 +36,7 @@ from loregarden.services.criterion_check import CriteriaCheck, check_criteria
 from loregarden.services.criterion_split import SplitRefused, split_criteria
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.readiness_gate import block_if_unready
 from loregarden.services.rework_feedback import latest_rework_context, record_rework_feedback
 from loregarden.services.scope_round import open_round_if_due
 from loregarden.services.studio_routing import is_terminal_stage
@@ -207,8 +208,12 @@ def before_next_stage(session: Session, orch_run: OrchestrationRun, ticket: Tick
     """What both drivers do before choosing a stage. True when the ticket blocked.
 
     The scope round first: a round reopens spec, so the gate is no longer next
-    and the criteria check waits until the ticket comes back to it.
+    and the criteria check waits until the ticket comes back to it. Then the
+    stage's declared inputs (`readiness_gate`): a criteria check that sent the
+    ticket back to verify has changed which stage is next, so it goes last.
     """
     if open_round_if_due(session, orch_run, ticket):
         return True
-    return check_criteria_if_due(session, orch_run, ticket)
+    if check_criteria_if_due(session, orch_run, ticket):
+        return True
+    return block_if_unready(session, orch_run, ticket)

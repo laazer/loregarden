@@ -62,6 +62,7 @@ from loregarden.services.stage_dispatch_prep import (
     consume_scope_reroute_pin,
     resolve_run_agent,
 )
+from loregarden.services.stage_readiness import refuse_unready_dispatch
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
     blocked_on_stage_retry_budget,
@@ -882,6 +883,7 @@ class OrchestrationService:
             live_statuses=LIVE_ORCHESTRATION_STATUSES,
         )
         refuse_held_dispatch(self.session, ticket, stage_key=target_key)
+        refuse_unready_dispatch(self.session, ticket, target.stage_def)
 
         # Read before `_prepare_stage_start`, which erases the blocking text this
         # decision is partly read from.

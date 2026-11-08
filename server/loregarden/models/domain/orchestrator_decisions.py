@@ -116,3 +116,12 @@ class OrchestratorDecision(StrEnum):
     #: A scope round's spec decided none of the findings it was asked to, twice,
     #: so the remaining findings were deferred rather than blocking for a person.
     DEFERRED_UNDECIDED_FINDINGS = "deferred_undecided_findings"
+    #: A stage's declared inputs (`required_inputs`) were missing, so it was not
+    #: started: the ticket blocked, or a start by hand was refused, naming them
+    #: (`stage_readiness`). The evidence carries an estimate of the tokens spared.
+    STAGE_INPUTS_MISSING = "stage_inputs_missing"
+    #: A review lens that passed was not re-run, because nothing it could read
+    #: changed since: the tree is the one it passed on, or the rework touched
+    #: none of the files it read (`review_relens`). The evidence names the commit
+    #: range and what its passing run spent.
+    CARRIED_FORWARD_PASS = "carried_forward_pass"
