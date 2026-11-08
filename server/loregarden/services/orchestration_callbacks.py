@@ -43,6 +43,7 @@ from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
 )
+from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.hold_line import truncate_for_storage
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.prepared_action import (
@@ -468,6 +469,9 @@ class OrchestrationCallbackService:
         # stage RUNNING with nothing behind it — and on this path there is no
         # AgentRun to make that visible.
         refuse_held_dispatch(self.session, ticket, stage_key=stage_key)
+        refuse_unchecked_gate(
+            self.session, ticket, stage_key=stage_key, orchestration_run_id=orch_run.id
+        )
         guard_standalone_stage_dispatch(
             self.session,
             ticket,

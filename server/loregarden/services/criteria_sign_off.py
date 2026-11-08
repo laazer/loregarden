@@ -22,12 +22,8 @@ Narrow, like the other signers in `autopilot_sign_off.signer_for_gate`:
 
 from __future__ import annotations
 
-import json
-
 from loregarden.models.domain import (
     Approval,
-    DomainEvent,
-    EventType,
     OrchestratorDecision,
     Ticket,
 )
@@ -35,11 +31,11 @@ from loregarden.services.criterion_gate_stages import gate_of
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.hierarchy_service import descendants_by_root
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.orchestrator_decisions import decisions_of, record_orchestrator_decision
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import resolve_ticket_stages
 from pydantic import BaseModel
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 #: `Approval.resolved_by` for a gate signed on its criteria check.
 RESOLVED_BY_CRITERIA = "criteria_check"
@@ -62,16 +58,6 @@ class CriteriaBasis(BaseModel):
     not_rerun: int
 
 
-def _decisions(session: Session, ticket_ids: list[str]) -> list[tuple[DomainEvent, dict]]:
-    events = session.exec(
-        select(DomainEvent)
-        .where(DomainEvent.type == EventType.ORCHESTRATOR_DECISION)
-        .where(col(DomainEvent.ticket_id).in_(ticket_ids))
-        .order_by(col(DomainEvent.created_at).desc())
-    ).all()
-    return [(event, json.loads(event.payload_json or "{}")) for event in events]
-
-
 def decided_in_a_persons_place(session: Session, ticket: Ticket) -> list[str]:
     """The decisions under ``ticket`` that keep its gate a person's, one line each, newest first."""
     tree = {
@@ -80,7 +66,7 @@ def decided_in_a_persons_place(session: Session, ticket: Ticket) -> list[str]:
     }
     return [
         f"{tree[event.ticket_id or ''].external_id}: {payload.get('reason') or payload['decision']}"
-        for event, payload in _decisions(session, list(tree))
+        for event, payload in decisions_of(session, list(tree))
         if payload.get("decision") in HOLDS_THE_GATE
     ]
 
@@ -96,7 +82,7 @@ def held_gate_note(session: Session, ticket: Ticket) -> str:
 
 
 def _latest_check(session: Session, ticket: Ticket, stage_key: str) -> CriteriaBasis | None:
-    for event, payload in _decisions(session, [ticket.id]):
+    for event, payload in decisions_of(session, [ticket.id]):
         if payload.get("decision") != OrchestratorDecision.CRITERIA_CHECKED.value:
             continue
         if payload.get("stage_key") != stage_key:

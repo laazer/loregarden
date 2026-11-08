@@ -9,7 +9,6 @@ recorded way past it, and the release when the prerequisite lands.
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +30,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from sqlmodel import Session, select
+from tests.dispatch_enumeration import NOT_DISPATCHES, calls, function_node, stage_starters
 from tests.factories import make_workspace_ticket
 from tests.history_helpers import decision_kinds, decision_payloads
 
@@ -136,57 +136,9 @@ DISPATCHERS: dict[tuple[str, str], str] = {
     ("services/stage_fanout_service.py", "launch_fanout"): "refuse_held_dispatch",
 }
 
-#: Every helper that writes a stage status, by the name it is called through.
-_STATUS_WRITERS = frozenset({"set_stage_status", "_set_stage_status", "finalize_stage"})
-
-
-def _sets_stage_running(node: ast.AST) -> bool:
-    for call in ast.walk(node):
-        if not isinstance(call, ast.Call):  # py-org: allow-isinstance - AST node types
-            continue
-        name = getattr(call.func, "attr", getattr(call.func, "id", ""))
-        if name not in _STATUS_WRITERS:
-            continue
-        values = [*call.args, *(keyword.value for keyword in call.keywords)]
-        if any(getattr(value, "attr", "") == "RUNNING" for value in values):
-            return True
-    return False
-
-
-def _calls(node: ast.AST, name: str) -> bool:
-    return any(
-        getattr(call.func, "attr", getattr(call.func, "id", "")) == name
-        for call in ast.walk(node)
-        if isinstance(call, ast.Call)  # py-org: allow-isinstance - AST node types
-    )
-
-
-def _stage_starters() -> set[tuple[str, str]]:
-    found: set[tuple[str, str]] = set()
-    root = SERVER / "loregarden"
-    for path in root.rglob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        if "RUNNING" not in source:
-            continue
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, ast.FunctionDef) and _sets_stage_running(
-                node
-            ):  # py-org: allow-isinstance - AST node types
-                found.add((str(path.relative_to(root)), node.name))
-    return found
-
-
-#: Functions that set a stage RUNNING and are not dispatches, with why.
-NOT_DISPATCHES: dict[tuple[str, str], str] = {
-    ("agents/executors/permission_bridge.py", "_resume_after_approval"): (
-        "puts the stage of a run that is already executing back to RUNNING once its "
-        "approval is answered; the run was dispatched, and held, through start_run"
-    ),
-}
-
 
 def test_every_function_that_starts_a_stage_is_held():
-    starters = _stage_starters()
+    starters = stage_starters()
     unknown = starters - DISPATCHERS.keys() - NOT_DISPATCHES.keys()
     assert not unknown, (
         "These set a stage RUNNING without being listed as held or exempt: "
@@ -196,16 +148,10 @@ def test_every_function_that_starts_a_stage_is_held():
 
 
 def test_every_listed_dispatcher_actually_holds():
-    root = SERVER / "loregarden"
     for (module, function), how in DISPATCHERS.items():
-        tree = ast.parse((root / module).read_text(encoding="utf-8"))
-        node = next(
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef)
-            and n.name == function  # py-org: allow-isinstance - AST node types
+        assert calls(function_node(module, function), how), (
+            f"{module}::{function} no longer calls {how}"
         )
-        assert _calls(node, how), f"{module}::{function} no longer calls {how}"
 
 
 # --- the REST surface ----------------------------------------------------------
