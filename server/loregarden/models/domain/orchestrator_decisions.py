@@ -143,3 +143,6 @@ class OrchestratorDecision(StrEnum):
     #: A review, verify or gate stage reported findings that do not block, each
     #: with its disposition, and they are on record rather than dropped.
     FINDINGS_RECORDED = "findings_recorded"
+    #: A review lane's recheck round answered its prior blocking findings,
+    #: each resolved, unresolved or unanswered (`recheck_round`).
+    RECHECK_RECORDED = "recheck_recorded"

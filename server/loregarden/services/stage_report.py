@@ -70,6 +70,19 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class Recheck:
+    """A recheck round's answer about one of the reviewer's prior findings.
+
+    `id` is the label the prompt gave the prior finding (`P1`, `P2`, …), so the
+    answer names the finding without restating it (`recheck_round`).
+    """
+
+    id: str
+    resolved: bool
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class StageReport:
     status: str
     confidence: float
@@ -109,6 +122,8 @@ class StageReport:
     #: from the verdict like the criteria: a malformed list cannot cost the
     #: report its status.
     findings: list[Finding] = field(default_factory=list)
+    #: In a recheck round, the answer about each prior blocking finding.
+    rechecks: list[Recheck] = field(default_factory=list)
 
 
 def _embedded_strings(node: object):
@@ -254,6 +269,17 @@ class _FindingsPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     findings: list[Any] | None = Field(default=None)
+    rechecks: list[Any] | None = Field(default=None)
+
+
+class _RecheckPayload(BaseModel):
+    """One recheck answer as an agent wrote it; one with no `resolved` is no answer."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    resolved: bool
+    note: str | None = ""
 
 
 class _FindingPayload(BaseModel):
@@ -307,13 +333,30 @@ def findings_from(raw_items: list[Any]) -> list[Finding]:
     return findings
 
 
-def _findings_of(payload: str) -> list[Finding]:
+def _findings_payload(payload: str) -> _FindingsPayload:
     try:
-        parsed = _FindingsPayload.model_validate_json(payload)
+        return _FindingsPayload.model_validate_json(payload)
     except ValidationError:
         logger.warning("stage report findings could not be parsed", exc_info=True)
-        return []
-    return findings_from(parsed.findings or [])
+        return _FindingsPayload()
+
+
+def _findings_of(payload: str) -> list[Finding]:
+    return findings_from(_findings_payload(payload).findings or [])
+
+
+def _rechecks_of(payload: str) -> list[Recheck]:
+    """The recheck answers; one an agent got wrong is skipped, and logged."""
+    rechecks: list[Recheck] = []
+    for raw in _findings_payload(payload).rechecks or []:
+        try:
+            item = _RecheckPayload.model_validate(raw)
+        except ValidationError:
+            logger.warning("stage report recheck %r could not be parsed", raw)
+            continue
+        if item.id.strip():
+            rechecks.append(Recheck(item.id.strip(), item.resolved, (item.note or "").strip()))
+    return rechecks
 
 
 class _WaiverItemPayload(BaseModel):
@@ -391,6 +434,7 @@ def _build_report(payload: str) -> StageReport | None:
         waiting_on=block.waiting_on,
         waivers=_waivers_of(payload),
         findings=_findings_of(payload),
+        rechecks=_rechecks_of(payload),
     )
 
 
