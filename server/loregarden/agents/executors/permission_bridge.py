@@ -19,6 +19,15 @@ from loregarden.agents.executors.approval_scope import (  # noqa: F401
     HOME_CHAT_STAGE_KEY,
     ApprovalScope,
 )
+from loregarden.agents.executors.stream_json import (  # noqa: F401
+    build_control_response,
+    build_user_message,
+    parse_ndjson_line,
+    parse_stored_tool_input,
+    result_failure_text,
+    result_payload_status,
+    serialize_tool_input,
+)
 from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     ASK_USER_QUESTION_TOOL,
     AUTO_APPROVED_CLI_TOOLS,
@@ -121,36 +130,6 @@ def _now() -> float:
     return time.time()
 
 
-def serialize_tool_input(tool_input: Any) -> str:
-    """Persist full tool input JSON without truncation."""
-    return json.dumps(tool_input, ensure_ascii=False)
-
-
-def parse_stored_tool_input(raw: str) -> dict[str, Any]:
-    """Parse stored tool input; tolerate legacy truncated payloads."""
-    if not raw or raw == "{}":
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        # An unparseable payload becomes an empty tool input, which is what the
-        # approver sees and what an always-allow rule would be written from.
-        logger.exception("Stored tool input is not valid JSON; treating as empty input")
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _parse_ndjson_line(line: str) -> dict[str, Any] | None:
-    line = line.strip()
-    if not line:
-        return None
-    try:
-        payload = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
 def extract_permission_request(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Normalize Claude/Cursor permission control messages."""
     msg_type = payload.get("type", "")
@@ -177,50 +156,6 @@ class ApprovalResolution:
     approved: bool
     updated_input: dict[str, Any] | None = None
     message: str = ""
-
-
-def build_control_response(
-    *,
-    request_id: str,
-    approved: bool,
-    message: str = "",
-    updated_input: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    inner: dict[str, Any]
-    if approved:
-        inner = {"behavior": "allow"}
-        # Empty updatedInput overwrites Claude's original tool args and breaks Bash/MCP.
-        if updated_input:
-            inner["updatedInput"] = updated_input
-    else:
-        inner = {"behavior": "deny", "message": message or "Denied via Loregarden inbox"}
-    return {
-        "type": "control_response",
-        "response": {
-            "subtype": "success",
-            "request_id": request_id,
-            "response": inner,
-        },
-    }
-
-
-def build_user_message(prompt: str, *, session_id: str | None = None) -> dict[str, Any]:
-    message: dict[str, Any] = {
-        "type": "user",
-        "message": {"role": "user", "content": prompt},
-        "parent_tool_use_id": None,
-    }
-    if session_id:
-        message["session_id"] = session_id
-    return message
-
-
-def result_payload_status(payload: dict[str, Any]) -> tuple[bool, bool]:
-    """Return (finished, failed) for Claude/Cursor stream-json result events."""
-    if payload.get("type") != "result":
-        return False, False
-    failed = bool(payload.get("is_error")) or payload.get("subtype") == "error"
-    return True, failed
 
 
 def _close_stdin(proc: Any) -> None:
@@ -331,6 +266,7 @@ class _LoopState:
     approval_deadline: float = 0.0
     finished_with_result: bool = False
     result_is_error: bool = False
+    result_failure: str = ""
     last_steer_poll: float = 0.0
     last_cancel_poll: float = 0.0
     idle_deadline: float = 0.0
@@ -345,6 +281,62 @@ class _LoopStep:
 
     action: str
     result: BridgeResult | None = None
+
+
+def _record_result(state: _LoopState, payload: dict[str, Any], *, failed: bool) -> None:
+    """Note a stream-json result event: the run is over, and how it ended."""
+    state.session_id = str(payload.get("session_id") or state.session_id)
+    state.finished_with_result = True
+    state.result_is_error = failed
+    state.result_failure = result_failure_text(payload) if failed else ""
+
+
+def _settled_stderr(
+    state: _LoopState, stderr: str, status: RunStatus, returncode: int | None
+) -> str:
+    """A run's stderr as recorded. A failure carries why: the CLI states it in the
+    result, and its stderr may hold only unrelated warnings, so the result leads;
+    a failure never says nothing."""
+    if status != RunStatus.FAILED:
+        return stderr
+    reasons = [state.result_failure, stderr.strip()]
+    return "\n".join(r for r in reasons if r) or f"agent CLI exited {returncode} with no output"
+
+
+def _ingest_exited_output(
+    stdout_reader: SubprocessLineReader,
+    state: _LoopState,
+    *,
+    streamer: RunStreamSink | None,
+    max_seconds: float = 5.0,
+) -> None:
+    """Read what an exited CLI wrote that the loop had not read yet.
+
+    The reader takes stdout a chunk at a time, so a CLI that writes its last
+    lines and exits at once (a missing login fails in milliseconds, init and
+    result together) leaves them buffered when `poll()` first reports the exit.
+    Dropping them lost the result, and with it the only statement of why the
+    run failed.
+    """
+    if state.finished_with_result:
+        return
+    deadline = _now() + max_seconds
+    while _now() < deadline:
+        line = stdout_reader.readline(timeout=0.2)
+        if line is None:
+            return
+        line = line.rstrip("\n")
+        state.stdout_lines.append(line)
+        if streamer:
+            streamer.append_stream_line(line)
+        payload = parse_ndjson_line(line)
+        if payload:
+            finished, failed = result_payload_status(payload)
+            if finished:
+                _record_result(state, payload, failed=failed)
+    logger.warning(
+        "An exited agent CLI was still yielding output after %ss; the rest is unread", max_seconds
+    )
 
 
 def _returned_result(step: _LoopStep) -> BridgeResult:
@@ -376,13 +368,11 @@ def _continue_while_awaiting(
         state.stdout_lines.append(line)
         if streamer:
             streamer.append_stream_line(line)
-        payload = _parse_ndjson_line(line)
+        payload = parse_ndjson_line(line)
         if payload:
             finished, failed = result_payload_status(payload)
             if finished and state.pending_approval is None:
-                state.session_id = str(payload.get("session_id") or state.session_id)
-                state.finished_with_result = True
-                state.result_is_error = failed
+                _record_result(state, payload, failed=failed)
                 return _LoopStep("break")
     elif streamer and _now() - state.last_persist >= 2.0:
         streamer.touch()
@@ -577,6 +567,7 @@ class PermissionBridgeRunner:
                 if _now() >= state.idle_deadline or _now() >= state.hard_deadline:
                     break
                 if proc.poll() is not None:
+                    _ingest_exited_output(stdout_reader, state, streamer=streamer)
                     break
 
                 cancelled = _check_cancel(run_id, proc, state)
@@ -1194,7 +1185,7 @@ class PermissionBridgeRunner:
         state.stdout_lines.append(line)
         if streamer:
             streamer.append_stream_line(line)
-        payload = _parse_ndjson_line(line)
+        payload = parse_ndjson_line(line)
         if not payload:
             return _LoopStep("continue")
 
@@ -1203,9 +1194,7 @@ class PermissionBridgeRunner:
 
         finished, failed = result_payload_status(payload)
         if finished and state.pending_approval is None:
-            state.session_id = str(payload.get("session_id") or state.session_id)
-            state.finished_with_result = True
-            state.result_is_error = failed
+            _record_result(state, payload, failed=failed)
             return _LoopStep("break")
 
         permission = extract_permission_request(payload)
@@ -1364,6 +1353,7 @@ class PermissionBridgeRunner:
             status = RunStatus.FAILED if state.result_is_error else RunStatus.SUCCEEDED
         else:
             status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
+        stderr = _settled_stderr(state, stderr, status, proc.returncode)
         return BridgeResult(
             status=status, stdout=stdout, stderr=stderr, session_id=state.session_id
         )

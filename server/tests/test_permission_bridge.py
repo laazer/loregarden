@@ -4,6 +4,7 @@ import os
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 from loregarden.agents.cli_adapters import (
     permission_bypass_enabled,
     resolve_cli_invocation,
@@ -1876,3 +1877,105 @@ def test_permission_bridge_home_chat_gates_force_push(tmp_path):
         approval = session.exec(select(Approval).where(Approval.run_id == run_id)).first()
         assert approval is not None
         assert approval.tool_name == "Bash"
+
+
+@pytest.fixture
+def planner_run():
+    """A seeded ticket and a RUNNING planner run on it, in an in-memory database."""
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_failure_reason_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="plan",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        yield session, ticket, run
+
+
+def _run_scripted(planner_run, tmp_path, chunks: list[bytes], code: int, stderr: bytes = b""):
+    session, ticket, run = planner_run
+    proc = _ScriptedProc(chunks)
+    proc.stderr = io.BytesIO(stderr)
+    while proc.emit_next():
+        pass
+    proc.finish(code)
+    invocation = SimpleNamespace(
+        argv=["unused"], cwd=str(tmp_path), adapter="claude", resume_session_id="", env={}
+    )
+    return PermissionBridgeRunner(session).run(
+        run_id=run.id,
+        ticket=ticket,
+        invocation=invocation,
+        prompt="do work",
+        timeout_seconds=30,
+        spawn_process=proc_factory(proc),
+    )
+
+
+def test_a_failed_result_with_silent_stderr_carries_the_clis_own_reason(planner_run, tmp_path):
+    """The Claude CLI reports a missing login in its result and nothing on stderr;
+    that reason, not a bare "Agent run failed", is what the run must carry."""
+    from loregarden.models.domain import RunStatus
+
+    result_line = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+        "result": "Invalid API key · Please run /login",
+        "session_id": "s",
+    }
+    result = _run_scripted(planner_run, tmp_path, [json.dumps(result_line).encode() + b"\n"], 1)
+
+    assert result.status == RunStatus.FAILED
+    assert result.stderr == "Invalid API key · Please run /login"
+
+
+def test_a_cli_that_dies_saying_nothing_still_names_how_it_died(planner_run, tmp_path):
+    from loregarden.models.domain import RunStatus
+
+    result = _run_scripted(planner_run, tmp_path, [], 3)
+
+    assert result.status == RunStatus.FAILED
+    assert result.stderr == "agent CLI exited 3 with no output"
+
+
+def test_a_failed_results_reason_leads_any_unrelated_stderr(planner_run, tmp_path):
+    from loregarden.models.domain import RunStatus
+
+    result_line = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+        "result": "Failed to authenticate. API Error: 401 Invalid bearer token",
+    }
+    result = _run_scripted(
+        planner_run,
+        tmp_path,
+        [json.dumps(result_line).encode() + b"\n"],
+        1,
+        stderr=b"Warning: some unrelated notice\n",
+    )
+
+    assert result.status == RunStatus.FAILED
+    assert result.stderr.splitlines() == [
+        "Failed to authenticate. API Error: 401 Invalid bearer token",
+        "Warning: some unrelated notice",
+    ]
