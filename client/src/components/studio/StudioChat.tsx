@@ -12,9 +12,11 @@ import { ComposerCommandMenu } from "../chat/ComposerCommandMenu";
 import { ComposerNotes } from "../chat/ComposerNotes";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
+import { StreamingReply } from "../chat/StreamingReply";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
 import { Button } from "../ui/Button";
 import {
+  agentPlanIdentity,
   agentPlanPartKey,
   agentPlanRequestTask,
   agentPlanRunSummary,
@@ -147,6 +149,15 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   const shownMessages = useMemo(
     () => withLivePlans(messages, thinking.plans, supersededPlans),
     [messages, thinking.plans, supersededPlans],
+  );
+  const threadPlanIdentities = useMemo(
+    () =>
+      new Set(
+        messages.flatMap((message) =>
+          (message.parts ?? []).map(agentPlanIdentity).filter((id): id is string => id !== null),
+        ),
+      ),
+    [messages],
   );
 
   // Message *count* is the wrong trigger on its own: a reply streams in, a
@@ -392,12 +403,14 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                   />
                 ) : null}
                 {thinking.answer.trim() ? (
-                  // The reply as it forms. Not marked up as markdown while it
-                  // streams: half a fenced block or half a table renders as
-                  // garbage that rearranges itself on every frame.
-                  <div className="lg-chat-reply lg-chat-reply--streaming">
-                    {thinking.answer}
-                  </div>
+                  // The reply as it forms: finished blocks and cards render as
+                  // they will settle; only the block in progress is plain text.
+                  <StreamingReply
+                    answer={thinking.answer}
+                    plans={thinking.plans}
+                    threadPlanIdentities={threadPlanIdentities}
+                    onPrimitiveSubmit={onPrimitiveSubmit}
+                  />
                 ) : null}
               </>
             ) : (
