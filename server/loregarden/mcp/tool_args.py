@@ -19,7 +19,10 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import TypeAdapter, ValidationError
+
 from loregarden.mcp.tool_ids import McpTool
+from loregarden.models.domain import FindingDisposition
 from loregarden.services.ticket_documents import DEFAULT_DOCUMENT_KIND
 
 logger = logging.getLogger(__name__)
@@ -375,3 +378,35 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.LIST_ARTIFACTS.value: normalize_list_artifacts,
     McpTool.READ_ARTIFACT.value: normalize_read_artifact,
 }
+
+
+#: One finding of `loregarden_complete_stage(findings=...)`, the same shape as
+#: the report block's `findings` (`stage_report.Finding`).
+FINDING_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "The defect in one sentence."},
+        "blocking": {"type": "boolean", "description": "Whether it sends the work back."},
+        "trigger": {"type": "string", "description": "How a person or caller reaches it."},
+        "path": {"type": "string", "description": "What runs from the trigger to the defect."},
+        "impact": {"type": "string", "description": "What a person using it meets."},
+        "disposition": {
+            "type": "string",
+            "enum": [disposition.value for disposition in FindingDisposition],
+            "description": "Where a finding that does not block went.",
+        },
+        "ticket": {"type": "string", "description": "The ticket, for assigned_ticket."},
+    },
+    "required": ["summary"],
+}
+
+
+_FINDINGS_ARG = TypeAdapter(list[dict[str, Any]])
+
+
+def coerce_findings(value: Any) -> list[dict[str, Any]]:
+    """`findings` as a list of objects; anything else is refused, not dropped."""
+    try:
+        return _FINDINGS_ARG.validate_python(value or [])
+    except ValidationError as exc:
+        raise ValueError("findings must be a list of objects") from exc

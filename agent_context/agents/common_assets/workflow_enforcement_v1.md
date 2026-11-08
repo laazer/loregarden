@@ -62,7 +62,7 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "findings": [{"summary": "<the defect, one sentence>", "blocking": true, "trigger": "<how it is reached>", "path": "<what runs from there to the defect>", "impact": "<what a person using it meets>"}, {"summary": "<a finding that does not block>", "blocking": false, "disposition": "documented_exception|assigned_ticket|out_of_scope", "ticket": "<external id, for assigned_ticket>"}]}
 <<<END_STAGE_REPORT>>>
 ```
 
@@ -93,6 +93,18 @@ Field rules:
   round and was then rerouted three more times on genuine new findings, none of which any
   criterion covered.
 
+- `findings` (**review, verify and gate stages**): everything you found, one object each.
+  A `fail` or `needs_rework` from one of these stages is a reject **only if at least one
+  finding has `"blocking": true` and a non-empty `trigger`, `path` and `impact`**:
+  - `trigger`: a reachable way in — the request, input or sequence that reaches the defect.
+  - `path`: the code that runs from that trigger to the defect, by file and function.
+  - `impact`: what a person using the system meets because of it.
+  A reject with no such finding is not treated as a reject: the stage proceeds as passed and
+  the ticket's history says why. A finding you cannot give all three for does not block. Every
+  finding that does not block names its `disposition`: `documented_exception` (known and
+  accepted, with the reason in `summary`), `assigned_ticket` (already covered by planned work;
+  put its external id in `ticket`), or `out_of_scope`. It is recorded, not dropped. Through the
+  tool, pass the same list as `loregarden_complete_stage(findings=[...])`.
 - `unmet_criteria`: when `status` is `fail` or `needs_rework`, the acceptance criteria your
   finding makes false — the grounds for the rejection, not a restatement of it. Delivered to the
   target stage alongside `reroute_context`, so the agent redoing the work knows what "done" would

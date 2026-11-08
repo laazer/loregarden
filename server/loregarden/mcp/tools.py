@@ -63,6 +63,7 @@ from loregarden.mcp.ticket_ops_tools import (
     execute_ticket_ops_tool,
     normalize_ticket_ops_args,
 )
+from loregarden.mcp.tool_args import FINDING_SCHEMA, coerce_findings
 from loregarden.mcp.tool_args import TABLE_NORMALIZERS as _TABLE_NORMALIZERS
 from loregarden.mcp.tool_args import coerce_mapping as _coerce_mapping
 from loregarden.mcp.tool_args import coerce_optional_bool as _coerce_optional_bool
@@ -102,6 +103,7 @@ from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
+from loregarden.services.stage_report import findings_from
 from loregarden.services.stage_shape import current_stage_shape
 from loregarden.services.ticket_dependencies import resolve_prerequisites
 from loregarden.services.ticket_discovery import list_tickets_mcp
@@ -191,6 +193,7 @@ def _normalize_stage_scoped(name: str, args: dict[str, Any]) -> dict[str, Any]:
         payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
         payload["outcome"] = _coerce_optional_string(args.get("outcome")) or "pass"
         payload["blocking_issues"] = _coerce_optional_string(args.get("blocking_issues"))
+        payload["findings"] = coerce_findings(args.get("findings"))
     if name == "loregarden_skip_stage":
         payload["reason"] = _coerce_optional_string(args.get("reason"))
     if name == "loregarden_request_approval":
@@ -529,6 +532,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "outcome": _enum_string_prop("Stage outcome.", ["pass", "reject"]),
                 "blocking_issues": _string_prop("Optional rework notes when routing upstream."),
+                "findings": {
+                    "type": "array",
+                    "description": (
+                        "What a review, verify or gate stage found. A reject from one of those "
+                        "stands only on a finding with blocking=true and a non-empty trigger, "
+                        "path and impact; any other finding names its disposition."
+                    ),
+                    "items": FINDING_SCHEMA,
+                },
             },
             required=["run_id", "stage_key"],
         ),
@@ -1390,6 +1402,7 @@ def execute_tool(
             next_stage_key=arguments.get("next_stage_key", ""),
             outcome=arguments.get("outcome", "pass"),
             blocking_issues=arguments.get("blocking_issues", ""),
+            findings=findings_from(arguments.get("findings") or []),
         )
         session.refresh(ticket)
         return json.dumps(

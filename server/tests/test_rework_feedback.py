@@ -43,6 +43,7 @@ from loregarden.services.workflow_state import (
     parse_stage_map,
     stages_up_to_done_json,
 )
+from loregarden.testing.factories import COMPLETE_BLOCKING_FINDING, findings_fragment
 from sqlmodel import Session, select
 
 # A finding longer than record_blocking_issue's 200-char inline cap — the exact
@@ -197,7 +198,7 @@ def _report(status: str, confidence: float, reroute_to_stage="", reroute_context
         extra += f', "reroute_context": "{safe}"'
     return (
         "Narrative.\n<<<LOREGARDEN_STAGE_REPORT>>>\n"
-        f'{{"status": "{status}", "confidence": {confidence}{extra}}}\n'
+        f'{{"status": "{status}", "confidence": {confidence}{extra}{findings_fragment(status)}}}\n'
         "<<<END_STAGE_REPORT>>>\n"
     )
 
@@ -462,6 +463,7 @@ def _report_unmet(status: str, reroute_to_stage: str, criteria: list[str]) -> st
         "reroute_to_stage": reroute_to_stage,
         "reroute_context": "same finding again",
         "unmet_criteria": criteria,
+        "findings": [COMPLETE_BLOCKING_FINDING],
     }
     return f"Narrative.\n<<<LOREGARDEN_STAGE_REPORT>>>\n{json.dumps(payload)}\n<<<END_STAGE_REPORT>>>\n"
 
