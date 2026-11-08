@@ -14,6 +14,9 @@ SPEC_AGENT_ID = "spec"
 UI_DESIGN_AGENT_ID = "ui-design-decision"
 #: Proves a ticket's acceptance criteria met, one by one (`services.criterion_ledger`).
 VERIFIER_AGENT_ID = "verifier"
+#: Blobert TDD's gate: maps each acceptance criterion to its evidence, so in a
+#: workflow with no verify stage it is the stage that settles them met.
+AC_GATEKEEPER_AGENT_ID = "ac_gatekeeper"
 
 AGENTS: dict[str, dict] = {
     "planner": {

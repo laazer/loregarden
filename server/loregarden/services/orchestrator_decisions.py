@@ -15,12 +15,13 @@ replacing one with the other loses a reader.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from loregarden.core.event_bus import event_bus
-from loregarden.models.domain import EventType, OrchestratorDecision, Ticket
-from sqlmodel import Session
+from loregarden.models.domain import DomainEvent, EventType, OrchestratorDecision, Ticket
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -66,3 +67,14 @@ def record_orchestrator_decision(
             **(evidence or {}),
         },
     )
+
+
+def decisions_of(session: Session, ticket_ids: list[str]) -> list[tuple[DomainEvent, dict]]:
+    """Every orchestrator decision on ``ticket_ids``, newest first, with its payload."""
+    events = session.exec(
+        select(DomainEvent)
+        .where(DomainEvent.type == EventType.ORCHESTRATOR_DECISION)
+        .where(col(DomainEvent.ticket_id).in_(ticket_ids))
+        .order_by(col(DomainEvent.created_at).desc())
+    ).all()
+    return [(event, json.loads(event.payload_json or "{}")) for event in events]

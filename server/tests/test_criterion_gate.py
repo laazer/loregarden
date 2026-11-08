@@ -35,7 +35,8 @@ from loregarden.services import criterion_split_creator  # noqa: F401 — instal
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.auto_decisions import auto_decisions_under
 from loregarden.services.criterion_check import _render, _runner_for
-from loregarden.services.criterion_gate import check_criteria_if_due, check_due, gate_of
+from loregarden.services.criterion_gate import check_criteria_if_due
+from loregarden.services.criterion_gate_stages import check_due, gate_of
 from loregarden.services.criterion_ledger import (
     record_delegation,
     settle_met,
@@ -49,6 +50,7 @@ from loregarden.services.orchestration_profile import (
     load_profile_from_path,
     orchestration_dir,
 )
+from loregarden.services.rework_feedback import latest_rework_context
 from loregarden.services.seed import seed_database
 from loregarden.services.unsettled_criteria_runs import done_tickets_with_unsettled_criteria
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
@@ -126,13 +128,42 @@ def env_fixture(checkout: Path):
         yield profile
 
 
+#: Blobert TDD's spine: no verify stage; its gate is the AC gatekeeper, then an
+#: optional playtest a person signs.
+BLOBERT_SHAPE = [
+    {"key": "implement", "name": "Implement", "agent_id": "core_simulation", "order": 1},
+    {"key": "script_review", "name": "Review", "agent_id": "static_qa", "order": 2},
+    {
+        "key": "ac_gate",
+        "name": "AC Gate",
+        "agent_id": "ac_gatekeeper",
+        "order": 3,
+        "stage_type": "gate",
+    },
+    {"key": "playtest", "name": "Playtest", "agent_id": "", "order": 4, "optional": True},
+    {"key": "learning", "name": "Learning", "agent_id": "learning", "order": 5},
+    {"key": "done", "name": "Done", "order": 6, "terminal": True},
+]
+
+
 @pytest.fixture(name="ticket")
 def ticket_fixture(db_session: Session) -> Ticket:
     """A feature under a milestone, every stage before its gate done: about to enter it."""
+    return _ticket_on(db_session, V3_SHAPE, through_gate=False)
+
+
+@pytest.fixture(name="blobert_ticket")
+def blobert_ticket_fixture(db_session: Session) -> Ticket:
+    """A Blobert TDD feature whose AC gate just passed: about to enter playtest."""
+    return _ticket_on(db_session, BLOBERT_SHAPE, through_gate=True)
+
+
+def _ticket_on(session: Session, shape: list[dict], *, through_gate: bool) -> Ticket:
+    db_session = session
     seed_database(db_session)
     workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
     template = WorkflowTemplate(
-        slug="criteria-v3-shape", name="V3 shape", stages_json=json.dumps(V3_SHAPE)
+        slug="criteria-shape", name="criteria shape", stages_json=json.dumps(shape)
     )
     db_session.add(template)
     db_session.flush()
@@ -152,7 +183,7 @@ def ticket_fixture(db_session: Session) -> Ticket:
     _, stages = resolve_ticket_stages(db_session, ticket)
     gate = gate_of(stages)
     for stage in stages:
-        if stage.order < gate.order:
+        if stage.order < gate.order or (through_gate and stage.order == gate.order):
             set_stage_status(ticket, instance, stages, stage.key, StageStatus.DONE)
     db_session.add_all([ticket, instance])
     db_session.commit()
@@ -206,8 +237,9 @@ def test_the_check_is_due_only_on_entering_the_gate_after_verify(db_session, tic
     _, stages = resolve_ticket_stages(db_session, ticket)
     gate = gate_of(stages)
     assert gate.key == "gate"
-    assert check_due(stages, gate)
-    assert not check_due(stages, next(s for s in stages if s.key == "review"))
+    stage_map = parse_stage_map(workflow_instance_for(db_session, ticket.id), stages)
+    assert check_due(stages, stage_map, gate)
+    assert not check_due(stages, stage_map, next(s for s in stages if s.key == "review"))
 
 
 def test_the_gate_is_not_entered_with_a_criterion_unanswered(db_session, ticket, env):
@@ -366,6 +398,97 @@ def test_a_test_no_command_reruns_must_still_exist(db_session, ticket, env):
     _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_never_written")
     check_criteria_if_due(db_session, _orch_run(db_session, ticket), ticket)
     assert _next(db_session, ticket) == "verify"
+
+
+def _set(session: Session, ticket: Ticket, key: str, status: StageStatus) -> None:
+    instance = workflow_instance_for(session, ticket.id)
+    _, stages = resolve_ticket_stages(session, ticket)
+    set_stage_status(ticket, instance, stages, key, status)
+    session.add_all([ticket, instance])
+    session.commit()
+
+
+def _due(session: Session, ticket: Ticket, key: str) -> bool:
+    _, stages = resolve_ticket_stages(session, ticket)
+    stage_map = parse_stage_map(workflow_instance_for(session, ticket.id), stages)
+    return check_due(stages, stage_map, next(s for s in stages if s.key == key))
+
+
+def test_a_blobert_ticket_is_checked_on_leaving_its_ac_gate(db_session, blobert_ticket):
+    assert _next(db_session, blobert_ticket) == "playtest"
+    assert _due(db_session, blobert_ticket, "playtest")
+    assert not _due(db_session, blobert_ticket, "ac_gate")
+
+
+def test_a_ruled_out_playtest_moves_the_check_to_the_stage_after_it(db_session, blobert_ticket):
+    _set(db_session, blobert_ticket, "playtest", StageStatus.WONT_DO)
+    assert _due(db_session, blobert_ticket, "learning")
+
+
+def test_a_blobert_ticket_is_checked_once_after_its_gate(db_session, blobert_ticket):
+    _set(db_session, blobert_ticket, "playtest", StageStatus.AWAITING)
+    assert not _due(db_session, blobert_ticket, "playtest")
+    _set(db_session, blobert_ticket, "playtest", StageStatus.DONE)
+    assert not _due(db_session, blobert_ticket, "learning")
+
+
+def test_a_blobert_ticket_cannot_pass_its_ac_gate_with_a_criterion_unanswered(
+    db_session, blobert_ticket, env
+):
+    _met(db_session, blobert_ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    assert not check_criteria_if_due(
+        db_session, _orch_run(db_session, blobert_ticket), blobert_ticket
+    )
+    assert _next(db_session, blobert_ticket) == "ac_gate"
+    sent = next(p for p in _decisions(db_session, blobert_ticket) if "criteria_sent_to_verify" in p)
+    assert "1 acceptance criteria" in sent
+    assert latest_rework_context(db_session, blobert_ticket, "ac_gate").startswith(
+        "Before 'playtest'"
+    )
+
+
+def test_a_blobert_ticket_with_every_criterion_met_goes_on_past_its_gate(
+    db_session, blobert_ticket, env
+):
+    _met(db_session, blobert_ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    _met(db_session, blobert_ticket, CRITERIA[1], "server/tests/test_arms.py::test_reads_width")
+    assert not check_criteria_if_due(
+        db_session, _orch_run(db_session, blobert_ticket), blobert_ticket
+    )
+    assert _next(db_session, blobert_ticket) == "playtest"
+    assert any("criteria_checked" in p for p in _decisions(db_session, blobert_ticket))
+
+
+def test_the_detector_covers_a_blobert_ticket_done_with_a_criterion_unanswered(
+    db_session, blobert_ticket
+):
+    _orch_run(db_session, blobert_ticket)
+    blobert_ticket.state = TicketState.DONE
+    db_session.add(blobert_ticket)
+    db_session.commit()
+    assert [v.ticket_id for v in done_tickets_with_unsettled_criteria(db_session)] == [
+        blobert_ticket.id
+    ]
+
+
+def test_blobert_reruns_a_criterions_python_tests_through_its_asset_environment():
+    commands = load_profile_from_path(orchestration_dir() / "blobert.yaml").gates
+    by_prefix = {c.prefix: c for c in commands.criterion_test_commands}
+    asset = "asset_generation/python/tests/test_cage.py::test_counts"
+    ci = "tests/ci/test_gates.py::test_blocks"
+
+    assert (
+        _runner_for(asset, commands.criterion_test_commands)
+        is by_prefix["asset_generation/python/"]
+    )
+    assert _runner_for(ci, commands.criterion_test_commands) is by_prefix["tests/ci/"]
+    assert shlex.split(_render(by_prefix["asset_generation/python/"], [asset]))[-1] == asset
+    assert shlex.split(_render(by_prefix["tests/ci/"], [ci]))[-1] == ci
+    # Godot tests have no per-test runner: they are only checked to exist.
+    assert (
+        _runner_for("tests/movement/test_dash.gd::test_cooldown", commands.criterion_test_commands)
+        is None
+    )
 
 
 def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():

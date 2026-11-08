@@ -52,6 +52,7 @@ from loregarden.models.domain import (
 from loregarden.services import stage_fanout_groups as groups
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.dependency_hold import refuse_held_dispatch
+from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.git_commit_push_service import commit_all_dirty_in
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
@@ -147,6 +148,7 @@ def launch_fanout(
     # Before the stage is marked RUNNING below: `start_run` holds each attempt
     # too, but by then the group exists and the stage reads as running.
     refuse_held_dispatch(session, ticket, stage_key=stage_key)
+    refuse_unchecked_gate(session, ticket, stage_key=stage_key)
 
     open_group = _open_group_for(session, ticket.id)
     if open_group is not None:

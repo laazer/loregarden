@@ -179,6 +179,7 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "criteria_sent_to_verify",
         "criteria_checked",
         "deferred_undecided_findings",
+        "signed_off_on_criteria",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

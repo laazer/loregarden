@@ -132,6 +132,10 @@ class GatesConfig(BaseModel):
     # exist, and the check says so on the ticket's history rather than passing
     # them as rerun.
     criterion_test_commands: list[CriterionTestCommand] = Field(default_factory=list)
+    # Whether a ticket's gate signs itself off when its criteria check answered
+    # for every criterion at the ticket's HEAD (`criteria_sign_off`). Off keeps
+    # the sign-off a person's in this workspace.
+    sign_off_when_criteria_checked: bool = True
 
 
 class GitAutomationConfig(BaseModel):
@@ -506,7 +510,11 @@ AUTOFIX_GATE_KEYS = frozenset(
 #: Keys a gates editor that does not send them must not overwrite: the autofix
 #: policy, and the gate lease size — both usually hand-set in the YAML, and
 #: neither shown by the editor that saves enabled/commands/transition_script.
-PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {"capacity_footprint", "criterion_test_commands"}
+PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {
+    "capacity_footprint",
+    "criterion_test_commands",
+    "sign_off_when_criteria_checked",
+}
 
 
 def update_gates_config(
