@@ -180,6 +180,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "criteria_checked",
         "deferred_undecided_findings",
         "signed_off_on_criteria",
+        "stage_inputs_missing",
+        "carried_forward_pass",
         # Normal (client tone()): a review passed with what it read on record.
         "read_evidence_checked",
         # Failed tone, the default: a pass that read nothing of the diff.

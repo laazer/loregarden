@@ -27,6 +27,7 @@ from loregarden.models.domain.enums_exit_actions import (
     ApprovalResolutionAction,
     ExitActionResolutionMode,
 )
+from loregarden.models.domain.stage_input_enums import StageInput
 from loregarden.models.domain.work_item_types import WorkItemType
 from pydantic import ConfigDict, model_validator
 from sqlmodel import Field, SQLModel
@@ -71,6 +72,10 @@ class WorkflowStageDef(ExitActionsStage):
     # Evidence kinds this stage must produce for the current commit before it can
     # pass. Empty means unproven work advances, which is the old behaviour.
     required_evidence: list[str] = Field(default_factory=list)
+    # What this stage must be given before its agent is spawned, the mirror of
+    # `required_evidence`: checked by `services.stage_readiness`, and a missing
+    # one blocks the stage without spawning. Empty means no check, as before.
+    required_inputs: list[StageInput] = Field(default_factory=list)
     # Ends the workflow when reached. Falls back to `key == "done"` for templates
     # authored before this flag existed, including version-pinned instances.
     terminal: bool = False
@@ -1168,6 +1173,8 @@ class StudioWorkflowStage(ExitActionsStage):
     # from Studio — which is how `terminal` and `skip_when` were once lost, and
     # how a live template's evidence gates would be.
     required_evidence: list[str] = Field(default_factory=list)
+    #: See `WorkflowStageDef.required_inputs`.
+    required_inputs: list[StageInput] = Field(default_factory=list)
     checklist: list[str] = Field(default_factory=list)
     stage_brief: str = ""
     #: See `WorkflowStageDef.timeout_seconds`.

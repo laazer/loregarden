@@ -42,6 +42,7 @@ from loregarden.models.domain.read_evidence_enums import *  # noqa: F401,F403
 from loregarden.models.domain.schemas import *  # noqa: F401,F403
 from loregarden.models.domain.schemas_exit_actions import *  # noqa: F401,F403
 from loregarden.models.domain.ship_tables import *  # noqa: F401,F403
+from loregarden.models.domain.stage_input_enums import *  # noqa: F401,F403
 from loregarden.models.domain.stage_types import *  # noqa: F401,F403
 from loregarden.models.domain.survey_enums import *  # noqa: F401,F403
 from loregarden.models.domain.survey_tables import *  # noqa: F401,F403

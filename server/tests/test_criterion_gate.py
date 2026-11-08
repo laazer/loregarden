@@ -489,3 +489,16 @@ def test_blobert_reruns_a_criterions_python_tests_through_its_asset_environment(
         _runner_for("tests/movement/test_dash.gd::test_cooldown", commands.criterion_test_commands)
         is None
     )
+
+
+def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():
+    profile = load_profile_from_path(orchestration_dir() / "loregarden.yaml")
+    commands = profile.gates.criterion_test_commands
+    test_id = 'client/src/lib/__tests__/criterionJest.test.ts::"refuses an id with no test name"'
+
+    runner = _runner_for(test_id, commands)
+
+    assert runner is not None and runner.prefix == "client/"
+    argv = shlex.split(_render(runner, [test_id]))
+    assert argv == ["node", "client/scripts/criterion-jest.cjs", test_id]
+    assert (orchestration_dir().parents[1] / argv[1]).is_file()

@@ -120,6 +120,15 @@ class OrchestratorDecision(StrEnum):
     #: criterion answered for at the ticket's HEAD and nothing under it
     #: decided in a person's place (`criteria_sign_off`).
     SIGNED_OFF_ON_CRITERIA = "signed_off_on_criteria"
+    #: A stage's declared inputs (`required_inputs`) were missing, so it was not
+    #: started: the ticket blocked, or a start by hand was refused, naming them
+    #: (`stage_readiness`). The evidence carries an estimate of the tokens spared.
+    STAGE_INPUTS_MISSING = "stage_inputs_missing"
+    #: A review lens that passed was not re-run, because nothing it could read
+    #: changed since: the tree is the one it passed on, or the rework touched
+    #: none of the files it read (`review_relens`). The evidence names the commit
+    #: range and what its passing run spent.
+    CARRIED_FORWARD_PASS = "carried_forward_pass"
     #: A review, verify or gate run passed, and its own tool calls show how much
     #: of the diff it read (`read_evidence`): every file, or only some.
     READ_EVIDENCE_CHECKED = "read_evidence_checked"
