@@ -155,7 +155,10 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "criteria_sent_to_verify" ||
     decision === "criteria_checked" ||
     decision === "deferred_undecided_findings" ||
-    decision === "signed_off_on_criteria"
+    decision === "signed_off_on_criteria" ||
+    // A lens not re-run on a tree nothing changed is the pipeline saving a
+    // turn; a stage refused for a missing input stays the "failed" default.
+    decision === "carried_forward_pass"
     ? "normal"
     : "failed";
   }

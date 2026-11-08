@@ -17,6 +17,13 @@ still has something to re-derive.
 So: re-run a passing lens when the rework diff intersects the files that lens
 read. The reads come from lg-workflow-integrity-681.
 
+One case needs no reads at all: a tree nothing has changed since the lens passed
+on (`stage_readiness.unchanged_since`). There is nothing new for it to read, so
+its pass is carried forward whatever was recorded about its reads.
+
+Every lens not re-run is recorded on the history rail with the commit range and
+what its passing run spent (`CARRIED_FORWARD_PASS`), so the saving is countable.
+
 EVERY UNKNOWN RE-RUNS. No record of what the lens read, no record of what the
 rework changed, a run still in flight — each of those means the intersection
 cannot be computed, and an uncomputable intersection is not an empty one. With no
@@ -36,7 +43,9 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
+from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.parallel_stage import latest_member_run, member_passed, member_skill_name
+from loregarden.services.stage_readiness import record_carried_forward, unchanged_since
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, col, select
@@ -54,6 +63,9 @@ class LensDecision:
     spec: ParallelAgentSpec
     rerun: bool
     reason: str
+    #: The passing run a lens not re-run carries forward, and the commits since.
+    prior: AgentRun | None = None
+    commit_range: str = ""
 
 
 def _read_paths(run: AgentRun) -> set[str] | None:
@@ -107,6 +119,16 @@ def _decide_one(
         # was aimed at.
         return LensDecision(spec, True, "did not pass its last run")
 
+    unchanged = unchanged_since(session, ticket, previous)
+    if unchanged:
+        return LensDecision(
+            spec,
+            False,
+            f"passed on {unchanged}, and nothing has changed since",
+            previous,
+            unchanged,
+        )
+
     read = _read_paths(previous)
     if read is None:
         return LensDecision(spec, True, "no record of what it read last time")
@@ -125,7 +147,11 @@ def _decide_one(
         more = f" (+{len(overlap) - 3} more)" if len(overlap) > 3 else ""
         return LensDecision(spec, True, f"the rework changed files it read: {shown}{more}")
     return LensDecision(
-        spec, False, f"passed, and the rework touched none of the {len(read)} files it read"
+        spec,
+        False,
+        f"passed, and the rework touched none of the {len(read)} files it read",
+        previous,
+        f"{previous.start_head_sha[:9] or '?'}..{resolve_head_sha(session, ticket)[:9] or '?'}",
     )
 
 
@@ -173,13 +199,28 @@ def record_relens_decisions(
     stage_key: str,
     decisions: list[LensDecision],
 ) -> None:
-    """Write the round's reasoning onto the stage, leaving its status alone.
+    """Record each lens not re-run on the history rail, and the round's reasoning
+    on the stage, leaving its status alone.
 
     On the stage rather than in a log because that is where the workflow pane
     shows it: a lens that quietly did not run is indistinguishable from one that
     ran and found nothing, and the whole risk of this change is that a skip is
     invisible.
     """
+    for decision in decisions:
+        if decision.prior is None:
+            continue
+        skill = member_skill_name(stage_def, decision.spec)
+        record_carried_forward(
+            session,
+            ticket,
+            stage_key,
+            lens=decision.spec.agent_id + (f"/{skill}" if skill else ""),
+            prior=decision.prior,
+            commit_range=decision.commit_range,
+            reason=decision.reason,
+        )
+    session.commit()
     instance = session.exec(
         select(WorkflowInstance).where(col(WorkflowInstance.ticket_id) == ticket.id)
     ).first()

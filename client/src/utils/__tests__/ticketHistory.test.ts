@@ -165,6 +165,17 @@ describe("orchestrator decisions", () => {
     expect(blocked.tone).toBe("failed");
   });
 
+  // lg-milestone-that-2468: a lens carried forward saved a turn; a stage
+  // refused for a missing input needs someone to supply it.
+  it("reads a carried-forward pass as normal and a stage missing its input as trouble", () => {
+    const [carried, missing] = historyLines([
+      decision("carried_forward_pass", "static_qa carried forward its pass from run_1.", "review"),
+      decision("stage_inputs_missing", "'gate' was not started: missing diff.", "gate"),
+    ]);
+    expect(carried.tone).toBe("normal");
+    expect(missing.tone).toBe("failed");
+  });
+
   it("still says what it was when the reason is missing", () => {
     const [line] = historyLines([decision("settled_orphaned_run", "")]);
     expect(line.text).toContain("settled orphaned run");

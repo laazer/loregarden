@@ -140,6 +140,10 @@ def test_finished_stages_are_not_charged_again(session, workspace):
 
 def test_a_running_stage_is_charged_only_for_what_is_left(session, workspace):
     ticket = _ticket(session, workspace, "T-3", done_stages=("spec",), running_stage="implement")
+    # The estimator is handed the clock rather than reading it. Read live, the
+    # elapsed time grew by however long setup took, and a loaded pre-push run
+    # once spent 2.1s of it, past the tolerance this used to allow.
+    now = datetime(2026, 11, 8, 12, 0, tzinfo=timezone.utc)
     session.add(
         AgentRun(
             run_code="r-1",
@@ -148,13 +152,14 @@ def test_a_running_stage_is_charged_only_for_what_is_left(session, workspace):
             agent_id="backend_implementer",
             stage_key="implement",
             status=RunStatus.RUNNING,
-            started_at=datetime.now(timezone.utc) - timedelta(seconds=150),
+            started_at=now - timedelta(seconds=150),
         )
     )
     session.commit()
 
+    estimator = TicketTreeEstimator(session, stats=FLAT_STATS, now=now)
     # 400 - 150 elapsed, plus verify.
-    assert _estimator(session).estimate(ticket.id).own_seconds == pytest.approx(450.0, abs=2)
+    assert estimator.estimate(ticket.id).own_seconds == pytest.approx(450.0)
 
 
 def test_a_done_ticket_costs_nothing(session, workspace):
