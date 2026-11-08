@@ -332,3 +332,26 @@ describe("where a decision's detail comes from", () => {
     expect(line.detail).toBeUndefined();
   });
 });
+
+// lg-milestone-that-2467: a review's pass rests on having read the diff, and its
+// own tool calls are what say whether it did.
+describe("read evidence", () => {
+  function evidence(kind: string, filesRead: string[]): TicketHistoryEvent {
+    const event = decision(kind, "Run r_1 read 1 of the 3 changed files.", "review");
+    return { ...event, payload: { ...event.payload, read_evidence: "insufficient", files_read: filesRead } };
+  }
+
+  it("reads a pass with its reads on record as normal, and names the files behind the line", () => {
+    const [line] = historyLines([evidence("read_evidence_checked", ["server/a.py"])]);
+
+    expect(line.tone).toBe("normal");
+    expect(line.detail).toBe("Read: server/a.py");
+  });
+
+  it("reads a refused pass as trouble, with nothing behind the line when nothing was read", () => {
+    const [line] = historyLines([evidence("refused_unread_pass", [])]);
+
+    expect(line.tone).toBe("failed");
+    expect(line.detail).toBeUndefined();
+  });
+});

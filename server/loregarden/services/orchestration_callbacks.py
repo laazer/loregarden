@@ -101,14 +101,7 @@ def _verdict_after_settle(
     remaining: tuple[UnresolvedItem, ...],
 ) -> StageVerdict:
     """Keep settle's remaining names; a live PASS with names becomes NEEDS_REWORK."""
-    if not remaining:
-        return verdict
-    status = (
-        StageReportStatus.NEEDS_REWORK
-        if verdict.status is StageReportStatus.PASS
-        else verdict.status
-    )
-    return StageVerdict(status=status, unresolved=remaining)
+    return verdict.after_settle(remaining)
 
 
 class OrchestrationCallbackService:

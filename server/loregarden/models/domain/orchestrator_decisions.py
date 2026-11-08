@@ -129,3 +129,9 @@ class OrchestratorDecision(StrEnum):
     #: none of the files it read (`review_relens`). The evidence names the commit
     #: range and what its passing run spent.
     CARRIED_FORWARD_PASS = "carried_forward_pass"
+    #: A review, verify or gate run passed, and its own tool calls show how much
+    #: of the diff it read (`read_evidence`): every file, or only some.
+    READ_EVIDENCE_CHECKED = "read_evidence_checked"
+    #: A review, verify or gate run passed having read none of the diff's files,
+    #: or with no tool calls at all, so the pass was refused (`read_evidence`).
+    REFUSED_UNREAD_PASS = "refused_unread_pass"

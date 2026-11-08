@@ -17,6 +17,8 @@ from typing import Any
 
 from loregarden.agents.registry import SPEC_AGENT_ID
 from loregarden.models.domain import (
+    BlockKind,
+    ReadEvidenceStatus,
     StageReportStatus,
     StageType,
     Ticket,
@@ -26,6 +28,7 @@ from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.operation_criteria import pending_operation_criteria
+from loregarden.services.read_evidence import stage_read_evidence
 from loregarden.services.stage_report import StageReport
 from loregarden.services.studio_routing import is_agentless_stage, took_light_route
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -52,6 +55,10 @@ _UNJUDGEABLE_EVIDENCE_NAME = "evidence:unjudgeable"
 _UX_ANSWERS_NAME = "ux_answers missing"
 _FIX_COVERAGE_NAME = "fix_coverage missing"
 _OPERATION_CRITERIA_NAME = "operation_criteria pending"
+#: A waiver in the run's report does not clear these: the signal is live, read
+#: from the transcript on every derive, and a live signal sets the status.
+_READ_NOTHING_NAME = "read:nothing"
+_READ_NO_TOOLS_NAME = "read:no_tools"
 # Same path handoff_writer uses. Copied rather than imported: handoff_writer
 # imports orchestration_callbacks, which imports this module.
 _GATE_MODULE_RELPATH = "ci/scripts/gates/handoff_validation_check.py"
@@ -118,6 +125,9 @@ class VerdictSignal:
     producer_stage_key: str = ""
     detail: str = ""
     is_claim: bool = False
+    #: Who can clear a `blocked` signal, when the signal knows. Carried onto the
+    #: report so the block is classified by it rather than guessed from prose.
+    block_kind: BlockKind | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +157,17 @@ class StageVerdict:
 
     status: StageReportStatus
     unresolved: tuple[UnresolvedItem, ...]
+    #: The kind of the blocking signal that won, when it named one.
+    block_kind: BlockKind | None = None
+
+    def after_settle(self, remaining: tuple[UnresolvedItem, ...]) -> StageVerdict:
+        """Keep settle's remaining names; a live PASS with names becomes NEEDS_REWORK."""
+        if not remaining:
+            return self
+        status = (
+            StageReportStatus.NEEDS_REWORK if self.status is StageReportStatus.PASS else self.status
+        )
+        return replace(self, status=status, unresolved=remaining)
 
 
 def claim_from_tool_outcome(outcome: str) -> StageReportStatus:
@@ -210,7 +231,17 @@ def derive_verdict(signals: Sequence[VerdictSignal] | Iterable[VerdictSignal]) -
             for name in names
         )
     )
-    return StageVerdict(status=status, unresolved=unresolved)
+    block_kind = next(
+        (
+            signal.block_kind
+            for signal in judgeable
+            if signal.outcome is StageReportStatus.BLOCKED and signal.block_kind is not None
+        ),
+        None,
+    )
+    if status is not StageReportStatus.BLOCKED:
+        block_kind = None
+    return StageVerdict(status=status, unresolved=unresolved, block_kind=block_kind)
 
 
 def collect_signals(
@@ -267,13 +298,19 @@ def report_with_verdict(
         context = existing
     reroute_to = report.reroute_to_stage
     claimed_pass = report.status == StageReportStatus.PASS
-    if claimed_pass and verdict.status is not StageReportStatus.PASS:
+    # A blocked verdict goes nowhere: it waits for whoever can clear it, and a
+    # reroute target would make a parallel lens read as a rejection to rerun.
+    if claimed_pass and verdict.status not in (
+        StageReportStatus.PASS,
+        StageReportStatus.BLOCKED,
+    ):
         reroute_to = current_stage
     return replace(
         report,
         status=verdict.status.value,
         reroute_to_stage=reroute_to,
         reroute_context=context,
+        blocked_kind=report.blocked_kind or verdict.block_kind,
     )
 
 
@@ -520,6 +557,7 @@ def _folded_pass_held_signals(
                 detail=coverage_missing,
             )
         )
+    signals.extend(_read_evidence_signals(session, ticket, agent_id, stage_key=stage_key))
     if agent_id == SPEC_AGENT_ID and pending_operation_criteria(session, ticket):
         signals.append(
             VerdictSignal(
@@ -531,3 +569,44 @@ def _folded_pass_held_signals(
             )
         )
     return signals
+
+
+def _read_evidence_signals(
+    session: Session, ticket: Ticket, agent_id: str, *, stage_key: str
+) -> list[VerdictSignal]:
+    """A pass from a run that read none of the diff is not a pass (`read_evidence`).
+
+    Read from the run's transcript, so nothing in its report changes it. A run
+    with tool calls that read nothing is sent back to its own stage; one with no
+    tool calls at all could not have read anything, and blocks as the harness.
+    """
+    evidence = stage_read_evidence(session, ticket, agent_id=agent_id, stage_key=stage_key)
+    if evidence is None:
+        return []
+    if evidence.status is ReadEvidenceStatus.NONE:
+        return [
+            VerdictSignal(
+                source="read_evidence",
+                item_key=_READ_NOTHING_NAME,
+                outcome=StageReportStatus.NEEDS_REWORK,
+                producer_agent_id=agent_id,
+                producer_stage_key=stage_key,
+                detail=(
+                    f"{evidence.summary()} Read the changed files (the Read tool, or "
+                    "`git diff` over the ticket's range) before reporting a pass."
+                ),
+            )
+        ]
+    if evidence.status is ReadEvidenceStatus.NO_TOOLS:
+        return [
+            VerdictSignal(
+                source="read_evidence",
+                item_key=_READ_NO_TOOLS_NAME,
+                outcome=StageReportStatus.BLOCKED,
+                producer_agent_id=agent_id,
+                producer_stage_key=stage_key,
+                detail=evidence.summary(),
+                block_kind=BlockKind.HARNESS,
+            )
+        ]
+    return []

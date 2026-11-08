@@ -82,6 +82,11 @@ function requeueText(event: TicketHistoryEvent): string {
  */
 function decisionDetail(event: TicketHistoryEvent): string | undefined {
   const decision = str(event.payload.decision);
+  // A review's read evidence: the line says how many files; the detail names them.
+  const filesRead = event.payload.files_read;
+  if (Array.isArray(filesRead) && filesRead.length > 0) {
+    return `Read: ${filesRead.map(str).join(", ")}`;
+  }
   const detail =
     decision === "requeued"
       ? str(event.payload.reason)
@@ -158,7 +163,11 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "signed_off_on_criteria" ||
     // A lens not re-run on a tree nothing changed is the pipeline saving a
     // turn; a stage refused for a missing input stays the "failed" default.
-    decision === "carried_forward_pass"
+    decision === "carried_forward_pass" ||
+    // A review that passed with what it read on record. Reading only some of
+    // the diff is a lens keeping to its remit, not trouble; reading none is
+    // `refused_unread_pass`, which stays "failed".
+    decision === "read_evidence_checked"
     ? "normal"
     : "failed";
   }
