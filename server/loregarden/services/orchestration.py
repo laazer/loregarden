@@ -43,6 +43,7 @@ from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_pa
 from loregarden.services.exit_action_approvals import ExitActionApprovalMixin
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
+from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.landing import land_before_done
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
@@ -526,6 +527,8 @@ class OrchestrationService:
         transitions = self._resolve_transitions(ticket)
         route = StateMachine.resolve_next_stage_key(stages, transitions, current, outcome="pass")
         if not route:
+            if terminal := find_terminal_stage(stages):  # before any write; the check commits
+                refuse_unchecked_gate(self.session, ticket, stage_key=terminal.key)
             return self._finish_workflow(ticket, instance, stages, current or "")
 
         if current and ticket.workflow_stage_status not in (
@@ -636,6 +639,9 @@ class OrchestrationService:
         ):
             raise ValueError("Advance to the Done stage before completing the ticket")
 
+        # Guarded when the workflow has no gate stage. Before the writes below:
+        # the check commits what it decides, and would commit them with it.
+        refuse_unchecked_gate(self.session, ticket, stage_key=done_def.key)
         settle_unreached_stages(ticket, instance, stages, terminal_key=done_def.key)
         ticket.workflow_stage_key = done_def.key
         return self._finish_workflow(ticket, instance, stages, done_def.key)
@@ -884,6 +890,9 @@ class OrchestrationService:
         )
         refuse_held_dispatch(self.session, ticket, stage_key=target_key)
         refuse_unready_dispatch(self.session, ticket, target.stage_def)
+        refuse_unchecked_gate(
+            self.session, ticket, stage_key=target_key, orchestration_run_id=orchestration_run_id
+        )
 
         # Read before `_prepare_stage_start`, which erases the blocking text this
         # decision is partly read from.

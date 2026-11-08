@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     Ticket,
     WorkflowStageDef,
 )
+from loregarden.services.criteria_sign_off import held_gate_note
 from loregarden.services.exit_action_ledger import outstanding_exit_actions
 from loregarden.services.exit_actions import (
     allowed_resolution_actions,
@@ -64,6 +65,12 @@ def build_gate_impact(ticket: Ticket, stage_name: str) -> str:
         lines.append("Acceptance criteria:")
         lines.extend(f"- {item}" for item in criteria)
     return "\n".join(lines)
+
+
+def _with_held_note(session: Session, ticket: Ticket, impact: str) -> str:
+    """The impact, followed by the decisions that kept this gate from signing itself."""
+    note = held_gate_note(session, ticket)
+    return f"{impact}\n\n{note}" if note else impact
 
 
 def create_workflow_gate_approval(
@@ -114,7 +121,7 @@ def create_workflow_gate_approval(
         title=title or f"Resolve {stage_name} exit actions",
         level="high" if ticket.priority == 1 else "medium",
         stage_key=stage_key,
-        impact=impact or build_gate_impact(ticket, stage_name),
+        impact=impact or _with_held_note(session, ticket, build_gate_impact(ticket, stage_name)),
         checklist_json=json.dumps(checklist),
         tool_input_json=json.dumps(
             {

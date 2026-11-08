@@ -116,6 +116,10 @@ class OrchestratorDecision(StrEnum):
     #: A scope round's spec decided none of the findings it was asked to, twice,
     #: so the remaining findings were deferred rather than blocking for a person.
     DEFERRED_UNDECIDED_FINDINGS = "deferred_undecided_findings"
+    #: The gate was signed on the criteria check, not by a person: every
+    #: criterion answered for at the ticket's HEAD and nothing under it
+    #: decided in a person's place (`criteria_sign_off`).
+    SIGNED_OFF_ON_CRITERIA = "signed_off_on_criteria"
     #: A stage's declared inputs (`required_inputs`) were missing, so it was not
     #: started: the ticket blocked, or a start by hand was refused, naming them
     #: (`stage_readiness`). The evidence carries an estimate of the tokens spared.

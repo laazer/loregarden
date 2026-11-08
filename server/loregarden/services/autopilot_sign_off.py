@@ -31,6 +31,11 @@ from loregarden.models.domain import (
     OrchestratorDecision,
     Ticket,
 )
+from loregarden.services.criteria_sign_off import (
+    CriteriaBasis,
+    criteria_basis,
+    record_criteria_sign_off,
+)
 from loregarden.services.exit_action_ledger import (
     gate_is_operator_judgment_only,
     read_gate_resolution,
@@ -103,6 +108,9 @@ class GateSignerKind(StrEnum):
     AUTOPILOT = "autopilot"
     #: An orchestration run started with `auto_approve`.
     AUTO_APPROVE_RUN = "auto_approve_run"
+    #: The ticket's criteria check, which answered for every criterion at the
+    #: commit the ticket is at (`criteria_sign_off`).
+    CRITERIA_CHECKED = "criteria_checked"
 
 
 @dataclass(frozen=True)
@@ -110,11 +118,14 @@ class GateSigner:
     """The automation that owns a gate, and the plan the record needs.
 
     `plan` rides along because `record_autopilot_sign_off` cannot write its
-    `AutopilotEvent` without the initiative id; it is None for a run signer.
+    `AutopilotEvent` without the initiative id; `basis` because
+    `record_criteria_sign_off` names the check it signed on. Each is None for
+    the other signers.
     """
 
     kind: GateSignerKind
     plan: InitiativePlan | None = None
+    basis: CriteriaBasis | None = None
 
 
 def signer_for_gate(
@@ -141,7 +152,26 @@ def signer_for_gate(
         return GateSigner(kind=GateSignerKind.AUTOPILOT, plan=plan)
     if orch_run is not None and orch_run.auto_approve:
         return GateSigner(kind=GateSignerKind.AUTO_APPROVE_RUN)
+    basis = criteria_basis(session, ticket, approval)
+    if basis is not None:
+        return GateSigner(kind=GateSignerKind.CRITERIA_CHECKED, basis=basis)
     return None
+
+
+def record_sign_off(
+    session: Session,
+    ticket: Ticket,
+    orch_run: OrchestrationRun | None,
+    approval: Approval,
+    signer: GateSigner,
+) -> None:
+    """Record, on the history, which signer approved ``approval`` in a person's place."""
+    if signer.plan is not None:
+        record_autopilot_sign_off(session, ticket, signer.plan, approval)
+    elif signer.basis is not None:
+        record_criteria_sign_off(session, ticket, approval, signer.basis)
+    elif orch_run is not None:
+        record_auto_approve_sign_off(session, ticket, orch_run, approval)
 
 
 def record_auto_approve_sign_off(
