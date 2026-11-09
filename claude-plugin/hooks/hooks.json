@@ -1,0 +1,27 @@
+{
+  "description": "Loregarden guardrails. Each steps aside in a repository that ships its own copy (.claude/hooks/<name>.py).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin_dispatch.py\" git_signing_guard",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin_dispatch.py\" pr_ux_section_precheck",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin_dispatch.py\" pr_duplicate_work_precheck",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

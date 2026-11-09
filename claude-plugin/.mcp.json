@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "loregarden": {
+      "type": "http",
+      "url": "${LOREGARDEN_MCP_URL:-http://127.0.0.1:8000/mcp}"
+    }
+  }
+}

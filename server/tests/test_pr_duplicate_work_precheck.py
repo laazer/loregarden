@@ -97,6 +97,14 @@ def test_an_unknown_branch_passes_with_a_note_not_silently(repo):
     assert "did not run" in verdict[1]
 
 
+def test_a_repository_with_no_integration_branch_is_left_alone(tmp_path):
+    """No tree has landed anything, so nothing can be duplicated, and the plugin says nothing."""
+    repo = tmp_path / "plain"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    assert _decide("gh pr create --head nope --title t --body b", repo) is None
+
+
 def test_the_script_speaks_the_hook_protocol(repo):
     """End to end, under the interpreter hooks actually get."""
     payload = json.dumps(

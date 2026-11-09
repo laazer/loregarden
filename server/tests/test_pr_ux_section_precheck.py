@@ -123,6 +123,14 @@ def test_a_repository_without_the_check_is_ignored(tmp_path):
     assert _decide(f"gh pr create --body '{BARE}'", repo) is None
 
 
+def test_a_repository_without_the_check_gets_no_note_even_when_the_body_is_unreadable(tmp_path):
+    """The plugin runs this hook in every repository; only one carrying the check hears from it."""
+    repo = tmp_path / "other"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    assert _decide("gh pr create --fill", repo) is None
+
+
 def test_other_commands_are_ignored(ui_repo):
     assert _decide("gh pr view 506", ui_repo) is None
     assert _decide("git status", ui_repo) is None

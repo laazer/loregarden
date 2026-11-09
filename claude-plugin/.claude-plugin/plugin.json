@@ -1,0 +1,7 @@
+{
+  "name": "loregarden",
+  "version": "0.1.0",
+  "description": "Loregarden's MCP tools, cross-repo skills and guardrail hooks in every Claude Code session, not just the loregarden checkout.",
+  "author": { "name": "laazer" },
+  "repository": "https://github.com/laazer/loregarden"
+}

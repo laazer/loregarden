@@ -98,9 +98,9 @@ def _shares_work(workdir: Path, sha: str, branch_sha: str, bases: list) -> bool:
     return any(not _on_base(workdir, commit, bases) for commit in common)
 
 
-def _holders(workdir: Path, sha: str, bases: list) -> list:
-    """The integration branches ``sha`` shares work with beyond the base."""
-    holders = []
+def _integration_branches(workdir: Path) -> list:
+    """(name, sha) of every local integration branch."""
+    branches = []
     for line in ux._git(
         workdir,
         "for-each-ref",
@@ -108,9 +108,18 @@ def _holders(workdir: Path, sha: str, bases: list) -> list:
         f"refs/heads/{_INTEGRATION}",
     ).splitlines():
         name, _, branch_sha = line.rpartition(" ")
-        if name and _shares_work(workdir, sha, branch_sha, bases):
-            holders.append(name)
-    return holders
+        if name:
+            branches.append((name, branch_sha))
+    return branches
+
+
+def _holders(workdir: Path, sha: str, bases: list) -> list:
+    """The integration branches ``sha`` shares work with beyond the base."""
+    return [
+        name
+        for name, branch_sha in _integration_branches(workdir)
+        if _shares_work(workdir, sha, branch_sha, bases)
+    ]
 
 
 def decide(payload: dict):
@@ -121,6 +130,8 @@ def decide(payload: dict):
         return None
     workdir = ux._workdir(command, match, Path(payload.get("cwd") or "."))
     try:
+        if not _integration_branches(workdir):
+            return None  # no tree has landed anything here; nothing can be duplicated
         args = ux._gh_args(command, match)
         head = _head(workdir, args)
         if head.startswith(_INTEGRATION):

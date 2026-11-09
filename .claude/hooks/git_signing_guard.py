@@ -18,13 +18,21 @@ If signing genuinely fails, the fix is the signer (the key, the agent), and a
 person decides that. The pre-push gate `.lefthook/scripts/signed-commits.sh`
 backs this up for commits made any other way.
 
+The loregarden Claude Code plugin runs this guard in every repository, so it
+denies only where the session's repository signs (`commit.gpgsign` true in its
+effective config): where nothing signs, turning signing off changes nothing. A
+config git cannot read counts as signing, so a broken probe never opens the
+guard.
+
 Standard library only, Python 3.9: hooks run under the system `python3`.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 import sys
 
 _GIT = re.compile(r"(?:^|[\s;&|(])git(?:\s|$)")
@@ -51,10 +59,35 @@ _RULES = (
 )
 
 
+def repo_signs(cwd: str) -> bool:
+    """Whether commits made in ``cwd`` are signed; True when git cannot say."""
+    # GIT_DIR beats cwd; a hook inherits whatever the session exported.
+    env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE")}
+    try:
+        result = subprocess.run(
+            ["git", "config", "--type=bool", "--get", "commit.gpgsign"],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):  # silent-ok: counts as signing, so the guard stays shut
+        return True
+    if result.returncode == 1 and not result.stdout.strip():
+        return False  # unset: git exits 1 with no output
+    return result.stdout.strip() != "false"
+
+
 def decide(payload: dict):
     """("deny", reason) or None."""
     command = (payload.get("tool_input") or {}).get("command") or ""
     if not _GIT.search(command):
+        return None
+    if not repo_signs(payload.get("cwd") or os.getcwd()):
         return None
     for pattern, what in _RULES:
         if pattern.search(command):

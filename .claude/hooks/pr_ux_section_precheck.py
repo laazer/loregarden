@@ -180,13 +180,15 @@ def decide(payload: dict) -> tuple[str | None, str] | None:
         return None
     workdir = _workdir(command, match, Path(payload.get("cwd") or os.getcwd()))
     try:
+        root = Path(_git(workdir, "rev-parse", "--show-toplevel"))
+        # Before the body is read: a repository without the check (the plugin
+        # runs this hook everywhere) gets no note about a check it never had.
+        check = _load_check(root)
+        if check is None:
+            return None
         args = _gh_args(command, match)
         body = _body(command, match, args, workdir)
         if body is None:
-            return None
-        root = Path(_git(workdir, "rev-parse", "--show-toplevel"))
-        check = _load_check(root)
-        if check is None:  # another repository: it has no such check
             return None
         found = check.problems(body, _changed(workdir, args))
         fix_found = _fix_coverage_problems(root, args, body)

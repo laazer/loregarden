@@ -1,0 +1,12 @@
+{
+  "name": "loregarden",
+  "owner": { "name": "laazer" },
+  "metadata": { "description": "Loregarden's Claude Code plugin." },
+  "plugins": [
+    {
+      "name": "loregarden",
+      "source": "./claude-plugin",
+      "description": "Loregarden's MCP tools, cross-repo skills and guardrail hooks in every Claude Code session."
+    }
+  ]
+}

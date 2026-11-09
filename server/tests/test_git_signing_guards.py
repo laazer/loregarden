@@ -9,9 +9,11 @@ refuses the commit however it was made.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.services.git_subprocess import scrubbed_git_env
@@ -26,8 +28,34 @@ _spec.loader.exec_module(guard)
 ZERO = "0" * 40
 
 
-def _decide(command: str):
-    return guard.decide({"tool_input": {"command": command}})
+def _repo_with_signing(root: Path, value: str | None) -> Path:
+    """A repository whose local `commit.gpgsign` is ``value``, or has none."""
+    root.mkdir()
+    env = scrubbed_git_env()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True, env=env)
+    if value is None:
+        return root
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", value],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    return root
+
+
+@pytest.fixture(name="signing_repo", scope="module")
+def signing_repo_fixture(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _repo_with_signing(tmp_path_factory.mktemp("signing") / "repo", "true")
+
+
+@pytest.fixture(name="decide")
+def decide_fixture(signing_repo: Path):
+    def _decide(command: str):
+        return guard.decide({"tool_input": {"command": command}, "cwd": str(signing_repo)})
+
+    return _decide
 
 
 # --- the PreToolUse guard --------------------------------------------------------
@@ -48,8 +76,8 @@ def _decide(command: str):
         "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=commit.gpgsign GIT_CONFIG_VALUE_0=false git commit -m x",
     ],
 )
-def test_turning_signing_off_is_denied(command):
-    verdict = _decide(command)
+def test_turning_signing_off_is_denied(command, decide):
+    verdict = decide(command)
     assert verdict is not None and verdict[0] == "deny"
 
 
@@ -63,8 +91,35 @@ def test_turning_signing_off_is_denied(command):
         "echo commit.gpgsign=false",  # not a git command
     ],
 )
-def test_ordinary_git_passes(command):
-    assert _decide(command) is None
+def test_ordinary_git_passes(command, decide):
+    assert decide(command) is None
+
+
+_OFF = "git -c commit.gpgsign=false commit -m x"
+
+
+def _decide_in(repo: Path):
+    return guard.decide({"tool_input": {"command": _OFF}, "cwd": str(repo)})
+
+
+def test_the_guard_leaves_a_repository_that_does_not_sign_alone(tmp_path):
+    """The plugin runs the guard everywhere; where nothing signs, there is nothing to turn off."""
+    assert _decide_in(_repo_with_signing(tmp_path / "repo", "false")) is None
+
+
+def test_the_guard_leaves_a_repository_with_no_signing_config_alone(tmp_path):
+    repo = _repo_with_signing(tmp_path / "repo", None)
+    isolated = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    with mock.patch.dict(os.environ, isolated):
+        assert _decide_in(repo) is None
+
+
+def test_a_config_git_cannot_read_counts_as_signing(tmp_path):
+    """A broken probe must never open the guard."""
+    verdict = _decide_in(_repo_with_signing(tmp_path / "repo", "maybe"))
+    assert verdict is not None and verdict[0] == "deny"
+    with mock.patch.object(guard.subprocess, "run", side_effect=OSError("no git")):
+        assert guard.repo_signs(str(tmp_path))
 
 
 # --- the pre-push gate -----------------------------------------------------------
