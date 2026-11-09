@@ -122,6 +122,42 @@ def test_an_odd_tool_argument_does_not_drop_the_text_beside_it():
     assert hook.has_reported(_input("Handoff written."), [line]) is True
 
 
+def _prompt(text: str) -> str:
+    return json.dumps({"type": "user", "message": {"role": "user", "content": text}})
+
+
+def test_a_resumed_sessions_earlier_report_does_not_count():
+    # A rework round resumes the session that did the work; the report it
+    # wrote then answered the earlier run, not this one.
+    lines = [
+        _prompt("Implement the ticket."),
+        _assistant({"type": "text", "text": REPORT}),
+        _prompt("A reviewer sent this back: fix the null case."),
+        _assistant({"type": "text", "text": "Looking at the null case."}),
+    ]
+    assert hook.has_reported(_input("Fixed it."), lines) is False
+
+
+def test_a_resumed_sessions_earlier_complete_stage_does_not_count():
+    call = {"type": "tool_use", "id": "t9", "name": "mcp__loregarden__loregarden_complete_stage"}
+    lines = [
+        _prompt("Implement the ticket."),
+        _assistant({**call, "input": {}}),
+        _tool_result("t9"),
+        _prompt("A reviewer sent this back."),
+    ]
+    assert hook.has_reported(_input(""), lines) is False
+
+
+def test_a_report_after_the_resumed_prompt_counts():
+    lines = [
+        _prompt("Implement the ticket."),
+        _prompt("A reviewer sent this back."),
+        _assistant({"type": "text", "text": REPORT}),
+    ]
+    assert hook.has_reported(_input("Done."), lines) is True
+
+
 def test_transcript_lines_it_does_not_model_are_skipped():
     lines = ["not json", json.dumps({"type": "summary", "summary": "x"}), _assistant()]
     assert hook.has_reported(_input(REPORT), lines) is True
@@ -151,6 +187,15 @@ def test_the_cap_is_counted_per_session(state_dir):
     for _ in range(hook.MAX_BLOCKS + 1):
         hook.decide(_input("nothing", session_id="a"), [])
     assert hook.decide(_input("nothing", session_id="b"), []) is not None
+
+
+def test_the_cap_is_counted_per_run_so_a_resumed_session_starts_fresh(state_dir):
+    with mock.patch.dict(os.environ, {hook.RUN_ID_ENV: "run-1"}):
+        for _ in range(hook.MAX_BLOCKS + 1):
+            hook.decide(_input("nothing", session_id="a"), [])
+        assert hook.decide(_input("nothing", session_id="a"), []) is None
+    with mock.patch.dict(os.environ, {hook.RUN_ID_ENV: "run-2"}):
+        assert hook.decide(_input("nothing", session_id="a"), []) is not None
 
 
 def test_unreadable_hook_input_lets_the_turn_end(state_dir):

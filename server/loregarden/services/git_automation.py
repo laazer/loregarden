@@ -204,12 +204,15 @@ PUSH_STAGED_ENV = "LOREGARDEN_PUSH_STAGED"
 PUSH_STAGED_BASE_ENV = "LOREGARDEN_PUSH_STAGED_BASE"
 
 
-def push_commit_as(repo_root: Path, branch: str, head: str, *, base: str = "main") -> StepResult:
+def push_commit_as(
+    repo_root: Path, branch: str, head: str, *, base: str = "main", lease: str | None = None
+) -> StepResult:
     """Push ``head`` as ``branch``, replacing what the remote held and nothing newer.
 
     The lease is the value just read from the remote, not a remote-tracking ref
     that may be stale: a push someone made to the PR branch since is refused,
-    never overwritten. An absent branch leases on absence.
+    never overwritten. An absent branch leases on absence. A caller that has
+    already decided what it may overwrite passes that commit as ``lease``.
 
     ``head`` is a commit cut on ``base``'s remote tip — a tree's publish
     (`squash_onto`) or the merge queue's staging cut — so the push names it to
@@ -218,10 +221,13 @@ def push_commit_as(repo_root: Path, branch: str, head: str, *, base: str = "main
     ``head`` cannot land before its own required checks pass on it.
     """
     ref = f"refs/heads/{branch}"
-    listed = _git(["ls-remote", "origin", ref], repo_root)
-    if listed.returncode != 0:
-        return StepResult("push", False, _fail_text(listed, "git ls-remote failed"))
-    held = listed.stdout.split()[0] if listed.stdout.split() else ""
+    if lease is None:
+        listed = _git(["ls-remote", "origin", ref], repo_root)
+        if listed.returncode != 0:
+            return StepResult("push", False, _fail_text(listed, "git ls-remote failed"))
+        held = listed.stdout.split()[0] if listed.stdout.split() else ""
+    else:
+        held = lease
     push = run_git(
         ["push", f"--force-with-lease={ref}:{held}", "origin", f"{head}:{ref}"],
         cwd=repo_root,

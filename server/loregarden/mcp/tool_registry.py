@@ -22,6 +22,7 @@ from loregarden.mcp.chat_wait_tool import HANDLERS as CHAT_WAIT_HANDLERS
 from loregarden.mcp.chat_wait_tool import (
     TOOL_DEFINITIONS as CHAT_WAIT_TOOL_DEFINITIONS,  # noqa: F401 — re-export for tools.py
 )
+from loregarden.mcp.deferral_tool import defer_ticket_tool
 from loregarden.mcp.devdocs_tool import search_reference_tool
 from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
@@ -74,6 +75,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
     McpTool.DOCTOR.value: doctor,
     McpTool.DISK_USAGE.value: disk_usage_tool,
+    McpTool.DEFER_TICKET.value: defer_ticket_tool,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
     McpTool.FETCH_REFERENCE.value: fetch_reference_tool,

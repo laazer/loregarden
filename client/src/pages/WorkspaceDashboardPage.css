@@ -403,43 +403,6 @@ a.wsd-id:focus-visible {
   color: var(--rdl);
 }
 
-/* --- merge queue ------------------------------------------------------------
-   A stopped entry's reason and log tail sit under its row, full width. */
-
-.wsd-mq-row {
-  flex-wrap: wrap;
-}
-
-.wsd-mq-row > .wsd-row-note,
-.wsd-mq-reason {
-  flex-basis: 100%;
-}
-
-.wsd-mq-reason p {
-  margin: 0;
-  font-size: var(--fs-small);
-}
-
-.wsd-mq-landed > summary {
-  padding: 8px 0;
-  font-size: var(--fs-small);
-  color: var(--txm);
-  cursor: pointer;
-}
-
-.wsd-mq-log {
-  max-height: 16em;
-  margin: 4px 0 0;
-  padding: 8px;
-  overflow: auto;
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  white-space: pre-wrap;
-  color: var(--txm);
-  background: var(--bg3);
-  border-radius: 6px;
-}
-
 /* --- mini ticket cards ----------------------------------------------------
    A ticket shown by what the work is. The left edge carries its state, so a
    group of cards reads at a glance without a legend. */
@@ -607,23 +570,18 @@ a.wsd-id:focus-visible {
 }
 
 .wsd-tag--ready_to_merge,
-.wsd-tag--instance-ready,
-.wsd-tag--mq-merged {
+.wsd-tag--instance-ready {
   color: var(--grl);
   background: color-mix(in srgb, var(--grn) 18%, transparent);
 }
 
 .wsd-tag--to_review,
-.wsd-tag--instance-starting,
-.wsd-tag--mq-staging,
-.wsd-tag--mq-testing,
-.wsd-tag--mq-merging {
+.wsd-tag--instance-starting {
   color: var(--bll);
   background: color-mix(in srgb, var(--blue) 18%, transparent);
 }
 
 .wsd-tag--needs_work,
-.wsd-tag--mq-timed_out,
 .wsd-tag--block-agent,
 .wsd-tag--block-parked,
 .wsd-tag--instance-stalled {
@@ -632,7 +590,6 @@ a.wsd-id:focus-visible {
 }
 
 .wsd-tag--conflicting,
-.wsd-tag--mq-failed,
 .wsd-tag--block-person {
   color: var(--rdl);
   background: color-mix(in srgb, var(--red) 18%, transparent);

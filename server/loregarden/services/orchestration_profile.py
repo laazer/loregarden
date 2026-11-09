@@ -23,7 +23,14 @@ from loregarden.models.domain import (
     OrchestrationDriver,
     Workspace,
 )
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PositiveInt,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
@@ -83,9 +90,19 @@ class CriterionTestCommand(BaseModel):
     strip_prefix: bool = True
 
 
+#: How long a gate command may run when its profile names no timeout for it.
+DEFAULT_GATE_TIMEOUT_SECONDS = 300
+
+
 class GatesConfig(BaseModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
+    # Seconds a command may run before it is a TIMEOUT, keyed by the command
+    # exactly as `commands` spells it; a command not named here gets
+    # DEFAULT_GATE_TIMEOUT_SECONDS. One global budget fit nothing: a suite
+    # needs minutes, a probe answers in milliseconds idle and was refused at 5s
+    # under load 30 (lg-milestone-that-2487).
+    command_timeouts: dict[str, PositiveInt] = Field(default_factory=dict)
     transition_script: str = ""
     # When a transition gate (lint/format/typecheck) fails, try to repair it
     # automatically before pulling in a human. `autofix_commands` are mechanical
@@ -136,6 +153,22 @@ class GatesConfig(BaseModel):
     # for every criterion at the ticket's HEAD (`criteria_sign_off`). Off keeps
     # the sign-off a person's in this workspace.
     sign_off_when_criteria_checked: bool = True
+
+    @model_validator(mode="after")
+    def _timeouts_name_commands(self) -> GatesConfig:
+        # A key that matches no command would be a timeout that applies to
+        # nothing, and the command it was meant for would run on the default.
+        stray = sorted(set(self.command_timeouts) - set(self.commands))
+        if stray:
+            raise ValueError(
+                f"command_timeouts names commands not in gates.commands: {stray}. "
+                "Spell each key exactly as its command is listed."
+            )
+        return self
+
+    def timeout_for(self, command: str) -> int:
+        """Seconds the command (as `commands` spells it) may run."""
+        return self.command_timeouts.get(command, DEFAULT_GATE_TIMEOUT_SECONDS)
 
 
 class GitAutomationConfig(BaseModel):
@@ -512,6 +545,7 @@ AUTOFIX_GATE_KEYS = frozenset(
 #: neither shown by the editor that saves enabled/commands/transition_script.
 PRESERVED_GATE_KEYS = AUTOFIX_GATE_KEYS | {
     "capacity_footprint",
+    "command_timeouts",
     "criterion_test_commands",
     "sign_off_when_criteria_checked",
 }
@@ -539,6 +573,13 @@ def update_gates_config(
     for key in preserve:
         if key in existing_gates:
             new_gates[key] = existing_gates[key]
+    # A kept timeout for a command the editor just removed would make the file
+    # refuse to load; it goes with its command.
+    new_gates["command_timeouts"] = {
+        command: seconds
+        for command, seconds in dict(new_gates.get("command_timeouts") or {}).items()
+        if command in new_gates["commands"]
+    }
     _merge_block(raw, "gates", new_gates)
     _write_yaml_atomic(path, raw)
     return load_profile_from_path(path)

@@ -12,7 +12,9 @@ Three questions and one action:
   GitHub's own readings, not ours;
 - the failing jobs' log tails (`failure_log`), from `ci_checks`;
 - the merge itself (`merge`), `pull_request_merge.squash_merge`, pinned to the
-  staged head.
+  staged head;
+- a comment on the pull request (`comment`), where a PR admitted with no ticket
+  is told why it left the queue.
 
 Every read raises `GitHubReadError` when GitHub cannot be asked. None returns
 an empty answer for a failure: "no checks yet" and "could not ask" stay apart
@@ -22,11 +24,13 @@ all the way to the entry (`MergeQueueWait`).
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Protocol
 
 from loregarden.models.domain import PullRequestCheckOutcome, PullRequestState
 from loregarden.services.ci_checks import GH_TIMEOUT_SECONDS, check_name, failure_logs
+from loregarden.services.git_subprocess import run_gh
 from loregarden.services.github_pr_listing import GitHubReadError, read_gh
 from loregarden.services.pull_request_merge import squash_merge
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
@@ -48,6 +52,9 @@ query($owner: String!, $name: String!, $number: Int!) {
   }
 }
 """
+
+#: GitHub caps a comment body at 65536 characters; leave room for its framing.
+_COMMENT_LIMIT = 60000
 
 #: GitHub's pull request states, which we do not own.
 _STATE = {
@@ -150,6 +157,8 @@ class QueueGitHub(Protocol):
 
     def open_pull_request(self, head_branch: str) -> tuple[int, str] | None: ...
 
+    def comment(self, number: int, body: str) -> str: ...
+
 
 class GhQueueGitHub:
     """`QueueGitHub` over the `gh` CLI, in one repository."""
@@ -207,6 +216,20 @@ class GhQueueGitHub:
 
     def merge(self, number: int, head_sha: str) -> str:
         return squash_merge(self.repo_root, number, head_sha)
+
+    def comment(self, number: int, body: str) -> str:
+        """Comment on PR ``number``; "" when posted, else why not."""
+        try:
+            proc = run_gh(
+                ["pr", "comment", str(number), "--body", body[:_COMMENT_LIMIT]],
+                cwd=self.repo_root,
+                timeout=GH_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"gh did not run: {exc}"
+        if proc.returncode == 0:
+            return ""
+        return (proc.stderr or proc.stdout or "").strip() or "gh pr comment failed"
 
     def open_pull_request(self, head_branch: str) -> tuple[int, str] | None:
         """The open PR whose head is ``head_branch``; None when there is none.

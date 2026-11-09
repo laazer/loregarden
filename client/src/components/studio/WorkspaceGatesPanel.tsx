@@ -460,6 +460,7 @@ function TestSummary({
                   counts?.passed && `${counts.passed} passed`,
                   counts?.failed && `${counts.failed} failed`,
                   counts?.unavailable && `${counts.unavailable} couldn't run`,
+                  counts?.timeout && `${counts.timeout} timed out`,
                 ]
                   .filter(Boolean)
                   .join(" · ") + ` — in ${report.repo_root}`}

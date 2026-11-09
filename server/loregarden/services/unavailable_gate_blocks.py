@@ -98,7 +98,7 @@ def work_blocks_from_unavailable_gates(session: Session) -> list[MisfiledBlock]:
         if not gates:
             continue
         gate = _GatePayload.model_validate_json(gates[0].payload_json)
-        if gate.outcome is not GateOutcome.UNAVAILABLE:
+        if not gate.outcome.reached_no_verdict:
             continue
         if gate.stage_key != ticket.workflow_stage_key:
             continue

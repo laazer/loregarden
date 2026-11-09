@@ -35,7 +35,7 @@ export interface GatesConfigUpdate {
   autofix_max_agent_attempts?: number;
 }
 
-export type GateTestOutcome = "passed" | "skipped" | "disabled" | "failed" | "unavailable";
+export type GateTestOutcome = "passed" | "skipped" | "disabled" | "failed" | "unavailable" | "timeout";
 
 export interface GateTestCommandResult {
   template: string;

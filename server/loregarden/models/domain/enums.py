@@ -935,6 +935,15 @@ class GateOutcome(str, Enum):
     DISABLED = "disabled"
     FAILED = "failed"
     UNAVAILABLE = "unavailable"
+    #: Ran past its timeout. Like UNAVAILABLE it reached no verdict and goes to
+    #: a person, not an agent; unlike it, the tool exists and may only be slow
+    #: on a loaded host, so the runner retries it once and names the load.
+    TIMEOUT = "timeout"
+
+    @property
+    def reached_no_verdict(self) -> bool:
+        """The gate could not say pass or fail: it never ran, or never finished."""
+        return self in (GateOutcome.UNAVAILABLE, GateOutcome.TIMEOUT)
 
 
 class GateFixTier(str, Enum):

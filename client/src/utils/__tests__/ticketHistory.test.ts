@@ -66,6 +66,12 @@ describe("historyLines", () => {
     expect(line.tone).toBe("unavailable");
   });
 
+  it("says a gate timed out, in the machine's tone rather than the work's", () => {
+    const [line] = historyLines([gate("timeout")]);
+    expect(line.text).toBe("Gate implement timed out");
+    expect(line.tone).toBe("unavailable");
+  });
+
   it("leaves the other transition kinds reading as they did", () => {
     const lines = historyLines([stageEvent("StageStarted"), stageEvent("StageCompleted")]);
     expect(lines.map((l) => l.text)).toEqual([
@@ -353,5 +359,34 @@ describe("read evidence", () => {
 
     expect(line.tone).toBe("failed");
     expect(line.detail).toBeUndefined();
+  });
+});
+
+describe("historyLines — findings that do not block", () => {
+  it("reads a reject with no complete blocking finding, and findings put on record, as normal", () => {
+    const lines = historyLines([
+      decision(
+        "reject_not_admitted",
+        "verifier reported needs_rework on 'verify', which is not a reject: it named no blocking finding.",
+        "verify",
+      ),
+      decision("findings_recorded", "static_qa recorded 2 finding(s) on 'review' that do not block.", "review"),
+      decision(
+        "recheck_recorded",
+        "static_qa rechecked 1 prior finding(s) on 'review': 1 resolved, 0 unresolved, 0 unanswered.",
+        "review",
+      ),
+    ]);
+
+    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal", "normal"]);
+  });
+
+  it("reads a deferral and its undoing as normal", () => {
+    const lines = historyLines([
+      decision("ticket_deferred", "operator deferred lg-x-1: waits on a vendor fix.", "implement"),
+      decision("ticket_undeferred", "operator took back the deferral of lg-x-1.", "implement"),
+    ]);
+
+    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal"]);
   });
 });

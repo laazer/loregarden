@@ -79,8 +79,17 @@ GATE_DID_NOT_RUN_REASON = (
 )
 
 
-def gate_did_not_run_summary(from_stage: str) -> str:
-    """The block's pointer for a gate that examined nothing."""
+def gate_did_not_run_summary(
+    from_stage: str, outcome: GateOutcome = GateOutcome.UNAVAILABLE
+) -> str:
+    """The block's pointer for a gate that examined nothing, or never finished."""
+    if outcome is GateOutcome.TIMEOUT:
+        # Kept under BLOCKING_ISSUE_INLINE_LIMIT, or it is replaced by the
+        # generic pointer; the timeout, load and output are on the Timeline tab.
+        return (
+            f"Gate at '{from_stage}' timed out twice; no verdict, not a finding in this "
+            "code. Raise its timeout or wait out the load (Timeline tab), then requeue."
+        )
     return (
         f"Gate at '{from_stage}' could not run, so nothing was checked; not a "
         "finding in this ticket's code. Fix the environment it reported (Timeline "
@@ -212,7 +221,7 @@ class GateRecovery:
             ),
         )
         if not result.ok:
-            if result.outcome is GateOutcome.UNAVAILABLE:
+            if result.outcome is not None and result.outcome.reached_no_verdict:
                 # The gate could not run — a hung command, a binary not on
                 # PATH, a capacity line that stopped moving. That is a fact
                 # about the machine, and handing it to the stage's own agent
@@ -226,7 +235,7 @@ class GateRecovery:
                     orch_run,
                     from_stage,
                     clean_gate_detail(result),
-                    blocking_summary=gate_did_not_run_summary(from_stage),
+                    blocking_summary=gate_did_not_run_summary(from_stage, result.outcome),
                     harness=True,
                 )
                 return GateDecision.BLOCKED

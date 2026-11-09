@@ -59,7 +59,9 @@ def _pending(session: Session, entry: MergeQueueEntry) -> list[Approval]:
     return list(
         session.exec(
             select(Approval).where(
-                Approval.ticket_id == entry.ticket_id,
+                # By workspace, not ticket: a PR admitted by number has none,
+                # and `ticket_id == NULL` matches no row. The title names the PR.
+                Approval.workspace_id == entry.workspace_id,
                 Approval.kind == ApprovalKind.HUMAN_ACTION,
                 Approval.status == ApprovalStatus.PENDING,
                 Approval.title == queue_card_title(entry),

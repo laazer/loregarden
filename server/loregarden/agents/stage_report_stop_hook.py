@@ -14,9 +14,15 @@ in the transcript file when the hook fires). A run that has reported may stop. O
 that has not is told why it cannot, and resumes in the same session with its
 context, so it can wait for the task in the foreground and then report.
 
-``MAX_BLOCKS`` bounds the refusals per session, so a model that will not report
+``MAX_BLOCKS`` bounds the refusals per run, so a model that will not report
 cannot loop forever. Past it the stop goes through and ``run_completion``'s
 missing-report block surfaces the run as it always has.
+
+A rework round may resume the session of the run it reworks (`rework_resume`),
+so the transcript can hold an earlier turn's report. Only the current turn
+counts: what follows the newest prompt. The refusal count is keyed by the run
+(its ``LOREGARDEN_MCP_RUN_ID``) as well as the session, so the resumed turn gets
+its own ``MAX_BLOCKS`` rather than the remainder of the first one's.
 
 Wired in by ``cli_adapters.stage_report_hook_settings``; run as
 ``python -m loregarden.agents.stage_report_stop_hook``.
@@ -26,11 +32,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
+from loregarden.mcp.caller import RUN_ID_ENV
 from loregarden.services.stage_report import REPORT_BLOCK_REMINDER, parse_stage_report
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -45,6 +53,7 @@ COMPLETE_STAGE_TOOL = "loregarden_complete_stage"
 
 _RUNNING = "running"  # py-org: allow-string - Claude Code's background-task status
 _ASSISTANT = "assistant"  # py-org: allow-string - Claude Code transcript entry type
+_USER = "user"  # py-org: allow-string - Claude Code transcript entry type
 _TEXT = "text"  # py-org: allow-string - Claude Code content block type
 _TOOL_USE = "tool_use"  # py-org: allow-string - Claude Code content block type
 _TOOL_RESULT = "tool_result"  # py-org: allow-string - Claude Code content block type
@@ -86,19 +95,49 @@ class _Block(_Lenient):
 
 
 class _Message(_Lenient):
-    #: Only the block-list form. A plain-string body (a typed user prompt) fails
-    #: validation and its line is skipped: it holds no assistant text and no tool
-    #: result, so it cannot carry a report.
+    #: Only the block-list form. A plain-string body is a prompt, read by
+    #: ``_PromptEntry`` instead: it carries no report, but marks where the
+    #: current turn begins.
     content: list[_Block] = []
 
 
 class _Entry(_Lenient):
     type: str = ""
     message: _Message | None = None
+    #: Set by ``_entries`` for a prompt line, never read from the transcript.
+    is_prompt: bool = False
+
+
+class _PromptBody(_Lenient):
+    content: str
+
+
+class _PromptEntry(_Lenient):
+    """A prompt: a user line whose body is a plain string. The bridge sends the
+    stage prompt this way, and a resumed run's follow-up the same."""
+
+    type: str
+    message: _PromptBody
 
 
 def _blocks(entry: _Entry) -> list[_Block]:
     return entry.message.content if entry.message is not None else []
+
+
+def _current_turn(entries: list[_Entry]) -> list[_Entry]:
+    """The entries after the newest prompt: what this turn has said and done."""
+    for index in range(len(entries) - 1, -1, -1):
+        if entries[index].is_prompt:
+            return entries[index + 1 :]
+    return entries
+
+
+def _prompt_marker(line: str) -> _Entry | None:
+    try:
+        prompt = _PromptEntry.model_validate_json(line)
+    except ValidationError:  # silent-ok: not a prompt either; the line carries no report
+        return None
+    return _Entry(type=_USER, is_prompt=True) if prompt.type == _USER else None
 
 
 def _entries(lines: Iterable[str]) -> list[_Entry]:
@@ -106,10 +145,12 @@ def _entries(lines: Iterable[str]) -> list[_Entry]:
     for line in lines:
         try:
             entries.append(_Entry.model_validate_json(line))
-        except (
-            ValidationError
-        ):  # silent-ok: a transcript line we do not model (summaries, metadata) carries no report
-            continue
+        except ValidationError:
+            # silent-ok: a line we do not model (summaries, metadata) carries no
+            # report; a prompt line is kept only as the turn's boundary.
+            marker = _prompt_marker(line)
+            if marker is not None:
+                entries.append(marker)
     return entries
 
 
@@ -127,9 +168,10 @@ def has_reported(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> 
     The same two channels ``run_completion`` accepts: the sentinel block, read by
     the same parser, from the agent's own text only (a tool result that printed
     the contract's example is not a report), or a ``complete_stage`` call that
-    did not error.
+    did not error. Read from the current turn only: a resumed session's earlier
+    report answered an earlier run.
     """
-    entries = _entries(transcript_lines)
+    entries = _current_turn(_entries(transcript_lines))
     texts = [
         block.text
         for entry in entries
@@ -173,12 +215,13 @@ def refusal_reason(hook_input: StopHookInput) -> str:
 
 
 def _counter_path(session_id: str) -> Path:
-    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+    key = f"{os.environ.get(RUN_ID_ENV, '')}:{session_id}"
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
     return _STATE_DIR / f"{digest}.count"
 
 
 def _record_block(session_id: str) -> int:
-    """Count one more refusal for this session; return the new total."""
+    """Count one more refusal for this run's session; return the new total."""
     path = _counter_path(session_id)
     try:
         count = int(path.read_text(encoding="utf-8")) + 1

@@ -107,6 +107,8 @@ ENDPOINTS = {
     # The workspace dashboard's merge queue: a head waiting on its checks, two
     # behind it, one of each way an entry stops, and the recent merges.
     "merge-queue-loregarden.json": ("/api/merge-queue/loregarden", {}),
+    # Home and the Lanes page: every workspace's queue that has held an entry.
+    "merge-queue-overview.json": ("/api/merge-queue", {}),
 }
 
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible

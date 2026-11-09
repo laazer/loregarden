@@ -33,9 +33,18 @@ lg-milestone-that-969. Advanced once per workspace on the CI poll tick
    has); a cleanup that cannot finish is reported, and the entry still reads
    merged because GitHub said so.
 
+**A pull request admitted by number** (no ticket; `merge_queue_pull_heads`)
+stages onto its author's own head branch. A head there that the queue did not
+push is the author's newer work: a testing entry restages as for any moved
+head, and staging (`_authors_head`) adopts that work instead of pushing the old
+head over it. When such an entry leaves the queue unmerged, the reason is also
+posted on the PR, since no ticket carries it.
+
 **Direction is fixed.** Every merge here puts the candidate onto the base:
-`_stage` takes the base tip as the parent and the candidate as the content,
-and nothing in this module writes to the candidate's branch.
+`_stage` takes the base tip as the parent and the candidate as the content.
+Nothing here writes to a tree's integration branch; a PR admitted by number has
+no other branch, so its staged commit replaces its head, leased on what the
+author last left there.
 
 **Cancellability** is declared per step in `STEPS` and justified by
 idempotence: cutting a commit or reading checks only recomputes a decision, so
@@ -69,7 +78,6 @@ from loregarden.models.domain import (
     MergeQueueWait,
     PullRequestCheckOutcome,
     PullRequestState,
-    Ticket,
     Workspace,
     comparable_utc,
     utcnow,
@@ -80,6 +88,7 @@ from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_preservation import target_preserved
 from loregarden.services.merge_queue import (
+    entry_ticket,
     head_entry,
     live_entries,
     retry,
@@ -91,6 +100,11 @@ from loregarden.services.merge_queue_github import (
     StagedPullRequest,
     read_required,
     unreported,
+)
+from loregarden.services.merge_queue_pull_heads import (
+    author_owns_head,
+    drop_pull_pin,
+    fetch_pull_head,
 )
 from loregarden.services.merge_queue_reports import (
     artifact_open,
@@ -266,8 +280,14 @@ class MergeQueueLoop:
                 detail=f"whether it merges onto {entry.base_branch} could not be determined: "
                 f"{staged.detail}",
             )
+        lease: str | None = None
+        if author_owns_head(entry):
+            held = self._authors_head(entry)
+            if held is None:
+                return False
+            lease = held
         pushed = push_commit_as(
-            self.repo_root, entry.pr_head_branch, staged.sha, base=entry.base_branch
+            self.repo_root, entry.pr_head_branch, staged.sha, base=entry.base_branch, lease=lease
         )
         if not pushed.ok:
             # Transient as a rule (the network, a lease another publish just
@@ -289,6 +309,7 @@ class MergeQueueLoop:
             state=MergeQueueState.TESTING,
             wait=MergeQueueWait.CHECKS_UNREPORTED,
             staged_sha=staged.sha,
+            pushed_sha=staged.sha,
             staged_tree=staged.tree,
             staged_base_sha=staged.base_sha,
             attempts=entry.attempts + 1,
@@ -301,6 +322,43 @@ class MergeQueueLoop:
         self.report.actions.append(f"PR #{entry.pr_number}: staged {staged.sha[:12]}")
         return False
 
+    def _authors_head(self, entry: MergeQueueEntry) -> str | None:
+        """What the PR head holds now, when it is safe to push over; None when it is not.
+
+        Safe means it is the work this entry carries or the commit the queue
+        last pushed. Anything else is a push its author made while the entry
+        waited: the entry adopts it and stages again next cycle, and the push
+        leases on the value read here so one landing in between is refused.
+        """
+        held, failure = fetch_pull_head(self.repo_root, entry.pr_number)
+        if failure:
+            self.report.errors.append(f"PR #{entry.pr_number}: {failure}")
+            self._hold(
+                entry,
+                MergeQueueState.STAGING,
+                when="while its head could not be fetched",
+                state=MergeQueueState.QUEUED,
+                attempts=entry.attempts + 1,
+                detail=f"could not read PR #{entry.pr_number}'s head before staging: {failure}",
+            )
+            return None
+        if held in (entry.head_sha, entry.pushed_sha):
+            return held
+        if transition(
+            self.session,
+            entry,
+            MergeQueueState.STAGING,
+            state=MergeQueueState.QUEUED,
+            wait=MergeQueueWait.NONE,
+            head_sha=held,
+            detail=f"its author pushed {held[:12]} while it waited; staging that instead",
+        ):
+            logger.info("Merge queue: PR #%s adopted its author's push %s", entry.pr_number, held)
+            self.report.actions.append(f"PR #{entry.pr_number}: adopted {held[:12]}")
+        else:
+            self._gone(entry, "while adopting its author's push")
+        return None
+
     def cut(self, entry: MergeQueueEntry) -> Staged:
         """The candidate merged onto the base's fetched tip. The base is always the parent."""
         base_sha, failure = fetch_base(self.repo_root, entry.base_branch)
@@ -311,7 +369,7 @@ class MergeQueueLoop:
                 MergeVerdict.UNDETERMINED,
                 detail=f"{entry.head_sha[:12]} is not a commit in {self.repo_root}",
             )
-        ticket = self.session.get(Ticket, entry.ticket_id)
+        ticket = entry_ticket(self.session, entry)
         title = f"{ticket.external_id}: {ticket.title}" if ticket else f"PR #{entry.pr_number}"
         outcome = squash_onto(self.repo_root, base_sha, entry.head_sha, message=title)
         verdict = merge_verdict(outcome)
@@ -357,7 +415,7 @@ class MergeQueueLoop:
         ):
             return self._gone(entry, "while recording its conflict")
         self.session.refresh(entry)
-        ticket = self.session.get(Ticket, entry.ticket_id)
+        ticket = entry_ticket(self.session, entry)
         artifact = file_conflict_artifact(self.session, entry, ticket) if ticket else None
         # Blocked-on-an-artifact only once one exists: `_remind_blocked` retries
         # an entry whose artifact is closed, and "none was filed" is not closed.
@@ -370,6 +428,7 @@ class MergeQueueLoop:
         ):
             self.session.refresh(entry)
         report_stopped(self.session, entry)
+        self._tell_author(entry)
         self.report.actions.append(f"PR #{entry.pr_number}: conflicted; {entry.artifact_ref}")
         return True
 
@@ -537,6 +596,9 @@ class MergeQueueLoop:
                 f"{merged.merge_tree}, the checks passed on {entry.staged_tree}",
             )
         cleanup = delete_staging_ref(self.repo_root, entry.pr_head_branch)
+        if author_owns_head(entry):
+            unpinned = drop_pull_pin(self.repo_root, entry.pr_number)
+            cleanup = "; ".join(part for part in (cleanup, unpinned) if part)
         detail = f"merged as {merged.merge_commit[:12]}; landed tree equals the tested tree"
         if cleanup:
             detail += f" (cleanup: {cleanup})"
@@ -639,8 +701,34 @@ class MergeQueueLoop:
             return self._gone(entry, f"before it could be marked {state.value}")
         self.session.refresh(entry)
         report_stopped(self.session, entry)
+        self._tell_author(entry)
         self.report.actions.append(f"PR #{entry.pr_number}: {state.value}")
         return True
+
+    def _tell_author(self, entry: MergeQueueEntry) -> None:
+        """Post why a PR admitted by number left the queue on the PR itself.
+
+        A tree's reason lives on its ticket; this PR has none, and its author
+        reads the PR. The inbox card `report_stopped` filed is the durable
+        record either way, so a comment that cannot be posted is reported on
+        the cycle and logged, not retried.
+        """
+        if not author_owns_head(entry):
+            return
+        body = (
+            f"The merge queue stopped PR #{entry.pr_number} ({entry.state.value}).\n\n"
+            f"{entry.detail}"
+        )
+        if entry.log_tail:
+            body += f"\n\nFailing log tail:\n\n```\n{entry.log_tail[-4000:]}\n```"
+        body += (
+            "\n\nFix it on this branch and enqueue it again "
+            f"(`loregarden_enqueue_merge pr_number={entry.pr_number}`)."
+        )
+        failure = self.github.comment(entry.pr_number, body)
+        if failure:
+            self.report.errors.append(f"PR #{entry.pr_number}: comment failed: {failure}")
+            logger.warning("Merge queue: PR #%s comment failed: %s", entry.pr_number, failure)
 
     def _hold(
         self, entry: MergeQueueEntry, expected: MergeQueueState, *, when: str, **fields: object

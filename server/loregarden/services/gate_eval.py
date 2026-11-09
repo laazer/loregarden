@@ -50,7 +50,12 @@ from sqlmodel import Session, col, select
 logger = logging.getLogger(__name__)
 
 #: Outcomes that mean a gate actually ran. The rest recorded that none did.
-_ATTEMPT_OUTCOMES = (GateOutcome.PASSED, GateOutcome.FAILED, GateOutcome.UNAVAILABLE)
+_ATTEMPT_OUTCOMES = (
+    GateOutcome.PASSED,
+    GateOutcome.FAILED,
+    GateOutcome.UNAVAILABLE,
+    GateOutcome.TIMEOUT,
+)
 
 
 class GateEvent(BaseModel):

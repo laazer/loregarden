@@ -50,6 +50,7 @@ from loregarden.models.domain import (
     WorkItemType,
     comparable_utc,
 )
+from loregarden.services.deferral_state import is_deferred
 from loregarden.services.initiative_coverage import InitiativeCoverage, plan_coverage
 from loregarden.services.initiative_forecast import (
     Pace,
@@ -328,7 +329,12 @@ class PlanGraphBuilder:
             )
         _mark_ancestors_underway(nodes)
         for node in nodes.values():
-            node.waiting_on = [d for d in node.deps if nodes[d].status != NodeStatus.DONE]
+            # A deferred prerequisite is one this node proceeds without.
+            node.waiting_on = [
+                d
+                for d in node.deps
+                if nodes[d].status != NodeStatus.DONE and not is_deferred(nodes[d].ticket)
+            ]
             if node.status == NodeStatus.READY and node.waiting_on:
                 node.status = NodeStatus.WAITING
 

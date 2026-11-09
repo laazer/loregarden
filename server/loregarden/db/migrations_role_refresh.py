@@ -13,6 +13,7 @@ is the copy, with the guards 0123 and 0137 each wrote by hand:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -35,11 +36,20 @@ def _editors(conn: Connection, agent_id: str) -> set[str]:
 
 
 def refresh_role_from_seed(
-    conn: Connection, *, migration_id: str, slug: str, role_file: str, marker: str
+    conn: Connection,
+    *,
+    migration_id: str,
+    slug: str,
+    role_file: str,
+    marker: str,
+    superseded_bodies: frozenset[str] = frozenset(),
 ) -> bool:
     """Copy `role_file` into `slug`'s role body; return whether it wrote.
 
-    A database with no agent tables yet has nothing to refresh.
+    A database with no agent tables yet has nothing to refresh. A body a person
+    edited is left alone, unless its sha256 is in `superseded_bodies`: a body
+    the migration's author compared with the seed and found the seed already
+    carries every edit of.
     """
     if not (table_exists(conn, "studio_agents") and table_exists(conn, "studio_agent_versions")):
         return False
@@ -53,7 +63,8 @@ def refresh_role_from_seed(
     if row is None or marker in (row["role_body"] or ""):
         return False
     editors = _editors(conn, row["id"])
-    if editors:
+    body_hash = hashlib.sha256((row["role_body"] or "").encode("utf-8")).hexdigest()
+    if editors and body_hash not in superseded_bodies:
         logger.warning(
             "%s: %r was edited by %s and lacks %r — leaving it alone; merge the seed "
             "file's new section into it by hand in Studio.",

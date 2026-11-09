@@ -46,7 +46,7 @@ _DIGESTED = (
     EventType.GATE_EVALUATED,
     EventType.APPROVAL_REQUESTED,
 )
-_GATE_FAILURES = frozenset({GateOutcome.FAILED, GateOutcome.UNAVAILABLE})
+_GATE_FAILURES = frozenset({GateOutcome.FAILED, GateOutcome.UNAVAILABLE, GateOutcome.TIMEOUT})
 _KIND_RANK = {kind: index for index, kind in enumerate(ActivityHighlightKind)}
 
 

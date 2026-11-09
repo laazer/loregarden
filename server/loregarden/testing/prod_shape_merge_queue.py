@@ -1,13 +1,19 @@
 """The scenario's merge queue: what a workspace dashboard shows landing on main.
 
-**Not measured from live.** The queue ships with this table, so live holds no
-rows yet (checked read-only 2026-11-03: `merge_queue_entries` has 0 rows). The shape is the volume the queue's own ticket states
-(lg-milestone-that-972): "typically zero or one, a milestone's worth at most".
-An entry is a tree root's PR, so at most is the number of roots publishing at
-once. The scenario draws the largest realistic queue — a head waiting on its
-checks, two behind it — plus one of each way an entry stops and the recent
-merges, so every row shape the surface renders exists. Re-measure once the
-queue has run for a few weeks; until then this is the ticket's word, not data.
+**Re-measured 2026-11-08 (read-only):** live holds 7 entries, all merged, all a
+tree's (one milestone's PRs), against about 49 pull requests merged to `main`
+since the queue shipped on 2026-11-03. Interactive sessions' PRs now enter it
+by number with no ticket (`merge_queue_ticketless_entries`), so most entries
+will be ticketless: about 7 in 49 were trees. The scenario keeps one entry in
+``TREE_EVERY`` a tree's, so a ticket's row (title, external id, conflict
+artifact) and a session's row (branch name, no ticket) both exist on every
+surface; the rest are ticketless.
+
+Depth is the queue's own word, not yet data: "typically zero or one". At about
+ten PRs a day, each in line for 15-30 minutes (the 7 live entries took 15-33),
+a few at once is the realistic peak, so the scenario draws a head waiting on its
+checks with two behind it, one of each way an entry stops, and the recent
+merges. Re-measure depth once interactive PRs have used the queue for a week.
 
 Split from `prod_shape` (near its size cap); `build_prod_shape` calls it.
 """
@@ -32,7 +38,10 @@ class MergeQueueShape(BaseModel):
     merged: int
 
 
-MERGE_QUEUE_CALIBRATION = MergeQueueShape(measured="2026-11-03 (ticket volume)", live=3, merged=8)
+MERGE_QUEUE_CALIBRATION = MergeQueueShape(measured="2026-11-08 (live, read-only)", live=3, merged=8)
+
+#: One entry in this many is a tree's; the rest are PRs admitted by number.
+TREE_EVERY = 3
 
 #: The workspace whose dashboard the fixture records.
 MERGE_QUEUE_WORKSPACE = "loregarden"
@@ -69,17 +78,22 @@ def add_merge_queue_shape(
     def entry(n: int, state: MergeQueueState, minutes_ago: int, **fields) -> MergeQueueEntry:
         nonlocal position
         position += 1
-        ticket_id, external_id = roots[n % len(roots)]
         pr = 700 + n
         changed = now - timedelta(minutes=minutes_ago)
+        if n % TREE_EVERY == 0:
+            ticket_id, external_id = roots[n % len(roots)]
+            head_branch, source = f"publish/integration/{external_id}", f"integration/{external_id}"
+        else:
+            ticket_id = None
+            head_branch = source = f"claude/session-{n:02x}{pr:x}"
         return MergeQueueEntry(
             id=shape_id("merge-queue", n),
             workspace_id=workspace_id,
             ticket_id=ticket_id,
             pr_number=pr,
             pr_url=f"https://github.com/laazer/loregarden/pull/{pr}",
-            pr_head_branch=f"publish/integration/{external_id}",
-            source_branch=f"integration/{external_id}",
+            pr_head_branch=head_branch,
+            source_branch=source,
             head_sha=f"{n:02x}" * 20,
             position=position,
             state=state,

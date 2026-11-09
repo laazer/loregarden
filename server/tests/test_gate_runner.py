@@ -622,7 +622,7 @@ def test_run_transition_gates_disabled_outcome_still_carries_stage_context(sessi
     assert context["to_stage"] == "review"
 
 
-def test_a_timed_out_gate_is_unavailable_not_failed(session, tmp_path):
+def test_a_timed_out_gate_is_not_failed(session, tmp_path):
     """The distinction that stops an hour-long loop.
 
     A gate reported FAILED is handed to the stage's own agent to fix, then the
@@ -635,14 +635,14 @@ def test_a_timed_out_gate_is_unavailable_not_failed(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="G-1", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(
-        slug="demo", gates=GatesConfig(enabled=True, commands=["sleep 5"])
+        slug="demo",
+        gates=GatesConfig(enabled=True, commands=["sleep 5"], command_timeouts={"sleep 5": 1}),
     )
 
-    with patch("loregarden.services.gate_runner.GATE_TIMEOUT_SECONDS", 1):
-        result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
+    result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
 
     assert result.ok is False
-    assert result.outcome is GateOutcome.UNAVAILABLE
+    assert result.outcome is GateOutcome.TIMEOUT
     assert "timed out" in result.message
 
 

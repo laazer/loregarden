@@ -40,6 +40,7 @@ import logging
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import BlockKind, EventType, Ticket, TicketState, WorkItemType
+from loregarden.services.deferral_state import is_deferred
 from loregarden.services.discovered_work import has_owned_children, owned_children
 from loregarden.services.initiative_coverage import (
     initiative_roots,
@@ -104,7 +105,45 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
     # `derive` owns the state_locked / wont_do guards and the bookkeeping; a
     # parent's state is a function of its children, not a move anyone chose.
     moved = derive(parent, target, actor="rollup")
-    return _stamp_tickets_kind(parent, target) or moved
+    stamped = _stamp_tickets_kind(parent, target)
+    return _note_deferred_children(session, parent) or stamped or moved
+
+
+#: How a rollup note naming deferred children starts, so the rollup only ever
+#: clears a note it wrote.
+DEFERRED_NOTE = "Waits on deferred "
+#: Deferred children the note names before the rest become a count.
+_DEFERRED_NAMED = 3
+
+
+def _note_deferred_children(session: Session, parent: Ticket) -> bool:
+    """Say which deferred children keep a rolled-up parent from done, and why.
+
+    A deferred child stays blocked, so the parent is blocked by the rollup
+    (`ticket_deferral`); without this its card read "blocked" with no hint
+    that the block was a decision someone made. True when it changed.
+    """
+    deferred = [
+        child for child in session.exec(owned_children(parent.id)).all() if is_deferred(child)
+    ]
+    if deferred and parent.block_kind is BlockKind.TICKETS:
+        named = "; ".join(
+            f"{child.external_id} ({child.deferred_reason})" for child in deferred[:_DEFERRED_NAMED]
+        )
+        more = (
+            f"; and {len(deferred) - _DEFERRED_NAMED} more"
+            if len(deferred) > _DEFERRED_NAMED
+            else ""
+        )
+        note = f"{DEFERRED_NOTE}{named}{more}"
+    elif parent.blocking_issues.startswith(DEFERRED_NOTE):
+        note = ""
+    else:
+        return False
+    if parent.blocking_issues == note:
+        return False
+    parent.blocking_issues = note
+    return True
 
 
 def _stamp_tickets_kind(parent: Ticket, target: TicketState) -> bool:

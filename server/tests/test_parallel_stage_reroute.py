@@ -19,6 +19,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.workflow_state import initial_stages_json
+from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
 
 
@@ -33,7 +34,7 @@ def _stage_report(
     return (
         "Narrative output from the agent.\n"
         "<<<LOREGARDEN_STAGE_REPORT>>>\n"
-        f'{{"status": "{status}", "confidence": {confidence}{extra}}}\n'
+        f'{{"status": "{status}", "confidence": {confidence}{extra}{findings_fragment(status)}}}\n'
         "<<<END_STAGE_REPORT>>>\n"
     )
 

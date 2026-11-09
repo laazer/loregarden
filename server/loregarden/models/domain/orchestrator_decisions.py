@@ -95,6 +95,11 @@ class OrchestratorDecision(StrEnum):
     PREREQUISITES_OVERRIDDEN = "prerequisites_overridden"
     #: A held or parked ticket's prerequisites all landed, so it was resumed.
     RELEASED_ON_PREREQUISITES = "released_on_prerequisites"
+    #: A blocked ticket was deferred: it stays blocked, and its dependents
+    #: proceed without it (`ticket_deferral`).
+    TICKET_DEFERRED = "ticket_deferred"
+    #: A deferral was taken back: the ticket holds its dependents again.
+    TICKET_UNDEFERRED = "ticket_undeferred"
     #: A ticket over the size threshold was split into ordered children, which
     #: carry its work from here; it runs none of its own stages again.
     SPLIT_OVERSIZED_TICKET = "split_oversized_ticket"
@@ -135,3 +140,14 @@ class OrchestratorDecision(StrEnum):
     #: A review, verify or gate run passed having read none of the diff's files,
     #: or with no tool calls at all, so the pass was refused (`read_evidence`).
     REFUSED_UNREAD_PASS = "refused_unread_pass"
+    #: A review, verify or gate stage reported fail or needs_rework with no
+    #: blocking finding that states its trigger, path and impact, so it was not
+    #: treated as a reject: the stage proceeded as passed (`finding_bar`). The
+    #: evidence carries every finding it reported.
+    REJECT_NOT_ADMITTED = "reject_not_admitted"
+    #: A review, verify or gate stage reported findings that do not block, each
+    #: with its disposition, and they are on record rather than dropped.
+    FINDINGS_RECORDED = "findings_recorded"
+    #: A review lane's recheck round answered its prior blocking findings,
+    #: each resolved, unresolved or unanswered (`recheck_round`).
+    RECHECK_RECORDED = "recheck_recorded"
