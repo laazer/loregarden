@@ -40,11 +40,13 @@ from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.criterion_split import split_instead_of_pausing
 from loregarden.services.dependency_hold import link_reported_prerequisites
+from loregarden.services.finding_bar import PriorFinding, settle_review
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
+from loregarden.services.recheck_round import prior_findings
 from loregarden.services.recorded_paths import ticket_recorded_paths
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
@@ -116,6 +118,7 @@ def member_result(
     session: Session | None = None,
     ticket: Ticket | None = None,
     stage_def: WorkflowStageDef | None = None,
+    priors: list[PriorFinding] | None = None,
 ) -> ParallelMemberResult:
     """Judge one member from what its run produced.
 
@@ -123,7 +126,14 @@ def member_result(
     stdout pass is derived (handoff_expected=False). Callers without a ticket
     (infrastructure tests) still judge the envelope alone.
     """
-    report = parse_stage_report(stdout)
+    # Pure: the lane is re-judged on every reconcile; the decision was
+    # recorded once, when the run completed (`finding_bar.admit_run_report`).
+    report, _ = settle_review(
+        parse_stage_report(stdout),
+        agent_id=agent_id,
+        stage=stage_def,
+        priors=priors or [],
+    )
     if status != RunStatus.SUCCEEDED:
         return ParallelMemberResult(
             agent_id=agent_id,
@@ -204,6 +214,7 @@ def member_result_from_run(run: AgentRun) -> ParallelMemberResult:
         session=session,
         ticket=ticket,
         stage_def=stage_def,
+        priors=prior_findings(session, ticket, run) if session and ticket else [],
     )
 
 

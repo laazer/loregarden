@@ -79,6 +79,10 @@ NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
 NEEDS_A_DISPATCHED_SURVEY_PASS = frozenset(
     {"loregarden_survey_pass", "loregarden_survey_record", "loregarden_survey_write"}
 )
+#   loregarden_defer_ticket -> defers only a blocked ticket; the seed ticket is not
+#   blocked, and its honest answer here is a refusal. test_ticket_deferral.py drives
+#   it over MCP against a blocked ticket.
+NEEDS_A_BLOCKED_TICKET = "loregarden_defer_ticket"
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -551,6 +555,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         *NEEDS_AN_EXTERNAL_HARNESS_RUN,
         *NEEDS_A_DISPATCHED_SURVEY_PASS,
         *NEEDS_A_QUEUED_PULL_REQUEST,
+        NEEDS_A_BLOCKED_TICKET,
     }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"

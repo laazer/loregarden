@@ -64,6 +64,7 @@ from loregarden.services.exit_action_ledger import (
     outstanding_exit_actions,
 )
 from loregarden.services.exit_actions import attest_assigned_actions
+from loregarden.services.finding_bar import admit_run_report
 from loregarden.services.gate_approvals import create_workflow_gate_approval
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.network_wait import (
@@ -80,6 +81,7 @@ from loregarden.services.operation_criteria import (
 )
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.read_evidence import record_read_evidence
+from loregarden.services.recheck_round import prior_findings
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
@@ -434,7 +436,14 @@ def complete_run_tail(
     if not ticket:
         return run
 
-    report = parse_stage_report(stdout)
+    # A judging stage's reject stands only on a finding that shows its defect.
+    report = admit_run_report(
+        orch.session,
+        ticket,
+        run,
+        parse_stage_report(stdout),
+        priors=prior_findings(orch.session, ticket, run),
+    )
     if report is not None and run.verdict_channel is StageVerdictChannel.UNKNOWN:
         # Only when the tool did not already claim it: an agent that called
         # `complete_stage` and also printed the sentinel used the typed channel,

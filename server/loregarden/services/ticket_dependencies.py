@@ -30,6 +30,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from loregarden.models.domain import Ticket, TicketDependency, TicketState
+from loregarden.services.deferral_state import is_deferred
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from sqlmodel import Session, select
@@ -249,7 +250,10 @@ class TicketDependencyService:
         if not prerequisite_ids:
             return []
         rows = self.session.exec(select(Ticket).where(Ticket.id.in_(prerequisite_ids))).all()
-        return [row for row in rows if row.state not in self.SATISFIED_STATES]
+        # A deferred prerequisite holds nothing (`ticket_deferral`).
+        return [
+            row for row in rows if row.state not in self.SATISFIED_STATES and not is_deferred(row)
+        ]
 
     def dependents(self, ticket_id: str) -> list[str]:
         return list(

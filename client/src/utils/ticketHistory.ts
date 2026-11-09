@@ -167,7 +167,18 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     // A review that passed with what it read on record. Reading only some of
     // the diff is a lens keeping to its remit, not trouble; reading none is
     // `refused_unread_pass`, which stays "failed".
-    decision === "read_evidence_checked"
+    decision === "read_evidence_checked" ||
+    // A reject that showed no defect proceeding as a pass, and findings that
+    // do not block put on record, are the pipeline carrying on as designed.
+    decision === "reject_not_admitted" ||
+    decision === "findings_recorded" ||
+    // A review lane's recheck answering its prior findings; a finding left
+    // unresolved sends the work back through its own reroute event.
+    decision === "recheck_recorded" ||
+    // A person's decision to let a blocked ticket's dependents go ahead, or to
+    // take that back; the block itself has its own line.
+    decision === "ticket_deferred" ||
+    decision === "ticket_undeferred"
     ? "normal"
     : "failed";
   }

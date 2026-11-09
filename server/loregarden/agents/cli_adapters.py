@@ -672,6 +672,59 @@ def cursor_resume_invocation(
     return replace(invocation, argv=argv, stdin_prompt=prompt, resume_session_id=session_id)
 
 
+def claude_resume_invocation(
+    invocation: CliInvocation, *, session_id: str, prompt: str
+) -> CliInvocation:
+    """`invocation` again, continuing claude session `session_id` with `prompt`.
+
+    Every flag is kept, the stage prompt in ``--append-system-prompt-file``
+    included: a system prompt is not part of a session's history, so a resumed
+    turn without it would lose the stage contract. Print mode replaces the fixed
+    user prompt with ``prompt``; interactive mode leaves argv's prompt alone,
+    since the permission bridge sends ``prompt`` as the session's next message.
+    """
+    argv = list(invocation.argv)
+    if not invocation.interactive:
+        user_prompt = argv.index("--append-system-prompt-file") + 2
+        argv[user_prompt] = prompt
+        after_print = argv.index("-p") + 1
+        argv[after_print:after_print] = ["--resume", session_id]
+        return replace(invocation, argv=argv, resume_session_id=session_id)
+    return replace(invocation, argv=[*argv, "--resume", session_id], resume_session_id=session_id)
+
+
+#: Why each executing adapter's session cannot be continued by a later run, or
+#: "" when it can (`rework_resume`). Every adapter but `DEFAULT` declares one;
+#: `test_rework_resume` fails when a new adapter does not.
+SESSION_RESUME_UNSUPPORTED: dict[CliAdapter, str] = {
+    CliAdapter.CLAUDE: "",
+    CliAdapter.CURSOR: "",
+    CliAdapter.CODEX: "codex sessions are not resumed by this control plane (`codex exec resume` is not wired)",
+    CliAdapter.OPENCODE: "opencode sessions are not resumed by this control plane (`--session` is not wired)",
+    CliAdapter.LMSTUDIO: "the LM Studio runner keeps no session between runs",
+    CliAdapter.LOCAL: "the local runner has no CLI session",
+}
+
+
+def session_resume_unsupported(adapter: str) -> str:
+    """Why `adapter`'s session cannot be resumed, or "" when it can."""
+    try:
+        return SESSION_RESUME_UNSUPPORTED[CliAdapter(adapter)]
+    except (ValueError, KeyError):
+        return f"adapter {adapter!r} declares no session resume"
+
+
+def session_resume_invocation(
+    invocation: CliInvocation, *, session_id: str, prompt: str
+) -> CliInvocation:
+    """`invocation` continuing session `session_id` with `prompt` as the next turn."""
+    if invocation.adapter == CliAdapter.CLAUDE:
+        return claude_resume_invocation(invocation, session_id=session_id, prompt=prompt)
+    if invocation.adapter == CliAdapter.CURSOR:
+        return cursor_resume_invocation(invocation, session_id=session_id, prompt=prompt)
+    raise ValueError(session_resume_unsupported(invocation.adapter))
+
+
 DEFAULT_OPENCODE_USER_PROMPT = (
     "Execute the Loregarden stage task in the attached prompt file. "
     "Work in the workspace directory and complete the stage deliverables."

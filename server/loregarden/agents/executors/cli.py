@@ -16,15 +16,14 @@ from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.dispatch_warnings import (
     warn_before_run,
 )
-from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.agents.executors.prompt_size import record_prompt_size
-from loregarden.agents.executors.report_resume import resume_for_missing_report
+from loregarden.agents.executors.rework_round import prepare_round, run_round
 from loregarden.agents.executors.run_evidence import (
     record_run_evidence,
     run_context_artifacts,
     run_paths_before,
 )
+from loregarden.agents.executors.stage_turn import spawn_stage_turn
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -91,6 +90,7 @@ from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.recorded_paths import ticket_recorded_paths
+from loregarden.services.rework_resume import plan_rework_resume
 from loregarden.services.run_errors import (
     RunTimeout,
     agent_timeout_message,
@@ -339,7 +339,15 @@ class CliAgentExecutor:
                     advance_workflow=advance_workflow,
                 )
 
-            run.command = " ".join(invocation.argv)
+            plan, first = prepare_round(
+                self.session,
+                run,
+                plan_rework_resume(
+                    self.session, ticket, run, adapter=invocation.adapter, repo_root=repo_root
+                ),
+                invocation,
+            )
+            run.command = " ".join(first.argv)
             self.session.add(run)
             self.session.commit()
 
@@ -368,43 +376,31 @@ class CliAgentExecutor:
                 else agent.get("timeout", 120)
             )
             try:
-                if invocation.interactive:
-                    bridge = PermissionBridgeRunner(self.session)
-                    result = bridge.run(
-                        run_id=run.id,
-                        ticket=ticket,
-                        invocation=invocation,
-                        prompt=prompt,
-                        timeout_seconds=timeout,
-                        streamer=streamer,
-                    )
-                    stdout, stderr, status = result.stdout, result.stderr, result.status
-                else:
-                    # The transport is resolved by whoever performs the spawn,
-                    # and announced from the answer that spawn returned — see
-                    # `print_mode.run_print_mode`. Resolved here as well it was
-                    # two independent readings of one fact, and the SYS line was
-                    # written BEFORE the spawn, so a tmux spawn that raised left
-                    # a line in the feed naming a session that never existed.
-                    stdout, stderr, status = run_print_mode(
-                        invocation=invocation,
-                        repo_root=repo_root,
-                        timeout=timeout,
-                        streamer=streamer,
-                        run_id=run.id,
-                        run_code=run.run_code,
-                    )
-                    # One resume when the turn ended with no report (848).
-                    stdout, stderr, status = resume_for_missing_report(
-                        invocation=invocation,
-                        run=run,
-                        stdout=stdout,
-                        stderr=stderr,
-                        status=status,
+
+                def spawn(turn: CliInvocation, text: str, stem: str) -> tuple[str, str, RunStatus]:
+                    return spawn_stage_turn(
+                        self.session,
+                        run,
+                        ticket,
+                        turn,
+                        prompt=text,
+                        stem=stem,
                         repo_root=repo_root,
                         timeout=timeout,
                         streamer=streamer,
                     )
+
+                turn = run_round(
+                    self.session,
+                    run,
+                    plan=plan,
+                    invocation=invocation,
+                    first=first,
+                    prompt=prompt,
+                    spawn=spawn,
+                    streamer=streamer,
+                )
+                stdout, stderr, status = turn.stdout, turn.stderr, turn.status
 
                 streamer.finalize(status=status, stderr=stderr)
                 record_run_evidence(
@@ -413,7 +409,7 @@ class CliAgentExecutor:
                     repo_root=repo_root,
                     paths_before=run_paths_before(run),
                     stdout=stdout,
-                    invocation=invocation,
+                    invocation=turn.invocation,
                 )
                 artifacts = run_context_artifacts(ticket, run, status)
                 completed = self.orchestration.complete_run(
