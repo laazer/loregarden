@@ -692,6 +692,7 @@ _RECEIPT_STATUS: dict[GateOutcome, str] = {
     GateOutcome.PASSED: RECEIPT_PASSED,
     GateOutcome.FAILED: RECEIPT_FAILED,
     GateOutcome.UNAVAILABLE: RECEIPT_FAILED,
+    GateOutcome.TIMEOUT: RECEIPT_FAILED,
     GateOutcome.DISABLED: RECEIPT_DISABLED,
     GateOutcome.SKIPPED: RECEIPT_DISABLED,
 }

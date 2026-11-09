@@ -14,6 +14,7 @@ const OUTCOME_LABEL: Record<GateTestCommandResult["outcome"], string> = {
   passed: "Passed",
   failed: "Failed",
   unavailable: "Couldn't run",
+  timeout: "Timed out",
   skipped: "Skipped",
   disabled: "Disabled",
 };

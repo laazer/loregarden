@@ -126,6 +126,8 @@ def record_gate_evaluation(
             "to_stage": to_stage,
             "stage_key": from_stage,
             "command": result.command,
+            # Commands that timed out once and ran again; empty when none did.
+            "timeout_retries": list(result.timeout_retries),
             # What had already tried to fix it. Without this a pass cannot say
             # why it passed, and neither recovery tier can be judged on evidence
             # (lg-workflow-integrity-683).

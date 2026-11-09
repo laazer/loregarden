@@ -147,7 +147,9 @@ def test_a_gate_waiting_in_line_keeps_its_orchestration_alive(session, monkeypat
 # ---- the block ------------------------------------------------------------
 
 
-def _unavailable_gate_blocks(db_session: Session, message: str) -> Ticket:
+def _unavailable_gate_blocks(
+    db_session: Session, message: str, outcome: GateOutcome = GateOutcome.UNAVAILABLE
+) -> Ticket:
     workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
     ticket = db_session.exec(
         select(Ticket).where(
@@ -160,7 +162,7 @@ def _unavailable_gate_blocks(db_session: Session, message: str) -> Ticket:
     orch_run = make_orchestration_run(
         db_session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="unavailable"
     )
-    result = GateRunResult(ok=False, outcome=GateOutcome.UNAVAILABLE, message=message)
+    result = GateRunResult(ok=False, outcome=outcome, message=message)
     with mock.patch(
         "loregarden.services.gate_recovery.run_transition_gates", return_value=result
     ) as gates:
