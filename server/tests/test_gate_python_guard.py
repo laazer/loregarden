@@ -40,6 +40,7 @@ GUARDED_ENTRY_POINTS = [
     "py_organization_check.py",
     "py_silent_except_check.py",
     "py_git_subprocess_check.py",
+    "md_report_check.py",
     "gate_scope_json.py",
     "select_pytest_targets.py",
 ]
