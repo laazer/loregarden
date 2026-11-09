@@ -66,6 +66,18 @@ def test_every_hook_command_names_a_dispatchable_hook_that_exists():
         assert (_HOOKS / f"{name}.py").is_file()
 
 
+def test_the_hooks_module_exists_and_its_state_is_namespaced_by_the_plugin_name():
+    """The engine keys `$.state` by plugin name; a contract under any other name is never read."""
+    hooks = _json(_PLUGIN / "hooks" / "hooks.json")
+    manifest = _json(_PLUGIN / ".claude-plugin" / "plugin.json")
+    for module in hooks["modules"]:
+        assert (_PLUGIN / "hooks" / module).is_file(), module
+    contract = (_PLUGIN / manifest["types"]).read_text(encoding="utf-8")
+    assert re.search(rf"^\s+{manifest['name']}: \{{", contract, re.MULTILINE)
+    garden = (_PLUGIN / "hooks" / "garden.tsx").read_text(encoding="utf-8")
+    assert set(re.findall(r"plugin: '([\w-]+)'", garden)) == {manifest["name"]}
+
+
 def _run(hook: str, project_dir: Path, command: str = "git -c commit.gpgsign=false commit -m x"):
     payload = json.dumps({"cwd": str(project_dir), "tool_input": {"command": command}})
     env = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE")}

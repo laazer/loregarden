@@ -55,3 +55,6 @@ draft/
 
 # Stray test/run output
 *.log
+
+# Type declarations Claude Code writes beside a plugin it loads from disk.
+claude-plugin/.claude-plugin/types/

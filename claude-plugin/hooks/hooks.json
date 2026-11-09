@@ -1,5 +1,8 @@
 {
-  "description": "Loregarden guardrails. Each steps aside in a repository that ships its own copy (.claude/hooks/<name>.py).",
+  "description": "The /garden panel (the hooks module), and loregarden's guardrails (the command hooks), each of which steps aside in a repository that ships its own copy (.claude/hooks/<name>.py).",
+  "modules": [
+    "./garden.tsx"
+  ],
   "hooks": {
     "PreToolUse": [
       {
