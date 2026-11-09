@@ -1,4 +1,4 @@
-export type GardenTab = 'tend' | 'harvest' | 'weather'
+export type GardenTab = 'tend' | 'busy' | 'harvest'
 
 /** A pending approval: a person's sign-off a run is waiting on. */
 export type Approval = {
@@ -34,17 +34,57 @@ export type QueueEntry = {
   changedAt: string
 }
 
+/** What a held command last said about itself, and when. */
+export type Progress = { summary: string; reportedAt: string }
+
 /** A capacity lease, held or waiting. */
 export type Lease = {
   id: string
-  label: string
+  /** What the holder said it is running, e.g. "git push (pre-push client+server suites)". */
+  what: string
+  /** "worktree @ branch", or the holder's whole label when it gave no parts. */
+  where: string
+  pid: number | null
   footprint: string
   cpus: number
   memoryMb: number
   heldSeconds: number
   position: number | null
   waitSeconds: number | null
+  /** Set when the lease belongs to a ticket's run; it is then drawn on that lane's card. */
+  ticketId: string
+  runId: string
+  progress: Progress | null
+  /** A waiter that stopped asking: it will be dropped from the line. */
+  pollStalled: boolean
 }
+
+/** A lane at work: a whole ticket's orchestration, or one agent run. */
+export type Lane = {
+  slot: number
+  ticketId: string
+  runId: string
+  orchestration: boolean
+  agent: string
+  stage: string
+  status: string
+  elapsedSeconds: number
+}
+
+/** A ticket or stage waiting for a lane. */
+export type LaneWait = {
+  id: string
+  ticketId: string
+  slot: number
+  position: number
+  orchestration: boolean
+  agent: string
+  stage: string
+  waitSeconds: number
+}
+
+/** The ticket a card names, read once per ticket and kept. */
+export type TicketName = { externalId: string; title: string; workspace: string }
 
 export type Capacity = {
   cpusUsed: number
@@ -68,6 +108,11 @@ export type Garden = {
   approvals: Approval[]
   blockedCount: number
   queue: QueueEntry[]
+  /** Lanes at work and the line for them; light reads, 0.1 s on the live database. */
+  lanes: Lane[]
+  laneQueue: LaneWait[]
+  /** Names for the tickets the lane and capacity cards point at, by ticket id. */
+  tickets: Record<string, TicketName>
   blocked: Blocked[] | null
   capacity: Capacity | null
   failed: string[]

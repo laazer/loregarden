@@ -70,10 +70,36 @@ const queue = {
   ],
 }
 const capacity = {
-  host: { ceiling: { cpus: 7, memory_mb: 48332 }, in_use: { cpus: 4, memory_mb: 8192 } },
-  holders: [{ lease_id: 'h1', holder_label: 'pre-push server-tests · claude/x', footprint: 'heavy', cpus: 4, memory_mb: 8192, held_seconds: 67 }],
+  host: { ceiling: { cpus: 7, memory_mb: 48332 }, in_use: { cpus: 6, memory_mb: 12288 } },
+  holders: [
+    // The live case: a suite that reported FAILED 75 minutes ago and still holds 4 CPUs.
+    {
+      lease_id: 'h1',
+      holder_label: '2490 full server suite (2) · paper-review-2610@claude/dispatch-idempotency · pid 79180',
+      holder: { what: '2490 full server suite (2)', worktree: 'paper-review-2610', branch: 'claude/dispatch-idempotency', pid: 79180 },
+      footprint: 'heavy',
+      cpus: 4,
+      memory_mb: 8192,
+      held_seconds: 7200,
+      progress: { summary: 'FAILED: pytest on 1 file(s) (5/5)', reported_at: '2026-11-09T14:45:00+00:00' },
+    },
+    // Held by the run on lane 1: drawn on that lane's card, not as its own.
+    { lease_id: 'h2', holder_label: 'run r1', agent_run_id: 'r1', ticket_id: 't9', footprint: 'stack', cpus: 2, memory_mb: 4096, held_seconds: 300 },
+  ],
   waiting: [{ lease_id: 'w1', holder_label: 'jest · claude/y', footprint: 'stack', position: 1, estimated_wait_seconds: 600 }],
 }
+const lanes = {
+  active_runs: [
+    { run_id: 'r1', orchestration_run_id: 'o1', ticket_id: 't9', slot_number: 1, agent_id: 'implementer', stage_key: 'implement', status: 'running', elapsed_seconds: 1500 },
+  ],
+}
+const laneQueue = {
+  queued_runs: [
+    { entry_id: 'e1', ticket_id: 't8', slot_number: 1, position: 1, entry_kind: 'orchestration', agent_id: 'planner', stage_key: 'plan', wait_seconds: 240 },
+  ],
+}
+const t9 = { id: 't9', external_id: 'lg-plugin-panel-2530', title: 'Queue cards in the garden', workspace_slug: 'loregarden' }
+const t8 = { id: 't8', external_id: 'blo-77', title: 'Playtest exit actions', workspace_slug: 'blobert' }
 
 const ANSWERS: Record<string, unknown> = {
   '/api/inbox/approvals': approvals,
@@ -81,6 +107,10 @@ const ANSWERS: Record<string, unknown> = {
   '/api/tickets?state=blocked&limit=500': blocked,
   '/api/merge-queue': queue,
   '/api/docker/capacity': capacity,
+  '/api/parallel/active-runs': lanes,
+  '/api/parallel/queued-runs': laneQueue,
+  '/api/tickets/t9': t9,
+  '/api/tickets/t8': t8,
 }
 
 type Answer = { status: number; ok: boolean; headers: Record<string, string>; text: string }
@@ -116,7 +146,7 @@ test('each tab answers its question from the server, on every surface', async ($
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.command.run(GARDEN)
 
-  expect(seen.status.at(-1)).toBe('🌿 15 to tend · 1 blocked · 1 landing · 1 queued')
+  expect(seen.status.at(-1)).toBe('🌿 15 to tend · 1 blocked · 1 working · 1 landing · 1 queued')
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -130,9 +160,18 @@ test('each tab answers its question from the server, on every surface', async ($
     expect(await ui.find({ type: 'Link', text: /PR 830/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Recently landed/ })).toBeDefined()
 
-    await ui.press({ key: 'tab-weather' })
-    expect(await ui.find({ type: 'Text', text: /pre-push server-tests/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /#1/ })).toBeDefined()
+    await ui.press({ key: 'tab-busy' })
+    // A lane card names its ticket, links it, and carries the lease its run holds.
+    expect(await ui.find({ type: 'Link', text: /Queue cards in the garden/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /holds 2 CPU · 4\.0 GB/ })).toBeDefined()
+    // That lease is not drawn twice; the other holder gets its own card, flagged as silent.
+    expect(await ui.find({ type: 'Text', text: /run r1/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /2490 full server suite/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /pid 79180/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /silent for 1h, still holding/ })).toBeDefined()
+    // Both lines are under Waiting: the lane queue and the capacity queue.
+    expect(await ui.find({ type: 'Link', text: /Playtest exit actions/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /☁ #1/ })).toBeDefined()
 
     await ui.press({ key: 'tab-tend' })
     await ui.unmount()
@@ -202,7 +241,46 @@ test('a light read keeps what the heavy read found, and asks nothing heavy', asy
   const heavy = await readGarden(fetcher, 'http://x', NOW, null, true)
   asked.length = 0
   const light = await readGarden(fetcher, 'http://x', NOW + 1, heavy, false)
-  expect(asked.sort()).toEqual(['/api/inbox/approvals', '/api/merge-queue', '/api/tickets/status-summary'])
+  // Ticket names were read once, by the heavy read; the light read reuses them.
+  expect(asked.sort()).toEqual([
+    '/api/inbox/approvals',
+    '/api/merge-queue',
+    '/api/parallel/active-runs',
+    '/api/parallel/queued-runs',
+    '/api/tickets/status-summary',
+  ])
+  expect(light.tickets.t9?.title).toBe('Queue cards in the garden')
   expect(light.blocked).toEqual(heavy.blocked)
   expect(light.heavyAt).toBe(NOW)
+})
+
+test('a ticket name that cannot be read shows the ticket id and is named, then is read again', async () => {
+  const names = (path: string) => (path.startsWith('/api/tickets/t') ? down : SERVER(path))
+  const first = await readGarden(async url => names(url.replace('http://x', '')), 'http://x', NOW, null, true)
+  expect(first.failed).toEqual(['ticket names (HTTP 502)'])
+  expect(first.tickets).toEqual({})
+  const second = await readGarden(async url => SERVER(url.replace('http://x', '')), 'http://x', NOW + 1, first, false)
+  expect(second.failed).toEqual([])
+  expect(Object.keys(second.tickets).sort()).toEqual(['t8', 't9'])
+})
+
+test('nothing at work is an empty state on Busy', async ($, on) => {
+  engine(on, path =>
+    path === '/api/parallel/active-runs'
+      ? ok({ active_runs: [] })
+      : path === '/api/parallel/queued-runs'
+        ? ok({ queued_runs: [] })
+        : path === '/api/docker/capacity'
+          ? ok({ host: capacity.host, holders: [], waiting: [] })
+          : SERVER(path),
+  )
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.command.run(GARDEN)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-busy' })
+
+  expect(await ui.find({ type: 'Text', text: /No lane is busy/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Nothing else holds the machine/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Nobody is waiting/ })).toBeDefined()
+  await ui.unmount()
 })

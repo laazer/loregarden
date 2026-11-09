@@ -1,13 +1,16 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Fetch, Garden, GardenTab } from '../types'
+import type { Fetch, Garden, GardenTab, Lease } from '../types'
 import {
   ago,
   bar,
   byWorkspace,
   isActive,
   isLanding,
+  leaseFor,
+  QUIET_SECONDS,
+  quietSeconds,
   readGarden,
   span,
   statusText,
@@ -32,7 +35,7 @@ const VIOLET = '#9d8cff'
 const tab = atom({ plugin: 'loregarden', key: 'tab' } as const, 'tend' as GardenTab)
 // The tag changes when Garden's fields change: a value an earlier version stored reads as null.
 const garden = atom({ plugin: 'loregarden', key: 'garden' } as const, null as Garden | null, {
-  shape: 'garden-2',
+  shape: 'garden-3',
 })
 const fetchState = atom({ plugin: 'loregarden', key: 'fetch' } as const, {
   inFlight: false,
@@ -42,8 +45,8 @@ const activeAt = atom({ plugin: 'loregarden', key: 'activeAt' } as const, 0)
 
 const TABS: { id: GardenTab; hotkey: string; glyph: string; name: string; says: string }[] = [
   { id: 'tend', hotkey: '1', glyph: '🌱', name: 'Tend', says: 'Approvals waiting on you, and blocked tickets' },
-  { id: 'harvest', hotkey: '2', glyph: '🌾', name: 'Harvest', says: 'Pull requests in the merge queue' },
-  { id: 'weather', hotkey: '3', glyph: '⛅', name: 'Weather', says: 'Who holds this machine, and who waits' },
+  { id: 'busy', hotkey: '2', glyph: '🐝', name: 'Busy', says: 'What is being worked on, and what holds this machine' },
+  { id: 'harvest', hotkey: '3', glyph: '🌾', name: 'Harvest', says: 'Pull requests in the merge queue' },
 ]
 
 /**
@@ -118,7 +121,9 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const current = await read($, tab)
+    // A tab an earlier version stored (it had 'weather') opens on Tend.
+    const stored = await read($, tab)
+    const current: GardenTab = TABS.some(t => t.id === stored) ? stored : 'tend'
     const g = await read($, garden)
     const f = await read($, fetchState)
     const now = await $.clock.now()
@@ -126,8 +131,8 @@ export const register: Register = (on, options) => {
     const link = (path: string) => `${appUrl}${path}`
     const counts: Record<GardenTab, string> = {
       tend: g ? String(g.approvals.length + g.blockedCount) : '…',
+      busy: g ? String(g.lanes.length + (g.capacity?.holders.length ?? 0)) : '…',
       harvest: g ? String(g.queue.filter(isLanding).length) : '…',
-      weather: g?.capacity ? String(g.capacity.holders.length + g.capacity.waiting.length) : '…',
     }
     const shown = TABS.find(t => t.id === current) ?? TABS[0]!
 
@@ -308,52 +313,171 @@ export const register: Register = (on, options) => {
       )
     } else {
       const c = g.capacity
-      body = !c ? (
-        <Text color={AMBER}>🍂 The capacity ledger did not answer.</Text>
-      ) : (
+      const holders = c?.holders ?? []
+      const onLanes = new Set(g.lanes.map(l => leaseFor(l, holders)?.id).filter(Boolean))
+      const loose = holders.filter(h => !onLanes.has(h.id))
+      const ticket = (id: string) => {
+        const t = g.tickets[id]
+        return {
+          href: link(`/tickets/${t?.externalId || id}`),
+          label: t?.title ?? `ticket ${id.slice(0, 8)}`,
+          sub: t ? [t.workspace, t.externalId].filter(Boolean).join(' · ') : '',
+        }
+      }
+      const holds = (l: Lease) => `${l.cpus} CPU · ${(l.memoryMb / 1024).toFixed(1)} GB`
+      /** What the held command last said, or how long it has been silent. */
+      const saying = (l: Lease) => {
+        const quiet = quietSeconds(l, now)
+        if (quiet !== null && quiet >= QUIET_SECONDS) {
+          return (
+            <Text color={RED} wrap="wrap">
+              ⚠ silent for {span(quiet)}, still holding · last: {l.progress?.summary}
+            </Text>
+          )
+        }
+        return l.progress ? (
+          <Text dimColor wrap="truncate">
+            {l.progress.summary} · {ago(l.progress.reportedAt, now)}
+          </Text>
+        ) : null
+      }
+      const section = (title: string, count: number, empty: string, cards: RenderChildren) => (
         <Box flexDirection="column" gap={1}>
-          <Box flexDirection="column">
-            <Text tabular>
-              <Text color={SAGE}>{bar(c.cpusUsed, c.cpusCeiling)}</Text> CPU {c.cpusUsed}/{c.cpusCeiling}
-            </Text>
-            <Text tabular>
-              <Text color={SAGE}>{bar(c.memoryUsedMb, c.memoryCeilingMb)}</Text> Memory{' '}
-              {(c.memoryUsedMb / 1024).toFixed(1)}/{(c.memoryCeilingMb / 1024).toFixed(1)} GB
-            </Text>
-          </Box>
-          <Box flexDirection="column">
-            <Text bold>
-              Holding <Text dimColor>{c.holders.length}</Text>
-            </Text>
-            {c.holders.length === 0 ? <Text dimColor>☀️ Clear skies: nothing holds the machine.</Text> : null}
-            {c.holders.map(holder => (
-              <Box flexDirection="row" gap={1} key={`holder-${holder.id}`}>
-                <Text color={AMBER}>☁</Text>
-                <Text wrap="truncate">{holder.label}</Text>
-                <Text dimColor>
-                  {holder.footprint} · {span(holder.heldSeconds)}
-                </Text>
-              </Box>
-            ))}
-          </Box>
-          <Box flexDirection="column">
-            <Text bold>
-              Waiting <Text dimColor>{c.waiting.length}</Text>
-            </Text>
-            {c.waiting.length === 0 ? <Text dimColor>Nobody is waiting in line.</Text> : null}
-            {c.waiting.map(w => (
-              <Box flexDirection="row" gap={1} key={`waiting-${w.id}`}>
-                <Text color={VIOLET} tabular>
-                  {w.position === null ? '·' : `#${w.position}`}
-                </Text>
-                <Text wrap="truncate">{w.label}</Text>
-                <Text dimColor>
-                  {w.footprint}
-                  {w.waitSeconds === null ? '' : ` · ~${span(w.waitSeconds)}`}
-                </Text>
-              </Box>
-            ))}
-          </Box>
+          <Text bold>
+            {title} <Text dimColor>{count}</Text>
+          </Text>
+          {count === 0 ? <Text dimColor>{empty}</Text> : cards}
+        </Box>
+      )
+      const waits = g.laneQueue.length + (c?.waiting.length ?? 0)
+      body = (
+        <Box flexDirection="column" gap={1}>
+          {c ? (
+            <Box flexDirection="column">
+              <Text tabular>
+                <Text color={SAGE}>{bar(c.cpusUsed, c.cpusCeiling)}</Text> CPU {c.cpusUsed}/{c.cpusCeiling}
+              </Text>
+              <Text tabular>
+                <Text color={SAGE}>{bar(c.memoryUsedMb, c.memoryCeilingMb)}</Text> Memory{' '}
+                {(c.memoryUsedMb / 1024).toFixed(1)}/{(c.memoryCeilingMb / 1024).toFixed(1)} GB
+              </Text>
+            </Box>
+          ) : (
+            <Text dimColor>Reading the capacity ledger…</Text>
+          )}
+          {section(
+            'Working',
+            g.lanes.length,
+            '🌙 No lane is busy. Start a ticket from Loregarden or with loregarden_start_orchestration.',
+            g.lanes.map(lane => {
+              const t = ticket(lane.ticketId)
+              const lease = leaseFor(lane, holders)
+              const repairing = lane.status === 'repairing'
+              return (
+                <Box
+                  key={`lane-${lane.slot}-${lane.runId || lane.ticketId}`}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={repairing ? AMBER : SAGE}
+                  paddingX={1}
+                >
+                  <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                    <Link href={t.href} label={`🐝 ${t.label}`} />
+                    <Text dimColor tabular>
+                      lane {lane.slot} · {span(lane.elapsedSeconds)}
+                    </Text>
+                  </Box>
+                  {t.sub ? <Text dimColor>{t.sub}</Text> : null}
+                  <Text>
+                    <Text color={repairing ? AMBER : SAGE_LIGHT}>{lane.status || 'running'}</Text>
+                    {[lane.agent, lane.stage].filter(Boolean).length
+                      ? ` · ${[lane.agent, lane.stage].filter(Boolean).join(' · ')}`
+                      : ''}
+                    <Text dimColor>{lane.orchestration ? ' · whole ticket' : ' · one stage'}</Text>
+                  </Text>
+                  {lease ? (
+                    <Text color={AMBER}>
+                      ☁ holds {holds(lease)} for {span(lease.heldSeconds)}
+                    </Text>
+                  ) : null}
+                  {lease ? saying(lease) : null}
+                </Box>
+              )
+            }),
+          )}
+          {section(
+            'Holding the machine',
+            loose.length,
+            c ? '☀️ Nothing else holds the machine.' : 'Not read yet.',
+            loose.map(l => {
+              const quiet = quietSeconds(l, now)
+              const stuck = quiet !== null && quiet >= QUIET_SECONDS
+              return (
+                <Box
+                  key={`holder-${l.id}`}
+                  flexDirection="column"
+                  borderStyle="round"
+                  borderColor={stuck ? RED : AMBER}
+                  paddingX={1}
+                >
+                  <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                    <Text bold wrap="truncate">
+                      ☁ {l.what}
+                    </Text>
+                    <Text dimColor tabular>
+                      {span(l.heldSeconds)}
+                    </Text>
+                  </Box>
+                  {l.where ? (
+                    <Text dimColor wrap="truncate">
+                      {l.where}
+                      {l.pid === null ? '' : ` · pid ${l.pid}`}
+                    </Text>
+                  ) : null}
+                  <Text color={AMBER}>
+                    {holds(l)}
+                    <Text dimColor>{l.footprint ? ` · ${l.footprint}` : ''}</Text>
+                  </Text>
+                  {l.ticketId ? <Link href={ticket(l.ticketId).href} label={ticket(l.ticketId).label} /> : null}
+                  {saying(l)}
+                </Box>
+              )
+            }),
+          )}
+          {section(
+            'Waiting',
+            waits,
+            'Nobody is waiting for a lane or for capacity.',
+            <Box flexDirection="column">
+              {g.laneQueue.map(q => {
+                const t = ticket(q.ticketId)
+                return (
+                  <Box flexDirection="row" gap={1} key={`lanewait-${q.id}`}>
+                    <Text color={VIOLET} tabular>
+                      lane {q.slot} #{q.position}
+                    </Text>
+                    <Link href={t.href} label={t.label} />
+                    <Text dimColor>
+                      {[q.stage, span(q.waitSeconds)].filter(Boolean).join(' · ')}
+                    </Text>
+                  </Box>
+                )
+              })}
+              {(c?.waiting ?? []).map(w => (
+                <Box flexDirection="row" gap={1} key={`waiting-${w.id}`}>
+                  <Text color={VIOLET} tabular>
+                    {w.position === null ? '☁ ·' : `☁ #${w.position}`}
+                  </Text>
+                  <Text wrap="truncate">{w.what}</Text>
+                  <Text color={w.pollStalled ? RED : undefined} dimColor={!w.pollStalled}>
+                    {w.footprint}
+                    {w.waitSeconds === null ? '' : ` · ~${span(w.waitSeconds)}`}
+                    {w.pollStalled ? ' · stopped asking' : ''}
+                  </Text>
+                </Box>
+              ))}
+            </Box>,
+          )}
         </Box>
       )
     }
