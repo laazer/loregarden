@@ -32,6 +32,7 @@ from pathlib import Path
 
 from loregarden.models.domain import Ticket, TicketState, Workspace
 from loregarden.services.branch_names import resolve_ticket_branch
+from loregarden.services.deferral_state import is_deferred
 from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.target_branch import target_branch_name
@@ -119,6 +120,9 @@ def unmet_prerequisites_for_start(
 
     unmet: list[UnmetPrerequisite] = []
     for prerequisite in rows:
+        if is_deferred(prerequisite):
+            # Deferred so this one proceeds without it (`ticket_deferral`).
+            continue
         if prerequisite.state not in dependencies.SATISFIED_STATES:
             unmet.append(UnmetPrerequisite(prerequisite, UnmetReason.NOT_DONE))
             continue

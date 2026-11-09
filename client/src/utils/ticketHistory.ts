@@ -174,7 +174,11 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     decision === "findings_recorded" ||
     // A review lane's recheck answering its prior findings; a finding left
     // unresolved sends the work back through its own reroute event.
-    decision === "recheck_recorded"
+    decision === "recheck_recorded" ||
+    // A person's decision to let a blocked ticket's dependents go ahead, or to
+    // take that back; the block itself has its own line.
+    decision === "ticket_deferred" ||
+    decision === "ticket_undeferred"
     ? "normal"
     : "failed";
   }

@@ -374,4 +374,13 @@ describe("historyLines — findings that do not block", () => {
 
     expect(lines.map((line) => line.tone)).toEqual(["normal", "normal", "normal"]);
   });
+
+  it("reads a deferral and its undoing as normal", () => {
+    const lines = historyLines([
+      decision("ticket_deferred", "operator deferred lg-x-1: waits on a vendor fix.", "implement"),
+      decision("ticket_undeferred", "operator took back the deferral of lg-x-1.", "implement"),
+    ]);
+
+    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal"]);
+  });
 });

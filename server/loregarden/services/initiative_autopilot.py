@@ -90,6 +90,8 @@ from loregarden.services.autopilot_timing import (
     stops_at,
 )
 from loregarden.services.child_readiness import subtree_start_hold
+from loregarden.services.deferral_state import is_deferred
+from loregarden.services.deferred_sweep import sweep_deferred
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.discovered_work import has_owned_children, undecided
 from loregarden.services.initiative_graph import (
@@ -251,6 +253,7 @@ def _dispatch(
     lanes: QueueLaneService,
     *,
     retry: str | None = None,
+    retried_as: AutopilotAction = AutopilotAction.RETRIED,
 ) -> bool:
     """Queue one pick, or record why not. True when it was queued.
 
@@ -340,7 +343,7 @@ def _dispatch(
     _record(
         session,
         plan.initiative_id,
-        AutopilotAction.DISPATCHED if retry is None else AutopilotAction.RETRIED,
+        AutopilotAction.DISPATCHED if retry is None else retried_as,
         ticket_id=ticket.id,
         detail=queued if retry is None else f"blocked, but {retry}; {queued}",
     )
@@ -447,6 +450,16 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
             continue
         dispatched += int(_dispatch(session, plan, node, lanes, retry=retry.get(node.id)))
         session.commit()
+    if dispatched == 0:
+        # Nothing else could start: the plan's deferred tickets get their sweep.
+        dispatched = sweep_deferred(
+            session,
+            plan,
+            ctx,
+            lambda node, why: _dispatch(
+                session, plan, node, lanes, retry=why, retried_as=AutopilotAction.SWEEP_RETRIED
+            ),
+        )
     return dispatched
 
 
@@ -456,6 +469,9 @@ def _retryable(session: Session, plan: InitiativePlan, ctx: PlanContext) -> dict
     reasons: dict[str, str] = {}
     for node in ctx.graph.nodes.values():
         if node.external or node.status != NodeStatus.BLOCKED or node.id in retried:
+            continue
+        if is_deferred(node.ticket):
+            # Deferred tickets are retried by the sweeps, once other work settles.
             continue
         reason = retry_reason(session, node.ticket)
         if reason is not None:

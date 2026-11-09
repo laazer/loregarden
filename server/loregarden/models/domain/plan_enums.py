@@ -136,6 +136,14 @@ class AutopilotAction(StrEnum):
     #: Turned off by its timer or schedule: a stop condition was reached, or
     #: the scheduled window it started in ended. Not a fault, unlike PAUSED.
     STOPPED = "stopped"
+    #: Nothing else could start, so it began a sweep re-attempting the plan's
+    #: deferred tickets (`deferred_sweep`).
+    SWEEP_STARTED = "sweep"
+    #: Re-attempted a deferred ticket as part of a sweep.
+    SWEEP_RETRIED = "swept"
+    #: Stopped sweeping: the last sweep finished nothing, or the bound was
+    #: reached. The detail lists the deferred tickets that remain.
+    SWEEPS_ENDED = "sweep_end"
 
 
 class AutopilotStopKind(StrEnum):
