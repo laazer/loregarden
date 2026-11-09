@@ -120,6 +120,30 @@ describe("StudioChatMessages live thinking", () => {
     expect(screen.queryByText("Fetching a reply")).not.toBeInTheDocument();
   });
 
+  it("shows a finished plan card as the card while the reply is still streaming", () => {
+    const plan = {
+      primitive: "todo_list",
+      owner: "agent",
+      plan_id: "land-1216",
+      title: "Unblock the land",
+      items: [{ id: "baseline", text: "Record the baseline", checked: false }],
+    };
+    mockThinking.mockReturnValue({
+      content: "",
+      answer: `Diagnosis and **fixes**:\n\n\`\`\`loregarden\n${JSON.stringify(plan)}\n\`\`\`\n\nStarting with`,
+      activity: "Writing the reply",
+      plans: [plan],
+      isStreaming: true,
+    });
+
+    const { container } = render(<StudioChatMessages messages={[]} isThinking activeTurnId="turn-9" />);
+
+    expect(screen.getByText("Record the baseline")).toBeInTheDocument();
+    expect(screen.getByText("fixes").tagName).toBe("STRONG");
+    expect(screen.getByText("Starting with")).toHaveClass("lg-chat-reply--streaming");
+    expect(container.textContent).not.toContain('"primitive"');
+  });
+
   it("keeps the placeholder while the turn has produced nothing yet", () => {
     render(
       <StudioChatMessages

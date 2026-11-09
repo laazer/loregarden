@@ -102,8 +102,11 @@
 
 /* The reply while it is still being written. Same bubble as the settled one,
    so the turn does not visibly jump when the real message replaces it. */
-.lg-chat-reply--streaming {
+.lg-chat-reply.lg-chat-reply--streaming {
   white-space: pre-wrap;
+  /* Same size as the settled markdown (.markdown-preview), so a paragraph
+     does not shrink at the moment it finishes and renders as markdown. */
+  font-size: var(--fs-small);
   line-height: 1.6;
 }
 
@@ -144,8 +147,36 @@
 
 @media (prefers-reduced-motion: reduce) {
   .lg-thinking-stream-pulse,
-  .lg-chat-reply--streaming::after {
+  .lg-chat-reply--streaming::after,
+  .lg-chat-streaming-note--forming::after {
     animation: none;
     opacity: 1;
   }
+}
+
+/* The reply as it forms, chunked: finished blocks, cards, then the tail. */
+.lg-chat-streaming {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.lg-chat-streaming-note {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.lg-chat-streaming-note--forming::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  background: var(--ac2);
+  opacity: 0.8;
+  animation: lg-thinking-caret 1s steps(2, start) infinite;
 }

@@ -175,6 +175,22 @@ def test_the_reply_streams_apart_from_the_reasoning(db_session: Session):
     assert frame["activity"] == "Writing the reply"
 
 
+def test_text_blocks_on_either_side_of_a_tool_call_stream_as_two_paragraphs(db_session: Session):
+    """Text after a tool call is a new content block; it must not run into the last one."""
+    sink = ChatTurnThinkingSink("turn-blocks")
+    for text in ("Diagnosis and fixes.", "Now the AC3b fix."):
+        sink.append_stream_line(
+            _partial({"type": "content_block_start", "index": 0, "content_block": {"type": "text"}})
+        )
+        sink.append_stream_line(
+            _partial({"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}})
+        )
+    sink.close()
+
+    frame = read_chat_turn_thinking(db_session, "turn-blocks")
+    assert frame["answer"] == "Diagnosis and fixes.\n\nNow the AC3b fix."
+
+
 def test_codex_agent_updates_stream_and_the_newest_replaces_the_previous(db_session: Session):
     """Codex emits commentary updates and its final answer as separate
     ``agent_message`` items. The update must be visible immediately, while the

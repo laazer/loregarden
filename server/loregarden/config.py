@@ -5,6 +5,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from loregarden.models.domain.process_enums import AgentTransport
+from loregarden.services.claude_oauth_env import prime_claude_oauth_token_env
 from loregarden.services.gh_account_env import prime_gh_user_env
 from loregarden.services.path_resolve import (
     expand_path,
@@ -262,26 +263,6 @@ settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 
 
-def _prime_claude_oauth_token_env() -> None:
-    """Make a cached `claude setup-token` token visible to every subprocess this
-    process spawns (Baxter, CLI adapters) — not just this process's own HTTP
-    calls — regardless of how the backend was launched. dev-server.sh exports
-    this itself, but the Tauri desktop app spawns `python -m loregarden`
-    directly and never runs that script, so it needs priming here instead.
-    """
-    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip():
-        return
-    token_path = settings.repo_root / "data" / ".claude-oauth-token"
-    if not token_path.is_file():
-        return
-    try:
-        token = token_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return
-    if token and token.isascii() and not any(ch.isspace() for ch in token):
-        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-
-
 def _prime_cursor_api_key_env() -> None:
     """Export Cursor auth for headless ``cursor-agent -p`` subprocesses.
 
@@ -293,7 +274,8 @@ def _prime_cursor_api_key_env() -> None:
     prime_cursor_api_key_env(repo_root=settings.repo_root)
 
 
-_prime_claude_oauth_token_env()
+# Every `claude` subprocess needs the cached token; see `claude_oauth_env`.
+prime_claude_oauth_token_env(repo_root=settings.repo_root)
 _prime_cursor_api_key_env()
 # The `gh` account a publish acts as, for every launcher and not only
 # dev-server.sh in the primary checkout; see `gh_account_env`.
