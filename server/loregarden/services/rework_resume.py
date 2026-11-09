@@ -15,6 +15,8 @@ finding as the session's next turn (`follow_up`). It runs fresh, recording why
 - the adapter cannot resume (`cli_adapters.SESSION_RESUME_UNSUPPORTED`);
 - the earlier run named no session, or ran in another checkout (a CLI finds a
   session by its working directory);
+- the ticket's spec changed since the earlier run was given it
+  (`spec_snapshot`): its session holds the old text;
 - the finding's rejecting run already resumed a session once. The same finding
   delivered twice resumes once: a second round on it starts from a clean slate,
   since the resumed one did not settle it.
@@ -153,6 +155,11 @@ def _skip_reason(
         return (
             f"the earlier run {prior.run_code} ran in {prior.start_repo_path}, "
             f"this one in {repo_root}; a CLI finds its session by directory"
+        )
+    if prior.spec_hash and run.spec_hash and prior.spec_hash != run.spec_hash:
+        return (
+            f"the spec changed since the earlier run {prior.run_code} read it; "
+            "its session holds the old description, criteria or documents"
         )
     earlier = _already_resumed_for(session, ticket, feedback)
     if earlier is not None:

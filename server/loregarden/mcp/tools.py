@@ -46,6 +46,7 @@ from loregarden.mcp.memory_tool_args import normalize_memory_tool_args
 from loregarden.mcp.memory_tools import execute_memory_tool
 from loregarden.mcp.merge_queue_tools import TOOL_DEFINITIONS as MERGE_QUEUE_TOOL_DEFINITIONS
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
+from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.run_resolution import (
     ORCHESTRATION_RUN_ID_DESCRIPTION,
@@ -1231,6 +1232,7 @@ _RUN_AWARE_HANDLERS = {
 }
 
 
+@keeps_own_spec_edits
 def execute_tool(
     session: Session,
     name: str,

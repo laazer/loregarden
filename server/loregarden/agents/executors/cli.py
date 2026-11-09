@@ -96,6 +96,7 @@ from loregarden.services.run_errors import (
     agent_timeout_message,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.spec_snapshot import stamp_run_spec
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
@@ -294,6 +295,7 @@ class CliAgentExecutor:
                 tree=before,
             )
             record_prompt_size(self.session, run, prompt)
+            stamp_run_spec(self.session, run, ticket)
         except SkillNotFoundError as exc:
             return self.orchestration.complete_run(
                 run,
@@ -589,6 +591,7 @@ class CliAgentExecutor:
             stage_def,
             assembly_source=MemoryBriefingAssembly.RENDER,
         )
+        stamp_run_spec(self.session, run, ticket)
         return prompt, PreparedTree(repo_root=repo_root, target_branch=once())
 
     def prepare_terminal_handoff(

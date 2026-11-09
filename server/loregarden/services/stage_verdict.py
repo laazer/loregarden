@@ -28,7 +28,8 @@ from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.operation_criteria import pending_operation_criteria
-from loregarden.services.read_evidence import stage_read_evidence
+from loregarden.services.read_evidence import latest_stage_run, stage_read_evidence
+from loregarden.services.spec_snapshot import run_spec_drift, unsettled_criteria_detail
 from loregarden.services.stage_report import StageReport
 from loregarden.services.studio_routing import is_agentless_stage, took_light_route
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -59,6 +60,9 @@ _OPERATION_CRITERIA_NAME = "operation_criteria pending"
 #: from the transcript on every derive, and a live signal sets the status.
 _READ_NOTHING_NAME = "read:nothing"
 _READ_NO_TOOLS_NAME = "read:no_tools"
+#: A pass from a run whose ticket gained or reworded a criterion after it was
+#: dispatched: it did not answer for the new text (`spec_snapshot`).
+_SPEC_CRITERIA_CHANGED_NAME = "spec:criteria_changed"
 # Same path handoff_writer uses. Copied rather than imported: handoff_writer
 # imports orchestration_callbacks, which imports this module.
 _GATE_MODULE_RELPATH = "ci/scripts/gates/handoff_validation_check.py"
@@ -558,6 +562,7 @@ def _folded_pass_held_signals(
             )
         )
     signals.extend(_read_evidence_signals(session, ticket, agent_id, stage_key=stage_key))
+    signals.extend(_spec_drift_signals(session, ticket, agent_id, stage_key=stage_key))
     if agent_id == SPEC_AGENT_ID and pending_operation_criteria(session, ticket):
         signals.append(
             VerdictSignal(
@@ -610,3 +615,27 @@ def _read_evidence_signals(
             )
         ]
     return []
+
+
+def _spec_drift_signals(
+    session: Session, ticket: Ticket, agent_id: str, *, stage_key: str
+) -> list[VerdictSignal]:
+    """A pass on criteria the ticket no longer carries does not settle the new ones.
+
+    Read from the newest run of this agent at this stage, which at completion is
+    the run being judged. Its re-run is dispatched on the current criteria.
+    """
+    run = latest_stage_run(session, ticket, agent_id=agent_id, stage_key=stage_key)
+    drift = run_spec_drift(session, ticket, run) if run is not None else None
+    if drift is None or not drift.unsettles_criteria:
+        return []
+    return [
+        VerdictSignal(
+            source="spec_snapshot",
+            item_key=_SPEC_CRITERIA_CHANGED_NAME,
+            outcome=StageReportStatus.NEEDS_REWORK,
+            producer_agent_id=agent_id,
+            producer_stage_key=stage_key,
+            detail=unsettled_criteria_detail(drift),
+        )
+    ]

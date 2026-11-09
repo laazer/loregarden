@@ -513,6 +513,9 @@ class AgentRun(SQLModel, table=True):
     rework_feedback_id: str = ""
     resumed_from_run_id: str = ""
     resume_skip_reason: str = ""
+    #: The spec this run was given, and its sha256; "" is no record (`spec_snapshot`).
+    spec_snapshot_json: str = ""
+    spec_hash: str = ""
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None
