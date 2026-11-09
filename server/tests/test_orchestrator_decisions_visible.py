@@ -192,6 +192,10 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "findings_recorded",
         # Normal (client tone()): a review lane's recheck round, per prior finding.
         "recheck_recorded",
+        # Normal, both (client tone()): a blocked ticket deferred so its
+        # dependents proceed, and a deferral taken back.
+        "ticket_deferred",
+        "ticket_undeferred",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

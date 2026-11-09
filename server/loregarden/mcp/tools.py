@@ -19,6 +19,7 @@ from loregarden.mcp.admission import (
 from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
 from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
 from loregarden.mcp.criterion_tools import CRITERION_TOOL_DEFINITIONS, settle_criterion_tool
+from loregarden.mcp.deferral_tool import TOOL_DEFINITION as DEFER_TICKET_TOOL_DEFINITION
 from loregarden.mcp.devdocs_tool import TOOL_DEFINITION as DEVDOCS_TOOL_DEFINITION
 from loregarden.mcp.discovery_tools import DISCOVERY_TOOL_DEFINITIONS, decide_finding_tool
 from loregarden.mcp.disk_usage_tool import TOOL_DEFINITION as DISK_USAGE_TOOL_DEFINITION
@@ -1109,6 +1110,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DISK_USAGE_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(DEFER_TICKET_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(GITHUB_ISSUE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(REFERENCE_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DEVDOCS_TOOL_DEFINITION)

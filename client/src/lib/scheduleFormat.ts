@@ -107,6 +107,9 @@ export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   released: "Put back in its lane",
   retried: "Retried a blocked ticket",
   stopped: "Stopped on its timer or schedule",
+  sweep: "Began a sweep of deferred tickets",
+  swept: "Retried a deferred ticket",
+  sweep_end: "Stopped sweeping deferred tickets",
 };
 
 /** "Oct 2, 14:05" — when an autopilot event happened. */

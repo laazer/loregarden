@@ -63,6 +63,7 @@ class McpTool(StrEnum):
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
     DISK_USAGE = "loregarden_disk_usage"
+    DEFER_TICKET = "loregarden_defer_ticket"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
     SURVEY_QUEUE = "loregarden_survey_queue"

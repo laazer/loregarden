@@ -95,6 +95,11 @@ class OrchestratorDecision(StrEnum):
     PREREQUISITES_OVERRIDDEN = "prerequisites_overridden"
     #: A held or parked ticket's prerequisites all landed, so it was resumed.
     RELEASED_ON_PREREQUISITES = "released_on_prerequisites"
+    #: A blocked ticket was deferred: it stays blocked, and its dependents
+    #: proceed without it (`ticket_deferral`).
+    TICKET_DEFERRED = "ticket_deferred"
+    #: A deferral was taken back: the ticket holds its dependents again.
+    TICKET_UNDEFERRED = "ticket_undeferred"
     #: A ticket over the size threshold was split into ordered children, which
     #: carry its work from here; it runs none of its own stages again.
     SPLIT_OVERSIZED_TICKET = "split_oversized_ticket"

@@ -238,6 +238,11 @@ class Ticket(SQLModel, table=True):
     is_integration_review: bool = Field(default=False)
     state_locked: bool = Field(default=False)
     workflow_disabled: bool = Field(default=False)
+    #: When a person deferred this blocked ticket so its dependents proceed
+    #: without it (`ticket_deferral`), and why. A deferral lasts until the
+    #: ticket is resolved or undeferred; the autopilot's sweeps retry it.
+    deferred_at: datetime | None = None
+    deferred_reason: str = ""
     # Per-ticket override of the workspace's git automation policy, as a JSON
     # object holding only the keys that differ (see GitAutomationConfig). Empty
     # means "inherit the profile" — which is not the same as "everything off",
