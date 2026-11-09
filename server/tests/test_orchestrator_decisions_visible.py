@@ -196,6 +196,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # dependents proceed, and a deferral taken back.
         "ticket_deferred",
         "ticket_undeferred",
+        # Normal (client tone()): a repeated dispatch got its in-flight run back.
+        "dispatch_replayed",
         # Failed tone, the default: a run finished on a spec that moved under it.
         "spec_changed_under_run",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
