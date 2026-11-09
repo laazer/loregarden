@@ -47,6 +47,7 @@ from loregarden.models.domain import (
     DockerWaitBasis,
 )
 from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID, POOL_ROW_IDS
+from loregarden.models.domain.enums_capacity import DockerCeilingSource
 from loregarden.services.docker_capacity import (
     Ceiling,
     DockerInvoke,
@@ -59,6 +60,7 @@ from loregarden.services.docker_ledger import (
     OCCUPYING,
     as_utc,
     booked,
+    load_gate_cpus,
     load_pool,
     pool_ceiling,
     shortfalls,
@@ -70,7 +72,11 @@ from loregarden.services.docker_wait_estimate import (
     estimate_waits,
     poll_interval_for,
 )
-from loregarden.services.host_capacity import resolve_host_ceiling
+from loregarden.services.host_capacity import (
+    ExternalLoad,
+    host_external_load,
+    resolve_host_ceiling,
+)
 from loregarden.services.run_lease import pid_alive
 from sqlalchemy import bindparam, func, text, update
 from sqlmodel import Session, col, select
@@ -212,9 +218,12 @@ def refresh_ceiling(
     number: if each claim carried its own locally cached measurement, two
     processes with different cache ages would enforce different limits.
     """
-    previous = pool_ceiling(load_pool(session, pool_name))
+    pool = load_pool(session, pool_name)
+    previous = pool_ceiling(pool)
+    external = ExternalLoad(cpus=0.0)
     if pool_name is CapacityPool.HOST:
         ceiling = resolve_host_ceiling(previous=previous)
+        external = host_external_load(ceiling, held_cpus=pool.held_cpus)
     else:
         ceiling = resolve_ceiling(invoke=invoke, previous=previous, use_cache=use_cache)
     pool = load_pool(session, pool_name)
@@ -223,7 +232,8 @@ def refresh_ceiling(
     pool.ceiling_leases = ceiling.leases
     pool.ceiling_source = ceiling.source
     pool.probed_at = ceiling.probed_at
-    pool.probe_error = ceiling.error
+    pool.probe_error = "; ".join(error for error in (ceiling.error, external.error) if error)
+    pool.external_cpus = external.cpus
     session.add(pool)
     session.commit()
     return ceiling
@@ -293,6 +303,7 @@ def claim_pool_capacity(
     memory_mb: int,
     revision: int,
     count: int = 1,
+    load_gate: bool = False,
 ) -> bool:
     """Book `cpus`/`memory_mb` (and `count` lease slots) against one pool, or say it did not fit.
 
@@ -309,11 +320,16 @@ def claim_pool_capacity(
     nothing" contract. Change the shape here and that module is the other place
     to look.
     """
+    held_cpus = DockerCapacityPool.held_cpus
+    if load_gate:
+        # Outside load counts as held for this claim (`docker_ledger.load_gate_cpus`
+        # decided it applies, from the row `revision` pins).
+        held_cpus = held_cpus + DockerCapacityPool.external_cpus
     result = session.exec(
         update(DockerCapacityPool)
         .where(DockerCapacityPool.id == pool_id)
         .where(DockerCapacityPool.revision == revision)
-        .where(DockerCapacityPool.held_cpus + cpus <= DockerCapacityPool.ceiling_cpus)
+        .where(held_cpus + cpus <= DockerCapacityPool.ceiling_cpus)
         .where(
             DockerCapacityPool.held_memory_mb + memory_mb <= DockerCapacityPool.ceiling_memory_mb
         )
@@ -415,6 +431,8 @@ def drain_waiters(session: Session) -> list[str]:
     set moving.
     """
     promoted: list[str] = []
+    if _head_waiter(session) is not None:
+        _refresh_stale_host_load(session)
     # The head is re-read on every pass rather than walked from one snapshot of
     # the line. A snapshot misses a claimant that arrived during this drain —
     # and one that arrived while this drain held a booking it was about to
@@ -453,6 +471,29 @@ def drain_waiters(session: Session) -> list[str]:
 
         promoted.append(lease.id)
     return promoted
+
+
+def _refresh_stale_host_load(session: Session) -> None:
+    """Re-measure the host before judging a waiter by a load reading gone stale.
+
+    The reaper re-measures every sweep while anything is on the board, but it
+    returns early on an idle ledger, so the first claim after a quiet hour would
+    otherwise be judged by the load of an hour ago. Reading it is in-process
+    (`getloadavg`, `sysctlbyname`), so this costs a row write, not a fork.
+    Only a measured ceiling carries a load reading; an override has none.
+    """
+    if not settings.host_load_aware:
+        return
+    pool = load_pool(session, CapacityPool.HOST)
+    if pool.ceiling_source not in (DockerCeilingSource.PROBE, DockerCeilingSource.STALE_PROBE):
+        return
+    probed = as_utc(pool.probed_at)
+    if (
+        probed is not None
+        and (_now() - probed).total_seconds() < settings.host_load_max_age_seconds
+    ):
+        return
+    refresh_ceiling(session, pool_name=CapacityPool.HOST)
 
 
 def _head_waiter(session: Session) -> DockerLease | None:
@@ -516,7 +557,9 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
         session.expire_all()
         # Every row read (and lazily created, which commits) before the first
         # UPDATE, so nothing commits half a booking.
-        revisions = {pool: load_pool(session, pool).revision for pool in pools}
+        rows = {pool: load_pool(session, pool) for pool in pools}
+        revisions = {pool: row.revision for pool, row in rows.items()}
+        gated = {pool: load_gate_cpus(pool, row, lease) > 0 for pool, row in rows.items()}
         if all(
             claim_pool_capacity(
                 session,
@@ -525,6 +568,7 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
                 memory_mb=lease.memory_mb,
                 revision=revisions[pool],
                 count=booked(lease).count,
+                load_gate=gated[pool],
             )
             for pool in pools
         ):

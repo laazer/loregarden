@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
+from loregarden.config import settings
 from loregarden.core.timestamps import as_utc as _as_utc_aware
 from loregarden.models.domain import (
     CapacityPool,
@@ -99,14 +100,51 @@ class Shortfall:
         }
 
 
-def shortfalls(name: CapacityPool, pool: DockerCapacityPool, lease: DockerLease) -> list[Shortfall]:
+def load_gate_cpus(
+    name: CapacityPool,
+    pool: DockerCapacityPool,
+    lease: DockerLease,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Outside load that holds `lease` back in `pool`, or 0 where none does.
+
+    The rule is `host_capacity`'s (its docstring has the reasoning and the
+    prior art): only the host pool, only a claim of at least
+    `host_load_gate_min_cpus`, only while the ledger already holds something,
+    and only for the first `host_load_patience_seconds` of the claim's wait.
+    One function, so the drain's booking and the board's "N free" cannot
+    disagree about whether load counted.
+    """
+    if name is not CapacityPool.HOST or not settings.host_load_aware:
+        return 0.0
+    if pool.external_cpus <= 0 or pool.held_cpus <= 0:
+        return 0.0
+    if lease.cpus < settings.host_load_gate_min_cpus:
+        return 0.0
+    requested = as_utc(lease.requested_at)
+    waited = ((now or datetime.now(timezone.utc)) - requested).total_seconds() if requested else 0
+    if waited >= settings.host_load_patience_seconds:
+        return 0.0
+    return pool.external_cpus
+
+
+def shortfalls(
+    name: CapacityPool,
+    pool: DockerCapacityPool,
+    lease: DockerLease,
+    *,
+    now: datetime | None = None,
+) -> list[Shortfall]:
     """Every dimension `lease` does not fit in `pool`; empty when it fits.
 
     Admission's own test, so the board's "waiting for 4 cpus, 3 free" is the
     reason the drain is holding the claim back, not a second opinion of it.
+    Outside load that holds the claim back (`load_gate_cpus`) counts as held.
     """
+    load = load_gate_cpus(name, pool, lease, now=now)
     checks = (
-        (CapacityResource.CPUS, lease.cpus, pool.held_cpus, pool.ceiling_cpus),
+        (CapacityResource.CPUS, lease.cpus, pool.held_cpus + load, pool.ceiling_cpus),
         (CapacityResource.MEMORY_MB, lease.memory_mb, pool.held_memory_mb, pool.ceiling_memory_mb),
         (CapacityResource.SLOTS, booked(lease).count, pool.held_count, pool.ceiling_leases),
     )
