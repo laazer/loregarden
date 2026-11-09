@@ -16,7 +16,9 @@ from loregarden.models.domain import (
     MergeQueueEntry,
     MergeQueueState,
     MergeQueueWait,
+    PullRequestState,
     Ticket,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services import merge_queue
@@ -26,14 +28,16 @@ from loregarden.services.merge_queue_github import (
     CheckReading,
     GhQueueGitHub,
     QueueGitHub,
+    StagedPullRequest,
     read_required,
 )
-from loregarden.services.publish_ref import publish_ref_for
+from loregarden.services.merge_queue_pull_heads import fetch_pull_head
+from loregarden.services.publish_ref import PUBLISH_PREFIX, publish_ref_for
 from loregarden.services.publish_tree import published_branch
 from loregarden.services.target_branch import subtree_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, TypeAdapter
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 _READINGS = TypeAdapter(list[CheckReading])
 
@@ -42,7 +46,8 @@ class EntryView(BaseModel):
     """One entry as the board and the tools show it."""
 
     id: str
-    ticket_id: str
+    #: None for a pull request admitted by number.
+    ticket_id: str | None
     ticket_external_id: str
     ticket_title: str
     position: int
@@ -102,7 +107,7 @@ def _can_retry(entry: MergeQueueEntry) -> bool:
 
 
 def _fields(session: Session, entry: MergeQueueEntry, head_id: str | None) -> dict:
-    ticket = session.get(Ticket, entry.ticket_id)
+    ticket = merge_queue.entry_ticket(session, entry)
     return {
         "id": entry.id,
         "ticket_id": entry.ticket_id,
@@ -147,6 +152,66 @@ def queue_view(session: Session, workspace: Workspace, *, limit: int = 50) -> Qu
             for entry in merge_queue.entries_for(session, workspace.id, limit=limit)
         ],
         head_id=head_id,
+    )
+
+
+class QueueOverview(BaseModel):
+    """Every workspace's queue that has ever held an entry, for the pages that span workspaces."""
+
+    queues: list[QueueView]
+
+
+class TicketQueueView(BaseModel):
+    """The merge queue as one ticket sees it: its tree's most recent entry.
+
+    A tree lands as one pull request, queued under its root, so a child ticket
+    reads the same entry as its root does.
+    """
+
+    root_ticket_id: str
+    root_external_id: str
+    #: None when the tree has never been queued (or ``ticket`` is an initiative,
+    #: which roots no tree).
+    entry: EntryView | None
+    #: Live entries in line before ``entry``; 0 for the head and a finished one.
+    ahead: int
+
+
+def queue_overview(session: Session, *, limit: int = 10) -> QueueOverview:
+    """Each workspace with any entry, its live entries then its ``limit`` latest finished."""
+    workspace_ids = session.exec(select(MergeQueueEntry.workspace_id).distinct()).all()
+    workspaces = session.exec(
+        select(Workspace).where(col(Workspace.id).in_(list(workspace_ids))).order_by(Workspace.slug)
+    ).all()
+    return QueueOverview(
+        queues=[queue_view(session, workspace, limit=limit) for workspace in workspaces]
+    )
+
+
+def ticket_queue_view(session: Session, ticket: Ticket) -> TicketQueueView:
+    """Where ``ticket``'s tree stands in the merge queue, if it was ever queued."""
+    if ticket.work_item_type is WorkItemType.INITIATIVE:
+        return TicketQueueView(
+            root_ticket_id=ticket.id, root_external_id=ticket.external_id, entry=None, ahead=0
+        )
+    root = subtree_root(session, ticket)
+    latest = session.exec(
+        select(MergeQueueEntry)
+        .where(MergeQueueEntry.ticket_id == root.id)
+        .order_by(col(MergeQueueEntry.enqueued_at).desc())
+        .limit(1)
+    ).first()
+    if latest is None:
+        return TicketQueueView(
+            root_ticket_id=root.id, root_external_id=root.external_id, entry=None, ahead=0
+        )
+    live = merge_queue.live_entries(session, latest.workspace_id)
+    ahead = next((index for index, entry in enumerate(live) if entry.id == latest.id), 0)
+    return TicketQueueView(
+        root_ticket_id=root.id,
+        root_external_id=root.external_id,
+        entry=EntryView(**_fields(session, latest, _head_id(session, latest.workspace_id))),
+        ahead=ahead,
     )
 
 
@@ -227,6 +292,69 @@ def enqueue_ticket(
             base_branch=base_branch(workspace),
         ),
     )
+
+
+def enqueue_pull_request(
+    session: Session,
+    workspace: Workspace,
+    pr_number: int,
+    *,
+    github: QueueGitHub | None = None,
+) -> Admission:
+    """Queue open PR ``pr_number`` on its own, with no ticket behind it.
+
+    For a branch that is not a tree's, such as an interactive session's. The
+    candidate is the PR's head as GitHub reports it, fetched and pinned here
+    (`merge_queue_pull_heads`) because it may have been pushed from another
+    clone. Raises `QueueRefusal` for a PR that is not open, targets another
+    base, or is a tree's publish PR (queue that by its ticket), and
+    `GitHubReadError` when GitHub cannot say.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    github = github or GhQueueGitHub(repo_root)
+    pr = github.read_pull_request(pr_number)
+    base = base_branch(workspace)
+    _refuse_unqueueable(pr, base)
+    head, failure = fetch_pull_head(repo_root, pr_number)
+    if failure:
+        raise QueueRefusal(failure)
+    if head != pr.head_sha:
+        raise QueueRefusal(
+            f"PR #{pr_number}'s head moved from {pr.head_sha[:12]} to {head[:12]} while it "
+            "was read; enqueue it again"
+        )
+    return merge_queue.enqueue(
+        session,
+        None,
+        workspace,
+        Candidate(
+            pr_number=pr_number,
+            pr_url=pr.url,
+            pr_head_branch=pr.head_branch,
+            source_branch=pr.head_branch,
+            head_sha=head,
+            base_branch=base,
+        ),
+    )
+
+
+def _refuse_unqueueable(pr: StagedPullRequest, base: str) -> None:
+    """Raise `QueueRefusal` unless ``pr`` is open, targets ``base`` and is no tree's publish PR.
+
+    ``pr.base_branch`` is the base GitHub reports for this PR, compared against the
+    workspace's own answer, never used as one.
+    """
+    if pr.state is not PullRequestState.OPEN:
+        raise QueueRefusal(f"PR #{pr.number} is {pr.state.value}, not open")
+    if pr.base_branch != base:
+        raise QueueRefusal(
+            f"PR #{pr.number} targets {pr.base_branch}; the queue lands on {base} only"
+        )
+    if pr.head_branch.startswith(PUBLISH_PREFIX):
+        raise QueueRefusal(
+            f"PR #{pr.number} publishes a ticket tree ({pr.head_branch}); queue it by a "
+            "ticket in that tree instead"
+        )
 
 
 def admitted_or_refuse(admission: Admission) -> Admission:

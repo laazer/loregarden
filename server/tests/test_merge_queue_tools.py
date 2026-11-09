@@ -23,7 +23,7 @@ from loregarden.mcp.tool_ids import (
     TRIAGE_OPS_MCP_TOOLS,
     McpTool,
 )
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.models.domain import PullRequestState, Ticket, WorkItemType, Workspace
 from loregarden.services import merge_queue_requests
 from sqlmodel import Session
 
@@ -124,4 +124,36 @@ def test_a_refusal_is_an_error_not_an_empty_answer(client, tree):
         reply = _call(client, McpTool.ENQUEUE_MERGE, {"ticket_id": tree})
 
     assert "loregarden_land_ticket" in json.dumps(reply)
+    assert "result" not in reply or reply["result"].get("isError"), reply
+
+
+def test_a_pr_with_no_ticket_is_enqueued_by_number(client, tree):  # noqa: ARG001 - makes mqt
+    pr = mock.Mock(
+        state=PullRequestState.OPEN,
+        base_branch="main",
+        head_branch="claude/session-x",
+        head_sha="f" * 40,
+        url="https://github.com/o/r/pull/4",
+    )
+    with (
+        mock.patch.object(merge_queue_requests, "GhQueueGitHub") as gh,
+        mock.patch.object(merge_queue_requests, "fetch_pull_head", return_value=("f" * 40, "")),
+        mock.patch.object(merge_queue_requests, "base_branch", return_value="main"),
+    ):
+        gh.return_value.read_pull_request.return_value = pr
+        enqueued = json.loads(
+            _text(_call(client, McpTool.ENQUEUE_MERGE, {"pr_number": 4, "workspace_slug": "mqt"}))
+        )
+
+    assert enqueued["outcome"] == "admitted"
+    assert enqueued["entry"]["ticket_id"] is None
+    assert enqueued["entry"]["pr_number"] == 4
+
+
+@pytest.mark.parametrize(
+    "args",
+    [{}, {"pr_number": 4}, {"pr_number": 4, "ticket_id": "mqt-1", "workspace_slug": "mqt"}],
+)
+def test_enqueue_takes_exactly_one_candidate(client, tree, args):  # noqa: ARG001
+    reply = _call(client, McpTool.ENQUEUE_MERGE, args)
     assert "result" not in reply or reply["result"].get("isError"), reply
