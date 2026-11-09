@@ -148,7 +148,9 @@ function engine(on: On, answer: (path: string) => Answer) {
 
 const SERVER = (path: string) => (path in ANSWERS ? ok(ANSWERS[path]) : down)
 
-test("home's sections, in home's order, answer from the server on every surface", async ($, on) => {
+const SECTION_TITLE = /^(Machine capacity|Needs you|Running now|Landing on main|Recent activity)\b/
+
+test("the panel's sections, capacity first, answer from the server on every surface", async ($, on) => {
   const seen = engine(on, SERVER)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.command.run(GARDEN)
@@ -158,6 +160,12 @@ test("home's sections, in home's order, answer from the server on every surface"
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
+
+    // Machine capacity comes first, so what holds the machine is read before what waits on it.
+    const titles = (await ui.findAll({ type: 'Text', text: SECTION_TITLE }))
+      .map(t => SECTION_TITLE.exec(t.text)?.[1])
+      .filter((t, i, all) => t !== undefined && all.indexOf(t) === i)
+    expect(titles).toEqual(['Machine capacity', 'Needs you', 'Running now', 'Landing on main', 'Recent activity'])
 
     // Needs you: 14 identical gates are one row ×14; the failures are one row per ticket and stage.
     expect(await ui.find({ type: 'Text', text: /15 approvals · 2 failed · 1 ticket/ })).toBeDefined()

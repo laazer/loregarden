@@ -594,10 +594,10 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" gap={1}>
         {kpis}
         {banners}
+        {machine}
         {needs}
         {running}
         {landing}
-        {machine}
         {activity}
       </Box>,
     )
