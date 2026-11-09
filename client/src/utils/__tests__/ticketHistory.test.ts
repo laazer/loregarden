@@ -66,6 +66,12 @@ describe("historyLines", () => {
     expect(line.tone).toBe("unavailable");
   });
 
+  it("says a gate timed out, in the machine's tone rather than the work's", () => {
+    const [line] = historyLines([gate("timeout")]);
+    expect(line.text).toBe("Gate implement timed out");
+    expect(line.tone).toBe("unavailable");
+  });
+
   it("leaves the other transition kinds reading as they did", () => {
     const lines = historyLines([stageEvent("StageStarted"), stageEvent("StageCompleted")]);
     expect(lines.map((l) => l.text)).toEqual([

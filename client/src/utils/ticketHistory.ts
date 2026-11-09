@@ -50,6 +50,7 @@ function gateText(event: TicketHistoryEvent): string {
   const tier = str(event.payload.fix_tier);
   const where = stage ? ` ${stage}` : "";
   if (outcome === "unavailable") return `Gate${where} could not run`;
+  if (outcome === "timeout") return `Gate${where} timed out`;
   return `Gate${where} ${outcome}${afterFix(tier)}`;
 }
 
@@ -184,7 +185,8 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
   }
   if (event.type !== "GateEvaluated") return "normal";
   const outcome = str(event.payload.outcome);
-  if (outcome === "unavailable") return "unavailable";
+  // A timeout is the machine's, like a gate that could not run: no verdict on the work.
+  if (outcome === "unavailable" || outcome === "timeout") return "unavailable";
   return outcome === "failed" ? "failed" : "normal";
 }
 

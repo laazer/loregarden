@@ -17,7 +17,7 @@ import { describeError, pushToast, toastActionFailed } from "../../state/toastSt
 import { GatePresetPicker } from "./GatePresetPicker";
 
 /** Outcomes a transition would block on. */
-const BLOCKING = new Set(["failed", "unavailable"]);
+const BLOCKING = new Set(["failed", "unavailable", "timeout"]);
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
