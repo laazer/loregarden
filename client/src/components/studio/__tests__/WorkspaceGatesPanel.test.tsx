@@ -176,6 +176,31 @@ describe("WorkspaceGatesPanel", () => {
     expect(api.updateWorkspaceGates).not.toHaveBeenCalled();
   });
 
+  it("says a check timed out, apart from one that could not run", async () => {
+    api.orchestrationProfile.mockResolvedValue(profile({ gates_commands: ["slow"] }));
+    api.testWorkspaceGates.mockResolvedValue({
+      repo_root: "/repo/blobert",
+      transition: "implement_to_verify",
+      results: [
+        {
+          template: "slow",
+          command: "slow",
+          outcome: "timeout",
+          message: "Gate command timed out after 300s (load average 30.1 on 10 CPUs)",
+          stdout: "",
+          stderr: "",
+          duration_ms: 300000,
+        },
+      ],
+    });
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Test checks" }));
+
+    expect(await screen.findByText("Timed out · 300.0 s")).toBeInTheDocument();
+    expect(screen.getByText(/1 timed out/)).toBeInTheDocument();
+  });
+
   it("adds a built-in guardrail in one click", async () => {
     api.orchestrationProfile.mockResolvedValue(
       profile({ gates_suggested_commands: ["node {loregarden_root}/ts_ux_states_check.cjs --repo x"] }),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import subprocess
 import sys
@@ -24,7 +25,11 @@ from loregarden.services import orchestration_capacity
 from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
-from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+from loregarden.services.orchestration_profile import (
+    DEFAULT_GATE_TIMEOUT_SECONDS,
+    GatesConfig,
+    OrchestrationProfile,
+)
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -32,7 +37,10 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 DEFAULT_TRANSITION_SCRIPT = "ci/scripts/run_workflow_transition_gates.py"
-GATE_TIMEOUT_SECONDS = 300
+
+#: How much of a timed-out command's output is kept on its result: the end,
+#: where a hung command's last words are.
+TIMEOUT_OUTPUT_TAIL = 2048
 
 #: `sysexits.h` EX_UNAVAILABLE, as raised by `.lefthook/scripts/
 #: gate_python_guard.py` when the interpreter is too old to run the gate at all.
@@ -58,6 +66,9 @@ class GateRunResult:
     command: str = ""
     stdout: str = ""
     stderr: str = ""
+    #: Commands that timed out once and were run again (the retry is recorded
+    #: whether it then passed or not).
+    timeout_retries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -169,8 +180,33 @@ def resolved_transition_script(profile: OrchestrationProfile, workspace: Workspa
     return str(script.relative_to(repo_root)) if script is not None else ""
 
 
+def _host_load() -> str:
+    """The host's 1-minute load average against its CPU count, in words."""
+    try:
+        one_minute = os.getloadavg()[0]
+    except OSError:  # silent-ok: no load average on this platform; the message says so
+        return "host load unknown"
+    return f"load average {one_minute:.1f} on {os.cpu_count() or '?'} CPUs"
+
+
+def _tail(output: bytes | str | None) -> str:
+    """The last TIMEOUT_OUTPUT_TAIL characters of a killed command's partial output.
+
+    `subprocess` hands partial output back as bytes on a timeout even in text
+    mode, and a command killed mid-write can end inside a UTF-8 sequence.
+    """
+    if not output:
+        return ""
+    text = output if type(output) is str else output.decode("utf-8", errors="replace")
+    return text.strip()[-TIMEOUT_OUTPUT_TAIL:]
+
+
 def _run_command(
-    command: str, cwd: Path, *, extra_env: dict[str, str] | None = None
+    command: str,
+    cwd: Path,
+    *,
+    extra_env: dict[str, str] | None = None,
+    timeout: int = DEFAULT_GATE_TIMEOUT_SECONDS,
 ) -> GateRunResult:
     # A single malformed or unrunnable command entry (a typo'd Studio gate, a
     # checked-in script missing its execute bit) must degrade to a normal
@@ -205,7 +241,7 @@ def _run_command(
             env={**scrubbed_git_env(), **(extra_env or {})},
             capture_output=True,
             text=True,
-            timeout=GATE_TIMEOUT_SECONDS,
+            timeout=timeout,
             check=False,
         )
     except OSError as exc:
@@ -214,12 +250,17 @@ def _run_command(
         return GateRunResult(
             ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc), command=command
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        # Not UNAVAILABLE: the tool exists and was working. Under load a probe
+        # that answers in 4ms idle blew a 5s budget, and "could not run" sent
+        # the operator looking for a broken install (lg-milestone-that-2487).
         return GateRunResult(
             ok=False,
-            outcome=GateOutcome.UNAVAILABLE,
-            message=f"Gate command timed out after {GATE_TIMEOUT_SECONDS}s",
+            outcome=GateOutcome.TIMEOUT,
+            message=f"Gate command timed out after {timeout}s ({_host_load()})",
             command=command,
+            stdout=_tail(exc.stdout),
+            stderr=_tail(exc.stderr),
         )
 
     stdout = (completed.stdout or "").strip()
@@ -306,12 +347,12 @@ def gates_can_run(profile: OrchestrationProfile, workspace: Workspace) -> bool:
 def _blocking(result: GateRunResult) -> GateRunResult:
     """Stamp a failed command with the outcome that decides who handles it.
 
-    A command that could not run keeps UNAVAILABLE; anything else that failed is
-    a real gate failure. Collapsing the two — which `replace(result,
-    outcome="failed")` did unconditionally — is what sent a hung `npx` to an
-    agent to "fix".
+    A command that could not run keeps UNAVAILABLE, and one that ran out of
+    time keeps TIMEOUT; anything else that failed is a real gate failure.
+    Collapsing them — which `replace(result, outcome="failed")` did
+    unconditionally — is what sent a hung `npx` to an agent to "fix".
     """
-    if result.outcome is GateOutcome.UNAVAILABLE:
+    if result.outcome is not None and result.outcome.reached_no_verdict:
         return result
     return replace(result, outcome=GateOutcome.FAILED)
 
@@ -470,9 +511,9 @@ def run_transition_gates(
             ticket=ticket,
             workspace=workspace,
             transition=context["transition"],
-            # Every command is bounded by GATE_TIMEOUT_SECONDS, so this covers
-            # the whole run without a heartbeat.
-            ttl_seconds=GATE_TIMEOUT_SECONDS * (len(templates) + 2),
+            # Every command is bounded by its timeout and retried at most once,
+            # so this covers the whole run without a heartbeat.
+            ttl_seconds=_lease_ttl(profile.gates, templates),
             parent_lease_id=parent.lease_id,
             orchestration_run_id=orch_run.id if orch_run is not None else None,
         )
@@ -480,10 +521,43 @@ def run_transition_gates(
         return GateRunResult(ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc))
     try:
         return _run_gate_commands(
-            session, ticket, repo_root, context, script, templates, env=lease.env
+            session,
+            ticket,
+            repo_root,
+            context,
+            script,
+            templates,
+            env=lease.env,
+            gates=profile.gates,
         )
     finally:
         lease.release(session)
+
+
+def _lease_ttl(gates: GatesConfig, templates: list[str]) -> int:
+    """Seconds the gate lease must outlive: every command twice, plus the script twice."""
+    budget = sum(gates.timeout_for(template) for template in templates)
+    return 2 * (budget + DEFAULT_GATE_TIMEOUT_SECONDS) + DEFAULT_GATE_TIMEOUT_SECONDS
+
+
+def _run_once_more_on_timeout(
+    command: str, cwd: Path, *, env: dict[str, str], timeout: int
+) -> GateRunResult:
+    """Run a gate command, and once more if it timed out.
+
+    A timeout on a loaded host is often only slowness; a second attempt costs
+    one more budget and spares a person a block that clears by itself. A
+    command that could not run (UNAVAILABLE) or that failed is not retried:
+    neither will change on its own.
+    """
+    first = _run_command(command, cwd, extra_env=env, timeout=timeout)
+    if first.outcome is not GateOutcome.TIMEOUT:
+        return first
+    logger.warning("gate command timed out, retrying once: %s — %s", command, first.message)
+    second = _run_command(command, cwd, extra_env=env, timeout=timeout)
+    if second.outcome is GateOutcome.TIMEOUT:
+        second = replace(second, message=f"{second.message}, on its retry too")
+    return replace(second, timeout_retries=(command,))
 
 
 def _run_gate_commands(
@@ -495,9 +569,11 @@ def _run_gate_commands(
     templates: list[str],
     *,
     env: dict[str, str],
+    gates: GatesConfig,
 ) -> GateRunResult:
     """Run the transition script, then each configured command, stopping at the first failure."""
     ran = 0
+    retried: list[str] = []
 
     # The workspace transition-gate script runs first, and tolerates transitions
     # it doesn't model: the orchestrator emits one edge per stage advance, but a
@@ -517,7 +593,10 @@ def _run_gate_commands(
             f"--checkpoints-dir {HANDOFF_SCRATCH_SUBDIR}",
             context,
         )
-        result = _run_command(script_command, repo_root, extra_env=env)
+        result = _run_once_more_on_timeout(
+            script_command, repo_root, env=env, timeout=DEFAULT_GATE_TIMEOUT_SECONDS
+        )
+        retried += result.timeout_retries
         if result.ok:
             ran += 1
         elif _is_undefined_transition(result):
@@ -534,18 +613,27 @@ def _run_gate_commands(
     # any failure blocks.
     for template in templates:
         command = format_gate_command(template, context)
-        result = _run_command(command, repo_root, extra_env=env)
+        result = _run_once_more_on_timeout(
+            command, repo_root, env=env, timeout=gates.timeout_for(template)
+        )
+        retried += result.timeout_retries
         if not result.ok:
-            return _blocking(result)
+            return replace(_blocking(result), timeout_retries=tuple(retried))
         ran += 1
 
     if ran == 0:
         return GateRunResult(
-            ok=True, outcome=GateOutcome.SKIPPED, message="no gate commands configured"
+            ok=True,
+            outcome=GateOutcome.SKIPPED,
+            message="no gate commands configured",
+            timeout_retries=tuple(retried),
         )
 
+    message = f"passed {ran} gate command(s)"
+    if retried:
+        message += f"; {len(retried)} passed only on a retry after timing out"
     return GateRunResult(
-        ok=True, outcome=GateOutcome.PASSED, message=f"passed {ran} gate command(s)"
+        ok=True, outcome=GateOutcome.PASSED, message=message, timeout_retries=tuple(retried)
     )
 
 

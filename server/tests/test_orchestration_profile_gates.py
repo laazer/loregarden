@@ -64,6 +64,8 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         # means they are only checked to exist (`criterion_check`).
         "criterion_test_commands": [],
         "sign_off_when_criteria_checked": True,
+        # Per-command timeouts; a command not named runs on the default.
+        "command_timeouts": {},
     }
 
 
@@ -102,6 +104,8 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
         # means they are only checked to exist (`criterion_check`).
         "criterion_test_commands": [],
         "sign_off_when_criteria_checked": True,
+        # Per-command timeouts; a command not named runs on the default.
+        "command_timeouts": {},
     }
 
     profile = resolve_orchestration_profile(ws)

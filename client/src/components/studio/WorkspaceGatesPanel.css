@@ -546,7 +546,8 @@
   background: color-mix(in srgb, var(--red) 18%, transparent);
   color: var(--rdl);
 }
-.gate-badge--unavailable {
+.gate-badge--unavailable,
+.gate-badge--timeout {
   background: color-mix(in srgb, var(--amb) 18%, transparent);
   color: var(--aml);
 }
