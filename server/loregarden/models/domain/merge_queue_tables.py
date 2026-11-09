@@ -4,8 +4,10 @@ lg-milestone-that-968. The loop (`services.merge_queue_loop`) reads these rows
 and is the only writer past admission; admission and withdrawal are
 `services.merge_queue`. Nothing here talks to git or GitHub.
 
-A candidate is a ticket's pull request: for a tree, the root's
-``publish/integration/<root>`` PR that `publish_tree` opens. ``head_sha`` is
+A candidate is a pull request: for a tree, the root's
+``publish/integration/<root>`` PR that `publish_tree` opens; otherwise any open
+PR on the base, admitted by number with no ticket (an interactive session's
+branch), whose head the queue pushes its staged commit onto. ``head_sha`` is
 the work being merged (the integration branch's tip at admission), not the PR's
 head commit: the loop re-cuts the PR's head onto the base whenever the base
 moves, so the PR head changes under one candidate while ``head_sha`` does not.
@@ -46,7 +48,8 @@ class MergeQueueEntry(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    #: The tree's root ticket; None for a pull request admitted by number.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     pr_number: int
     pr_url: str = ""
     #: The PR's head branch on the remote (``publish/<branch>``): the staging ref.
@@ -74,6 +77,9 @@ class MergeQueueEntry(SQLModel, table=True):
     staged_sha: str = ""
     staged_tree: str = ""
     staged_base_sha: str = ""
+    #: The last commit the queue pushed onto the PR head. Kept across a restage,
+    #: so a PR admitted by number can tell its author's push from the queue's.
+    pushed_sha: str = ""
     #: What landed: GitHub's merge commit and its tree, which must equal
     #: ``staged_tree``.
     merge_commit: str = ""

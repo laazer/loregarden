@@ -1,4 +1,12 @@
+import pytest
 from loregarden import config
+from loregarden.services.claude_oauth_env import prime_claude_oauth_token_env
+from loregarden.services.git_subprocess import run_git
+
+
+def _cache_token(checkout, token):
+    (checkout / "data").mkdir(parents=True, exist_ok=True)
+    (checkout / "data" / ".claude-oauth-token").write_text(token, encoding="utf-8")
 
 
 def test_prime_claude_oauth_token_env_loads_cached_token(tmp_path, monkeypatch):
@@ -7,49 +15,87 @@ def test_prime_claude_oauth_token_env_loads_cached_token(tmp_path, monkeypatch):
     cached token needs to land in os.environ, regardless of how the backend
     was launched (dev-server.sh sets it too, but the Tauri desktop app spawns
     `python -m loregarden` directly and never runs that script)."""
-    monkeypatch.setattr(config.settings, "repo_root", tmp_path)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    token_dir = tmp_path / "data"
-    token_dir.mkdir()
-    (token_dir / ".claude-oauth-token").write_text("a-clean-token", encoding="utf-8")
+    _cache_token(tmp_path, "a-clean-token")
 
-    config._prime_claude_oauth_token_env()
-
+    assert (
+        prime_claude_oauth_token_env(repo_root=tmp_path)
+        == tmp_path / "data" / ".claude-oauth-token"
+    )
     assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "a-clean-token"
 
 
+def _git(cwd, *args):
+    run_git(
+        ["-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.fixture
+def primary_and_worktree(tmp_path):
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    _git(primary, "init", "-q", "-b", "main")
+    _git(primary, "commit", "-q", "--allow-empty", "-m", "init")
+    worktree = tmp_path / "worktree"
+    _git(primary, "worktree", "add", "-q", "-b", "ticket", str(worktree))
+    return primary.resolve(), worktree.resolve()
+
+
+def test_prime_claude_oauth_token_env_reads_the_primary_checkout_from_a_worktree(
+    primary_and_worktree, monkeypatch
+):
+    """`data/` is per checkout and only the primary caches the token, so a server
+    run from a worktree (`task sandbox`) must find it there — or every agent it
+    starts fails unauthenticated with an empty stderr."""
+    primary, worktree = primary_and_worktree
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    _cache_token(primary, "primary-token")
+
+    found = prime_claude_oauth_token_env(repo_root=worktree)
+
+    assert found is not None and found.resolve() == primary / "data" / ".claude-oauth-token"
+    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-token"
+
+
+def test_prime_claude_oauth_token_env_prefers_the_worktrees_own_token(
+    primary_and_worktree, monkeypatch
+):
+    primary, worktree = primary_and_worktree
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    _cache_token(primary, "primary-token")
+    _cache_token(worktree, "worktree-token")
+
+    prime_claude_oauth_token_env(repo_root=worktree)
+
+    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "worktree-token"
+
+
 def test_prime_claude_oauth_token_env_does_not_override_existing_env_var(tmp_path, monkeypatch):
-    monkeypatch.setattr(config.settings, "repo_root", tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "already-set")
-    token_dir = tmp_path / "data"
-    token_dir.mkdir()
-    (token_dir / ".claude-oauth-token").write_text("cached-token", encoding="utf-8")
+    _cache_token(tmp_path, "cached-token")
 
-    config._prime_claude_oauth_token_env()
-
+    assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
     assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "already-set"
 
 
 def test_prime_claude_oauth_token_env_ignores_malformed_cached_file(tmp_path, monkeypatch):
     """Guards the same corruption case usage_service.py's file reader guards —
     captured terminal output (spinners, prompts) must never reach os.environ."""
-    monkeypatch.setattr(config.settings, "repo_root", tmp_path)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    token_dir = tmp_path / "data"
-    token_dir.mkdir()
-    (token_dir / ".claude-oauth-token").write_text("garbled\n✳ output", encoding="utf-8")
+    _cache_token(tmp_path, "garbled\n✳ output")
 
-    config._prime_claude_oauth_token_env()
-
+    assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in config.os.environ
 
 
 def test_prime_claude_oauth_token_env_noop_when_file_absent(tmp_path, monkeypatch):
-    monkeypatch.setattr(config.settings, "repo_root", tmp_path)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
-    config._prime_claude_oauth_token_env()
-
+    assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in config.os.environ
 
 

@@ -13,6 +13,35 @@
   padding-top: 14px;
 }
 
+/* Lanes scrolls as one: the board keeps the full height it was built for, and
+   the merge queue sits below the fold (Home links to it as #merge-queue). */
+.machine-lanes {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.machine-lanes-board {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Lanes' merge queue, under the board, inside the board's own gutters. */
+.machine-lanes-merge-queue {
+  flex: none;
+  padding: 0 24px 24px;
+}
+
+@media (max-width: 640px) {
+  .machine-lanes-merge-queue {
+    padding: 0 16px 16px;
+  }
+}
+
 .machine-tabs {
   display: inline-flex;
   align-self: flex-start;

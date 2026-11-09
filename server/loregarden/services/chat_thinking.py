@@ -271,6 +271,11 @@ class ChatTurnThinkingSink:
                 self._saw_deltas = True
                 self._set_activity(str(block.get("name") or "Working"))
             elif block_type == "text":
+                # Each text block is its own paragraph. Text written after a
+                # tool call is a new block; appended bare, "fixes." and "Now
+                # the fix." stream as "fixes.Now the fix."
+                if self._answer and not self._answer.endswith("\n\n"):
+                    self._answer = self._answer.rstrip("\n") + "\n\n"
                 self._set_activity("Writing the reply")
             return
 

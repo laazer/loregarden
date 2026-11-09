@@ -10,6 +10,9 @@ from unittest import mock
 
 import pytest
 from loregarden.db.versions.merge_queue_entries import m_merge_queue_entries
+from loregarden.db.versions.merge_queue_ticketless_entries import (
+    m_merge_queue_ticketless_entries,
+)
 from loregarden.models.domain import (
     MergeQueueAdmission,
     MergeQueueEntry,
@@ -73,11 +76,16 @@ def test_migration_creates_the_table_and_reruns_as_a_no_op(isolated_db):
     with isolated_db.begin() as conn:
         m_merge_queue_entries(conn)
         m_merge_queue_entries(conn)
+        m_merge_queue_ticketless_entries(conn)
+        m_merge_queue_ticketless_entries(conn)
     inspector = inspect(isolated_db)
-    migrated = {column["name"] for column in inspector.get_columns("merge_queue_entries")}
-    assert migrated == set(MergeQueueEntry.model_fields)
-    indexes = {index["name"] for index in inspector.get_indexes("merge_queue_entries")}
-    assert {"uq_merge_queue_live_head", "ix_merge_queue_entries_state"} <= indexes
+    columns = {column["name"]: column for column in inspector.get_columns("merge_queue_entries")}
+    assert set(columns) == set(MergeQueueEntry.model_fields)
+    assert columns["ticket_id"]["nullable"]
+    indexes = {index["name"]: index for index in inspector.get_indexes("merge_queue_entries")}
+    assert {"uq_merge_queue_live_head", "ix_merge_queue_entries_state"} <= set(indexes)
+    # The rebuild that drops NOT NULL must keep the duplicate-head index partial.
+    assert indexes["uq_merge_queue_live_head"]["dialect_options"]["sqlite_where"] is not None
 
 
 def test_state_is_the_enum_not_a_string(session, workspace, ticket):

@@ -20,7 +20,7 @@ from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import Candidate, enqueue, transition
 from loregarden.services.merge_queue_github import StagedPullRequest
 from loregarden.services.ticket_pull_request import GhCheck
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 REQUIRED = ["Client (TypeScript)", "Server (Python)"]
 
@@ -211,3 +211,66 @@ def test_enqueue_with_an_open_pr_admits_it(client, queue):
     body = response.json()
     assert body["outcome"] == "admitted"
     assert (body["entry"]["pr_number"], body["entry"]["head_sha"]) == (9, "e" * 40)
+
+
+def _child_of(isolated_db, parent_external_id: str) -> str:
+    with Session(isolated_db) as session:
+        parent = session.exec(select(Ticket).where(Ticket.external_id == parent_external_id)).one()
+        child = Ticket(
+            external_id="lg-2",
+            workspace_id=parent.workspace_id,
+            title="child",
+            work_item_type=WorkItemType.TASK,
+            parent_ticket_id=parent.id,
+        )
+        session.add(child)
+        session.commit()
+        return child.id
+
+
+def test_a_child_ticket_reads_its_trees_entry_and_how_many_are_ahead(client, isolated_db, queue):
+    child_id = _child_of(isolated_db, "lg-1")
+
+    response = client.get(f"/api/merge-queue/tickets/{child_id}")
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["root_external_id"] == "lg-1"
+    assert body["entry"]["pr_number"] == 8, "the tree's latest entry, not its first"
+    assert body["entry"]["state"] == "queued"
+    assert body["ahead"] == 1
+
+
+def test_a_ticket_never_queued_has_no_entry(client, isolated_db):
+    with Session(isolated_db) as session:
+        ws = Workspace(slug="quiet", name="quiet", repo_path="/nonexistent")
+        session.add(ws)
+        session.commit()
+        ticket = Ticket(
+            external_id="q-1", workspace_id=ws.id, title="t", work_item_type=WorkItemType.FEATURE
+        )
+        initiative = Ticket(
+            external_id="q-2", workspace_id=None, title="i", work_item_type=WorkItemType.INITIATIVE
+        )
+        session.add_all([ticket, initiative])
+        session.commit()
+        ids = (ticket.id, initiative.id)
+
+    for ticket_id in ids:
+        body = client.get(f"/api/merge-queue/tickets/{ticket_id}").json()
+        assert (body["entry"], body["ahead"]) == (None, 0)
+
+
+def test_an_unknown_ticket_is_a_404(client):
+    assert client.get("/api/merge-queue/tickets/nope-404").status_code == 404
+
+
+def test_the_overview_lists_each_workspace_that_has_held_an_entry(client, isolated_db, queue):
+    with Session(isolated_db) as session:
+        session.add(Workspace(slug="never-queued", name="n", repo_path="/nonexistent"))
+        session.commit()
+
+    body = client.get("/api/merge-queue").json()
+
+    assert [view["workspace_slug"] for view in body["queues"]] == ["mq"]
+    assert [entry["pr_number"] for entry in body["queues"][0]["entries"]] == [7, 8]

@@ -13,6 +13,7 @@ import { PrioBars } from "../components/PrioBars";
 import { TicketGithubSyncButton } from "../components/TicketGithubSyncButton";
 import { TicketFailurePanel } from "../components/ticket/TicketFailurePanel";
 import { TicketPartOf } from "../components/ticket/TicketPartOf";
+import { TicketMergeQueueStrip } from "../components/mergeQueue/TicketMergeQueueStrip";
 import { TicketSplitLine } from "../components/ticket/TicketSplitLine";
 import { TicketWorkflowColumn } from "../components/ticket/TicketWorkflowColumn";
 import { TicketWorkModals } from "../components/ticket/TicketWorkModals";
@@ -223,6 +224,7 @@ export function TicketPage() {
         {parent.data && siblings.length > 0 ? (
           <TicketPartOf ticketId={sel.id} parent={parent.data} siblings={siblings} tab={lastReadingTab} />
         ) : null}
+        <TicketMergeQueueStrip ticketId={sel.id} />
       </header>
 
       <div className="ticket-page-body">
