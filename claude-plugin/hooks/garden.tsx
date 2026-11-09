@@ -4,9 +4,10 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import type { Fetch, Garden, Lease } from '../types'
 import {
   ago,
-  bar,
+  BAR_CELLS,
   countLine,
   failedToday,
+  filledCells,
   inLine,
   isActive,
   landedSince,
@@ -63,6 +64,13 @@ const RUN_TONE: Record<string, Tone | 'done' | 'idle'> = {
   blocked: 'bad',
   repairing: 'wait',
 }
+/**
+ * Every mark the panel draws is this one square, colored by what it means:
+ * a used bar cell, a free one, a capacity holder. Fonts give ▰ and ▱ different
+ * shapes and sizes, and ☁ comes out as an emoji, so they never lined up.
+ */
+const MARK = '■'
+
 /** One glyph per stage, so "5 of 12" reads at a glance (Home's stage strip). */
 const STAGE_GLYPH: Record<string, [string, string]> = {
   done: ['●', SAGE],
@@ -188,6 +196,19 @@ export const register: Register = (on, options) => {
         {body}
       </Box>
     )
+    /** Home's capacity meter: used cells in sage, free ones muted, the same square for both. */
+    const meter = (label: string, used: number, ceiling: number, said: string) => {
+      const filled = filledCells(used, ceiling)
+      return (
+        <Text tabular>
+          <Text color={SAGE}>{MARK.repeat(filled)}</Text>
+          <Text color={MUTED} dimColor>
+            {MARK.repeat(BAR_CELLS - filled)}
+          </Text>{' '}
+          {label} {said}
+        </Text>
+      )
+    }
     const empty = (text: string) => (
       <Text dimColor wrap="wrap">
         {text}
@@ -398,7 +419,7 @@ export const register: Register = (on, options) => {
               </Text>
               {lease ? (
                 <Text color={AMBER}>
-                  ☁ holds {holds(lease)} for {span(lease.heldSeconds)}
+                  {MARK} holds {holds(lease)} for {span(lease.heldSeconds)}
                 </Text>
               ) : null}
               {lease ? saying(lease) : null}
@@ -473,13 +494,13 @@ export const register: Register = (on, options) => {
       ) : (
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column">
-            <Text tabular>
-              <Text color={SAGE}>{bar(c.cpusUsed, c.cpusCeiling)}</Text> CPU {c.cpusUsed}/{c.cpusCeiling}
-            </Text>
-            <Text tabular>
-              <Text color={SAGE}>{bar(c.memoryUsedMb, c.memoryCeilingMb)}</Text> Memory{' '}
-              {(c.memoryUsedMb / 1024).toFixed(1)}/{(c.memoryCeilingMb / 1024).toFixed(1)} GB
-            </Text>
+            {meter('CPU', c.cpusUsed, c.cpusCeiling, `${c.cpusUsed}/${c.cpusCeiling}`)}
+            {meter(
+              'Memory',
+              c.memoryUsedMb,
+              c.memoryCeilingMb,
+              `${(c.memoryUsedMb / 1024).toFixed(1)}/${(c.memoryCeilingMb / 1024).toFixed(1)} GB`,
+            )}
           </Box>
           {c.holders.length === 0 ? empty('☀️ Nothing holds the machine.') : null}
           {onLanes.size ? <Text dimColor>{onLanes.size} held by running tickets, on their cards above.</Text> : null}
@@ -496,7 +517,7 @@ export const register: Register = (on, options) => {
               >
                 <Box flexDirection="row" justifyContent="space-between" gap={1}>
                   <Text bold wrap="truncate">
-                    ☁ {l.what}
+                    <Text color={stuck ? RED : AMBER}>{MARK}</Text> {l.what}
                   </Text>
                   <Text dimColor tabular>
                     {span(l.heldSeconds)}

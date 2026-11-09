@@ -496,10 +496,12 @@ export function span(seconds: number): string {
   return `${Math.floor(seconds / 86400)}d`
 }
 
-/** A ten-cell bar of used against ceiling, `▰▰▰▱▱▱▱▱▱▱`. */
-export function bar(used: number, ceiling: number): string {
-  const filled = ceiling > 0 ? Math.min(10, Math.round((used / ceiling) * 10)) : 0
-  return '▰'.repeat(filled) + '▱'.repeat(10 - filled)
+/** The bar's width in cells. */
+export const BAR_CELLS = 10
+
+/** How many of the bar's cells are used, 0 to BAR_CELLS. */
+export function filledCells(used: number, ceiling: number): number {
+  return ceiling > 0 ? Math.max(0, Math.min(BAR_CELLS, Math.round((used / ceiling) * BAR_CELLS))) : 0
 }
 
 /** The status-line text: one glance at what the garden needs. */

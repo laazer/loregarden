@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { failedToday, needsYouRows, parseApprovals, parseRuns, parseTickets, readGarden } from '../hooks/garden-data'
+import { BAR_CELLS, failedToday, filledCells, needsYouRows, parseApprovals, parseRuns, parseTickets, readGarden } from '../hooks/garden-data'
 
 const PANE = {
   plugin: 'loregarden',
@@ -305,4 +305,11 @@ test('a ticket name that cannot be read is named, and read again next poll', asy
   const second = await readGarden(async url => SERVER(url.replace('http://x', '')), 'http://x', NOW + 1, first, false)
   expect(second.failed).toEqual([])
   expect(Object.keys(second.names)).toEqual(['t8'])
+})
+
+test('a meter fills in proportion and stays inside its cells, even past the ceiling', () => {
+  expect(filledCells(4, 7)).toBe(6)
+  expect(filledCells(0, 7)).toBe(0)
+  expect(filledCells(9, 7)).toBe(BAR_CELLS)
+  expect(filledCells(3, 0)).toBe(0)
 })
