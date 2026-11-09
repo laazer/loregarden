@@ -29,6 +29,7 @@ from loregarden.models.domain.instance_template_tables import *  # noqa: F401,F4
 from loregarden.models.domain.invariant_enums import *  # noqa: F401,F403
 from loregarden.models.domain.landing_enums import *  # noqa: F401,F403
 from loregarden.models.domain.living_map_tables import *  # noqa: F401,F403
+from loregarden.models.domain.mcp_tables import *  # noqa: F401,F403
 from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
 from loregarden.models.domain.memory_tables import *  # noqa: F401,F403
 from loregarden.models.domain.merge_queue_enums import *  # noqa: F401,F403

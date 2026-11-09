@@ -67,6 +67,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.dispatch_key import executed_once
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.exit_action_dispatch import assign_dispatch_exit_actions
@@ -220,6 +221,7 @@ class CliAgentExecutor:
         # parallel workers it lends this to, check the repository's shape once.
         self.preflight_ledger = preflight_ledger or PreflightLedger()
 
+    @executed_once
     def execute(
         self,
         run: AgentRun,

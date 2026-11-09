@@ -389,4 +389,12 @@ describe("historyLines — findings that do not block", () => {
 
     expect(lines.map((line) => line.tone)).toEqual(["normal", "normal"]);
   });
+
+  it("reads a replayed dispatch that got its run back as normal", () => {
+    const [line] = historyLines([
+      decision("dispatch_replayed", "A queue dispatch of implement got run r_1 back.", "implement"),
+    ]);
+
+    expect(line.tone).toBe("normal");
+  });
 });

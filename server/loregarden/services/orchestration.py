@@ -1,4 +1,3 @@
-import json
 import logging
 import secrets
 from dataclasses import dataclass
@@ -31,6 +30,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import ticket_manual_edit
+from loregarden.services.approval_answers import record_approval_answer
 from loregarden.services.approval_ignore import ignore_approval
 from loregarden.services.approval_resolution import (
     apply_gate_resolution,
@@ -40,6 +40,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.dispatch_guard import refuse_dispatch_under_terminal_parent
+from loregarden.services.dispatch_key import commit_keyed_run, dispatch_key, replay_of
 from loregarden.services.exit_action_approvals import ExitActionApprovalMixin
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
@@ -84,10 +85,6 @@ from loregarden.services.ticket_rollup import has_children, reconcile_ancestors,
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import refuse_closing_unpublished
-from loregarden.services.triage_question_log import (
-    record_home_chat_question_exchange,
-    record_triage_question_exchange,
-)
 from loregarden.services.unresolved_ledger import visible_unresolved
 from loregarden.services.workflow_service import (
     resolve_ticket_stages,
@@ -865,6 +862,7 @@ class OrchestrationService:
         timeout_override_seconds: int | None = None,
         force: bool = False,
         dispatch_surface: DispatchSurface = DispatchSurface.HTTP,
+        dispatch_lane: str = "",
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -880,6 +878,28 @@ class OrchestrationService:
         # operator's blocking diagnosis and left the ticket started.
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
+
+        # A replay of a dispatch whose run is still in flight gets that run back,
+        # before anything is charged or written (`dispatch_key`).
+        # The agent is resolved here, first: the key names it, and
+        # `resolve_run_agent` raises on a stage that resolves no agent, which
+        # must happen before the stage is charged a dispatch it never spent.
+        # Nothing below touches `next_agent` before the pins are consumed, so
+        # this is the agent that runs.
+        chosen_agent, chosen_skill = resolve_run_agent(
+            ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
+        )
+        key = dispatch_key(
+            self.session,
+            ticket,
+            orchestration_run_id=orchestration_run_id,
+            stage_key=target_key,
+            agent_id=chosen_agent,
+            skill_name=chosen_skill,
+            lane=dispatch_lane,
+        )
+        if (replayed := replay_of(self.session, ticket, key, surface=dispatch_surface)) is not None:
+            return replayed
 
         parent = refuse_dispatch_under_terminal_parent(
             self.session,
@@ -932,21 +952,6 @@ class OrchestrationService:
             clear_budget=budget_reset_pending,
         )
 
-        # Resolved here rather than after the commit block for two reasons.
-        # The attribution below needs the agent that will actually run, and
-        # `ticket.next_agent` is not it — the pin is empty for most of a
-        # ticket's life, so an audit row that named it recorded "" for the
-        # agent whose forced dispatch it exists to attribute. And
-        # `_resolve_run_agent` raises on a stage that resolves no agent: doing
-        # that after the commit charged the stage a dispatch it never spent.
-        #
-        # Safe to move because `_prepare_stage_start` above does not touch
-        # `next_agent`, so nothing between the old and new position changes what
-        # this resolves to.
-        chosen_agent, chosen_skill = resolve_run_agent(
-            ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
-        )
-
         # After the reset, so a cleared counter is refilled by this dispatch.
         if decision is not None:
             commit_standalone_stage_dispatch(
@@ -995,10 +1000,14 @@ class OrchestrationService:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_override_seconds,
             dispatch_waiver_approval_id=waiver_approval_id,
+            dispatch_key=key,
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)
-        self.session.commit()
+        if (
+            kept := commit_keyed_run(self.session, ticket, run, surface=dispatch_surface)
+        ) is not run:
+            return kept  # another dispatch of this lane committed first
         self.session.refresh(run)
 
         event_bus.publish(
@@ -1119,9 +1128,6 @@ class OrchestrationService:
 #: under ``auto_approve`` (AC-6); design-plan sign-off is the only permitted
 #: unattended path, and it lives in ``subtree_auto_run.resolve_gate_if_permitted``.
 _ROUTABLE_APPROVAL_KINDS = frozenset({ApprovalKind.WORKFLOW_GATE, ApprovalKind.REWORK_PAUSE})
-#: Approval kinds answered with `answers` against a `tool_input_json` question —
-#: an agent's AskUserQuestion, and a decision block asked the same way (749).
-_QUESTION_APPROVAL_KINDS = frozenset({ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION})
 
 
 class ApprovalService(ExitActionApprovalMixin):
@@ -1160,7 +1166,8 @@ class ApprovalService(ExitActionApprovalMixin):
             self._validate_rework_route(approval, rework_route_key)
 
         if approved:
-            self._record_question_or_permission_response(
+            record_approval_answer(
+                self.session,
                 approval,
                 answers=answers,
                 response_text=response_text,
@@ -1206,81 +1213,6 @@ class ApprovalService(ExitActionApprovalMixin):
                 ticket, approval, approved=False, rework_route_key="", response_text=text
             ),
         )
-
-    def _record_question_or_permission_response(
-        self,
-        approval: Approval,
-        *,
-        answers: dict[str, str | list[str]] | None,
-        response_text: str,
-        always_allow: bool,
-        allow_for_ticket: bool,
-        allow_for_stage: bool,
-    ) -> None:
-        from loregarden.agents.executors.permission_bridge import (
-            build_ask_user_question_input,
-            parse_stored_tool_input,
-            validate_question_answers,
-        )
-        from loregarden.services.permission_allowlist import (
-            add_ticket_allow_rule,
-            add_workspace_allow_rule,
-        )
-
-        if approval.kind in _QUESTION_APPROVAL_KINDS:
-            tool_input = json.loads(approval.tool_input_json or "{}")
-            validate_question_answers(tool_input, answers, response=response_text)
-            updated_input = build_ask_user_question_input(
-                tool_input,
-                answers=answers or {},
-                response=response_text,
-            )
-            approval.response_json = json.dumps({"updated_input": updated_input})
-            # The answer reaches the agent as a tool result; mirror it into the chat so the
-            # operator's transcript shows the exchange rather than jumping over it.
-            record_triage_question_exchange(
-                self.session,
-                approval,
-                tool_input,
-                answers=answers,
-                response=response_text,
-            )
-            record_home_chat_question_exchange(
-                self.session,
-                approval,
-                tool_input,
-                answers=answers,
-                response=response_text,
-            )
-            return
-        if approval.kind != ApprovalKind.CLI_PERMISSION:
-            return
-        tool_input = parse_stored_tool_input(approval.tool_input_json)
-        approval.response_json = json.dumps({"updated_input": tool_input})
-        if always_allow:
-            add_workspace_allow_rule(
-                self.session,
-                approval.workspace_id,
-                approval.tool_name,
-                tool_input,
-            )
-        # Ticket/stage allow rules need a work item; Home chat approvals are
-        # workspace-scoped and can only persist always_allow.
-        if allow_for_ticket and approval.ticket_id:
-            add_ticket_allow_rule(
-                self.session,
-                approval.ticket_id,
-                approval.tool_name,
-                tool_input,
-            )
-        if allow_for_stage and approval.ticket_id and approval.stage_key:
-            add_ticket_allow_rule(
-                self.session,
-                approval.ticket_id,
-                approval.tool_name,
-                tool_input,
-                stage_key=approval.stage_key,
-            )
 
     def _validate_rework_route(self, approval: Approval, rework_route_key: str) -> None:
         """Validate an explicit stage override up front so a bad target can't

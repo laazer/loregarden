@@ -213,6 +213,12 @@ def _reset_stage_to_pending(db_session: Session, ticket: Ticket) -> None:
     orch = OrchestrationService(db_session)
     instance, stages = orch._resolve_stages(ticket)
     set_stage_status(ticket, instance, stages, "review", StageStatus.PENDING)
+    # The pass's runs finished too: a start while they are in flight is a replay
+    # of their dispatch and gets them back (`dispatch_key`).
+    for run in _agent_runs(db_session, ticket.id):
+        if run.status is RunStatus.RUNNING:
+            run.status = RunStatus.SUCCEEDED
+            db_session.add(run)
     db_session.add(ticket)
     db_session.add(instance)
     db_session.commit()

@@ -151,6 +151,10 @@ class OrchestratorDecision(StrEnum):
     #: A review lane's recheck round answered its prior blocking findings,
     #: each resolved, unresolved or unanswered (`recheck_round`).
     RECHECK_RECORDED = "recheck_recorded"
+    #: A stage dispatch repeated one whose run is still in flight, after a
+    #: crash, restart or timeout, and got that run back instead of starting a
+    #: second agent (`dispatch_key`). The evidence carries the key and surface.
+    DISPATCH_REPLAYED = "dispatch_replayed"
     #: A run finished on a ticket whose description, acceptance criteria or
     #: documents changed after it was dispatched (`spec_snapshot`). The evidence
     #: names what changed; a pass on changed criteria is held and the stage re-run.
