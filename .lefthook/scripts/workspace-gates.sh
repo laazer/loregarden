@@ -29,9 +29,12 @@ EX_UNAVAILABLE=69
 
 #: "<language> <checker>". Python runs through server_python.sh: the checkers need
 #: >=3.11 and a bare `python3` resolves against the *target* workspace's PATH.
+#: `md` is the language a checker grades, not the one it is written in: the
+#: markdown gate is Python too.
 GATES=(
   "py py_organization_check.py"
   "py py_silent_except_check.py"
+  "md md_report_check.py"
   "ts ts_organization_check.cjs"
   "ts ts_no_silent_failures_check.cjs"
   "ts ts_ux_states_check.cjs"
@@ -84,7 +87,7 @@ for gate in "${GATES[@]}"; do
   selected=()
   for file in ${files[@]+"${files[@]}"}; do
     case "$lang:$file" in
-      py:*.py | ts:*.ts | ts:*.tsx) selected+=("$file") ;;
+      py:*.py | md:*.md | ts:*.ts | ts:*.tsx) selected+=("$file") ;;
     esac
   done
   # Handed files, none of them this gate's: nothing for it to examine.
@@ -93,7 +96,7 @@ for gate in "${GATES[@]}"; do
   fi
 
   case "$lang" in
-    py) cmd=(bash "$SCRIPTS/server_python.sh" "$SCRIPTS/$checker") ;;
+    py | md) cmd=(bash "$SCRIPTS/server_python.sh" "$SCRIPTS/$checker") ;;
     ts)
       resolve_ts_node
       if ! command -v "$ts_node" >/dev/null 2>&1; then

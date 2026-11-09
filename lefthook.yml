@@ -90,6 +90,11 @@ pre-commit:
       # in a gate went undetected by the gate itself.
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
+    md-report:
+      name: Report markdown written into the tree
+      priority: 1
+      glob: "{*.md,**/*.md}"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/md_report_check.py {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
       priority: 1

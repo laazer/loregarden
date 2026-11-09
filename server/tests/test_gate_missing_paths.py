@@ -43,6 +43,7 @@ GATES = [
     pytest.param(
         [sys.executable, str(_SCRIPTS / "py_git_subprocess_check.py")], "src/pkg/m.py", id="py-git"
     ),
+    pytest.param([sys.executable, str(_SCRIPTS / "md_report_check.py")], "notes/m.md", id="md"),
     pytest.param(
         ["node", str(_SCRIPTS / "ts_organization_check.cjs")], "client/src/m.ts", id="ts-org"
     ),
@@ -88,6 +89,8 @@ def _build_repo(root: Path) -> None:
     _git(root, "config", "user.name", "t")
     (root / "src" / "pkg").mkdir(parents=True)
     (root / "src" / "pkg" / "m.py").write_text(PY_BODY)
+    (root / "notes").mkdir()
+    (root / "notes" / "m.md").write_text("# Notes\n")
     (root / "client" / "src").mkdir(parents=True)
     (root / "client" / "src" / "m.ts").write_text(TS_BODY)
     (root / "client" / "src" / "m.css").write_text(CSS_BODY)

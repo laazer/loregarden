@@ -18,6 +18,8 @@ The run context at the top of your prompt states which one you are on; there is 
 verification file — not at the repo root, not in `server/tests/`, not anywhere. Loregarden
 reads none of them, so a report written to disk is invisible to the control plane; it only
 gets swept into an unrelated ticket's commit by the orchestrator.
+A gate (`md_report_check.py`) refuses a new report-shaped `.md` outside the doc directories
+at commit and at every stage transition, and names the tool below that takes it.
 
 If your role says to "produce a report", "document your findings", or "provide a summary" and
 names no destination, the destination is **a control-plane tool** — never a new file:
