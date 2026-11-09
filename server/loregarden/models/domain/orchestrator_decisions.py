@@ -151,3 +151,7 @@ class OrchestratorDecision(StrEnum):
     #: A review lane's recheck round answered its prior blocking findings,
     #: each resolved, unresolved or unanswered (`recheck_round`).
     RECHECK_RECORDED = "recheck_recorded"
+    #: A run finished on a ticket whose description, acceptance criteria or
+    #: documents changed after it was dispatched (`spec_snapshot`). The evidence
+    #: names what changed; a pass on changed criteria is held and the stage re-run.
+    SPEC_CHANGED_UNDER_RUN = "spec_changed_under_run"
