@@ -277,7 +277,9 @@ def test_a_run_settled_twice_is_recorded_once(db_session, at_test_break):
         at_test_break,
         _stdout("needs_rework", findings=[{**COMPLETE, "path": ""}]),
     )
-    settled = admit_run_report(db_session, at_test_break, run, parse_stage_report(run.stdout or ""))
+    settled = admit_run_report(
+        db_session, at_test_break, run, parse_stage_report(run.stdout or ""), priors=[]
+    )
 
     assert settled is not None and settled.status == "pass"
     assert len(_decisions(db_session, at_test_break, "reject_not_admitted")) == 1

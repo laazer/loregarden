@@ -5,6 +5,7 @@ from __future__ import annotations
 from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import AgentRun, StageReportStatus, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
+from loregarden.services.recheck_round import recheck_context_lines
 from loregarden.services.repair_brief import repair_brief_for
 from loregarden.services.rework_feedback import render_rework_feedback
 from loregarden.services.stage_verdict import (
@@ -180,6 +181,7 @@ def build_orchestration_context(
             feedback,
         ]
     lines += _unresolved_context_lines(session, ticket, run, stage_def)
+    lines += recheck_context_lines(session, ticket, run)
 
     return "\n".join(lines)
 

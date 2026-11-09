@@ -365,8 +365,13 @@ describe("historyLines — findings that do not block", () => {
         "verify",
       ),
       decision("findings_recorded", "static_qa recorded 2 finding(s) on 'review' that do not block.", "review"),
+      decision(
+        "recheck_recorded",
+        "static_qa rechecked 1 prior finding(s) on 'review': 1 resolved, 0 unresolved, 0 unanswered.",
+        "review",
+      ),
     ]);
 
-    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal"]);
+    expect(lines.map((line) => line.tone)).toEqual(["normal", "normal", "normal"]);
   });
 });

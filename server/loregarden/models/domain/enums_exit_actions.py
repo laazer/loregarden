@@ -95,3 +95,12 @@ class FindingDisposition(StrEnum):
     ASSIGNED_TICKET = "assigned_ticket"
     #: Real, but outside what this ticket set out to do.
     OUT_OF_SCOPE = "out_of_scope"
+
+
+class RecheckStatus(StrEnum):
+    """What a recheck round said about one of the reviewer's prior findings."""
+
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    #: The report said nothing about it.
+    UNANSWERED = "unanswered"

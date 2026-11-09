@@ -190,6 +190,8 @@ def test_the_decision_kind_is_closed(db_session: Session):
         # finding proceeding as a pass, and findings that do not block on record.
         "reject_not_admitted",
         "findings_recorded",
+        # Normal (client tone()): a review lane's recheck round, per prior finding.
+        "recheck_recorded",
     }, "a decision kind changed — update client/src/utils/ticketHistory.ts to match"
 
 

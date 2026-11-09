@@ -22,12 +22,13 @@ as often as it likes; `admit_run_report` records, once per run, at completion.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 
 from loregarden.models.domain import (
     AgentRun,
     DomainEvent,
     EventType,
+    RecheckStatus,
     StageReportStatus,
     StageType,
     Ticket,
@@ -91,14 +92,81 @@ def admitted(
     reason = unadmitted_reason(report.findings)
     if not reason:
         return report, ""
-    passed = replace(
+    return _as_pass(report), reason
+
+
+def _as_pass(report: StageReport) -> StageReport:
+    """A reject that did not stand: a pass, with nothing to reroute to and no criteria unmet."""
+    return replace(
         report,
         status=StageReportStatus.PASS.value,
         reroute_to_stage=None,
         reroute_to_agent=None,
         unmet_criteria=[],
     )
-    return passed, reason
+
+
+@dataclass(frozen=True)
+class PriorFinding:
+    """One blocking finding a review lane's last reject stood on, as a recheck round sees it.
+
+    `id` (`P1`, `P2`, …) is how the prompt shows it and how the report answers it.
+    """
+
+    id: str
+    finding: Finding
+
+
+def recheck_answers(
+    report: StageReport | None, priors: list[PriorFinding]
+) -> list[tuple[PriorFinding, RecheckStatus, str]]:
+    """Each prior finding with what the report said about it, and the reviewer's note."""
+    answers = {recheck.id: recheck for recheck in report.rechecks} if report else {}
+    rows = []
+    for prior in priors:
+        answer = answers.get(prior.id)
+        if answer is None:
+            rows.append((prior, RecheckStatus.UNANSWERED, ""))
+        else:
+            status = RecheckStatus.RESOLVED if answer.resolved else RecheckStatus.UNRESOLVED
+            rows.append((prior, status, answer.note))
+    return rows
+
+
+def rechecked(
+    report: StageReport | None, priors: list[PriorFinding]
+) -> tuple[StageReport | None, str]:
+    """`report` as it settles a recheck round, and why its reject was not admitted.
+
+    A recheck round asks one question: did the rework resolve each prior
+    finding? So a reject stands only when it names a prior finding unresolved;
+    whatever the reviewer newly found is recorded as not blocking, never a new
+    reject in this round. Pure, like `admitted`.
+    """
+    if report is None or not priors:
+        return report, ""
+    report = replace(
+        report, findings=[replace(finding, blocking=False) for finding in report.findings]
+    )
+    if report.status not in _REJECTS:
+        return report, ""
+    if any(status is RecheckStatus.UNRESOLVED for _, status, _ in recheck_answers(report, priors)):
+        return report, ""
+    reason = "in a recheck round a reject names a prior finding unresolved, and it named none"
+    return _as_pass(report), reason
+
+
+def settle_review(
+    report: StageReport | None,
+    *,
+    agent_id: str,
+    stage: WorkflowStageDef | None,
+    priors: list[PriorFinding],
+) -> tuple[StageReport | None, str]:
+    """The bar a judging report meets: the recheck rule when it has prior findings, else `admitted`."""
+    if priors:
+        return rechecked(report, priors)
+    return admitted(report, agent_id=agent_id, stage=stage)
 
 
 def finding_record(finding: Finding) -> dict:
@@ -124,7 +192,11 @@ def _already_recorded(session: Session, run: AgentRun) -> bool:
         .where(DomainEvent.run_id == run.id)
         .where(DomainEvent.type == EventType.ORCHESTRATOR_DECISION)
     ).all()
-    kinds = {OrchestratorDecision.REJECT_NOT_ADMITTED, OrchestratorDecision.FINDINGS_RECORDED}
+    kinds = {
+        OrchestratorDecision.REJECT_NOT_ADMITTED,
+        OrchestratorDecision.FINDINGS_RECORDED,
+        OrchestratorDecision.RECHECK_RECORDED,
+    }
     return any(json.loads(payload or "{}").get("decision") in kinds for payload in events)
 
 
@@ -155,13 +227,21 @@ def record_unadmitted_reject(
 
 
 def admit_run_report(
-    session: Session, ticket: Ticket, run: AgentRun, report: StageReport | None
+    session: Session,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport | None,
+    *,
+    priors: list[PriorFinding],
 ) -> StageReport | None:
-    """`admitted`, with the decision recorded once for `run`.
+    """`settle_review`, with the decision recorded once for `run`.
 
-    Records `reject_not_admitted` when a reject did not stand, else
-    `findings_recorded` when the report carried findings that do not block.
+    Records `reject_not_admitted` when a reject did not stand, and
+    `recheck_recorded` for a recheck round, else `findings_recorded` when the
+    report carried findings that do not block.
     """
+    if priors and report is not None:
+        return _admit_recheck(session, ticket, run, report, priors)
     if report is None or not report.findings and report.status not in _REJECTS:
         return report
     stage = _stage(session, ticket, run.stage_key)
@@ -195,6 +275,61 @@ def admit_run_report(
                 "that do not block, each with where it went."
             ),
             evidence={"findings": [finding_record(f) for f in non_blocking]},
+        )
+    return settled
+
+
+def _admit_recheck(
+    session: Session,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport,
+    priors: list[PriorFinding],
+) -> StageReport | None:
+    settled, reason = rechecked(report, priors)
+    if _already_recorded(session, run):
+        return settled
+    rows = recheck_answers(report, priors)
+    counts = {status: sum(1 for _, s, _ in rows if s is status) for status in RecheckStatus}
+    record_orchestrator_decision(
+        session,
+        ticket,
+        decision=OrchestratorDecision.RECHECK_RECORDED,
+        stage_key=run.stage_key,
+        run_id=run.id,
+        reason=(
+            f"{run.agent_id} rechecked {len(rows)} prior finding(s) on '{run.stage_key}': "
+            + ", ".join(f"{counts[status]} {status.value}" for status in RecheckStatus)
+            + (
+                f"; {len(report.findings)} new finding(s) recorded as not blocking."
+                if report.findings
+                else "."
+            )
+        ),
+        evidence={
+            "claimed": report.status,
+            "rechecks": [
+                {
+                    "id": prior.id,
+                    "summary": prior.finding.summary,
+                    "status": status.value,
+                    "note": note,
+                }
+                for prior, status, note in rows
+            ],
+            "new_findings": [finding_record(f) for f in settled.findings] if settled else [],
+        },
+    )
+    if reason:
+        record_unadmitted_reject(
+            session,
+            ticket,
+            agent_id=run.agent_id,
+            stage_key=run.stage_key,
+            claimed=report.status,
+            reason=reason,
+            findings=report.findings,
+            run_id=run.id,
         )
     return settled
 

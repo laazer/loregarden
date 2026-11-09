@@ -332,7 +332,16 @@ COMPLETE_BLOCKING_FINDING = {
 
 
 def findings_fragment(status: StageReportStatus) -> str:
-    """`, "findings": [...]` for a reject status, else "": spliced into a hand-written report."""
+    """`, "findings": [...]` for a reject status, else "": spliced into a hand-written report.
+
+    It also answers a recheck round's first prior finding as unresolved
+    (`services/recheck_round`), so a reviewer that rejects every round keeps
+    rejecting on the same defect, as these tests mean it to. A first round has
+    no prior findings and ignores the answer.
+    """
     if status not in (StageReportStatus.FAIL, StageReportStatus.NEEDS_REWORK):
         return ""
-    return f', "findings": {json.dumps([COMPLETE_BLOCKING_FINDING])}'
+    return (
+        f', "findings": {json.dumps([COMPLETE_BLOCKING_FINDING])}'
+        f', "rechecks": {json.dumps([{"id": "P1", "resolved": False}])}'
+    )

@@ -171,7 +171,10 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     // A reject that showed no defect proceeding as a pass, and findings that
     // do not block put on record, are the pipeline carrying on as designed.
     decision === "reject_not_admitted" ||
-    decision === "findings_recorded"
+    decision === "findings_recorded" ||
+    // A review lane's recheck answering its prior findings; a finding left
+    // unresolved sends the work back through its own reroute event.
+    decision === "recheck_recorded"
     ? "normal"
     : "failed";
   }
