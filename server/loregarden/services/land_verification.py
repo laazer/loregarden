@@ -292,7 +292,7 @@ def run_verify_command(
 
     # The whole of it is carried: the excerpt is cut later, from the end, and the
     # artifact wants all of it.
-    output = strip_ansi(raw_output)
+    output = strip_ansi(decode_output(raw_output))
     if returncode is None:
         return VerifyOutcome(
             ok=False,
@@ -328,7 +328,24 @@ def run_verify_command(
     )
 
 
-def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int | None, str]:
+def decode_output(raw: bytes) -> str:
+    """What a verification command wrote, as text a person can read. Never raises.
+
+    The pipe is read as bytes and decoded here, in the function whose callers
+    already hold a `VerifyOutcome`, so no decode can escape between the command
+    and its verdict. A suite that prints one byte that is not UTF-8 (a raw byte
+    in a test, a latin-1 tool on stderr, a filename in another encoding) once
+    raised `UnicodeDecodeError` inside a strict text-mode read, a fourth exit
+    beside the three verdicts that took the landing down with none of them
+    (lg-milestone-that-1421). The verdict is the exit status's to decide, so a
+    bad byte costs one replacement character and never the output around it.
+    """
+    return raw.decode("utf-8", errors="replace")
+
+
+def _run_to_deadline(
+    argv: list[str], *, cwd: Path, env: dict[str, str]
+) -> tuple[int | None, bytes]:
     """Run `argv` to `LAND_VERIFY_TIMEOUT_SECONDS`: (exit code, output), code None on timeout.
 
     Its own session, so a timeout ends the whole tree. `subprocess.run` kills
@@ -338,8 +355,7 @@ def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tupl
 
     What the command printed before the deadline is kept, because it is the only
     record of how far it got. The retried `communicate` returns everything read
-    so far as text; the first `TimeoutExpired` carries it as bytes even in text
-    mode.
+    so far. The output stays bytes until `decode_output`.
     """
     with subprocess.Popen(
         argv,
@@ -351,7 +367,6 @@ def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tupl
         # "Installed 68 packages" instead of naming the failing tests.
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
         start_new_session=True,
     ) as process:
         try:
@@ -361,7 +376,7 @@ def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tupl
         except subprocess.TimeoutExpired:
             _kill_session(process)
             return None, _drain(process)
-    return process.returncode, output or ""
+    return process.returncode, output or b""
 
 
 #: How long a killed tree gets to close its end of the pipe. Only a process that
@@ -369,7 +384,7 @@ def _run_to_deadline(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tupl
 _DRAIN_SECONDS = 10
 
 
-def _kill_session(process: subprocess.Popen[str]) -> None:
+def _kill_session(process: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (
@@ -378,7 +393,7 @@ def _kill_session(process: subprocess.Popen[str]) -> None:
         pass
 
 
-def _drain(process: subprocess.Popen[str]) -> str:
+def _drain(process: subprocess.Popen[bytes]) -> bytes:
     try:
         output, _ = process.communicate(timeout=_DRAIN_SECONDS)
     except subprocess.TimeoutExpired as held:
@@ -389,8 +404,8 @@ def _drain(process: subprocess.Popen[str]) -> str:
             "the output pipe of %s",
             process.args,
         )
-        return (held.output or b"").decode(errors="replace")
-    return output or ""
+        return held.output or b""
+    return output or b""
 
 
 def _verify_candidate(

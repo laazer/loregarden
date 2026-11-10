@@ -58,6 +58,8 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import random
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -78,6 +80,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services import land_verification
 from loregarden.services.artifact_records import is_system_record, run_log_artifact_title
 from loregarden.services.artifact_service import BLOCKING_ISSUE_INLINE_LIMIT
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
@@ -89,6 +92,7 @@ from loregarden.services.git_merge_noco import (
     squash_onto,
 )
 from loregarden.services.land_ticket import LandSkip, land_ticket
+from loregarden.services.land_verification import decode_output, run_verify_command
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.target_branch import resolve_target_branch
@@ -540,6 +544,101 @@ def test_a_verification_that_times_out_refuses_rather_than_passing(
         "a suite that never finished did not report a failure about the code"
     )
     assert "time" in outcome.detail.lower(), outcome.detail
+
+
+#: One invalid byte pair between two readable words (lg-milestone-that-1421).
+_UNDECODABLE = bytes([0x6F, 0x6B, 0x20, 0xFF, 0xFE, 0x20, 0x62, 0x61, 0x64, 0x0A])
+
+
+def _writes_raw(tmp_path: Path, payload: bytes, *, exit_code: int, then: str = "") -> str:
+    """A command writing `payload` as raw bytes, then running `then`, then exiting.
+
+    Through `stdout.buffer`: `print` encodes with the child's own codec, and the
+    bytes would never reach the pipe undecodable.
+    """
+    script = tmp_path / "raw.py"
+    script.write_text(
+        "import sys, time\n"
+        f"sys.stdout.buffer.write(bytes({list(payload)!r}))\n"
+        "sys.stdout.buffer.flush()\n"
+        f"{then}\n"
+        f"sys.exit({exit_code})\n",
+        encoding="utf-8",
+    )
+    return shlex.join([sys.executable, str(script)])
+
+
+def test_a_verification_whose_output_is_not_utf8_is_classified_and_not_a_crash(tmp_path):
+    """lg-milestone-that-1421 AC1-3, moved from `test_open_defect_repros`.
+
+    The exit status decides the verdict, not the byte: the command ran and
+    failed, so FAILED with its exit code. The text either side survives,
+    because the receipt carries it and an empty body cannot be acted on.
+    """
+    command = _writes_raw(tmp_path, _UNDECODABLE, exit_code=1)
+
+    outcome = run_verify_command(command, tmp_path, footprint=DockerFootprint.NONE)
+
+    assert (outcome.outcome, outcome.ok, outcome.exit_code) == (GateOutcome.FAILED, False, 1)
+    assert "ok" in outcome.output and "bad" in outcome.output, outcome.output
+
+
+def test_a_passing_verification_with_undecodable_output_passes(tmp_path):
+    """AC2: a blanket refusal would block a land whose suite passed."""
+    command = _writes_raw(tmp_path, _UNDECODABLE, exit_code=0)
+
+    outcome = run_verify_command(command, tmp_path, footprint=DockerFootprint.NONE)
+
+    assert (outcome.outcome, outcome.ok, outcome.exit_code) == (GateOutcome.PASSED, True, 0)
+    assert "ok" in outcome.output and "bad" in outcome.output, outcome.output
+
+
+def test_undecodable_output_from_a_command_that_timed_out_is_kept(tmp_path):
+    """The timeout path reads what was written before the kill on its own."""
+    command = _writes_raw(tmp_path, _UNDECODABLE, exit_code=0, then="time.sleep(30)")
+
+    with mock.patch.object(land_verification, "LAND_VERIFY_TIMEOUT_SECONDS", 1):
+        outcome = run_verify_command(command, tmp_path, footprint=DockerFootprint.NONE)
+
+    assert outcome.outcome is GateOutcome.UNAVAILABLE and not outcome.ok
+    assert "ok" in outcome.output and "bad" in outcome.output, outcome.output
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        bytes(range(256)),
+        b"\xe2\x82",  # a three-byte sequence cut after two
+        b"\xed\xa0\x80",  # an encoded surrogate, which UTF-8 forbids
+        b"\xc0\xaf",  # an overlong encoding
+        b"\xf8\x88\x80\x80\x80",  # a five-byte form
+        bytes(random.Random(1421).getrandbits(8) for _ in range(4096)),
+    ],
+    ids=["every-byte", "truncated", "surrogate", "overlong", "five-byte", "random"],
+)
+def test_no_decode_error_crosses_the_verdict_boundary(raw):
+    """AC5: the pipe is read as bytes and decoded once, where the outcome is
+    owned, by a decoder that cannot raise. Valid UTF-8 comes back unchanged."""
+    text = decode_output(raw)
+
+    assert isinstance(text, str)
+    assert decode_output("naïve ✓\n".encode()) == "naïve ✓\n"
+
+
+def test_the_command_s_output_reaches_the_verdict_as_bytes(tmp_path):
+    """AC5: no text-mode read sits between the command and `decode_output`.
+    A strict decode anywhere before it is the crash this replaced."""
+    with mock.patch.object(
+        land_verification, "decode_output", wraps=land_verification.decode_output
+    ) as decode:
+        run_verify_command(
+            _writes_raw(tmp_path, _UNDECODABLE, exit_code=0),
+            tmp_path,
+            footprint=DockerFootprint.NONE,
+        )
+
+    [call] = decode.call_args_list
+    assert call.args == (_UNDECODABLE,)
 
 
 def test_the_commands_run_in_a_detached_worktree_at_the_candidate_sha(
