@@ -27,6 +27,18 @@ much:
   code map, the toolchain link), not to read this repo's client, and following
   them selected 529 of 691 files. A test that reads the client only through a
   helper is the miss this leaves, and CI's full run is what catches it.
+* A change to agent prose (`agent_context/agents/`, `agent_context/skills/`,
+  all markdown) selects the tests that name the `agent_context` tree, the tests
+  that name the changed file, and the tests that import a package module that
+  names it — directly, one hop. Followed transitively, any module that reads
+  these files reaches ~530 of the 721 test files (every DB test reaches the
+  migrations and the seed through `init_db`), which is the full suite under
+  another name; the reader's own tests are where its handling of the file is
+  pinned. A file is named by its path under `agent_context/` (role files are
+  registered as `"agents/misc_agents/repair_v1.md"`) or by its basename (skills
+  are found by globbing for `"SKILL.md"`). The rest of `agent_context/` (orchestration profiles,
+  workflow seeds) is configuration that changes how runs behave, and still
+  falls back.
 * String constants naming a package module count as imports, so the MCP tool
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
@@ -73,6 +85,11 @@ EXIT_RUN_EVERYTHING = 2
 
 PACKAGE = "loregarden"
 CLIENT_DIR = "client"
+CONTEXT_DIR = "agent_context"
+
+#: Prose under `agent_context/`: read as text by the modules that name it, so
+#: the tests reaching those modules are the ones a change can break.
+NARROWABLE_CONTEXT_TREES = (f"{CONTEXT_DIR}/agents/", f"{CONTEXT_DIR}/skills/")
 
 #: Changing one of these changes how every test runs, so nothing narrower is honest.
 _SHARED_TEST_FILES = frozenset({"conftest.py", "factories.py", "worktree_helpers.py"})
@@ -101,6 +118,8 @@ def full_suite_reason(paths: list[str]) -> str | None:
     for path in paths:
         if path.startswith("client/"):
             continue  # jest's problem, not pytest's
+        if path.startswith(NARROWABLE_CONTEXT_TREES):
+            continue
         if not path.startswith("server/"):
             return f"{path} is outside server/ (tests read repo files no import graph sees)"
         if path.startswith("server/tests/") and Path(path).name in _SHARED_TEST_FILES:
@@ -146,40 +165,76 @@ def _imported_modules(tree: ast.AST) -> set[str]:
     return found
 
 
-def _is_client_path(value: str) -> bool:
-    """`client`, `client/…`, `…/client/…` or `…/client`: the path segment, so
+def _is_tree_path(value: str, tree: str) -> bool:
+    """`tree`, `tree/…`, `…/tree/…` or `…/tree`: the path segment, so
     `"client_id"` and `"api client"` do not count."""
     return (
-        value == CLIENT_DIR
-        or value.startswith(f"{CLIENT_DIR}/")
-        or f"/{CLIENT_DIR}/" in value
-        or value.endswith(f"/{CLIENT_DIR}")
+        value == tree
+        or value.startswith(f"{tree}/")
+        or f"/{tree}/" in value
+        or value.endswith(f"/{tree}")
     )
 
 
-class _ClientPathFinder(ast.NodeVisitor):
-    """Finds a string constant naming the client tree.
+def _is_client_path(value: str) -> bool:
+    return _is_tree_path(value, CLIENT_DIR)
 
-    How a server test reads `client/`: by path, never by import, so the
-    import graph cannot see it.
+
+@dataclass
+class _PathNames:
+    """What a file's string constants say about the repo trees it reads.
+
+    How a server test reads `client/` or `agent_context/`: by path, never by
+    import, so the import graph cannot see it.
     """
 
+    client: bool = False
+    context_tree: bool = False
+    #: constants that could name an `agent_context` markdown file
+    markdown: frozenset[str] = frozenset()
+
+
+class _PathFinder(ast.NodeVisitor):
     def __init__(self) -> None:
-        self.found = False
+        self.client = False
+        self.context_tree = False
+        self.markdown: set[str] = set()
 
     def visit_Constant(self, node: ast.Constant) -> None:
         value = node.value
         # A literal's value is any of str/bytes/int/float/complex/None/Ellipsis:
         # a stdlib union this repo does not own, and only a str can be a path.
-        if isinstance(value, str) and _is_client_path(value):  # py-org: allow-isinstance
-            self.found = True
+        if not isinstance(value, str):  # py-org: allow-isinstance
+            return
+        self.client = self.client or _is_client_path(value)
+        self.context_tree = self.context_tree or _is_tree_path(value, CONTEXT_DIR)
+        if value.endswith(".md"):
+            self.markdown.add(value)
 
 
-def _names_client_tree(tree: ast.AST) -> bool:
-    """Does this file name the client tree in a string constant?"""
-    finder = _ClientPathFinder()
+def _path_names(tree: ast.AST) -> _PathNames:
+    finder = _PathFinder()
     finder.visit(tree)
-    return finder.found
+    return _PathNames(
+        client=finder.client,
+        context_tree=finder.context_tree,
+        markdown=frozenset(finder.markdown),
+    )
+
+
+def names_context_file(constants: frozenset[str], rel: str) -> bool:
+    """Does one of these constants name `rel`, a repo-relative `agent_context` file?
+
+    By its whole path, by its path under `agent_context/` or any shorter
+    suffix of it that keeps a directory, or by its basename.
+    """
+    basename = rel.rsplit("/", 1)[-1]
+    for value in constants:
+        if value == basename or value == rel:
+            return True
+        if "/" in value and rel.endswith(f"/{value.lstrip('/')}"):
+            return True
+    return False
 
 
 def _parse(path: Path) -> ast.AST:
@@ -200,7 +255,7 @@ def _parse(path: Path) -> ast.AST:
 
 @dataclass(frozen=True)
 class ImportGraph:
-    """The package and its tests as edges, plus the tests that read the client tree."""
+    """The package and its tests as edges, plus what each names by path."""
 
     #: module -> package modules it imports
     module_edges: dict[str, set[str]]
@@ -208,6 +263,11 @@ class ImportGraph:
     test_edges: dict[Path, set[str]]
     #: test files that name the client tree themselves
     client_tests: frozenset[Path]
+    #: test files that name the `agent_context` tree themselves
+    context_tests: frozenset[Path]
+    #: module or test file -> the markdown paths its string constants name
+    module_markdown: dict[str, frozenset[str]]
+    test_markdown: dict[Path, frozenset[str]]
 
 
 def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
@@ -218,22 +278,33 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
             known[name] = py
 
     module_edges: dict[str, set[str]] = {}
+    module_markdown: dict[str, frozenset[str]] = {}
     for name, py in known.items():
         tree = _parse(py)
         module_edges[name] = {m for m in _imported_modules(tree) if m in known}
+        module_markdown[name] = _path_names(tree).markdown
 
     test_edges: dict[Path, set[str]] = {}
+    test_markdown: dict[Path, frozenset[str]] = {}
     client_tests: set[Path] = set()
+    context_tests: set[Path] = set()
     for py in sorted(test_root.rglob("test_*.py")):
         tree = _parse(py)
         test_edges[py] = {m for m in _imported_modules(tree) if m in known}
-        if _names_client_tree(tree):
+        names = _path_names(tree)
+        test_markdown[py] = names.markdown
+        if names.client:
             client_tests.add(py)
+        if names.context_tree:
+            context_tests.add(py)
 
     return ImportGraph(
         module_edges=module_edges,
         test_edges=test_edges,
         client_tests=frozenset(client_tests),
+        context_tests=frozenset(context_tests),
+        module_markdown=module_markdown,
+        test_markdown=test_markdown,
     )
 
 
@@ -260,6 +331,8 @@ class ChangeSet:
     modules: frozenset[str]
     #: anything under `client/` changed
     client: bool
+    #: changed agent prose, repo-relative (see `NARROWABLE_CONTEXT_TREES`)
+    context_files: frozenset[str]
 
 
 def classify(repo: Path, paths: list[str]) -> ChangeSet:
@@ -267,9 +340,12 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
     tests: set[Path] = set()
     modules: set[str] = set()
     client = False
+    context_files: set[str] = set()
     for rel in paths:
         if rel.startswith(f"{CLIENT_DIR}/"):
             client = True
+        elif rel.startswith(NARROWABLE_CONTEXT_TREES):
+            context_files.add(rel)
         elif not rel.startswith("server/") or not rel.endswith(".py"):
             continue
         elif rel.startswith("server/tests/"):
@@ -278,20 +354,30 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
                 tests.add(repo / rel)
         elif name := module_name(repo / rel, package_root):
             modules.add(name)
-    return ChangeSet(tests=frozenset(tests), modules=frozenset(modules), client=client)
+    return ChangeSet(
+        tests=frozenset(tests),
+        modules=frozenset(modules),
+        client=client,
+        context_files=frozenset(context_files),
+    )
 
 
 def select(repo: Path, paths: list[str]) -> list[Path]:
     """Test files that import a changed module, plus changed tests themselves,
-    plus — when the client changed — the tests that read the client tree."""
+    plus — when the client changed — the tests that read the client tree, plus
+    — when agent prose changed — the tests that read it."""
     changes = classify(repo, paths)
-    if not changes.modules and not changes.client:
+    if not changes.modules and not changes.client and not changes.context_files:
         return sorted(changes.tests)
 
     graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
     selected = set(changes.tests)
     if changes.client:
         selected |= graph.client_tests
+    if changes.context_files:
+        readers = _modules_naming(graph, changes.context_files)
+        selected |= graph.context_tests | _tests_naming(graph, changes.context_files)
+        selected |= {test for test, imports in graph.test_edges.items() if imports & readers}
     if changes.modules:
         selected |= {
             test_file
@@ -299,6 +385,22 @@ def select(repo: Path, paths: list[str]) -> list[Path]:
             if reachable(imports, graph.module_edges) & changes.modules
         }
     return sorted(selected)
+
+
+def _modules_naming(graph: ImportGraph, files: frozenset[str]) -> set[str]:
+    return {
+        module
+        for module, constants in graph.module_markdown.items()
+        if any(names_context_file(constants, rel) for rel in files)
+    }
+
+
+def _tests_naming(graph: ImportGraph, files: frozenset[str]) -> set[Path]:
+    return {
+        test_file
+        for test_file, constants in graph.test_markdown.items()
+        if any(names_context_file(constants, rel) for rel in files)
+    }
 
 
 def main() -> int:
