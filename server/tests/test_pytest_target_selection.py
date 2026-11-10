@@ -45,6 +45,8 @@ selector = _load()
         "server/loregarden/data/seed.json",
         "lefthook.yml",
         "agent_context/orchestration/default.yaml",
+        "agent_context/workflows/default.yaml",
+        "agent_context/README.md",
         "CLAUDE.md",
     ],
 )
@@ -59,6 +61,8 @@ def test_unmappable_change_runs_everything(path):
         ["server/tests/test_doctor.py"],
         ["client/src/App.tsx"],  # jest's problem, not pytest's
         ["server/loregarden/services/doctor.py", "client/src/App.tsx"],
+        ["agent_context/agents/misc_agents/repair_v1.md"],
+        ["agent_context/skills/refactor/SKILL.md"],
     ],
 )
 def test_mappable_change_is_narrowed(paths):
@@ -173,6 +177,77 @@ def test_server_only_change_does_not_pull_in_client_readers(client_reader_repo: 
     assert "test_reads_client.py" not in _names(selected)
 
 
+ROLE = "agent_context/agents/misc_agents/role_v1.md"
+SKILL = "agent_context/skills/sorting/SKILL.md"
+
+
+@pytest.fixture
+def prose_repo(fake_repo: Path) -> Path:
+    """`fake_repo` plus agent prose, the modules naming it, and tests at each distance."""
+    for rel in (ROLE, SKILL, "agent_context/agents/misc_agents/other_v1.md"):
+        (fake_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (fake_repo / rel).write_text("# prose\n", encoding="utf-8")
+    pkg = fake_repo / "server" / "loregarden" / "services"
+    (pkg / "roles.py").write_text('ROLE_FILE = "agents/misc_agents/role_v1.md"\n', encoding="utf-8")
+    (pkg / "skills.py").write_text('SKILL_FILE = "SKILL.md"\n', encoding="utf-8")
+    (pkg / "wrapper.py").write_text("from loregarden.services import roles\n", encoding="utf-8")
+    tests = fake_repo / "server" / "tests"
+    bodies = {
+        "test_roles.py": "from loregarden.services import roles\n",
+        "test_skills.py": "from loregarden.services import skills\n",
+        # Two hops from the reader: every DB test is, through init_db.
+        "test_wrapper.py": "from loregarden.services import wrapper\n",
+        "test_reads_tree.py": 'from pathlib import Path\nROOT = Path("agent_context")\n',
+        "test_names_role.py": 'ROLE = "role_v1.md"\n',
+    }
+    for name, body in bodies.items():
+        (tests / name).write_text(f"{body}\ndef test_t():\n    pass\n", encoding="utf-8")
+    return fake_repo
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        pytest.param(
+            ROLE, {"test_roles.py", "test_reads_tree.py", "test_names_role.py"}, id="role"
+        ),
+        pytest.param(SKILL, {"test_skills.py", "test_reads_tree.py"}, id="skill-by-glob"),
+        pytest.param(
+            "agent_context/agents/misc_agents/other_v1.md", {"test_reads_tree.py"}, id="unnamed"
+        ),
+    ],
+)
+def test_agent_prose_selects_the_tests_that_read_it(prose_repo: Path, changed, expected):
+    """Editing one role file once ran every test in the suite."""
+    assert _names(selector.select(prose_repo, [changed])) == expected
+
+
+def test_agent_prose_and_a_module_change_select_both(prose_repo: Path):
+    selected = selector.select(prose_repo, [SKILL, "server/loregarden/services/leaf.py"])
+    assert _names(selected) == {
+        "test_skills.py",
+        "test_reads_tree.py",
+        "test_middle.py",
+        "test_dynamic.py",
+    }
+
+
+@pytest.mark.parametrize(
+    ("constant", "names_it"),
+    [
+        ("agent_context/agents/misc_agents/role_v1.md", True),
+        ("agents/misc_agents/role_v1.md", True),
+        ("misc_agents/role_v1.md", True),
+        ("role_v1.md", True),
+        ("isc_agents/role_v1.md", False),
+        ("le_v1.md", False),
+        ("other_v1.md", False),
+    ],
+)
+def test_a_constant_names_a_prose_file_by_path_suffix_or_basename(constant, names_it):
+    assert selector.names_context_file(frozenset([constant]), ROLE) is names_it
+
+
 # --------------------------------------------------------------------------- #
 # the CLI contract the hook depends on
 # --------------------------------------------------------------------------- #
@@ -261,6 +336,24 @@ def test_cli_runs_everything_when_a_module_cannot_be_parsed(git_repo: Path, body
     assert result.returncode == selector.EXIT_RUN_EVERYTHING, result.stdout
     assert "middle.py" in result.stderr, result.stderr
     assert result.stdout == "", result.stdout
+
+
+def test_cli_narrows_a_change_to_agent_prose(prose_repo: Path):
+    _git(prose_repo, "init", "-q", ".")
+    _git(prose_repo, "config", "user.email", "t@example.com")
+    _git(prose_repo, "config", "user.name", "t")
+    _git(prose_repo, "add", "-A")
+    _git(prose_repo, "commit", "-qm", "base")
+    (prose_repo / ROLE).write_text("# prose, revised\n", encoding="utf-8")
+    _git(prose_repo, "commit", "-aqm", "revise the role")
+
+    result = _run_cli(prose_repo, "HEAD~1")
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == [
+        "server/tests/test_names_role.py",
+        "server/tests/test_reads_tree.py",
+        "server/tests/test_roles.py",
+    ]
 
 
 # --------------------------------------------------------------------------- #
