@@ -21,6 +21,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.git_automation import push_commit_as
 from loregarden.services.merge_queue import QueueRefusal
+from loregarden.services.merge_queue_github import StagedPullRequest
 from loregarden.services.merge_queue_pull_heads import pin_ref
 from loregarden.services.merge_queue_reports import queue_card_title, report_stopped
 from loregarden.services.merge_queue_requests import enqueue_pull_request
@@ -48,6 +49,12 @@ class AuthorsGitHub(FakeGitHub):
     def __init__(self, origin) -> None:
         super().__init__(origin)
         self.comments: list[tuple[int, str]] = []
+        self.title = "Session work"
+        self.body = ""
+
+    def read_pull_request(self, number: int) -> StagedPullRequest:
+        read = super().read_pull_request(number)
+        return read.model_copy(update={"title": self.title, "body": self.body})
 
     def open(self, number: int, head_branch: str) -> None:
         super().open(number, head_branch)

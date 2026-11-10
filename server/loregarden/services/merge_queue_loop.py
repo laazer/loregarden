@@ -101,6 +101,7 @@ from loregarden.services.merge_queue_github import (
     read_required,
     unreported,
 )
+from loregarden.services.merge_queue_landed_tickets import close_landed_tickets
 from loregarden.services.merge_queue_pull_heads import (
     author_owns_head,
     drop_pull_pin,
@@ -250,17 +251,17 @@ class MergeQueueLoop:
 
     # -- step 1 and 2: stage and publish ------------------------------------
 
-    def _stage(self, entry: MergeQueueEntry, expected: MergeQueueState) -> bool:
-        if expected is MergeQueueState.QUEUED:
-            if not transition(
-                self.session,
-                entry,
-                MergeQueueState.QUEUED,
-                state=MergeQueueState.STAGING,
-                wait=MergeQueueWait.NONE,
-                detail="staging",
-            ):
-                return self._gone(entry, "before staging")
+    def _begin_staging(self, entry: MergeQueueEntry, expected: MergeQueueState) -> bool | None:
+        """Mark the entry staging; None to go on, else the cycle's result for it."""
+        if expected is MergeQueueState.QUEUED and not transition(
+            self.session,
+            entry,
+            MergeQueueState.QUEUED,
+            state=MergeQueueState.STAGING,
+            wait=MergeQueueWait.NONE,
+            detail="staging",
+        ):
+            return self._gone(entry, "before staging")
         if entry.attempts >= settings.merge_queue_max_attempts:
             return self._stop(
                 entry,
@@ -269,7 +270,16 @@ class MergeQueueLoop:
                 detail=f"staged {entry.attempts} times without landing: the base keeps moving "
                 "under it or its push keeps failing; retry once it settles",
             )
-        staged = self.cut(entry)
+        return None
+
+    def _stage(self, entry: MergeQueueEntry, expected: MergeQueueState) -> bool:
+        begun = self._begin_staging(entry, expected)
+        if begun is not None:
+            return begun
+        message = self._staged_message(entry)
+        if message is None:
+            return False
+        staged = self.cut(entry, message)
         if staged.verdict is MergeVerdict.CONFLICTED:
             return self._conflicted(entry, staged)
         if staged.verdict is MergeVerdict.UNDETERMINED:
@@ -359,7 +369,35 @@ class MergeQueueLoop:
             self._gone(entry, "while adopting its author's push")
         return None
 
-    def cut(self, entry: MergeQueueEntry) -> Staged:
+    def _staged_message(self, entry: MergeQueueEntry) -> str | None:
+        """The staged commit's message; None when the PR could not be read (held).
+
+        GitHub names a one-commit squash after that commit, so this is what
+        lands on the base. A tree entry is named after its ticket. A pull
+        request admitted by number keeps its author's title and body, whose
+        `Ticket:` lines are how the tickets it lands are found again.
+        """
+        ticket = entry_ticket(self.session, entry)
+        if ticket is not None:
+            return f"{ticket.external_id}: {ticket.title}"
+        try:
+            pull = self.github.read_pull_request(entry.pr_number)
+        except GitHubReadError as exc:
+            self.report.errors.append(f"PR #{entry.pr_number}: {exc}")
+            self._hold(
+                entry,
+                MergeQueueState.STAGING,
+                when="while its title could not be read",
+                state=MergeQueueState.QUEUED,
+                attempts=entry.attempts + 1,
+                detail=f"could not read PR #{entry.pr_number} before staging: {exc}",
+            )
+            return None
+        title = pull.title.strip() or f"PR #{entry.pr_number}"
+        body = pull.body.strip()
+        return f"{title}\n\n{body}" if body else title
+
+    def cut(self, entry: MergeQueueEntry, message: str) -> Staged:
         """The candidate merged onto the base's fetched tip. The base is always the parent."""
         base_sha, failure = fetch_base(self.repo_root, entry.base_branch)
         if failure:
@@ -369,9 +407,7 @@ class MergeQueueLoop:
                 MergeVerdict.UNDETERMINED,
                 detail=f"{entry.head_sha[:12]} is not a commit in {self.repo_root}",
             )
-        ticket = entry_ticket(self.session, entry)
-        title = f"{ticket.external_id}: {ticket.title}" if ticket else f"PR #{entry.pr_number}"
-        outcome = squash_onto(self.repo_root, base_sha, entry.head_sha, message=title)
+        outcome = squash_onto(self.repo_root, base_sha, entry.head_sha, message=message)
         verdict = merge_verdict(outcome)
         if verdict is not MergeVerdict.CLEAN:
             return Staged(
@@ -624,7 +660,24 @@ class MergeQueueLoop:
             merged.merge_tree[:12],
         )
         self.report.actions.append(f"PR #{entry.pr_number}: merged {merged.merge_commit[:12]}")
+        if author_owns_head(entry):
+            self._close_named_tickets(entry, merged)
         return True
+
+    def _close_named_tickets(self, entry: MergeQueueEntry, merged: StagedPullRequest) -> None:
+        """Close the tickets a landed PR's body names; no ticket on the entry carries them."""
+        landed = close_landed_tickets(
+            self.session, entry, body=merged.body, merge_commit=merged.merge_commit
+        )
+        if landed.closed:
+            self.report.actions.append(f"PR #{entry.pr_number}: closed {', '.join(landed.closed)}")
+        if landed.left_to_rollup:
+            self.report.actions.append(
+                f"PR #{entry.pr_number}: left {', '.join(landed.left_to_rollup)} to its rollup"
+            )
+        self.report.errors.extend(
+            f"PR #{entry.pr_number} landed; ticket {problem}" for problem in landed.problems
+        )
 
     def _resume_merging(self, entry: MergeQueueEntry) -> bool:
         """An entry left MERGING by a crash or an unanswered confirmation."""
