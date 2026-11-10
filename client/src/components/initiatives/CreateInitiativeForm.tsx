@@ -56,11 +56,15 @@ export function CreateInitiativeForm({ milestones, isSaving, onCreate, onCancel 
         />
       </label>
       {milestones.length > 0 ? (
-        <div className="initiative-create-picked">
+        <div>
           <span className="modal-field-label">
             Attaches {milestones.length} {milestones.length === 1 ? "milestone" : "milestones"}
           </span>
-          <ul>
+          <ul
+            className="initiative-create-picked-list scroll-focus-ring"
+            aria-label="Milestones this initiative will attach"
+            tabIndex={0}
+          >
             {milestones.map((m) => (
               <li key={m.id}>
                 <span className="initiative-ws-pill">{m.workspace_slug}</span> {m.title}

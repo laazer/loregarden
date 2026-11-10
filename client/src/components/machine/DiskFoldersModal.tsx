@@ -128,7 +128,11 @@ export function DiskFoldersModal({
               Run a scan to list the workspaces and worktrees it covers.
             </p>
           ) : (
-            <ul className="disk-folders-list">
+            <ul
+              className="disk-folders-list scroll-focus-ring"
+              aria-label="Folders scanned automatically"
+              tabIndex={0}
+            >
               {automatic.map((root) => (
                 <li key={root.path}>
                   <span className="disk-folders-path">{root.path}</span>

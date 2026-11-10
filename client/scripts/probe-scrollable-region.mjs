@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * Measure, in a real browser, which shapes the `scrollable-region-focusable`
- * detector fires on — one page, thirteen shapes, the real
+ * detector fires on — one page, twenty-one shapes, the real
  * `src/lib/usabilityCheck.ts`.
  *
  * The detector's question is "can a keyboard reach this scrollbar", and six of
- * the thirteen shapes below have no scrollbar at all because the browser never
+ * the twenty-one shapes below have no scrollbar at all because the browser never
  * renders them. Counting cannot replace measuring here, for two reasons that
  * are only visible in an engine:
  *
@@ -26,7 +26,7 @@
  *
  *   node scripts/probe-scrollable-region.mjs
  *
- * Four of the thirteen are the horizontal axis (lg-milestone-that-2230). The
+ * Four of the twenty-one are the horizontal axis (lg-milestone-that-2230). The
  * laid-out arm admitted an element on `overflowX` and then measured only
  * `scrollHeight/clientHeight`, so a region that clips sideways and not
  * downwards was dropped as "does not clip" while no key reached it. Nothing in
@@ -34,10 +34,20 @@
  * `clientWidth` are both 0 there and every axis case has to be stubbed. This
  * is the only place the browser answers.
  *
+ * Eight of the twenty-one are the tabbability predicate (lg-milestone-that-2232).
+ * The detector inlined its own copy of `tabbableWithin`'s filter and the copy
+ * read `.disabled` as a property, so a region whose only control sits in a
+ * `<fieldset disabled>`, is `[hidden]`, or is inside `[inert]` was reported
+ * reachable while the platform refuses it focus. `controlFocusable` is the
+ * browser's own answer for those rows — `.focus()` called and
+ * `document.activeElement` read back, AFTER the findings are collected so
+ * focusing cannot perturb the detector — which is what makes their old zeros a
+ * defect rather than a judgement call.
+ *
  * One JSON row per shape is printed carrying `{ shape, selector, expected,
- * findings, clientHeight, scrollHeight, clientWidth, scrollWidth,
- * checkVisibility, checkVisibilityDefault, computedMaxHeight, computedOverflow,
- * computedOverflowX, computedOverflowY, ok }`.
+ * findings, controlFocusable, clientHeight, scrollHeight, clientWidth,
+ * scrollWidth, checkVisibility, checkVisibilityDefault, computedMaxHeight,
+ * computedOverflow, computedOverflowX, computedOverflowY, ok }`.
  *
  * Exits non-zero when any shape disagrees with `expected`, **including a
  * control that fails to fire**: a probe whose controls are silent proves
@@ -200,6 +210,85 @@ const SHAPES = [
     expected: 0,
     html: `<div class="m-pane" style="width: 200px; height: 40px; overflow: auto;">short</div>`,
   },
+  // lg-milestone-that-2232 — the shapes the detector's own copy of the
+  // tabbability test calls reachable. Each control below reports `tabIndex` 0
+  // and `.disabled` false, and Chromium refuses `.focus()` on all three;
+  // `controlFocusable` is the browser's own answer, which is why the zeros
+  // these rows used to print were a defect rather than a judgement call.
+  {
+    shape: "only control is in a <fieldset disabled>",
+    selector: ".n-pane",
+    expected: 1,
+    clipAxis: "y",
+    focusSelector: ".n-pane fieldset button",
+    html: `<div class="n-pane" style="${PANE}"><fieldset disabled><button>Copy</button></fieldset>${lines}</div>`,
+  },
+  {
+    shape: "only control is [hidden]",
+    selector: ".o-pane",
+    expected: 1,
+    clipAxis: "y",
+    focusSelector: ".o-pane button",
+    html: `<div class="o-pane" style="${PANE}"><button hidden>Copy</button>${lines}</div>`,
+  },
+  {
+    shape: "only control is inside [inert]",
+    selector: ".p-pane",
+    expected: 1,
+    clipAxis: "y",
+    focusSelector: ".p-pane button",
+    html: `<div class="p-pane" style="${PANE}"><div inert><button>Copy</button></div>${lines}</div>`,
+  },
+  {
+    shape: "only control is a plain enabled <button> (control)",
+    selector: ".q-pane",
+    expected: 0,
+    control: true,
+    clipAxis: "y",
+    focusSelector: ".q-pane button",
+    html: `<div class="q-pane" style="${PANE}"><button>Copy</button>${lines}</div>`,
+  },
+  {
+    shape: "nothing focusable at all (control)",
+    selector: ".r-pane",
+    expected: 1,
+    control: true,
+    clipAxis: "y",
+    html: pane("r-pane"),
+  },
+  // test-break — the other direction. Every shape above claims a region the
+  // detector must START reporting, so a predicate that refuses focus to
+  // everything satisfies all of them and turns live panes into findings on
+  // every surface `npm run visual-qa` visits. These three are regions a key
+  // DOES reach, and Chromium says so: each prints `controlFocusable true`
+  // beside `findings 0`, so the silence is measured rather than assumed.
+  {
+    shape: "a disabled control beside a live one (control)",
+    selector: ".s-pane",
+    expected: 0,
+    control: true,
+    clipAxis: "y",
+    focusSelector: ".s-pane .live",
+    html: `<div class="s-pane" style="${PANE}"><div><button disabled>Stop</button><button class="live">Copy</button></div>${lines}</div>`,
+  },
+  {
+    shape: "only control under an aria-hidden ancestor (control)",
+    selector: ".t-pane",
+    expected: 0,
+    control: true,
+    clipAxis: "y",
+    focusSelector: ".t-pane button",
+    html: `<div class="t-pane" style="${PANE}"><div aria-hidden="true"><button>Copy</button></div>${lines}</div>`,
+  },
+  {
+    shape: "only control under a non-fieldset [disabled] ancestor (control)",
+    selector: ".u-pane",
+    expected: 0,
+    control: true,
+    clipAxis: "y",
+    focusSelector: ".u-pane button",
+    html: `<div class="u-pane" style="${PANE}"><div disabled><button>Copy</button></div>${lines}</div>`,
+  },
 ];
 
 /**
@@ -326,6 +415,36 @@ const CLAIMS = [
       row.computedOverflowX === "auto" &&
       row.computedOverflowY === "auto",
   },
+  // lg-milestone-that-2232 — the browser's own refusal, which is what makes the
+  // three rows above a defect rather than a judgement call, plus the enabled
+  // control that stops this probe passing by refusing focus to everything.
+  ...[".n-pane", ".o-pane", ".p-pane"].map((selector) => ({
+    selector,
+    claim:
+      "the platform refuses this pane's only control a focus stop — .focus() " +
+      "leaves document.activeElement elsewhere — so a detector that calls the " +
+      "region reachable is wrong about the browser, not merely strict",
+    holds: (row) => row.controlFocusable === false,
+  })),
+  {
+    selector: ".q-pane",
+    claim:
+      "the plain enabled <button> IS focusable, so the three refusals above are " +
+      "the shapes under test and not a page that refuses focus to everything",
+    holds: (row) => row.controlFocusable === true,
+  },
+  // test-break — the browser's answer for the three shapes the detector must
+  // stay silent on. `aria-hidden` and a `disabled` attribute on a <div> are
+  // both inert as far as focus goes, so a copy that read either through
+  // `closest` would report a region the platform hands a tab stop to.
+  ...[".s-pane", ".t-pane", ".u-pane"].map((selector) => ({
+    selector,
+    claim:
+      "the platform DOES give this pane's control a focus stop, so standing " +
+      "aside is the measured answer and a finding here would be a false " +
+      "positive printed on every surface with a pane like it",
+    holds: (row) => row.controlFocusable === true,
+  })),
   {
     selector: ".j-pane",
     claim:
@@ -390,7 +509,7 @@ try {
   rows = [];
   for (const subject of SHAPES) {
     const row = await page.evaluate(
-      ({ html, selector, check }) => {
+      ({ html, selector, focusSelector, check }) => {
         document.body.innerHTML = html;
         // Force a layout before reading, so a geometry of 0 means "not
         // rendered" rather than "not measured yet".
@@ -402,7 +521,17 @@ try {
         const found = new Function(`${check}; return findUsabilityProblems(document.body);`)()
           .filter((p) => p.kind === "scrollable-region-focusable")
           .map((p) => p.detail);
+        // Measured AFTER the findings, so focusing a control cannot perturb
+        // the detector that just ran. `null` where the shape names none.
+        let controlFocusable = null;
+        if (focusSelector) {
+          const control = document.querySelector(focusSelector);
+          if (!control) return { missingFocus: true };
+          control.focus();
+          controlFocusable = document.activeElement === control;
+        }
         return {
+          controlFocusable,
           findings: found.filter((detail) => detail.includes(selector.slice(1))).length,
           allFindings: found,
           clientHeight: el.clientHeight,
@@ -417,9 +546,17 @@ try {
           computedOverflowY: style.overflowY,
         };
       },
-      { html: subject.html, selector: subject.selector, check: usabilityCheck },
+      {
+        html: subject.html,
+        selector: subject.selector,
+        focusSelector: subject.focusSelector ?? null,
+        check: usabilityCheck,
+      },
     );
     if (row.missing) fail(`${subject.selector} is not in this shape's markup`);
+    if (row.missingFocus) {
+      fail(`${subject.focusSelector} is not in ${subject.selector}'s markup, so its focusability is unmeasured`);
+    }
     rows.push({
       shape: subject.shape,
       selector: subject.selector,
@@ -468,7 +605,8 @@ for (const { selector, claim, holds } of CLAIMS) {
         `${row.scrollWidth}, overflow ${row.computedOverflow}, overflow-x ` +
         `${row.computedOverflowX}, overflow-y ${row.computedOverflowY}, ` +
         `checkVisibility({visibilityProperty:true}) ${row.checkVisibility}, ` +
-        `checkVisibility() ${row.checkVisibilityDefault}`,
+        `checkVisibility() ${row.checkVisibilityDefault}, controlFocusable ` +
+        `${row.controlFocusable}`,
     );
   }
 }

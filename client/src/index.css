@@ -2430,6 +2430,16 @@ label:is(
   outline-offset: 2px;
 }
 
+/* The shared ring for a bounded `overflow: auto|scroll` region that carries a
+   `tabIndex={0}` so the keyboard can scroll it at all (lg-milestone-that-2215).
+   The offset is INSET, unlike the button ring above: an outset ring on a
+   clipping box is drawn under its neighbours, which is why both of the
+   hand-written rules this replaced had already chosen `-2px`. */
+.scroll-focus-ring:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
 .ticket-studio-drafts {
   width: 400px;
   flex: none;
@@ -4203,6 +4213,15 @@ button.send-leaf:hover:not(:disabled) {
   gap: 18px;
 }
 
+/* The loading, error and nothing-reported pane that stands in the report's
+   place (lg-milestone-that-2215 AC8). One line, so no section gap, and it
+   carries no tab stop: a labelled box over a single sentence is the dead stop
+   that criterion forbids. */
+.usage-modal-empty {
+  gap: 0;
+  color: var(--txm);
+}
+
 .usage-warning-banner {
   border: 1px solid rgba(240, 180, 41, 0.45);
   background: rgba(240, 180, 41, 0.08);
@@ -4260,6 +4279,16 @@ button.send-leaf:hover:not(:disabled) {
   font-size: var(--fs-small);
   max-width: 240px;
   text-align: right;
+}
+
+/* The modal-level refresh error. Not .usage-provider-error: that one is a span in a
+   provider row's flex column (240px, right-aligned), and this is a direct child of
+   .modal-panel, which declares no padding of its own. */
+.usage-modal-error {
+  margin: 0;
+  padding: 0 20px;
+  color: var(--amb);
+  font-size: var(--fs-small);
 }
 
 .usage-provider-cached {

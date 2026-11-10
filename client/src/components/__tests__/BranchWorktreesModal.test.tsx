@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { BranchWorktreesModal } from "../BranchWorktreesModal";
 import { removeBranchWorktree, type BranchTriageEntry } from "../../lib/branchTriageApi";
@@ -392,4 +393,47 @@ test("a restored cleanup_failed 200 with no linked ticket does not end in WRITE_
     (node) => node.textContent,
   );
   expect(details.filter((text) => text === WRITE_A_RECEIPT)).toHaveLength(0);
+});
+
+/**
+ * `.branch-worktrees-info` is the horizontal case of lg-milestone-that-2215:
+ * `min-width: 0; overflow-x: auto` on a row holding a full checkout path. The
+ * live-max path is 94 characters of mono, so it clips on every realistic
+ * window — and the row's `Delete` button sits OUTSIDE the clipping box, so
+ * nothing in it could take the focus the arrow keys scroll sideways from.
+ */
+describe("the worktree path's keyboard path", () => {
+  const regionName = (path: string) => `Path and state of the worktree at ${path}`;
+
+  it("is a tab stop that steps on to that row's Delete — AC3", async () => {
+    renderModal(branchWith([RESTORED_PATH]));
+
+    const info = screen.getByRole("group", { name: regionName(RESTORED_PATH) });
+    expect(info).toHaveAttribute("tabindex", "0");
+    expect(info).toHaveClass("scroll-focus-ring");
+
+    // `Delete` FOLLOWS the info box in its row, so Tab forward is the step
+    // this surface offers, and it is the action the path leads to.
+    info.focus();
+    await userEvent.tab();
+    expect(screen.getAllByRole("button", { name: /^Delete/ })[0]).toHaveFocus();
+  });
+
+  it("renders no labelled box when the branch has no worktrees — AC8", () => {
+    renderModal(branchWith([]));
+
+    // Zero rows means the list is replaced by one line in its place, so there
+    // is no named region with nothing behind it.
+    expect(screen.queryByRole("group", { name: regionName(RESTORED_PATH) })).toBeNull();
+    expect(screen.getByText("No worktrees are checked out for this branch.")).toBeInTheDocument();
+  });
+
+  it("lets Escape from inside the box still close the dialog — AC9", () => {
+    const { onClose } = renderModal(branchWith([RESTORED_PATH]));
+
+    const info = screen.getByRole("group", { name: regionName(RESTORED_PATH) });
+    info.focus();
+    fireEvent.keyDown(info, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
 });

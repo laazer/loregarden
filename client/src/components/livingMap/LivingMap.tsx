@@ -261,7 +261,14 @@ export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: stri
                     ) : null}
                   </dl>
                   {selected.item.detail && selected.item.detail !== selected.item.title ? (
-                    <p className="living-map-detail-text">{selected.item.detail}</p>
+                    <div
+                      className="living-map-detail-text scroll-focus-ring"
+                      role="group"
+                      aria-label={`Detail for ${selected.item.title}`}
+                      tabIndex={0}
+                    >
+                      {selected.item.detail}
+                    </div>
                   ) : null}
                   <Button
                     variant="plain"

@@ -81,7 +81,12 @@ export function BranchWorktreesModal({
           <ul className="branch-worktrees-list">
             {worktrees.map((wt) => (
               <li key={wt.path} className="branch-worktrees-row">
-                <div className="branch-worktrees-info">
+                <div
+                  className="branch-worktrees-info scroll-focus-ring"
+                  role="group"
+                  aria-label={`Path and state of the worktree at ${wt.path}`}
+                  tabIndex={0}
+                >
                   <code>{wt.path}</code>
                   <span className={`branch-worktrees-status ${wt.dirty ? "dirty" : "clean"}`}>
                     {wt.dirty ? "dirty" : "clean"}

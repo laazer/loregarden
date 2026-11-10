@@ -205,7 +205,9 @@ export function ImportTicketsModal({
               Selected ({selected.length})
             </div>
             <ul
-              className="import-selected-list"
+              className="import-selected-list scroll-focus-ring"
+              aria-label="Selected ticket files"
+              tabIndex={0}
               style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--txm)" }}
             >
               {selected.map((file) => (

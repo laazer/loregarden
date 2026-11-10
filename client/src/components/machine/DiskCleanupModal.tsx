@@ -213,7 +213,11 @@ function DiskCleanupBody({
             {refused.length > 0 ? (
               <section aria-labelledby="disk-refused-heading">
                 <h3 id="disk-refused-heading">Kept ({refused.length})</h3>
-                <ul className="disk-cleanup-list">
+                <ul
+                  className="disk-cleanup-list scroll-focus-ring"
+                  aria-label="Folders kept"
+                  tabIndex={0}
+                >
                   {refused.map(({ verdict, size_bytes }) => (
                     <li
                       key={verdict.path}
@@ -288,28 +292,33 @@ function CleanupOutcome({ result }: { result: DiskCleanupResult }) {
         {result.failed_count ? ` ${result.failed_count} failed.` : ""} Empty the
         Trash in Finder to get the space back.
       </p>
-      <ul className="disk-cleanup-list">
-        {result.results.map((item) => (
-          <li
-            key={item.path}
-            className={`disk-cleanup-item is-${item.outcome}`}
-          >
-            <div className="disk-cleanup-check">
-              <span className="disk-cleanup-path">{item.path}</span>
-              <span className="disk-cleanup-size">
-                {item.outcome === "trashed"
-                  ? "In Trash"
-                  : item.outcome === "refused"
-                    ? "Kept"
-                    : "Failed"}
-              </span>
-            </div>
-            {item.detail ? (
-              <p className="disk-cleanup-note">{item.detail}</p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      {result.results.length === 0 ? (
+        <p className="disk-cleanup-summary">Nothing was moved.</p>
+      ) : (
+        <ul
+          className="disk-cleanup-list scroll-focus-ring"
+          aria-label="Cleanup outcome by folder"
+          tabIndex={0}
+        >
+          {result.results.map((item) => (
+            <li key={item.path} className={`disk-cleanup-item is-${item.outcome}`}>
+              <div className="disk-cleanup-check">
+                <span className="disk-cleanup-path">{item.path}</span>
+                <span className="disk-cleanup-size">
+                  {item.outcome === "trashed"
+                    ? "In Trash"
+                    : item.outcome === "refused"
+                      ? "Kept"
+                      : "Failed"}
+                </span>
+              </div>
+              {item.detail ? (
+                <p className="disk-cleanup-note">{item.detail}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

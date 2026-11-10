@@ -451,7 +451,16 @@ function AttemptRow({
           Log
         </Button>
       </div>
-      {excerpt ? <pre className="tl-stderr">{excerpt}</pre> : null}
+      {excerpt ? (
+        <pre
+          className="tl-stderr scroll-focus-ring"
+          role="group"
+          aria-label="Attempt error output"
+          tabIndex={0}
+        >
+          {excerpt}
+        </pre>
+      ) : null}
       {running && showLiveLog ? (
         <div className="tl-live-log">
           <LaneLogView runId={attempt.run_id} />
@@ -500,7 +509,16 @@ function FailedRunRow({
       </Button>
       {open ? (
         <div id={bodyId}>
-          {sharedError ? <pre className="tl-stderr">{sharedError}</pre> : null}
+          {sharedError ? (
+            <pre
+              className="tl-stderr scroll-focus-ring"
+              role="group"
+              aria-label="Stage error output"
+              tabIndex={0}
+            >
+              {sharedError}
+            </pre>
+          ) : null}
           <ul className="tl-attempts tl-attempts--nested">
             {row.attempts.map((attempt) => (
               <AttemptRow

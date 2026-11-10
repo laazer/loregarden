@@ -41,7 +41,12 @@ export function DeleteViewConfirmModal({
         <IconCloseButton disabled={isDeleting} onClick={onClose} />
       </div>
 
-      <div className="modal-body">
+      <div
+        className="modal-body scroll-focus-ring"
+        role="group"
+        aria-label="What deleting this view does"
+        tabIndex={0}
+      >
         <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           This deletes the view, its layout and its tab. It cannot be undone.
         </p>

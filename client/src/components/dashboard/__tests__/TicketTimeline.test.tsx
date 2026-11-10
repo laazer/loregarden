@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../../api/client";
@@ -605,5 +606,89 @@ describe("what this ticket spent waiting for the machine", () => {
       "Could not load this ticket’s run ledger",
     );
     expect(screen.queryByText(/machine capacity/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * `.tl-stderr` is a bounded `overflow: auto` error pane, at two element sites
+ * (lg-milestone-that-2215). Neither held a tab stop: the `Log` button that
+ * serves the attempt sits in the row ABOVE the pane, and the shared-error pane
+ * in a folded group is reached from the fold toggle above it.
+ */
+describe("the error panes' keyboard paths", () => {
+  it("makes an attempt's error pane a tab stop stepping back to its Log button — AC3", async () => {
+    // Two attempts, because the LATEST failure's output goes in the panel
+    // above rather than in an excerpt — so the pane only renders for a
+    // failure that something came after.
+    const failing = visit("implement", [
+      attempt({ run_id: "i1", status: "failed", error_tail: "line one\nAssertionError: boom" }),
+      attempt({ run_id: "i2" }),
+    ]);
+    renderTimeline({ visits: [PLAN, failing, GATE] });
+    fireEvent.click(await screen.findByRole("button", { name: /Implementation/ }));
+
+    const pane = await screen.findByRole("group", { name: "Attempt error output" });
+    expect(pane).toHaveAttribute("tabindex", "0");
+    expect(pane).toHaveClass("scroll-focus-ring");
+
+    // `Log` PRECEDES the pane in its row, so Shift+Tab is the step that
+    // exists. There is no control after the pane to Tab forward on to.
+    pane.focus();
+    await userEvent.tab({ shift: true });
+    // The `Log` of the failed row specifically, scoped to the stage body: the
+    // other stages render their own, and both attempts in this fixture share
+    // an agent and a run code, so neither the name nor a global index alone
+    // picks it out.
+    const implementBody = document.getElementById(
+      stageButton(/Implementation/).getAttribute("aria-controls")!,
+    )!;
+    expect(within(implementBody).getAllByRole("button", { name: /Open the log/ })[0]).toHaveFocus();
+  });
+
+  it("makes a folded group's shared error pane a tab stop — AC3", async () => {
+    const LAUNCH_TAIL = "Agent launch failed\ntmux: command too long";
+    const failedRun = (run_id: string) =>
+      attempt({
+        run_id,
+        run_code: `run_${run_id}`,
+        agent_id: "test_designer",
+        status: "failed",
+        error_tail: LAUNCH_TAIL,
+        duration_seconds: 2,
+      });
+    renderTimeline({
+      visits: [visit("test_design", [failedRun("d1"), failedRun("d2"), failedRun("d3"), failedRun("d4")])],
+      detail: ticket({
+        state: "blocked",
+        block_message: "Agent launch failed",
+        stages: [{ key: "test_design", name: "Design tests" }],
+      } as Partial<TicketDetail>),
+    });
+
+    const stage = await screen.findByRole("button", { name: /Design tests/ });
+    const body = document.getElementById(stage.getAttribute("aria-controls")!)!;
+    fireEvent.click(within(body).getByRole("button", { name: /Attempts 1–3/ }));
+
+    const pane = within(body).getByRole("group", { name: "Stage error output" });
+    expect(pane).toHaveAttribute("tabindex", "0");
+    expect(pane).toHaveClass("scroll-focus-ring");
+    pane.focus();
+    await userEvent.tab({ shift: true });
+    expect(within(body).getByRole("button", { name: /Attempts 1–3/ })).toHaveFocus();
+  });
+
+  it("renders no labelled pane for a failure that wrote nothing — AC8", async () => {
+    const silent = visit("implement", [
+      attempt({ run_id: "i1", status: "failed", error_tail: "" }),
+      attempt({ run_id: "i2" }),
+    ]);
+    renderTimeline({ visits: [PLAN, silent, GATE] });
+    fireEvent.click(await screen.findByRole("button", { name: /Implementation/ }));
+
+    // An empty `error_tail` is a run that failed without saying anything, and
+    // a labelled box over nothing is the dead tab stop AC8 forbids. The `Log`
+    // button stays, because it is the route to the whole thing.
+    expect((await screen.findAllByRole("button", { name: /Open the log/ })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("group", { name: "Attempt error output" })).toBeNull();
   });
 });

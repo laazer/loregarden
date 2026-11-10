@@ -43,7 +43,12 @@ export function DeleteTicketConfirmModal({
             <IconCloseButton disabled={isDeleting} onClick={onClose} />
           </div>
 
-          <div className="modal-body">
+          <div
+            className="modal-body scroll-focus-ring"
+            role="group"
+            aria-label="What deleting this ticket does"
+            tabIndex={0}
+          >
             <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
               This permanently deletes the ticket along with its run history, artifacts, and
               approvals. This action cannot be undone.

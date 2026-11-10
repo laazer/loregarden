@@ -91,13 +91,23 @@ export function AgentVersionHistory({ slug, currentVersion }: Props) {
               {v.change_note && (
                 <p className="studio-version-note">{v.change_note}</p>
               )}
-              {isOpen && (
-                <pre className="studio-version-body">
-                  {detail.isFetching
-                    ? "Loading…"
-                    : detail.data?.snapshot?.role_body ?? "(no snapshot)"}
-                </pre>
-              )}
+              {isOpen &&
+                (detail.isFetching ? (
+                  <p className="studio-version-note">Loading the role text…</p>
+                ) : detail.data?.snapshot?.role_body ? (
+                  <pre
+                    className="studio-version-body scroll-focus-ring"
+                    role="group"
+                    aria-label={`Role text for v${v.version}`}
+                    tabIndex={0}
+                  >
+                    {detail.data.snapshot.role_body}
+                  </pre>
+                ) : (
+                  <p className="studio-version-note">
+                    No snapshot was stored for this version.
+                  </p>
+                ))}
             </li>
           );
         })}

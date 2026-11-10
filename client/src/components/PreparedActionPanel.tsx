@@ -104,7 +104,14 @@ export function PreparedActionPanel({
       {output && (
         <div className="prepared-action-row">
           <span className="prepared-action-label">Captured</span>
-          <pre className="prepared-action-output">{output}</pre>
+          <pre
+            className="prepared-action-output scroll-focus-ring"
+            role="group"
+            aria-label="Captured output"
+            tabIndex={0}
+          >
+            {output}
+          </pre>
         </div>
       )}
 

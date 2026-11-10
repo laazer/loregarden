@@ -57,7 +57,12 @@ export function AgentDeleteConfirm({
         </div>
       </div>
 
-      <div className="modal-body">
+      <div
+        className="modal-body scroll-focus-ring"
+        role="group"
+        aria-label="What deleting this agent does"
+        tabIndex={0}
+      >
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
           This deletes <code>{slug}</code> and its {versionCount} stored version
           {versionCount === 1 ? "" : "s"}. It cannot be undone.

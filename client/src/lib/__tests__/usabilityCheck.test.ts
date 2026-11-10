@@ -1,4 +1,9 @@
 import { findUsabilityProblems } from "../usabilityCheck";
+import * as usabilityCheck from "../usabilityCheck";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { tabbableWithin } from "../../hooks/useDialogFocusTrap";
 
 function kinds(html: string): string[] {
   const root = document.createElement("div");
@@ -280,6 +285,59 @@ describe("scrollable-region-focusable", () => {
     // so neither gives the region a way in.
     expect(scrollable(`<div class="log" style="${SCROLLER}"><button disabled>Copy</button>${LONG}</div>`)).toHaveLength(1);
     expect(scrollable(`<div class="log" style="${SCROLLER}"><span tabindex="-1">x</span>${LONG}</div>`)).toHaveLength(1);
+  });
+
+  /**
+   * AC2 — the three false negatives the detector's own copy of the
+   * tabbability test let through, plus the three the copy's `.disabled`
+   * property read cannot see at all.
+   *
+   * Each region's only control reports `tabIndex` 0 and `.disabled` false, so
+   * the predicate as landed by `8b3d3eb2c` concludes the region has a way in.
+   * Chromium refuses `.focus()` on all six — measured in
+   * `scripts/probe-scrollable-region.mjs`, whose `.n-pane`/`.o-pane`/`.p-pane`
+   * rows record the browser's own refusal beside the finding count. A region
+   * no key reaches, reported reachable, is the defect this detector exists to
+   * find.
+   */
+  it("flags one whose only control sits in a disabled fieldset", () => {
+    // `.disabled` is true on the <button> via its fieldset, but only as a
+    // computed property in a browser: jsdom reports it false. The attribute is
+    // on the <fieldset>, so `closest("fieldset[disabled]")` is the only term
+    // that answers in both engines.
+    const html = `<div class="log" style="${SCROLLER}"><fieldset disabled><button>Copy</button></fieldset>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
+  });
+
+  it("flags one whose only control is [hidden]", () => {
+    const html = `<div class="log" style="${SCROLLER}"><button hidden>Copy</button>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
+  });
+
+  it("flags one whose only control is inside [inert]", () => {
+    const html = `<div class="log" style="${SCROLLER}"><div inert><button>Copy</button></div>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
+  });
+
+  it("flags one whose only control is aria-disabled", () => {
+    const html = `<div class="log" style="${SCROLLER}"><button aria-disabled="true">Copy</button>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
+  });
+
+  it("flags one whose only control is aria-hidden", () => {
+    // Read on the element ITSELF, matching `useDialogFocusTrap`: widening this
+    // to `closest("[aria-hidden='true']")` would be a new divergence in the
+    // other direction, so the fixture puts the attribute on the control.
+    const html = `<div class="log" style="${SCROLLER}"><button aria-hidden="true">Copy</button>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
+  });
+
+  it("flags one whose only control is an <a> carrying a disabled attribute", () => {
+    // The case the property read cannot reach in ANY engine: `HTMLAnchorElement`
+    // has no `disabled` property, so `.disabled` is `undefined` and the copy
+    // calls this anchor a way in. The attribute is what the platform honours.
+    const html = `<div class="log" style="${SCROLLER}"><a href="/x" disabled>Copy</a>${LONG}</div>`;
+    expect(scrollable(html)).toHaveLength(1);
   });
 
   it("reads a bound and an overflow on either axis", () => {
@@ -852,5 +910,289 @@ describe("scrollable-region-focusable", () => {
     expect(document.body.getBoundingClientRect().width).toBe(0);
     expect(scrollable(`<div class="pane" style="${X_ONLY}">${LONG}</div>`)).toHaveLength(1);
     expect(scrollable(`<div class="pane" style="${Y_ONLY}">${LONG}</div>`)).toHaveLength(1);
+  });
+
+  /**
+   * test-break — every AC2 case above asserts `toHaveLength(1)`, so the
+   * designed table is one-sided: an `isTabbable` that is too STRICT satisfies
+   * all six, and its one control (a plain `<button>`) rules out only the
+   * constant `false`. Each case below is a region a key DOES reach, three of
+   * them measured reachable in Chromium (`.u-pane`, `.t-pane`, `.s-pane`).
+   */
+
+  it("stands aside where the only control sits under a non-fieldset [disabled] ancestor", () => {
+    // `disabled` means nothing on a `<div>`; Chromium focuses the button.
+    const html = `<div class="log" style="${SCROLLER}"><div disabled><button>Copy</button></div>${LONG}</div>`;
+    expect(scrollable(html)).toEqual([]);
+  });
+
+  it("stands aside where the only control sits under an aria-hidden ancestor", () => {
+    // Term 5 is element-only, and the platform hands this a tab stop.
+    const html = `<div class="log" style="${SCROLLER}"><div aria-hidden="true"><button>Copy</button></div>${LONG}</div>`;
+    expect(scrollable(html)).toEqual([]);
+  });
+
+  it("reads the aria attributes by value, so `false` is not `true`", () => {
+    expect(
+      scrollable(`<div class="log" style="${SCROLLER}"><button aria-disabled="false">Copy</button>${LONG}</div>`),
+    ).toEqual([]);
+    expect(
+      scrollable(`<div class="log" style="${SCROLLER}"><button aria-hidden="false">Copy</button>${LONG}</div>`),
+    ).toEqual([]);
+    expect(
+      scrollable(`<div class="log" style="${SCROLLER}"><div aria-hidden="false"><button>Copy</button></div>${LONG}</div>`),
+    ).toEqual([]);
+  });
+
+  it("asks whether ANY control is reachable, not whether every one is", () => {
+    const toolbar =
+      `<div class="log" style="${SCROLLER}">` +
+      `<div class="bar"><button disabled>Stop</button><button>Copy</button></div>${LONG}</div>`;
+    expect(scrollable(toolbar)).toEqual([]);
+    // Reversed, so the answer cannot come from the order of the two controls.
+    const reversed =
+      `<div class="log" style="${SCROLLER}">` +
+      `<div class="bar"><button>Copy</button><button disabled>Stop</button></div>${LONG}</div>`;
+    expect(scrollable(reversed)).toEqual([]);
+  });
+
+  it("reports a toolbar whose every control is refused once, not once per control", () => {
+    // RED before the fix, for the `hidden` control: two refused controls are
+    // still one region an operator has to fix.
+    const dead =
+      `<div class="log" style="${SCROLLER}">` +
+      `<div class="bar"><button disabled>Stop</button><button hidden>Copy</button></div>${LONG}</div>`;
+    expect(scrollable(dead)).toHaveLength(1);
+  });
+});
+
+/**
+ * AC3 — the drift guard, because the duplication is permanent.
+ *
+ * `src/lib/usabilityCheck.ts` may not import anything:
+ * `scripts/visual-qa.mjs:33` transpiles that one file, strips its exports and
+ * evaluates the whole module in a page where nothing else from the app exists,
+ * and `scripts/probe-scrollable-region.mjs:349-353` does the same. So the
+ * tabbability predicate there is REQUIRED to be a copy of
+ * `useDialogFocusTrap`'s, and this describe block is what makes it a copy that
+ * is CHECKED rather than one that is hoped for. The test file carries none of
+ * that constraint: it imports both sides and compares them directly.
+ *
+ * `useDialogFocusTrap.ts` is the reference definition. Its own comments record
+ * two deliberate refinements to the selector list — `[contenteditable]` left
+ * plain, `[tabindex]` matched broadly and narrowed by the resolved `tabIndex`
+ * — and the table below carries a row for each, so the next such refinement
+ * lands red here instead of on one copy only.
+ *
+ * `tabbableWithin` scans `root.querySelectorAll`, so it never returns `root`
+ * itself: the comparison is `isTabbable(el)` against
+ * `tabbableWithin(wrapper).includes(el)` with `el` a DESCENDANT of `wrapper`.
+ * A comparison against `tabbableWithin(el)` would be vacuously false on every
+ * row and the table would assert nothing.
+ *
+ * `isTabbable` is read off the module namespace rather than named-imported for
+ * the same reason `KIND` above is typed `string`: the export does not exist
+ * until the implement stage, and this file has to typecheck while it is RED.
+ * The first case below is what turns its absence into a failure rather than a
+ * silence.
+ */
+describe("isTabbable agrees with tabbableWithin", () => {
+  const isTabbable = (usabilityCheck as { isTabbable?: (el: Element) => boolean }).isTabbable;
+
+  /**
+   * One row per shape the two definitions could disagree on. `target` names
+   * the element under test, always a descendant of the wrapper.
+   *
+   * There is deliberately NO `input[type="radio"]` carrying a `name` here:
+   * `tabbableWithin` applies `isSkippedRadio` and `isTabbable` deliberately
+   * does not (a radio group is never a bounded region's only way in, and this
+   * check measures reachability rather than tab order), so a named radio group
+   * is the one shape where disagreement is CORRECT and a row for it would
+   * assert a falsehood.
+   */
+  const ROWS: ReadonlyArray<{ name: string; html: string; target: string }> = [
+    { name: "an enabled <button>", html: `<button id="t">Copy</button>`, target: "#t" },
+    { name: "<button disabled>", html: `<button id="t" disabled>Copy</button>`, target: "#t" },
+    {
+      name: '<button aria-disabled="true">',
+      html: `<button id="t" aria-disabled="true">Copy</button>`,
+      target: "#t",
+    },
+    {
+      name: "a <button> inside <fieldset disabled>",
+      html: `<fieldset disabled><button id="t">Copy</button></fieldset>`,
+      target: "#t",
+    },
+    { name: "<button hidden>", html: `<button id="t" hidden>Copy</button>`, target: "#t" },
+    {
+      name: "a <button> inside [inert]",
+      html: `<div inert><button id="t">Copy</button></div>`,
+      target: "#t",
+    },
+    {
+      name: '<button aria-hidden="true">',
+      html: `<button id="t" aria-hidden="true">Copy</button>`,
+      target: "#t",
+    },
+    {
+      name: '<button tabindex="-1">',
+      html: `<button id="t" tabindex="-1">Copy</button>`,
+      target: "#t",
+    },
+    { name: '<a href="/x">', html: `<a id="t" href="/x">Copy</a>`, target: "#t" },
+    { name: "<a> with no href", html: `<a id="t">Copy</a>`, target: "#t" },
+    {
+      name: '<a href="/x" disabled>',
+      html: `<a id="t" href="/x" disabled>Copy</a>`,
+      target: "#t",
+    },
+    { name: "<div contenteditable>", html: `<div id="t" contenteditable>Copy</div>`, target: "#t" },
+    {
+      name: '<div contenteditable tabindex="0">',
+      html: `<div id="t" contenteditable tabindex="0">Copy</div>`,
+      target: "#t",
+    },
+    // test-break — the rows that tell AC1's terms apart from the
+    // over-corrections every row above accepts. Expected is
+    // `tabbableWithin`'s own answer, measured, not read off the spec.
+    {
+      name: "the <summary> of an open <details>",
+      html: `<details open><summary id="t">Reason</summary>body</details>`,
+      target: "#t",
+    },
+    {
+      name: "a <button> under a non-fieldset [disabled] ancestor",
+      html: `<div disabled><button id="t">Copy</button></div>`,
+      target: "#t",
+    },
+    {
+      name: 'a <button> under an aria-hidden="true" ancestor',
+      html: `<div aria-hidden="true"><button id="t">Copy</button></div>`,
+      target: "#t",
+    },
+    {
+      name: '<button aria-disabled="false">',
+      html: `<button id="t" aria-disabled="false">Copy</button>`,
+      target: "#t",
+    },
+    {
+      name: '<button aria-hidden="false">',
+      html: `<button id="t" aria-hidden="false">Copy</button>`,
+      target: "#t",
+    },
+    {
+      // An UNNAMED radio is a group of one, so the two must agree even in
+      // the one family where they may differ.
+      name: "an unnamed <input type=radio>",
+      html: `<input type="radio" id="t">`,
+      target: "#t",
+    },
+    {
+      // The inaccuracy both sides SHARE, so nobody repairs one of them: the
+      // HTML spec leaves a `<legend>` control of a disabled fieldset enabled.
+      name: "a <button> in the <legend> of a <fieldset disabled>",
+      html: `<fieldset disabled><legend><button id="t">Copy</button></legend></fieldset>`,
+      target: "#t",
+    },
+  ];
+
+  function fixture(html: string, target: string): { wrapper: HTMLElement; el: HTMLElement } {
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = html;
+    const el = wrapper.querySelector<HTMLElement>(target);
+    if (!el) throw new Error(`${target} is not in this row's markup`);
+    return { wrapper, el };
+  }
+
+  it("exports isTabbable from the detector", () => {
+    // Without the export every row below would throw rather than compare, and
+    // a table that cannot run is not a guard. This case names the reason.
+    expect(typeof isTabbable).toBe("function");
+  });
+
+  it.each(ROWS.map((row) => [row.name, row] as const))(
+    "answers %s the way tabbableWithin does",
+    (_name, row) => {
+      const { wrapper, el } = fixture(row.html, row.target);
+      expect(isTabbable!(el)).toBe(tabbableWithin(wrapper).includes(el));
+    },
+  );
+
+  it("covers both outcomes, so the agreement above cannot be vacuous", () => {
+    // A table on which both definitions returned false for every row would
+    // satisfy every case above while checking nothing. At least one row must
+    // be tabbable and at least one must not.
+    const answers = ROWS.map((row) => {
+      const { el } = fixture(row.html, row.target);
+      return isTabbable!(el);
+    });
+    expect(answers).toContain(true);
+    expect(answers).toContain(false);
+  });
+
+  it("agrees over the same table with the wrapper in the document", () => {
+    // Every row above runs DETACHED, so a term consulting layout would
+    // differ only once rendered, which the both-outcomes case cannot see.
+    for (const row of ROWS) {
+      const { wrapper, el } = fixture(row.html, row.target);
+      const detached = isTabbable!(el);
+      document.body.appendChild(wrapper);
+      try {
+        expect(isTabbable!(el)).toBe(detached);
+        expect(isTabbable!(el)).toBe(tabbableWithin(wrapper).includes(el));
+      } finally {
+        wrapper.remove();
+      }
+    }
+  });
+
+  it("diverges from tabbableWithin on a named radio group, and only there", () => {
+    // The one disagreement AC3 declares CORRECT, asserted rather than left
+    // to a comment: a named group's second radio is skipped by the trap and
+    // reachable to the detector. Copy `isSkippedRadio` across and every row
+    // above passes while this turns red.
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML =
+      `<form><input type="radio" name="g" id="first"><input type="radio" name="g" id="second"></form>`;
+    const first = wrapper.querySelector<HTMLElement>("#first")!;
+    const second = wrapper.querySelector<HTMLElement>("#second")!;
+    const trapped = tabbableWithin(wrapper);
+
+    expect(trapped).toContain(first);
+    expect(trapped).not.toContain(second);
+    expect(isTabbable!(first)).toBe(true);
+    expect(isTabbable!(second)).toBe(true);
+  });
+});
+
+/**
+ * test-break — AC1's "stays import-free" is a `grep` a human runs once, and
+ * the drift test above is GREEN against the one change that breaks the
+ * browser: importing `tabbableWithin` here and deleting the copy makes the two
+ * agree by construction and throws at runtime in `scripts/visual-qa.mjs`,
+ * which `new Function`s this module in a page holding nothing else from the
+ * app. Neither jest nor `tsc` sees it. Read from disk, because an import graph
+ * cannot see the absence of an edge.
+ */
+describe("usabilityCheck.ts is inlinable", () => {
+  const SOURCE = readFileSync(join(__dirname, "..", "usabilityCheck.ts"), "utf8");
+
+  it("carries no import statement, and is still what both inliners strip", () => {
+    expect(SOURCE.split("\n").filter((line) => /^\s*import[\s{*]/.test(line))).toEqual([]);
+    // The premise: the case above is worth asserting only because something
+    // transpiles this module whole. If that stops being true, delete this
+    // block rather than leave it asserting a constraint nothing imposes.
+    for (const script of ["visual-qa.mjs", "probe-scrollable-region.mjs"]) {
+      const inliner = readFileSync(join(__dirname, "..", "..", "..", "scripts", script), "utf8");
+      expect(inliner).toContain("usabilityCheck.ts");
+      expect(inliner).toContain("/^export /gm");
+    }
+  });
+
+  it("reads `disabled` as an attribute, never as a property", () => {
+    // AC1's second grep. The property is `undefined` on an `<a>` and false
+    // in jsdom inside a `<fieldset disabled>`: wrong in both engines.
+    const reads = SOURCE.split("\n").filter((line) => line.includes(".disabled"));
+    expect(reads).toEqual([]);
   });
 });

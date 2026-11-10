@@ -738,7 +738,11 @@ describe("the reason region, adversarially", () => {
     const region = await failedFirstLoad();
     const alert = screen.getByRole("alert");
 
+    // lg-milestone-that-2215 AC2 adds a fourth: `scroll-focus-ring`, the one
+    // place the ring for every region of this shape is now defined. Still an
+    // exhaustive list, so a stray class is still a failure.
     expect(Array.from(region.classList).sort()).toEqual([
+      "scroll-focus-ring",
       "wm-error-reason",
       "wm-muted",
       "wm-narrow",
@@ -875,12 +879,46 @@ describe("the reason region, adversarially", () => {
       "max-height": "9em",
       overflow: "auto",
     });
-    // Immediately after, so the ring cannot drift away from what it rings.
-    expect(rules[index + 1]!.selector).toBe(".wm-error-reason:focus-visible");
-    expect(rules[index + 1]!.declarations).toEqual({
-      outline: "2px solid var(--ac)",
-      "outline-offset": "-2px",
-    });
+    // lg-milestone-that-2215 AC2: the ring is no longer this stylesheet's.
+    // Nineteen more regions of this exact shape are in the tree, and three
+    // independent copies of one rule is how their rings drift apart, so the
+    // ring moved to `.scroll-focus-ring:focus-visible` in `index.css` — defined
+    // once, beside `.btn-focus-ring`. The bound above is unchanged; only the
+    // ring moved. This assertion used to require the rule here, by selector,
+    // immediately after the block: that is the assertion the move rewrites.
+    expect(rules.map((rule) => rule.selector)).not.toContain(
+      ".wm-error-reason:focus-visible",
+    );
+    const shared = Array.from(
+      fs
+        .readFileSync(path.resolve(__dirname, "..", "..", "..", "index.css"), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/([^{}]+)\{([^{}]*)\}/g),
+      ([, selector, body]) => ({ selector: selector.trim(), body }),
+    ).filter((rule) => rule.selector === ".scroll-focus-ring:focus-visible");
+
+    expect(shared).toHaveLength(1);
+    expect(shared[0]!.body).toMatch(/outline:\s*2px solid var\(--ac\)/);
+    // INSET, not the `+2px` of `.btn-focus-ring`: an outset ring on a clipping
+    // box is drawn under its neighbours, which is why the rule it replaces
+    // already chose -2px.
+    expect(shared[0]!.body).toMatch(/outline-offset:\s*-2px/);
+  });
+
+  it("wears the shared ring class rather than a ring of its own", async () => {
+    // AC2's other half: the element has to ASK for the shared rule, and a
+    // stylesheet assertion alone cannot see that. All four things AC2 requires
+    // are checked here, on the element a screen reader actually meets.
+    monitorFindings.mockRejectedValue(new Error(PAGE));
+    renderView();
+
+    const region = await screen.findByRole("group", { name: NAME });
+    expect(region).toHaveClass("scroll-focus-ring");
+    expect(region).toHaveAttribute("tabindex", "0");
+    // A bare <div> maps to no ARIA role, so this one keeps role="group"; the
+    // <ol> and <pre> regions in the same family must NOT take it.
+    expect(region).toHaveAttribute("role", "group");
+    expect(region.tagName).toBe("DIV");
   });
 });
 

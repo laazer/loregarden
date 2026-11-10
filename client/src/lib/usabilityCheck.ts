@@ -17,9 +17,12 @@
  * held 224 unfilterable cards, and reported zero problems on all 19 surfaces.
  * A check that cannot see the house style is not evidence of anything.
  *
- * Deliberately self-contained — one function, no imports, nothing from module
- * scope: `scripts/visual-qa.mjs` transpiles this file and evaluates the
- * function inside the browser page, where nothing else from the app exists.
+ * Deliberately import-free: `scripts/visual-qa.mjs` transpiles this file,
+ * strips `^export ` and evaluates the whole module in one scope inside a
+ * browser page where nothing else from the app exists. Module-scope
+ * declarations survive that; an `import` does not. So the rule is no imports,
+ * which is why the one predicate shared with the app is a copy (`isTabbable`
+ * below) rather than a reuse.
  */
 
 export type UsabilityProblemKind =
@@ -35,6 +38,56 @@ export type UsabilityProblemKind =
 export interface UsabilityProblem {
   kind: UsabilityProblemKind;
   detail: string;
+}
+
+/**
+ * What the platform will hand a Tab press to, before per-element filtering.
+ *
+ * A corrected copy of `useDialogFocusTrap`'s `FOCUSABLE_SELECTOR`, including
+ * its two recorded refinements: `[contenteditable]` is matched plain because
+ * the `tabIndex >= 0` term below already excludes a non-editable one, and
+ * `[tabindex]` is matched broadly and narrowed by the resolved `tabIndex`,
+ * since `tabindex="-1"` is programmatically focusable but not tabbable.
+ */
+const FOCUSABLE_SELECTOR =
+  "a[href], area[href], button, input, select, textarea, iframe, audio[controls], video[controls], [contenteditable], [tabindex]";
+
+/**
+ * Whether the platform will stop on `el` for a Tab press.
+ *
+ * A **copy** of `tabbableWithin`'s filter (`hooks/useDialogFocusTrap.ts`), not
+ * a reuse, and deliberately so: `scripts/visual-qa.mjs` transpiles this file
+ * and evaluates `findUsabilityProblems` inside a browser page where nothing
+ * else from the app exists, so this module may not import. That hook is the
+ * reference definition; this is the checked copy, and
+ * `__tests__/usabilityCheck.test.ts` imports both and asserts they agree over
+ * a fixture table so the next refinement cannot land on one side only.
+ *
+ * `disabled` is read as the **attribute**, never the property, because one
+ * filter has to cover every tag: `<a disabled>` has no such property, and a
+ * `<button>` inside `<fieldset disabled>` has it true only by way of the
+ * `fieldset[disabled]` term. Reading the property reported all three of
+ * `fieldset[disabled]`, `[hidden]` and `[inert]` as reachable while Chromium
+ * refused focus to each, which is the whole defect this predicate fixes.
+ *
+ * `aria-hidden` is read on the element ITSELF rather than through `closest`,
+ * matching the reference exactly; widening it here would be a new divergence
+ * in the other direction.
+ *
+ * `isSkippedRadio` is NOT copied, and that is a decision rather than an
+ * omission: a radio group is never a bounded region's only way in, and this
+ * check measures whether any key reaches the region at all, not tab order.
+ */
+export function isTabbable(el: Element): boolean {
+  return (
+    el.matches(FOCUSABLE_SELECTOR) &&
+    (el as HTMLElement).tabIndex >= 0 &&
+    !el.hasAttribute("disabled") &&
+    el.getAttribute("aria-disabled") !== "true" &&
+    el.getAttribute("aria-hidden") !== "true" &&
+    el.closest("fieldset[disabled]") === null &&
+    el.closest("[hidden],[inert]") === null
+  );
 }
 
 export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
@@ -295,24 +348,12 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   // rendered, since an empty 0-height box clips nothing. Like `nested-boxes`
   // it stands aside where there is nothing to read at all.
   if (view) {
-    // Copied from `useDialogFocusTrap`'s FOCUSABLE_SELECTOR rather than
-    // imported: `scripts/visual-qa.mjs` evaluates this function inside a
-    // browser page where nothing else from the app exists.
-    const FOCUSABLE =
-      "a[href], area[href], button, input, select, textarea, iframe, audio[controls], video[controls], [contenteditable], [tabindex]";
     /** No height at all to exceed, so nothing is clipped and nothing scrolls. */
     const UNBOUND = new Set(["", "none", "auto"]);
     const SCROLLS = new Set(["auto", "scroll"]);
     /** An empty box carries no text a key would be needed to reach. */
     const renders = (el: Element): boolean =>
       el.children.length > 0 || (el.textContent ?? "").trim() !== "";
-    // `tabIndex` as the property, not the attribute: an <a href> is already a
-    // stop with nothing to fix, and `disabled`/`tabindex="-1"` take a control
-    // out of tab order, so neither gives the region a way in.
-    const tabbable = (el: Element): boolean =>
-      el.matches(FOCUSABLE) &&
-      (el as HTMLElement).tabIndex >= 0 &&
-      !(el as HTMLElement & { disabled?: boolean }).disabled;
     /**
      * Does the browser render this region — asked of the browser, because
      * geometry cannot answer it. A **closed** `<details>` holding a bounded
@@ -369,8 +410,8 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
         if (UNBOUND.has(style.maxHeight) && UNBOUND.has(style.height)) continue;
         if (!renders(el)) continue;
       }
-      if (tabbable(el)) continue;
-      if (Array.from(el.querySelectorAll(FOCUSABLE)).some(tabbable)) continue;
+      if (isTabbable(el)) continue;
+      if (Array.from(el.querySelectorAll(FOCUSABLE_SELECTOR)).some(isTabbable)) continue;
       const name = (el.getAttribute("class") ?? "").trim().split(/\s+/)[0] || el.tagName.toLowerCase();
       problems.push({
         kind: "scrollable-region-focusable",

@@ -83,7 +83,14 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
     >
       {firstLines.length ? (
         <div className="lg-primitive-terminal">
-          <pre className="lg-primitive-terminal-body">{firstLines.join("\n")}</pre>
+          <pre
+            className="lg-primitive-terminal-body scroll-focus-ring"
+            role="group"
+            aria-label="Agent role text"
+            tabIndex={0}
+          >
+            {firstLines.join("\n")}
+          </pre>
         </div>
       ) : (
         <p className="lg-primitive-card-sub">This agent has no role text yet.</p>

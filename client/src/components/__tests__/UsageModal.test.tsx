@@ -1,4 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { UsageProviderSnapshot, UsageSnapshot } from "../../api/client";
 import { UsageModal } from "../UsageModal";
@@ -103,5 +104,99 @@ describe("UsageModal", () => {
     const dialog = renderModal();
 
     expect(within(dialog).getByText(/^Recorded /)).toBeInTheDocument();
+  });
+});
+
+/**
+ * `.modal-body usage-modal-body` is a bounded `overflow: auto` region
+ * (lg-milestone-that-2215). `Close` and `Refresh` are both in `.modal-footer`
+ * OUTSIDE it, so the per-provider report could not be scrolled from the
+ * keyboard — and this is the one body that genuinely overflows, at three
+ * providers with meters and a per-model breakdown each.
+ */
+describe("the usage report's keyboard path", () => {
+  const REGION = "Usage by provider";
+
+  function renderWith(props: {
+    snapshot?: UsageSnapshot | null;
+    isLoading?: boolean;
+    error?: { message: string } | null;
+  }) {
+    const onClose = jest.fn();
+    render(
+      <UsageModal
+        open
+        snapshot={props.snapshot === undefined ? SNAPSHOT : (props.snapshot ?? undefined)}
+        isLoading={props.isLoading ?? false}
+        error={(props.error ?? null) as never}
+        onClose={onClose}
+        onRefresh={() => {}}
+      />,
+    );
+    return { onClose };
+  }
+
+  it("is a tab stop that steps on to the footer's Close — AC3", async () => {
+    renderWith({});
+
+    const body = screen.getByRole("group", { name: REGION });
+    expect(body).toHaveAttribute("tabindex", "0");
+    expect(body).toHaveClass("scroll-focus-ring");
+
+    // The footer FOLLOWS the body, so Tab forward is the step this surface
+    // offers. Named by its text rather than by role alone: the header's cross
+    // carries the same accessible name.
+    body.focus();
+    await userEvent.tab();
+    const footerClose = screen
+      .getAllByRole("button", { name: "Close" })
+      .find((button) => button.textContent === "Close");
+    expect(footerClose).toHaveFocus();
+  });
+
+  it("puts each substitute state in its place rather than inside the region — AC8", () => {
+    // The pane used to hold the loading line, the error line AND the report,
+    // so a tab stop on it would have announced "Usage by provider" over the
+    // word "Loading…". Each state is now one line where the region was.
+    renderWith({ snapshot: null, isLoading: true });
+    expect(screen.queryByRole("group", { name: REGION })).toBeNull();
+    expect(screen.getByText("Loading usage…")).toBeInTheDocument();
+
+    cleanup();
+    renderWith({ snapshot: null, error: { message: "claude CLI is not logged in" } });
+    expect(screen.queryByRole("group", { name: REGION })).toBeNull();
+    expect(screen.getByText("claude CLI is not logged in")).toBeInTheDocument();
+
+    cleanup();
+    renderWith({ snapshot: { providers: [], near_limit: false, warnings: [], fetched_at: null } as never });
+    expect(screen.queryByRole("group", { name: REGION })).toBeNull();
+    expect(screen.getByText("No usage has been reported for any provider yet.")).toBeInTheDocument();
+  });
+
+  it("shows a failed refresh beside the numbers it could not replace", () => {
+    // react-query keeps `data` when a refetch fails (hooks/useUsageSnapshot.ts
+    // hands this modal one query's `data` and `error`), so the operator pressing
+    // Refresh and failing still has the previous report on screen. The error
+    // line lives outside the branch for exactly that case, and
+    // api/queryClient.ts suppresses the toast whenever data is already present,
+    // so this paragraph is the only surface that says the refresh failed.
+    renderWith({ error: { message: "claude CLI is not logged in" } });
+
+    expect(screen.getByRole("group", { name: REGION })).not.toBeNull();
+    // role="alert" because nothing else announces it: the toast is suppressed and
+    // the stale numbers beside it look unchanged. Its own class, because
+    // .usage-provider-error is a 240px right-aligned span inside a provider row.
+    const line = screen.getByRole("alert");
+    expect(line).toHaveTextContent("claude CLI is not logged in");
+    expect(line).toHaveClass("usage-modal-error");
+  });
+
+  it("lets Escape from inside the region still close the dialog — AC9", () => {
+    const { onClose } = renderWith({});
+
+    const body = screen.getByRole("group", { name: REGION });
+    body.focus();
+    fireEvent.keyDown(body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
   });
 });
