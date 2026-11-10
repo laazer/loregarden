@@ -6,7 +6,7 @@ from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import AgentRun, StageReportStatus, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
 from loregarden.services.recheck_round import recheck_context_lines
-from loregarden.services.repair_brief import repair_brief_for
+from loregarden.services.repair_brief import gate_fix_brief_for, repair_brief_for
 from loregarden.services.rework_feedback import render_rework_feedback
 from loregarden.services.stage_verdict import (
     StageVerdict,
@@ -160,6 +160,19 @@ def build_orchestration_context(
             posture.contract,
         ]
 
+    lines += _why_youre_here_lines(session, ticket, run, stage_key)
+    lines += _unresolved_context_lines(session, ticket, run, stage_def)
+    lines += recheck_context_lines(session, ticket, run)
+    lines += deferral_context_lines(session, ticket)
+
+    return "\n".join(lines)
+
+
+def _why_youre_here_lines(
+    session: Session | None, ticket: Ticket, run: AgentRun, stage_key: str
+) -> list[str]:
+    """The reason this run exists: a repair brief, a gate-fix brief, prior feedback."""
+    lines: list[str] = []
     # Prefer the full rework-feedback ledger over ticket.blocking_issues: the
     # latter is capped for the workflow pane (a 200-char pointer for anything
     # longer), so on a reroute it can carry no actionable detail at all. The
@@ -171,7 +184,10 @@ def build_orchestration_context(
     brief = _repair_brief(session, ticket, run, stage_key)
     if brief:
         lines += ["", "## Why you're here — your repair brief", brief]
-    if feedback and feedback != brief:
+    gate_brief = gate_fix_brief_for(session, ticket, run=run) if session else ""
+    if gate_brief:
+        lines += ["", "## Why you're here — the transition gate refused this stage", gate_brief]
+    if feedback and feedback not in (brief, gate_brief):
         lines += [
             "",
             "## Why you're here — prior stage feedback",
@@ -181,11 +197,7 @@ def build_orchestration_context(
             "",
             feedback,
         ]
-    lines += _unresolved_context_lines(session, ticket, run, stage_def)
-    lines += recheck_context_lines(session, ticket, run)
-    lines += deferral_context_lines(session, ticket)
-
-    return "\n".join(lines)
+    return lines
 
 
 def _unresolved_context_lines(

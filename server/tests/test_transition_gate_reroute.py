@@ -7,6 +7,7 @@ _advance_stage_after_run before this gate check ever runs.
 
 import json
 
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
 from loregarden.models.domain import (
     AgentRun,
@@ -229,8 +230,9 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
     db_session: Session, monkeypatch, tmp_path
 ):
     """When mechanical fixers can't satisfy the gate, the stage is rerouted back
-    to its own agent for a bounded number of inline retries before finally
-    pausing for a human — the loop must not spin forever."""
+    to its own agent for a bounded number of inline retries, then the repair
+    agent gets its one turn, before finally pausing for a human — the loop must
+    not spin forever."""
     from loregarden.agents.executors.cli import CliAgentExecutor
 
     ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path)
@@ -252,11 +254,13 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
     builtin.execute(ticket, profile, max_stages=10)
 
     db_session.refresh(ticket)
-    # Initial run + exactly autofix_max_agent_attempts inline retries.
+    # Initial run + exactly autofix_max_agent_attempts inline retries + one repair turn.
     runs = db_session.exec(
-        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
+        select(AgentRun)
+        .where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
+        .order_by(AgentRun.created_at)
     ).all()
-    assert len(runs) == 3
+    assert [run.agent_id for run in runs] == ["test_breaker"] * 3 + [REPAIR_AGENT_ID]
     # Exhausted: no automatic pass remains, so the ticket is blocked for a person
     # with a short pointer, and the orchestration says so rather than SUCCEEDED
     # (lg-milestone-that-1216 sat at a pending stage nothing would run).
@@ -305,7 +309,8 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     runs_after_first_call = db_session.exec(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
-    assert len(runs_after_first_call) == 3  # initial + 2 inline retries, budget exhausted
+    # initial + 2 inline retries + the repair turn, budget exhausted
+    assert len(runs_after_first_call) == 4
 
     # The operator requeues the blocked stage, then a fresh orchestration run
     # starts — a brand-new BuiltinOrchestrator with no in-memory state from the
@@ -327,10 +332,13 @@ def test_autofix_agent_fallback_budget_persists_across_separate_orchestration_ru
     runs_after_second_call = db_session.exec(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test-break")
     ).all()
-    # Exactly one more run — the stage's own agent re-running once on the fresh
-    # call — then straight to blocked. No *additional* inline auto-fix retries
-    # were spent, since the persisted budget was already used up.
-    assert len(runs_after_second_call) == len(runs_after_first_call) + 1
+    # The stage's own agent re-runs once on the fresh call, and the repair turn
+    # the requeue gave back runs once — then straight to blocked. No *additional*
+    # inline auto-fix retries were spent, since the persisted budget was used up.
+    new_runs = sorted(runs_after_second_call, key=lambda run: run.created_at)[
+        len(runs_after_first_call) :
+    ]
+    assert [run.agent_id for run in new_runs] == ["test_breaker", REPAIR_AGENT_ID]
     assert ticket.state == TicketState.BLOCKED
     assert ticket.workflow_stage_key == "test-break"
     assert ticket.workflow_stage_status == StageStatus.BLOCKED

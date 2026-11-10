@@ -42,6 +42,7 @@ from loregarden.services.autofix_commit import (
     commit_fixer_changes,
     take_fixer_footprint,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.gate_attribution import (
@@ -58,12 +59,13 @@ from loregarden.services.gate_runner import run_gate_autofix, run_transition_gat
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.repair_brief import record_gate_fix_brief
 from loregarden.services.stage_retry_budget import (
     count_gate_fix_attempts,
     foreign_gate_failure_artifact_title,
     gate_failure_artifact_title,
 )
-from loregarden.services.studio_routing import took_light_route
+from loregarden.services.studio_routing import is_parallel_stage, took_light_route
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workflow_routing import apply_stage_route
@@ -71,6 +73,18 @@ from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
+
+#: What every agent sent to clear a gate failure is allowed to do. A gate asks
+#: for structural changes a stage's role does not usually cover (a test designer
+#: told to split a file over its size limit), and an agent that reads its role as
+#: forbidding the fix re-checks its own work and reports `pass` against a gate
+#: that will fail again (lg-reference-sources-1912, three rounds).
+GATE_FIX_AUTHORITY = (
+    "Making the change the gate asks for is part of this stage's work, whatever your role "
+    "usually covers: in any file the gate names you may split a file that is over its size "
+    "limit, extract or move code, and rename, as long as behaviour is unchanged and the tests "
+    "still pass. Do not waive, skip or weaken the gate itself."
+)
 
 #: Why a gate that never ran gets no repair turn: there was nothing to repair.
 GATE_DID_NOT_RUN_REASON = (
@@ -366,9 +380,16 @@ class GateRecovery:
             self._reroute_for_agent_fix(ticket, instance, stages, orch_run, from_stage, detail)
             return GateDecision.REROUTED
 
-        # Out of automatic options — reroute for rework and pause for a human.
-        self._block_after_gate_failure(ticket, orch_run, from_stage, detail)
-        return GateDecision.BLOCKED
+        # The retries are spent: the repair agent gets its one turn on the gate
+        # failure, and a person after that.
+        self._block_after_gate_failure(
+            ticket,
+            orch_run,
+            from_stage,
+            detail,
+            agent_passes=profile.gates.autofix_agent_fallback,
+        )
+        return GateDecision.REROUTED if repair_pinned(ticket, from_stage) else GateDecision.BLOCKED
 
     def _ticket_changed_paths(self, ticket: Ticket) -> list[str]:
         """Every path this ticket's runs have touched.
@@ -491,15 +512,16 @@ class GateRecovery:
             },
         )
 
-    def _gate_failure_agent(self, detail: str) -> str:
+    def _gate_failure_agent(self, detail: str, *, parallel: bool = False) -> str:
         """Who should take a failing gate: "" for the stage's own agent.
 
         A lint or format failure is the stage's own mess and it can clear it. A
         failing test is a different job — the agent that just declared success is
         the one whose model of the code is wrong, and asking it again tends to
-        produce the nearest change that makes the red go away.
+        produce the nearest change that makes the red go away. A parallel stage
+        keeps its members: its driver fans out unless the repair agent is pinned.
         """
-        return DEBUGGER_AGENT_ID if looks_like_test_output(detail) else ""
+        return DEBUGGER_AGENT_ID if looks_like_test_output(detail) and not parallel else ""
 
     def _reroute_for_agent_fix(
         self,
@@ -529,18 +551,22 @@ class GateRecovery:
                 "command": "",
             },
         )
-        handoff_agent = self._gate_failure_agent(detail)
+        stage = next((s for s in stages if s.key == from_stage), None)
+        handoff_agent = self._gate_failure_agent(
+            detail, parallel=stage is not None and is_parallel_stage(stage)
+        )
         if handoff_agent:
             blocking = (
                 f"The '{from_stage}' stage reported success, then its tests failed. Find the "
                 f"root cause from observed runtime state and fix that — do not delete, skip, "
-                f"or loosen a test to get a pass. Report `pass` once it is green:\n\n{detail}"
+                f"or loosen a test to get a pass. {GATE_FIX_AUTHORITY} Report `pass` once it is "
+                f"green:\n\n{detail}"
             )
         else:
             blocking = (
                 f"The '{from_stage}' stage passed its agent but failed the static-analysis gate "
                 f"on the way to the next stage, and automatic fixers couldn't resolve it. "
-                f"Fix these issues and report `pass`:\n\n{detail}"
+                f"{GATE_FIX_AUTHORITY} Fix these issues and report `pass`:\n\n{detail}"
             )
         apply_stage_route(
             ticket,
@@ -554,6 +580,9 @@ class GateRecovery:
             blocking_issues=blocking,
             orch_run=orch_run,
         )
+        # `blocking_issues` is blanked when the retry is dispatched, before its
+        # prompt is rendered; this copy is the one the retry reads.
+        record_gate_fix_brief(self.session, ticket, stage_key=from_stage, brief=blocking)
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
@@ -613,8 +642,14 @@ class GateRecovery:
         blocking_summary: str = "",
         *,
         harness: bool = False,
+        agent_passes: bool = False,
     ) -> None:
-        """Automatic fixes are exhausted: block the ticket for a person.
+        """Automatic fixes are exhausted: block the ticket, offering its repair turn.
+
+        A gate that ran and found a defect gives the repair agent its one turn,
+        briefed with the gate's output, when the profile allows agent passes on a
+        failing gate (`agent_passes`); the caller sees `repair_pinned` and re-runs
+        the stage. One that could not run (`harness`) goes to a person.
 
         The raw gate output goes to the Timeline tab; blocking_issues, rendered
         directly in the workflow pane, stays a short pointer rather than a wall
@@ -652,15 +687,33 @@ class GateRecovery:
             orch_run,
             ticket,
             origin=BlockOrigin.CONTROL_PLANE,
-            repair=RepairPolicy.withheld(
-                GATE_DID_NOT_RUN_REASON
-                if harness
-                else "the gate's automatic fixes, and any agent passes it allows, are spent"
+            repair=_gate_repair_policy(
+                from_stage, detail, harness=harness, agent_passes=agent_passes
             ),
             stage_key=from_stage,
             message=(
                 blocking_summary
                 or f"Transition gate failed at '{from_stage}' — see the Timeline tab for details."
             ),
-            declared=BlockKind.HARNESS if harness else None,
+            # The gate found a defect in the work; the pointer alone reads as no kind.
+            declared=BlockKind.HARNESS if harness else BlockKind.WORK,
         )
+
+
+def _gate_repair_policy(
+    from_stage: str, detail: str, *, harness: bool, agent_passes: bool
+) -> RepairPolicy:
+    """Whether a gate failure that blocked gets the repair agent's turn, briefed."""
+    if harness:
+        return RepairPolicy.withheld(GATE_DID_NOT_RUN_REASON)
+    if not agent_passes:
+        return RepairPolicy.withheld(
+            "agent passes on a failing gate are turned off for this workspace "
+            "(gates.autofix_agent_fallback), so the block goes to a person"
+        )
+    return RepairPolicy.offer(
+        brief=(
+            f"The transition gate out of '{from_stage}' still fails after its automatic "
+            f"fixes and agent retries. {GATE_FIX_AUTHORITY}\n\n{detail}"
+        )
+    )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from loregarden.agents.registry import get_agent
+from loregarden.agents.registry import ORCHESTRATOR_PINNED_AGENTS, get_agent
 from loregarden.core.state_machine import StageRoutePlan, StateMachine
 from loregarden.models.domain import (
     OrchestrationRun,
@@ -404,6 +404,10 @@ def _pin_reject_agent(
     """
     agent_id = next_agent.strip()
     if outcome != "reject" or not agent_id:
+        return ""
+    if agent_id in ORCHESTRATOR_PINNED_AGENTS:
+        # Not a scope pin: dispatch resolves it from `next_agent` itself
+        # (`resolve_orchestrator_pin`), so "no agent was pinned" would be false.
         return ""
     by_key = {stage.key: stage for stage in stages}
     # A non-strict caller may route from a key the template no longer has; the
