@@ -37,7 +37,13 @@ export function RedraftConfirmModal({
         <IconCloseButton onClick={onClose} />
       </div>
 
-      <div id="redraft-confirm-body" className="modal-body plan-redraft-body">
+      <div
+        id="redraft-confirm-body"
+        className="modal-body plan-redraft-body scroll-focus-ring"
+        role="group"
+        aria-label="What redrafting replaces"
+        tabIndex={0}
+      >
         <ul>
           {replaces.pendingProposal ? (
             <li>The proposal waiting for you is replaced as soon as the new draft is filed.</li>

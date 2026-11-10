@@ -43,7 +43,12 @@ export function BranchCheckoutConfirmModal({
         <IconCloseButton disabled={isCheckingOut} onClick={onClose} />
       </div>
 
-      <div className="modal-body">
+      <div
+        className="modal-body scroll-focus-ring"
+        role="group"
+        aria-label="What checking out this branch does"
+        tabIndex={0}
+      >
         <p style={{ margin: 0, fontSize: "var(--fs-body)", lineHeight: 1.55, color: "var(--txm)" }}>
           This switches your workspace's local git checkout to{" "}
           <strong style={{ color: "var(--tx)" }}>{branch.name}</strong>. Anything running against

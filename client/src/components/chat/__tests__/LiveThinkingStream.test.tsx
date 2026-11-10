@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { LiveThinkingStream } from "../LiveThinkingStream";
 import { StudioChatMessages } from "../../studio/StudioChat";
@@ -178,5 +179,34 @@ describe("StudioChatMessages live thinking", () => {
     const turn = screen.getByText("Fixed it.").closest(".lg-chat-turn");
     const rendered = turn?.textContent ?? "";
     expect(rendered.indexOf("Thinking")).toBeLessThan(rendered.indexOf("Fixed it."));
+  });
+});
+
+/**
+ * `.lg-thinking-stream-body` is a bounded `overflow: auto` trace pane
+ * (lg-milestone-that-2215). Its only tab stop was the toggle in the head
+ * ABOVE it, so the trace itself could not be scrolled from the keyboard.
+ */
+describe("the trace pane's keyboard path", () => {
+  it("is a tab stop that steps back to the toggle that opened it — AC3", async () => {
+    render(<LiveThinkingStream content="Deep thoughts." activity="Thinking" />);
+    fireEvent.click(screen.getByRole("button", { name: /Thinking/ }));
+
+    const pane = screen.getByRole("group", { name: "Reasoning trace" });
+    expect(pane).toHaveAttribute("tabindex", "0");
+    expect(pane).toHaveClass("scroll-focus-ring");
+
+    // The toggle PRECEDES the pane, so Shift+Tab is the step that exists.
+    pane.focus();
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole("button", { name: /Thinking/ })).toHaveFocus();
+  });
+
+  it("puts a line in its place when the trace has nothing in it yet — AC8", () => {
+    render(<LiveThinkingStream content="" activity="Thinking" />);
+    fireEvent.click(screen.getByRole("button", { name: /Thinking/ }));
+
+    expect(screen.queryByRole("group", { name: "Reasoning trace" })).toBeNull();
+    expect(screen.getByText("Nothing has been traced yet.")).toBeInTheDocument();
   });
 });

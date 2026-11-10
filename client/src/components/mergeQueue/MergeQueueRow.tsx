@@ -187,7 +187,9 @@ export function StoppedReason({ entry }: { entry: MergeQueueEntry }) {
       {entry.log_tail ? (
         <details>
           <summary>Failing log tail</summary>
-          <pre className="mq-log">{entry.log_tail}</pre>
+          <pre className="mq-log scroll-focus-ring" role="group" aria-label="Failing log tail" tabIndex={0}>
+            {entry.log_tail}
+          </pre>
         </details>
       ) : null}
     </div>

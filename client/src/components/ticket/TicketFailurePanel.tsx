@@ -125,7 +125,7 @@ export function TicketFailurePanel({
             </span>
           </div>
           {/* Scrolls when a long message overflows it, so it takes focus for the keys. */}
-          <ol id={outputId} className="tf-lines" tabIndex={0} aria-label="Failure output" hidden={!outputOpen}>
+          <ol id={outputId} className="tf-lines scroll-focus-ring" tabIndex={0} aria-label="Failure output" hidden={!outputOpen}>
             {lines.map((line, index) => (
               <li key={index} className={isErrorLine(line) ? "is-error" : undefined}>
                 {line || " "}

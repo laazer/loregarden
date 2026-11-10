@@ -288,7 +288,7 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
             at thousands of characters. Bounded and left-aligned by
             `.wm-error-reason` so it cannot push Retry off the viewport. */}
         <div
-          className="wm-muted wm-narrow wm-error-reason"
+          className="wm-muted wm-narrow wm-error-reason scroll-focus-ring"
           role="group"
           aria-label="Reason the monitor could not be read"
           tabIndex={0}

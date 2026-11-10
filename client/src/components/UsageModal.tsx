@@ -157,20 +157,44 @@ export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefres
         <IconCloseButton disabled={isLoading} onClick={onClose} />
       </div>
 
-      <div className="modal-body usage-modal-body">
-        {isLoading && !snapshot && <p className="modal-hint">Loading usage…</p>}
-        {error && <p className="usage-provider-error">{error.message}</p>}
-        {snapshot?.warnings.length ? (
-          <div className="usage-warning-banner">
-            {snapshot.warnings.map((warning) => (
-              <div key={warning}>! {warning}</div>
-            ))}
-          </div>
-        ) : null}
-        {snapshot?.providers.map((provider) => (
-          <ProviderSection key={provider.provider} provider={provider} />
-        ))}
-      </div>
+      {/* The modal-level error sits beside the report, not inside the substitute pane:
+          react-query keeps `data` across a failed refetch, so a Refresh that fails
+          while stale numbers are on screen takes the region branch, and an error line
+          living only in the other branch would never render — api/queryClient.ts
+          suppresses the toast in exactly that case. */}
+      {error ? (
+        <p className="usage-modal-error" role="alert">
+          {error.message}
+        </p>
+      ) : null}
+
+      {snapshot && (snapshot.warnings.length > 0 || snapshot.providers.length > 0) ? (
+        <div
+          className="modal-body usage-modal-body scroll-focus-ring"
+          role="group"
+          aria-label="Usage by provider"
+          tabIndex={0}
+        >
+          {snapshot.warnings.length ? (
+            <div className="usage-warning-banner">
+              {snapshot.warnings.map((warning) => (
+                <div key={warning}>! {warning}</div>
+              ))}
+            </div>
+          ) : null}
+          {snapshot.providers.map((provider) => (
+            <ProviderSection key={provider.provider} provider={provider} />
+          ))}
+        </div>
+      ) : isLoading || !error ? (
+        <div className="modal-body usage-modal-body usage-modal-empty" aria-busy={isLoading}>
+          {isLoading ? (
+            <p className="modal-hint">Loading usage…</p>
+          ) : (
+            <p className="modal-hint">No usage has been reported for any provider yet.</p>
+          )}
+        </div>
+      ) : null}
 
       <div className="modal-footer">
         <Button variant="secondary" disabled={isLoading} onClick={onClose}>

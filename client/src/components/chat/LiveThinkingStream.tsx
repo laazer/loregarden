@@ -71,10 +71,15 @@ export function LiveThinkingStream({
         </span>
       </Button>
 
-      {collapsed ? null : (
+      {collapsed ? null : blocks.length === 0 ? (
+        <p className="lg-thinking-stream-prose">Nothing has been traced yet.</p>
+      ) : (
         <div
           id={bodyId}
-          className="lg-thinking-stream-body"
+          className="lg-thinking-stream-body scroll-focus-ring"
+          role="group"
+          aria-label="Reasoning trace"
+          tabIndex={0}
           ref={bodyRef}
           onScroll={(event) => {
             const el = event.currentTarget;

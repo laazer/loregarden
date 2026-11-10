@@ -44,6 +44,11 @@ export function StageFanoutReview({ group, onSettled }: Props) {
   const [error, setError] = useState("");
   const [openFile, setOpenFile] = useState<Record<string, string>>({});
   const [patches, setPatches] = useState<Record<string, string>>({});
+  // The fetch failure lives in its own map rather than in `patches`: writing an
+  // error string there made it the labelled region's content, so an operator who
+  // tabbed to "Patch for b.py" was read the fetch error as if it were the diff.
+  const [patchErrors, setPatchErrors] = useState<Record<string, string>>({});
+  const [fetching, setFetching] = useState<Record<string, boolean>>({});
 
   const settled = SETTLED_OUTCOMES.has(group.outcome);
   const anyInFlight = group.attempts.some((attempt) => IN_FLIGHT.has(attempt.status));
@@ -54,16 +59,19 @@ export function StageFanoutReview({ group, onSettled }: Props) {
   async function showFile(attempt: FanoutAttempt, path: string) {
     const key = `${attempt.id}:${path}`;
     setOpenFile((current) => ({ ...current, [attempt.id]: path }));
-    if (patches[key] !== undefined) return;
-    setPatches((current) => ({ ...current, [key]: "Loading…" }));
+    if (patches[key] !== undefined || fetching[key]) return;
+    setFetching((current) => ({ ...current, [key]: true }));
+    setPatchErrors((current) => ({ ...current, [key]: "" }));
     try {
       const result = await stageFanoutApi.fileDiff(group.ticket_id, group.id, attempt.id, path);
-      setPatches((current) => ({ ...current, [key]: result.patch || "(no changes)" }));
+      setPatches((current) => ({ ...current, [key]: result.patch }));
     } catch (err) {
-      setPatches((current) => ({
+      setPatchErrors((current) => ({
         ...current,
         [key]: describeError(err, "Could not load this file's diff"),
       }));
+    } finally {
+      setFetching((current) => ({ ...current, [key]: false }));
     }
   }
 
@@ -167,9 +175,27 @@ export function StageFanoutReview({ group, onSettled }: Props) {
               </ul>
 
               {shown ? (
-                <pre className="fanout-attempt__diff" data-testid={`patch-${attempt.attempt_index}`}>
-                  {patches[`${attempt.id}:${shown}`] ?? ""}
-                </pre>
+                patchErrors[`${attempt.id}:${shown}`] ? (
+                  <p className="fanout-attempt__failure" role="alert">
+                    {patchErrors[`${attempt.id}:${shown}`]}
+                  </p>
+                ) : patches[`${attempt.id}:${shown}`] ? (
+                  <pre
+                    className="fanout-attempt__diff scroll-focus-ring"
+                    role="group"
+                    aria-label={`Patch for ${shown}`}
+                    tabIndex={0}
+                    data-testid={`patch-${attempt.attempt_index}`}
+                  >
+                    {patches[`${attempt.id}:${shown}`]}
+                  </pre>
+                ) : patches[`${attempt.id}:${shown}`] !== undefined ? (
+                  <p className="fanout-attempt__empty">
+                    {shown} has no changes in this attempt.
+                  </p>
+                ) : (
+                  <p className="fanout-attempt__empty">Loading the patch for {shown}…</p>
+                )
               ) : null}
 
               {!settled && (

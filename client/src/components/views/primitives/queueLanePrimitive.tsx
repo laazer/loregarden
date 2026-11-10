@@ -79,7 +79,13 @@ function LaneBody({ lane }: { lane: QueueLane }) {
   const attention = lane.attention_total ?? lane.attention?.length ?? 0;
 
   return (
-    <div className="queue-lane" data-slot={lane.slot_number}>
+    <div
+      className="queue-lane scroll-focus-ring"
+      role="group"
+      aria-label={`Lane ${lane.slot_number}`}
+      tabIndex={0}
+      data-slot={lane.slot_number}
+    >
       <div className="queue-lane-head">
         <span className="queue-lane-slot">Lane {lane.slot_number}</span>
         <span

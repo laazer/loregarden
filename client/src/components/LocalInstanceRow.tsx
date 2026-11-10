@@ -21,7 +21,7 @@ interface LocalInstanceRowProps {
   onStop: (instance: LocalInstance) => void;
 }
 
-function LogTail({ id }: { id: string }) {
+function LogTail({ id, name, kind }: { id: string; name: string; kind: LocalInstance["kind"] }) {
   const logs = useQuery({ queryKey: ["local-instances", "logs", id], queryFn: () => localInstancesApi.logs(id) });
   if (logs.error) {
     return (
@@ -35,7 +35,12 @@ function LogTail({ id }: { id: string }) {
     return <p className="modal-hint">The log is empty — the process has written nothing yet.</p>;
   }
   return (
-    <pre className="local-instances-log" tabIndex={0} aria-label={`Log for ${id}`}>
+    <pre
+      className="local-instances-log scroll-focus-ring"
+      role="group"
+      tabIndex={0}
+      aria-label={`Log for ${name} ${kind}`}
+    >
       {logs.data.truncated ? "…\n" : ""}
       {logs.data.lines.join("\n")}
     </pre>
@@ -117,7 +122,7 @@ export function LocalInstanceRow({ instance, targetName, stopping, onStop }: Loc
       </div>
       {showLog && (
         <div id={logId}>
-          <LogTail id={instance.id} />
+          <LogTail id={instance.id} name={instance.name} kind={instance.kind} />
         </div>
       )}
     </li>

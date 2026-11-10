@@ -48,15 +48,8 @@
   overflow: auto;
 }
 
-/* The bound above makes it a scroll container, so it is a focus stop (see the
-   `tabIndex` on the element) and needs a ring of its own: `index.css` has no
-   global one for a bare tabbable div, and the UA default is off-theme here.
-   Inset, as `.tf-lines:focus-visible` is, because an outward ring on an
-   `overflow: auto` box collides with the sibling lines in `.wm-centred`. */
-.wm-error-reason:focus-visible {
-  outline: 2px solid var(--ac);
-  outline-offset: -2px;
-}
+/* The focus ring is `.scroll-focus-ring` in `index.css`, shared with every
+   other bounded scrolling region that carries its own tab stop. */
 
 .wm-header {
   display: flex;

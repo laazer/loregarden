@@ -8,6 +8,7 @@
  */
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { StageFanoutReview } from "../StageFanoutReview";
 import { stageFanoutApi, type FanoutGroup } from "../../lib/stageFanoutApi";
 
@@ -174,4 +175,76 @@ test("an error from the settle call is shown, not swallowed", async () => {
   fireEvent.click(screen.getAllByRole("button", { name: "Promote this one" })[0]);
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("merge conflict in a.py"));
+});
+
+/**
+ * `.fanout-attempt__diff` is a bounded `overflow: auto` patch pane
+ * (lg-milestone-that-2215). The file buttons above it are the only tab stops
+ * in the attempt, so the patch itself could not be scrolled from the keyboard.
+ */
+describe("the patch pane's keyboard path", () => {
+  it("is a tab stop that steps back to the file that opened it — AC3", async () => {
+    mockFileDiff.mockResolvedValue({
+      attempt_id: "attempt-1",
+      path: "b.py",
+      patch: "+++ the second answer",
+      truncated: false,
+    });
+    render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+    fireEvent.click(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py"));
+
+    const pane = await screen.findByRole("group", { name: "Patch for b.py" });
+    expect(pane).toHaveAttribute("tabindex", "0");
+    expect(pane).toHaveClass("scroll-focus-ring");
+
+    // The file list PRECEDES the pane, so Shift+Tab is the step this surface
+    // offers: back to the file button that opened the patch.
+    pane.focus();
+    await userEvent.tab({ shift: true });
+    expect(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py").closest("button")).toHaveFocus();
+  });
+
+  it("puts a line in its place while the patch is still being fetched — AC8", async () => {
+    let settle: ((value: { attempt_id: string; path: string; patch: string; truncated: boolean }) => void) | undefined;
+    mockFileDiff.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+    fireEvent.click(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py"));
+
+    // A patch that has not arrived is an empty string, and a labelled box over
+    // an empty string is the dead tab stop AC8 forbids.
+    expect(await screen.findByText("Loading the patch for b.py…")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Patch for b.py" })).toBeNull();
+
+    settle?.({ attempt_id: "attempt-1", path: "b.py", patch: "+++ here it is", truncated: false });
+    expect(await screen.findByRole("group", { name: "Patch for b.py" })).toBeInTheDocument();
+  });
+
+  it("puts the failure in its place when the diff cannot be fetched — AC8", async () => {
+    mockFileDiff.mockRejectedValue(new Error("the worktree is gone"));
+    render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+    fireEvent.click(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py"));
+
+    // The error is NOT the region's content: a region announced "Patch for b.py"
+    // holding a fetch error reads as the diff itself.
+    expect(await screen.findByRole("alert")).toHaveTextContent("the worktree is gone");
+    expect(screen.queryByRole("group", { name: "Patch for b.py" })).toBeNull();
+  });
+
+  it("puts a line in its place when the file has no changes — AC8", async () => {
+    mockFileDiff.mockResolvedValue({
+      attempt_id: "attempt-1",
+      path: "b.py",
+      patch: "",
+      truncated: false,
+    });
+    render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+    fireEvent.click(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py"));
+
+    expect(await screen.findByText("b.py has no changes in this attempt.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Patch for b.py" })).toBeNull();
+  });
 });

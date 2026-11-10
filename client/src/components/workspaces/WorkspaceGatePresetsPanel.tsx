@@ -198,7 +198,14 @@ export function WorkspaceGatePresetsPanel({ slug, name, onDirtyChange }: Workspa
                     <code>{result.command}</code> — {result.outcome}
                     {result.message ? `: ${result.message}` : ""}
                     {(result.stderr || result.stdout) && (
-                      <pre className="gate-preset-output">{(result.stderr || result.stdout).trim().split("\n").slice(-8).join("\n")}</pre>
+                      <pre
+                        className="gate-preset-output scroll-focus-ring"
+                        role="group"
+                        aria-label={`Output from ${result.template}`}
+                        tabIndex={0}
+                      >
+                        {(result.stderr || result.stdout).trim().split("\n").slice(-8).join("\n")}
+                      </pre>
                     )}
                   </li>
                 ))}

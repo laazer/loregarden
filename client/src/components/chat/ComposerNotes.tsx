@@ -31,7 +31,11 @@ export function ComposerNotes({ commands }: { commands: ComposerCommandsBinding 
               ×
             </button>
           </div>
-          <ul className="lg-composer-help-list">
+          <ul
+            className="lg-composer-help-list scroll-focus-ring"
+            aria-label="Composer slash commands"
+            tabIndex={0}
+          >
             {helpCommands.map((command) => (
               <li key={command.name}>
                 <code>/{command.name}</code>

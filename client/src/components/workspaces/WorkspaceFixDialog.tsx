@@ -91,7 +91,12 @@ export function WorkspaceFixDialog({
               if (!inFlight) onConfirm(pending);
             }}
           >
-            <div className="modal-body">
+            <div
+              className="modal-body scroll-focus-ring"
+              role="group"
+              aria-label="What this fix does"
+              tabIndex={0}
+            >
               <p id="workspace-fix-effect" className="workspace-fix-effect">
                 {words.effect}
               </p>

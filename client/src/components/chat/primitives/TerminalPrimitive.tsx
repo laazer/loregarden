@@ -22,6 +22,7 @@ function exitOf(lines: TerminalLine[]): { text: string; status: ChipStatus | nul
 export function TerminalPrimitive({ part }: { part: TerminalPart }) {
   const lines = part.lines ?? [];
   const exit = exitOf(lines);
+  const visible = lines.filter((line) => line.kind !== "status");
   return (
     <PrimitiveCard
       kind="terminal"
@@ -33,10 +34,16 @@ export function TerminalPrimitive({ part }: { part: TerminalPart }) {
       actions={part.cwd ? <OpenIdeButton /> : null}
     >
       <div className="lg-primitive-terminal">
-        <pre className="lg-primitive-terminal-body">
-          {lines
-            .filter((line) => line.kind !== "status")
-            .map((line, i) => {
+        {visible.length === 0 ? (
+          <p className="lg-primitive-card-sub">This command produced no output.</p>
+        ) : (
+          <pre
+            className="lg-primitive-terminal-body scroll-focus-ring"
+            role="group"
+            aria-label="Command output"
+            tabIndex={0}
+          >
+            {visible.map((line, i) => {
               const kind = line.kind ?? "stdout";
               const cls =
                 kind === "command"
@@ -52,7 +59,8 @@ export function TerminalPrimitive({ part }: { part: TerminalPart }) {
                 </div>
               );
             })}
-        </pre>
+          </pre>
+        )}
       </div>
     </PrimitiveCard>
   );

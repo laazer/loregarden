@@ -252,7 +252,14 @@ function GateCommandRow({
       {detail && (
         <details className="gate-row-details" open={result?.outcome !== "passed"}>
           <summary>Test output</summary>
-          <pre className="gate-row-output">{detail}</pre>
+          <pre
+            className="gate-row-output scroll-focus-ring"
+            role="group"
+            aria-label="Test output"
+            tabIndex={0}
+          >
+            {detail}
+          </pre>
         </details>
       )}
     </li>

@@ -10,6 +10,7 @@
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { AgentDeleteConfirm } from "../AgentDeleteConfirm";
 
@@ -131,5 +132,46 @@ describe("AgentDeleteConfirm", () => {
     expect(screen.getByRole("dialog")).toContainElement(
       document.activeElement as HTMLElement | null,
     );
+  });
+});
+
+/**
+ * `.modal-body` is a bounded `overflow: auto` region here, and every control
+ * this dialog has — `Cancel` and `Delete agent` — sits in `.modal-footer`
+ * OUTSIDE it (lg-milestone-that-2215). So nothing in the body could take the
+ * focus the arrow keys scroll from.
+ */
+describe("the dialog body's keyboard path", () => {
+  it("is a tab stop that steps on to the footer's first control — AC3", async () => {
+    renderConfirm();
+
+    const body = screen.getByRole("group", { name: "What deleting this agent does" });
+    expect(body).toHaveAttribute("tabindex", "0");
+    expect(body).toHaveClass("scroll-focus-ring");
+
+    // The footer FOLLOWS the body, so Tab forward is the step that exists.
+    body.focus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
+  it("renders no labelled body while the dialog is closed — AC8", () => {
+    renderConfirm({ open: false });
+
+    // The tab stop exists only when there is something behind it. A closed
+    // shell keeps its last content for the exit animation and must not leave
+    // a named region in the tab order over it.
+    expect(screen.queryByRole("group", { name: "What deleting this agent does" })).toBeNull();
+  });
+
+  it("lets Escape from inside the body still close the dialog — AC9", () => {
+    const { props } = renderConfirm();
+
+    const body = screen.getByRole("group", { name: "What deleting this agent does" });
+    body.focus();
+    fireEvent.keyDown(body, { key: "Escape" });
+    // A region that consumed Escape would break `useDialogDismiss` for the
+    // whole dialog, which is why no fixed region binds a key of its own.
+    expect(props.onCancel).toHaveBeenCalled();
   });
 });

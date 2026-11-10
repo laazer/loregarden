@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 
 import type { LivingMap as LivingMapData, MapItem } from "../../../api/livingMapApi";
@@ -211,5 +212,52 @@ describe("LivingMap", () => {
 
     fireEvent.change(await screen.findByRole("textbox", { name: "Filter the map" }), { target: { value: "rotate" } });
     expect(rowTitles()).toEqual(["Rotate the keys"]);
+  });
+});
+
+/**
+ * `.living-map-detail-text` is a bounded `overflow: auto` pane of plain prose
+ * (lg-milestone-that-2215). Nothing in it took focus, so the arrow keys had
+ * nothing to scroll it from.
+ */
+describe("the detail pane's keyboard path", () => {
+  const WITH_DETAIL = [
+    item({
+      id: "q1",
+      seq: 1,
+      kind: "question",
+      state: "waiting",
+      title: "Ship on Friday?",
+      detail: "The release notes are not written and the migration has not been rehearsed.",
+    }),
+  ];
+
+  it("is a tab stop that steps on to the Close button beside it — AC3", async () => {
+    mockGet.mockResolvedValue(map(WITH_DETAIL));
+    renderMap();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Ship on Friday\?/ }));
+    const pane = screen.getByRole("group", { name: "Detail for Ship on Friday?" });
+    expect(pane).toHaveAttribute("tabindex", "0");
+    expect(pane).toHaveClass("scroll-focus-ring");
+
+    // `Close` FOLLOWS the pane in DOM order, so the forward Tab is the step
+    // that exists here. Asserting a backward one would assert a path the
+    // surface does not offer.
+    pane.focus();
+    expect(pane).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("renders no labelled pane when the item carries no detail — AC8", async () => {
+    mockGet.mockResolvedValue(map([item({ id: "q1", seq: 1, title: "Ship on Friday?", detail: "" })]));
+    renderMap();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Ship on Friday\?/ }));
+    // No detail means no pane at all, rather than a box announcing a name with
+    // nothing behind it. The `dl` above it still says what the item is.
+    expect(screen.queryByRole("group", { name: "Detail for Ship on Friday?" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Details: Ship on Friday?" })).toBeInTheDocument();
   });
 });
