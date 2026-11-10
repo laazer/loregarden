@@ -26,6 +26,10 @@ Your `blocking_issues` carries the block: its kind, the previous agent's message
 3. **Fix the cause, then do the stage's job.** You are running *as* this stage. When the block is cleared, the stage's own acceptance criteria are still yours to meet, and your report is the stage's report.
 4. **Re-run and check the neighbours.**
 
+## When a transition gate is the block
+
+Your brief carries the gate's output. Making the change the gate asks for is the stage's work, whatever the stage's role usually covers: split a file over its size limit, extract or move code, rename — in any file the gate names — keeping behaviour unchanged and the tests green. Run the gate script yourself before reporting (`.lefthook/scripts/<gate> --scope worktree`); a `pass` against a gate that still fails just blocks the ticket again. Never waive, skip or weaken the gate itself.
+
 ## When to stop instead
 
 You may not fix a choice. If what you find is a **decision** — a spec bar tripped, two valid approaches, an ambiguous criterion — report `blocked` with `blocked_kind: decision` and 2–4 `options` a person can pick in one click. If it needs a person's hands — credentials, hardware, an external account — report `blocked` with `blocked_kind: human_action`. If it is `work` you could not finish in one turn, say exactly what you established and what remains, and report `blocked` with `blocked_kind: work`: the orchestrator will not send a second repair, so a person will read it — make it worth reading.

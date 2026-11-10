@@ -56,10 +56,13 @@ class RepairPolicy:
     """
 
     withheld_reason: str = ""
+    #: What the repair turn is told, when the block message is only a pointer to
+    #: it: a gate failure keeps its output on the Timeline, not in the pane.
+    brief: str = ""
 
     @classmethod
-    def offer(cls) -> RepairPolicy:
-        return cls()
+    def offer(cls, brief: str = "") -> RepairPolicy:
+        return cls(brief=brief)
 
     @classmethod
     def withheld(cls, reason: str) -> RepairPolicy:
@@ -106,6 +109,7 @@ def settle_block(
     kind_as_written: str = "",
     repairable: bool = True,
     no_repair_reason: str = "",
+    repair_brief: str = "",
 ) -> BlockSettlement:
     """Classify this block and spend its repair turn, or record why it got none.
 
@@ -118,7 +122,8 @@ def settle_block(
     provider quota window is the live case. It still gets its kind and its
     recorded reason; it just does not burn a turn proving the obvious.
     `no_repair_reason` is that reason in the caller's words; the default is the
-    quota-window sentence.
+    quota-window sentence. `repair_brief` is what the repair turn is told when
+    `message` is only a pointer to the failure; it defaults to `message`.
     """
     kind = record_block(
         session,
@@ -139,7 +144,7 @@ def settle_block(
             transitions=list(transitions or []),
             stage_key=stage_key,
             kind=kind,
-            message=message,
+            message=repair_brief or message,
             failed_agent=failed_agent,
         )
     else:

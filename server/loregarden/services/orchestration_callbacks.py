@@ -829,6 +829,7 @@ class OrchestrationCallbackService:
                 declared=declared,
                 repairable=repair.may_repair,
                 no_repair_reason=repair.withheld_reason,
+                repair_brief=repair.brief,
             )
         if settlement is not None and settlement.repair_armed:
             # The stage is re-armed under the repair agent; the drive goes on.

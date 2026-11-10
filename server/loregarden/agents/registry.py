@@ -6,6 +6,10 @@ DEBUGGER_AGENT_ID = "debugger"
 #: Reruns a blocked stage the orchestrator judged fixable without a person
 #: (lg-workflow-integrity-750). One turn, never a second; see services.block_repair.
 REPAIR_AGENT_ID = "repair"
+#: Agents the orchestrator itself pins on a stage through `next_agent`, though no
+#: stage declares them: the repair turn, and the debugger a failing-test gate
+#: hands over to. Dispatch honours them ahead of routing (`resolve_orchestrator_pin`).
+ORCHESTRATOR_PINNED_AGENTS = frozenset({REPAIR_AGENT_ID, DEBUGGER_AGENT_ID})
 #: Writes a ticket's acceptance criteria; its passing run is where operation
 #: criteria are caught before an implementer is handed them (782).
 SPEC_AGENT_ID = "spec"

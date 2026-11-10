@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
+from loregarden.agents.registry import ORCHESTRATOR_PINNED_AGENTS, get_agent
 from loregarden.core.stage_groups import (  # noqa: F401 — re-exported for existing import sites
     emptied_groups,
     group_members,
@@ -756,28 +756,32 @@ def repair_pin_applies(stage: WorkflowStageDef) -> bool:
     return stage.stage_type != StageType.GATE
 
 
-def resolve_repair_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
-    """The repair turn's pin (750): the orchestrator's own, not an agent's hint.
+def resolve_orchestrator_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
+    """An agent the orchestrator pinned (750): its own decision, not an agent's hint.
 
-    Decided before classify routing and before `agent_is_overridable`, because
-    both would otherwise re-pick the stage's declared agent, leave the pin
-    unconsumed, and re-arm the stage on the next failure — twelve dispatches in
-    a minute on a classify `implement` stage before the budget caught it.
+    The repair turn, and the debugger a failing-test gate hands over to. Neither
+    is declared by any stage, so classify routing and `agent_is_overridable`
+    would re-pick the stage's own agent, leave the pin unconsumed, and re-arm
+    the stage on the next failure — twelve dispatches in a minute on a classify
+    `implement` stage before the budget caught it. The debugger was never
+    dispatched at all until it was resolved here (0 runs in the live database
+    on 2026-11-10).
     """
-    if (ticket.next_agent or "").strip() != REPAIR_AGENT_ID:
+    pinned = (ticket.next_agent or "").strip()
+    if pinned not in ORCHESTRATOR_PINNED_AGENTS:
         return None
-    if not repair_pin_applies(stage) or not get_agent(REPAIR_AGENT_ID):
+    if not repair_pin_applies(stage) or not get_agent(pinned):
         return None
-    return REPAIR_AGENT_ID, ""
+    return pinned, ""
 
 
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     pinned = resolve_scope_reroute_pin(ticket, stage)
     if pinned:
         return pinned
-    repair = resolve_repair_pin(ticket, stage)
-    if repair:
-        return repair
+    orchestrator_pin = resolve_orchestrator_pin(ticket, stage)
+    if orchestrator_pin:
+        return orchestrator_pin
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
