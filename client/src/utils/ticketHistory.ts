@@ -179,7 +179,10 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     // A person's decision to let a blocked ticket's dependents go ahead, or to
     // take that back; the block itself has its own line.
     decision === "ticket_deferred" ||
-    decision === "ticket_undeferred"
+    decision === "ticket_undeferred" ||
+    // A repeated dispatch that got its in-flight run back instead of starting
+    // a second agent: the retry absorbed, as designed.
+    decision === "dispatch_replayed"
     ? "normal"
     : "failed";
   }

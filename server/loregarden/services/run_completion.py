@@ -89,6 +89,7 @@ from loregarden.services.rework_feedback import (
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_log_stream import finalize_run_log_artifact
 from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
+from loregarden.services.spec_snapshot import record_spec_drift
 from loregarden.services.stage_report import (
     StageReport,
     final_agent_message,
@@ -457,6 +458,9 @@ def complete_run_tail(
         and report.status == StageReportStatus.PASS
     ):
         record_read_evidence(orch.session, ticket, run)
+    if status is RunStatus.SUCCEEDED:
+        # Before the verdict, which holds a pass on criteria the run was not given.
+        record_spec_drift(orch.session, ticket, run)
     if advance_workflow:
         derived = advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
         if derived is not None:

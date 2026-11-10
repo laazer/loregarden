@@ -94,6 +94,13 @@ class DockerCapacityPool(SQLModel, table=True):
     #: Why the last probe failed, carried so every payload quoting a stale
     #: ceiling can say what went wrong rather than just that it is old.
     probe_error: str = ""
+    #: Busy cores the ledger does not account for, measured with the ceiling
+    #: (host pool only; see `host_capacity.external_cpus`). Not part of the
+    #: ceiling: the ceiling is the machine's size, which refusals and fitting
+    #: read, and this is how much of it something else is using right now.
+    #: `server_default` because the pool rows are seeded by raw INSERTs in
+    #: migrations that predate this column and name every column they knew of.
+    external_cpus: float = Field(default=0.0, sa_column_kwargs={"server_default": "0"})
 
     #: Bumped by every successful claim and release, so a racer can tell whether
     #: the pool moved under its read.

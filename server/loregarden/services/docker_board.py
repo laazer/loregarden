@@ -284,6 +284,10 @@ def _pool_summary(pool: DockerCapacityPool, ceiling: Ceiling) -> dict:
             "memory_mb": pool.held_memory_mb,
             "leases": pool.held_count,
         },
+        # Busy cores outside the ledger. They hold back claims of a core or more
+        # while the ledger holds anything (`docker_ledger.load_gate_cpus`), so
+        # "available" for those is smaller than ceiling - in_use by this much.
+        "external_cpus": pool.external_cpus,
         "available": {
             "cpus": max(0.0, round(ceiling.cpus - pool.held_cpus, 2)),
             "memory_mb": max(0, ceiling.memory_mb - pool.held_memory_mb),

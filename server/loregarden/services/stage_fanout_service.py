@@ -185,6 +185,8 @@ def launch_fanout(
             skill_name=skill_name or None,
             auto_approve=auto_approve,
             dispatch_surface=DispatchSurface.FANOUT,
+            # The attempts compete side by side on one agent; each is its own lane.
+            dispatch_lane=f"fanout:{attempt.id}",
         )
         worktree = service.create_worktree(
             workspace_id=ticket.workspace_id,
