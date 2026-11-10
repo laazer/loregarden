@@ -47,6 +47,7 @@ a half-written `.rc` file actually takes.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import stat
@@ -308,7 +309,9 @@ def test_a_pane_runs_in_its_cwd_after_the_servers_own_directory_is_gone(tmp_path
     earlier test's temp dir); the live server was then sitting in an active
     ticket's worktree.
     """
-    monkeypatch.setattr(settings, "agent_tmux_socket", f"lg-pytest-cwd-{uuid4().hex[:8]}")
+    monkeypatch.setattr(
+        settings, "agent_tmux_socket", f"lg-pytest-{os.getpid()}-cwd-{uuid4().hex[:8]}"
+    )
     doomed = tmp_path / "server-started-here"
     doomed.mkdir()
     subprocess.run(

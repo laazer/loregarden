@@ -33,6 +33,7 @@ from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.repo_templates import from_template, set_template_root
+from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
 from tests.worktree_helpers import seed_stage_report_contract
 
 
@@ -116,11 +117,19 @@ def _private_tmux_server():
     and lets teardown `kill-server` without reaching anything that is not ours.
     """
     previous = settings.agent_tmux_socket
-    settings.agent_tmux_socket = f"lg-pytest-{os.getpid()}"
+    settings.agent_tmux_socket = f"{TEST_SOCKET_PREFIX}{os.getpid()}"
+    has_tmux = shutil.which("tmux") is not None
+    if has_tmux:
+        # A run killed before its teardown never reached the `kill-server`
+        # below, and `exit-empty off` keeps its server alive forever.
+        reap_orphaned_test_servers()
     yield
-    if shutil.which("tmux"):
+    if has_tmux:
         # No `check`: a worker that never spawned a tmux agent has no server to kill.
         subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+        # Again on the way out: a nested suite this run killed (a land-verification
+        # tree's) died before its own teardown, during this session.
+        reap_orphaned_test_servers()
     settings.agent_tmux_socket = previous
 
 

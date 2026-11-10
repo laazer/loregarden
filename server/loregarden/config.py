@@ -237,6 +237,16 @@ class Settings(BaseSettings):
     host_capacity_max_leases: int = 6
     host_reserved_cpus: float = 1.0
     host_reserved_memory_mb: int = 4096
+    # Load from outside the ledger (the browser, the window server, a dev server's
+    # reloader) holds back a claim of at least `host_load_gate_min_cpus` while the
+    # ledger already holds something — GNU make's `-l` rule — for at most
+    # `host_load_patience_seconds` of that claim's wait, after which it is judged
+    # on the ceiling alone so a box that is always busy cannot starve the line.
+    # See services/host_capacity.py.
+    host_load_aware: bool = True
+    host_load_gate_min_cpus: float = 1.0
+    host_load_patience_seconds: float = 600.0
+    host_load_max_age_seconds: float = 15.0
     # Every agent run holds a small host lease for its lifetime (see
     # services/run_capacity.py). A run waits in line while it moves; when nothing
     # ahead has finished for this long it fails naming who holds the line
