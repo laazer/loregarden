@@ -327,6 +327,45 @@
   gap: 8px;
 }
 
+/* A ticket's pending approvals, pinned above the turns rather than under the
+   last one: they are the ticket's, raised whatever the chat is doing, and at
+   the foot they read as the latest reply and hid the walker. */
+.copilot-dock-approvals {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  max-height: 40%;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+  overflow-y: auto;
+  padding: 12px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.copilot-dock-approvals-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.copilot-dock-approvals-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--amb) 22%, transparent);
+  color: var(--aml);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .copilot-dock-rail-label {
   font-size: var(--fs-micro);
   letter-spacing: 0.09em;

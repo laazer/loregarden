@@ -213,40 +213,41 @@ describe("the empty thread", () => {
   });
 });
 
-it("renders pending approvals as an in-thread agent ask, not dock chrome", () => {
+const QUESTION_APPROVAL = {
+  id: "a1",
+  title: "Which shape?",
+  level: "low",
+  workspace_slug: "loregarden",
+  stage_key: "home-chat",
+  stage_name: "Home chat",
+  impact: "",
+  ticket_id: "",
+  ticket_external_id: "",
+  kind: "cli_question",
+  status: "pending",
+  run_id: "r1",
+  tool_name: "AskUserQuestion",
+  tool_input_json: "{}",
+  cli_adapter: "claude",
+  questions: [
+    {
+      question: "Which shape?",
+      header: "Shape",
+      options: [{ label: "Cards" }, { label: "Table" }],
+    },
+  ],
+} as ReturnType<typeof useActiveChatSession>["pendingApprovals"][number];
+
+it("renders pending approvals as an in-thread agent ask, not dock chrome, off a ticket", () => {
   mockResolver.mockReturnValue(
     bind({
       session: session({
         messages: [{ id: "m1", role: "user", content: "Ship queue history" }],
         isBusy: true,
       }),
-      label: "Ticket triage",
-      pendingApprovals: [
-        {
-          id: "a1",
-          title: "Which shape?",
-          level: "low",
-          workspace_slug: "loregarden",
-          stage_key: "home-chat",
-          stage_name: "Home chat",
-          impact: "",
-          ticket_id: "",
-          ticket_external_id: "",
-          kind: "cli_question",
-          status: "pending",
-          run_id: "r1",
-          tool_name: "AskUserQuestion",
-          tool_input_json: "{}",
-          cli_adapter: "claude",
-          questions: [
-            {
-              question: "Which shape?",
-              header: "Shape",
-              options: [{ label: "Cards" }, { label: "Table" }],
-            },
-          ],
-        },
-      ],
+      label: "Home chat",
+      ticketId: null,
+      pendingApprovals: [QUESTION_APPROVAL],
     }),
   );
   useUiStore.setState({ copilotOpen: true });
@@ -258,8 +259,47 @@ it("renders pending approvals as an in-thread agent ask, not dock chrome", () =>
   expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
   expect(document.querySelector(".lg-chat-messages")).toContainElement(ask);
   expect(document.querySelector(".pending-approvals--ask")).toBeTruthy();
+  expect(screen.queryByRole("complementary", { name: /Waiting on you/ })).not.toBeInTheDocument();
   expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
-  expect(screen.queryByText("Assistant is thinking…")).not.toBeInTheDocument();
+});
+
+it("pins a ticket's approvals above the thread, keeping the walker in it", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: session({
+        messages: [{ id: "m1", role: "user", content: "Ship queue history" }],
+        isBusy: true,
+      }),
+      label: "Ticket triage",
+      ticketId: "t1",
+      pendingApprovals: [QUESTION_APPROVAL],
+    }),
+  );
+  useUiStore.setState({ copilotOpen: true });
+
+  render(<CopilotDock />, { wrapper: MemoryRouter });
+
+  const pane = screen.getByRole("complementary", { name: /Waiting on you/ });
+  const ask = screen.getByLabelText("Agent is asking");
+  expect(pane).toContainElement(ask);
+  const thread = document.querySelector(".lg-chat-messages");
+  expect(thread).not.toContainElement(ask);
+  // Pinned at the top: the pane comes before the turns, not after the last one.
+  expect(pane.compareDocumentPosition(thread as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The approval no longer stands in for the latest turn: the walker shows.
+  expect(screen.getByText("Baxter is looking…")).toBeInTheDocument();
+  expect(thread?.querySelector(".lg-garden-bed")).toBeTruthy();
+});
+
+it("draws no approvals pane on a ticket with nothing pending", () => {
+  mockResolver.mockReturnValue(
+    bind({ session: session({ messages: [{ id: "m1", role: "user", content: "Hi" }] }), ticketId: "t1" }),
+  );
+  useUiStore.setState({ copilotOpen: true });
+
+  render(<CopilotDock />, { wrapper: MemoryRouter });
+
+  expect(screen.queryByRole("complementary", { name: /Waiting on you/ })).not.toBeInTheDocument();
 });
 
 it("stays empty when no screen owns a conversation and no shell was asked for", () => {

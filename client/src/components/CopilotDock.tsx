@@ -112,6 +112,51 @@ export function CopilotDock() {
   // in the empty thread instead: a sidebar is too narrow for a rail, and hid them.
   const showHistory = Boolean(archive) && historyOpen;
   const openers = session && !composerBlocked ? promptsFor(promptKind, branch) : [];
+  // On a ticket the approvals are the ticket's, not this turn's: its stages
+  // raise them whatever the chat is doing. Pinned to the foot of the thread
+  // they read as the latest reply and hid the walker, so there they are pinned
+  // above the turns instead. Elsewhere an approval is the agent asking in this
+  // conversation, and stays in the thread.
+  const approvalsInThread = !ticketId;
+  const approvalsPinned = !approvalsInThread && pendingApprovals.length > 0;
+  const approvals = pendingApprovals.length ? (
+    <PendingApprovalsSection
+      variant="ask"
+      approvals={pendingApprovals}
+      submittingApprovalId={
+        resolveApproval.isPending
+          ? resolveApproval.variables?.id ?? null
+          : null
+      }
+      submitError={
+        resolveApproval.isError
+          ? formatApprovalResolveError(resolveApproval.error)
+          : null
+      }
+      onApprove={(approval, payload) =>
+        resolveApproval.mutate({
+          id: approval.id,
+          action: "approve",
+          ...payload,
+        })
+      }
+      onRecheck={(approval, payload) =>
+        resolveApproval.mutate({
+          id: approval.id,
+          action: "recheck",
+          ...payload,
+        })
+      }
+      onReject={(approval, payload) =>
+        resolveApproval.mutate({
+          id: approval.id,
+          action: "reject",
+          ...payload,
+        })
+      }
+    />
+  ) : null;
+
   // Loading draws nothing: a welcome flashing in front of a thread that is
   // about to arrive would read as the conversation being gone.
   const showWelcome =
@@ -120,7 +165,7 @@ export function CopilotDock() {
     session?.messages.length === 0 &&
     !showsChatWalker(Boolean(session?.isBusy), session?.runStatus) &&
     session?.runStatus !== "waiting" &&
-    pendingApprovals.length === 0;
+    !(approvalsInThread && pendingApprovals.length > 0);
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError || composerBlocked) return;
@@ -187,6 +232,14 @@ export function CopilotDock() {
               {/* The chat page's night sky, behind the turns. Its vines stay on
                   the page: a sidebar has no room for them. */}
               <GardenSky />
+              {approvalsPinned ? (
+                <aside className="copilot-dock-approvals" aria-labelledby={`${titleId}-approvals`}>
+                  <h3 id={`${titleId}-approvals`} className="copilot-dock-approvals-title">
+                    Waiting on you <span className="copilot-dock-approvals-count">{pendingApprovals.length}</span>
+                  </h3>
+                  {approvals}
+                </aside>
+              ) : null}
               {showWelcome ? (
                 <DockChatWelcome
                   assistantLabel={assistantLabel}
@@ -205,7 +258,7 @@ export function CopilotDock() {
                 emptyMessage={session.isLoading ? "" : (composerBlocked ?? undefined)}
                 isThinking={
                   showsChatWalker(session.isBusy, session.runStatus) &&
-                  pendingApprovals.length === 0
+                  !(approvalsInThread && approvals)
                 }
                 trailingStatus={
                   session.runStatus === "waiting" && session.wait ? (
@@ -218,49 +271,17 @@ export function CopilotDock() {
                 // The action bar already shows the agent beside the composer; a
                 // head on every reply only spent the thread's width.
                 showAssistantAvatar={false}
-                className="copilot-dock-messages"
+                // On a ticket the thread can hold nothing focusable (plain-text
+                // replies, approvals pinned above it), so the scroller is its
+                // own tab stop or the keyboard cannot scroll it.
+                className="copilot-dock-messages scroll-focus-ring"
+                role="group"
+                aria-label="Conversation"
+                tabIndex={0}
                 onPrimitiveSubmit={(content) => sendQuick(content)}
                 // Agent questions arrive as approvals, not messages — show them
                 // as the agent's ask inside the thread, not as dock chrome.
-                trailingAsk={
-                  pendingApprovals.length ? (
-                    <PendingApprovalsSection
-                      variant="ask"
-                      approvals={pendingApprovals}
-                      submittingApprovalId={
-                        resolveApproval.isPending
-                          ? resolveApproval.variables?.id ?? null
-                          : null
-                      }
-                      submitError={
-                        resolveApproval.isError
-                          ? formatApprovalResolveError(resolveApproval.error)
-                          : null
-                      }
-                      onApprove={(approval, payload) =>
-                        resolveApproval.mutate({
-                          id: approval.id,
-                          action: "approve",
-                          ...payload,
-                        })
-                      }
-                      onRecheck={(approval, payload) =>
-                        resolveApproval.mutate({
-                          id: approval.id,
-                          action: "recheck",
-                          ...payload,
-                        })
-                      }
-                      onReject={(approval, payload) =>
-                        resolveApproval.mutate({
-                          id: approval.id,
-                          action: "reject",
-                          ...payload,
-                        })
-                      }
-                    />
-                  ) : null
-                }
+                trailingAsk={approvalsInThread ? approvals : null}
               />
               )}
             </div>
