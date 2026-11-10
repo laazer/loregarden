@@ -2,7 +2,7 @@
 
 Loregarden is an Agent SDLC IDE: a local control plane for orchestrating multi-agent software development. It tracks work as tickets in SQLite, runs agents through configurable pipelines, isolates concurrent work in Git worktrees, surfaces approval prompts in an inbox, and exposes the same workflow tools over MCP.
 
-![Home board](docs/screenshots/home.png)
+![Home: what needs you, what is running, what is landing on main, and recent agent activity](docs/screenshots/home.png)
 
 ## Architecture
 
@@ -20,25 +20,26 @@ The database is the source of truth for tickets, workflow templates, agent defin
 
 - Ticket planning and execution through configurable, versioned multi-agent workflows
 
-  ![Ticket console showing a run's stage timeline beside the workspace tree](docs/screenshots/console.png)
+  ![Console listing every workspace beside its work items, with status, blocker and type filters](docs/screenshots/console.png)
 
 - Concurrent runs isolated in Git worktrees, with optional commit, push, pull-request, merge, and conflict-resolution automation
 
-  ![Parallel execution queue with three worktree lanes](docs/screenshots/queue.png)
+  ![Parallel execution queue with three worktree lanes and the queue's status](docs/screenshots/queue.png)
 
 - Initiatives, which group milestones across workspaces, with a dependency-graph planning page, suggested sprints, and an autopilot that paces tickets into the queue
 
-  ![Initiative plan with a milestone schedule and the planning agent](docs/screenshots/initiatives.png)
+  ![An initiative's milestones across three workspaces, above the milestones not yet in one](docs/screenshots/initiatives.png)
 
 - Human approval gates and permission bridging for supervised CLI agents
 - Transition gates (lint, organization, silent-failure, UX-state, theme) that run on every stage handoff, with Gate Studio to see and edit them
 - Baxter workspace, ticket, and branch chat backed by the live control plane
 - Agent and workflow editing in Studio with version history and restore
 
-  ![Agent Studio editing a built-in agent's role and runtime config](docs/screenshots/agent-studio.png)
+  ![Agent Studio ranking agents by failure rate, with the stage each fails at most](docs/screenshots/agent-studio.png)
 
 - Flex-grid and canvas views composed from reusable IDE panels
 - MCP access over HTTP, stdio, or the in-process `loregarden` CLI
+- A Claude Code plugin that brings the MCP tools, skills, guardrail hooks and a `/garden` panel into every Claude Code session (see [Claude Code plugin](#claude-code-plugin))
 - Local run accounting plus Claude, Cursor, and Codex usage visibility
 - A host and Docker capacity ledger that queues agent runs and gates so concurrent work does not overload the machine
 - A run monitor that turns thrashing, stalled, and drifted runs into tickets
@@ -130,6 +131,69 @@ task workspace:docs  -- <workspace-root>   # control-plane section in AGENTS.md
 ```
 
 `task workspace:hooks:pr` lands a refreshed hook block as one PR per repo instead of editing checkouts in place. See [CLAUDE.md](CLAUDE.md) for details.
+
+## Claude Code plugin
+
+`claude-plugin/` packages Loregarden for Claude Code, so a session in any repository gets:
+
+- the `loregarden` MCP server, so its tools work outside this checkout;
+- the cross-repo skills (`autopilot`, `reference-survey`, `refactor`, `human-verification-brief`);
+- the guardrail hooks: commit signing, the PR "User-facing surfaces" check and the duplicate-work check. Each one steps aside in a repository that ships its own copy;
+- `/garden`, a panel beside the chat showing what Home shows, without Baxter: machine capacity, what needs you, running lanes, the merge queue and recent activity.
+
+![The /garden panel: machine capacity with the suite holding it and two commands waiting, then what needs you](docs/screenshots/garden-panel.png)
+
+While the plugin is loaded, the status line keeps a one-line summary, even with the panel closed:
+
+![Status line reading "21 need you · 2 waiting for capacity"](docs/screenshots/garden-status.png)
+
+It needs a running Loregarden server (`task server` or `task dev`). `/garden` needs Claude Code 2.1.317 or newer.
+
+### Install
+
+From GitHub:
+
+```bash
+claude plugin marketplace add laazer/loregarden
+claude plugin install loregarden@loregarden
+```
+
+From a local checkout, which is read straight from the folder, so your edits take effect on `/reload-plugins` with no reinstall:
+
+```bash
+claude plugin marketplace add /path/to/loregarden
+claude plugin install loregarden@loregarden
+```
+
+Inside a session, the same commands work as `/plugin marketplace add …` and `/plugin install …`. Then type `/garden` to open the panel.
+
+### Configure
+
+The panel reads `http://127.0.0.1:8000` and links into `http://localhost:5173` by default. To point it elsewhere, for example at `task sandbox`:
+
+```bash
+claude plugin configure loregarden@loregarden   # shows the options and which are set
+echo '{"serverUrl": "http://127.0.0.1:8123", "appUrl": "http://localhost:5174"}' \
+  | claude plugin configure loregarden@loregarden --values-stdin
+```
+
+Options left out keep their values. Restart Claude Code to apply them. `/plugin configure loregarden@loregarden` does the same inside a session.
+
+The MCP server reads `LOREGARDEN_MCP_URL` from the environment Claude Code starts in (default `http://127.0.0.1:8000/mcp`).
+
+### Update
+
+A GitHub install runs the copy made when it was installed. Pull the latest commit with:
+
+```bash
+claude plugin marketplace update loregarden
+claude plugin update loregarden@loregarden
+```
+
+Then run `/reload-plugins` in open sessions, or restart them. A local-checkout install needs only `/reload-plugins` after you pull.
+
+> [!NOTE]
+> The skills and guardrail hooks are symbolic links into `agent_context/skills/` and `.claude/hooks/`. A local-checkout install resolves them. A GitHub install has not been verified to keep them yet; if the skills or hooks are missing after one, install from a local checkout instead.
 
 ## Desktop app
 
