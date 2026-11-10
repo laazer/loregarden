@@ -10,6 +10,7 @@ import {
 } from "../chat/ChatMessageActions";
 import { ComposerCommandMenu } from "../chat/ComposerCommandMenu";
 import { ComposerNotes } from "../chat/ComposerNotes";
+import { GardenBed } from "../chat/GardenBed";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { StreamingReply } from "../chat/StreamingReply";
@@ -89,6 +90,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   trailingStatus,
   showAssistantAvatar = true,
   onPrimitiveSubmit,
+  tabIndex,
+  role,
+  "aria-label": ariaLabel,
 }: {
   messages: ChatMessageView[];
   emptyMessage?: string;
@@ -128,6 +132,15 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   showAssistantAvatar?: boolean;
   /** Lets interactive primitives, such as Q&A, send a user reply. */
   onPrimitiveSubmit?: (content: string) => void;
+  /**
+   * Makes the scroller itself a tab stop, for a host whose thread can hold
+   * nothing focusable (plain-text replies): without one, arrow keys and Page
+   * Up/Down cannot scroll it. Pair it with `scroll-focus-ring` in `className`.
+   */
+  tabIndex?: number;
+  /** With `tabIndex`: `"group"`, so the focused scroller announces its name. */
+  role?: "group";
+  "aria-label"?: string;
 }) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -179,6 +192,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
       <div
         ref={listRef}
         className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}
+        tabIndex={tabIndex}
+        role={role}
+        aria-label={ariaLabel}
       >
         <p className="lg-chat-messages-empty ticket-studio-messages-empty">
           {emptyMessage ?? "No messages yet."}
@@ -192,6 +208,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
     <div
       ref={listRef}
       className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}
+      tabIndex={tabIndex}
+      role={role}
+      aria-label={ariaLabel}
     >
       {shownMessages.map((message) => {
         const isUser = isUserChatRole(message.role);
@@ -416,6 +435,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             ) : (
               <>
                 <div className="lg-chat-loading-track" aria-hidden>
+                  <GardenBed />
                   <div className="lg-chat-loading-walker">
                     {/* Always the walk cycle: the track paces this avatar from
                         end to end, and `thinking` is the sleep row — which read

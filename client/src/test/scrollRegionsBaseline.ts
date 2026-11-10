@@ -217,6 +217,11 @@ export const BASELINE: readonly BaselineEntry[] = [
     reason: "tabbable",
   },
   {
+    selector: ".copilot-dock-approvals",
+    reason: "focusable-descendant",
+    note: "tab stop in the subtree: <ApprovalCard> buttons via <PendingApprovalsSection> components/CopilotDock.tsx",
+  },
+  {
     selector: ".copilot-dock-artifacts",
     reason: "focusable-descendant",
     note: "tab stop in the subtree: <Button> components/chat/ChatArtifactsList.tsx:42",

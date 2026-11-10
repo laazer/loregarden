@@ -1,0 +1,109 @@
+/* A garden that grows behind Baxter while a reply is on its way. One cycle is
+   two paces (7.2s): each plant sprouts as the walker passes it outward, blooms,
+   and holds through the next crossing; it wilts just before he comes round to
+   plant it again, so the bed is in flower most of the time. */
+
+.lg-garden-bed {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 40px;
+  pointer-events: none;
+}
+
+.lg-garden-soil {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background: color-mix(in srgb, var(--amb) 22%, var(--bg2));
+}
+
+.lg-garden-plant {
+  position: absolute;
+  bottom: 2px;
+  width: 22px;
+  height: 30px;
+  translate: -50% 0;
+  overflow: visible;
+}
+
+.lg-garden-plant--tall {
+  height: 37px;
+}
+
+.lg-garden-stem {
+  fill: none;
+  stroke: var(--ac);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: lg-garden-sprout 7.2s var(--ease-out) var(--lg-sprout-delay, 0s) infinite both;
+}
+
+.lg-garden-leaf {
+  fill: var(--ac2);
+  stroke: none;
+}
+
+.lg-garden-bloom {
+  fill: var(--lg-bloom, var(--aml));
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+  animation: lg-garden-blossom 7.2s var(--ease-spring) var(--lg-sprout-delay, 0s) infinite both;
+}
+
+.lg-garden-heart {
+  fill: var(--aml);
+}
+
+@keyframes lg-garden-sprout {
+  0% {
+    transform: scale(0.2, 0);
+    opacity: 0;
+  }
+  3% {
+    opacity: 1;
+  }
+  12% {
+    transform: scale(1, 1);
+  }
+  88% {
+    transform: scale(1, 1);
+    opacity: 1;
+  }
+  97%,
+  100% {
+    transform: scale(0.9, 0.4);
+    opacity: 0;
+  }
+}
+
+@keyframes lg-garden-blossom {
+  0%,
+  12% {
+    transform: scale(0) rotate(-40deg);
+    opacity: 0;
+  }
+  20% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  86% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  94%,
+  100% {
+    transform: scale(0.4) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The global rule would play one 0.01ms cycle and leave every plant on its
+     last frame — wilted. Show the garden grown instead. */
+  .lg-garden-stem,
+  .lg-garden-bloom {
+    animation: none;
+  }
+}

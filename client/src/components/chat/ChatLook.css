@@ -197,16 +197,13 @@
   width: 100%;
   height: calc(var(--lg-chat-walker-size) + 8px);
   overflow: hidden;
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(251, 243, 228, 0.06), transparent 70%),
-    var(--bg1);
-  border: 1px solid var(--bd);
 }
 
 .lg-chat-loading-walker {
   position: absolute;
-  top: 4px;
+  /* The walk frames leave 18/256 of the tile under his paws (~4px at 56):
+     this sets them on the garden's soil, which tops out 4px above the foot. */
+  top: 8px;
   left: 0;
   width: var(--lg-chat-walker-size);
   height: var(--lg-chat-walker-size);
@@ -214,9 +211,17 @@
   will-change: translate, transform;
 }
 
+/* The sheet is transparent around the dog; the cream plate is for badges.
+   Here he walks on the card itself, with a light rim so a dark dog still
+   reads on a dark ground. */
 .lg-chat-loading-walker .baxter-avatar {
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  border-radius: 0;
+  overflow: visible;
+  background-color: transparent;
+  background-image: var(--baxter-sheet);
+  box-shadow: none;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--tx) 55%, transparent))
+    drop-shadow(0 2px 4px color-mix(in srgb, var(--shadow) 40%, transparent));
 }
 
 .lg-chat-loading-title {
