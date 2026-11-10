@@ -40,7 +40,7 @@ _PR_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      number url state headRefName headRefOid baseRefName baseRefOid
+      number url state title body headRefName headRefOid baseRefName baseRefOid
       mergeCommit { oid tree { oid } }
       commits(last: 1) { nodes { commit { oid tree { oid }
         statusCheckRollup { contexts(first: 100) { nodes {
@@ -101,6 +101,8 @@ class _GhPullRequest(BaseModel):
     number: int
     url: str
     state: str
+    title: str = ""
+    body: str = ""
     head_branch: str = Field(alias="headRefName")
     head_sha: str = Field(alias="headRefOid")
     base_branch: str = Field(alias="baseRefName")
@@ -144,6 +146,11 @@ class StagedPullRequest(BaseModel):
     merge_commit: str = ""
     merge_tree: str = ""
     checks: list[GhCheck] = Field(default_factory=list)
+    #: What its author wrote. The staged commit carries them, since GitHub
+    #: names a one-commit squash after its commit, and the body's `Ticket:`
+    #: lines name the tickets the landing closes.
+    title: str = ""
+    body: str = ""
 
 
 class QueueGitHub(Protocol):
@@ -273,6 +280,8 @@ def staged_pull_request(pr: _GhPullRequest) -> StagedPullRequest:
         merge_commit=pr.merge_commit.oid if pr.merge_commit else "",
         merge_tree=pr.merge_commit.tree.oid if pr.merge_commit else "",
         checks=rollup.contexts.nodes if rollup is not None else [],
+        title=pr.title,
+        body=pr.body,
     )
 
 
