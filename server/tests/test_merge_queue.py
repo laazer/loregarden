@@ -227,3 +227,23 @@ def test_place_in_line_counts_live_entries_not_lifetime_positions(session, works
     assert head.detail == merge_queue.place_in_line(0)
     assert behind.detail == merge_queue.place_in_line(1)
     assert merge_queue.place_in_line(0) != merge_queue.place_in_line(1)
+
+
+def test_a_stopped_attempt_replaced_by_a_later_entry_leaves_the_board(session, workspace, ticket):
+    """PR #839 failed, was queued again as a new row and merged; its failed row stayed
+    on the board with a Retry that would re-queue a head the PR had moved past."""
+    first_try = enqueue(session, None, workspace, _candidate("a" * 40, pr=8)).entry
+    transition(session, first_try, MergeQueueState.QUEUED, state=MergeQueueState.FAILED)
+    still_failed = enqueue(session, None, workspace, _candidate("b" * 40, pr=9)).entry
+    transition(session, still_failed, MergeQueueState.QUEUED, state=MergeQueueState.FAILED)
+    second_try = enqueue(session, None, workspace, _candidate("c" * 40, pr=8)).entry
+    transition(session, second_try, MergeQueueState.QUEUED, state=MergeQueueState.MERGED)
+
+    listed = {entry.id for entry in merge_queue.entries_for(session, workspace.id)}
+
+    assert listed == {second_try.id, still_failed.id}
+    assert merge_queue.is_superseded(session, first_try)
+    assert not merge_queue.is_superseded(session, still_failed)
+    with pytest.raises(QueueRefusal, match="queued again"):
+        retry(session, first_try.id)
+    assert retry(session, still_failed.id).state is MergeQueueState.QUEUED

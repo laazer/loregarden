@@ -36,8 +36,9 @@ from loregarden.models.domain import (
     Workspace,
     utcnow,
 )
-from sqlalchemy import func, update
+from sqlalchemy import and_, exists, func, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -142,12 +143,58 @@ def live_entries(session: Session, workspace_id: str) -> list[MergeQueueEntry]:
     )
 
 
+#: Terminal states a retry can re-queue; an entry in one stays on the board
+#: with its reason until it is retried or a later entry for its work replaces it.
+STOPPED_STATES = MERGE_QUEUE_TERMINAL_STATES - {MergeQueueState.MERGED}
+
+
+def _later_entry_for_same_work():
+    """SQL: a later entry (higher position) for the same pull request exists.
+
+    Re-enqueuing a stopped PR admits a NEW row rather than moving the old one,
+    so the stopped attempt stays behind. Once a later entry for the same work
+    exists, the stopped one is history: it no longer says what the operator
+    must act on, and its Retry would re-queue a head the PR has moved past.
+    Matched by PR number alone: a tree re-publishes onto the same publish
+    ref, so its PR keeps its number, while two entries of one ticket can be
+    different, both-real pull requests.
+    """
+    later = aliased(MergeQueueEntry)
+    return exists().where(
+        and_(
+            later.workspace_id == MergeQueueEntry.workspace_id,
+            later.position > MergeQueueEntry.position,
+            MergeQueueEntry.pr_number > 0,
+            later.pr_number == MergeQueueEntry.pr_number,
+        )
+    )
+
+
+def is_superseded(session: Session, entry: MergeQueueEntry) -> bool:
+    """Whether a later entry for ``entry``'s pull request exists."""
+    return (
+        entry.state in STOPPED_STATES
+        and session.exec(
+            select(MergeQueueEntry.id)
+            .where(MergeQueueEntry.id == entry.id)
+            .where(_later_entry_for_same_work())
+        ).first()
+        is not None
+    )
+
+
 def entries_for(session: Session, workspace_id: str, *, limit: int = 50) -> list[MergeQueueEntry]:
-    """The live entries in order, then the most recent finished ones, newest first."""
+    """The live entries in order, then the most recent finished ones, newest first.
+
+    A stopped entry whose work was queued again later is left out: the later
+    entry (live, landed or stopped itself) is the one that answers for it.
+    """
+    stopped = col(MergeQueueEntry.state).in_(list(STOPPED_STATES))
     finished = session.exec(
         select(MergeQueueEntry)
         .where(MergeQueueEntry.workspace_id == workspace_id)
         .where(col(MergeQueueEntry.state).in_(list(MERGE_QUEUE_TERMINAL_STATES)))
+        .where(~and_(stopped, _later_entry_for_same_work()))
         .order_by(col(MergeQueueEntry.state_changed_at).desc())
         .limit(limit)
     ).all()
@@ -393,14 +440,15 @@ def withdraw(session: Session, entry_id: str, *, reason: str = "") -> MergeQueue
 def retry(session: Session, entry_id: str) -> MergeQueueEntry:
     """Send a failed, timed-out or withdrawn entry to the back of the queue."""
     entry = _entry(session, entry_id)
-    if entry.state not in (
-        MergeQueueState.FAILED,
-        MergeQueueState.TIMED_OUT,
-        MergeQueueState.WITHDRAWN,
-    ):
+    if entry.state not in STOPPED_STATES:
         raise QueueRefusal(
             f"PR #{entry.pr_number} is {entry.state.value}; only a failed, timed-out or "
             "withdrawn entry can be retried"
+        )
+    if is_superseded(session, entry):
+        raise QueueRefusal(
+            f"PR #{entry.pr_number} was queued again after this attempt; that later entry "
+            "answers for it"
         )
     duplicate = _live_with_head(session, entry.workspace_id, entry.head_sha)
     if duplicate is not None:
