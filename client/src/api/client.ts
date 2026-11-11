@@ -4,12 +4,13 @@ import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
 import { referenceAreasApi } from "./referenceAreasApi";
+import { referenceResearchApi } from "./referenceResearchApi";
 import { referenceLibraryApi } from "./referenceLibraryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketLandingApi } from "./ticketLandingApi";
 import { autoDecisionApi } from "./autoDecisionApi";
 import { ticketPullRequestApi } from "./ticketPullRequestApi";
-import type { ApprovalHistoryItem, ApprovalResolutionAction } from "./chatTypes";
+import type { ApprovalHistoryItem, ApprovalResolutionAction, BaxterChatThreadMode } from "./chatTypes";
 import type { GatePresets } from "./gatePresetTypes";
 import type { RepositoryProbe, WorkspaceRepositoryCreated } from "./workspaceRepositoryTypes";
 
@@ -33,6 +34,7 @@ export type {
 } from "./initiativeApi";
 export type * from "./memoryApi";
 export type * from "./referenceAreasApi";
+export type * from "./referenceResearchApi";
 export type * from "./referenceLibraryApi";
 import type {
   WorkflowReassignmentPreview,
@@ -512,6 +514,7 @@ export const api = {
   ...initiativeApi,
   ...memoryApi,
   ...referenceAreasApi,
+  ...referenceResearchApi,
   ...referenceLibraryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
@@ -639,6 +642,12 @@ export const api = {
   deleteBaxterChatSession: (scope: string, sessionId: string) =>
     request<{ deleted: string }>(`${baxterChatSessionsPath(scope)}/${sessionId}`, {
       method: "DELETE",
+    }),
+  /** Switch a thread between general and research; its next turn gets that mode's tools. */
+  setBaxterChatMode: (scope: string, sessionId: string, mode: BaxterChatThreadMode) =>
+    request<BaxterChatSnapshot>(`${baxterChatSessionsPath(scope)}/${sessionId}/mode`, {
+      method: "PUT",
+      body: JSON.stringify({ mode }),
     }),
   setBaxterChatRuntime: (scope: string, sessionId: string, body: WorkspaceRuntimeSettings) =>
     request<WorkspaceRuntimeSettings>(`${baxterChatSessionsPath(scope)}/${sessionId}/runtime`, {

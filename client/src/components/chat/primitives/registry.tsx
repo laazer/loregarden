@@ -11,6 +11,8 @@ import { KanbanPrimitive, StatusColumnPrimitive } from "./KanbanPrimitive";
 import { ParentTicketPrimitive } from "./ParentTicketPrimitive";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { QAPrimitive } from "./QAPrimitive";
+import { ResearchCandidatesPrimitive } from "./ResearchCandidatesPrimitive";
+import { ResearchClaimPrimitive } from "./ResearchClaimPrimitive";
 import { TerminalPrimitive } from "./TerminalPrimitive";
 import { ThinkingPrimitive } from "./ThinkingPrimitive";
 import { TicketListPrimitive } from "./TicketListPrimitive";
@@ -68,6 +70,8 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   qa: QAPrimitive as Renderer,
   btw: BtwPrimitive as Renderer,
   giphy: GiphyPrimitive as Renderer,
+  research_candidates: ResearchCandidatesPrimitive as Renderer,
+  research_claim: ResearchClaimPrimitive as Renderer,
 };
 
 export function renderChatPart(

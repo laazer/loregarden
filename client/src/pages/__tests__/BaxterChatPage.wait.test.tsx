@@ -51,6 +51,7 @@ describe("BaxterChatPage — a waiting turn", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Push",
       messages: [
@@ -109,6 +110,7 @@ describe("BaxterChatPage — a waiting turn", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Push",
       messages: [
@@ -142,6 +144,7 @@ describe("BaxterChatPage — a waiting turn", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Stopped",
       messages: [

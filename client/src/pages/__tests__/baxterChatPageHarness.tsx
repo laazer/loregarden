@@ -50,6 +50,7 @@ export function fakeChatServer(reply = "Model says ship Home polish.") {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: title || "New chat",
       messages: [],

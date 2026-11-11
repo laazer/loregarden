@@ -190,6 +190,20 @@ export const CHAT_PRIMITIVE_VERDICTS: Record<PrimitiveKind, ChatPrimitiveAudit> 
       "field would be one no operator could fill. Its escalation also writes into a running " +
       "agent's input — an action that belongs where the conversation is.",
   },
+  research_candidates: {
+    verdict: "chat-bound",
+    needs: "`question_id`; the card fetches the question's candidates and claims.",
+    reason:
+      "One id and a fetch, but a question id is minted by a research thread and named nowhere " +
+      "else yet; the library's research list is where a pane of it would come from.",
+  },
+  research_claim: {
+    verdict: "chat-bound",
+    needs: "a project `url` and a recorded `capability`; the card fetches the claim that stands.",
+    reason:
+      "Two strings and a fetch, but the capability is one a research question recorded, in " +
+      "the operator's words; the library source's Capabilities section is its pane.",
+  },
   giphy: {
     verdict: "chat-bound",
     needs: "`giphy_id` or a Giphy media `url`, and an alt/caption.",

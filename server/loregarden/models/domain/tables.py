@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from loregarden.models.domain.block_kinds import BlockKind
-from loregarden.models.domain.chat_enums import BaxterChatScope
+from loregarden.models.domain.chat_enums import BaxterChatScope, ChatThreadMode
 from loregarden.models.domain.enums import (
     DEFAULT_COMPATIBILITY_POSTURE,
     ApprovalKind,
@@ -1159,6 +1159,9 @@ class BaxterChatSession(SQLModel, table=True):
     initiative_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     # The ticket this thread's feature loop builds, or None when it runs none.
     feature_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    # What the thread is for; a research thread gets read-only tools (see
+    # `services.baxter_chat_research`).
+    mode: ChatThreadMode = Field(sa_column=str_enum_column(ChatThreadMode, ChatThreadMode.GENERAL))
     # Derived from the first operator message unless the operator renames it.
     title: str = ""
     runtime_json: str = "{}"

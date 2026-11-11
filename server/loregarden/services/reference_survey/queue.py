@@ -44,7 +44,7 @@ MAX_PASSES_PER_QUESTION = 5
 _OPEN_PASS = (SurveyPassStatus.QUEUED, SurveyPassStatus.DISPATCHED)
 
 
-def _canonical_url(kind: SurveySourceKind, raw: str) -> str:
+def canonical_url(kind: SurveySourceKind, raw: str) -> str:
     if kind is SurveySourceKind.REPO:
         try:
             parsed = parse_repo_url(raw)
@@ -156,7 +156,7 @@ def enqueue_source(session: Session, body: SourceIn, *, admitted: bool = False) 
     The licence gate runs before reading either way.
     """
     workspaces = resolve_workspaces(session, body.workspace_slugs)
-    url = _canonical_url(body.kind, body.url)
+    url = canonical_url(body.kind, body.url)
     existing = session.exec(select(SurveySource).where(SurveySource.url == url)).first()
     if existing is None:
         source = SurveySource(

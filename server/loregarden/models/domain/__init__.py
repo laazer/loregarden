@@ -47,6 +47,7 @@ from loregarden.models.domain.stage_input_enums import *  # noqa: F401,F403
 from loregarden.models.domain.stage_types import *  # noqa: F401,F403
 from loregarden.models.domain.survey_area_tables import *  # noqa: F401,F403
 from loregarden.models.domain.survey_enums import *  # noqa: F401,F403
+from loregarden.models.domain.survey_research_tables import *  # noqa: F401,F403
 from loregarden.models.domain.survey_tables import *  # noqa: F401,F403
 from loregarden.models.domain.tables import *  # noqa: F401,F403
 from loregarden.models.domain.ticket_import_schemas import *  # noqa: F401,F403

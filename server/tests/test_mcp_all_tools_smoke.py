@@ -208,6 +208,18 @@ def _args_for(
         # structured `catalog_unavailable` payload, zero network, no isError.
         "loregarden_search_reference": {"query": "smoke"},
         "loregarden_survey_queue": {"action": "list", "workspace_slug": ws},
+        # An empty pattern is refused before any clone: a `refused` payload, zero network.
+        "loregarden_research_repo": {
+            "action": "grep",
+            "url": "https://github.com/acme/rigger",
+            "pattern": "",
+        },
+        "loregarden_research_record": {
+            "action": "refute",
+            "url": "https://github.com/acme/rigger",
+            "capability": "builds skeletons",
+            "note": "smoke",
+        },
         "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
         "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
         "loregarden_land_ticket": {"ticket_id": ticket_id},
@@ -531,6 +543,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_fetch_reference",
         "loregarden_search_reference",
         "loregarden_survey_queue",
+        "loregarden_research_repo",
+        "loregarden_research_record",
         "loregarden_reserve_docker_capacity",
         "loregarden_renew_docker_lease",
         "loregarden_release_docker_capacity",

@@ -374,6 +374,8 @@ _MINIMAL_FENCES: dict[str, dict[str, object]] = {
     "qa": {"items": [{"id": "q", "question": "Which?"}]},
     "btw": {"exchange_id": "e1", "ticket_id": "t1", "question": "Why?"},
     "giphy": {"giphy_id": "abc"},
+    "research_candidates": {"question_id": "q1"},
+    "research_claim": {"url": "https://github.com/acme/rigger", "capability": "rigs"},
 }
 
 

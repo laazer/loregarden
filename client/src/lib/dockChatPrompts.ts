@@ -10,10 +10,17 @@ export const COMPOSER_PLACEHOLDER: Record<string, string> = {
   "ticket-triage": "Message about this ticket…",
   "branch-triage": "Message about this branch…",
   "baxter-home": "Ask Baxter anything about this workspace…",
+  "baxter-research": "Ask which projects do something, e.g. auto-rig a mesh…",
   "initiative-planner": "Ask Baxter about dates, pace, or what to start…",
   "initiative-triage": "Ask Baxter about the work under this initiative…",
 };
 
+/** Openers for a workspace thread in research mode: the same thread, other questions. */
+export const BAXTER_RESEARCH = "baxter-research";
+/** A workspace thread's openers follow its mode: research asks other questions. */
+export function workspaceThreadPromptKind(kind: string, mode: "general" | "research"): string {
+  return mode === "research" ? BAXTER_RESEARCH : kind;
+}
 /** Openers for the planner on an initiative's plan page: its `ChatSessionKind`. */
 export const INITIATIVE_PLANNING = "initiative-planner";
 /** Openers for Baxter, triaging the work under an initiative. */
@@ -39,6 +46,11 @@ export const TRY_ASKING: Record<string, string[]> = {
     "What should I work on next?",
     "What is blocked right now?",
     "Summarise today's runs",
+  ],
+  [BAXTER_RESEARCH]: [
+    "Which open-source projects generate a skeleton for an unrigged mesh?",
+    "Compare the libraries in our reference library for this capability",
+    "Does a project I name really do what its README says?",
   ],
   // An initiative's plan page: the planner answers about dates and pace,
   // Baxter about the tickets under it — so each gets the questions it takes.

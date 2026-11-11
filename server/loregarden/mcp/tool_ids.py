@@ -70,6 +70,8 @@ class McpTool(StrEnum):
     SURVEY_PASS = "loregarden_survey_pass"
     SURVEY_RECORD = "loregarden_survey_record"
     SURVEY_WRITE = "loregarden_survey_write"
+    RESEARCH_REPO = "loregarden_research_repo"
+    RESEARCH_RECORD = "loregarden_research_record"
     RESERVE_DOCKER_CAPACITY = "loregarden_reserve_docker_capacity"
     RENEW_DOCKER_LEASE = "loregarden_renew_docker_lease"
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
@@ -113,6 +115,16 @@ SURVEY_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.SURVEY_PASS,
     McpTool.SURVEY_RECORD,
     McpTool.SURVEY_WRITE,
+)
+
+#: A research thread's tools (`mcp.research_tools`): read a project's source at a
+#: commit, record candidates and claims, and queue a pick for review. Granted
+#: only to research threads (`services.baxter_chat_research`).
+RESEARCH_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.RESEARCH_REPO,
+    McpTool.RESEARCH_RECORD,
+    McpTool.SURVEY_QUEUE,
+    McpTool.FETCH_REFERENCE,
 )
 
 #: Booking docker capacity. Folded into `STAGE_DEFAULT_MCP_TOOLS`, which
@@ -311,6 +323,9 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         # are read back byte-exact, and the one human gate (admitting a source) is
         # an inbox card the service files itself.
         *SURVEY_MCP_TOOLS,
+        # Writes only the research record (questions, candidates, claims); the
+        # service refuses a verified claim it cannot check, so a click adds nothing.
+        McpTool.RESEARCH_RECORD,
     }
 )
 
@@ -367,7 +382,8 @@ LOCAL_INSTANCE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: run's timeout budget to no benefit. Egress itself is bounded elsewhere: the
 #: SSRF guard rejects non-global addresses on every hop, and the body is capped.
 NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset(
-    {McpTool.FETCH_REFERENCE, McpTool.SEARCH_REFERENCE}
+    # research_repo clones a public repository into the reference cache and reads it.
+    {McpTool.FETCH_REFERENCE, McpTool.SEARCH_REFERENCE, McpTool.RESEARCH_REPO}
 )
 
 #: A wait row for a child the chat turn already spawned. Auto-approved because

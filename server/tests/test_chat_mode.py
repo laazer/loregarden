@@ -8,6 +8,7 @@ saw. So the parity tests here matter more than the enumeration ones.
 from __future__ import annotations
 
 from loregarden.models.domain.enums import ChatAdvisoryCause, ChatMode
+from loregarden.services.baxter_chat_research import research_mode
 from loregarden.services.chat_mode import aside_mode, resolve_chat_mode, stage_run_in_flight
 
 #: Adapters with neither a bridge nor a writable oneshot. See adapter_capabilities.
@@ -68,6 +69,8 @@ class TestEveryCauseIsReachable:
             resolve_chat_mode("claude", read_only_surface=True).cause,
             aside_mode().cause,
             stage_run_in_flight("implementer", "implement").cause,
+            research_mode("claude").cause,
+            research_mode("cursor").cause,
         }
         assert produced == set(ChatAdvisoryCause)
 
@@ -87,6 +90,8 @@ class TestTheOperatorIsToldSomethingUseful:
             resolve_chat_mode("claude", read_only_surface=True),
             aside_mode(),
             stage_run_in_flight("implementer", "implement"),
+            research_mode("claude"),
+            research_mode("cursor"),
         ):
             assert mode.reason, mode.cause
             assert mode.advice, mode.cause

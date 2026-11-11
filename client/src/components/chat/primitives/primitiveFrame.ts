@@ -30,6 +30,8 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, PrimitiveSize> = {
   qa: "regular",
   btw: "regular",
   giphy: "regular",
+  research_candidates: "wide",
+  research_claim: "wide",
 };
 
 const SIZE_RANK: Record<PrimitiveSize, number> = { regular: 0, wide: 1, full: 2 };

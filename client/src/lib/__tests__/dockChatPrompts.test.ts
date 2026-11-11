@@ -3,8 +3,10 @@ import {
   DECLINE_PROMPT,
   ELABORATE_PROMPT,
   SHIP_PROMPT,
+  TRY_ASKING,
   followUpPrompts,
   replyPrompts,
+  workspaceThreadPromptKind,
 } from "../dockChatPrompts";
 import type { ChatMessageView } from "../../components/chat/chatUtils";
 
@@ -77,5 +79,14 @@ describe("followUpPrompts", () => {
       assistant("Tests pass. Want me to open the PR?"),
     ]);
     expect(prompts.indexOf(SHIP_PROMPT)).toBeGreaterThan(prompts.indexOf(DECLINE_PROMPT));
+  });
+});
+
+describe("a workspace thread in research mode", () => {
+  it("opens on research questions, not the general ones", () => {
+    const kind = workspaceThreadPromptKind("baxter-home", "research");
+    expect(followUpPrompts(kind, null, [])).toEqual(TRY_ASKING[kind]);
+    expect(followUpPrompts(kind, null, [])).not.toContain("What should I work on next?");
+    expect(workspaceThreadPromptKind("baxter-home", "general")).toBe("baxter-home");
   });
 });
