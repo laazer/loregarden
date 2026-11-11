@@ -58,6 +58,8 @@
 }
 
 .capacity-meter-fill {
+  position: absolute;
+  inset: 0;
   display: block;
   height: 100%;
   border-radius: 3px;
@@ -73,6 +75,34 @@
 
 .capacity-meter-track--full .capacity-meter-fill {
   background: var(--red);
+}
+
+/* Load the meter does not book (processes outside the ledger). Hatched so it
+   reads as "taken, not by us" without relying on hue; drawn under the booked
+   fill, which starts at the same edge. */
+.capacity-meter-track .capacity-meter-fill--external,
+.capacity-meter-swatch {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--txl) 0 3px,
+    var(--bg3) 3px 6px
+  );
+}
+
+.capacity-meter-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.capacity-meter-swatch {
+  flex: none;
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

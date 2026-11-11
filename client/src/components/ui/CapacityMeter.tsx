@@ -36,6 +36,15 @@ export interface CapacityMeterProps {
   tone?: CapacityTone;
   /** Said instead of the numbers when the ceiling is unmeasured. */
   unknownLabel?: string;
+  /**
+   * Taken by something this meter does not book, e.g. CPU load from processes
+   * outside the capacity ledger. Drawn as a second, hatched segment after
+   * `used`, written out beside the numbers, and counted in the tone: a pool
+   * that books 0.25 of 7 cpus on a machine already running 10 is full.
+   */
+  external?: number;
+  /** Names what `external` is, after its amount: "9.8 cpus outside the ledger". */
+  externalLabel?: string;
 }
 
 /**
@@ -59,20 +68,28 @@ export function CapacityMeter({
   format,
   tone,
   unknownLabel = "not measured",
+  external = 0,
+  externalLabel = "taken elsewhere",
 }: CapacityMeterProps) {
-  const resolved = tone ?? deriveTone(used, total);
+  const outside = Math.max(0, external);
+  const resolved = tone ?? deriveTone(used + outside, total);
   const measured = total > 0;
-  // Clamped so an over-booked pool — which a reconciliation lag can produce for
-  // a moment — draws a full bar rather than one overflowing its track.
-  const percent = measured ? Math.min(100, Math.max(0, (used / total) * 100)) : 0;
-  const valueText = measured ? `${format(used)} of ${format(total)}` : unknownLabel;
+  // Clamped so an over-booked pool — which a reconciliation lag, or outside
+  // load beyond the ceiling, can produce — draws a full bar rather than one
+  // overflowing its track.
+  const toPercent = (value: number) =>
+    measured ? Math.min(100, Math.max(0, (value / total) * 100)) : 0;
+  const percent = toPercent(used);
+  const outsideNote = outside > 0 ? `${format(outside)} ${externalLabel}` : "";
+  const amounts = measured ? `${format(used)} of ${format(total)}` : unknownLabel;
+  const valueText = measured && outsideNote ? `${amounts}, plus ${outsideNote}` : amounts;
 
   return (
     <div className="capacity-meter" data-testid={`capacity-meter-${label.toLowerCase()}`}>
       <div className="capacity-meter-head">
         <span className="capacity-meter-label">{label}</span>
         <span className={`capacity-meter-value capacity-meter-value--${resolved}`}>
-          {valueText}
+          {amounts}
         </span>
       </div>
       <div
@@ -85,10 +102,24 @@ export function CapacityMeter({
         aria-valuetext={valueText}
         data-tone={resolved}
       >
+        {measured && outside > 0 ? (
+          <span
+            className="capacity-meter-fill capacity-meter-fill--external"
+            style={progressFillStyle(toPercent(used + outside))}
+            aria-hidden
+          />
+        ) : null}
         {measured ? (
           <span className="capacity-meter-fill" style={progressFillStyle(percent)} aria-hidden />
         ) : null}
       </div>
+      {measured && outsideNote ? (
+        <span className="capacity-meter-note">
+          {/* The note wears the hatch's pattern and colour, not the tone's, so it
+              reads as the striped segment's key rather than the booked fill's. */}
+          <span className="capacity-meter-swatch" aria-hidden />+ {outsideNote}
+        </span>
+      ) : null}
     </div>
   );
 }
