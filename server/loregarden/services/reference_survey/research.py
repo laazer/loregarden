@@ -20,7 +20,7 @@ import json
 import logging
 from datetime import datetime
 
-from loregarden.models.domain import BaxterChatSession, SurveySource
+from loregarden.models.domain import BaxterChatMessage, BaxterChatSession, SurveySource
 from loregarden.models.domain.chat_enums import ChatThreadMode
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.survey_enums import ClaimRecorder, ClaimStatus, SurveySourceKind
@@ -152,6 +152,11 @@ class QuestionView(BaseModel):
     run_count: int
     last_run_at: datetime | None
     saved: bool
+    #: Days between automatic re-runs; None re-runs only when asked.
+    interval_days: int | None
+    area_id: str | None
+    #: Why the last scheduled re-run could not start; "" when it did.
+    schedule_error: str
     candidates: list[CandidateView]
 
 
@@ -323,7 +328,12 @@ def _check_claim(claim: ClaimIn, url: str, wanted: list[str]) -> Evidence:
 
 
 def _agent_claim(
-    claim: ClaimIn, evidence: Evidence, url: str, candidate: SurveyResearchCandidate, run_id: str
+    claim: ClaimIn,
+    evidence: Evidence,
+    url: str,
+    candidate: SurveyResearchCandidate,
+    run_id: str,
+    run: int,
 ) -> SurveyCapabilityClaim:
     cited = _cites_source(claim)
     return SurveyCapabilityClaim(
@@ -340,8 +350,35 @@ def _agent_claim(
         note=claim.note.strip(),
         recorded_by=ClaimRecorder.AGENT,
         run_id=run_id,
+        run=run,
         question_id=candidate.question_id,
     )
+
+
+def _turn_in_flight(session: Session, thread_id: str) -> str:
+    """The thread's pending assistant turn id, or "" when no turn is running."""
+    turn = session.exec(
+        select(BaxterChatMessage.id)
+        .where(BaxterChatMessage.session_id == thread_id, BaxterChatMessage.status == "pending")
+        .order_by(col(BaxterChatMessage.created_at).desc())
+    ).first()
+    return turn or ""
+
+
+def _start_run(session: Session, question: SurveyResearchQuestion) -> int:
+    """The run this recording belongs to: the current turn's, or a new one.
+
+    One research turn is one run, however many record calls it splits its
+    candidates over, so "new" and "dropped" compare whole runs. A call made
+    outside a turn (the CLI, a test) starts a run of its own.
+    """
+    turn = _turn_in_flight(session, question.thread_id)
+    if not turn or turn != question.last_run_turn_id or question.run_count == 0:
+        question.run_count += 1
+    question.last_run_turn_id = turn
+    question.last_run_at = utcnow()
+    question.updated_at = question.last_run_at
+    return question.run_count
 
 
 def record_candidates(
@@ -354,10 +391,7 @@ def record_candidates(
         raise SurveyError(f"At most {MAX_CANDIDATES_PER_CALL} candidates per call")
     question = _question(session, question_id)
     wanted = capabilities(question)
-    question.run_count += 1
-    question.last_run_at = utcnow()
-    question.updated_at = question.last_run_at
-    run = question.run_count
+    run = _start_run(session, question)
     result = RecordResult(question_id=question.id, run=run, recorded=[], refused=[], warnings=[])
     for body in candidates:
         try:
@@ -377,7 +411,7 @@ def record_candidates(
                 result.refused.append(f"{url} · {claim.capability}: {evidence.refusal}")
                 continue
             claimed.add(claim.capability)
-            stored = _agent_claim(claim, evidence, url, candidate, run_id)
+            stored = _agent_claim(claim, evidence, url, candidate, run_id, run)
             if warning := _store_claim(session, stored):
                 result.warnings.append(warning)
         if missing := [cap for cap in wanted if cap not in claimed]:
@@ -468,6 +502,9 @@ def question_view(session: Session, question_id: str) -> QuestionView:
         run_count=question.run_count,
         last_run_at=question.last_run_at,
         saved=question.saved,
+        interval_days=question.interval_days,
+        area_id=question.area_id,
+        schedule_error=question.schedule_error,
         candidates=views,
     )
 

@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+
+import { api } from "../../api/client";
 
 import type { ResearchClaim, ResearchQuestion } from "../../api/referenceResearchApi";
 import { memoryPath } from "../../lib/appNavigation";
@@ -12,16 +15,18 @@ import {
   type CandidateSort,
   type CandidateSortKey,
 } from "../../lib/researchCandidates";
+import { pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { QueuePicksModal } from "./QueuePicksModal";
+import { SaveQuestionModal, intervalLabel } from "./SaveQuestionModal";
 import "./Research.css";
 
 /**
  * One claim: how far a capability was checked. A verified one links to the file
  * at the commit it was read at, so "verified" can always be opened and read.
  */
-function ClaimBadge({ claim, capability }: { claim: ResearchClaim | null | undefined; capability: string }) {
+export function ClaimBadge({ claim, capability }: { claim: ResearchClaim | null | undefined; capability: string }) {
   if (!claim) {
     return <span className="rs-claim rs-claim--none" title={`Nothing claimed for “${capability}”`}>Not checked</span>;
   }
@@ -91,6 +96,17 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
   const onSort = (key: CandidateSortKey) => setSort((current) => nextSort(current, key));
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [queueing, setQueueing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+  // Errors reach a toast through the mutation cache's errorTitle.
+  const rerun = useMutation({
+    meta: { errorTitle: "Re-run research" },
+    mutationFn: () => api.rerunResearchQuestion(question.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["baxter-chat-session"] });
+      pushToast({ tone: "success", title: "Re-running", message: "The answer lands in this thread." });
+    },
+  });
   const picks = rows.filter((row) => selected.has(row.url)).map((row) => ({ url: row.url, name: row.name }));
   const toggle = (url: string, on: boolean) =>
     setSelected((current) => {
@@ -106,6 +122,21 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
       <span className="rs-summary rs-inline">
         {picks.length ? `${picks.length} selected` : "Select projects to queue them for a survey pass."}
       </span>
+      <span className="rs-toolbar-actions">
+      <Button variant="plain" compact disabled={rerun.isPending} onClick={() => rerun.mutate()}>
+        {rerun.isPending ? "Starting…" : "Run again"}
+      </Button>
+      <Button
+        variant="plain"
+        compact
+        aria-haspopup="dialog"
+        aria-expanded={saving}
+        title={question.schedule_error ? `Last scheduled re-run did not start: ${question.schedule_error}` : undefined}
+        onClick={() => setSaving(true)}
+      >
+        {question.saved ? `Saved · ${intervalLabel(question.interval_days)}` : "Save question…"}
+        {question.schedule_error ? " ⚠" : ""}
+      </Button>
       <Button
         variant="secondary"
         compact
@@ -116,6 +147,7 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
       >
         Queue {picks.length || ""} for review…
       </Button>
+      </span>
     </div>
     <div className="rs-table-scroll">
       <table className="rs-table" aria-label={`Candidates for: ${question.question}`}>
@@ -191,6 +223,7 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
       onClose={() => setQueueing(false)}
       onQueued={() => setSelected(new Set())}
     />
+    {saving ? <SaveQuestionModal open question={question} onClose={() => setSaving(false)} /> : null}
     </>
   );
 }

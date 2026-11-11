@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
+from loregarden.services.baxter_chat_service import BaxterChatConflictError
 from loregarden.services.reference_survey.bulk import BulkAddItem
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.report import workspace_id_for
@@ -27,7 +28,14 @@ from loregarden.services.reference_survey.research_context import (
     project_view,
     workspace_questions,
 )
+from loregarden.services.reference_survey.research_diff import RunDiff, run_diff
 from loregarden.services.reference_survey.research_library import QueuePicksIn, queue_picks
+from loregarden.services.reference_survey.research_saved import (
+    RerunStarted,
+    SaveQuestionIn,
+    rerun_question,
+    save_question,
+)
 from sqlmodel import Session
 
 router = APIRouter(prefix="/reference-research", tags=["reference-library"])
@@ -73,6 +81,47 @@ def research_question(question_id: str, session: Session = Depends(get_session))
         return question_view(session, question_id)
     except SurveyNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/questions/{question_id}/save", response_model=QuestionView)
+def save_research_question(
+    question_id: str, body: SaveQuestionIn, session: Session = Depends(get_session)
+) -> QuestionView:
+    """Save, re-pin or un-save a question; an interval makes it re-run on its own."""
+    try:
+        return save_question(session, question_id, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/questions/{question_id}/rerun", response_model=RerunStarted)
+def rerun_research_question(
+    question_id: str, session: Session = Depends(get_session)
+) -> RerunStarted:
+    """Re-run a question now, as a turn in its thread. 409 while that thread is busy."""
+    try:
+        return rerun_question(session, question_id)
+    except BaxterChatConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except SurveyNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/questions/{question_id}/diff", response_model=RunDiff)
+def research_run_diff(
+    question_id: str, run: int | None = None, session: Session = Depends(get_session)
+) -> RunDiff:
+    """What one run (default: the latest) changed against the run before it."""
+    try:
+        return run_diff(session, question_id, run)
+    except SurveyNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/claims", response_model=ClaimCard)

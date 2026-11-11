@@ -304,6 +304,16 @@ class ResearchProjectPart(BaseModel):
     title: str | None = None
 
 
+class ResearchDiffPart(BaseModel):
+    """What one run of a research question changed, read from the record by question id."""
+
+    primitive: Literal["research_diff"] = "research_diff"
+    question_id: str
+    #: The run it describes; None for the question's latest run.
+    run: int | None = None
+    title: str | None = None
+
+
 ChatPart = Annotated[
     TextPart
     | ThinkingPart
@@ -330,7 +340,8 @@ ChatPart = Annotated[
     | GiphyPart
     | ResearchCandidatesPart
     | ResearchClaimPart
-    | ResearchProjectPart,
+    | ResearchProjectPart
+    | ResearchDiffPart,
     Field(discriminator="primitive"),
 ]
 
@@ -362,5 +373,6 @@ KNOWN_PRIMITIVES = frozenset(
         "research_candidates",
         "research_claim",
         "research_project",
+        "research_diff",
     }
 )

@@ -13,6 +13,7 @@ import { PrimitiveCard } from "./PrimitiveCard";
 import { QAPrimitive } from "./QAPrimitive";
 import { ResearchCandidatesPrimitive } from "./ResearchCandidatesPrimitive";
 import { ResearchClaimPrimitive } from "./ResearchClaimPrimitive";
+import { ResearchDiffPrimitive } from "./ResearchDiffPrimitive";
 import { ResearchProjectPrimitive } from "./ResearchProjectPrimitive";
 import { TerminalPrimitive } from "./TerminalPrimitive";
 import { ThinkingPrimitive } from "./ThinkingPrimitive";
@@ -74,6 +75,7 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   research_candidates: ResearchCandidatesPrimitive as Renderer,
   research_claim: ResearchClaimPrimitive as Renderer,
   research_project: ResearchProjectPrimitive as Renderer,
+  research_diff: ResearchDiffPrimitive as Renderer,
 };
 
 export function renderChatPart(

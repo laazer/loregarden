@@ -140,6 +140,9 @@ def research_prompt_lines(session: Session, chat_session: BaxterChatSession) -> 
         '   ```loregarden\\n{"primitive":"research_claim","url":"<url>","capability":"<capability>"}\\n```',
         'When the operator corrects you ("X can\'t do that"), record it with '
         "loregarden_research_record action=refute, quoting them in `note`.",
+        "When asked to re-run a question, record against its question_id and answer with a "
+        "diff card, which shows what the run added, dropped and changed:",
+        '   ```loregarden\\n{"primitive":"research_diff","question_id":"<id>"}\\n```',
         "When the operator asks what is known about one project, answer with a project card:",
         '   ```loregarden\\n{"primitive":"research_project","url":"<url>"}\\n```',
         "To queue a pick for review, call loregarden_survey_queue action=enqueue with "

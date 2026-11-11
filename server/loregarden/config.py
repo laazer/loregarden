@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # background sync is due. Each workspace sets its own interval; this is
     # only the resolution. 0 disables the scheduler entirely.
     github_sync_tick_seconds: float = 60.0
+    #: How often the research schedule looks for a saved question whose re-run is due.
+    #: Each question sets its own interval in days; this is only the resolution. 0 is off.
+    research_schedule_tick_seconds: float = 300.0
     #: How often initiative autopilot looks for ready work. Non-positive is off.
     autopilot_interval_seconds: float = 60.0
     #: How often the reference survey dispatches the head of its queue. Non-positive is off.

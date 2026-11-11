@@ -28,7 +28,8 @@ export type PrimitiveKind =
   | "giphy"
   | "research_candidates"
   | "research_claim"
-  | "research_project";
+  | "research_project"
+  | "research_diff";
 
 export interface TextPart {
   primitive: "text";
@@ -287,6 +288,15 @@ export interface ResearchProjectPart {
   title?: string | null;
 }
 
+/** What one run of a research question changed, read by question id. */
+export interface ResearchDiffPart {
+  primitive: "research_diff";
+  question_id: string;
+  /** The run it describes; absent for the latest. */
+  run?: number | null;
+  title?: string | null;
+}
+
 export type ChatPart =
   | TextPart
   | ThinkingPart
@@ -313,7 +323,8 @@ export type ChatPart =
   | GiphyPart
   | ResearchCandidatesPart
   | ResearchClaimPart
-  | ResearchProjectPart;
+  | ResearchProjectPart
+  | ResearchDiffPart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
 

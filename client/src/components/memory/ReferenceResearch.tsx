@@ -11,6 +11,7 @@ import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { ModalShell } from "../ui/ModalShell";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { intervalLabel } from "../research/SaveQuestionModal";
 import "../research/Research.css";
 
 /** Open a thread full-page: bind it under its workspace, then go to the chat. */
@@ -28,6 +29,8 @@ function useOpenThread(workspace: string) {
 
 function QuestionRow({ question, onOpen }: { question: ResearchQuestionSummary; onOpen: () => void }) {
   const tags = [
+    question.saved ? `saved · ${intervalLabel(question.interval_days).toLowerCase()}` : "",
+    question.area_name,
     `${question.candidates} candidate${question.candidates === 1 ? "" : "s"}`,
     question.run_count ? `run ${question.run_count}` : "not run yet",
     question.last_run_at ? shortDate(question.last_run_at) : "",
@@ -38,6 +41,11 @@ function QuestionRow({ question, onOpen }: { question: ResearchQuestionSummary; 
         {question.question}
       </Button>
       <span className="rs-summary">{tags.join(" · ")}</span>
+      {question.schedule_error ? (
+        <span className="rs-error" role="status">
+          Last scheduled re-run did not start: {question.schedule_error}
+        </span>
+      ) : null}
     </li>
   );
 }

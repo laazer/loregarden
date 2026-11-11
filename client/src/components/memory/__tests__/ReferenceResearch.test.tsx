@@ -33,10 +33,24 @@ beforeEach(() => {
 });
 
 describe("the library's Research", () => {
+  it("lists saved questions with their schedule and a re-run that did not start", async () => {
+    mockApi.researchQuestions.mockResolvedValue([
+      { id: "q1", question: "Which repos auto-rig a mesh?", thread_id: "t1", capabilities: ["rigs"],
+        run_count: 3, last_run_at: "2026-11-11T10:00:00Z", candidates: 4, saved: true,
+        interval_days: 7, area_name: "Rigging", schedule_error: "adapter gone" },
+    ]);  // prettier-ignore
+    renderWithRoutes(<ReferenceResearchButton workspace="blobert" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    expect(await screen.findByText(/saved · every week · Rigging · 4 candidates · run 3/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Last scheduled re-run did not start: adapter gone");
+  });
+
   it("lists the workspace's questions and opens one's thread full-page", async () => {
     mockApi.researchQuestions.mockResolvedValue([
       { id: "q1", question: "Which repos auto-rig a mesh?", thread_id: "t1", capabilities: ["rigs"],
-        run_count: 2, last_run_at: "2026-11-11T10:00:00Z", candidates: 4 },
+        run_count: 2, last_run_at: "2026-11-11T10:00:00Z", candidates: 4, saved: false,
+        interval_days: null, area_name: "", schedule_error: "" },
     ]);  // prettier-ignore
     renderWithRoutes(<ReferenceResearchButton workspace="blobert" />);
 

@@ -278,3 +278,18 @@
     text-align: left;
   }
 }
+
+.rs-diff-section {
+  margin-top: 10px;
+}
+
+.rs-diff-section:first-child {
+  margin-top: 0;
+}
+
+.rs-toolbar-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}

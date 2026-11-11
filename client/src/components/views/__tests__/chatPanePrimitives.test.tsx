@@ -1,7 +1,7 @@
 /**
  * 557 — the chat primitives as view containers.
  *
- * Covers the ticket's AC1 (every one of the 26 has a recorded verdict), AC2
+ * Covers the ticket's AC1 (every one of the 27 has a recorded verdict), AC2
  * (each adaptable one is registered, renders from settings and fetches its own
  * data), AC3 (the rest are recorded and absent), AC7 (two instances coexist)
  * and AC8 (no page-level state).
@@ -74,7 +74,7 @@ function renderHost(containerId: string, settings: Record<string, unknown>) {
   );
 }
 
-describe("AC1 — every one of the 26 chat primitives has a recorded verdict", () => {
+describe("AC1 — every one of the 27 chat primitives has a recorded verdict", () => {
   it("covers the chat registry exactly, with no primitive left undecided", () => {
     // `CHAT_PRIMITIVE_VERDICTS` is a `Record<PrimitiveKind, …>`, so a 27th
     // chat primitive fails the *build*. That is the real guard; this asserts
@@ -84,7 +84,7 @@ describe("AC1 — every one of the 26 chat primitives has a recorded verdict", (
     expect(Object.keys(CHAT_PRIMITIVE_VERDICTS).sort()).toEqual(
       Object.keys(PRIMITIVE_RENDERERS).sort(),
     );
-    expect(Object.keys(CHAT_PRIMITIVE_VERDICTS)).toHaveLength(26);
+    expect(Object.keys(CHAT_PRIMITIVE_VERDICTS)).toHaveLength(27);
   });
 
   it("records evidence and a reason for each, not a bare verdict", () => {
@@ -100,9 +100,9 @@ describe("AC1 — every one of the 26 chat primitives has a recorded verdict", (
     }
   });
 
-  it("splits the 26 into the thirteen it registers and the thirteen it does not", () => {
+  it("splits the 27 into the thirteen it registers and the fourteen it does not", () => {
     expect(adaptablePrimitiveKinds()).toHaveLength(13);
-    expect(chatBoundPrimitiveKinds()).toHaveLength(13);
+    expect(chatBoundPrimitiveKinds()).toHaveLength(14);
   });
 });
 

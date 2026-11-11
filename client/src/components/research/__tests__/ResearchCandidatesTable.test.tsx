@@ -35,6 +35,9 @@ const QUESTION: ResearchQuestion = {
   run_count: 2,
   last_run_at: "2026-11-11T10:00:00Z",
   saved: false,
+  interval_days: null,
+  area_id: null,
+  schedule_error: "",
   candidates: [
     candidate("AnyCreature", {
       stars: 900,
@@ -139,6 +142,61 @@ describe("ResearchCandidatesPrimitive", () => {
       areas: [],
     });
     expect(screen.getByRole("checkbox", { name: "Select AnyCreature" })).not.toBeChecked();
+  });
+
+  it("saves the question with an area and a weekly re-run", async () => {
+    mockApi.researchQuestion.mockResolvedValue(QUESTION);
+    mockApi.referenceAreas.mockResolvedValue([
+      { id: "a1", workspace_slug: "blobert", slug: "rigging", label: "blobert/rigging", name: "Rigging",
+        description: "", keywords: [], home_ticket: null, archived: false },
+    ]);  // prettier-ignore
+    mockApi.saveResearchQuestion.mockResolvedValue({ ...QUESTION, saved: true, area_id: "a1", interval_days: 7 });
+    renderCard();
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save question…" }));
+    const dialog = await screen.findByRole("dialog");
+    const area = within(dialog).getByLabelText("Project area (optional)");
+    await waitFor(() => expect(area).toBeEnabled());
+    fireEvent.change(area, { target: { value: "a1" } });
+    fireEvent.change(within(dialog).getByLabelText("Re-run"), { target: { value: "7" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save question" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mockApi.saveResearchQuestion).toHaveBeenCalledWith("q1", { saved: true, area_id: "a1", interval_days: 7 });
+  });
+
+  it("shows a saved question's schedule and lets it stop", async () => {
+    mockApi.researchQuestion.mockResolvedValue({ ...QUESTION, saved: true, interval_days: 14, schedule_error: "adapter gone" });
+    mockApi.referenceAreas.mockResolvedValue([]);
+    mockApi.saveResearchQuestion.mockResolvedValue({ ...QUESTION, saved: false });
+    renderCard();
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: /Saved · Every 2 weeks/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("The last scheduled re-run did not start: adapter gone");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stop saving" }));
+    await waitFor(() =>
+      expect(mockApi.saveResearchQuestion).toHaveBeenCalledWith("q1", { saved: false, area_id: null, interval_days: 14 }),
+    );
+  });
+
+  it("runs the question again once per click while it starts", async () => {
+    mockApi.researchQuestion.mockResolvedValue(QUESTION);
+    let resolve: (value: Awaited<ReturnType<typeof api.rerunResearchQuestion>>) => void = () => {};
+    mockApi.rerunResearchQuestion.mockReturnValue(new Promise((done) => (resolve = done)));
+    renderCard();
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+    const starting = await screen.findByRole("button", { name: "Starting…" });
+    expect(starting).toBeDisabled();
+    fireEvent.click(starting);
+    resolve({ question_id: "q1", thread_id: "t1", turn_id: "m9" });
+    expect(await screen.findByRole("button", { name: "Run again" })).toBeEnabled();
+    expect(mockApi.rerunResearchQuestion).toHaveBeenCalledTimes(1);
+    expect(mockApi.rerunResearchQuestion).toHaveBeenCalledWith("q1");
   });
 
   it("keeps the dialog open and names each project that was not queued", async () => {

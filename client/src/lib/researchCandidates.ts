@@ -10,7 +10,11 @@ export const RESEARCH_QUESTION_ROOT = "research-question";
 export const RESEARCH_CLAIM_ROOT = "research-claim";
 export const RESEARCH_PROJECT_ROOT = "research-project";
 export const researchProjectKey = (url: string) => [RESEARCH_PROJECT_ROOT, url] as const;
-export const researchQuestionsKey = (workspace: string) => ["research-questions", workspace] as const;
+export const RESEARCH_QUESTIONS_ROOT = "research-questions";
+export const researchQuestionsKey = (workspace: string) => [RESEARCH_QUESTIONS_ROOT, workspace] as const;
+export const RESEARCH_DIFF_ROOT = "research-diff";
+export const researchDiffKey = (questionId: string, run: number | null | undefined) =>
+  [RESEARCH_DIFF_ROOT, questionId, run ?? "latest"] as const;
 export const researchQuestionKey = (questionId: string) => [RESEARCH_QUESTION_ROOT, questionId] as const;
 export const researchClaimKey = (url: string, capability: string) =>
   [RESEARCH_CLAIM_ROOT, url, capability] as const;

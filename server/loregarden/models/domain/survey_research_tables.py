@@ -53,6 +53,12 @@ class SurveyResearchQuestion(SQLModel, table=True):
     #: Bumped each time candidates are recorded; candidates remember theirs.
     run_count: int = 0
     last_run_at: datetime | None = None
+    #: The chat turn that recorded the latest run: its further record calls join that run.
+    last_run_turn_id: str = ""
+    #: When a re-run was last asked for (by a person or the schedule).
+    last_scheduled_at: datetime | None = None
+    #: Why the last scheduled re-run could not start; "" when it did.
+    schedule_error: str = ""
     #: A saved question is listed in the library; an ad-hoc one only in its thread.
     saved: bool = False
     archived_at: datetime | None = None
@@ -110,6 +116,8 @@ class SurveyCapabilityClaim(SQLModel, table=True):
     )
     #: The agent run that recorded it; "" for a person's correction.
     run_id: str = ""
+    #: The question run it was recorded in; 0 for a person's correction.
+    run: int = 0
     question_id: str | None = Field(
         default=None, foreign_key="survey_research_questions.id", index=True
     )
