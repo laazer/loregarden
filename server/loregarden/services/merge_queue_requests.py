@@ -50,7 +50,10 @@ class EntryView(BaseModel):
     ticket_id: str | None
     ticket_external_id: str
     ticket_title: str
+    #: Lifetime sequence number in the workspace, for ordering; not a place in line.
     position: int
+    #: Live entries in line before this one; 0 for the head and a finished one.
+    ahead: int
     state: MergeQueueState
     #: Why a live entry is not moving; "" when nothing holds it.
     wait: MergeQueueWait
@@ -106,7 +109,7 @@ def _can_retry(entry: MergeQueueEntry) -> bool:
     )
 
 
-def _fields(session: Session, entry: MergeQueueEntry, head_id: str | None) -> dict:
+def _fields(session: Session, entry: MergeQueueEntry, head_id: str | None, ahead: int) -> dict:
     ticket = merge_queue.entry_ticket(session, entry)
     return {
         "id": entry.id,
@@ -114,6 +117,7 @@ def _fields(session: Session, entry: MergeQueueEntry, head_id: str | None) -> di
         "ticket_external_id": ticket.external_id if ticket else "",
         "ticket_title": ticket.title if ticket else "",
         "position": entry.position,
+        "ahead": ahead,
         "state": entry.state,
         "wait": entry.wait,
         "is_head": entry.id == head_id,
@@ -145,11 +149,15 @@ def _head_id(session: Session, workspace_id: str) -> str | None:
 def queue_view(session: Session, workspace: Workspace, *, limit: int = 50) -> QueueView:
     """The live entries in order, then the most recent finished ones."""
     head_id = _head_id(session, workspace.id)
+    entries = merge_queue.entries_for(session, workspace.id, limit=limit)
+    # entries_for lists the live entries first, in line order, so a live
+    # entry's index is its count ahead; one query instead of one per entry.
+    live_ids = {entry.id for entry in merge_queue.live_entries(session, workspace.id)}
     return QueueView(
         workspace_slug=workspace.slug,
         entries=[
-            EntryView(**_fields(session, entry, head_id))
-            for entry in merge_queue.entries_for(session, workspace.id, limit=limit)
+            EntryView(**_fields(session, entry, head_id, index if entry.id in live_ids else 0))
+            for index, entry in enumerate(entries)
         ],
         head_id=head_id,
     )
@@ -205,12 +213,11 @@ def ticket_queue_view(session: Session, ticket: Ticket) -> TicketQueueView:
         return TicketQueueView(
             root_ticket_id=root.id, root_external_id=root.external_id, entry=None, ahead=0
         )
-    live = merge_queue.live_entries(session, latest.workspace_id)
-    ahead = next((index for index, entry in enumerate(live) if entry.id == latest.id), 0)
+    ahead = merge_queue.ahead_of(session, latest)
     return TicketQueueView(
         root_ticket_id=root.id,
         root_external_id=root.external_id,
-        entry=EntryView(**_fields(session, latest, _head_id(session, latest.workspace_id))),
+        entry=EntryView(**_fields(session, latest, _head_id(session, latest.workspace_id), ahead)),
         ahead=ahead,
     )
 
@@ -239,7 +246,7 @@ def entry_detail(
         checks = _live_checks(github or _github(session, entry.workspace_id), entry)
         checks_live = True
     return EntryDetail(
-        **_fields(session, entry, head_id),
+        **_fields(session, entry, head_id, merge_queue.ahead_of(session, entry)),
         checks=checks,
         checks_live=checks_live,
     )

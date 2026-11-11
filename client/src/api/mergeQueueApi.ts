@@ -37,7 +37,10 @@ export interface MergeQueueEntry {
   ticket_id: string | null;
   ticket_external_id: string;
   ticket_title: string;
+  /** Lifetime sequence number in the workspace; not a place in line. */
   position: number;
+  /** Live entries in line before this one; 0 for the head and a finished one. */
+  ahead: number;
   state: MergeQueueState;
   wait: MergeQueueWait;
   is_head: boolean;

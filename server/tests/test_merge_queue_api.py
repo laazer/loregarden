@@ -119,6 +119,36 @@ def test_the_waiting_head_says_what_it_waits_on(client, queue):
     assert by_id[head_id]["can_withdraw"], "waiting on checks is cancellable"
 
 
+def test_each_entry_says_how_many_are_ahead_of_it(client, isolated_db, queue):
+    head_id, behind_id = queue
+    with Session(isolated_db) as session:
+        behind = session.get(MergeQueueEntry, behind_id)
+        transition(session, behind, MergeQueueState.QUEUED, state=MergeQueueState.WITHDRAWN)
+        ws = session.exec(select(Workspace).where(Workspace.slug == "mq")).one()
+        ticket = session.exec(select(Ticket).where(Ticket.external_id == "lg-1")).one()
+        last = enqueue(
+            session,
+            ticket,
+            ws,
+            Candidate(
+                9,
+                "https://github.com/o/r/pull/9",
+                "publish/integration/lg-1",
+                "integration/lg-1",
+                "d" * 40,
+                "main",
+            ),
+        ).entry
+        last_id = last.id
+
+    listed = client.get("/api/merge-queue/mq").json()
+    ahead = {entry["id"]: entry["ahead"] for entry in listed["entries"]}
+
+    assert ahead == {head_id: 0, last_id: 1, behind_id: 0}, "a withdrawn entry holds no place"
+    detail = client.get(f"/api/merge-queue/entries/{last_id}?live=false").json()
+    assert detail["ahead"] == 1
+
+
 def test_the_heads_detail_reads_its_checks_live(client, queue):
     head_id, _ = queue
 
