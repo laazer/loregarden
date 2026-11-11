@@ -1216,3 +1216,59 @@
 .hive-panel__canvas-host {
   position: relative;
 }
+
+.hive-panel__view {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg0);
+}
+
+.hive-panel__view-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--txl);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.hive-panel__view-btn:hover {
+  color: var(--tx);
+}
+
+.hive-panel__view-btn.is-on {
+  background: var(--bg3);
+  color: var(--tx);
+  font-weight: 600;
+}
+
+.hive-panel__hint {
+  font-size: var(--fs-micro);
+  color: var(--txl);
+}
+
+.hive-panel--officeplace .hive-panel__view {
+  background: var(--hive-paper-muted);
+  border-color: var(--hive-paper-edge);
+}
+
+.hive-panel--officeplace .hive-panel__view-btn {
+  color: var(--hive-ink-muted);
+}
+
+.hive-panel--officeplace .hive-panel__view-btn:hover,
+.hive-panel--officeplace .hive-panel__view-btn.is-on {
+  color: var(--hive-ink);
+}
+
+.hive-panel--officeplace .hive-panel__view-btn.is-on {
+  background: var(--hive-paper);
+  box-shadow: 0 1px 2px var(--hive-paper-shadow);
+}
+
+.hive-panel--officeplace .hive-panel__hint {
+  color: var(--hive-ink-muted);
+}

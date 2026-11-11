@@ -9,9 +9,11 @@ import {
   hiveSpeedLabel,
 } from "../../lib/hive/speed";
 import { agentStatusSnapshot, buildHiveWorld } from "../../lib/hive/worldModel";
-import { useUiStore } from "../../state/uiStore";
+import { useUiStore, type HiveView } from "../../state/uiStore";
+import { HiveAgentMap } from "./hive/HiveAgentMap";
 import { HiveCssFloor } from "./hive/HiveCssFloor";
 import { HiveErrorBoundary } from "./hive/HiveErrorBoundary";
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import "./HiveSimulationPanel.css";
 
@@ -31,6 +33,8 @@ function FloorIcon() {
 export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
   const hiveSkin = resolveHiveSkinId(useUiStore((s) => s.hiveSkin));
   const setHiveSkin = useUiStore((s) => s.setHiveSkin);
+  const hiveView = useUiStore((s) => s.hiveView);
+  const setHiveView = useUiStore((s) => s.setHiveView);
   const hiveSpeedIndex = useUiStore((s) => s.hiveSpeedIndex);
   const stepHiveSpeed = useUiStore((s) => s.stepHiveSpeed);
   const speedMultiplier = HIVE_SPEED_MULTIPLIERS[hiveSpeedIndex] ?? HIVE_SPEED_MULTIPLIERS[1];
@@ -99,94 +103,135 @@ export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
     <div className={`hive-panel hive-panel--${hiveSkin || DEFAULT_HIVE_SKIN}`}>
       <div className="hive-panel__header">
         <FloorIcon />
-        <span className="hive-panel__title">{model.floorTitle}</span>
-        <span className={`hive-panel__live${playing ? " hive-panel__live--replay" : ""}`}>
-          <span className="hive-panel__live-dot" aria-hidden />
-          {playing ? `replay ${replayIndex + 1}/${replayFrames.length}` : "live"}
-        </span>
-        <div className="hive-panel__spacer" />
-        <div className="hive-panel__speed" role="group" aria-label="Simulation speed">
-          <button
-            type="button"
-            className="hive-panel__speed-btn"
-            onClick={() => stepHiveSpeed(-1)}
-            disabled={hiveSpeedIndex <= 0}
-            aria-label="Slow down simulation"
-          >
-            −
-          </button>
-          <span className="hive-panel__speed-label" aria-live="polite">
-            {hiveSpeedLabel(speedMultiplier)}
-          </span>
-          <button
-            type="button"
-            className="hive-panel__speed-btn"
-            onClick={() => stepHiveSpeed(1)}
-            disabled={hiveSpeedIndex >= HIVE_SPEED_MULTIPLIERS.length - 1}
-            aria-label="Speed up simulation"
-          >
-            +
-          </button>
-        </div>
-        <button
-          type="button"
-          className="hive-panel__replay"
-          onClick={playing ? stopReplay : startReplay}
-          disabled={!playing && !canReplay}
-          aria-pressed={playing}
-        >
-          {playing ? "Stop" : "Replay"}
-        </button>
-        <label className="hive-panel__skin">
-          <span className="hive-panel__skin-label">Skin</span>
-          {HIVE_ENABLED_SKIN_IDS.length > 1 ? (
-            <Select
-              className="hive-panel__skin-select"
-              value={hiveSkin || DEFAULT_HIVE_SKIN}
-              onChange={(e) => setHiveSkin(e.target.value as HiveSkinId)}
-              aria-label="Hive simulation skin"
+        <span className="hive-panel__title">{hiveView === "map" ? "Agent map" : model.floorTitle}</span>
+        <HiveViewToggle view={hiveView} onChange={setHiveView} />
+        {hiveView === "office" ? (
+          <>
+            <span className={`hive-panel__live${playing ? " hive-panel__live--replay" : ""}`}>
+              <span className="hive-panel__live-dot" aria-hidden />
+              {playing ? `replay ${replayIndex + 1}/${replayFrames.length}` : "live"}
+            </span>
+            <div className="hive-panel__spacer" />
+            <div className="hive-panel__speed" role="group" aria-label="Simulation speed">
+              <Button
+                variant="plain"
+                className="hive-panel__speed-btn"
+                onClick={() => stepHiveSpeed(-1)}
+                disabled={hiveSpeedIndex <= 0}
+                aria-label="Slow down simulation"
+              >
+                −
+              </Button>
+              <span className="hive-panel__speed-label" aria-live="polite">
+                {hiveSpeedLabel(speedMultiplier)}
+              </span>
+              <Button
+                variant="plain"
+                className="hive-panel__speed-btn"
+                onClick={() => stepHiveSpeed(1)}
+                disabled={hiveSpeedIndex >= HIVE_SPEED_MULTIPLIERS.length - 1}
+                aria-label="Speed up simulation"
+              >
+                +
+              </Button>
+            </div>
+            <Button
+              variant="plain"
+              className="hive-panel__replay"
+              onClick={playing ? stopReplay : startReplay}
+              disabled={!playing && !canReplay}
+              aria-pressed={playing}
             >
-              {HIVE_ENABLED_SKIN_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {HIVE_SKINS[id].label}
-                </option>
-              ))}
-            </Select>
-          ) : (
-            <span className="hive-panel__skin-value">{HIVE_SKINS[hiveSkin].label}</span>
-          )}
-        </label>
-        <span className="hive-panel__legend">
-          <span className="hive-panel__legend-dot hive-panel__legend-dot--working" aria-hidden />
-          working
-        </span>
-        <span className="hive-panel__legend">
-          <span className="hive-panel__legend-dot hive-panel__legend-dot--done" aria-hidden />
-          done
-        </span>
-        <span className="hive-panel__legend">
-          <span className="hive-panel__legend-dot hive-panel__legend-dot--idle" aria-hidden />
-          idle
-        </span>
+              {playing ? "Stop" : "Replay"}
+            </Button>
+            <label className="hive-panel__skin">
+              <span className="hive-panel__skin-label">Skin</span>
+              {HIVE_ENABLED_SKIN_IDS.length > 1 ? (
+                <Select
+                  className="hive-panel__skin-select"
+                  value={hiveSkin || DEFAULT_HIVE_SKIN}
+                  onChange={(e) => setHiveSkin(e.target.value as HiveSkinId)}
+                  aria-label="Hive simulation skin"
+                >
+                  {HIVE_ENABLED_SKIN_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {HIVE_SKINS[id].label}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <span className="hive-panel__skin-value">{HIVE_SKINS[hiveSkin].label}</span>
+              )}
+            </label>
+            <span className="hive-panel__legend">
+              <span className="hive-panel__legend-dot hive-panel__legend-dot--working" aria-hidden />
+              working
+            </span>
+            <span className="hive-panel__legend">
+              <span className="hive-panel__legend-dot hive-panel__legend-dot--done" aria-hidden />
+              done
+            </span>
+            <span className="hive-panel__legend">
+              <span className="hive-panel__legend-dot hive-panel__legend-dot--idle" aria-hidden />
+              idle
+            </span>
+          </>
+        ) : (
+          <>
+            <div className="hive-panel__spacer" />
+            <span className="hive-panel__hint">Each tool call flies from its agent to a station</span>
+          </>
+        )}
       </div>
 
-      <div className="hive-panel__floor">
-        <HiveErrorBoundary>
-          <HiveCssFloor
-            key={`floor-${replayNonce}-${hiveSkin}`}
-            model={model}
-            speedMultiplier={speedMultiplier}
-          />
-        </HiveErrorBoundary>
-        {model.idle && !playing ? (
-          <div className="hive-panel__idle">
-            <div className="hive-panel__idle-title">The floor is quiet</div>
-            <div className="hive-panel__idle-copy">
-              No agents assigned yet — advance this ticket to staff the workflow.
+      {hiveView === "map" ? (
+        <div className="hive-panel__floor">
+          <HiveErrorBoundary>
+            <HiveAgentMap ticket={ticket} />
+          </HiveErrorBoundary>
+        </div>
+      ) : (
+        <div className="hive-panel__floor">
+          <HiveErrorBoundary>
+            <HiveCssFloor
+              key={`floor-${replayNonce}-${hiveSkin}`}
+              model={model}
+              speedMultiplier={speedMultiplier}
+            />
+          </HiveErrorBoundary>
+          {model.idle && !playing ? (
+            <div className="hive-panel__idle">
+              <div className="hive-panel__idle-title">The floor is quiet</div>
+              <div className="hive-panel__idle-copy">
+                No agents assigned yet — advance this ticket to staff the workflow.
+              </div>
             </div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const HIVE_VIEWS: { id: HiveView; label: string }[] = [
+  { id: "office", label: "Office" },
+  { id: "map", label: "Map" },
+];
+
+function HiveViewToggle({ view, onChange }: { view: HiveView; onChange: (view: HiveView) => void }) {
+  return (
+    <div className="hive-panel__view" role="group" aria-label="Hive view">
+      {HIVE_VIEWS.map((option) => (
+        <Button
+          key={option.id}
+          variant="plain"
+          className={`hive-panel__view-btn${view === option.id ? " is-on" : ""}`}
+          aria-pressed={view === option.id}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </Button>
+      ))}
     </div>
   );
 }

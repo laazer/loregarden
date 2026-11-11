@@ -1,0 +1,440 @@
+/*
+ * Every colour goes through a --map-* variable: the app theme by default, the
+ * active Hive skin's --hive-* palette when it has one (below), so the map reads
+ * as the same place as the office floor it sits beside.
+ */
+.hive-map {
+  --map-bg: var(--bg0);
+  --map-panel: var(--bg1);
+  --map-card: var(--bg2);
+  --map-card-hi: var(--bg3);
+  --map-chip: var(--bg4);
+  --map-edge: var(--bd);
+  --map-edge-hi: var(--bd2);
+  --map-ink: var(--tx);
+  --map-ink-2: var(--txm);
+  --map-ink-3: var(--txl);
+  --map-accent: var(--ac);
+  --map-accent-hi: var(--ac2);
+  --map-memory: var(--vio);
+  --map-memory-hi: var(--vil);
+  --map-inbox: var(--amb);
+  --map-inbox-hi: var(--aml);
+  --map-busy: var(--blue);
+  --map-busy-hi: var(--bll);
+  --map-danger: var(--red);
+  --map-danger-hi: var(--rdl);
+}
+
+/* The Officeplace: paper, ink and a blue pen. */
+.hive-panel--officeplace .hive-map {
+  --map-bg: var(--hive-floor-bg);
+  --map-panel: var(--hive-paper);
+  --map-card: var(--hive-paper-muted);
+  --map-card-hi: var(--hive-paper);
+  --map-chip: var(--hive-paper-edge);
+  --map-edge: var(--hive-paper-edge);
+  --map-edge-hi: var(--hive-ink-muted);
+  --map-ink: var(--hive-ink);
+  --map-ink-2: var(--hive-ink-muted);
+  --map-ink-3: var(--hive-ink-muted);
+  --map-accent: var(--hive-accent);
+  --map-accent-hi: var(--hive-accent);
+  --map-memory: var(--hive-success);
+  --map-memory-hi: var(--hive-success);
+  --map-inbox: var(--hive-warn);
+  --map-inbox-hi: var(--hive-warn);
+  --map-busy: var(--hive-accent);
+  --map-busy-hi: var(--hive-accent);
+  --map-danger: var(--hive-danger);
+  --map-danger-hi: var(--hive-danger);
+}
+
+.hive-map {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 0;
+  background: var(--map-bg);
+}
+
+.hive-map__stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.hive-map__svg {
+  width: 100%;
+  height: 100%;
+  max-height: 640px;
+  overflow: visible;
+}
+
+.hive-map__orbit {
+  fill: none;
+  stroke: var(--map-edge);
+  stroke-dasharray: 2 6;
+}
+
+/* ---- spokes and pulses ---- */
+
+.hive-map__spoke {
+  stroke: color-mix(in srgb, var(--map-accent) 45%, transparent);
+  stroke-linecap: round;
+}
+
+.hive-map__spoke--memory {
+  stroke: color-mix(in srgb, var(--map-memory) 50%, transparent);
+}
+
+.hive-map__spoke--inbox {
+  stroke: color-mix(in srgb, var(--map-inbox) 50%, transparent);
+}
+
+.hive-map__pulse {
+  stroke: var(--map-accent-hi);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 10 110;
+  stroke-dashoffset: 120;
+  animation: hive-map-pulse 0.9s var(--ease-out) forwards;
+}
+
+.hive-map__pulse--memory {
+  stroke: var(--map-memory-hi);
+}
+
+.hive-map__pulse--failed {
+  stroke: var(--map-danger);
+}
+
+@keyframes hive-map-pulse {
+  from {
+    stroke-dashoffset: 120;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 10;
+    opacity: 0;
+  }
+}
+
+/* ---- stations ---- */
+
+.hive-map__station-disc {
+  fill: var(--map-card);
+  stroke: var(--map-edge-hi);
+  stroke-width: 1.2;
+}
+
+.hive-map__station.is-lit .hive-map__station-disc {
+  stroke: var(--map-accent);
+}
+
+.hive-map__station--memory.is-lit .hive-map__station-disc {
+  stroke: var(--map-memory);
+}
+
+.hive-map__station--inbox.is-lit .hive-map__station-disc {
+  stroke: var(--map-inbox);
+}
+
+.hive-map__station-icon {
+  fill: none;
+  stroke: var(--map-ink-3);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hive-map__station.is-lit .hive-map__station-icon {
+  stroke: var(--map-ink);
+}
+
+.hive-map__station-busy {
+  fill: none;
+  stroke: var(--map-busy);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hive-map-spin 6s linear infinite;
+}
+
+@keyframes hive-map-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hive-map__station-label {
+  fill: var(--map-ink-2);
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+.hive-map__station-count,
+.hive-map__station-multi {
+  fill: var(--map-ink-3);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.hive-map__station-multi {
+  fill: var(--map-busy-hi);
+}
+
+.hive-map__station-fail {
+  fill: var(--map-danger);
+}
+
+.hive-map__station-fail-count {
+  fill: var(--map-bg);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+
+/* ---- agents ---- */
+
+.hive-map__agent-disc {
+  fill: var(--map-card-hi);
+  stroke: var(--map-edge-hi);
+  stroke-width: 1.5;
+}
+
+.hive-map__agent.is-active .hive-map__agent-disc {
+  stroke: var(--map-busy);
+  fill: color-mix(in srgb, var(--map-busy) 18%, var(--map-card));
+}
+
+.hive-map__agent-label {
+  fill: var(--map-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+/* ---- side lists ---- */
+
+.hive-map__side {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--map-edge);
+  background: var(--map-panel);
+  padding: 12px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hive-map__heading {
+  margin: 0 0 6px;
+  font-family: var(--ui);
+  font-weight: 600;
+  font-size: var(--fs-small);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--map-ink-2);
+}
+
+.hive-map__agents,
+.hive-map__feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hive-map__agent-row {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid var(--map-edge);
+  border-radius: 6px;
+  background: var(--map-card);
+  color: var(--map-ink);
+  cursor: pointer;
+}
+
+.hive-map__agent-row:hover,
+.hive-map__agent-row:focus-visible {
+  border-color: var(--map-edge-hi);
+  background: var(--map-card-hi);
+}
+
+.hive-map__agent-row.is-active {
+  border-color: color-mix(in srgb, var(--map-busy) 55%, var(--map-edge));
+}
+
+.hive-map__agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.hive-map__agent-initials {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--map-chip);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.hive-map__agent-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--map-ink-3);
+}
+
+.hive-map__agent-now {
+  font-size: var(--fs-small);
+  color: var(--map-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hive-map__feed-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 12px 58px 72px minmax(0, 1fr) auto;
+  grid-template-areas: "mark time station label fold" ". . agent agent agent";
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--map-ink);
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--fs-small);
+}
+
+.hive-map__feed-row:hover,
+.hive-map__feed-row:focus-visible {
+  background: var(--map-card);
+}
+
+.hive-map__feed-mark {
+  grid-area: mark;
+  color: var(--map-ink-3);
+}
+
+.hive-map__feed-row--running .hive-map__feed-mark {
+  color: var(--map-busy);
+}
+
+.hive-map__feed-row--failed .hive-map__feed-mark,
+.hive-map__feed-row--failed .hive-map__feed-label {
+  color: var(--map-danger-hi);
+}
+
+.hive-map__feed-time {
+  grid-area: time;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--map-ink-3);
+}
+
+.hive-map__feed-station {
+  grid-area: station;
+  font-weight: 600;
+  color: var(--map-accent-hi);
+}
+
+.hive-map__feed-station--memory {
+  color: var(--map-memory-hi);
+}
+
+.hive-map__feed-station--inbox {
+  color: var(--map-inbox-hi);
+}
+
+.hive-map__feed-label {
+  grid-area: label;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hive-map__feed-fold {
+  grid-area: fold;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--map-ink-3);
+}
+
+.hive-map__feed-agent {
+  grid-area: agent;
+  font-size: var(--fs-micro);
+  color: var(--map-ink-3);
+}
+
+.hive-map__empty,
+.hive-map__warn {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--map-ink-3);
+}
+
+.hive-map__warn {
+  margin-top: 6px;
+  color: var(--map-inbox-hi);
+}
+
+/* ---- empty and error ---- */
+
+.hive-map__notice {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.hive-map__notice-title {
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--map-ink);
+}
+
+.hive-map__notice-copy {
+  font-size: var(--fs-body);
+  color: var(--map-ink-3);
+  max-width: 420px;
+}
+
+@media (max-width: 760px) {
+  .hive-map {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(280px, 1fr) auto;
+  }
+
+  .hive-map__side {
+    border-left: 0;
+    border-top: 1px solid var(--map-edge);
+  }
+}
