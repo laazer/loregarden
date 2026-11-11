@@ -379,7 +379,9 @@ def test_a_parent_whose_ledger_read_raises_fails_the_gate_rather_than_passing_it
     assert not ran.exists()
 
 
-def test_the_two_refusals_name_the_same_two_numbers(session, workspace, ticket) -> None:
+def test_the_two_refusals_name_the_same_two_numbers(
+    session, workspace, ticket, monkeypatch
+) -> None:
     """R2/R3. One refusal reaches the operator through the ticket and one
     through the capacity board, and they must agree.
 
@@ -398,6 +400,8 @@ def test_the_two_refusals_name_the_same_two_numbers(session, workspace, ticket) 
     # Fill the machine so nothing can be booked ahead of the line, then ask for
     # a SERVICE child the 0.5 parent cannot cover.
     _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=6.5)
+    # The gate re-asks while the pool moves; nothing ends here, so it stalls out.
+    monkeypatch.setattr("loregarden.config.settings.gate_capacity_wait_seconds", 0.3)
 
     ledger_refusal = reserve_child(
         session,
