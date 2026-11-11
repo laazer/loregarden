@@ -17,6 +17,8 @@ export type PaneVisibility = Record<PaneId, boolean>;
 
 export type UtilityDockEdge = "bottom" | "right";
 
+export type HiveView = "office" | "map";
+
 export const DEFAULT_COPILOT_HEIGHT = 340;
 export const MIN_COPILOT_HEIGHT = 180;
 export const MAX_COPILOT_HEIGHT = 720;
@@ -109,6 +111,8 @@ interface UiState {
    */
   chatScope: string;
   hiveSkin: HiveSkinId;
+  /** Hive's view: the office floor, or the station map of agent tool calls. */
+  hiveView: HiveView;
   hiveSpeedIndex: number;
   copilotOpen: boolean;
   copilotHeight: number;
@@ -237,6 +241,7 @@ interface UiState {
   setUtilityDockEdge: (edge: UtilityDockEdge) => void;
   setRailDocked: (docked: boolean) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
+  setHiveView: (view: HiveView) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
   openEditorFile: (workspaceSlug: string, filePath: string, contextRoot?: string) => void;
@@ -257,6 +262,7 @@ type PersistedUiState = Pick<
   | "branchTriageWorkspaceSlug"
   | "chatScope"
   | "hiveSkin"
+  | "hiveView"
   | "hiveSpeedIndex"
   | "copilotOpen"
   | "copilotHeight"
@@ -288,6 +294,7 @@ export const useUiStore = create<UiState>()(
       branchTriageWorkspaceSlug: "",
       chatScope: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
+      hiveView: "office",
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       copilotOpen: false,
       copilotHeight: DEFAULT_COPILOT_HEIGHT,
@@ -418,6 +425,7 @@ export const useUiStore = create<UiState>()(
       setUtilityDockEdge: (utilityDockEdge) =>
         set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge), screenDockEdge: null }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
+      setHiveView: (hiveView) => set({ hiveView }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
       stepHiveSpeed: (delta) =>
@@ -508,6 +516,7 @@ export const useUiStore = create<UiState>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         state.hiveSkin = resolveHiveSkinId(state.hiveSkin);
+        state.hiveView = state.hiveView === "map" ? "map" : "office";
       },
       partialize: (s) => ({
         expandedTicketIds: s.expandedTicketIds,
@@ -530,6 +539,7 @@ export const useUiStore = create<UiState>()(
         railDocked: s.railDocked,
         terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
+        hiveView: s.hiveView,
         hiveSpeedIndex: s.hiveSpeedIndex,
       }),
     },

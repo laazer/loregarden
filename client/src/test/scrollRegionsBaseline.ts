@@ -472,6 +472,11 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "declared in HierarchyEditor.module.css, so the bundler renames the class and no literal in any TSX can be joined to it.",
   },
   {
+    selector: ".hive-map__side",
+    reason: "focusable-descendant",
+    note: "tab stop in the subtree: <Button> components/dashboard/hive/HiveAgentMap.tsx:300",
+  },
+  {
     selector: ".studio-record",
     reason: "focusable-descendant",
     note: "tab stop in the subtree: <Link> components/studio/StudioEditorShell.tsx:69",

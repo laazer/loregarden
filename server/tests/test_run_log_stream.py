@@ -843,3 +843,62 @@ def test_an_uncharacterised_envelope_is_dropped_rather_than_stringified():
     # A string still comes through: an uncharacterised *text* stream is worth
     # keeping verbatim.
     assert format_stream_payload({"type": "mystery", "text": "raw"}) == ("OUT", "raw")
+
+
+def test_run_log_streamer_logs_each_tool_call_after_the_text_that_led_to_it():
+    """Claude runs logged results only; the call that produced them was dropped."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+            make_agent_run(
+                session,
+                run_id="run_calls",
+                run_code="run_calls",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
+            streamer = RunLogStreamer(
+                run_id="run_calls",
+                ticket_id=ticket.id,
+                run_code="run_calls",
+                agent_id="static_qa",
+                skill_name="run_tests",
+            )
+            streamer.append_stream_line(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "Reading it."},
+                                {
+                                    "type": "tool_use",
+                                    "name": "Read",
+                                    "input": {"file_path": "/r/a/b.py"},
+                                },
+                            ]
+                        },
+                    }
+                )
+            )
+            streamer.finalize(status=RunStatus.SUCCEEDED)
+            content = load_run_log(session, "run_calls")
+            pairs = [(line["tag"], line["text"]) for line in content["lines"]]
+            assert pairs.index(("OUT", "Reading it.")) < pairs.index(
+                ("TOOL", "call · Read · a/b.py")
+            )
+    finally:
+        stream_mod.engine = original_engine

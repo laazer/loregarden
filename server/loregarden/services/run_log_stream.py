@@ -44,6 +44,7 @@ from loregarden.services.log_storage import (
 )
 from loregarden.services.sqlite_retry import sqlite_write_retry
 from loregarden.services.tool_body import command_outcome, with_tool_output
+from loregarden.services.tool_call_line import tool_call_lines
 from sqlmodel import Session, select
 
 
@@ -231,6 +232,9 @@ def _format_assistant_message(payload: dict[str, Any]) -> LogLine | None:
         return OUT / " ".join(text_parts)
     if thinking_parts:
         return THINK / " ".join(thinking_parts)
+    calls = tool_call_lines(message.get("content"))
+    if calls:
+        return calls[0]
     return _untyped_stream_payload(payload)
 
 
@@ -605,8 +609,15 @@ class RunLogStreamer:
             # written straight out under their own tag.
             self._switch_channel(THINK.name)
             self.append_line(THINK / " ".join(thinking), force=True)
-        if not parts:
-            return
+        if parts:
+            self._append_assistant_text(parts)
+        calls = tool_call_lines(message.get("content"))
+        if calls:
+            self._switch_channel(TOOL.name)
+            for call in calls:
+                self.append_line(call, force=True)
+
+    def _append_assistant_text(self, parts: list[str]) -> None:
         self._switch_channel(OUT.name)
         if self.partial_output:
             chunk_text = "".join(parts)
