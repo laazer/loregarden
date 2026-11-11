@@ -17,6 +17,8 @@ tests are unchanged. The two at the bottom cover the child branch.
 
 from __future__ import annotations
 
+import functools
+
 import pytest
 from loregarden.models.domain import (
     CapacityPool,
@@ -28,6 +30,8 @@ from loregarden.models.domain import (
     DockerLeaseStatus,
     GateOutcome,
 )
+from loregarden.services.capacity_line import retry_while_pool_moves
+from loregarden.services.docker_leases import release_lease
 from loregarden.services.docker_ledger import load_pool
 from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.gate_runner import run_transition_gates
@@ -237,7 +241,7 @@ def test_a_gate_child_books_the_excess_ahead_of_the_queue(
 
 
 def test_a_gate_child_that_exceeds_the_parent_grant_is_refused_not_queued(
-    session, host, workspace, ticket
+    session, host, workspace, ticket, monkeypatch
 ) -> None:
     """R2. Refused at once, with the four facts an operator needs to act on.
 
@@ -252,6 +256,8 @@ def test_a_gate_child_that_exceeds_the_parent_grant_is_refused_not_queued(
         session, ticket, workspace, parent, DockerFootprint.LIGHT, "triage_to_plan"
     )
     assert first.lease_id, "a child inside the parent's grant is granted with the pool full"
+    # Nothing holding capacity ends here, so the re-ask stalls and gives up.
+    monkeypatch.setattr("loregarden.config.settings.gate_capacity_wait_seconds", 0.3)
 
     with pytest.raises(GateCapacityUnavailable) as refusal:
         _child_lease(
@@ -273,3 +279,93 @@ def test_a_gate_child_that_exceeds_the_parent_grant_is_refused_not_queued(
         if lease.status is DockerLeaseStatus.WAITING and lease.holder_label.startswith("gates ")
     ] == []
     first.release(session)
+
+
+# ---- A child refused because the pool is full right now is asked again ----
+#
+# lg-reference-sources-1912 and lg-milestone-that-1431, 2026-11-10: each gate's
+# 0.5-cpu excess did not fit for one instant while pre-push suites held the
+# machine, and both tickets blocked as harness failures. The re-ask holds no
+# place in line; it waits only while the pool keeps moving.
+
+
+def _drive_retry(monkeypatch, **clock_and_sleep) -> None:
+    """Run the gate's re-ask on a test clock: its defaults are bound at import."""
+    monkeypatch.setattr(
+        "loregarden.services.gate_capacity.retry_while_pool_moves",
+        functools.partial(retry_while_pool_moves, **clock_and_sleep),
+    )
+
+
+def test_a_gate_child_waits_for_room_while_the_pool_moves_and_never_queues(
+    session, host, workspace, ticket, monkeypatch
+) -> None:
+    parent = _parent(session, ticket, workspace)
+    suite = _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=7.5)
+    assert suite.granted
+    asks: list[str] = []
+
+    def sleep_until_the_suite_finishes(_seconds: float) -> None:
+        asks.append("re-asked")
+        # The suite ends while the gate is waiting, and nothing else claims the room.
+        if len(asks) == 2:
+            release_lease(session, suite.lease_id, reason=DockerLeaseEndReason.RELEASED)
+        assert [
+            lease
+            for lease in session.exec(select(DockerLease))
+            if lease.status is DockerLeaseStatus.WAITING
+        ] == [], "the re-ask must hold no place in line"
+
+    _drive_retry(monkeypatch, sleep=sleep_until_the_suite_finishes)
+
+    lease = _child_lease(
+        session, ticket, workspace, parent, DockerFootprint.SERVICE, "implement_to_verify"
+    )
+
+    assert lease.lease_id, "granted once the suite freed the room"
+    assert len(asks) == 2
+    row = session.get(DockerLease, lease.lease_id)
+    assert (row.parent_lease_id, row.cpus, row.covered_cpus) == (parent.lease_id, 1.0, 0.5)
+    lease.release(session)
+
+
+def test_a_gate_child_gives_up_only_when_nothing_holding_capacity_finishes(
+    session, host, workspace, ticket, monkeypatch
+) -> None:
+    """The stall clock restarts when a holder ends, so a busy pool is not a stalled one."""
+    parent = _parent(session, ticket, workspace)
+    _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=6.0)
+    churn = [_reserve(session, CapacityPool.HOST, label=f"lint {i}", cpus=0.5) for i in range(3)]
+    now = [0.0]
+    ended: list[str] = []
+
+    def tick(_seconds: float) -> None:
+        now[0] += 1.0
+        # Each second a short holder ends and a new one takes its room, so the
+        # pool stays full but keeps moving for three seconds, then stops.
+        if churn:
+            done = churn.pop(0)
+            release_lease(session, done.lease_id, reason=DockerLeaseEndReason.RELEASED)
+            ended.append(done.lease_id)
+            refill = _reserve(session, CapacityPool.HOST, label="lint refill", cpus=0.5)
+            assert refill.granted
+
+    _drive_retry(monkeypatch, sleep=tick, clock=lambda: now[0])
+
+    with pytest.raises(GateCapacityUnavailable) as refusal:
+        acquire_gate_capacity(
+            session,
+            DockerFootprint.SERVICE,
+            ticket=ticket,
+            workspace=workspace,
+            transition="implement_to_verify",
+            ttl_seconds=600,
+            wait_seconds=2.0,
+            parent_lease_id=parent.lease_id,
+        )
+
+    assert len(ended) == 3, "it kept asking while holders were finishing"
+    assert now[0] >= 5.0, "and gave up only two seconds after the last one ended"
+    message = str(refusal.value)
+    assert "exceeds_parent_grant" in message
+    assert "Nothing holding capacity finished for 2s" in message

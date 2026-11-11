@@ -22,6 +22,12 @@ The claim is priced from the parent's unlent remainder, any excess is booked
 ahead of the line, or it is refused at once. 858's reasoning still holds for a
 gate with no parent — a land verification, a standalone transition — and that
 branch is unchanged.
+
+A child refused because its excess does not fit *right now* is asked again
+while the pool keeps moving (`retry_while_pool_moves`), still holding no place
+in line. Refusing on the first full instant blocked lg-reference-sources-1912
+and lg-milestone-that-1431 as harness failures on 2026-11-10, for a 0.5-cpu
+excess that fitted minutes later.
 """
 
 from __future__ import annotations
@@ -43,9 +49,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services.capacity_children import reserve_child
 from loregarden.services.capacity_environment import child_environment
-from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
+from loregarden.services.capacity_line import (
+    renew_orchestration_lease,
+    retry_while_pool_moves,
+    wait_while_line_moves,
+)
 from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import (
+    REJECT_EXCEEDS_PARENT_GRANT,
     DockerReservation,
     release_lease,
     reserve,
@@ -87,7 +98,8 @@ def acquire_gate_capacity(
     """Hold host capacity for one transition's gate commands, or raise saying why not.
 
     With `parent_lease_id` the claim is a child of the run's parent lease and
-    never queues; without one it is the ordinary top-level claim that waits in
+    never takes a place in line: it is granted, or re-asked while the pool keeps
+    moving, or refused; without one it is the ordinary top-level claim that waits in
     line. A parent that has gone away is **refused**, never quietly promoted to
     the top-level claim this did before 1923: that fallback would reintroduce a
     wait of minutes to hours on a path nothing reports, and the ticket would
@@ -97,22 +109,29 @@ def acquire_gate_capacity(
         return GateLease()
 
     label = f"gates {transition} · {workspace.slug} · {ticket.external_id or ticket.id}"
+    stall = settings.gate_capacity_wait_seconds if wait_seconds is None else wait_seconds
+    keep_alive = (
+        (lambda: renew_orchestration_lease(session, orchestration_run_id))
+        if orchestration_run_id
+        else None
+    )
     if parent_lease_id:
-        reservation = reserve_child(
+        reservation = retry_while_pool_moves(
             session,
-            parent_lease_id=parent_lease_id,
-            holder_label=label,
-            footprint=footprint,
-            pool=CapacityPool.HOST,
-            holder_kind=DockerHolderKind.AD_HOC,
-            # Stamped so the run's lease graph is readable from the run alone:
-            # one parent and a child per transition, which is what the capacity
-            # board draws and what the per-run assertions read.
-            orchestration_run_id=orchestration_run_id,
-            ticket_id=ticket.id,
-            workspace_id=workspace.id,
-            holder_pid=os.getpid(),
-            ttl_seconds=ttl_seconds,
+            lambda: _reserve_gate_child(
+                session,
+                footprint,
+                ticket=ticket,
+                workspace=workspace,
+                label=label,
+                ttl_seconds=ttl_seconds,
+                parent_lease_id=parent_lease_id,
+                orchestration_run_id=orchestration_run_id,
+            ),
+            retryable=lambda refused: refused.error_kind == REJECT_EXCEEDS_PARENT_GRANT,
+            waiting_for=label,
+            stall_seconds=stall,
+            on_poll=keep_alive,
         )
         if reservation.granted:
             return GateLease(lease_id=reservation.lease_id, env=child_environment(reservation, {}))
@@ -134,7 +153,6 @@ def acquire_gate_capacity(
         ttl_seconds=ttl_seconds,
     )
     if reservation.state is DockerGrantState.QUEUED:
-        stall = settings.gate_capacity_wait_seconds if wait_seconds is None else wait_seconds
         logger.warning(
             "Gates %s for %s are waiting in line for host capacity (giving up only if "
             "nothing ahead finishes for %.0fs): %s",
@@ -144,14 +162,7 @@ def acquire_gate_capacity(
             reservation.message,
         )
         reservation = wait_while_line_moves(
-            session,
-            reservation,
-            stall_seconds=stall,
-            on_poll=(
-                (lambda: renew_orchestration_lease(session, orchestration_run_id))
-                if orchestration_run_id
-                else None
-            ),
+            session, reservation, stall_seconds=stall, on_poll=keep_alive
         )
 
     if reservation.granted:
@@ -161,6 +172,35 @@ def acquire_gate_capacity(
     raise GateCapacityUnavailable(
         f"Gate commands for {transition} did not run: no {footprint.value} host capacity "
         f"({reservation.error_kind or 'the line stopped moving'}) — {reservation.message}"
+    )
+
+
+def _reserve_gate_child(
+    session: Session,
+    footprint: DockerFootprint,
+    *,
+    ticket: Ticket,
+    workspace: Workspace,
+    label: str,
+    ttl_seconds: int,
+    parent_lease_id: str,
+    orchestration_run_id: str | None,
+) -> DockerReservation:
+    return reserve_child(
+        session,
+        parent_lease_id=parent_lease_id,
+        holder_label=label,
+        footprint=footprint,
+        pool=CapacityPool.HOST,
+        holder_kind=DockerHolderKind.AD_HOC,
+        # Stamped so the run's lease graph is readable from the run alone:
+        # one parent and a child per transition, which is what the capacity
+        # board draws and what the per-run assertions read.
+        orchestration_run_id=orchestration_run_id,
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        holder_pid=os.getpid(),
+        ttl_seconds=ttl_seconds,
     )
 
 

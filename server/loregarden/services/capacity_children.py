@@ -208,7 +208,7 @@ def _grant(
                     message=f"{child.cpus:g} cpus / {child.memory_mb} MB is "
                     f"{excess_cpus:g} cpus / {excess_memory} MB more than parent "
                     f"{parent.id} has unlent, and that excess does not fit right now. "
-                    "A child never waits in line; size the parent to cover its children.",
+                    "A child never takes a place in line; its caller may ask again as capacity frees up.",
                 )
             if _out_of_time(deadline, child):
                 return _contended(child)

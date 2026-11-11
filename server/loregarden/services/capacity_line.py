@@ -23,6 +23,7 @@ cycle.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 
@@ -41,6 +42,8 @@ from loregarden.services.docker_leases import (
 from loregarden.services.docker_ledger import OCCUPYING, as_utc
 from loregarden.services.docker_poll_guard import note_poll
 from sqlmodel import Session, col, or_, select, update
+
+logger = logging.getLogger(__name__)
 
 #: Between polls of our own place in line.
 POLL_SECONDS = 2.0
@@ -110,6 +113,75 @@ def wait_while_line_moves(
             on_poll()
         session.commit()  # end any read transaction before sleeping on it
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
+
+
+def occupying_lease_ids(session: Session) -> set[str]:
+    """Every lease holding capacity now. One leaving the set means capacity came back."""
+    return set(session.exec(select(DockerLease.id).where(col(DockerLease.status).in_(OCCUPYING))))
+
+
+def retry_while_pool_moves(
+    session: Session,
+    attempt: Callable[[], DockerReservation],
+    *,
+    retryable: Callable[[DockerReservation], bool],
+    waiting_for: str,
+    stall_seconds: float,
+    on_poll: Callable[[], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> DockerReservation:
+    """Re-ask a claim that never takes a place in line until it is granted or the pool stalls.
+
+    For a child lease (`capacity_children`): it is booked ahead of the queue or
+    refused, and a refusal because the pool is full *right now* is not an answer
+    about the work. lg-reference-sources-1912 and lg-milestone-that-1431 were
+    both blocked on 2026-11-10 because their gate's 0.5-cpu excess did not fit
+    for one instant while pre-push suites held the machine.
+
+    The retry holds no place in line, so it cannot be the head anyone waits
+    behind. The thread asking holds only its run's parent lease, and parents are
+    sized so that every lane's parent together is well under the ceiling
+    (`GatesConfig.parent_capacity_footprint`), so the capacity it waits for is
+    held by work that finishes. The same stall rule as `wait_while_line_moves`
+    bounds it: the clock restarts whenever a lease holding capacity ends, and
+    only a pool where nothing has finished for `stall_seconds` gives up,
+    returning the last refusal for the caller to report.
+    """
+    moved_at = clock()
+    holding = occupying_lease_ids(session)
+    warned = False
+    while True:
+        reservation = attempt()
+        if reservation.granted or not retryable(reservation):
+            return reservation
+        if not warned and stall_seconds > 0:
+            warned = True
+            logger.warning(
+                "%s is waiting for room (giving up only if nothing holding capacity "
+                "finishes for %.0fs): %s",
+                waiting_for,
+                stall_seconds,
+                reservation.message,
+            )
+        stalled_for = clock() - moved_at
+        if stalled_for >= stall_seconds:
+            if stall_seconds > 0:
+                reservation.message = (
+                    f"{reservation.message} Nothing holding capacity finished for "
+                    f"{stalled_for:.0f}s while this waited for room."
+                )
+            return reservation
+        if on_poll is not None:
+            on_poll()
+        session.commit()  # end any read transaction before sleeping on it
+        sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
+        reclaim_dead_holders(session)
+        session.expire_all()
+        now_holding = occupying_lease_ids(session)
+        if holding - now_holding:
+            moved_at = clock()
+        holding = now_holding
 
 
 def renew_orchestration_lease(session: Session, orchestration_run_id: str) -> None:
