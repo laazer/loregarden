@@ -104,6 +104,11 @@ _NEW_TICKET = {
             "in the workspace's findings milestone, made if absent."
         ),
         "work_item_type": enum_string_prop("Work item type (default task).", _values(WorkItemType)),
+        "area": string_prop(
+            "The project area it is for, by slug or <workspace>/<slug> label (the brief lists "
+            "the source's areas). With no parent it is filed under that area's home ticket; "
+            "omitted, the source's one area in this workspace is used when it has exactly one."
+        ),
         "description": string_prop("The spec. The finding itself goes in block, not here."),
         "priority": integer_prop("1-3, 1 highest (default 3)."),
     },

@@ -22,6 +22,7 @@ from loregarden.models.domain.survey_tables import (
     SurveyUnknown,
 )
 from loregarden.services.reference_repo_service import clone_path_for, parse_repo_url
+from loregarden.services.reference_survey.areas import source_area_context
 from loregarden.services.reference_survey.errors import SurveyNotFound
 from loregarden.services.reference_survey.initiatives import initiative_context, open_question
 from loregarden.services.reference_survey.passes import coverage_report, get_pass, pass_counts_line
@@ -128,6 +129,7 @@ def pass_brief(session: Session, pass_id: str) -> dict:
         "source": _source_view(source),
         "workspaces": workspaces,
         "initiatives": [i.model_dump() for i in initiatives],
+        "areas": [a.model_dump() for a in source_area_context(session, source.id)],
         "clone_path": clone,
         "coverage": {k: v for k, v in report.items() if k not in ("finer_entries",)},
         "earlier_passes": [
@@ -144,6 +146,8 @@ def pass_brief(session: Session, pass_id: str) -> dict:
             "Stop when the question is answered and record where you stopped.",
             "Read once for every workspace listed: match each finding against all their backlogs.",
             "Weigh each finding against the listed initiatives' goals too; say which one it serves.",
+            "When project areas are listed, say which area each finding serves; a new ticket with "
+            "no parent names it in create.area and is filed under that area's home.",
         ],
     }
 

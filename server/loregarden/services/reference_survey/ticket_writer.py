@@ -48,7 +48,13 @@ from loregarden.services.acceptance_criteria import (
 )
 from loregarden.services.hierarchy_service import validate_parent_assignment
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.reference_survey.adoption_home import adoption_parent, adoption_type
+from loregarden.services.reference_survey.adoption_home import (
+    adoption_parent,
+    adoption_type,
+    area_tag,
+    tag_ticket,
+)
+from loregarden.services.reference_survey.areas import area_label, finding_area
 from loregarden.services.reference_survey.errors import (
     SurveyError,
     SurveyNotFound,
@@ -277,12 +283,17 @@ def _create(
     criteria: list[str],
     source: SurveySource | None = None,
 ) -> Ticket:
+    area = finding_area(session, source.id, workspace, spec.area) if source is not None else None
     if spec.parent:
         parent = resolve_one(session, spec.parent, workspace_id=workspace.id)
     elif source is not None:
         # Nothing covers its premise and the pass named no parent: it is something
-        # to adopt, filed with what else this source offered (`adoption_home`).
-        parent = adoption_parent(session, workspace, source)
+        # to adopt, filed with what else this source offered (`adoption_home`),
+        # under its project area's home when that area has one.
+        area_home = (
+            session.get(Ticket, area.home_ticket_id) if area and area.home_ticket_id else None
+        )
+        parent = adoption_parent(session, workspace, source, area_home)
         spec = spec.model_copy(update={"work_item_type": adoption_type(spec.work_item_type)})
     else:
         raise SurveyError("A ticket filed here needs a parent: name one in create.parent.")
@@ -293,7 +304,7 @@ def _create(
             f"A {spec.work_item_type.value} cannot sit under {parent.external_id} "
             f"(a {parent.work_item_type.value}): {exc}. Resolve the parent before creating."
         ) from exc
-    return TicketService(session).create_ticket(
+    created = TicketService(session).create_ticket(
         workspace_slug=workspace.slug,
         title=spec.title,
         work_item_type=spec.work_item_type,
@@ -303,6 +314,9 @@ def _create(
         priority=spec.priority,
         created_by="reference-survey",
     )
+    if area is not None:
+        created = tag_ticket(session, created, area_tag(area_label(workspace.slug, area.slug)))
+    return created
 
 
 def _overflow_spec(

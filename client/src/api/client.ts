@@ -3,6 +3,7 @@ import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { request } from "./http";
 import { initiativeApi } from "./initiativeApi";
 import { memoryApi } from "./memoryApi";
+import { referenceAreasApi } from "./referenceAreasApi";
 import { referenceLibraryApi } from "./referenceLibraryApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketLandingApi } from "./ticketLandingApi";
@@ -31,6 +32,7 @@ export type {
   SubtreeAutopilot,
 } from "./initiativeApi";
 export type * from "./memoryApi";
+export type * from "./referenceAreasApi";
 export type * from "./referenceLibraryApi";
 import type {
   WorkflowReassignmentPreview,
@@ -509,6 +511,7 @@ export const api = {
   ...autoDecisionApi,
   ...initiativeApi,
   ...memoryApi,
+  ...referenceAreasApi,
   ...referenceLibraryApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {

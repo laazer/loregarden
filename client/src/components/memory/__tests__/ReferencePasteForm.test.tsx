@@ -40,6 +40,7 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   mockApi.workspaces.mockResolvedValue([] as Awaited<ReturnType<typeof api.workspaces>>);
   mockApi.initiatives.mockResolvedValue([]);
+  mockApi.referenceAreas.mockResolvedValue([]);
 });
 
 describe("ReferencePasteForm", () => {
@@ -73,10 +74,12 @@ describe("ReferencePasteForm", () => {
           {
             url: "https://github.com/twentyhq/twenty", name: "twenty-crm",
             queued_reason: "The Open-Source CRM Built for AI Agents\nReplaces: Salesforce / HubSpot Enterprise ($150+/user/mo).",
+            areas: [],
           },
           {
             url: "https://github.com/Automattic/harper", name: "Harper",
             queued_reason: "Offline, Privacy-First AI Grammar & Writing Engine",
+            areas: [],
           },
         ],
       }),

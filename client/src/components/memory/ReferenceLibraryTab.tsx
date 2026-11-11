@@ -28,6 +28,7 @@ import { PageTopbar } from "../TopbarPageSlot";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
+import { ReferenceAreasButton } from "./ReferenceAreasManager";
 import { ReferenceAutoRereviewButton } from "./ReferenceAutoRereview";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
 import { ReferenceDiscoverButton } from "./ReferenceDiscover";
@@ -192,7 +193,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               className="rl-search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search name, URL or licence"
+              placeholder="Search name, URL, licence or area"
               aria-label="Search sources"
             />
             <Button
@@ -215,6 +216,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               Paste a list
             </Button>
             <ReferenceDiscoverButton workspace={slug} />
+            <ReferenceAreasButton workspace={slug} />
             <ReferenceAutoRereviewButton
               open={rereviewOpen}
               onOpen={() => setRereviewOpen(true)}

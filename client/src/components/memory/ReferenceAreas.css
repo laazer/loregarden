@@ -1,0 +1,128 @@
+/* Project areas: the picker in the paste table and add form, the tags on a
+   library row, and the Project areas manager. */
+
+.rl-suggest-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-small);
+}
+
+.rl-suggest-bar > span {
+  flex: 1 1 240px;
+}
+
+.rl-paste-table td.rl-paste-areas {
+  width: 24%;
+}
+
+.rl-area-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rl-area-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rl-area-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px 1px 7px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  color: var(--tx);
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.rl-area-chip-remove {
+  min-width: 0;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.rl-area-add {
+  width: 100%;
+}
+
+.rl-areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.rl-area-tag {
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  color: var(--tx);
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.rl-areas-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rl-areas-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--txm);
+  padding: 0 8px 6px 0;
+}
+
+.rl-areas-table td {
+  padding: 6px 8px 6px 0;
+  vertical-align: top;
+  border-top: 1px solid var(--bd);
+}
+
+.rl-areas-table td:first-child {
+  width: 26%;
+}
+
+.rl-areas-table td:first-child .rl-name {
+  padding: 0;
+  text-align: left;
+}
+
+.rl-areas-table .rl-area-group th {
+  padding-top: 12px;
+  color: var(--tx);
+}
+
+.rl-areas-table tr.rl-area--archived td {
+  color: var(--txm);
+}
+
+.rl-area-actions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .rl-areas-table thead {
+    display: none;
+  }
+
+  .rl-areas-table tr,
+  .rl-areas-table td {
+    display: block;
+    width: auto;
+  }
+
+  .rl-paste-table td.rl-paste-areas {
+    width: auto;
+  }
+}

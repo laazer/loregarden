@@ -44,6 +44,7 @@ from loregarden.api import (
     queue_lanes,
     queue_management,
     queue_review,
+    reference_areas,
     reference_library,
     reference_repos,
     runs,
@@ -345,6 +346,7 @@ app.include_router(ticket_studio.router, prefix="/api")
 app.include_router(reference_repos.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(reference_library.router, prefix="/api")
+app.include_router(reference_areas.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(done_ticket_ship.router, prefix="/api")

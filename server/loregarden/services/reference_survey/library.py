@@ -37,6 +37,7 @@ from loregarden.models.domain.survey_tables import (
     SurveyUnknown,
 )
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.reference_survey.areas import area_labels_by_source
 from loregarden.services.reference_survey.discovery import DiscoveryView, recent_discoveries
 from loregarden.services.reference_survey.errors import SurveyNotFound
 from loregarden.services.reference_survey.initiatives import LinkedInitiative, linked_initiatives
@@ -86,6 +87,8 @@ class LibraryRow(BaseModel):
     auto_rereview_excluded: bool
     #: The topic of the discovery run that found it, when an agent did.
     discovered_by: str | None
+    #: Project areas it serves, as `<workspace>/<slug>` labels.
+    areas: list[str]
 
 
 class LibraryList(BaseModel):
@@ -292,6 +295,7 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
         .order_by(col(SurveySourceWorkspace.added_at))
     ).all():
         serving[source_id].append(slug)
+    areas = area_labels_by_source(session, ids)
     rows = []
     for source in sources:
         count, last = pass_stats.get(source.id, (0, None))
@@ -326,6 +330,7 @@ def _rows(session: Session, sources: list[SurveySource]) -> list[LibraryRow]:
                 describe_error=source.describe_error,
                 auto_rereview_excluded=source.auto_rereview_excluded,
                 discovered_by=discovered.get(source.discovery_id) if source.discovery_id else None,
+                areas=areas.get(source.id, []),
             )
         )
     return rows
