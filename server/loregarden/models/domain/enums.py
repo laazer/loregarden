@@ -1424,6 +1424,11 @@ class ChatAdvisoryCause(StrEnum):
     #: turn answers but does not act, so the two cannot collide. Clears itself
     #: when that run finishes.
     STAGE_RUN_IN_FLIGHT = "stage_run_in_flight"
+    #: A research thread: searches and reads other projects, records what it
+    #: finds, and never edits code. Working as intended, like ASIDE_OBSERVER.
+    RESEARCH_THREAD = "research_thread"
+    #: A research thread on an adapter that cannot be held to read-only tools.
+    ADAPTER_CANNOT_RESEARCH = "adapter_cannot_research"
 
 
 class ClassifyBasis(StrEnum):

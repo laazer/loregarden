@@ -60,6 +60,8 @@ jest.mock("../../api/client", () => ({
       workspace_slug: "tinkercg",
     }),
     initiativePlan: jest.fn().mockResolvedValue({ milestones: [{ id: "m1" }] }),
+    createBaxterChatSession: jest.fn().mockResolvedValue({ id: "thread-1", mode: "general", messages: [] }),
+    setBaxterChatMode: jest.fn().mockResolvedValue({ id: "thread-1", mode: "research", messages: [] }),
   },
 }));
 jest.mock("../../lib/branchTriageApi", () => ({
@@ -201,6 +203,20 @@ it("falls back to the workspace Baxter thread on a screen that owns no conversat
   expect(result.current.label).toBe("loregarden");
   // The same thread `/chat` shows, so the dock can open it full-page.
   expect(result.current.maximisePath).toBe("/chat");
+});
+
+it("offers the workspace thread's two modes and switches it to research", async () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/studio/agents"),
+  });
+
+  expect(result.current.agents?.options.map((option) => option.id)).toEqual(["general", "research"]);
+  expect(result.current.agents?.active).toBe("general");
+  act(() => result.current.agents?.select("research"));
+
+  await waitFor(() =>
+    expect(api.setBaxterChatMode).toHaveBeenCalledWith("loregarden", "thread-1", "research"),
+  );
 });
 
 it("falls back to Baxter on the queue screen too", () => {

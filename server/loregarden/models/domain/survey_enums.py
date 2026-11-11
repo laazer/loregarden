@@ -32,6 +32,10 @@ __all__ = [
     "SurveyRecordAction",
     "LibraryState",
     "LearningsAvailability",
+    "ClaimStatus",
+    "ClaimRecorder",
+    "ResearchRepoAction",
+    "ResearchRecordAction",
 ]
 
 
@@ -290,3 +294,48 @@ class SurveyCardKind(StrEnum):
     NO_CARRIER_PARENT = "no_carrier_parent"
     DISCOVERY_NOT_QUEUED = "discovery_not_queued"
     WRITE_DID_NOT_LAND = "write_did_not_land"
+
+
+class ClaimStatus(StrEnum):
+    """How far a capability claim about a project was checked.
+
+    Research used to say "X does Y" with nothing behind it, and a README's
+    promise read the same as code that does it. Each status is a different
+    amount of evidence, and only ``verified`` names a file at a commit.
+    """
+
+    #: Read in the project's source: a file at a commit does it.
+    VERIFIED = "verified"
+    #: The project's docs or README say so; no code was read that does it.
+    DOCS_ONLY = "docs_only"
+    #: Looked for in the source and not found.
+    NOT_FOUND = "not_found"
+    #: A person said it does not, or the source shows it does not.
+    REFUTED = "refuted"
+
+
+class ClaimRecorder(StrEnum):
+    """Who put a capability claim on the record."""
+
+    AGENT = "agent"
+    OPERATOR = "operator"
+
+
+class ResearchRepoAction(StrEnum):
+    """`loregarden_research_repo` actions."""
+
+    HEAD = "head"
+    TREE = "tree"
+    GREP = "grep"
+    READ = "read"
+
+
+class ResearchRecordAction(StrEnum):
+    """`loregarden_research_record` actions."""
+
+    #: Open a research question in this thread: the question and the capabilities it needs.
+    QUESTION = "question"
+    #: Record candidates for a question, each with a claim per capability.
+    CANDIDATES = "candidates"
+    #: Record a person's correction: this project does not do this.
+    REFUTE = "refute"

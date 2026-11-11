@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
 import { ApiError, api, type Approval, type BaxterChatSnapshot, type WorkspaceRuntimeSettings } from "../api/client";
+import type { BaxterChatThreadMode } from "../api/chatTypes";
 import { baxterChatApi } from "../api/baxterChatApi";
 import type { ChatSession } from "../lib/chatSession";
 import { isRunStatusBusy } from "../lib/chatSession";
@@ -38,6 +39,10 @@ export interface BaxterChatSessionBinding extends ChatSession {
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
+  /** General or research; a research thread reads and records, and never edits code. */
+  mode: BaxterChatThreadMode;
+  setMode: (mode: BaxterChatThreadMode) => Promise<unknown>;
+  isSettingMode: boolean;
 }
 
 /** What one fork asks for: where to cut, and an optional first turn on the branch. */
@@ -267,6 +272,23 @@ export function useBaxterChatSessionAt(
     },
   });
 
+  const saveMode = useMutation({
+    meta: { errorTitle: "Switch chat mode" },
+    mutationFn: async (mode: BaxterChatThreadMode) => {
+      let id = sessionId;
+      if (!id) {
+        const created = await api.createBaxterChatSession(scope);
+        id = created.id;
+        setSessionId(id);
+        invalidateArchive();
+      }
+      return api.setBaxterChatMode(scope, id, mode);
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData(baxterChatSessionKey(scope, updated.id), updated);
+    },
+  });
+
   // Home chat publishes the capability matrix rather than the resolved intent,
   // so read the same two flags `resolve_chat_intent` reads. Unknown counts as
   // capable: a first paint that warned "advisory" and then took it back on load
@@ -315,5 +337,8 @@ export function useBaxterChatSessionAt(
       await saveRuntime.mutateAsync(runtime);
     },
     isSavingRuntime: saveRuntime.isPending,
+    mode: snapshot.data?.mode ?? "general",
+    setMode: (mode) => saveMode.mutateAsync(mode),
+    isSettingMode: saveMode.isPending,
   };
 }

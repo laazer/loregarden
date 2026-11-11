@@ -33,6 +33,7 @@ _REMEDIABLE: frozenset[ChatAdvisoryCause] = frozenset(
         ChatAdvisoryCause.ADAPTER_CANNOT_EXECUTE,
         ChatAdvisoryCause.ADAPTER_NEEDS_PERMISSION_BYPASS,
         ChatAdvisoryCause.BRANCH_NOT_CHECKED_OUT,
+        ChatAdvisoryCause.ADAPTER_CANNOT_RESEARCH,
     }
 )
 
@@ -62,6 +63,14 @@ _ADVICE: dict[ChatAdvisoryCause, str] = {
     ChatAdvisoryCause.STAGE_RUN_IN_FLIGHT: (
         "Nothing to fix — Baxter still answers, it just will not edit while that run "
         "is writing. Ask again once the run finishes to make changes."
+    ),
+    ChatAdvisoryCause.RESEARCH_THREAD: (
+        "Nothing to fix — this thread researches and records. Switch the thread to General "
+        "to ask for a change to code."
+    ),
+    ChatAdvisoryCause.ADAPTER_CANNOT_RESEARCH: (
+        "Switch this thread's runtime to Claude Code, the one adapter that can hold a turn "
+        "to read-only tools."
     ),
     ChatAdvisoryCause.ASIDE_OBSERVER: (
         "Nothing to fix — an aside is answered by reading the running agent's log, on "

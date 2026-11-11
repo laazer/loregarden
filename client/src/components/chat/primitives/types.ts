@@ -25,7 +25,9 @@ export type PrimitiveKind =
   | "commit"
   | "qa"
   | "btw"
-  | "giphy";
+  | "giphy"
+  | "research_candidates"
+  | "research_claim";
 
 export interface TextPart {
   primitive: "text";
@@ -262,6 +264,21 @@ export interface GiphyPart {
   caption?: string | null;
 }
 
+/** A research question's comparison table, read from the record by `question_id`. */
+export interface ResearchCandidatesPart {
+  primitive: "research_candidates";
+  question_id: string;
+  title?: string | null;
+}
+
+/** One project and one capability: the claim that stands, read by url + capability. */
+export interface ResearchClaimPart {
+  primitive: "research_claim";
+  url: string;
+  capability: string;
+  title?: string | null;
+}
+
 export type ChatPart =
   | TextPart
   | ThinkingPart
@@ -285,7 +302,9 @@ export type ChatPart =
   | CommitPart
   | QAPart
   | BtwPart
-  | GiphyPart;
+  | GiphyPart
+  | ResearchCandidatesPart
+  | ResearchClaimPart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
 

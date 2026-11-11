@@ -47,6 +47,7 @@ from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDL
 from loregarden.mcp.merge_queue_tools import HANDLERS as MERGE_QUEUE_HANDLERS
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
+from loregarden.mcp.research_tools import HANDLERS as RESEARCH_HANDLERS
 from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
@@ -97,4 +98,5 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     **FIX_COVERAGE_HANDLERS,
     **MERGE_QUEUE_HANDLERS,
     **SURVEY_HANDLERS,
+    **RESEARCH_HANDLERS,
 }

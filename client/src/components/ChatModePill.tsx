@@ -21,6 +21,7 @@ function fixFor(mode: ChatMode): ChatModeFix | null {
   if (!mode.remediable) return null;
   if (mode.cause === "adapter_cannot_execute") return "runtime";
   if (mode.cause === "adapter_needs_permission_bypass") return "runtime";
+  if (mode.cause === "adapter_cannot_research") return "runtime";
   if (mode.cause === "branch_not_checked_out") return "checkout";
   return null;
 }
@@ -73,7 +74,8 @@ export function ChatModePill({
       title={title}
     >
       <span className="app-action-bar-pill-dot" aria-hidden />
-      <span>{acting ? "can act" : "advisory"}</span>
+      {/* A research thread is read-only by design, so it says what it is doing. */}
+      <span>{acting ? "can act" : mode_.cause === "research_thread" ? "researching" : "advisory"}</span>
       {fix && onFix ? (
         <button
           type="button"

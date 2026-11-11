@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     BaxterChatSession,
+    ChatThreadMode,
     CliAdapter,
     Workspace,
     WorkspaceRuntimeSettings,
@@ -36,6 +37,7 @@ from loregarden.services.baxter_chat_service import (
     get_chat_session,
     home_chat_adapter,
     list_chat_sessions,
+    set_chat_mode,
     set_chat_runtime,
 )
 from loregarden.services.chat_attachments import (
@@ -68,6 +70,10 @@ class BaxterChatSessionCreate(BaseModel):
 
 class BaxterChatSessionUpdate(BaseModel):
     title: str = Field(min_length=1)
+
+
+class BaxterChatModeUpdate(BaseModel):
+    mode: ChatThreadMode
 
 
 class BaxterChatForkRequest(BaseModel):
@@ -249,6 +255,19 @@ def fork_baxter_chat_session(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return chat_session_snapshot(session, forked)
+
+
+@router.put("/sessions/{session_id}/mode")
+@global_router.put("/sessions/{session_id}/mode")
+def put_baxter_chat_mode(
+    session_id: str,
+    body: BaxterChatModeUpdate,
+    owner: ChatOwner = _OWNED,
+    session: Session = _DB,
+) -> dict:
+    """Switch the thread between general and research; its next turn gets those tools."""
+    chat_session = _chat_session(session, owner, session_id)
+    return chat_session_snapshot(session, set_chat_mode(session, chat_session, body.mode))
 
 
 @router.patch("/sessions/{session_id}/runtime", response_model=WorkspaceRuntimeSettings)

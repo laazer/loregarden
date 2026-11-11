@@ -1,0 +1,243 @@
+/* Research: a question's candidates compared across the capabilities it asked for. */
+
+.rs-table-scroll {
+  overflow-x: auto;
+}
+
+.rs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rs-table th,
+.rs-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rs-table thead th {
+  font-weight: 600;
+  color: var(--txm);
+  white-space: nowrap;
+}
+
+/* A capability is the operator's sentence; it wraps instead of widening the table. */
+.rs-table thead th.rs-cap {
+  min-width: 8em;
+  max-width: 14em;
+  white-space: normal;
+}
+
+.rs-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rs-table td.rs-num,
+.rs-table th.rs-num {
+  text-align: right;
+}
+
+.rs-sort {
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.rs-sort-mark {
+  display: inline-block;
+  width: 1em;
+}
+
+.rs-project {
+  font-weight: 600;
+  min-width: 14em;
+  max-width: 22em;
+}
+
+.rs-project a {
+  color: var(--tx);
+}
+
+.rs-summary {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  color: var(--txm);
+}
+
+/* Two lines in the table; the full summary is the project link's title. */
+.rs-project .rs-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.rs-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  color: var(--tx);
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.rs-tag--new {
+  background: color-mix(in srgb, var(--amb) 22%, transparent);
+}
+
+.rs-claim {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  color: var(--tx);
+}
+
+.rs-claim--verified {
+  background: color-mix(in srgb, var(--grn) 24%, transparent);
+}
+
+.rs-claim--docs_only {
+  background: color-mix(in srgb, var(--amb) 22%, transparent);
+}
+
+.rs-claim--not_found {
+  background: color-mix(in srgb, var(--txl) 22%, transparent);
+}
+
+.rs-claim--refuted {
+  background: color-mix(in srgb, var(--red) 24%, transparent);
+}
+
+.rs-claim--none {
+  color: var(--txl);
+}
+
+.rs-empty {
+  margin: 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+/* One claim: verdict, note, and the cited lines. */
+.rs-claim-card p {
+  margin: 0 0 6px;
+}
+
+.rs-claim-head {
+  font-weight: 600;
+}
+
+.rs-claim-head a {
+  color: var(--tx);
+}
+
+.rs-claim-capability {
+  font-weight: 400;
+  color: var(--txm);
+}
+
+.rs-inline {
+  display: inline;
+  margin-left: 4px;
+}
+
+.rs-claim-note {
+  color: var(--tx);
+  font-size: var(--fs-small);
+}
+
+.rs-excerpt {
+  margin: 6px 0;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rs-excerpt figcaption {
+  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  border-bottom: 1px solid var(--bd);
+}
+
+.rs-excerpt pre {
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.rs-excerpt-no {
+  display: inline-block;
+  min-width: 3ch;
+  margin-right: 1ch;
+  text-align: right;
+  color: var(--txl);
+  user-select: none;
+}
+
+.rs-claim-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rs-field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.rs-note {
+  width: 100%;
+}
+
+.rs-error {
+  margin: 6px 0 0;
+  color: var(--red);
+  font-size: var(--fs-small);
+}
+
+/* At phone width each row becomes a list of label: value pairs. */
+@media (max-width: 640px) {
+  .rs-table thead {
+    display: none;
+  }
+
+  .rs-table tr,
+  .rs-table th,
+  .rs-table td {
+    display: block;
+  }
+
+  .rs-table tr {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .rs-table th,
+  .rs-table td {
+    border-bottom: 0;
+    padding: 2px 0;
+  }
+
+  .rs-table td::before {
+    content: attr(data-label) ": ";
+    color: var(--txm);
+  }
+
+  .rs-table td.rs-num {
+    text-align: left;
+  }
+}

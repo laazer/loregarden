@@ -234,10 +234,10 @@ export const BASELINE: readonly BaselineEntry[] = [
   {
     selector: ".dock-welcome",
     reason: "placeholder-site",
-    note: "placeholder branch, no collection render and no control, at components/chat/DockChatWelcome.tsx:55",
+    note: "placeholder branch, no collection render and no control, at components/chat/DockChatWelcome.tsx:57",
     sites: [
       {
-        where: "components/chat/DockChatWelcome.tsx:65",
+        where: "components/chat/DockChatWelcome.tsx:67",
         reason: "focusable-descendant",
         note: "tab stop in the subtree: <Button> components/chat/ChatPromptRow.tsx:31 (gated on runtime state)",
       },

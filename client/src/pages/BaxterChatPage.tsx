@@ -35,7 +35,7 @@ import { useChatMessageActions } from "../hooks/useChatMessageActions";
 import { useChatScope } from "../hooks/useChatScope";
 import { chatScopeWorkspaceSlug, isGlobalChatScope } from "../lib/chatScope";
 import { showsChatWalker } from "../lib/chatSession";
-import { withReplyPrompts } from "../lib/dockChatPrompts";
+import { BAXTER_RESEARCH, TRY_ASKING, withReplyPrompts } from "../lib/dockChatPrompts";
 import { takeHomeBaxterFiles, takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { showChatMessage } from "../lib/chatJump";
@@ -510,11 +510,11 @@ export function BaxterChatPage() {
       );
     }
     if (!hasThread) return EMPTY_CHIPS;
-    return withReplyPrompts(suggestionChips(approvals, tickets), chat.messages).slice(
-      0,
-      PROMPT_LIMIT,
-    );
-  }, [galleryTurns, hasThread, approvals, tickets, chat.messages]);
+    // A research thread asks about other projects; the workspace's tickets are not its openers.
+    const openers =
+      chat.mode === "research" ? TRY_ASKING[BAXTER_RESEARCH] : suggestionChips(approvals, tickets);
+    return withReplyPrompts(openers, chat.messages).slice(0, PROMPT_LIMIT);
+  }, [galleryTurns, hasThread, approvals, tickets, chat.messages, chat.mode]);
 
   const promptsDisabled = busy || !scope;
   // One place at a time: the workbench while it is open, under the composer

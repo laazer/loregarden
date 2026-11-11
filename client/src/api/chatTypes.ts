@@ -181,6 +181,8 @@ export interface BaxterChatSessionSummary {
   updated_at: string;
 }
 
+export type BaxterChatThreadMode = "general" | "research";
+
 export interface BaxterChatSnapshot {
   id: string;
   workspace_id: string;
@@ -191,6 +193,8 @@ export interface BaxterChatSnapshot {
   /** Whose checkout and runtime the turns use; a global thread borrows one. */
   host_workspace_slug: string | null;
   title: string;
+  /** `research` threads search and read other projects and record what they find; they never edit code. */
+  mode: BaxterChatThreadMode;
   messages: TriageMessage[];
   /** Home-chat permission/question cards for the in-flight turn (also on the board). */
   pending_approvals?: Approval[];
@@ -262,7 +266,9 @@ export type ChatAdvisoryCause =
   | "no_run_for_approvals"
   | "surface_is_read_only"
   | "aside_observer"
-  | "stage_run_in_flight";
+  | "stage_run_in_flight"
+  | "research_thread"
+  | "adapter_cannot_research";
 
 /**
  * The mode of the rail's next turn, with the reason and the way out.

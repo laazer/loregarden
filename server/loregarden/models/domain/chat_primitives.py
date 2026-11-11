@@ -271,6 +271,31 @@ class GiphyPart(BaseModel):
     caption: str | None = None
 
 
+class ResearchCandidatesPart(BaseModel):
+    """A research question's comparison table, read from the record by id.
+
+    Carries only the id on purpose: the card fetches the candidates and claims
+    as recorded, so it cannot show a claim the service refused.
+    """
+
+    primitive: Literal["research_candidates"] = "research_candidates"
+    question_id: str
+    title: str | None = None
+
+
+class ResearchClaimPart(BaseModel):
+    """One project and one capability: the claim that stands and the lines behind it.
+
+    Names the project and capability, not a claim id, so the card always shows
+    the claim that stands now, a person's refutation included.
+    """
+
+    primitive: Literal["research_claim"] = "research_claim"
+    url: str
+    capability: str
+    title: str | None = None
+
+
 ChatPart = Annotated[
     TextPart
     | ThinkingPart
@@ -294,7 +319,9 @@ ChatPart = Annotated[
     | CommitPart
     | QAPart
     | BtwPart
-    | GiphyPart,
+    | GiphyPart
+    | ResearchCandidatesPart
+    | ResearchClaimPart,
     Field(discriminator="primitive"),
 ]
 
@@ -323,5 +350,7 @@ KNOWN_PRIMITIVES = frozenset(
         "qa",
         "btw",
         "giphy",
+        "research_candidates",
+        "research_claim",
     }
 )

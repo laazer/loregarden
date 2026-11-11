@@ -8,7 +8,7 @@ import { chatScopeInitiativeId, chatScopeWorkspaceSlug, initiativeChatScope } fr
 import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatSession } from "../lib/chatSession";
-import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../lib/dockChatPrompts";
+import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE, workspaceThreadPromptKind } from "../lib/dockChatPrompts";
 import { chatPath } from "../lib/homeBaxter";
 import { isLanding } from "../lib/workflowHelpers";
 import { useInitiativeAgentStore } from "../state/initiativeAgentStore";
@@ -165,6 +165,17 @@ export interface ChatAgents {
   active: string;
   select: (id: string) => void;
 }
+
+// A workspace thread's two modes: Baxter as usual, or researching other projects.
+// The same thread either way; the mode decides the tools its next turn gets.
+const THREAD_MODES: readonly ChatAgentOption[] = [
+  { id: "general", label: "Baxter", description: "Ask about and change this workspace's work" },
+  {
+    id: "research",
+    label: "Research",
+    description: "Find projects that do something, checked in their source; records to the reference library",
+  },
+];
 
 // Baxter's two modes on an initiative. Behind them sit two agents with their
 // own threads, but the operator talks to one assistant: the mode says what it
@@ -457,7 +468,17 @@ export function useActiveChatSession(): ActiveChatSession {
     archive: baxterArchive,
     model: baxterModel,
     maximisePath: chatPath(),
-    promptKind: baxterSession.kind,
+    promptKind: workspaceThreadPromptKind(baxterSession.kind, baxterSession.mode),
+    agents: {
+      options: THREAD_MODES,
+      active: baxterSession.mode,
+      select: (id) => {
+        baxterSession.setMode(id === "research" ? "research" : "general").catch(() => {
+          // silent-ok: setMode is a mutation carrying meta.errorTitle, so the global
+          // MutationCache toast names the failure and the switch stays where it was.
+        });
+      },
+    },
   };
 }
 

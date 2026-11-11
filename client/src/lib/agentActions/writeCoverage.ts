@@ -67,6 +67,7 @@ export const API_WRITE_COVERAGE = {
   addReferenceArea: { kind: "gap" },
   updateReferenceArea: { kind: "gap" },
   suggestReferenceAreas: { kind: "not_a_write", reason: DRAFT },
+  refuteResearchClaim: { kind: "mcp_tool", tool: "loregarden_research_record" },
   startDiscovery: {
     kind: "not_agent_driven",
     reason: "starts an agent to search and enqueue; an agent searches and enqueues with loregarden_survey_queue itself",
@@ -137,6 +138,7 @@ export const API_WRITE_COVERAGE = {
   renameBaxterChatSession: { kind: "not_agent_driven", reason: CONVERSATION },
   deleteBaxterChatSession: { kind: "human_only", reason: DELETES },
   setBaxterChatRuntime: { kind: "not_agent_driven", reason: CONVERSATION },
+  setBaxterChatMode: { kind: "not_agent_driven", reason: CONVERSATION },
   sendBaxterChatMessage: { kind: "not_agent_driven", reason: CONVERSATION },
   uploadBaxterChatAttachment: { kind: "not_agent_driven", reason: CONVERSATION },
   stopBaxterChatTurn: { kind: "not_agent_driven", reason: CONVERSATION },

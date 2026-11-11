@@ -39,6 +39,7 @@ from loregarden.models.domain import (
     BaxterChatScope,
     BaxterChatSession,
     ChatSurface,
+    ChatThreadMode,
     CliAdapter,
     OrchestrationRun,
     RunStatus,
@@ -68,6 +69,11 @@ from loregarden.services.baxter_chat_focus import (
     scope_initiative_ids,
     scope_workspace_ids,
     spans_workspaces,
+)
+from loregarden.services.baxter_chat_research import (
+    is_research,
+    research_mode,
+    research_turn,
 )
 from loregarden.services.baxter_chat_scope import (
     ChatOwner,
@@ -665,7 +671,8 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "pending_approvals": list_home_chat_pending_approvals(session, chat_session),
         "runtime": parse_runtime_settings(chat_session.runtime_json).model_dump(),
         "adapter_capabilities": caps,
-        "chat_mode": resolve_chat_mode(str(caps.get("adapter", "claude"))).as_dict(),
+        "mode": chat_session.mode.value,
+        "chat_mode": _thread_chat_mode(chat_session, str(caps.get("adapter", "claude"))),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
         "wait": wait_payload(wait) if wait is not None else None,
@@ -675,6 +682,23 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "created_at": chat_session.created_at.isoformat(),
         "updated_at": chat_session.updated_at.isoformat(),
     }
+
+
+def _thread_chat_mode(chat_session: BaxterChatSession, adapter: str) -> dict[str, object]:
+    if is_research(chat_session):
+        return research_mode(adapter).as_dict()
+    return resolve_chat_mode(adapter).as_dict()
+
+
+def set_chat_mode(
+    session: Session, chat_session: BaxterChatSession, mode: ChatThreadMode
+) -> BaxterChatSession:
+    """Switch a thread between general and research; the next turn gets that mode's tools."""
+    chat_session.mode = mode
+    session.add(chat_session)
+    session.commit()
+    session.refresh(chat_session)
+    return chat_session
 
 
 def get_chat_runtime(chat_session: BaxterChatSession) -> WorkspaceRuntimeSettings:
@@ -819,6 +843,7 @@ def build_baxter_chat_prompt(
     global_context: GlobalChatContext | None = None,
     extra_sections: Sequence[str] = (),
     chat_session_id: str = "",
+    research: bool = False,
 ) -> str:
     """Assemble one Home chat turn's system prompt.
 
@@ -830,6 +855,10 @@ def build_baxter_chat_prompt(
     ``global_context`` makes this a global thread's prompt: the snapshot spans
     every workspace, rows are labelled with theirs, and a focused initiative's
     plan is included.
+
+    ``research`` replaces the acting posture (fix things directly, git is in
+    scope) with nothing: a research thread's own posture arrives in
+    ``extra_sections`` (`baxter_chat_research.research_prompt_lines`).
 
     ``extra_sections`` are rendered after the snapshot, e.g. a feature loop's
     criteria (``chat_feature_loop.feature_prompt_lines``).
@@ -846,14 +875,15 @@ def build_baxter_chat_prompt(
     sections.extend(skill_prompt_block(skill_name, get_skill(skill_name) or ""))
     sections.extend(chat_role_blocks(agent or {}, surface=ChatSurface.HOME))
     sections.append("")
-    sections.extend(
-        chat_posture_blocks(
-            surface=ChatSurface.HOME,
-            interactive=interactive,
-            approval_bridge=approval_bridge,
+    if not research:
+        sections.extend(
+            chat_posture_blocks(
+                surface=ChatSurface.HOME,
+                interactive=interactive,
+                approval_bridge=approval_bridge,
+            )
         )
-    )
-    if interactive and chat_session_id:
+    if interactive and chat_session_id and not research:
         sections.append(
             f"This thread's chat_session_id is {chat_session_id}. Pass it as "
             "chat_session_id when calling loregarden_register_chat_wait."
@@ -1031,6 +1061,7 @@ def invoke_baxter_chat_model(
         global_context.workspace_ids if global_context is not None else {workspace.id}
     )
     agent = with_feature_loop_tools(session, chat_session, agent)
+    agent, research_lines, research = research_turn(session, chat_session, agent, selected)
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
         history=list(history or []),
@@ -1038,13 +1069,18 @@ def invoke_baxter_chat_model(
         approvals=_pending_approvals(session, snapshot_workspace_ids),
         tickets=_active_tickets(session, snapshot_workspace_ids),
         global_context=global_context,
-        extra_sections=[*feature_prompt_lines(session, chat_session), *extra_sections],
+        extra_sections=[
+            *feature_prompt_lines(session, chat_session),
+            *extra_sections,
+            *research_lines,
+        ],
         chat_session_id=chat_session.id if chat_session else "",
         agent=agent,
         references=resolve_references(session, message),
         interactive=interactive,
         approval_bridge=caps.permission_bridge,
         skill_name=skill_name,
+        research=research,
     )
     request = AgentTurnRequest(
         session=session,
@@ -1070,10 +1106,13 @@ def invoke_baxter_chat_model(
     )
 
     def outcome(turn: AgentTurnResult) -> ChatTurnOutcome:
-        return ChatTurnOutcome(reply=turn.reply, run_id=turn.run_id, acting=interactive)
+        # A research turn runs like an acting one but has nothing to publish.
+        return ChatTurnOutcome(
+            reply=turn.reply, run_id=turn.run_id, acting=interactive and not research
+        )
 
     result = run_agent_turn(request)
-    if not interactive or not is_agent_plan_execute_message(message):
+    if research or not interactive or not is_agent_plan_execute_message(message):
         return outcome(result)
 
     plan_id = _agent_plan_id(message)

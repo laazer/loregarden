@@ -1075,7 +1075,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // move into their own pane in its place, and that pane is a placeholder
     // branch by measurement — one line of text, no control, no collection.
     "components/UsageModal.tsx:190",
-    "components/chat/DockChatWelcome.tsx:55",
+    "components/chat/DockChatWelcome.tsx:57",
     "pages/BranchTriagePage.tsx:242",
     "pages/InitiativePlanPage.tsx:247",
   ];

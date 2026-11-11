@@ -116,6 +116,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Yesterday's triage",
       messages: [
@@ -134,6 +135,38 @@ describe("BaxterChatPage", () => {
 
     expect(await screen.findByText("Where did we stop?")).toBeInTheDocument();
     expect(screen.getByText("On the retro-tokens gate.")).toBeInTheDocument();
+  });
+
+  it("offers a research thread research questions, not the workspace's tickets", async () => {
+    const threads = fakeChatServer();
+    threads.set("s7", {
+      id: "s7",
+      workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
+      mode: "research",
+      ...NO_WORKBENCH,
+      title: "Rigging",
+      messages: [
+        { id: "m1", role: "user", content: "Which repos auto-rig a mesh?", created_at: "2026-11-11T09:00:00Z" },
+        { id: "m2", role: "assistant", content: "Three do.", created_at: "2026-11-11T09:00:01Z" },
+      ],
+      runtime: DEFAULT_RUNTIME,
+      run_status: "idle",
+      active_turn_id: null,
+      created_at: "2026-11-11T09:00:00Z",
+      updated_at: "2026-11-11T09:00:01Z",
+    });
+    useUiStore.setState({ baxterChatSessionId: "s7" });
+
+    renderChat();
+
+    expect(await screen.findByText("Three do.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Which open-source projects generate a skeleton for an unrigged mesh?").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Find the most valuable ticket")).not.toBeInTheDocument();
   });
 
   it("falls back to a fresh chat when the bound thread is gone", async () => {
@@ -284,6 +317,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Queue history",
       messages: [
@@ -442,6 +476,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Hello",
       messages: [
@@ -470,6 +505,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "In flight",
       messages: [
@@ -502,6 +538,7 @@ describe("BaxterChatPage", () => {
       scope: "workspace",
       initiative_id: null,
       host_workspace_slug: "loregarden",
+      mode: "general",
       ...NO_WORKBENCH,
       title: "Stop me",
       messages: [

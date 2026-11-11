@@ -40,6 +40,8 @@ const MINIMAL_PARTS: { [K in PrimitiveKind]: Extract<ChatPart, { primitive: K }>
   qa: { primitive: "qa", items: [{ id: "q", question: "Which?" }] },
   btw: { primitive: "btw", exchange_id: "e1", ticket_id: "t1", question: "Why?" },
   giphy: { primitive: "giphy", giphy_id: "abc" },
+  research_candidates: { primitive: "research_candidates", question_id: "q1" },
+  research_claim: { primitive: "research_claim", url: "https://github.com/acme/rigger", capability: "rigs" },
 };
 
 function renderPart(part: ChatPart) {

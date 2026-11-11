@@ -7,6 +7,8 @@ const SCOPE_LINE: Record<string, string> = {
   "ticket-triage": "Ask about this ticket: what is blocking it, or what its last run did.",
   "branch-triage": "Ask about this branch, or have Baxter commit and ship it.",
   "baxter-home": "Ask about anything in this workspace, or have Baxter do it.",
+  "baxter-research":
+    "Ask which projects do something. Baxter checks each claim in the project's source and records what it finds; it edits nothing.",
   "initiative-planner": "Ask about dates, pace, or what to start next.",
   "initiative-triage": "Ask about the work under this initiative.",
 };

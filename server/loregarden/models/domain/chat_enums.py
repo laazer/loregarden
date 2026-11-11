@@ -20,6 +20,18 @@ class BaxterChatScope(StrEnum):
     GLOBAL = "global"
 
 
+class ChatThreadMode(StrEnum):
+    """What one Home Baxter thread is for, which decides the tools its turns get.
+
+    ``research`` threads search the web, read other projects' source and record
+    what they find in the reference library. They are offered no tool that
+    writes a file or runs a shell, and they never publish a branch.
+    """
+
+    GENERAL = "general"
+    RESEARCH = "research"
+
+
 class ChatFocusKind(StrEnum):
     """What one row of a thread's focus names: a workspace or an initiative.
 
