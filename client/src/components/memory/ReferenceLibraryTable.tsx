@@ -13,6 +13,7 @@ import {
 } from "../../lib/referenceLibrary";
 import { Button } from "../ui/Button";
 import { KeepOrDrop } from "./ReferenceKeepDrop";
+import "./ReferenceAreas.css";
 
 interface Column {
   key: string;
@@ -100,6 +101,15 @@ export function ReferenceLibraryTable({
                 {row.description ? (
                   <span className="rl-description" title={row.description}>
                     {row.description}
+                  </span>
+                ) : null}
+                {row.areas.length > 0 ? (
+                  <span className="rl-areas" aria-label="Project areas">
+                    {row.areas.map((label) => (
+                      <span key={label} className="rl-area-tag">
+                        {label.startsWith(`${workspace}/`) ? label.slice(workspace.length + 1) : label}
+                      </span>
+                    ))}
                   </span>
                 ) : null}
                 {row.workspaces.length > 1 ? (

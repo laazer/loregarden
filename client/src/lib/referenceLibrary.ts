@@ -94,7 +94,8 @@ export function filterRows(rows: LibraryRow[], view: LibraryView, search: string
     return (
       row.name.toLowerCase().includes(needle) ||
       row.url.toLowerCase().includes(needle) ||
-      row.licence_name.toLowerCase().includes(needle)
+      row.licence_name.toLowerCase().includes(needle) ||
+      row.areas.some((label) => label.includes(needle))
     );
   });
 }

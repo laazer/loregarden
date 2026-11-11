@@ -12,6 +12,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain.survey_tables import SurveySource
+from loregarden.services.reference_survey.areas import (
+    link_picks,
+    resolve_picks,
+    with_area_workspaces,
+)
 from loregarden.services.reference_survey.bulk import BulkAddItem, enqueue_many
 from loregarden.services.reference_survey.discovery import (
     DiscoveryIn,
@@ -105,9 +110,14 @@ def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSo
 
 def _added(session: Session, body: SourceIn) -> AddSourceResult:
     initiatives = resolve_initiatives(session, body.initiative_ids)
+    picks = resolve_picks(session, body.areas)
+    body = body.model_copy(
+        update={"workspace_slugs": with_area_workspaces(body.workspace_slugs, picks)}
+    )
     # A person adding it here is its admission: no inbox card (see enqueue_source).
     added = enqueue_source(session, body, admitted=True)
     linked = follow(session, added.source.id, initiatives, actor="operator")
+    link_picks(session, added.source.id, picks)
     return AddSourceResult(
         source=library_row(session, added.source),
         attached=added.attached,

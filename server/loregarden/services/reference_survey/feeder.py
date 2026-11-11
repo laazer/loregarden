@@ -53,6 +53,7 @@ from loregarden.services.reference_repo_service import (
     clone_or_refresh,
     parse_repo_url,
 )
+from loregarden.services.reference_survey.areas import SourceAreaContext, source_area_context
 from loregarden.services.reference_survey.coverage import map_tree
 from loregarden.services.reference_survey.inbox import (
     CLEARED_BY_DISPATCH,
@@ -292,6 +293,7 @@ def _brief(
     clone: Path | None,
     workspaces: list[str],
     initiatives: list[InitiativeContext],
+    areas: list[SourceAreaContext],
 ) -> str:
     where = (
         f"Clone (read-only, never run anything in it): `{clone}`"
@@ -314,6 +316,15 @@ def _brief(
                     + " — their goals are in the brief."
                 ]
                 if initiatives
+                else []
+            ),
+            *(
+                [
+                    "**For project areas:** "
+                    + "; ".join(f"{a.label} ({a.name})" for a in areas)
+                    + " — read with these parts of the products in mind; what each is is in the brief."
+                ]
+                if areas
                 else []
             ),
             *([survey_pass.changes] if survey_pass.changes else []),
@@ -534,6 +545,7 @@ def _dispatch(
             clone,
             pass_workspaces(session, survey_pass),
             initiative_context(session, source.id),
+            source_area_context(session, source.id),
         ),
     )
     survey_pass.carrier_ticket_id = carrier.id

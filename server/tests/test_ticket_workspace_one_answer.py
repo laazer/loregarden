@@ -68,7 +68,9 @@ MIN_FILES_SCANNED = 500
 #: 30 since `reference_survey/feeder._create_carrier` files a carrier in its
 #: parent's workspace (`workspace_for_ticket`) rather than reading its source's
 #: SurveySource-keyed one: removed code, not lost reach.
-NON_TICKET_LOOKUPS = 30
+#: 31 since `reference_survey/areas.update_area` reads a project area's own
+#: workspace — the `SurveyArea` is the row, not a ticket — new code, not new reach.
+NON_TICKET_LOOKUPS = 31
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and

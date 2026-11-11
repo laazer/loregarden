@@ -62,6 +62,11 @@ export const API_WRITE_COVERAGE = {
   // Keeping or dropping a proposal decides the admission card an agent's find waits on.
   keepSource: { kind: "human_only", reason: GATE },
   dropSource: { kind: "human_only", reason: GATE },
+  // Project areas: an agent can name one (create.area on loregarden_survey_write)
+  // but cannot yet add or edit the catalog itself.
+  addReferenceArea: { kind: "gap" },
+  updateReferenceArea: { kind: "gap" },
+  suggestReferenceAreas: { kind: "not_a_write", reason: DRAFT },
   startDiscovery: {
     kind: "not_agent_driven",
     reason: "starts an agent to search and enqueue; an agent searches and enqueues with loregarden_survey_queue itself",

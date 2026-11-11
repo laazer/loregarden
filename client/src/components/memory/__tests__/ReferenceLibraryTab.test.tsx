@@ -103,6 +103,7 @@ beforeEach(() => {
   mockApi.referenceLibrary.mockResolvedValue(LIBRARY);
   mockApi.referenceSource.mockResolvedValue(DEEP);
   mockApi.initiatives.mockResolvedValue([INITIATIVE]);
+  mockApi.referenceAreas.mockResolvedValue([]);
   mockApi.referenceTopics.mockResolvedValue(TOPICS);
 });
 
@@ -518,7 +519,7 @@ describe("adding a reference", () => {
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
         workspace_slugs: ["loregarden"], kind: "repo", url: "https://github.com/acme/retry-kit",
-        question: "How do they retry?", queued_reason: "A retry ledger", initiative_ids: [],
+        question: "How do they retry?", queued_reason: "A retry ledger", initiative_ids: [], areas: [],
       }),
     );  // prettier-ignore
     await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/memory/library/new1"));
@@ -671,7 +672,7 @@ describe("who a review is for", () => {
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
         workspace_slugs: ["loregarden", "blobert"], kind: "repo", url: "https://github.com/acme/retry-kit",
-        question: "q", queued_reason: "r", initiative_ids: [INITIATIVE.id],
+        question: "q", queued_reason: "r", initiative_ids: [INITIATIVE.id], areas: [],
       }),
     );  // prettier-ignore
   });
@@ -721,7 +722,7 @@ describe("who a review is for", () => {
     await waitFor(() =>
       expect(mockApi.addReferenceSource).toHaveBeenCalledWith({
         workspace_slugs: ["blobert"], kind: "repo", url: "https://github.com/acme/retry-kit",
-        question: "", queued_reason: "", initiative_ids: [],
+        question: "", queued_reason: "", initiative_ids: [], areas: [],
       }),
     );  // prettier-ignore
   });

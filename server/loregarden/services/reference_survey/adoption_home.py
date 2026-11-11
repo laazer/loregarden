@@ -69,13 +69,29 @@ def findings_home(session: Session, workspace: Workspace) -> Ticket:
     return _tag(session, home, FINDINGS_HOME_TAG)
 
 
-def adoption_parent(session: Session, workspace: Workspace, source: SurveySource) -> Ticket:
+def area_tag(label: str) -> str:
+    """The tag a ticket filed for a project area carries: `area:<workspace>/<slug>`."""
+    return f"area:{label}"
+
+
+def tag_ticket(session: Session, ticket: Ticket, tag: str) -> Ticket:
+    """Add a tag (once) and commit."""
+    if tag in load_tags(ticket.tags_json):
+        return ticket
+    return _tag(session, ticket, tag)
+
+
+def adoption_parent(
+    session: Session, workspace: Workspace, source: SurveySource, home: Ticket | None = None
+) -> Ticket:
     """The "Adopt from <source>" feature, under the findings home; made when absent.
 
+    `home` replaces the workspace's findings home: a project area's home ticket,
+    so what one source offered an area is reviewed where that area's work lives.
     Found by its tag, its parent and the source URL its description opens with, so
     two sources with one name never share a feature.
     """
-    home = findings_home(session, workspace)
+    home = home or findings_home(session, workspace)
     opening = f"Findings from {source.url}"
     for feature in _tagged(session, workspace.id, ADOPT_TAG):
         if feature.parent_ticket_id == home.id and feature.description.startswith(opening):

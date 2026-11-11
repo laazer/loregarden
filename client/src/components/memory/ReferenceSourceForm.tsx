@@ -3,6 +3,7 @@ import { useId, useState, type ClipboardEvent, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "../../api/client";
+import type { EntryArea } from "../../api/referenceAreasApi";
 import type {
   AddSourceResult,
   BulkAddItem,
@@ -20,6 +21,7 @@ import { ModalShell } from "../ui/ModalShell";
 import { Textarea } from "../ui/Textarea";
 import { IconCloseButton } from "../IconCloseButton";
 import { MAX_BULK_URLS, announceBulk } from "./bulkAdd";
+import { AreaPicker } from "./ReferenceAreaPicker";
 import { ReferenceTargetsPicker } from "./ReferenceTargetsPicker";
 import { TopicChips } from "./ReferenceTopics";
 
@@ -150,6 +152,7 @@ export function ReferenceSourceForm({
   const [results, setResults] = useState<BulkAddItem[]>([]);
   const [readFor, setReadFor] = useState<string[]>([workspace]);
   const [initiativeIds, setInitiativeIds] = useState<string[]>([]);
+  const [areas, setAreas] = useState<EntryArea[]>([]);
   // The first is the source's home; this workspace stays first while it is ticked.
   const workspaceSlugs = readFor.includes(workspace)
     ? [workspace, ...readFor.filter((slug) => slug !== workspace)]
@@ -213,6 +216,7 @@ export function ReferenceSourceForm({
         question: question.trim(),
         queued_reason: why.trim(),
         initiative_ids: initiativeIds,
+        areas,
       }),
     onSuccess: (result) => {
       setFailure("");
@@ -232,6 +236,7 @@ export function ReferenceSourceForm({
         question: question.trim(),
         queued_reason: why.trim(),
         initiative_ids: initiativeIds,
+        entries: areas.length ? urls.map((each) => ({ url: each, name: "", queued_reason: "", areas })) : undefined,
       }),
     onSuccess: (items) => {
       setFailure("");
@@ -398,6 +403,10 @@ export function ReferenceSourceForm({
             initiatives={initiativeIds}
             onInitiatives={setInitiativeIds}
           />
+          <fieldset className="rl-target-group">
+            <legend>For project areas</legend>
+            <AreaPicker picked={areas} onChange={setAreas} name={several ? "these references" : "this reference"} workspace={workspace} />
+          </fieldset>
           <p className="rl-muted rl-optional-note">
             That is enough to review {several ? "them" : "it"}: the survey reads
             for those workspaces and initiatives. Pick topics, or add specifics

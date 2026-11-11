@@ -1,4 +1,5 @@
 import { request } from "./http";
+import type { EntryArea } from "./referenceAreasApi";
 
 /** Mirrors `LibraryState` in `server/loregarden/models/domain/survey_enums.py`. */
 export type LibraryState =
@@ -45,6 +46,8 @@ export interface LibraryRow {
   auto_rereview_excluded: boolean;
   /** The topic of the discovery run that found it, when an agent did. */
   discovered_by: string | null;
+  /** Project areas it serves, as `<workspace>/<slug>` labels. */
+  areas: string[];
 }
 
 export type SurveyTopic =
@@ -132,6 +135,8 @@ export interface AddSourceRequest {
   queued_reason: string;
   /** Initiatives to follow the source: its open tickets join them, now and later. */
   initiative_ids: string[];
+  /** Project areas it serves; each also makes it serve that area's workspace. */
+  areas?: EntryArea[];
 }
 
 export interface AddSourceResult {
@@ -187,6 +192,8 @@ export interface BulkAddEntry {
   url: string;
   name: string;
   queued_reason: string;
+  /** This URL's project areas; their workspaces join the shared ones for it alone. */
+  areas?: EntryArea[];
 }
 
 export interface BulkAddItem {

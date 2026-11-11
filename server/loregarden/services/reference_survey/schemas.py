@@ -100,6 +100,13 @@ class UnknownUpdateIn(_In):
     resolve: ResolveIn | None = None
 
 
+class EntryAreaIn(_In):
+    """A project area a source serves, by label (`loremaker/stratos`) or id, and why."""
+
+    area: str = Field(min_length=1)
+    reason: str = ""
+
+
 class SourceIn(_In):
     #: Every workspace whose backlog this source should answer; the first is home
     #: (where carrier tickets and inbox cards live). One pass reads for all.
@@ -113,6 +120,8 @@ class SourceIn(_In):
     #: Initiatives to follow the source: its open tickets join them, now and as
     #: passes add more (`initiatives.link_initiative`), by UUID or external id.
     initiative_ids: list[str] = Field(default_factory=list)
+    #: Project areas it serves (`areas`); each also makes it serve that area's workspace.
+    areas: list[EntryAreaIn] = Field(default_factory=list)
 
 
 #: URLs one bulk add takes: each is its own source and, when new, its own inbox card.
@@ -125,6 +134,8 @@ class BulkEntryIn(_In):
     url: str = Field(min_length=1)
     name: str = ""
     queued_reason: str = ""
+    #: This URL's project areas; their workspaces join the shared ones for it alone.
+    areas: list[EntryAreaIn] = Field(default_factory=list)
 
 
 class BulkSourceIn(_In):
@@ -188,6 +199,9 @@ class NewTicketIn(_In):
     #: ticket covers (`adoption_home`).
     parent: str = ""
     work_item_type: WorkItemType = WorkItemType.TASK
+    #: The project area it is for, by slug or label; with no parent it is filed
+    #: under that area's home. Empty uses the source's one area in the workspace, if it has one.
+    area: str = ""
     description: str = Field(min_length=1)
     priority: int = Field(default=3, ge=1, le=3)
 

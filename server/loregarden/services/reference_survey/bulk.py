@@ -13,6 +13,11 @@ from __future__ import annotations
 from loregarden.models.domain.survey_enums import BulkAddOutcome, SurveySourceKind
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
+from loregarden.services.reference_survey.areas import (
+    link_picks,
+    resolve_picks,
+    with_area_workspaces,
+)
 from loregarden.services.reference_survey.errors import (
     AlreadyRefused,
     AlreadyServes,
@@ -58,12 +63,16 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
     # Refused here, before any URL is added, rather than half-way down the list.
     initiatives = resolve_initiatives(session, body.initiative_ids)
     entries = {entry.url: entry for entry in body.entries}
+    # Areas too: an unknown one refuses the request before any URL is added.
+    areas = {entry.url: resolve_picks(session, entry.areas) for entry in body.entries}
     items = []
     for url in dict.fromkeys(u.strip() for u in body.urls if u.strip()):
         kind = body.kind or infer_kind(url)
         entry = entries.get(url)
+        picked = areas.get(url, [])
         one = SourceIn(
-            workspace_slugs=body.workspace_slugs, kind=kind, url=url, question=body.question,
+            workspace_slugs=with_area_workspaces(body.workspace_slugs, picked),
+            kind=kind, url=url, question=body.question,
             name=entry.name if entry else "",
             queued_reason=(entry and entry.queued_reason) or body.queued_reason,
             priority=body.priority,
@@ -74,6 +83,8 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
             session.rollback()
             known = session.get(SurveySource, exc.source_id)
             linked = follow(session, known.id, initiatives, actor="operator") if known else []
+            if known:
+                link_picks(session, known.id, picked)
             items.append(
                 BulkAddItem(
                     url=url, outcome=BulkAddOutcome.ALREADY, kind=known.kind if known else kind,
@@ -104,6 +115,7 @@ def enqueue_many(session: Session, body: BulkSourceIn) -> list[BulkAddItem]:
             items.append(failed)
             continue
         linked = follow(session, added.source.id, initiatives, actor="operator")
+        link_picks(session, added.source.id, picked)
         row = library_row(session, added.source)
         if added.scoped_pass is not None:
             outcome = BulkAddOutcome.RESCOPED

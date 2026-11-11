@@ -607,6 +607,7 @@
  "refused_reason": "",
  "source": {
   "approval_id": null,
+  "areas": [],
   "auto_rereview_excluded": false,
   "commits_since_review": null,
   "describe_error": "",
