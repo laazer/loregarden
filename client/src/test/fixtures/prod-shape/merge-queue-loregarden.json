@@ -1,6 +1,7 @@
 {
  "entries": [
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -28,6 +29,7 @@
    "wait": "checks_running"
   },
   {
+   "ahead": 1,
    "artifact_ref": "",
    "attempts": 0,
    "can_retry": false,
@@ -55,6 +57,7 @@
    "wait": "behind"
   },
   {
+   "ahead": 2,
    "artifact_ref": "",
    "attempts": 0,
    "can_retry": false,
@@ -82,6 +85,7 @@
    "wait": "behind"
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 0,
    "can_retry": true,
@@ -109,6 +113,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "lg-m2-2-conflict",
    "attempts": 0,
    "can_retry": true,
@@ -138,6 +143,7 @@
    "wait": "conflict_artifact_open"
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": true,
@@ -165,6 +171,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -192,6 +199,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -219,6 +227,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -246,6 +255,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -273,6 +283,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -300,6 +311,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -327,6 +339,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,
@@ -354,6 +367,7 @@
    "wait": ""
   },
   {
+   "ahead": 0,
    "artifact_ref": "",
    "attempts": 1,
    "can_retry": false,

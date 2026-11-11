@@ -206,3 +206,24 @@ def test_retry_sends_a_failed_entry_to_the_back(session, workspace, ticket):
     assert retried.position > behind.position
     with pytest.raises(QueueRefusal, match="queued"):
         retry(session, behind.id)
+
+
+def test_place_in_line_counts_live_entries_not_lifetime_positions(session, workspace, ticket):
+    """The 18th PR ever queued is at the head when the 17 before it landed.
+
+    ``position`` is a lifetime sequence number; an admission once reported it
+    as "queued at position 18" for a PR with nothing ahead of it.
+    """
+    landed = enqueue(session, ticket, workspace, _candidate("a" * 40, pr=7)).entry
+    transition(session, landed, MergeQueueState.QUEUED, state=MergeQueueState.MERGED)
+
+    head = enqueue(session, ticket, workspace, _candidate("b" * 40, pr=8))
+    behind = enqueue(session, ticket, workspace, _candidate("c" * 40, pr=9))
+
+    assert (head.entry.position, behind.entry.position) == (2, 3)
+    assert merge_queue.ahead_of(session, head.entry) == 0
+    assert merge_queue.ahead_of(session, behind.entry) == 1
+    assert merge_queue.ahead_of(session, landed) == 0, "a finished entry is in no line"
+    assert head.detail == merge_queue.place_in_line(0)
+    assert behind.detail == merge_queue.place_in_line(1)
+    assert merge_queue.place_in_line(0) != merge_queue.place_in_line(1)

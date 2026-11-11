@@ -39,12 +39,19 @@ from loregarden.services.merge_queue_requests import (
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 
+#: Finished entries the status read lists after the live ones. The queue
+#: keeps every entry it ever held; an agent asking what is landing needs the
+#: line and its last few outcomes, not the whole history.
+STATUS_HISTORY = 10
+
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.MERGE_QUEUE_STATUS,
         "description": (
             "Read the merge queue: what is landing on the base branch, in order, and why the "
-            "head entry is waiting (`wait`). Pass `entry_id` for one entry with the required "
+            "head entry is waiting (`wait`). `ahead` is an entry's place in line (live entries "
+            "before it); `position` is a lifetime sequence number, not a place in line. Lists "
+            "the live entries, then the latest finished ones. Pass `entry_id` for one entry with the required "
             "checks it waits on, read live from GitHub for a testing entry. Read-only."
         ),
         "inputSchema": tool_schema(
@@ -117,7 +124,7 @@ def _read_merge_queue(session: Session, arguments: dict[str, Any]) -> str:
     workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if workspace is None:
         raise ValueError(f"No workspace {slug}")
-    return _dump(queue_view(session, workspace))
+    return _dump(queue_view(session, workspace, limit=STATUS_HISTORY))
 
 
 def _admit(session: Session, arguments: dict[str, Any]) -> Admission:

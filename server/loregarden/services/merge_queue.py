@@ -154,6 +154,26 @@ def entries_for(session: Session, workspace_id: str, *, limit: int = 50) -> list
     return [*live_entries(session, workspace_id), *finished]
 
 
+def ahead_of(session: Session, entry: MergeQueueEntry) -> int:
+    """Live entries in line before ``entry``; 0 for the head and for a finished entry.
+
+    ``position`` is a lifetime sequence number (the next after the highest the
+    workspace ever used), so it is no place in line: the 18th PR ever queued
+    is at the head when the 17 before it have landed.
+    """
+    if entry.state in MERGE_QUEUE_TERMINAL_STATES:
+        return 0
+    live = live_entries(session, entry.workspace_id)
+    return next((index for index, other in enumerate(live) if other.id == entry.id), 0)
+
+
+def place_in_line(ahead: int) -> str:
+    """``ahead`` in words, for an admission's detail."""
+    if ahead == 0:
+        return "queued at the head of the line"
+    return f"queued behind {ahead} {'entry' if ahead == 1 else 'entries'}"
+
+
 def head_entry(session: Session, workspace_id: str) -> MergeQueueEntry | None:
     """The entry the loop acts on: the active one, else the first queued."""
     live = live_entries(session, workspace_id)
@@ -272,16 +292,16 @@ def _insert(
                 )
             continue  # lost the position to a concurrent admission; read the next one
         session.refresh(entry)
+        ahead = ahead_of(session, entry)
         logger.info(
-            "Merge queue %s: admitted PR #%s (%s) at position %s",
+            "Merge queue %s: admitted PR #%s (%s) at position %s, %s ahead",
             workspace.slug,
             entry.pr_number,
             candidate_label(ticket, entry.pr_number),
             entry.position,
+            ahead,
         )
-        return Admission(
-            MergeQueueAdmission.ADMITTED, f"queued at position {entry.position}", entry
-        )
+        return Admission(MergeQueueAdmission.ADMITTED, place_in_line(ahead), entry)
     raise RuntimeError(
         f"could not claim a merge queue position in {workspace.slug} after "
         f"{_POSITION_ATTEMPTS} concurrent admissions"
