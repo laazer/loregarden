@@ -69,6 +69,11 @@ export const API_WRITE_COVERAGE = {
   updateReferenceArea: { kind: "gap" },
   suggestReferenceAreas: { kind: "not_a_write", reason: DRAFT },
   refuteResearchClaim: { kind: "mcp_tool", tool: "loregarden_research_record" },
+  saveResearchQuestion: {
+    kind: "human_only",
+    reason: "a saved interval spends agent turns on its own schedule; that cost is the operator's call",
+  },
+  rerunResearchQuestion: { kind: "not_agent_driven", reason: CONVERSATION },
   startDiscovery: {
     kind: "not_agent_driven",
     reason: "starts an agent to search and enqueue; an agent searches and enqueues with loregarden_survey_queue itself",

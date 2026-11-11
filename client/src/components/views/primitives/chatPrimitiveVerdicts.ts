@@ -211,6 +211,13 @@ export const CHAT_PRIMITIVE_VERDICTS: Record<PrimitiveKind, ChatPrimitiveAudit> 
       "One string and a fetch, and it does have a pane: the library source's Capabilities " +
       "section renders the same view. A project not yet in the library has nowhere else to be.",
   },
+  research_diff: {
+    verdict: "chat-bound",
+    needs: "a `question_id` (and optionally a `run`); the card fetches what that run changed.",
+    reason:
+      "It answers one re-run of one question, in the thread that re-ran it; the candidates " +
+      "table is where the question's current state lives.",
+  },
   giphy: {
     verdict: "chat-bound",
     needs: "`giphy_id` or a Giphy media `url`, and an alt/caption.",

@@ -40,6 +40,7 @@ const KIND_LABELS: Record<string, string> = {
   research_candidates: "Research",
   research_claim: "Research claim",
   research_project: "Research project",
+  research_diff: "Research changes",
 };
 
 export function primitiveKindLabel(kind: string): string {

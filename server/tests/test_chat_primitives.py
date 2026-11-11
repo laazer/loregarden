@@ -377,6 +377,7 @@ _MINIMAL_FENCES: dict[str, dict[str, object]] = {
     "research_candidates": {"question_id": "q1"},
     "research_claim": {"url": "https://github.com/acme/rigger", "capability": "rigs"},
     "research_project": {"url": "https://github.com/acme/rigger"},
+    "research_diff": {"question_id": "q1"},
 }
 
 

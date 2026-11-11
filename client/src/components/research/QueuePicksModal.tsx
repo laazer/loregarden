@@ -4,7 +4,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { EntryArea } from "../../api/referenceAreasApi";
 import type { BulkAddItem } from "../../api/referenceLibraryApi";
-import { RESEARCH_PROJECT_ROOT, RESEARCH_QUESTION_ROOT } from "../../lib/researchCandidates";
+import {
+  RESEARCH_DIFF_ROOT,
+  RESEARCH_PROJECT_ROOT,
+  RESEARCH_QUESTION_ROOT,
+  RESEARCH_QUESTIONS_ROOT,
+} from "../../lib/researchCandidates";
 import { describeError, pushToast } from "../../state/toastStore";
 import { AreaPicker } from "../memory/ReferenceAreaPicker";
 import { Button } from "../ui/Button";
@@ -54,6 +59,8 @@ export function QueuePicksModal({ open, picks, questionId, question, onClose, on
       }),
     onSuccess: (items) => {
       void queryClient.invalidateQueries({ queryKey: [RESEARCH_QUESTION_ROOT] });
+      void queryClient.invalidateQueries({ queryKey: [RESEARCH_QUESTIONS_ROOT] });
+      void queryClient.invalidateQueries({ queryKey: [RESEARCH_DIFF_ROOT] });
       void queryClient.invalidateQueries({ queryKey: [RESEARCH_PROJECT_ROOT] });
       void queryClient.invalidateQueries({ queryKey: ["reference-library"] });
       const bad = items.filter((item) => !OK_OUTCOMES.has(item.outcome));

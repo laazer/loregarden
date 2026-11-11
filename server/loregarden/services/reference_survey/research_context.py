@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from loregarden.models.domain.survey_area_tables import SurveyArea
 from loregarden.models.domain.survey_research_tables import (
     SurveyCapabilityClaim,
     SurveyResearchCandidate,
@@ -61,6 +62,14 @@ class QuestionSummary(BaseModel):
     run_count: int
     last_run_at: datetime | None
     candidates: int
+    #: Saved questions list first and can re-run on their own.
+    saved: bool
+    #: Days between automatic re-runs; None re-runs only when asked.
+    interval_days: int | None
+    #: The project area it is pinned to, by name; "" when none.
+    area_name: str
+    #: Why the last scheduled re-run could not start; "" when it did.
+    schedule_error: str
 
 
 class ResearchContext(BaseModel):
@@ -190,6 +199,7 @@ def workspace_questions(session: Session, workspace_id: str) -> list[QuestionSum
             col(SurveyResearchQuestion.archived_at).is_(None),
         )
         .order_by(
+            col(SurveyResearchQuestion.saved).desc(),
             col(SurveyResearchQuestion.last_run_at).desc(),
             col(SurveyResearchQuestion.created_at).desc(),
         )
@@ -202,6 +212,16 @@ def workspace_questions(session: Session, workspace_id: str) -> list[QuestionSum
             .group_by(col(SurveyResearchCandidate.question_id))
         ).all()
     )
+    area_ids = {question.area_id for question in questions if question.area_id}
+    areas: dict[str, str] = (
+        dict(
+            session.exec(
+                select(SurveyArea.id, SurveyArea.name).where(col(SurveyArea.id).in_(area_ids))
+            ).all()
+        )
+        if area_ids
+        else {}
+    )
     return [
         QuestionSummary(
             id=question.id,
@@ -211,6 +231,10 @@ def workspace_questions(session: Session, workspace_id: str) -> list[QuestionSum
             run_count=question.run_count,
             last_run_at=question.last_run_at,
             candidates=counts.get(question.id, 0),
+            saved=question.saved,
+            interval_days=question.interval_days,
+            area_name=areas.get(question.area_id or "", ""),
+            schedule_error=question.schedule_error,
         )
         for question in questions
     ]

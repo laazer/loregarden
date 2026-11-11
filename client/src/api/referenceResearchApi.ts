@@ -48,6 +48,11 @@ export interface ResearchQuestion {
   run_count: number;
   last_run_at: string | null;
   saved: boolean;
+  /** Days between automatic re-runs; null re-runs only when asked. */
+  interval_days: number | null;
+  area_id: string | null;
+  /** Why the last scheduled re-run could not start; "" when it did. */
+  schedule_error: string;
   candidates: ResearchCandidate[];
 }
 
@@ -93,6 +98,51 @@ export interface ResearchQuestionSummary {
   run_count: number;
   last_run_at: string | null;
   candidates: number;
+  /** Saved questions list first and can re-run on their own. */
+  saved: boolean;
+  interval_days: number | null;
+  /** The project area it is pinned to, by name; "" when none. */
+  area_name: string;
+  schedule_error: string;
+}
+
+export interface SaveQuestionRequest {
+  /** False un-saves: it leaves the library's list and stops re-running. */
+  saved: boolean;
+  area_id: string | null;
+  interval_days: number | null;
+}
+
+export interface RerunStarted {
+  question_id: string;
+  thread_id: string;
+  /** The pending assistant turn the re-run is answered in. */
+  turn_id: string;
+}
+
+export interface ResearchClaimChange {
+  url: string;
+  name: string;
+  capability: string;
+  /** The claim before this run; null when this run is the first to check it. */
+  before: ResearchClaim | null;
+  after: ResearchClaim;
+}
+
+/** What one run of a research question changed against the run before it. */
+export interface ResearchRunDiff {
+  question_id: string;
+  question: string;
+  run: number;
+  /** 0 for a question's first run. */
+  previous_run: number;
+  /** Only the latest run can say which projects dropped out. */
+  dropped_known: boolean;
+  added: ResearchCandidate[];
+  dropped: ResearchCandidate[];
+  changed: ResearchClaimChange[];
+  /** Claims this run re-checked and found as they were. */
+  unchanged: number;
 }
 
 export interface QueuePicksRequest {
@@ -128,6 +178,21 @@ export const referenceResearchApi = {
   /** Queue picks for a survey pass, admitted, each linked to the question it answers. */
   queueResearchPicks: (body: QueuePicksRequest) =>
     request<BulkAddItem[]>("/api/reference-research/queue", { method: "POST", body: JSON.stringify(body) }),
+  /** Save, re-pin or un-save a question; an interval makes it re-run on its own. */
+  saveResearchQuestion: (questionId: string, body: SaveQuestionRequest) =>
+    request<ResearchQuestion>(`/api/reference-research/questions/${encodeURIComponent(questionId)}/save`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** Re-run a question now, as a turn in its thread; 409 while that thread is busy. */
+  rerunResearchQuestion: (questionId: string) =>
+    request<RerunStarted>(`/api/reference-research/questions/${encodeURIComponent(questionId)}/rerun`, {
+      method: "POST",
+    }),
+  researchRunDiff: (questionId: string, run?: number | null) =>
+    request<ResearchRunDiff>(
+      `/api/reference-research/questions/${encodeURIComponent(questionId)}/diff${run ? `?run=${run}` : ""}`,
+    ),
   /** A person's correction: this project does not do this. It stands over agent claims. */
   refuteResearchClaim: (body: RefuteClaimRequest) =>
     request<ResearchClaim>("/api/reference-research/claims/refute", {
