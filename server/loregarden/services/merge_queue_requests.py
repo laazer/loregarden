@@ -101,11 +101,10 @@ def _can_withdraw(entry: MergeQueueEntry) -> bool:
     return step is not None and STEPS[step].cancellable
 
 
-def _can_retry(entry: MergeQueueEntry) -> bool:
-    return entry.state in (
-        MergeQueueState.FAILED,
-        MergeQueueState.TIMED_OUT,
-        MergeQueueState.WITHDRAWN,
+def _can_retry(session: Session, entry: MergeQueueEntry) -> bool:
+    """Stopped, and not replaced by a later entry for the same work (whose retry refuses)."""
+    return entry.state in merge_queue.STOPPED_STATES and not merge_queue.is_superseded(
+        session, entry
     )
 
 
@@ -135,7 +134,7 @@ def _fields(session: Session, entry: MergeQueueEntry, head_id: str | None, ahead
         "conflicted_files": entry.conflicted_files(),
         "artifact_ref": entry.artifact_ref,
         "can_withdraw": _can_withdraw(entry),
-        "can_retry": _can_retry(entry),
+        "can_retry": _can_retry(session, entry),
         "enqueued_at": entry.enqueued_at,
         "state_changed_at": entry.state_changed_at,
     }
