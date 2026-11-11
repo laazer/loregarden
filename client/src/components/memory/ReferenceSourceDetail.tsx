@@ -26,6 +26,7 @@ import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { ReviewForm } from "./ReferenceReviewNow";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
+import { ReferenceSourceCapabilities } from "./ReferenceSourceCapabilities";
 import { ReferenceSourceInitiatives } from "./ReferenceSourceInitiatives";
 import { KeepOrDrop } from "./ReferenceKeepDrop";
 import { ReferenceLinkButton } from "./ReferenceLinkModal";
@@ -417,6 +418,7 @@ function Body({ detail, workspace, position }: { detail: LibraryDetail; workspac
         </section>
       ) : null}
       <Facts detail={detail} />
+      <ReferenceSourceCapabilities detail={detail} />
       <Tickets detail={detail} />
       <ReferenceSourceInitiatives detail={detail} />
       <Learnings detail={detail} />

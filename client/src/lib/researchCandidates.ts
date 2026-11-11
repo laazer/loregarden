@@ -8,6 +8,9 @@ import type { ClaimStatus, ResearchCandidate, ResearchClaim } from "../api/refer
 /** Query keys for research reads; a refutation invalidates both roots. */
 export const RESEARCH_QUESTION_ROOT = "research-question";
 export const RESEARCH_CLAIM_ROOT = "research-claim";
+export const RESEARCH_PROJECT_ROOT = "research-project";
+export const researchProjectKey = (url: string) => [RESEARCH_PROJECT_ROOT, url] as const;
+export const researchQuestionsKey = (workspace: string) => ["research-questions", workspace] as const;
 export const researchQuestionKey = (questionId: string) => [RESEARCH_QUESTION_ROOT, questionId] as const;
 export const researchClaimKey = (url: string, capability: string) =>
   [RESEARCH_CLAIM_ROOT, url, capability] as const;

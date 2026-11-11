@@ -76,6 +76,10 @@ const EMPTY_CHIPS = [
   "Triage the stuck tickets",
 ] as const;
 
+/** A new research thread says what it is for; the workspace's ticket counts are not its subject. */
+const RESEARCH_SUMMARY =
+  "Research thread: ask which projects do something. Baxter checks each claim in the project's source and records what it finds.";
+
 /** As many as one line under the composer holds at the reading width. */
 const PROMPT_LIMIT = 4;
 
@@ -187,6 +191,7 @@ function BaxterHeroAsk({
   commandOptions,
   menu,
   prompts,
+  placeholder = "What should we ship today?",
 }: {
   onSend: ComposerSend;
   onStop?: () => void;
@@ -197,6 +202,7 @@ function BaxterHeroAsk({
   commandOptions: ComposerHostOptions;
   menu: ReactNode;
   prompts: ReactNode;
+  placeholder?: string;
 }) {
   const composer = useBaxterComposer({ commandOptions, onSend, busy, blocked, menu });
 
@@ -209,7 +215,7 @@ function BaxterHeroAsk({
         <StudioChatComposer
           {...composer}
           onStop={onStop}
-          placeholder="What should we ship today?"
+          placeholder={placeholder}
           sendLabel="Ask Baxter"
           isSending={busy}
           isStopping={stopping}
@@ -336,6 +342,7 @@ export function BaxterChatPage() {
   // A turn waiting on the operator still owns the thread chrome — don't drop
   // back to the welcome hero while the approval card is the thing to answer.
   const isEmpty = !hasThread && !busy && turnApprovals.length === 0;
+  const research = chat.mode === "research";
   // The garden's vines and composer sit on the thread's column edge, which the
   // thread's scrollbar gutter moves by a platform-dependent amount.
   const chatRef = useRef<HTMLDivElement>(null);
@@ -509,8 +516,9 @@ export function BaxterChatPage() {
         EMPTY_CHIPS
       );
     }
-    if (!hasThread) return EMPTY_CHIPS;
     // A research thread asks about other projects; the workspace's tickets are not its openers.
+    if (chat.mode === "research" && !hasThread) return TRY_ASKING[BAXTER_RESEARCH];
+    if (!hasThread) return EMPTY_CHIPS;
     const openers =
       chat.mode === "research" ? TRY_ASKING[BAXTER_RESEARCH] : suggestionChips(approvals, tickets);
     return withReplyPrompts(openers, chat.messages).slice(0, PROMPT_LIMIT);
@@ -598,7 +606,7 @@ export function BaxterChatPage() {
             <header className="baxter-chat-intro">
               <p className="baxter-chat-kicker">{formatDateLine(now)}</p>
               <h1 className="baxter-chat-greeting">{greetingFor(now)}</h1>
-              <p className="baxter-chat-summary">{summaryLine}</p>
+              <p className="baxter-chat-summary">{research ? RESEARCH_SUMMARY : summaryLine}</p>
               <ChatScopeNote
                 scope={scope}
                 initiatives={initiatives}
@@ -615,6 +623,7 @@ export function BaxterChatPage() {
               commandOptions={commandOptions}
               menu={composerMenu}
               prompts={workbenchOpen ? null : promptRow}
+              placeholder={research ? "Which projects do what you need?" : undefined}
             />
             {sendError}
           </div>

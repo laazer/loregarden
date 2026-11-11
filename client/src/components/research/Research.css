@@ -4,6 +4,43 @@
   overflow-x: auto;
 }
 
+.rs-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rs-select {
+  width: 1.5em;
+}
+
+.rs-question-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rs-question {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.rs-question-open {
+  padding: 0;
+  font-weight: 600;
+  text-align: left;
+  white-space: normal;
+}
+
+.rs-pick-list {
+  margin: 0 0 10px;
+  padding-left: 1.2em;
+  font-size: var(--fs-small);
+}
+
 .rs-table {
   width: 100%;
   border-collapse: collapse;

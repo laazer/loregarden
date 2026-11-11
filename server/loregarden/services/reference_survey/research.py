@@ -30,10 +30,10 @@ from loregarden.models.domain.survey_research_tables import (
     SurveyResearchQuestion,
 )
 from loregarden.services.reference_repo_service import parse_repo_url
-from loregarden.services.reference_survey.bulk import infer_kind
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.queue import canonical_url
 from loregarden.services.reference_survey.research_repo import Evidence, verify_evidence
+from loregarden.services.reference_survey.source_kind import infer_kind
 from loregarden.services.reference_survey.upstream import (
     UpstreamUnavailable,
     gh_api_json,
@@ -414,7 +414,7 @@ def _claim_view(claim: SurveyCapabilityClaim) -> ClaimView:
     return ClaimView.model_validate(claim, from_attributes=True)
 
 
-def _shown_claim(claims: list[SurveyCapabilityClaim]) -> SurveyCapabilityClaim | None:
+def shown_claim(claims: list[SurveyCapabilityClaim]) -> SurveyCapabilityClaim | None:
     """A person's refutation if one stands, else the newest standing claim."""
     if refuted := _person_refuted(claims):
         return refuted
@@ -443,7 +443,7 @@ def question_view(session: Session, question_id: str) -> QuestionView:
         standing.setdefault((claim.url, claim.capability), []).append(claim)
     views = []
     for candidate in candidates:
-        shown = {cap: _shown_claim(standing.get((candidate.url, cap), [])) for cap in wanted}
+        shown = {cap: shown_claim(standing.get((candidate.url, cap), [])) for cap in wanted}
         views.append(
             CandidateView(
                 id=candidate.id,
@@ -482,7 +482,7 @@ def claim_card(session: Session, raw_url: str, capability: str) -> ClaimCard:
             )
         ).all()
     )
-    shown = _shown_claim([claim for claim in claims if claim.superseded_by is None])
+    shown = shown_claim([claim for claim in claims if claim.superseded_by is None])
     name = session.exec(
         select(SurveyResearchCandidate.name)
         .where(SurveyResearchCandidate.url == url)

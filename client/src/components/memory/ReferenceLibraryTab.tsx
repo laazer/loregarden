@@ -33,6 +33,7 @@ import { ReferenceAutoRereviewButton } from "./ReferenceAutoRereview";
 import { ReferenceLibraryTable } from "./ReferenceLibraryTable";
 import { ReferenceDiscoverButton } from "./ReferenceDiscover";
 import { ReferenceQueueStatus } from "./ReferenceQueueStatus";
+import { ReferenceResearchButton } from "./ReferenceResearch";
 import { ReferencePasteForm } from "./ReferencePasteForm";
 import { ReferenceSourceForm } from "./ReferenceSourceForm";
 import { ReferenceSourceDetail } from "./ReferenceSourceDetail";
@@ -216,6 +217,7 @@ export function ReferenceLibraryTab({ slug }: { slug: string }) {
               Paste a list
             </Button>
             <ReferenceDiscoverButton workspace={slug} />
+            <ReferenceResearchButton workspace={slug} />
             <ReferenceAreasButton workspace={slug} />
             <ReferenceAutoRereviewButton
               open={rereviewOpen}

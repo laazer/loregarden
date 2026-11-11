@@ -13,6 +13,8 @@ import {
   type CandidateSortKey,
 } from "../../lib/researchCandidates";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { QueuePicksModal } from "./QueuePicksModal";
 import "./Research.css";
 
 /**
@@ -87,12 +89,39 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
   );
   const rows = useMemo(() => sortCandidates(question.candidates, sort), [question.candidates, sort]);
   const onSort = (key: CandidateSortKey) => setSort((current) => nextSort(current, key));
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const [queueing, setQueueing] = useState(false);
+  const picks = rows.filter((row) => selected.has(row.url)).map((row) => ({ url: row.url, name: row.name }));
+  const toggle = (url: string, on: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (on) next.add(url);
+      else next.delete(url);
+      return next;
+    });
 
   return (
+    <>
+    <div className="rs-table-toolbar">
+      <span className="rs-summary rs-inline">
+        {picks.length ? `${picks.length} selected` : "Select projects to queue them for a survey pass."}
+      </span>
+      <Button
+        variant="secondary"
+        compact
+        disabled={picks.length === 0}
+        aria-haspopup="dialog"
+        aria-expanded={queueing}
+        onClick={() => setQueueing(true)}
+      >
+        Queue {picks.length || ""} for review…
+      </Button>
+    </div>
     <div className="rs-table-scroll">
       <table className="rs-table" aria-label={`Candidates for: ${question.question}`}>
         <thead>
           <tr>
+            <th scope="col" aria-label="Select" />
             <SortHeader label="Project" sortKey="name" sort={sort} onSort={onSort} />
             {question.capabilities.map((capability) => (
               <SortHeader
@@ -114,6 +143,16 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
           {/* ux-ok: the caller renders the empty state and never mounts this with no candidates. */}
           {rows.map((row) => (
             <tr key={row.id}>
+              <td className="rs-select">
+                <Input
+                  type="checkbox"
+                  checked={selected.has(row.url)}
+                  disabled={Boolean(row.source_id)}
+                  title={row.source_id ? "Already in the library" : undefined}
+                  aria-label={row.source_id ? `${row.name} is already in the library` : `Select ${row.name}`}
+                  onChange={(event) => toggle(row.url, event.target.checked)}
+                />
+              </td>
               <th scope="row" className="rs-project" data-label="Project">
                 <a href={row.url} target="_blank" rel="noreferrer" title={row.summary || row.url}>
                   {row.name}
@@ -144,5 +183,14 @@ export function ResearchCandidatesTable({ question }: { question: ResearchQuesti
         </tbody>
       </table>
     </div>
+    <QueuePicksModal
+      open={queueing}
+      picks={picks}
+      questionId={question.id}
+      question={question.question}
+      onClose={() => setQueueing(false)}
+      onQueued={() => setSelected(new Set())}
+    />
+    </>
   );
 }

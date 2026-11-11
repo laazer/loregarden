@@ -319,7 +319,7 @@ def test_the_brief_names_the_areas_a_pass_reads_for(pass_ctx):
     brief = pass_brief(session, survey_pass.id)
     assert [a["label"] for a in brief["areas"]] == ["loregarden/capacity-ops"]
     text = _brief(source, survey_pass, [], None, [world.workspace_slug], [],
-                  source_area_context(session, source.id))  # fmt: skip
+                  source_area_context(session, source.id), [])  # fmt: skip
     assert "**For project areas:** loregarden/capacity-ops (Capacity and ops)" in text
 
 

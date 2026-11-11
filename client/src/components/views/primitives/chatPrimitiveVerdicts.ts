@@ -204,6 +204,13 @@ export const CHAT_PRIMITIVE_VERDICTS: Record<PrimitiveKind, ChatPrimitiveAudit> 
       "Two strings and a fetch, but the capability is one a research question recorded, in " +
       "the operator's words; the library source's Capabilities section is its pane.",
   },
+  research_project: {
+    verdict: "chat-bound",
+    needs: "a project `url`; the card fetches every claim research recorded about it.",
+    reason:
+      "One string and a fetch, and it does have a pane: the library source's Capabilities " +
+      "section renders the same view. A project not yet in the library has nowhere else to be.",
+  },
   giphy: {
     verdict: "chat-bound",
     needs: "`giphy_id` or a Giphy media `url`, and an alt/caption.",

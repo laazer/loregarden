@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
-import { RESEARCH_CLAIM_ROOT, RESEARCH_QUESTION_ROOT } from "../../lib/researchCandidates";
+import { RESEARCH_CLAIM_ROOT, RESEARCH_PROJECT_ROOT, RESEARCH_QUESTION_ROOT } from "../../lib/researchCandidates";
 import { describeError, pushToast } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { ModalShell } from "../ui/ModalShell";
@@ -34,6 +34,7 @@ export function RefuteClaimModal({ open, url, capability, name, questionId, onCl
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [RESEARCH_CLAIM_ROOT] });
       void queryClient.invalidateQueries({ queryKey: [RESEARCH_QUESTION_ROOT] });
+      void queryClient.invalidateQueries({ queryKey: [RESEARCH_PROJECT_ROOT] });
       pushToast({ tone: "success", title: "Refutation recorded", message: `${name}: not “${capability}”` });
       setNote("");
       onClose();
