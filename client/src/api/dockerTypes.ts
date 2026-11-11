@@ -141,6 +141,13 @@ export interface DockerUnverifiable {
 export interface CapacityPoolSummary {
   ceiling: DockerCeiling;
   in_use: DockerCapacityAmounts;
+  /**
+   * Busy cores outside the ledger: the load average less what leases hold,
+   * capped at the core count. Host pool only; always 0 on the docker pool.
+   * Admission counts it as held for claims of a core or more, so a pool can
+   * book almost nothing and still have no cpu free.
+   */
+  external_cpus: number;
   available: DockerCapacityAmounts;
 }
 

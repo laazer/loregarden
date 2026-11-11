@@ -116,6 +116,34 @@ describe("DockerQueueBoard", () => {
     expect(screen.getByRole("meter", { name: "Docker CPU" })).toBeInTheDocument();
   });
 
+  it("shows CPU load from outside the ledger on the machine meter", () => {
+    const base = status();
+    render(
+      <DockerQueueBoard
+        status={status({
+          host: {
+            ...base.host,
+            ceiling: { ...base.host.ceiling, cpus: 7 },
+            in_use: { ...base.host.in_use, cpus: 0.25 },
+            external_cpus: 9.75,
+          },
+        })}
+        {...idle}
+      />,
+    );
+
+    const machine = screen.getByRole("meter", { name: "Machine CPU" });
+    expect(machine).toHaveAttribute("data-tone", "full");
+    expect(machine).toHaveAttribute(
+      "aria-valuetext",
+      "0.3 cpus of 7 cpus, plus 9.8 cpus outside the ledger",
+    );
+    // The docker pool has no outside-load figure of its own.
+    expect(screen.getByRole("meter", { name: "Docker CPU" }).getAttribute("aria-valuetext")).not.toMatch(
+      /outside/,
+    );
+  });
+
   it("says what the head of the line is short of, and that free slots are no use to it", () => {
     // A free slot is one of three things a claim needs. Beside a stalled line,
     // "Available" told people the machine had room it did not have.

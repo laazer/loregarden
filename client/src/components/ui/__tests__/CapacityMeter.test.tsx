@@ -60,4 +60,36 @@ describe("CapacityMeter", () => {
       .querySelector(".capacity-meter-fill") as HTMLElement;
     expect(fill.style.transform).toBe("scaleX(1)");
   });
+
+  it("counts load it does not book, so a nearly unbooked machine under load reads full", () => {
+    // The ledger booked 0.25 of 7 cpus while outside processes kept ~10 busy:
+    // a meter of bookings alone said "almost idle" while admission said "0 free".
+    render(
+      <CapacityMeter
+        label="CPU"
+        used={0.25}
+        external={9.75}
+        externalLabel="outside the ledger"
+        total={7}
+        format={cpus}
+      />,
+    );
+
+    const meter = screen.getByRole("meter", { name: "CPU" });
+    expect(meter).toHaveAttribute("data-tone", "full");
+    expect(meter).toHaveAttribute(
+      "aria-valuetext",
+      "0.25 cpus of 7 cpus, plus 9.75 cpus outside the ledger",
+    );
+    expect(screen.getByText("+ 9.75 cpus outside the ledger")).toBeInTheDocument();
+    const outside = meter.querySelector(".capacity-meter-fill--external") as HTMLElement;
+    expect(outside.style.transform).toBe("scaleX(1)");
+  });
+
+  it("draws no outside segment and no note when there is no outside load", () => {
+    render(<CapacityMeter label="CPU" used={1} external={0} total={5} format={cpus} />);
+    const meter = screen.getByRole("meter", { name: "CPU" });
+    expect(meter.querySelector(".capacity-meter-fill--external")).toBeNull();
+    expect(meter).toHaveAttribute("aria-valuetext", "1 cpus of 5 cpus");
+  });
 });

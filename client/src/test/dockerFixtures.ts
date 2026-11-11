@@ -52,6 +52,7 @@ export function capacityStatus(overrides: Partial<DockerCapacityStatus> = {}): D
       error: "",
     },
     in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
+    external_cpus: 0,
     available: { cpus: 3, memory_mb: 5846, leases: 3 },
     host: {
       ceiling: {
@@ -63,6 +64,7 @@ export function capacityStatus(overrides: Partial<DockerCapacityStatus> = {}): D
         error: "",
       },
       in_use: { cpus: 2, memory_mb: 4096, leases: 1 },
+      external_cpus: 0,
       available: { cpus: 10, memory_mb: 28672, leases: 3 },
     },
     holders: [],

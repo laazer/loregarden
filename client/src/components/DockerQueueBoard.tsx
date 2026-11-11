@@ -164,6 +164,8 @@ function PoolMeters({
         <CapacityMeter
           label={`${title} CPU`}
           used={inUse.cpus}
+          external={summary.external_cpus}
+          externalLabel="outside the ledger"
           total={ceiling.cpus}
           format={formatCpus}
         />
