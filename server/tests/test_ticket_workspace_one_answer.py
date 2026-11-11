@@ -70,7 +70,10 @@ MIN_FILES_SCANNED = 500
 #: SurveySource-keyed one: removed code, not lost reach.
 #: 31 since `reference_survey/areas.update_area` reads a project area's own
 #: workspace — the `SurveyArea` is the row, not a ticket — new code, not new reach.
-NON_TICKET_LOOKUPS = 31
+#: 32 since `reference_survey/research_library` queues research picks into their
+#: question's own workspace — the `SurveyResearchQuestion` is the row, not a
+#: ticket — new code, not new reach.
+NON_TICKET_LOOKUPS = 32
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and

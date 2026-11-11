@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../../api/client";
@@ -113,6 +113,48 @@ describe("ResearchCandidatesPrimitive", () => {
     fireEvent.click(stars);
     expect(stars.closest("th")).toHaveAttribute("aria-sort", "ascending");
     expect(projectColumn(table)).toEqual(["Rigger", "AnyCreature"]);
+  });
+
+  it("queues the selected projects for review with the question, and leaves library ones unselectable", async () => {
+    mockApi.researchQuestion.mockResolvedValue(QUESTION);
+    mockApi.referenceAreas.mockResolvedValue([]);
+    mockApi.queueResearchPicks.mockResolvedValue([
+      { url: "https://github.com/acme/anycreature", outcome: "queued", kind: "repo", source: null, detail: "", initiatives_linked: [] },
+    ]);  // prettier-ignore
+    renderCard();
+    await screen.findByRole("table");
+
+    const queue = screen.getByRole("button", { name: /Queue\s+for review/ });
+    expect(queue).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Rigger is already in the library" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select AnyCreature" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue 1 for review…" }));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Which repos auto-rig a mesh?");
+    fireEvent.click(screen.getByRole("button", { name: "Queue 1 for review" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mockApi.queueResearchPicks).toHaveBeenCalledWith({
+      urls: ["https://github.com/acme/anycreature"],
+      question_id: "q1",
+      areas: [],
+    });
+    expect(screen.getByRole("checkbox", { name: "Select AnyCreature" })).not.toBeChecked();
+  });
+
+  it("keeps the dialog open and names each project that was not queued", async () => {
+    mockApi.researchQuestion.mockResolvedValue(QUESTION);
+    mockApi.referenceAreas.mockResolvedValue([]);
+    mockApi.queueResearchPicks.mockResolvedValue([
+      { url: "https://github.com/acme/anycreature", outcome: "failed", kind: "repo", source: null, detail: "refused: licence", initiatives_linked: [] },
+    ]);  // prettier-ignore
+    renderCard();
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select AnyCreature" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue 1 for review…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Queue 1 for review" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("https://github.com/acme/anycreature: refused: licence");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("says when nothing was recorded, and names a failed load", async () => {

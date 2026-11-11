@@ -39,6 +39,7 @@ const KIND_LABELS: Record<string, string> = {
   giphy: "GIF",
   research_candidates: "Research",
   research_claim: "Research claim",
+  research_project: "Research project",
 };
 
 export function primitiveKindLabel(kind: string): string {

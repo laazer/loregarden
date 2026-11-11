@@ -33,6 +33,7 @@ from loregarden.services.reference_survey.record import (
     render_finding,
     unknown_evidence,
 )
+from loregarden.services.reference_survey.research_context import source_research
 from sqlmodel import Session, col, select
 
 #: What a pass's brief shows of each earlier pass: enough to know where it stopped.
@@ -130,6 +131,7 @@ def pass_brief(session: Session, pass_id: str) -> dict:
         "workspaces": workspaces,
         "initiatives": [i.model_dump() for i in initiatives],
         "areas": [a.model_dump() for a in source_area_context(session, source.id)],
+        "research": [r.model_dump(mode="json") for r in source_research(session, source)],
         "clone_path": clone,
         "coverage": {k: v for k, v in report.items() if k not in ("finer_entries",)},
         "earlier_passes": [
@@ -148,6 +150,8 @@ def pass_brief(session: Session, pass_id: str) -> dict:
             "Weigh each finding against the listed initiatives' goals too; say which one it serves.",
             "When project areas are listed, say which area each finding serves; a new ticket with "
             "no parent names it in create.area and is filed under that area's home.",
+            "When research questions are listed, confirm or refute each of their claims with "
+            "loregarden_research_record, citing file, commit and lines as a verified claim does.",
         ],
     }
 

@@ -11,9 +11,10 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceStatus,
 )
 from loregarden.models.domain.survey_tables import SurveySource
-from loregarden.services.reference_survey.bulk import enqueue_many, infer_kind
+from loregarden.services.reference_survey.bulk import enqueue_many
 from loregarden.services.reference_survey.errors import BRIEF_REASON_CHARS, brief_reason
 from loregarden.services.reference_survey.schemas import MAX_BULK_URLS, BulkEntryIn, BulkSourceIn
+from loregarden.services.reference_survey.source_kind import infer_kind
 from pydantic import ValidationError
 from sqlmodel import Session, select
 from tests.survey_support import build_world, second_workspace

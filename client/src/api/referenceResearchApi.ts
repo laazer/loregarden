@@ -1,4 +1,5 @@
 import { request } from "./http";
+import type { BulkAddItem } from "./referenceLibraryApi";
 
 /** How far a capability claim was checked; only `verified` names a file at a commit. */
 export type ClaimStatus = "verified" | "docs_only" | "not_found" | "refuted";
@@ -61,6 +62,49 @@ export interface ResearchClaimCard {
   earlier: number;
 }
 
+export interface ResearchQuestionRef {
+  id: string;
+  question: string;
+  thread_id: string;
+}
+
+/** Everything research knows about one project, across every question. */
+export interface ResearchProject {
+  url: string;
+  name: string;
+  /** The library source for this URL, when it is in the library. */
+  source_id: string | null;
+  licence_name: string;
+  language: string;
+  stars: number | null;
+  last_commit_at: string | null;
+  /** The claim that stands per capability, newest first; a person's refutation wins. */
+  claims: ResearchClaim[];
+  /** The questions that put it forward, newest first. */
+  questions: ResearchQuestionRef[];
+}
+
+/** One research question in a workspace, for the library's list of them. */
+export interface ResearchQuestionSummary {
+  id: string;
+  question: string;
+  thread_id: string;
+  capabilities: string[];
+  run_count: number;
+  last_run_at: string | null;
+  candidates: number;
+}
+
+export interface QueuePicksRequest {
+  urls: string[];
+  /** The question they answer; its text becomes the survey pass's question. */
+  question_id?: string | null;
+  /** Required without a question. */
+  workspace_slug?: string;
+  /** Project area labels every pick serves. */
+  areas?: string[];
+}
+
 export interface RefuteClaimRequest {
   url: string;
   capability: string;
@@ -75,6 +119,15 @@ export const referenceResearchApi = {
     request<ResearchClaimCard>(
       `/api/reference-research/claims?${new URLSearchParams({ url, capability }).toString()}`,
     ),
+  researchProject: (url: string) =>
+    request<ResearchProject>(`/api/reference-research/projects?${new URLSearchParams({ url }).toString()}`),
+  researchQuestions: (workspace: string) =>
+    request<ResearchQuestionSummary[]>(
+      `/api/reference-research/questions?${new URLSearchParams({ workspace }).toString()}`,
+    ),
+  /** Queue picks for a survey pass, admitted, each linked to the question it answers. */
+  queueResearchPicks: (body: QueuePicksRequest) =>
+    request<BulkAddItem[]>("/api/reference-research/queue", { method: "POST", body: JSON.stringify(body) }),
   /** A person's correction: this project does not do this. It stands over agent claims. */
   refuteResearchClaim: (body: RefuteClaimRequest) =>
     request<ResearchClaim>("/api/reference-research/claims/refute", {

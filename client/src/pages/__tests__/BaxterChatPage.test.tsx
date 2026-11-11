@@ -169,6 +169,36 @@ describe("BaxterChatPage", () => {
     expect(screen.queryByText("Find the most valuable ticket")).not.toBeInTheDocument();
   });
 
+  it("opens a new, empty research thread on research openers, not the ship prompt", async () => {
+    // The library's "New research thread" lands here with no messages yet.
+    const threads = fakeChatServer();
+    threads.set("s8", {
+      id: "s8",
+      workspace_id: "w1",
+      scope: "workspace",
+      initiative_id: null,
+      host_workspace_slug: "loregarden",
+      mode: "research",
+      ...NO_WORKBENCH,
+      title: "Research",
+      messages: [],
+      runtime: DEFAULT_RUNTIME,
+      run_status: "idle",
+      active_turn_id: null,
+      created_at: "2026-11-11T09:00:00Z",
+      updated_at: "2026-11-11T09:00:00Z",
+    });
+    useUiStore.setState({ baxterChatSessionId: "s8" });
+
+    renderChat();
+
+    expect(await screen.findByPlaceholderText("Which projects do what you need?")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Which open-source projects generate a skeleton for an unrigged mesh?").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Find the most valuable ticket")).not.toBeInTheDocument();
+  });
+
   it("falls back to a fresh chat when the bound thread is gone", async () => {
     useUiStore.setState({ baxterChatSessionId: "deleted-thread" });
     renderChat();

@@ -87,6 +87,7 @@ from loregarden.services.reference_survey.rereview import (
     queue_due,
     slice_for,
 )
+from loregarden.services.reference_survey.research_context import brief_lines, source_research
 from loregarden.services.reference_survey.upstream import UpstreamUnavailable, refresh_stale
 from loregarden.services.run_concurrency import ACTIVE_ORCHESTRATION_STATUSES
 from loregarden.services.ticket_service import TicketService
@@ -294,6 +295,7 @@ def _brief(
     workspaces: list[str],
     initiatives: list[InitiativeContext],
     areas: list[SourceAreaContext],
+    research: list[str],
 ) -> str:
     where = (
         f"Clone (read-only, never run anything in it): `{clone}`"
@@ -327,6 +329,7 @@ def _brief(
                 if areas
                 else []
             ),
+            *research,
             *([survey_pass.changes] if survey_pass.changes else []),
             f"**Licence:** {source.licence_constraint or 'unclassified'}",
             where + (f" @ `{source.pinned_commit[:12]}`" if source.pinned_commit else ""),
@@ -546,6 +549,7 @@ def _dispatch(
             pass_workspaces(session, survey_pass),
             initiative_context(session, source.id),
             source_area_context(session, source.id),
+            brief_lines(source_research(session, source)),
         ),
     )
     survey_pass.carrier_ticket_id = carrier.id

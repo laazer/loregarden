@@ -27,7 +27,8 @@ export type PrimitiveKind =
   | "btw"
   | "giphy"
   | "research_candidates"
-  | "research_claim";
+  | "research_claim"
+  | "research_project";
 
 export interface TextPart {
   primitive: "text";
@@ -279,6 +280,13 @@ export interface ResearchClaimPart {
   title?: string | null;
 }
 
+/** Everything research knows about one project, read by url. */
+export interface ResearchProjectPart {
+  primitive: "research_project";
+  url: string;
+  title?: string | null;
+}
+
 export type ChatPart =
   | TextPart
   | ThinkingPart
@@ -304,7 +312,8 @@ export type ChatPart =
   | BtwPart
   | GiphyPart
   | ResearchCandidatesPart
-  | ResearchClaimPart;
+  | ResearchClaimPart
+  | ResearchProjectPart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
 

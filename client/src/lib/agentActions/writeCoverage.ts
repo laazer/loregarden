@@ -57,6 +57,7 @@ export const API_WRITE_COVERAGE = {
   },
   addReferenceSource: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   addReferenceSources: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
+  queueResearchPicks: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   reviewSourceNow: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   linkSourceTargets: { kind: "mcp_tool", tool: "loregarden_survey_queue" },
   // Keeping or dropping a proposal decides the admission card an agent's find waits on.

@@ -51,6 +51,7 @@ from loregarden.services.reference_survey.errors import SurveyError
 from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
 from loregarden.services.reference_survey.library import library_row
 from loregarden.services.reference_survey.rereview import set_excluded
+from loregarden.services.reference_survey.research_library import link_enqueued
 from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
@@ -169,6 +170,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "discovery_id": string_prop(
                     "enqueue: the discovery run this find belongs to (from its brief); the find "
                     "then serves the run's workspaces and initiatives."
+                ),
+                "research_question_id": string_prop(
+                    "enqueue: the research question this pick answers; its pass brief then "
+                    "carries the question and the claims to confirm."
                 ),
                 "excluded": boolean_prop(
                     "set_auto_rereview: true takes the source out of auto re-review, false puts it back."
@@ -359,6 +364,8 @@ def _enqueue(session: Session, args: dict[str, Any]) -> dict:
         if args.get("discovery_id")
         else queue.enqueue_source(session, body)
     )
+    if args.get("research_question_id"):
+        link_enqueued(session, enqueued.source.id, args["research_question_id"])
     return {
         "ok": True,
         "source_id": enqueued.source.id,

@@ -13,6 +13,7 @@ import { PrimitiveCard } from "./PrimitiveCard";
 import { QAPrimitive } from "./QAPrimitive";
 import { ResearchCandidatesPrimitive } from "./ResearchCandidatesPrimitive";
 import { ResearchClaimPrimitive } from "./ResearchClaimPrimitive";
+import { ResearchProjectPrimitive } from "./ResearchProjectPrimitive";
 import { TerminalPrimitive } from "./TerminalPrimitive";
 import { ThinkingPrimitive } from "./ThinkingPrimitive";
 import { TicketListPrimitive } from "./TicketListPrimitive";
@@ -72,6 +73,7 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   giphy: GiphyPrimitive as Renderer,
   research_candidates: ResearchCandidatesPrimitive as Renderer,
   research_claim: ResearchClaimPrimitive as Renderer,
+  research_project: ResearchProjectPrimitive as Renderer,
 };
 
 export function renderChatPart(

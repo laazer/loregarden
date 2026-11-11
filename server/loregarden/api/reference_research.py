@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
+from loregarden.services.reference_survey.bulk import BulkAddItem
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
+from loregarden.services.reference_survey.report import workspace_id_for
 from loregarden.services.reference_survey.research import (
     ClaimCard,
     ClaimView,
@@ -19,9 +21,49 @@ from loregarden.services.reference_survey.research import (
     question_view,
     refute,
 )
+from loregarden.services.reference_survey.research_context import (
+    ProjectView,
+    QuestionSummary,
+    project_view,
+    workspace_questions,
+)
+from loregarden.services.reference_survey.research_library import QueuePicksIn, queue_picks
 from sqlmodel import Session
 
 router = APIRouter(prefix="/reference-research", tags=["reference-library"])
+
+
+@router.get("/questions", response_model=list[QuestionSummary])
+def research_questions(
+    workspace: str, session: Session = Depends(get_session)
+) -> list[QuestionSummary]:
+    """A workspace's research questions, most recently run first."""
+    try:
+        return workspace_questions(session, workspace_id_for(session, workspace))
+    except SurveyNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/projects", response_model=ProjectView)
+def research_project(url: str, session: Session = Depends(get_session)) -> ProjectView:
+    """Everything research knows about one project, across every question."""
+    try:
+        return project_view(session, url)
+    except SurveyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/queue", response_model=list[BulkAddItem])
+def queue_research_picks(
+    body: QueuePicksIn, session: Session = Depends(get_session)
+) -> list[BulkAddItem]:
+    """Queue picks for a survey pass, admitted, each linked to the question it answers."""
+    try:
+        return queue_picks(session, body)
+    except SurveyNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SurveyError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/questions/{question_id}", response_model=QuestionView)

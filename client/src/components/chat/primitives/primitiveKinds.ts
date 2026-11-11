@@ -56,6 +56,7 @@ const KINDS: Record<string, { icon: keyof typeof ICON_PATHS; tint: PrimitiveTint
   giphy: { icon: "gif", tint: "mute" },
   research_candidates: { icon: "research", tint: "work" },
   research_claim: { icon: "research", tint: "work" },
+  research_project: { icon: "research", tint: "work" },
 };
 
 export function primitiveTint(kind: string): PrimitiveTint {

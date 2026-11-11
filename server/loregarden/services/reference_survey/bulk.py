@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from loregarden.models.domain.survey_enums import BulkAddOutcome, SurveySourceKind
 from loregarden.models.domain.survey_tables import SurveySource
-from loregarden.services.reference_repo_service import ReferenceRepoError, parse_repo_url
 from loregarden.services.reference_survey.areas import (
     link_picks,
     resolve_picks,
@@ -28,23 +27,9 @@ from loregarden.services.reference_survey.initiatives import follow, resolve_ini
 from loregarden.services.reference_survey.library import LibraryRow, library_row
 from loregarden.services.reference_survey.queue import enqueue_source
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
+from loregarden.services.reference_survey.source_kind import infer_kind
 from pydantic import BaseModel, Field
 from sqlmodel import Session
-
-#: Hosts whose URLs are repositories. Any other https URL is read as a site,
-#: since `parse_repo_url` would accept a docs page's owner/name-shaped path too.
-CODE_HOSTS = frozenset({"github.com", "gitlab.com", "bitbucket.org", "codeberg.org"})
-
-
-def infer_kind(url: str) -> SurveySourceKind:
-    """A repository on a known code host, or reached over ssh; otherwise a site."""
-    try:
-        parsed = parse_repo_url(url)
-    except ReferenceRepoError:
-        return SurveySourceKind.SITE
-    if parsed.host in CODE_HOSTS or url.strip().startswith("git@"):
-        return SurveySourceKind.REPO
-    return SurveySourceKind.SITE
 
 
 class BulkAddItem(BaseModel):

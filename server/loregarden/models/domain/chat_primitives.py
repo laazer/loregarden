@@ -296,6 +296,14 @@ class ResearchClaimPart(BaseModel):
     title: str | None = None
 
 
+class ResearchProjectPart(BaseModel):
+    """Everything research knows about one project, across every question, read by URL."""
+
+    primitive: Literal["research_project"] = "research_project"
+    url: str
+    title: str | None = None
+
+
 ChatPart = Annotated[
     TextPart
     | ThinkingPart
@@ -321,7 +329,8 @@ ChatPart = Annotated[
     | BtwPart
     | GiphyPart
     | ResearchCandidatesPart
-    | ResearchClaimPart,
+    | ResearchClaimPart
+    | ResearchProjectPart,
     Field(discriminator="primitive"),
 ]
 
@@ -352,5 +361,6 @@ KNOWN_PRIMITIVES = frozenset(
         "giphy",
         "research_candidates",
         "research_claim",
+        "research_project",
     }
 )
