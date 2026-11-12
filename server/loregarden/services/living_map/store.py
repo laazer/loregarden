@@ -102,13 +102,16 @@ def _read(session: Session, scope: MapScope, ref: str) -> tuple[str, str, Record
     return ticket.id, ticket.title, ticket_records(session, ticket)
 
 
-def _filing_order(record: MapRecord) -> tuple[datetime, int, str]:
+def _filing_order(record: MapRecord) -> tuple[datetime, int]:
     # A topic first among records that happened at the same moment: it is
-    # stamped with the moment its first item happened.
+    # stamped with the moment its first item happened. Nothing else breaks the
+    # tie: every record of one message shares its moment, and the stable sort
+    # keeps them in the order they were read, which is the order the reply
+    # showed them. Breaking it by `source_ref` filed a plan's steps
+    # alphabetically by step id, and its questions ahead of its plan.
     return (
         comparable_utc(record.happened_at),
         0 if record.kind == MapItemKind.TOPIC else 1,
-        record.source_ref,
     )
 
 

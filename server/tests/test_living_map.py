@@ -84,18 +84,57 @@ def test_a_chat_map_files_its_topics_tasks_and_questions_in_order(db_session, ch
     thread, _ = chat
     view = living_map(db_session, MapScope.CHAT, thread.id)
 
+    # The reply's own order: the plan's steps in the order the card lists them,
+    # then the question that followed the card.
     assert _rows(view) == [
         (1, MapItemKind.TOPIC, MapItemState.OPEN, "Release checklist"),
-        (2, MapItemKind.QUESTION, MapItemState.SETTLED, "Ship on Friday?"),
+        (2, MapItemKind.TOPIC, MapItemState.OPEN, "Agent todo list"),
         (3, MapItemKind.TASK, MapItemState.SETTLED, "Cut the branch"),
         (4, MapItemKind.TASK, MapItemState.OPEN, "Tag it"),
-        (5, MapItemKind.QUESTION, MapItemState.WAITING, "Who announces it?"),
+        (5, MapItemKind.QUESTION, MapItemState.SETTLED, "Ship on Friday?"),
+        (6, MapItemKind.QUESTION, MapItemState.WAITING, "Who announces it?"),
     ]
-    topic = view.items[0]
-    # Everything after the ticket card hangs off it as its topic.
-    assert {item.topic_id for item in view.items[1:]} == {topic.id}
+    ticket_topic, plan_topic = view.items[0], view.items[1]
+    # A plan's steps hang off the plan; everything else after the ticket card
+    # hangs off the ticket, the plan included.
+    assert {item.topic_id for item in view.items[2:4]} == {plan_topic.id}
+    assert {item.topic_id for item in view.items[4:]} == {ticket_topic.id}
     assert view.title == "Plan the release"
-    assert [(s.name, s.count, s.ok) for s in view.sources] == [("chat parts", 5, True)]
+    assert [(s.name, s.count, s.ok) for s in view.sources] == [("chat parts", 6, True)]
+
+
+def test_a_plans_steps_are_filed_in_card_order_not_by_step_id(db_session):
+    workspace = make_workspace(db_session, slug="lm-order")
+    thread = BaxterChatSession(workspace_id=workspace.id, title="Land it")
+    db_session.add(thread)
+    db_session.commit()
+    _sayer(db_session, thread.id)(
+        "assistant",
+        0,
+        {
+            "primitive": "todo_list",
+            "title": "Agent execution plan",
+            "plan_id": "land",
+            "items": [
+                {"id": "push", "text": "Push the branch"},
+                {"id": "pr", "text": "Open the PR"},
+                {"id": "loopcap", "text": "Find the cause", "checked": True},
+                {"id": "dedupe", "text": "Collapse the duplicates"},
+            ],
+        },
+        {"primitive": "qa", "items": [{"id": "a", "question": "Collapse them?"}]},
+    )
+
+    view = living_map(db_session, MapScope.CHAT, thread.id)
+
+    assert [item.title for item in view.items] == [
+        "Agent execution plan",
+        "Push the branch",
+        "Open the PR",
+        "Find the cause",
+        "Collapse the duplicates",
+        "Collapse them?",
+    ]
 
 
 def test_a_question_is_answered_by_the_reply_after_it(db_session, chat):
@@ -286,7 +325,7 @@ def test_the_api_serves_a_map_and_names_what_is_missing(client, db_session, chat
     bad_scope = client.get("/api/living-map/nowhere/x")
 
     assert ok.status_code == 200
-    assert [item["kind"] for item in ok.json()["items"]][:2] == ["topic", "question"]
+    assert [item["kind"] for item in ok.json()["items"]][:2] == ["topic", "topic"]
     assert missing.status_code == 404
     assert "no-such-chat" in missing.json()["detail"]
     assert bad_scope.status_code == 422
