@@ -43,6 +43,7 @@ from loregarden.services.github_pr_listing import PR_PAGE_SIZE, GitHubReadError
 from loregarden.services.ticket_pull_request import GhCheck
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import set_stage_status
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
 from tests.worktree_helpers import (
@@ -280,6 +281,59 @@ def test_the_same_commit_is_one_result_and_one_attempt(session, workspace, repo,
     rows = session.exec(select(CIRunResult).where(CIRunResult.ticket_id == done_ticket.id)).all()
     assert len(rows) == 1
     assert len(CIService(session).attempts(done_ticket.id)) == 1
+
+
+def _ci_result_writes(session) -> list[str]:
+    """Every statement that writes `ci_run_results` on the session's engine, from now on."""
+    writes: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        if statement.lstrip().upper().startswith(("UPDATE", "INSERT")) and (
+            "ci_run_results" in statement
+        ):
+            writes.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", record)
+    return writes
+
+
+def test_re_observing_an_unchanged_commit_writes_nothing(session, workspace, repo, done_ticket):
+    pr = _pr(done_ticket.branch, _tip(repo, done_ticket.branch), RUNNING)
+    first, _ = _observe(session, done_ticket, workspace, pr)
+    stamped = first.updated_at
+    writes = _ci_result_writes(session)
+
+    again, _ = _observe(session, done_ticket, workspace, pr)
+
+    assert writes == [], "a poll that learns nothing must not take the write lock"
+    assert again.id == first.id and again.updated_at == stamped
+
+
+def test_a_status_change_on_the_same_commit_is_written(session, workspace, repo, done_ticket):
+    sha = _tip(repo, done_ticket.branch)
+    first, _ = _observe(session, done_ticket, workspace, _pr(done_ticket.branch, sha, RUNNING))
+    stamped = first.updated_at
+    writes = _ci_result_writes(session)
+
+    passed, _ = _observe(session, done_ticket, workspace, _pr(done_ticket.branch, sha, PASSING))
+
+    assert writes, "a status change is news and is recorded"
+    assert passed.status is CIStatus.PASSING and passed.updated_at > stamped
+
+
+def test_a_head_pushed_back_to_an_older_commit_is_the_latest_again(
+    session, workspace, repo, done_ticket
+):
+    branch = done_ticket.branch
+    old = _tip(repo, branch)
+    _observe(session, done_ticket, workspace, _pr(branch, old, RUNNING))
+    new = commit_on(repo, branch, "feature.txt", "v2\n")
+    _observe(session, done_ticket, workspace, _pr(branch, new, RUNNING))
+    assert CIService(session).latest_result(done_ticket.id).head_sha == new
+
+    _observe(session, done_ticket, workspace, _pr(branch, old, RUNNING))
+
+    assert CIService(session).latest_result(done_ticket.id).head_sha == old
 
 
 def test_a_passing_fix_commit_settles_the_attempt_succeeded(session, workspace, repo, done_ticket):

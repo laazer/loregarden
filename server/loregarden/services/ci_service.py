@@ -161,6 +161,15 @@ class CIService:
             )
         ).first()
 
+    def _is_latest(self, ticket_id: str, result: CIRunResult) -> bool:
+        """Whether ``result`` is what `latest_result` reports for the ticket.
+
+        A head pushed back to an older commit re-observes that commit's row,
+        which must be touched again to become the latest.
+        """
+        latest = self.latest_result(ticket_id)
+        return latest is not None and latest.id == result.id
+
     def _last_pass_at(self, ticket_id: str) -> datetime | None:
         row = self.session.exec(
             select(CIRunResult)
@@ -226,7 +235,10 @@ class CIService:
     def _record(
         self, ticket: Ticket, workspace: Workspace, pr: OpenPullRequest, repo_root: Path
     ) -> CIRunResult:
-        result = self._result_for(ticket.id, pr.head_sha) or CIRunResult(
+        existing = self._result_for(ticket.id, pr.head_sha)
+        # Read before anything is mutated, so this query flushes nothing.
+        was_latest = existing is not None and self._is_latest(ticket.id, existing)
+        result = existing or CIRunResult(
             workspace_id=workspace.id,
             ticket_id=ticket.id,
             provider=GITHUB_PROVIDER,
@@ -234,6 +246,7 @@ class CIService:
             pr_number=pr.number,
             logs_url=pr.url,
         )
+        before = (result.status, result.failure_summary)
         status = rollup(pr.checks)
         # A person skipped CI for this commit (`skip_ci_check`); the checks
         # GitHub still reports do not overrule them. A new commit is a new row.
@@ -241,6 +254,14 @@ class CIService:
             result.status = status
         if result.status is CIStatus.FAILING and result.failure_summary is None:
             self._attach_failure(result, pr, repo_root)
+        if was_latest and (result.status, result.failure_summary) == before:
+            # Nothing new: no write, so no database lock. Touching `updated_at`
+            # on every tick for every open PR was a write per PR every two
+            # minutes, each one a chance to queue behind another writer and
+            # fail with "database is locked". `updated_at` means the last
+            # change, which is what `latest_result`, `_last_pass_at` and
+            # `prune_logs` read it as.
+            return result
         result.updated_at = _now()
         self.session.add(result)
         self.session.commit()
