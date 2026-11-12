@@ -40,7 +40,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services.run_duration_stats import DurationStats, load_duration_stats
+from loregarden.services.run_duration_stats import DurationStats, cached_duration_stats
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, col, select
@@ -130,7 +130,7 @@ class TicketTreeEstimator:
         now: datetime | None = None,
     ) -> None:
         self.session = session
-        self.stats = stats if stats is not None else load_duration_stats(session)
+        self.stats = stats if stats is not None else cached_duration_stats(session)
         self.now = now or datetime.now(timezone.utc)
         self._children: dict[str, list[Ticket]] = {}
         self._instances: dict[str, WorkflowInstance] = {}

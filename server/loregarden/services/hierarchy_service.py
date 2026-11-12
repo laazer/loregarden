@@ -16,11 +16,28 @@ from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prere
 from loregarden.services.ticket_ids import respell_external_id
 from loregarden.services.ticket_split_view import split_ticket_ids
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
+
+#: SQLite's bound-parameter limit is far above this; it keeps one IN list small.
+_CHILD_COUNT_CHUNK = 500
 
 
 def child_count(session: Session, ticket_id: str) -> int:
-    return len(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket_id)).all())
+    return child_counts(session, [ticket_id]).get(ticket_id, 0)
+
+
+def child_counts(session: Session, ticket_ids: list[str]) -> dict[str, int]:
+    """Direct children per ticket, counted in SQL. A ticket with none is absent."""
+    counts: dict[str, int] = {}
+    for start in range(0, len(ticket_ids), _CHILD_COUNT_CHUNK):
+        chunk = ticket_ids[start : start + _CHILD_COUNT_CHUNK]
+        rows = session.exec(
+            select(Ticket.parent_ticket_id, func.count())
+            .where(col(Ticket.parent_ticket_id).in_(chunk))
+            .group_by(Ticket.parent_ticket_id)
+        ).all()
+        counts.update({parent_id: count for parent_id, count in rows if parent_id})
+    return counts
 
 
 def collect_ticket_scope_ids(session: Session, ticket_id: str) -> list[str]:

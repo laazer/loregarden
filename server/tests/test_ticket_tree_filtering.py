@@ -202,3 +202,17 @@ class TestTreeIntegrity:
 
     def test_no_matches_returns_empty_list(self, client: TestClient, hierarchy):
         assert _tree(client, "state=wont_do") == []
+
+
+def test_the_flat_list_counts_direct_children_per_row(client: TestClient, hierarchy):
+    """`GET /api/tickets` counts children for the whole page in one query; each
+    row still reports its own direct children, and a leaf reports zero."""
+    resp = client.get(f"/api/tickets?workspace={WORKSPACE}")
+    assert resp.status_code == 200, resp.text
+    counts = {row["id"]: row["child_count"] for row in resp.json()}
+
+    assert counts[hierarchy["milestone_root"]] == 1
+    assert counts[hierarchy["feature_mid"]] == 2
+    assert counts[hierarchy["capability_mid"]] == 1
+    assert counts[hierarchy["task_leaf"]] == 0
+    assert counts[hierarchy["lonely_milestone"]] == 0

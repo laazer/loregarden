@@ -24,6 +24,8 @@ module measures rather than guesses:
 
 from __future__ import annotations
 
+import threading
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -495,3 +497,29 @@ def prompt_size_by_stage(session: Session) -> list[PromptSizeStats]:
         for stage_key, runs in grouped.items()
     ]
     return sorted(stats, key=lambda item: item.median_chars, reverse=True)
+
+
+#: How long `cached_duration_stats` reuses the medians. They are 90-day medians,
+#: so minutes cannot move them; reading them costs ~1s of disk on the live
+#: database, which every queue snapshot (each open tab, every five seconds),
+#: monitor scan, estimate and plan read would otherwise pay.
+STATS_TTL_SECONDS = 300.0
+
+#: database URL -> (monotonic time read, stats). Keyed, so two databases in one
+#: process (tests, a sandbox) never read each other's history.
+_stats_cache: dict[str, tuple[float, DurationStats]] = {}
+_stats_lock = threading.Lock()
+
+
+def cached_duration_stats(session: Session) -> DurationStats:
+    """`load_duration_stats` across every workspace, reused for `STATS_TTL_SECONDS`."""
+    key = str(session.get_bind().url)
+    now = time.monotonic()
+    with _stats_lock:
+        hit = _stats_cache.get(key)
+        if hit is not None and now - hit[0] < STATS_TTL_SECONDS:
+            return hit[1]
+    stats = load_duration_stats(session)
+    with _stats_lock:
+        _stats_cache[key] = (now, stats)
+    return stats

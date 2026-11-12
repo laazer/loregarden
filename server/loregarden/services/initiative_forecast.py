@@ -27,8 +27,6 @@ the same unit, so the ratio between them means something.
 
 from __future__ import annotations
 
-import threading
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -43,7 +41,6 @@ from loregarden.models.domain import (
     WorkItemType,
     comparable_utc,
 )
-from loregarden.services.run_duration_stats import DurationStats, load_duration_stats
 from sqlmodel import Session, col, func, select
 
 #: Trailing window pace is measured over. Three weeks: long enough to hold a
@@ -62,31 +59,8 @@ MIN_WORKSPACE_SAMPLES = 3
 
 _CONTAINERS = frozenset({WorkItemType.INITIATIVE, WorkItemType.MILESTONE})
 
-#: How long the run-time medians are reused. They are 90-day medians, so minutes
-#: cannot move them; reading them costs ~1s of disk on the live database, which
-#: every plan read and every target edit would otherwise pay.
-STATS_TTL_SECONDS = 300.0
-
-#: database URL -> (monotonic time read, stats). Keyed, so two databases in one
-#: process (tests, a sandbox) never read each other's history.
-_stats_cache: dict[str, tuple[float, DurationStats]] = {}
-_stats_lock = threading.Lock()
-
 #: Milestones with no plan row sort after every planned one.
 _UNPLANNED_ORDER = 1_000_000
-
-
-def duration_stats(session: Session) -> DurationStats:
-    key = str(session.get_bind().url)
-    now = time.monotonic()
-    with _stats_lock:
-        hit = _stats_cache.get(key)
-        if hit is not None and now - hit[0] < STATS_TTL_SECONDS:
-            return hit[1]
-    stats = load_duration_stats(session)
-    with _stats_lock:
-        _stats_cache[key] = (now, stats)
-    return stats
 
 
 @dataclass(frozen=True)

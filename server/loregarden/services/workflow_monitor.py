@@ -64,7 +64,7 @@ from loregarden.services.orchestration_profile import (
 from loregarden.services.run_duration_stats import (
     MIN_SAMPLES,
     DurationStats,
-    load_duration_stats,
+    cached_duration_stats,
     load_stage_duration_profiles,
 )
 from loregarden.services.studio_drift import detect_all_drift
@@ -609,7 +609,7 @@ def scan(session: Session, *, ticket_id: str | None = None) -> list[MonitorFindi
     ticket that did not cause them.
     """
     runs = _runs(session, ticket_id)
-    stats = load_duration_stats(session)
+    stats = cached_duration_stats(session)
 
     findings = [
         *_detect_stage_thrash(runs, stats),

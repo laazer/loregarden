@@ -68,7 +68,7 @@ from loregarden.services.dependency_hold import (
     holding_prerequisites,
     unmet_prerequisites,
 )
-from loregarden.services.hierarchy_service import build_tree, child_count
+from loregarden.services.hierarchy_service import build_tree, child_count, child_counts
 from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
 from loregarden.services.log_storage import read_log_lines
 from loregarden.services.orchestration import OrchestrationService
@@ -172,8 +172,9 @@ def _ticket_summary(
     activity: TicketActivity | None = None,
     run_code: str | None = None,
     stuck: StuckPage | None = None,
+    children: int | None = None,
 ) -> TicketSummary:
-    """``activity``, ``run_code`` and ``stuck`` are passed in by list endpoints,
+    """``activity``, ``run_code``, ``stuck`` and ``children`` are passed in by list endpoints,
     which resolve the whole page in one batch each; single-ticket callers let
     them resolve themselves."""
     stuck = stuck or StuckPage.of(session, [ticket])
@@ -205,7 +206,7 @@ def _ticket_summary(
         milestone=ticket.milestone,
         branch=ticket.branch,
         tags=load_tags(ticket.tags_json),
-        child_count=child_count(session, ticket.id),
+        child_count=children if children is not None else child_count(session, ticket.id),
         current_stage_agent=ticket_stage_agent(session, ticket),
         activity=activity if activity is not None else activity_for(session, ticket.id),
         stages=stages,
@@ -618,6 +619,7 @@ def list_tickets(
     ticket_ids = [t.id for t in tickets]
     activity = classify_ticket_activity(session, ticket_ids)
     run_codes = _latest_run_codes(session, ticket_ids)
+    children = child_counts(session, ticket_ids)
     stuck = StuckPage.of(session, list(tickets))
     with stage_resolution_memo():
         prime_workflow_instances(session, ticket_ids)
@@ -628,6 +630,7 @@ def list_tickets(
                 activity.get(t.id, TicketActivity.IDLE),
                 run_code=run_codes.get(t.id, ""),
                 stuck=stuck,
+                children=children.get(t.id, 0),
             )
             for t in tickets
         ]

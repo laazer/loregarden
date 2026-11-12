@@ -13,6 +13,7 @@
  * both are acted on immediately.
  */
 
+import { replaceEqualDeep } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { API_BASE } from '../api/client';
@@ -82,7 +83,12 @@ export function useParallelExecutionWS(
 
     setStatus('connecting');
     const socket = new QueueSocket(queueSocketUrl(API_BASE), {
-      onSnapshot: setSnapshot,
+      // The server pushes a snapshot every five seconds whether or not the
+      // queue moved. Structural sharing keeps the previous object (and every
+      // unchanged run inside it) when nothing did, so an idle queue does not
+      // hand a new context value to every consumer — the sidebar included —
+      // on each tick.
+      onSnapshot: (next) => setSnapshot((prev) => replaceEqualDeep(prev, next)),
       onStatus: setStatus,
       onEvent: (event) => eventHandler.current?.(event),
     });

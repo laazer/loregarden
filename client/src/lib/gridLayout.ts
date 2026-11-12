@@ -409,10 +409,12 @@ export function closeLeaf(layout: ViewLayout, nodeId: string): ViewLayout {
 /** The layout with `splitId`'s children resized, in order. */
 export function resizeSplit(layout: ViewLayout, splitId: string, sizes: number[]): ViewLayout {
   const tree = requireTree(layout);
+  let unchanged = false;
   const replaced = mapSplit(tree, splitId, (split) => {
     if (sizes.length !== split.children.length) {
       throw new Error("This split changed while it was being resized, so it was left alone.");
     }
+    unchanged = split.children.every((child, index) => child.size === sizes[index]);
     return {
       ...split,
       children: split.children.map((child, index) => withSize(child, sizes[index])),
@@ -421,5 +423,8 @@ export function resizeSplit(layout: ViewLayout, splitId: string, sizes: number[]
   if (replaced === undefined) {
     throw new Error("The divider that moved is no longer in this view.");
   }
+  // A click on a divider with no drag: returning `layout` itself is what tells
+  // the caller there is nothing to PATCH.
+  if (unchanged) return layout;
   return storeTree(layout, replaced, containersOf(layout));
 }

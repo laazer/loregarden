@@ -18,6 +18,8 @@ from loregarden.models.domain import (
     WorkflowStageView,
 )
 from loregarden.services.ticket_state_service import derive, record_derived_change
+from sqlalchemy import inspect as sa_inspect
+from sqlmodel import SQLModel
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +260,17 @@ def derive_workflow(
     )
 
 
+def _changed_since_load(row: SQLModel) -> bool:
+    """Whether any column but ``updated_at`` differs from what was loaded.
+
+    SQLAlchemy's per-attribute history compares values, so assigning a column
+    the value it already holds is not a change. A row not yet persisted is.
+    """
+    return any(
+        attr.key != "updated_at" and attr.history.has_changes() for attr in sa_inspect(row).attrs
+    )
+
+
 def reconcile_workflow_state(
     ticket: Ticket,
     instance: WorkflowInstance,
@@ -291,11 +304,19 @@ def reconcile_workflow_state(
     sticky_done = ticket.state == TicketState.DONE and ticket_state != TicketState.DONE
     if owns_state and not sticky_done and derive(ticket, ticket_state, actor="workflow"):
         record_derived_change(ticket, actor="workflow")
-    ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key
     instance.stages_json = serialize_stage_map(stage_map, stages, notes=parse_stage_notes(instance))
-    instance.updated_at = datetime.now(timezone.utc)
+
+    # Stamp only a row that really changed — here or by the caller before it
+    # handed the row over (`set_stage_status` edits `stages_json` first). This
+    # runs on the READ path too, and an unconditional stamp left both rows dirty
+    # on every `GET /api/tickets/{id}`: the next query autoflushed them as an
+    # UPDATE, taking SQLite's write lock for the rest of the request.
+    now = datetime.now(timezone.utc)
+    for row in (ticket, instance):
+        if _changed_since_load(row):
+            row.updated_at = now
 
     # `next_agent` is deliberately NOT backfilled here. This function runs on the
     # READ path — `GET /api/tickets/{id}` reaches it through

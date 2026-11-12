@@ -178,6 +178,10 @@ export function withGeometry(item: CanvasItemModel, geometry: ItemGeometry): Can
   return { ...item, ...clampGeometry(geometry) };
 }
 
+function sameGeometry(a: ItemGeometry, b: ItemGeometry): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 /**
  * Which edges a resize gesture is dragging.
  *
@@ -419,6 +423,9 @@ export function moveItem(layout: ViewLayout, itemId: string, x: number, y: numbe
   const items = readCanvasItems(layout);
   const item = requireItem(items, itemId, "moved");
   const moved = withGeometry(item, { ...item, x, y });
+  // A click on a header with no drag lands here too; returning `layout` itself
+  // is what tells the caller there is nothing to PATCH (see `restackItem`).
+  if (sameGeometry(moved, item)) return layout;
   return storeItems(
     layout,
     items.map((each) => (each.id === itemId ? moved : each)),
@@ -441,6 +448,7 @@ export function resizeItem(
   const items = readCanvasItems(layout);
   const item = requireItem(items, itemId, "resized");
   const resized = withGeometry(item, geometry);
+  if (sameGeometry(resized, item)) return layout;
   return storeItems(
     layout,
     items.map((each) => (each.id === itemId ? resized : each)),
