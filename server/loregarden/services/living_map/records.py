@@ -47,6 +47,10 @@ logger = logging.getLogger(__name__)
 #: Long enough for a sentence, short enough for one row on the vine.
 TITLE_CHARS = 140
 
+#: What an untitled plan is called, by owner: the chat card's own fallbacks
+#: (`TodoListPrimitive`), so the map row names the card it stands for.
+_UNTITLED_PLAN = {"agent": "Agent todo list", "user": "Your checklist"}
+
 #: Tool-permission prompts are the CLI asking to run a command, hundreds per
 #: ticket and settled in seconds: noise on a map of what a person decided.
 _MAPPED_APPROVALS = frozenset(ApprovalKind) - {ApprovalKind.CLI_PERMISSION}
@@ -178,9 +182,11 @@ def _ticket_list_topic(
 
 
 def _task_records(
-    part: TodoListPart, message: BaxterChatMessage, topic_ref: str | None, _replied: bool
+    part: TodoListPart, message: BaxterChatMessage, _topic_ref: str | None, _replied: bool
 ) -> tuple[list[MapRecord], str | None]:
-    return _tasks(part, message, topic_ref), None
+    # The plan is its own steps' topic only: what follows the card still hangs
+    # off the topic before it, so `None` here leaves that topic current.
+    return _tasks(part, message), None
 
 
 def _question_records(
@@ -197,20 +203,25 @@ _CHAT_READERS: dict[type, _ChatReader] = {
 }
 
 
-def _tasks(
-    part: TodoListPart, message: BaxterChatMessage, topic_ref: str | None
-) -> list[MapRecord]:
+def _tasks(part: TodoListPart, message: BaxterChatMessage) -> list[MapRecord]:
+    """A plan's steps, hanging off the plan as their topic.
+
+    The plan is the topic rather than whatever topic came before it: steps
+    hung off an earlier ticket card read as that ticket's, and steps with no
+    topic read as loose rows nobody could tie back to the card they came from.
+    """
     # A plan re-emitted under the same id supersedes the earlier card, so its
     # items are keyed by the plan: a later copy that ticks one updates it.
     plan = part.plan_id or message.id
-    return [
+    topic, plan_ref = _topic(f"plan:{plan}", part.title or _UNTITLED_PLAN[part.owner], message)
+    return topic + [
         MapRecord(
             source_ref=f"todo:{plan}:{item.id}",
             kind=MapItemKind.TASK,
             state=MapItemState.SETTLED if item.checked else MapItemState.OPEN,
             title=_title(item.text),
             happened_at=message.created_at,
-            topic_ref=topic_ref,
+            topic_ref=plan_ref,
         )
         for item in part.items
     ]

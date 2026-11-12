@@ -122,6 +122,24 @@ describe("plans and asks", () => {
     expect(screen.getByText("Run continues from step 3")).toBeInTheDocument();
   });
 
+  it("picks Run up at the first open step when steps were ticked out of order", () => {
+    render(
+      <TodoListPrimitive
+        part={{
+          primitive: "todo_list",
+          owner: "agent",
+          items: [
+            { id: "push", text: "Push", checked: false },
+            { id: "pr", text: "Open PR", checked: false },
+            { id: "loopcap", text: "Find the cause", checked: true },
+          ],
+        }}
+        onSubmit={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("Run continues from step 1")).toBeInTheDocument();
+  });
+
   it("gives an open question card the one coloured edge, and drops it once answered", () => {
     const { container } = render(
       <QAPrimitive part={{ primitive: "qa", items: [{ id: "q", question: "Who is it for?" }] }} onSubmit={jest.fn()} />,

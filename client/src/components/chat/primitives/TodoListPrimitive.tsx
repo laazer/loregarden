@@ -66,6 +66,9 @@ export function TodoListPrimitive({
     setState((current) => ({ ...current, items: next(current.items) }));
 
   const completed = items.filter((item) => item.checked).length;
+  // Where Run picks up is the first open step, not the count of done ones:
+  // steps are ticked out of order, and "step 2" under an open step 1 is wrong.
+  const firstOpen = items.findIndex((item) => !item.checked);
   const userOwned = owner === "user";
   const remaining = items.some((item) => !item.checked);
   const canRun =
@@ -92,7 +95,7 @@ export function TodoListPrimitive({
             ? { tone: "run", label: "Running" }
             : { tone: "idle", label: `${completed}/${items.length}` }
       }
-      footerHint={canRun ? (completed ? `Run continues from step ${completed + 1}` : "Runs this plan in chat") : null}
+      footerHint={canRun ? (completed ? `Run continues from step ${firstOpen + 1}` : "Runs this plan in chat") : null}
       meta={<span className="lg-primitive-owner">{userOwned ? "You own this" : "Agent owned"}</span>}
       actions={canRun ? <PlayButton onClick={run} /> : null}
     >
