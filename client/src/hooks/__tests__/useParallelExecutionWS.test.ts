@@ -232,3 +232,35 @@ it('closes the socket on unmount', () => {
 
   expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
 });
+
+it('keeps the same value when an idle tick pushes an identical snapshot', () => {
+  const { result } = renderHook(() => useParallelExecutionWS());
+  act(() => {
+    latest().finishHandshake();
+    latest().push(SNAPSHOT);
+  });
+  const before = result.current;
+
+  act(() => latest().push(JSON.parse(JSON.stringify(SNAPSHOT)) as QueueStatusSnapshot));
+
+  // A new value here re-renders every consumer of the app-wide queue context,
+  // the sidebar included, every five seconds the queue sits idle.
+  expect(result.current).toBe(before);
+});
+
+it('takes a changed snapshot and keeps the parts that did not change', () => {
+  const { result } = renderHook(() => useParallelExecutionWS());
+  act(() => {
+    latest().finishHandshake();
+    latest().push(SNAPSHOT);
+  });
+  const before = result.current;
+  const ticked = JSON.parse(JSON.stringify(SNAPSHOT)) as QueueStatusSnapshot;
+  ticked.active_runs[0].elapsed_seconds = 17;
+
+  act(() => latest().push(ticked));
+
+  expect(result.current).not.toBe(before);
+  expect(result.current.activeRuns[0].elapsed_seconds).toBe(17);
+  expect(result.current.stats).toBe(before.stats);
+});

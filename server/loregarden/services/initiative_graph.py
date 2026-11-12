@@ -54,12 +54,12 @@ from loregarden.services.deferral_state import is_deferred
 from loregarden.services.initiative_coverage import InitiativeCoverage, plan_coverage
 from loregarden.services.initiative_forecast import (
     Pace,
-    duration_stats,
     group_by_workspace,
     measure_paces,
     plan_sequence,
 )
 from loregarden.services.initiative_service import load_targets, workspace_slugs
+from loregarden.services.run_duration_stats import cached_duration_stats
 from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.ticket_tags import load_tags
@@ -294,7 +294,7 @@ class PlanGraphBuilder:
 
     def _durations(self, nodes: dict[str, PlanNode], paces: dict[str, Pace]) -> None:
         estimator = TicketTreeEstimator(
-            self.session, stats=duration_stats(self.session), now=self.now
+            self.session, stats=cached_duration_stats(self.session), now=self.now
         )
         open_nodes = [n for n in nodes.values() if n.ticket.state not in RESOLVED_STATES]
         lanes_per_workspace: dict[str, set[str]] = defaultdict(set)

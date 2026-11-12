@@ -16,11 +16,12 @@ from __future__ import annotations
 import json
 import threading
 
-from loregarden.models.domain import Artifact, RunLogLine, RunStatus
+from loregarden.models.domain import Artifact, RunLogLine, RunStatus, Ticket
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.log_storage import LOG_STORAGE_ROWS, read_log_lines
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.seed import seed_database
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_workspace_ticket
 
@@ -304,3 +305,64 @@ def test_a_long_stream_is_not_cut_through_an_escape_code(db_session):
     assert "\x1b" not in text
     assert "8;2;" not in text
     assert text.endswith("─ done")
+
+
+def _writes(session: Session) -> list[str]:
+    """Every INSERT/UPDATE on the session's engine, from now on."""
+    writes: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        if statement.lstrip().upper().startswith(("UPDATE", "INSERT")):
+            writes.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", record)
+    return writes
+
+
+def test_a_heartbeat_with_nothing_new_writes_nothing(db_session):
+    """`touch()` fires every two seconds while an agent is silent. With no new
+    line and an unchanged tail it must not take SQLite's write lock."""
+    streamer = _streamer(db_session)
+    streamer.append("OUT", "first", force=True)
+    writes = _writes(db_session)
+
+    streamer.touch()
+    streamer.touch()
+
+    assert writes == []
+
+
+def test_a_heartbeat_after_a_reattach_writes_nothing(db_session):
+    """A streamer rebuilt from the stored log knows what is already durable."""
+    streamer = _streamer(db_session)
+    streamer.append("OUT", "first", force=True)
+    reattached = RunLogStreamer(
+        run_id=streamer.run_id,
+        ticket_id=streamer.ticket_id,
+        run_code=streamer.run_code,
+        agent_id=streamer.agent_id,
+        skill_name="",
+    )
+    reattached.resume()
+    writes = _writes(db_session)
+
+    reattached.touch()
+
+    assert writes == []
+
+
+def test_a_new_line_is_written_without_bumping_the_ticket_revision(db_session):
+    """Log output is activity, not an edit: `updated_at` moves, `revision` does not,
+    so a person's `expected_revision` edit does not conflict with agent output."""
+    streamer = _streamer(db_session)
+    streamer.append("OUT", "first", force=True)
+    ticket = db_session.get(Ticket, streamer.ticket_id)
+    revision, stamped = ticket.revision, ticket.updated_at
+
+    streamer.append("OUT", "second", force=True)
+
+    db_session.refresh(ticket)
+    assert ticket.revision == revision
+    assert ticket.updated_at > stamped
+    rows = db_session.exec(select(RunLogLine).where(RunLogLine.run_id == streamer.run_id)).all()
+    assert [row.text for row in rows][-1] == "second"

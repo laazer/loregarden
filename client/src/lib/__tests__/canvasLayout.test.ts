@@ -381,6 +381,28 @@ describe("stacking", () => {
   });
 });
 
+describe("a gesture that moved nothing", () => {
+  // A click on a pane header or a resize grip with no drag ends in a move or a
+  // resize to where the pane already is. Handing `layout` back untouched is
+  // what tells `useViewLayoutEdit` not to PATCH, as `restackItem` does.
+  it("returns the layout itself from a move to the same place", () => {
+    const layout = twoItems();
+    expect(moveItem(layout, "i-1", 100, 80)).toBe(layout);
+  });
+
+  it("returns the layout itself from a resize to the same geometry", () => {
+    const layout = twoItems();
+    expect(resizeItem(layout, "i-1", { x: 100, y: 80, width: 400, height: 300 })).toBe(layout);
+  });
+
+  it("still writes a move of a single pixel", () => {
+    const layout = twoItems();
+    const next = moveItem(layout, "i-1", 101, 80);
+    expect(next).not.toBe(layout);
+    expect(itemById(next, "i-1").x).toBe(101);
+  });
+});
+
 describe("removing a container", () => {
   it("drops the container with the item, because an orphan is refused", () => {
     const next = removeItem(twoItems(), "i-1");

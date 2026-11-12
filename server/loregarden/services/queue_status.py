@@ -26,7 +26,7 @@ from loregarden.services.parallel_queue import (
 from loregarden.services.queue_history import LaneAttentionCard, QueueHistoryService
 from loregarden.services.run_duration_stats import (
     DurationStats,
-    load_duration_stats,
+    cached_duration_stats,
     project_clear_time,
     project_lane_waits,
 )
@@ -349,7 +349,7 @@ def build_queue_status(session: Session) -> dict[str, Any]:
     # None. The dashboard renders that as "unknown" rather than substituting a
     # constant — see run_duration_stats. Drawn from every workspace, because
     # they all contend for the same slots.
-    duration_stats = load_duration_stats(session)
+    duration_stats = cached_duration_stats(session)
     max_concurrent = stats.get("max_concurrent", queue_service.max_concurrent)
     _attach_estimates(session, active_runs, queued_runs, duration_stats, max_concurrent)
 

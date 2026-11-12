@@ -15,8 +15,9 @@ flag to set, no migration, and no behaviour that arrives by default.
 **(b) The orchestrator's writers keep their unguarded bump.** Those are
 ``ticket_state_service.py:135``, ``orchestration.py:575``,
 ``orchestration_callbacks.py:442``/``:475``/``:619``, ``hierarchy_service.py:168``,
-``initiative_autopilot.py:414``, ``requeue.py:66``,
-``permission_allowlist.py:190`` and ``run_log_stream.py:810``. A stage recording
+``initiative_autopilot.py:414``, ``requeue.py:66`` and
+``permission_allowlist.py:190``. (``run_log_stream`` used to be on this list;
+log output no longer bumps the revision at all.) A stage recording
 what happened is not an edit competing with a person — it is the system writing
 down a fact — and a CAS there would make a stage completion *fail on contention*
 instead of proceeding. Measured on the live database on 2026-10-20, a single

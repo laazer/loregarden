@@ -180,14 +180,16 @@ def summarize_ticket_status(
     is deliberately narrower — in-progress tickets with nothing behind them, the
     number this whole module exists to surface.
     """
-    query = select(Ticket)
+    # Two columns, not whole rows: this runs every ten seconds on every page, and
+    # loading every ticket's description to count states read ~14MB a time.
+    query = select(Ticket.id, Ticket.state)
     if workspace_id:
         query = query.where(Ticket.workspace_id == workspace_id)
-    tickets = list(session.exec(query).all())
+    rows = list(session.exec(query).all())
 
-    states = Counter(t.state for t in tickets)
-    open_tickets = [t for t in tickets if t.state in OPEN_STATES]
-    activity = classify_ticket_activity(session, [t.id for t in open_tickets])
+    states = Counter(state for _id, state in rows)
+    open_tickets = [(ticket_id, state) for ticket_id, state in rows if state in OPEN_STATES]
+    activity = classify_ticket_activity(session, [ticket_id for ticket_id, _ in open_tickets])
     counts = Counter(activity.values())
 
     return TicketStatusSummary(
@@ -202,8 +204,8 @@ def summarize_ticket_status(
         queued=counts[TicketActivity.QUEUED],
         idle=sum(
             1
-            for t in open_tickets
-            if t.state == TicketState.IN_PROGRESS
-            and activity.get(t.id, TicketActivity.IDLE) == TicketActivity.IDLE
+            for ticket_id, state in open_tickets
+            if state == TicketState.IN_PROGRESS
+            and activity.get(ticket_id, TicketActivity.IDLE) == TicketActivity.IDLE
         ),
     )

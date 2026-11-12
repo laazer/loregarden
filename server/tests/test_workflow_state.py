@@ -17,6 +17,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
@@ -543,3 +544,59 @@ def test_terminal_flag_ends_a_workflow_whose_last_stage_is_not_named_done():
     legacy = [WorkflowStageDef(key="done", name="Done", order=1)]
     assert is_terminal_stage(legacy[0]) is True
     assert find_terminal_stage(legacy).key == "done"
+
+
+def _row_updates(session: Session, *tables: str) -> list[str]:
+    """Every UPDATE of ``tables`` on the session's engine, from now on."""
+    updates: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        head = statement.lstrip()
+        if head.upper().startswith("UPDATE") and head.split()[1].strip('"') in tables:
+            updates.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", record)
+    return updates
+
+
+def test_reading_a_settled_ticket_writes_neither_row(client: TestClient, db_session: Session):
+    """`GET /api/tickets/{id}` reconciles on the way through. With nothing to
+    repair it must not stamp `updated_at`, which left both rows dirty for the
+    next query to autoflush as an UPDATE under SQLite's write lock."""
+    ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
+    _ticket_detail(client, ticket_id)
+    stamped = db_session.get(Ticket, ticket_id).updated_at
+    updates = _row_updates(db_session, "tickets", "workflow_instances")
+
+    _ticket_detail(client, ticket_id)
+
+    assert updates == []
+    db_session.expire_all()
+    assert db_session.get(Ticket, ticket_id).updated_at == stamped
+
+
+def test_a_stage_change_still_stamps_both_rows(client: TestClient, db_session: Session):
+    """The stamp follows a real change, including one the caller made to
+    `stages_json` before handing the rows to the reconcile."""
+    ticket = db_session.get(
+        Ticket, _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    )
+    orch = OrchestrationService(db_session)
+    instance, _ = orch.ensure_workflow_instance(ticket, commit=True)
+    _, stages = orch._resolve_stages(ticket)
+    db_session.refresh(ticket)
+    db_session.refresh(instance)
+    ticket_stamp, instance_stamp = ticket.updated_at, instance.updated_at
+    pending = next(
+        key
+        for key, status in parse_stage_map(instance, stages).items()
+        if status is StageStatus.PENDING
+    )
+
+    set_stage_status(ticket, instance, stages, pending, StageStatus.WONT_DO, note="skipped")
+    db_session.commit()
+
+    db_session.refresh(instance)
+    assert instance.updated_at > instance_stamp
+    assert ticket.updated_at >= ticket_stamp
+    assert parse_stage_map(instance, stages)[pending] is StageStatus.WONT_DO
