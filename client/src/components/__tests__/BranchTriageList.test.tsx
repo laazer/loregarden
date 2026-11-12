@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import type { BranchTriageEntry } from "../../lib/branchTriageApi";
+import { findUsabilityProblems } from "../../lib/usabilityCheck";
 import { BranchTriageList } from "../BranchTriageList";
 
 const branch = (name: string, tickets: string[] = []): BranchTriageEntry => ({
@@ -32,7 +33,7 @@ const BRANCHES = [
 function renderList(branches: BranchTriageEntry[] = BRANCHES, onCleanUp?: () => void) {
   const onSelectBranch = jest.fn();
   const onReviewBranch = jest.fn();
-  render(
+  const { container } = render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
         <BranchTriageList
@@ -46,7 +47,12 @@ function renderList(branches: BranchTriageEntry[] = BRANCHES, onCleanUp?: () => 
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { onSelectBranch, onReviewBranch, field: screen.getByRole("searchbox", { name: "Filter branches by name or linked ticket" }) };
+  return {
+    onSelectBranch,
+    onReviewBranch,
+    container,
+    field: screen.getByRole("searchbox", { name: "Filter branches by name or linked ticket" }),
+  };
 }
 
 const shownBranches = () => document.querySelectorAll(".branch-triage-table tbody tr").length;
@@ -156,5 +162,34 @@ describe("BranchTriageList families", () => {
     const { field } = renderList(family);
     fireEvent.change(field, { target: { value: "1305" } });
     expect(screen.getByRole("button", { name: "loregarden/lg-milestone-that-1305" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * lg-milestone-that-2599 — the rows here are keyed by an identifier, so the
+ * digits ARE the distinguishing content. `findUsabilityProblems`' repeated-text
+ * pass folds digits before comparing, which manufactures 46 copies of one
+ * sentence out of 46 distinguishable branches and reported this healthy surface
+ * as UNUSABLE.
+ */
+describe("BranchTriageList at identifier-keyed volume", () => {
+  const WALL = Array.from({ length: 46 }, (_, i) => {
+    const entry = branch(`loregarden/lg-milestone-that-${2000 + i}`, [`lg-milestone-that-${2000 + i}`]);
+    entry.linked_tickets[0].state = "done";
+    entry.issues = [{ code: "diverged", severity: "medium" as const, message: "Diverged from the base branch" }];
+    return entry;
+  });
+
+  it("does not read 46 distinct branches as one repeated sentence", () => {
+    const { container, field } = renderList(WALL);
+
+    // Family folding (FAMILY_FOLD_AT = 12) collapses one stem into a single
+    // row, and it is off only while a needle is active — the production path
+    // that produced the sweep's 46 rows. Without this assertion the case is
+    // green before the fix, because one folded row cannot repeat.
+    fireEvent.change(field, { target: { value: "lg-milestone-that" } });
+    expect(container.querySelectorAll(".branch-triage-table tbody tr")).toHaveLength(46);
+
+    expect(findUsabilityProblems(container).map((p) => p.kind)).not.toContain("repeated-text");
   });
 });

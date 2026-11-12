@@ -124,19 +124,41 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
   const problems: UsabilityProblem[] = [];
 
   // A template repeated with different numbers or quoted names is still one
-  // sentence to the reader, so digits and quoted words are folded.
-  const counts = new Map<string, number>();
+  // sentence to the reader, so digits and quoted words are still folded: that
+  // fold is what catches the Monitor's template walls, where "Stage '…' ran #
+  // times" is 58 occurrences over 37 distinct unfolded strings.
+  //
+  // But a folded group whose unfolded rows are EVERY ONE of them distinct was
+  // never repetition — the fold manufactured it, because there the digits ARE
+  // the distinguishing content. That is /branch-triage's wall of 46 branch
+  // names, each naming its own ticket number, reported as one sentence said 46
+  // times. So the fold decides which groups exist and this gate decides which
+  // are reported: a group is reported only when at least one pair of its
+  // unfolded rows is identical.
+  //
+  // It is exact equality rather than a ratio because the Monitor's measured
+  // surpluses are 21, 36 and 10 — a margin a reader can see, and one no
+  // tolerance could widen without silencing the 18-row bucket at 8 distinct.
+  //
+  // Weakening repeated-text this way is safe because `unfiltered-long-list`
+  // and `tabular-list` still own walls of rows: a genuine wall of
+  // identifier-keyed rows is caught there, by the control it lacks and the
+  // fields it repeats, not by its text reading alike.
+  const counts = new Map<string, { count: number; unfolded: Set<string> }>();
   for (const el of Array.from(root.querySelectorAll("li, p, td, [role='listitem']"))) {
-    const text = (el.textContent ?? "")
-      .replace(/\s+/g, " ")
+    const unfolded = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+    const text = unfolded
       .replace(/(['"`])[^'"`]{1,60}\1/g, "'…'")
       .replace(/\d+(\.\d+)?/g, "#")
       .trim();
     if (text.length < 20) continue;
-    counts.set(text, (counts.get(text) ?? 0) + 1);
+    const group = counts.get(text) ?? { count: 0, unfolded: new Set<string>() };
+    group.count += 1;
+    group.unfolded.add(unfolded);
+    counts.set(text, group);
   }
-  for (const [text, count] of counts) {
-    if (count > REPEATED) {
+  for (const [text, { count, unfolded }] of counts) {
+    if (count > REPEATED && unfolded.size < count) {
       problems.push({
         kind: "repeated-text",
         detail: `${count} elements say "${text.slice(0, 80)}" — group or fold them`,
