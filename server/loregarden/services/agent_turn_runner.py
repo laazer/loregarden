@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +57,7 @@ from loregarden.services.run_concurrency import (
     find_blocking_chat_run,
     new_run_code,
 )
+from loregarden.services.run_lease import lease_renewal
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
@@ -435,65 +437,70 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
     )
     timeout = resolve_agent_timeout(request.agent, request.profile.timeout_env)
     run = _start_run(request)
-    root = _resolve_checkout(request, run)
-    thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
-    try:
-        with TemporaryDirectory(prefix=request.profile.tmp_prefix) as tmp:
-            prompt_file = Path(tmp) / "prompt.md"
-            prompt_file.write_text(request.prompt, encoding="utf-8")
-            invocation = build_interactive_invocation(
-                adapter="claude",
-                prompt_file=prompt_file,
-                workspace_root=root,
-                claude_model=claude_model,
-                claude_effort=resolve_effort_for_adapter("claude", request.workspace),
-                partial_messages=thinking is not None,
-                db_session=request.session,
-                # Chat surfaces — not pipeline stages. Keep interactive MCP open.
-                orchestrated=False,
-                tool_grants=agent_tool_grants(request.agent),
-                mcp_tools=list(request.agent.get("mcp_tools") or []),
-                mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
-                surface=request.surface,
-                agent_slug=request.agent.get("slug") or request.agent_id,
-                extra_dirs=request.extra_dirs,
-            )
-            bridge_kwargs: dict = {
-                "run_id": run.id,
-                "invocation": invocation,
-                "prompt": request.prompt,
-                "timeout_seconds": timeout,
-                "streamer": thinking,
-            }
-            if request.ticket is not None:
-                bridge_kwargs["ticket"] = request.ticket
-            else:
-                bridge_kwargs["workspace"] = request.workspace
-                if request.workspace_stage_key:
-                    bridge_kwargs["workspace_stage_key"] = request.workspace_stage_key
-            result = PermissionBridgeRunner(
-                request.session, track_workflow_stage=request.track_workflow_stage
-            ).run(**bridge_kwargs)
-    except Exception as exc:
-        _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
-        raise
-    finally:
-        if thinking:
-            thinking.close()
+    # Renewed for the whole turn, checkout included. Chat turns run on their own
+    # thread outside `supervised`, so without this nothing stamped the lease and
+    # the sweep reaped every Home turn that outran AGENT_RUN_LEASE mid-answer
+    # (7 home-chat runs, `last_seen_at` never set, in the fortnight to 2026-11-12).
+    with lease_renewal(run.id):
+        root = _resolve_checkout(request, run)
+        thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
+        try:
+            with TemporaryDirectory(prefix=request.profile.tmp_prefix) as tmp:
+                prompt_file = Path(tmp) / "prompt.md"
+                prompt_file.write_text(request.prompt, encoding="utf-8")
+                invocation = build_interactive_invocation(
+                    adapter="claude",
+                    prompt_file=prompt_file,
+                    workspace_root=root,
+                    claude_model=claude_model,
+                    claude_effort=resolve_effort_for_adapter("claude", request.workspace),
+                    partial_messages=thinking is not None,
+                    db_session=request.session,
+                    # Chat surfaces — not pipeline stages. Keep interactive MCP open.
+                    orchestrated=False,
+                    tool_grants=agent_tool_grants(request.agent),
+                    mcp_tools=list(request.agent.get("mcp_tools") or []),
+                    mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
+                    surface=request.surface,
+                    agent_slug=request.agent.get("slug") or request.agent_id,
+                    extra_dirs=request.extra_dirs,
+                )
+                bridge_kwargs: dict = {
+                    "run_id": run.id,
+                    "invocation": invocation,
+                    "prompt": request.prompt,
+                    "timeout_seconds": timeout,
+                    "streamer": thinking,
+                }
+                if request.ticket is not None:
+                    bridge_kwargs["ticket"] = request.ticket
+                else:
+                    bridge_kwargs["workspace"] = request.workspace
+                    if request.workspace_stage_key:
+                        bridge_kwargs["workspace_stage_key"] = request.workspace_stage_key
+                result = PermissionBridgeRunner(
+                    request.session, track_workflow_stage=request.track_workflow_stage
+                ).run(**bridge_kwargs)
+        except Exception as exc:
+            _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
+            raise
+        finally:
+            if thinking:
+                thinking.close()
 
-    reply = cap_reply(
-        extract_triage_reply(result.stdout),
-        request.profile.reply_cap,
-        label=request.profile.assistant_label,
-    )
-    if result.status != RunStatus.SUCCEEDED:
-        _settle(request, run, status=result.status, stderr=result.stderr)
-        raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
-    if not reply:
-        _settle(request, run, status=RunStatus.FAILED, stderr=result.stderr or "empty response")
-        raise RuntimeError("Agent returned an empty response")
-    _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
-    return reply, run.id
+        reply = cap_reply(
+            extract_triage_reply(result.stdout),
+            request.profile.reply_cap,
+            label=request.profile.assistant_label,
+        )
+        if result.status != RunStatus.SUCCEEDED:
+            _settle(request, run, status=result.status, stderr=result.stderr)
+            raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
+        if not reply:
+            _settle(request, run, status=RunStatus.FAILED, stderr=result.stderr or "empty response")
+            raise RuntimeError("Agent returned an empty response")
+        _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
+        return reply, run.id
 
 
 def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, str]:
@@ -508,35 +515,39 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
     # and that run is still what a worktree has to be attributed to — reading it
     # here is what lets an acting turn cut a tree instead of falling back to
     # reuse-only and writing into the shared checkout.
-    owner_run = run
-    if owner_run is None and run_id and not read_only:
-        owner_run = request.session.get(AgentRun, run_id)
+    # Every turn that carries a run renews its lease while the agent answers; see
+    # `_run_permission_bridge`. A read-only turn handed an existing run renews it
+    # too: `renew_agent_run_lease` stamps only a run that is still in flight.
+    with lease_renewal(run_id) if run_id else nullcontext():
+        owner_run = run
+        if owner_run is None and run_id and not read_only:
+            owner_run = request.session.get(AgentRun, run_id)
 
-    root = _resolve_turn_root(request, owner_run)
-    thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
-    try:
-        reply = run_cli_agent_turn(
-            request.profile,
-            workspace=request.workspace,
-            prompt=request.prompt,
-            user_prompt=request.user_prompt,
-            run_id="" if read_only else run_id,
-            workspace_slug=request.workspace.slug or "",
-            granted_tools=(None if read_only else list(request.agent.get("mcp_tools") or [])),
-            read_only=read_only,
-            thinking_sink=thinking,
-            workspace_root=root,
-            surface=request.surface,
-            extra_dirs=request.extra_dirs,
-        )
-    except Exception as exc:
+        root = _resolve_turn_root(request, owner_run)
+        thinking = ChatTurnThinkingSink(request.turn_id) if request.turn_id else None
+        try:
+            reply = run_cli_agent_turn(
+                request.profile,
+                workspace=request.workspace,
+                prompt=request.prompt,
+                user_prompt=request.user_prompt,
+                run_id="" if read_only else run_id,
+                workspace_slug=request.workspace.slug or "",
+                granted_tools=(None if read_only else list(request.agent.get("mcp_tools") or [])),
+                read_only=read_only,
+                thinking_sink=thinking,
+                workspace_root=root,
+                surface=request.surface,
+                extra_dirs=request.extra_dirs,
+            )
+        except Exception as exc:
+            if run is not None:
+                _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
+            raise
+        finally:
+            if thinking:
+                thinking.close()
+
         if run is not None:
-            _settle(request, run, status=RunStatus.FAILED, stderr=str(exc))
-        raise
-    finally:
-        if thinking:
-            thinking.close()
-
-    if run is not None:
-        _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
-    return reply, run_id or ""
+            _settle(request, run, status=RunStatus.SUCCEEDED, stderr="")
+        return reply, run_id or ""
