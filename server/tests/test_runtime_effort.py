@@ -605,7 +605,32 @@ def three_hanging_clis_fixture():
                 module.reset_model_cache()
 
 
-def test_a_cold_runtime_options_request_answers_while_every_cli_hangs(client, three_hanging_clis):
+@pytest.fixture(name="payload_seconds")
+def payload_seconds_fixture():
+    """How long each request spent building its payload, as the endpoint calls it.
+
+    The payload is where the defect lived: it is the call that once waited on
+    the probes. Timing it rather than the whole HTTP round trip keeps the budget
+    on what the fix changed. The round trip also carries request handling that
+    has nothing to do with probes, and under a full CI suite that part alone
+    once took ~3.1s while the payload took its usual ~0.76s.
+    """
+    seconds: list[float] = []
+
+    def timed(**kwargs):
+        started = time.monotonic()
+        try:
+            return runtime_options_payload(**kwargs)
+        finally:
+            seconds.append(time.monotonic() - started)
+
+    with mock.patch("loregarden.api.workspaces.runtime_options_payload", side_effect=timed):
+        yield seconds
+
+
+def test_a_cold_runtime_options_request_answers_while_every_cli_hangs(
+    client, three_hanging_clis, payload_seconds
+):
     """B6 — the defect this ticket exists to close.
 
     Before the fix, ``ProbeCache.get`` ran the probe on the calling thread and
@@ -613,12 +638,13 @@ def test_a_cold_runtime_options_request_answers_while_every_cli_hangs(client, th
     took opencode 45s + codex 12s + lmstudio 2x2s ~= 61s. The connection was
     already handed back, so the pool survived — the request did not.
     """
-    started = time.monotonic()
     response = client.get("/api/workspaces/runtime-options?workspace=loregarden")
-    elapsed = time.monotonic() - started
 
     assert response.status_code == 200
-    assert elapsed < 2.0, f"a cold runtime-options request took {elapsed:.2f}s with three hung CLIs"
+    (cold_elapsed,) = payload_seconds
+    assert cold_elapsed < 2.0, (
+        f"a cold runtime-options payload took {cold_elapsed:.2f}s with three hung CLIs"
+    )
 
     body = response.json()
     assert set(body["model_discovery"]) == {"codex", "lmstudio", "opencode"}
@@ -633,7 +659,7 @@ def test_a_cold_runtime_options_request_answers_while_every_cli_hangs(client, th
     assert body["opencode_models"][0]["id"] == ""
 
 
-def test_three_bounded_joins_fit_inside_the_budget(client, three_hanging_clis):
+def test_three_bounded_joins_fit_inside_the_budget(client, three_hanging_clis, payload_seconds):
     """The arithmetic behind the 0.25s default: 3 x 0.25 = 0.75s against 2s.
 
     Measured as a second request on a now-warm *failure*-free cache: the probes
@@ -641,13 +667,13 @@ def test_three_bounded_joins_fit_inside_the_budget(client, three_hanging_clis):
     probe runs" path, which must be faster still.
     """
     client.get("/api/workspaces/runtime-options?workspace=loregarden")
-
-    started = time.monotonic()
     response = client.get("/api/workspaces/runtime-options?workspace=loregarden")
-    elapsed = time.monotonic() - started
 
     assert response.status_code == 200
-    assert elapsed < 1.0, f"a second caller waited {elapsed:.2f}s behind three in-flight probes"
+    _, second_elapsed = payload_seconds
+    assert second_elapsed < 1.0, (
+        f"a second caller waited {second_elapsed:.2f}s behind three in-flight probes"
+    )
 
 
 def test_runtime_options_payload_moved_out_of_cli_settings():

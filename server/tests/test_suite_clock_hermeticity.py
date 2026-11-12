@@ -51,21 +51,24 @@ ALLOWED: dict[tuple[str, str], str] = {
     "round-trip precision, not elapsed time.",
     (
         "test_runtime_effort.py",
-        "elapsed < 2.0",
+        "cold_elapsed < 2.0",
     ): "The 2s budget is criterion B6 of lg-bug-hole-689, and the quantity under test "
-    "*is* wall-clock: before the fix this request took ~61s because three discovery "
+    "*is* wall-clock: before the fix the payload took ~61s because three discovery "
     "probes ran in sequence on the calling thread. There is no second measured "
     "quantity to compare against — a bound relative to the probes would be satisfied "
     "by the defect, since the probes are exactly what must no longer be waited for. "
-    "The margin is three bounded 0.25s joins against 2s, and the real cold request "
-    "measured 0.73s on this machine with two real CLIs probing.",
+    "It times `runtime_options_payload` as the endpoint calls it, not the HTTP round "
+    "trip: on a loaded CI runner the round trip once took 3.89s while the payload "
+    "inside it took its usual ~0.76s (three bounded 0.25s joins), so a round-trip "
+    "bound measured CI load rather than the fix. 0.76s held under 14 CPU-bound "
+    "processes locally.",
     (
         "test_runtime_effort.py",
-        "elapsed < 1.0",
+        "second_elapsed < 1.0",
     ): "Same ticket, the second-caller path: a request arriving while the probes are "
     "already in flight must not queue behind them. Also genuinely wall-clock, also "
     "with no relative form that the defect would fail — the unfixed code made this "
-    "caller wait the full probe. Measured 0.05s warm.",
+    "caller wait the full probe. Timed on the payload for the same reason as above.",
 }
 
 
