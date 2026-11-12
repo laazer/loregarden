@@ -129,3 +129,64 @@ def test_head_commit_sha_on_a_missing_directory_is_empty_not_an_error(tmp_path):
     on this machine. It used to inherit subprocess's exception for the missing
     cwd, so merely asking which commit was current could raise."""
     assert git_commit_push_service.head_commit_sha(tmp_path / "never-existed") == ""
+
+
+@pytest.fixture
+def repo_with_staged_deletion(tmp_path: Path) -> Path:
+    """A repo holding a tracked file whose deletion is ALREADY staged.
+
+    That state is what `git add -- <path>` cannot express: the path is in
+    neither the index nor the worktree, so the pathspec matches nothing and git
+    exits 128. It is reached in the wild by an agent committing a stray file and
+    a later step removing it with `git rm` (lg-milestone-that-2599's `p`).
+    """
+    repo = tmp_path / "staged-deletion"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main", ".")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    (repo / "p").write_text("", encoding="utf-8")
+    (repo / "keep.txt").write_text("one\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "init")
+    _git(repo, "rm", "-q", "p")
+    assert _git(repo, "status", "--porcelain").stdout.strip() == "D  p"
+    return repo
+
+
+def test_commit_paths_in_commits_a_path_whose_deletion_is_already_staged(
+    repo_with_staged_deletion: Path,
+):
+    """`git add -- p` exits 128 here, which used to fail the whole commit and
+    block every later stage of the ticket. The deletion is already in the
+    index, so the commit is what the path needs, not another add."""
+    assert git_commit_push_service.commit_paths_in(repo_with_staged_deletion, "drop p", ["p"])
+
+    assert _git(repo_with_staged_deletion, "status", "--porcelain").stdout.strip() == ""
+    tracked = _git(repo_with_staged_deletion, "ls-files").stdout.split()
+    assert "p" not in tracked
+
+
+def test_commit_all_dirty_in_mixes_a_staged_deletion_with_an_unstaged_edit(
+    repo_with_staged_deletion: Path,
+):
+    """The add still has to run for the unstaged half; only the already-staged
+    path is left out of the pathspec."""
+    (repo_with_staged_deletion / "keep.txt").write_text("two\n", encoding="utf-8")
+
+    assert git_commit_push_service.commit_all_dirty_in(repo_with_staged_deletion, "both halves")
+
+    assert _git(repo_with_staged_deletion, "status", "--porcelain").stdout.strip() == ""
+    landed = _git(repo_with_staged_deletion, "show", "--name-status", "--format=", "HEAD").stdout
+    assert "D\tp" in landed
+    assert "M\tkeep.txt" in landed
+
+
+def test_a_pathspec_that_matches_nothing_is_still_an_error(repo_with_staged_deletion: Path):
+    """The exemption is for paths git status reported as staged, not a licence
+    to swallow a failing add: a path that is dirty but unmatchable must still
+    raise rather than commit something else under its message."""
+    with pytest.raises(ValueError, match="did not match any files"):
+        git_commit_push_service._add_and_commit(
+            repo_with_staged_deletion, "bad", {"never-existed"}, frozenset()
+        )

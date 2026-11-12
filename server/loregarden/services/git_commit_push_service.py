@@ -145,8 +145,9 @@ def commit_paths_in(repo_root: Path, message: str, paths: Iterable[str]) -> bool
     # is an error rather than a no-op.
     # Nothing to commit if we cannot see what is dirty — better than
     # committing a guess.
-    live = (working_tree_paths(repo_root) or set()) & set(wanted)
-    return _add_and_commit(repo_root, message, live)
+    tree = read_tree(repo_root)
+    live = (tree.dirty_paths or frozenset()) & set(wanted)
+    return _add_and_commit(repo_root, message, set(live), tree.staged_only_paths)
 
 
 def commit_all_dirty_in(repo_root: Path, message: str) -> bool:
@@ -157,21 +158,36 @@ def commit_all_dirty_in(repo_root: Path, message: str) -> bool:
     name paths reverted since, and `git add` on a pathspec matching nothing is
     an error (lg-build-verification-847).
     """
-    return _add_and_commit(repo_root, message, working_tree_paths(repo_root) or set())
+    tree = read_tree(repo_root)
+    return _add_and_commit(
+        repo_root, message, set(tree.dirty_paths or frozenset()), tree.staged_only_paths
+    )
 
 
-def _add_and_commit(repo_root: Path, message: str, live: set[str]) -> bool:
+def _add_and_commit(
+    repo_root: Path, message: str, live: set[str], already_staged: frozenset[str]
+) -> bool:
     if not live:
         return False
 
-    add = run_git(
-        ["add", "--", *sorted(live)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if add.returncode != 0:
-        raise ValueError((add.stderr or add.stdout or "git add failed").strip())
+    # `git add` is for the worktree half of a change. A path whose change is
+    # already wholly in the index is not merely a no-op to add: once its
+    # deletion or rename is staged the path is in neither the index nor the
+    # worktree, nothing matches the pathspec, and git exits 128 with
+    # "fatal: pathspec '<path>' did not match any files" — failing a commit
+    # whose content was ready. Observed on lg-milestone-that-2599, where a
+    # stray empty file `p` committed by one stage and staged-deleted after it
+    # blocked every following stage's commit (2026-11-12).
+    to_add = sorted(live - already_staged)
+    if to_add:
+        add = run_git(
+            ["add", "--", *to_add],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        if add.returncode != 0:
+            raise ValueError((add.stderr or add.stdout or "git add failed").strip())
 
     commit = run_git(
         ["commit", "-m", message],

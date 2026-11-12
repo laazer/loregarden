@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 _UNBORN_OID = "(initial)"
 #: `# branch.head` when HEAD is detached.
 _DETACHED_HEAD = "(detached)"
+#: The worktree half of a porcelain v2 `XY` code when the worktree matches the
+#: index: the whole of this path's change is staged.
+_WORKTREE_CLEAN = "."
 
 
 def git_reading(
@@ -91,6 +94,10 @@ class TreeSnapshot:
     head_sha: str
     branch: str
     dirty_paths: frozenset[str] | None
+    #: Dirty paths whose change is entirely in the index already (porcelain v2
+    #: `XY` with `Y == "."`). A subset of `dirty_paths`, and the set `git add`
+    #: has nothing left to do for — see `_add_and_commit`.
+    staged_only_paths: frozenset[str] = frozenset()
 
     @property
     def readable(self) -> bool:
@@ -123,16 +130,11 @@ def read_tree(repo_root: Path) -> TreeSnapshot:
 
 
 def _parse_status_v2(repo_root: Path, stdout: str) -> TreeSnapshot:
-    """Parse `status --porcelain=v2 --branch -z`.
-
-    Each entry kind puts its path after a fixed number of space-separated
-    fields, so splitting with a field limit keeps spaces inside the path. A
-    rename or copy (`2`) emits its source path as the following record, and the
-    source is dirty too — the same set `--porcelain=v1` reported.
-    """
+    """Parse `status --porcelain=v2 --branch -z`."""
     head_sha = ""
     branch = ""
     paths: set[str] = set()
+    staged_only: set[str] = set()
     records = [record for record in stdout.split("\0") if record]
     index = 0
     while index < len(records):
@@ -141,23 +143,63 @@ def _parse_status_v2(repo_root: Path, stdout: str) -> TreeSnapshot:
         if record.startswith("# branch.oid "):
             oid = record.removeprefix("# branch.oid ")
             head_sha = "" if oid == _UNBORN_OID else oid
-        elif record.startswith("# branch.head "):
+            continue
+        if record.startswith("# branch.head "):
             name = record.removeprefix("# branch.head ")
             branch = "" if name == _DETACHED_HEAD else name
-        elif record.startswith("1 "):
-            paths.add(record.split(" ", 8)[8])
-        elif record.startswith("2 "):
-            paths.add(record.split(" ", 9)[9])
-            if index < len(records):
-                paths.add(records[index])
-                index += 1
-        elif record.startswith("u "):
-            paths.add(record.split(" ", 10)[10])
-        elif record.startswith("? "):
-            paths.add(record[2:])
+            continue
+        entry = _parse_entry(record, records[index] if index < len(records) else None)
+        if entry is None:
+            continue
+        paths.update(entry.paths)
+        if entry.staged_only:
+            staged_only.update(entry.paths)
+        index += entry.consumed_next
     return TreeSnapshot(
         repo_root=repo_root,
         head_sha=head_sha,
         branch=branch,
         dirty_paths=frozenset(paths),
+        staged_only_paths=frozenset(staged_only),
     )
+
+
+@dataclass(frozen=True)
+class _Entry:
+    """One dirty path (two for a rename), and whether git still has work for
+    `git add` on it."""
+
+    paths: tuple[str, ...]
+    staged_only: bool
+    consumed_next: int = 0
+
+
+def _parse_entry(record: str, next_record: str | None) -> _Entry | None:
+    """One porcelain v2 entry record, or None for anything else.
+
+    Each entry kind puts its path after a fixed number of space-separated
+    fields, so splitting with a field limit keeps spaces inside the path. A
+    rename or copy (`2`) emits its source path as the following record, and the
+    source is dirty too — the same set `--porcelain=v1` reported. The source is
+    gone from the worktree and its removal is in the index with the rename, so
+    it carries the entry's staged-only answer rather than one of its own.
+
+    `staged_only` is the worktree half of the `XY` code reading `.`: the change
+    is wholly in the index, and `git add` has nothing left to match.
+    """
+    if record.startswith("1 "):
+        fields = record.split(" ", 8)
+        return _Entry(paths=(fields[8],), staged_only=fields[1].endswith(_WORKTREE_CLEAN))
+    if record.startswith("2 "):
+        fields = record.split(" ", 9)
+        source = (next_record,) if next_record is not None else ()
+        return _Entry(
+            paths=(fields[9], *source),
+            staged_only=fields[1].endswith(_WORKTREE_CLEAN),
+            consumed_next=len(source),
+        )
+    if record.startswith("u "):
+        return _Entry(paths=(record.split(" ", 10)[10],), staged_only=False)
+    if record.startswith("? "):
+        return _Entry(paths=(record[2:],), staged_only=False)
+    return None
