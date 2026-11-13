@@ -57,6 +57,8 @@
   --aml: #f5c95a;
   --vio: #9d8cff;
   --vil: #c3b8ff;
+  /* A stage done on an earlier pass that the run will visit again. */
+  --rerun: var(--amb);
   /* Type scale. Six steps, named for what the text is, so a value can move
      without its name lying. Nothing goes below micro (11px): tertiary text at
      8-10px failed to read at all. Sizes above display are hero numbers and the
@@ -2297,6 +2299,11 @@ label:is(
   border: 1px solid var(--bd2);
   border-radius: 5px;
   padding: 1px 5px;
+}
+
+.workflow-stage-optional--rerun {
+  color: var(--rerun);
+  border-color: color-mix(in srgb, var(--rerun) 45%, transparent);
 }
 
 /* Why a stage ended up where it did — chiefly why a run pruned it to won't-do.

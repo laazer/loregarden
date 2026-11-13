@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { WorkflowStageView } from "../api/types";
-import { stageAgentMeta, stageStatusMeta } from "../lib/stageDisplay";
+import { stageAgentMeta, stageStatusMeta, willRerunStageKeys } from "../lib/stageDisplay";
 import { vineMark } from "../lib/vine";
 import { VineNode } from "./vine/VineNode";
 
@@ -19,25 +19,30 @@ function AgentRobotIcon() {
 export function WorkflowStageTimeline({
   stages,
   currentStageKey,
+  rerunKeys,
   renderStageActions,
   renderStageExtras,
 }: {
   stages: WorkflowStageView[];
   currentStageKey: string;
+  /** Done stages the run will visit again; pass it when `stages` is a window of the full list. */
+  rerunKeys?: ReadonlySet<string>;
   renderStageActions?: (stage: WorkflowStageView) => ReactNode;
   renderStageExtras?: (stage: WorkflowStageView) => ReactNode;
 }) {
+  const rerun = rerunKeys ?? willRerunStageKeys(stages);
   return (
     <div className="workflow-lifecycle">
       {stages.map((stage, index) => {
         const meta = stageStatusMeta(stage.status);
+        const willRerun = rerun.has(stage.key);
         const isCurrent = stage.key === currentStageKey;
         const isLast = index === stages.length - 1;
         const { agent, skill } = stageAgentMeta(stage);
 
         return (
           <div key={stage.key} className="workflow-stage">
-            <VineNode index={index} mark={vineMark(stage.status, isCurrent)} last={isLast} />
+            <VineNode index={index} mark={vineMark(stage.status, isCurrent)} last={isLast} rerun={willRerun} />
 
             <div className="workflow-stage-body">
               <div className="workflow-stage-header">
@@ -58,6 +63,7 @@ export function WorkflowStageTimeline({
                 >
                   {meta.label}
                 </span>
+                {willRerun ? <span className="workflow-stage-optional workflow-stage-optional--rerun">runs again</span> : null}
               </div>
 
               {agent ? (

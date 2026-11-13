@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { TicketSummary } from "../../api/types";
 import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
+import { willRerunStageKeys } from "../../lib/stageDisplay";
 import { Button } from "../ui/Button";
 import { StatusChip } from "../ui/StatusChip";
 
@@ -54,6 +55,7 @@ export function HomeRunningNow({
             const stages = ticket?.stages ?? [];
             const current = stages.find((stage) => stage.status === "running");
             const done = stages.filter((stage) => stage.status === "done").length;
+            const rerun = willRerunStageKeys(stages);
             const name = run.ticket_title || ticket?.title || run.ticket_code || "A ticket";
             return (
               <li key={run.ticket_id}>
@@ -72,12 +74,17 @@ export function HomeRunningNow({
                   {stages.length ? (
                     <span className="home-run-stages" aria-hidden="true">
                       {stages.map((stage) => (
-                        <i key={stage.key} data-status={stage.status} />
+                        <i
+                          key={stage.key}
+                          data-status={stage.status}
+                          data-rerun={rerun.has(stage.key) || undefined}
+                        />
                       ))}
                     </span>
                   ) : null}
                   <span className="home-run-card-meta">
                     {stages.length ? `${done} of ${stages.length} stages · ` : ""}
+                    {rerun.size ? `${rerun.size} to rerun · ` : ""}
                     {duration(run.elapsed_seconds)}
                   </span>
                 </Button>

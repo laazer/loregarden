@@ -53,6 +53,19 @@
   stroke-linecap: round;
 }
 
+/* A leaf from an earlier pass that the run will grow again. */
+.vine-node[data-rerun] .vine-leaf {
+  fill: var(--rerun);
+}
+
+.vine-node[data-rerun] .vine-leaf-stem {
+  stroke: var(--rerun);
+}
+
+.vine-node[data-rerun] .vine-stem.is-grown path {
+  stroke: color-mix(in srgb, var(--rerun) 60%, transparent);
+}
+
 .vine-leaf-rib {
   fill: none;
   stroke: var(--onac);

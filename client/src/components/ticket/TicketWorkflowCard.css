@@ -131,6 +131,10 @@
   color: var(--txl);
 }
 
+.twf-stage.is-rerun .twf-meta {
+  color: var(--rerun);
+}
+
 .twf-stage.is-failing .twf-meta {
   color: var(--red);
 }

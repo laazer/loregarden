@@ -376,6 +376,11 @@
   background: var(--vio);
 }
 
+/* Done on a previous pass, but after the active stage: it runs again. */
+.home-run-stages i[data-rerun] {
+  background: var(--rerun);
+}
+
 /* The feed: time, what happened, on what. */
 .home-feed-row {
   grid-template-columns: 52px auto minmax(0, 1fr);

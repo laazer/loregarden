@@ -11,6 +11,7 @@ import {
   stageAgentMeta,
   stageKindLabel,
   stageStatusMeta,
+  willRerunStageKeys,
 } from "../../lib/stageDisplay";
 import { canRunStage } from "../../lib/stageRunPolicy";
 import { stageRowMeta, stageRunSummaries } from "../../lib/stageSummary";
@@ -58,6 +59,7 @@ export function TicketWorkflowCard({ ticket, work }: { ticket: TicketDetail; wor
   );
 
   const stages = ticket.stages;
+  const rerun = willRerunStageKeys(stages);
   const doneCount = stages.filter((s) => s.status === "done" || s.status === "wont_do").length;
   const current = stages.find((s) => s.key === ticket.workflow_stage_key);
   const requestStageRun = (stageKey: string) => work.setRunConfirmStageKey(stageKey);
@@ -107,6 +109,7 @@ export function TicketWorkflowCard({ ticket, work }: { ticket: TicketDetail; wor
               last={index === stages.length - 1}
               meta={stageRowMeta(stage, summaries.get(stage.key))}
               failing={summaries.get(stage.key)?.failing ?? false}
+              rerun={rerun.has(stage.key)}
               onRun={requestStageRun}
             />
           ))}
@@ -145,6 +148,7 @@ function StageRow({
   last,
   meta,
   failing,
+  rerun,
   onRun,
 }: {
   ticket: TicketDetail;
@@ -154,6 +158,8 @@ function StageRow({
   last: boolean;
   meta: string;
   failing: boolean;
+  /** Done on an earlier pass; the run will visit it again. */
+  rerun: boolean;
   onRun: (stageKey: string) => void;
 }) {
   const isCurrent = stage.key === ticket.workflow_stage_key;
@@ -165,13 +171,14 @@ function StageRow({
     `twf-stage--${stage.status}`,
     isCurrent ? "is-current" : "",
     failing ? "is-failing" : "",
+    rerun ? "is-rerun" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
     <li className={className} aria-current={isCurrent ? "step" : undefined}>
-      <VineNode index={index} mark={vineMark(stage.status, isCurrent)} last={last} />
+      <VineNode index={index} mark={vineMark(stage.status, isCurrent)} last={last} rerun={rerun} />
       <span className="twf-name" title={kind ?? undefined}>
         {stage.name}
       </span>
@@ -180,7 +187,9 @@ function StageRow({
         {failing ? "Failing" : stageStatusMeta(stage.status).label}
         {isCurrent ? ", current stage" : ""}
       </span>
-      {meta ? <span className="twf-meta">{meta}</span> : null}
+      {meta || rerun ? (
+        <span className="twf-meta">{rerun ? (meta ? `${meta} · runs again` : "runs again") : meta}</span>
+      ) : null}
       <StageOverflowMenu
         ticket={ticket}
         stage={stage}

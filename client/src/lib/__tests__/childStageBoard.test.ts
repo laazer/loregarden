@@ -58,6 +58,13 @@ describe("the child stage board", () => {
     expect(cellLabel({ key: "review", name: "Review" }, cellMark(c, "review"))).toBe("Review: not in this workflow");
   });
 
+  it("marks a done stage past the active one as a rerun, in words too", () => {
+    const c = child({ stages: [stage("plan", "done"), stage("spec", "running"), stage("tests", "done")] });
+    expect(cellMark(c, "plan")).toBe("done");
+    expect(cellMark(c, "tests")).toBe("rerun");
+    expect(cellLabel({ key: "tests", name: "Tests" }, cellMark(c, "tests"))).toBe("Tests: done, runs again");
+  });
+
   it("counts each child at its current stage, and a done one at the last column", () => {
     const columns = [
       { key: "triage", name: "Triage" },

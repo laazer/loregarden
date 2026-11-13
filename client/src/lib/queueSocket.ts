@@ -106,6 +106,8 @@ export interface ActiveRun extends RunLabels, RunEstimates {
   /** The ticket's stages settled out of its total; null before it has a workflow. */
   stages_done?: number | null;
   stages_total?: number | null;
+  /** Of `stages_done`, those after the active stage, which the run will visit again (a rework). */
+  stages_rerun?: number | null;
   /**
    * Set only while `status` is `repairing`: which mechanism justified holding
    * the lane through a block, and how many re-dispatches this entry has already

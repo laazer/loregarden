@@ -255,6 +255,12 @@
   background: color-mix(in srgb, var(--grn) 55%, var(--bg0));
 }
 
+/* Done on an earlier pass; a rework will run it again. */
+.csb-mark--rerun {
+  border-color: var(--rerun);
+  background: color-mix(in srgb, var(--rerun) 35%, var(--bg0));
+}
+
 .csb-mark--running {
   border-color: var(--blue);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 22%, transparent);

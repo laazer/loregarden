@@ -243,7 +243,29 @@ async def test_a_lane_card_says_how_many_of_its_stages_are_settled(db_session):
     snapshot = build_queue_status(db_session)
     card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
 
-    assert (card["stages_done"], card["stages_total"]) == (1, len(stages))
+    assert (card["stages_done"], card["stages_total"], card["stages_rerun"]) == (1, len(stages), 0)
+
+
+async def test_a_lane_card_counts_done_stages_after_the_active_one_as_rerun(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "RING-3", TicketState.IN_PROGRESS)
+    orch = OrchestrationService(db_session)
+    orch.ensure_workflow_instance(ticket, commit=True)
+    instance, stages = orch._resolve_stages(ticket)
+    assert len(stages) >= 4
+    # A rework sent the ticket back to stage 1 after stages 2 and 3 finished.
+    set_stage_status(ticket, instance, stages, stages[0].key, StageStatus.DONE)
+    set_stage_status(ticket, instance, stages, stages[1].key, StageStatus.RUNNING)
+    set_stage_status(ticket, instance, stages, stages[2].key, StageStatus.DONE)
+    set_stage_status(ticket, instance, stages, stages[3].key, StageStatus.DONE)
+    db_session.add(instance)
+    db_session.commit()
+    _occupy_slot(db_session, ticket, RunStatus.RUNNING)
+
+    snapshot = build_queue_status(db_session)
+    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
+
+    assert (card["stages_done"], card["stages_rerun"]) == (3, 2)
 
 
 async def test_a_lane_card_with_no_workflow_yet_claims_no_progress(db_session):
@@ -254,4 +276,4 @@ async def test_a_lane_card_with_no_workflow_yet_claims_no_progress(db_session):
     snapshot = build_queue_status(db_session)
     card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
 
-    assert (card["stages_done"], card["stages_total"]) == (None, None)
+    assert (card["stages_done"], card["stages_total"], card["stages_rerun"]) == (None, None, None)
