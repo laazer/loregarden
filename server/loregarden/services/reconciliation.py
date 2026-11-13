@@ -64,6 +64,7 @@ from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
+    FINDINGS_OUTLIVE_THEIR_SOURCE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
@@ -302,6 +303,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
     _invariant(UNDECIDED_FINDINGS_DO_NOT_RUN),
+    # A finding whose source finished without a scope round: the decision it
+    # waits for can never be asked for, so it is deferred here or never.
+    _invariant(FINDINGS_OUTLIVE_THEIR_SOURCE),
     # A ticket that finished past the criteria check without answering for its
     # criteria. Report-only; reopening it is a person's call.
     _invariant(DONE_TICKETS_HAVE_SETTLED_CRITERIA),

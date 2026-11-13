@@ -73,6 +73,7 @@ from loregarden.services.reference_survey.invariant_checks import (
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.scope_invariants import (
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
+    FINDINGS_OUTLIVE_THEIR_SOURCE,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
@@ -1455,6 +1456,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     AWAITING_STAGES_ARE_ASKED,
     HELD_TICKETS_RESUME,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
+    FINDINGS_OUTLIVE_THEIR_SOURCE,
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     LANDED_WORK_IS_COMMITTED,
