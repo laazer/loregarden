@@ -108,3 +108,28 @@ describe("consolePaneVisibility", () => {
     expect(consolePaneVisibility(undefined)).toEqual({ workspaces: true, tickets: true });
   });
 });
+
+describe("persisting", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("does not rewrite localStorage when a set touches only unpersisted fields", () => {
+    // `search` is dropped by `partialize`; persist still serialized the slice
+    // and wrote it on every keystroke.
+    useUiStore.getState().setSearch("a");
+    const write = jest.spyOn(Storage.prototype, "setItem");
+
+    useUiStore.getState().setSearch("ab");
+    useUiStore.getState().setSearch("abc");
+
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("writes when a persisted field changes", () => {
+    const write = jest.spyOn(Storage.prototype, "setItem");
+    const density = useUiStore.getState().ticketDensity === "compact" ? "cards" : "compact";
+
+    useUiStore.setState({ ticketDensity: density });
+
+    expect(write).toHaveBeenCalledWith("loregarden-ui", expect.stringContaining(density));
+  });
+});

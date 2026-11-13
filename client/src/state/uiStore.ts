@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { BlockedOn, TicketState, WorkItemType } from "../api/client";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../lib/hive/speed";
 import { DEFAULT_HIVE_SKIN, normalizeHiveSkinId, resolveHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";
+import { skipUnchangedWrites } from "./skipUnchangedStorage";
 
 /** The Console's panes. A ticket's workflow and outputs moved to its own page. */
 export type PaneId = "workspaces" | "tickets";
@@ -443,6 +444,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
+      storage: createJSONStorage(() => skipUnchangedWrites(localStorage)),
       version: 15,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };

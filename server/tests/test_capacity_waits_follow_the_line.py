@@ -263,3 +263,28 @@ def _parent(session: Session, orch_run: OrchestrationRun, workspace):
         footprint=DockerFootprint.LIGHT,
         wait_seconds=STALL,
     )
+
+
+def test_a_long_wait_writes_its_heartbeat_once_a_minute_not_every_poll(session) -> None:
+    """The wait reads its place in line every poll, but stamping the lease and
+    renewing the orchestration took SQLite's write lock each time: one per
+    waiter every two seconds, exactly when the machine is busiest."""
+    line = ScriptedLine(session)
+    _set_ceiling(session, CapacityPool.HOST, cpus=4, memory_mb=8192, leases=6)
+    holder = _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=4)
+    ours = _reserve(session, CapacityPool.HOST, label="gates land-verify", cpus=2)
+    assert holder.granted and not ours.granted
+    line.finish_at(150, holder.lease_id)
+    beats: list[float] = []
+
+    granted = capacity_line.wait_while_line_moves(
+        session,
+        ours,
+        stall_seconds=1000,
+        on_poll=lambda: beats.append(line.now),
+        clock=line.clock,
+        sleep=line.sleep,
+    )
+
+    assert granted.granted
+    assert beats == [0.0, 60.0, 120.0]

@@ -54,7 +54,10 @@ logger = logging.getLogger(__name__)
 AGENT_RUN_LEASE = timedelta(minutes=10)
 
 #: How often the supervising thread stamps the lease while a run executes.
-RENEWAL_INTERVAL_SECONDS = 30.0
+#: Five renewals per lease window: a missed one or two still never expires a
+#: live run, and each renewal is a SQLite write lock per running agent (it was
+#: every 30s, twenty per window).
+RENEWAL_INTERVAL_SECONDS = 120.0
 
 #: A run in one of these has not finished, so its liveness is still a question.
 IN_FLIGHT = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)

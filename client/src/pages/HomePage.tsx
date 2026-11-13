@@ -102,10 +102,12 @@ export function HomePage() {
 
   const workspaceParam = workspace && workspace !== "all" ? workspace : undefined;
 
+  // The inbox's key: the topbar polls it every 5s app-wide and every approval
+  // action invalidates it, so this page reads the same list without a second
+  // poll. Under its own key it was a second request and could lag a resolve.
   const approvalsQ = useQuery({
-    queryKey: ["home-approvals"],
+    queryKey: ["approvals"],
     queryFn: () => api.approvals(),
-    refetchInterval: 15_000,
   });
   // In progress and blocked for the running cards' stage strips; parked and
   // blocked are where tickets waiting on a person live.

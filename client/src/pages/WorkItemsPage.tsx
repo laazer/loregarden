@@ -87,12 +87,12 @@ export function WorkItemsPage() {
   }, [tree.isError, tree.error]);
 
   // What each awaiting ticket is asked, for the "Needs me" view's reason
-  // column. Shares Home's query, so the two never disagree about the inbox.
+  // column. The inbox's own query, polled app-wide by the topbar, so this
+  // view never disagrees with the inbox.
   const approvalsQ = useQuery({
-    queryKey: ["home-approvals"],
+    queryKey: ["approvals"],
     queryFn: () => api.approvals(),
     enabled: view === "needs_me",
-    refetchInterval: 15_000,
   });
   useEffect(() => {
     if (approvalsQ.isError) {

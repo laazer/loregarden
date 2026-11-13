@@ -10,11 +10,12 @@ import inspect
 import json
 import subprocess
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 from loregarden.config import settings
 from loregarden.models.domain import (
     Artifact,
@@ -89,6 +90,14 @@ STATUS_FAIL = {
 
 FINDING_TITLE = "invariant_unrepaired:done_ticket_ship_is_observable"
 INVARIANT_NAME = "done_ticket_ship_is_observable"
+
+
+@pytest.fixture(autouse=True)
+def _every_pass_asks():
+    """These tests model consecutive passes as consecutive asks of GitHub; the
+    interval between real asks is covered by its own test below."""
+    with mock.patch.object(_dts(), "SHIP_PROBE_INTERVAL", timedelta(0)):
+        yield
 
 
 def _dts():
@@ -1612,3 +1621,24 @@ def test_get_done_ticket_ship_filters_by_workspace_slug(
     assert probes[0]["violations"][0]["external_id"] == child_b.external_id
     assert probes[0]["violations"][0]["ticket_id"] == child_b.id
     assert ws_a.slug not in {p["workspace_slug"] for p in probes}
+
+
+def test_a_workspace_probed_recently_is_not_asked_again(db_session: Session):
+    """The pass runs every 30s; each ask is two paged `gh` listings and a write
+    that moved only `probed_at`. Within the interval the row stands."""
+    dts = _dts()
+    workspace = _lore(db_session)
+    with mock.patch.object(dts, "SHIP_PROBE_INTERVAL", timedelta(minutes=5)):
+        with mock.patch.object(dts, "probe_workspace", wraps=dts.probe_workspace) as asked:
+            with _github(dts, open_prs=[], all_prs=[]):
+                dts.probe_all_workspaces(db_session)
+                dts.probe_all_workspaces(db_session)
+            assert asked.call_count == 1
+
+            row = dts._probe_row(db_session, workspace.id)
+            row.probed_at = utcnow() - timedelta(minutes=6)
+            db_session.add(row)
+            db_session.commit()
+            with _github(dts, open_prs=[], all_prs=[]):
+                dts.probe_all_workspaces(db_session)
+            assert asked.call_count == 2

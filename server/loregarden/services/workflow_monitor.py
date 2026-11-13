@@ -290,13 +290,17 @@ def _detect_stalled_runs(runs: list[AgentRun], stats: DurationStats) -> list[Mon
                 condition=MonitorCondition.STALLED_RUN,
                 ticket_id=run.ticket_id,
                 stage_key=run.stage_key or "",
+                # Stated as the start, not the elapsed time. Text that grows on
+                # every sweep rewrote the finding and its escalation Bug's
+                # description every 30s for as long as the run stayed stalled;
+                # the page already shows how long the finding has stood.
                 summary=(
-                    f"Run has been RUNNING for {elapsed.total_seconds() / 3600:.1f}h, "
+                    f"Run started {started:%Y-%m-%d %H:%M} UTC is still RUNNING, "
                     f"past the {bound.total_seconds() / 3600:.1f}h bound for this stage."
                 ),
                 evidence={
                     "run_id": run.id,
-                    "elapsed_seconds": str(int(elapsed.total_seconds())),
+                    "started_at": started.isoformat(),
                     "bound_seconds": str(int(bound.total_seconds())),
                     "basis": "stage median" if median else "fallback",
                 },
