@@ -8,6 +8,7 @@ import {
   stageStatusChip,
   ticketStateColor,
 } from "../../../lib/ticketStates";
+import { willRerunStageKeys } from "../../../lib/stageDisplay";
 import { blockedOnStateLabel, stuckTicketTone } from "../../../utils/blockKinds";
 import { StatusChip } from "../../ui/StatusChip";
 
@@ -16,22 +17,28 @@ export type ProgressSegment = {
   active?: boolean;
 };
 
-/** Stage segments: done go quiet, the live index glows, the rest wait. */
+/**
+ * Stage segments: done go quiet, the live index glows, the rest wait. A done
+ * stage after the live one will run again, so it is tinted rather than quiet.
+ */
 export function stageProgressSegments(
   stages: WorkflowStageView[] | undefined,
 ): { segments: ProgressSegment[]; done: number; total: number } {
   const list = stages ?? [];
   const focus = list.findIndex((s) => s.status !== "done" && s.status !== "wont_do");
   const focusIndex = focus === -1 ? list.length - 1 : focus;
+  const rerun = willRerunStageKeys(list);
   return {
     segments: list.map((stage, index) => {
       const live = index === focusIndex;
       return {
         color: live
           ? stageStatusColor(stage.status)
-          : stage.status === "done" || stage.status === "wont_do"
-            ? "var(--bd2)"
-            : "var(--bd)",
+          : rerun.has(stage.key)
+            ? "var(--rerun)"
+            : stage.status === "done" || stage.status === "wont_do"
+              ? "var(--bd2)"
+              : "var(--bd)",
         active: live && (stage.status === "running" || stage.status === "awaiting"),
       };
     }),

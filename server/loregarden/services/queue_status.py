@@ -126,6 +126,7 @@ def _attach_stage_progress(session: Session, active_runs: list[dict[str, Any]]) 
         progress = stage_progress(session, ticket) if ticket else None
         run["stages_done"] = progress.done if progress else None
         run["stages_total"] = progress.total if progress else None
+        run["stages_rerun"] = progress.rerun if progress else None
 
 
 def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:

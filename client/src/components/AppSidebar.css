@@ -589,6 +589,11 @@
   fill: none;
 }
 
+/* Done on an earlier pass, but past the active stage: a rework runs them again. */
+.app-sidebar-ring-rerun {
+  stroke: var(--rerun);
+}
+
 .app-sidebar-ring-track.is-unknown {
   stroke-dasharray: 2 2.4;
 }

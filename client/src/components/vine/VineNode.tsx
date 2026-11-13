@@ -32,10 +32,21 @@ function MarkShape({ mark }: { mark: VineMark }) {
  * status pill beside it already say what it shows. Its shape comes from its
  * own index and state, never from how many stages follow (see `lib/vine`).
  */
-export function VineNode({ index, mark, last }: { index: number; mark: VineMark; last: boolean }) {
+export function VineNode({
+  index,
+  mark,
+  last,
+  rerun = false,
+}: {
+  index: number;
+  mark: VineMark;
+  last: boolean;
+  /** Done on an earlier pass, but the run will visit it again (see `willRerunStageKeys`). */
+  rerun?: boolean;
+}) {
   const side = vineSide(index);
   return (
-    <div className={`vine-node vine-node--${side}`} data-mark={mark} aria-hidden>
+    <div className={`vine-node vine-node--${side}`} data-mark={mark} data-rerun={rerun || undefined} aria-hidden>
       {last ? null : (
         <svg className={`vine-stem${stemGrown(mark) ? " is-grown" : ""}`} viewBox="0 0 14 100" preserveAspectRatio="none">
           <path d={stemPath(index)} vectorEffect="non-scaling-stroke" />

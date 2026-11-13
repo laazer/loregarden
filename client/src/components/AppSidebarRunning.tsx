@@ -29,20 +29,29 @@ const RING_C = 2 * Math.PI * RING_R;
  * is: 5 of 12 stages done draws five-twelfths of the circle. A live run lights
  * the dot in the middle; nothing turns, so the ring never reads as a loading
  * spinner. A ticket with no workflow yet shows a dashed track, not a fraction.
+ * Stages done on an earlier pass that a rework will run again are not progress:
+ * they draw as their own arc in the rerun color, past the active stage.
  */
 function StageRing({
   done,
+  rerun,
   total,
   live,
   color,
 }: {
   done: number | null;
+  rerun: number | null;
   total: number | null;
   live: boolean;
   color: string;
 }) {
   const known = Boolean(total);
-  const fraction = total ? Math.min(done ?? 0, total) / total : 0;
+  const again = total ? Math.min(rerun ?? 0, done ?? 0) : 0;
+  const settled = total ? Math.min((done ?? 0) - again, total) : 0;
+  const fraction = total ? settled / total : 0;
+  // After the settled arc and the stage the run is on.
+  const rerunStart = total ? Math.min(settled + 1, total) / total : 0;
+  const rerunFraction = total ? Math.min(again, total - Math.min(settled + 1, total)) / total : 0;
   return (
     <svg className="app-sidebar-ring" width="18" height="18" viewBox="0 0 18 18" aria-hidden>
       <circle
@@ -65,6 +74,19 @@ function StageRing({
           strokeLinecap={fraction >= 1 ? "butt" : "round"}
           strokeDasharray={`${fraction * RING_C} ${RING_C}`}
           transform="rotate(-90 9 9)"
+        />
+      ) : null}
+      {rerunFraction > 0 ? (
+        <circle
+          className="app-sidebar-ring-rerun"
+          cx="9"
+          cy="9"
+          r={RING_R}
+          fill="none"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeDasharray={`${rerunFraction * RING_C} ${RING_C}`}
+          transform={`rotate(${-90 + rerunStart * 360} 9 9)`}
         />
       ) : null}
       {live ? <circle className="app-sidebar-ring-live" cx="9" cy="9" r="2.2" fill={color} /> : null}
@@ -95,6 +117,7 @@ export function SidebarRunningSection({ headingId }: { headingId: string }) {
             <span className="app-sidebar-icon">
               <StageRing
                 done={run.stages_done ?? null}
+                rerun={run.stages_rerun ?? null}
                 total={run.stages_total ?? null}
                 live={live}
                 color={ticketStateColor(run.ticket_state ?? "in_progress")}
@@ -105,6 +128,7 @@ export function SidebarRunningSection({ headingId }: { headingId: string }) {
               {run.stages_total ? (
                 <span className="app-sidebar-sr">
                   , {run.stages_done ?? 0} of {run.stages_total} stages done
+                  {run.stages_rerun ? `, ${run.stages_rerun} to rerun` : ""}
                 </span>
               ) : null}
             </span>

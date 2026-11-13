@@ -10,6 +10,7 @@ import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
 import { TicketPriorityBadge, stageProgressSegments } from "./TicketCardMeta";
+import { willRerunStageKeys } from "../../../lib/stageDisplay";
 import { ticketStateChip } from "../../../lib/ticketStates";
 import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
@@ -81,7 +82,11 @@ function StageWindow({ stages, currentStageKey }: { stages: WorkflowStageView[];
   const shown = folded ? stages.slice(start, start + STAGE_WINDOW) : stages;
   return (
     <div className="lg-primitive-ticket-timeline" id={listId}>
-      <WorkflowStageTimeline stages={shown} currentStageKey={currentStageKey} />
+      <WorkflowStageTimeline
+        stages={shown}
+        currentStageKey={currentStageKey}
+        rerunKeys={willRerunStageKeys(stages)}
+      />
       {stages.length > STAGE_WINDOW ? (
         <Button
           variant="plain"

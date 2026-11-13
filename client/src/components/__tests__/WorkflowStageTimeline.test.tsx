@@ -92,4 +92,21 @@ describe("WorkflowStageTimeline", () => {
       expect(after[3]).toEqual({ ...before[3], stem: expect.any(String) });
     });
   });
+
+  it("marks done stages after the running one as rerunning, on the vine and in words", () => {
+    const { container } = render(
+      <WorkflowStageTimeline
+        stages={[
+          stage({ key: "plan", name: "Plan", status: "done", optional: false }),
+          stage({ key: "spec", name: "Spec", status: "running", optional: false }),
+          stage({ key: "tests", name: "Tests", status: "done", optional: false }),
+        ]}
+        currentStageKey="spec"
+      />,
+    );
+
+    const rerun = [...container.querySelectorAll<HTMLElement>(".vine-node")].map((node) => node.dataset.rerun ?? null);
+    expect(rerun).toEqual([null, null, "true"]);
+    expect(screen.getAllByText("runs again")).toHaveLength(1);
+  });
 });

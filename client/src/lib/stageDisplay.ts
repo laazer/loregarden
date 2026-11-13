@@ -65,6 +65,21 @@ export function isDoneStage(stage: WorkflowStageView): boolean {
   return stage.key === "done";
 }
 
+const ACTIVE_STAGE_STATUSES: ReadonlySet<StageStatus> = new Set(["running", "awaiting", "blocked"]);
+
+/**
+ * Stages marked done that the workflow will visit again: a rework sent the
+ * ticket back to an earlier stage, so every done stage after the active one
+ * holds a result from the previous pass and runs again on the way forward.
+ */
+export function willRerunStageKeys(stages: readonly WorkflowStageView[]): Set<string> {
+  const active = stages.findIndex((stage) => ACTIVE_STAGE_STATUSES.has(stage.status));
+  if (active < 0) return new Set();
+  return new Set(
+    stages.slice(active + 1).filter((stage) => stage.status === "done").map((stage) => stage.key),
+  );
+}
+
 export function isParallelStage(stage: WorkflowStageView): boolean {
   return stage.stage_type === "parallel";
 }

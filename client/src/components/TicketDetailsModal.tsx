@@ -26,6 +26,7 @@ import {
 } from '../lib/ticketFieldDiff';
 import { TicketConflictNotice } from './TicketConflictNotice';
 import './TicketDetailsModal.css';
+import { willRerunStageKeys } from "../lib/stageDisplay";
 import { Button } from "./ui/Button";
 import { StatusChip } from "./ui/StatusChip";
 import { Input } from "./ui/Input";
@@ -644,6 +645,7 @@ function TicketEditForm({ draft, tags, disabled, criteriaLocked, storedCriteriaC
 /** Everything the modal shows but never edits: blockers, stages, artifacts, metadata. */
 function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
   const diffArtifact = ticket.artifacts?.diff;
+  const rerunStageKeys = willRerunStageKeys(ticket.stages ?? []);
   const diffSummary = diffArtifact
     ? `Files: ${diffArtifact.files || diffArtifact.sections?.length || '?'} | Added: ${diffArtifact.add || '0'} | Removed: ${diffArtifact.del || '0'}`
     : null;
@@ -671,7 +673,10 @@ function TicketReadOnlyDetails({ ticket }: { ticket: apiClient.TicketDetail }) {
             {ticket.stages.map((stage) => (
               <div key={stage.key} style={{ fontSize: "var(--fs-small)", color: 'var(--txm)' }}>
                 <div style={{ color: 'var(--tx)' }}>{asDisplayString(stage.name)}</div>
-                <div>Agent: {asDisplayString(stage.agent_id, 'N/A')} · Status: {asDisplayString(stage.status)}</div>
+                <div>
+                  Agent: {asDisplayString(stage.agent_id, 'N/A')} · Status: {asDisplayString(stage.status)}
+                  {rerunStageKeys.has(stage.key) ? <span style={{ color: 'var(--rerun)' }}> · runs again</span> : null}
+                </div>
               </div>
             ))}
           </div>

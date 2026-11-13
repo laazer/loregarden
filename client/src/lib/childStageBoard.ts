@@ -1,5 +1,6 @@
 import type { StageStatus, TicketSummary, WorkflowStageView } from "../api/types";
 import { agentFix } from "../utils/blockKinds";
+import { willRerunStageKeys } from "./stageDisplay";
 
 /** One column of the board: a stage some child's workflow has. */
 export interface BoardColumn {
@@ -74,17 +75,22 @@ export function isActive(child: TicketSummary): boolean {
   return child.activity === "running" || child.activity === "awaiting";
 }
 
-/** How one cell draws: its stage's status, or nothing when the child's workflow lacks the stage. */
-export type CellMark = StageStatus | "absent";
+/**
+ * How one cell draws: its stage's status, `rerun` for a stage done on an earlier
+ * pass that a rework will run again, or nothing when the child's workflow lacks the stage.
+ */
+export type CellMark = StageStatus | "rerun" | "absent";
 
 export function cellMark(child: TicketSummary, key: string): CellMark {
   // No workflow instance yet: it has reached none of them.
   if (!child.stages?.length) return "pending";
+  if (willRerunStageKeys(child.stages).has(key)) return "rerun";
   return child.stages.find((stage: WorkflowStageView) => stage.key === key)?.status ?? "absent";
 }
 
 const MARK_WORDS: Record<CellMark, string> = {
   done: "done",
+  rerun: "done, runs again",
   running: "running",
   blocked: "blocked",
   awaiting: "waiting on you",

@@ -106,6 +106,24 @@ test("a running ticket's ring closes as far as its settled stages, and says so i
   expect(link.querySelector(".app-sidebar-ring-live")).not.toBeNull();
 });
 
+test("stages a rework will run again draw as their own arc, not as progress", () => {
+  // 9 of 12 done, but 3 of those sit past the active stage.
+  queue({ activeRuns: [run({ stages_done: 9, stages_rerun: 3, stages_total: 12 })] });
+  const link = within(renderSection()).getByRole("link");
+
+  expect(link).toHaveTextContent("9 of 12 stages done, 3 to rerun");
+  const dash = (selector: string) => {
+    const [filled, ofTotal] = link.querySelector(selector)!.getAttribute("stroke-dasharray")!.split(" ").map(Number);
+    return filled / ofTotal;
+  };
+  expect(dash(".app-sidebar-ring-progress")).toBeCloseTo(6 / 12, 2);
+  expect(dash(".app-sidebar-ring-rerun")).toBeCloseTo(3 / 12, 2);
+  // It starts past the six settled stages and the one running: 7/12 of a turn from twelve o'clock.
+  expect(link.querySelector(".app-sidebar-ring-rerun")!.getAttribute("transform")).toBe(
+    `rotate(${-90 + (7 / 12) * 360} 9 9)`,
+  );
+});
+
 test("a ticket with no workflow yet shows a dashed track, not an invented fraction", () => {
   queue({ activeRuns: [run({ stages_done: null, stages_total: null, status: "queued" })] });
   const list = renderSection();

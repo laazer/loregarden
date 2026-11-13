@@ -7,6 +7,7 @@ import {
   stageAgentSubtitle,
   stageKindLabel,
   stageRunButtonLabel,
+  willRerunStageKeys,
 } from "../stageDisplay";
 
 function baseStage(overrides: Partial<WorkflowStageView> = {}): WorkflowStageView {
@@ -77,5 +78,33 @@ describe("stageDisplay", () => {
     });
     expect(isHumanGateStage(playtest)).toBe(true);
     expect(stageKindLabel(playtest)).toBe("human approval gate");
+  });
+
+  it("marks done stages after the active stage as rerunning", () => {
+    const stages = [
+      baseStage({ key: "plan", status: "done" }),
+      baseStage({ key: "spec", status: "running" }),
+      baseStage({ key: "test", status: "done" }),
+      baseStage({ key: "impl", status: "pending" }),
+      baseStage({ key: "review", status: "done" }),
+      baseStage({ key: "docs", status: "wont_do" }),
+    ];
+    expect([...willRerunStageKeys(stages)]).toEqual(["test", "review"]);
+  });
+
+  it("marks nothing when no stage is active", () => {
+    const stages = [
+      baseStage({ key: "plan", status: "done" }),
+      baseStage({ key: "spec", status: "pending" }),
+      baseStage({ key: "test", status: "done" }),
+    ];
+    expect(willRerunStageKeys(stages).size).toBe(0);
+  });
+
+  it("counts from an awaiting or blocked stage too", () => {
+    const awaiting = [baseStage({ key: "a", status: "awaiting" }), baseStage({ key: "b", status: "done" })];
+    const blocked = [baseStage({ key: "a", status: "blocked" }), baseStage({ key: "b", status: "done" })];
+    expect([...willRerunStageKeys(awaiting)]).toEqual(["b"]);
+    expect([...willRerunStageKeys(blocked)]).toEqual(["b"]);
   });
 });
