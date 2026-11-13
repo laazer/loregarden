@@ -9,6 +9,7 @@ import { GiphyPrimitive } from "./GiphyPrimitive";
 import { BranchHistoryPrimitive, CommitPrimitive } from "./GitPrimitive";
 import { KanbanPrimitive, StatusColumnPrimitive } from "./KanbanPrimitive";
 import { ParentTicketPrimitive } from "./ParentTicketPrimitive";
+import { PrCyclePrimitive } from "./PrCyclePrimitive";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { QAPrimitive } from "./QAPrimitive";
 import { ResearchCandidatesPrimitive } from "./ResearchCandidatesPrimitive";
@@ -76,6 +77,7 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   research_claim: ResearchClaimPrimitive as Renderer,
   research_project: ResearchProjectPrimitive as Renderer,
   research_diff: ResearchDiffPrimitive as Renderer,
+  pr_cycle: PrCyclePrimitive as Renderer,
 };
 
 export function renderChatPart(

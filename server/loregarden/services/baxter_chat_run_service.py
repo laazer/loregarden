@@ -8,6 +8,7 @@ continuation mints that run up front and binds ``BaxterChatMessage.run_id``.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -26,6 +27,7 @@ from loregarden.models.domain import (
     RunStatus,
     Workspace,
 )
+from loregarden.models.domain.chat_primitives import PrCyclePart
 from loregarden.services.baxter_chat_service import (
     BAXTER_CHAT_CLI_PROFILE,
     UNTITLED_SESSION_TITLE,
@@ -41,7 +43,12 @@ from loregarden.services.chat_attachments import (
     dump_attachments_json,
     load_attachments_json,
 )
-from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, cli_card_corrector, settle_reply
+from loregarden.services.chat_primitives import (
+    EMPTY_PARTS_JSON,
+    cli_card_corrector,
+    parts_to_jsonable,
+    settle_reply,
+)
 from loregarden.services.chat_publish import publish_chat_turn
 from loregarden.services.chat_run_cancel import request_chat_run_cancel
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
@@ -405,12 +412,18 @@ def _publish_lock(chat_session_id: str) -> threading.Lock:
         return _PUBLISH_LOCKS.setdefault(chat_session_id, threading.Lock())
 
 
-def _record_publish_outcome(session: Session, chat_session_id: str, summary: str) -> None:
+def _record_publish_outcome(
+    session: Session,
+    chat_session_id: str,
+    summary: str,
+    cycle: PrCyclePart | None = None,
+) -> None:
     """Put the publish result in the thread, as a message of its own.
 
     It cannot ride on the reply any more — the reply settled before publishing
     started, which is the point. A `system` row rather than an `assistant` one
-    because Baxter did not say this; the control plane did.
+    because Baxter did not say this; the control plane did. A publish that
+    pushed carries a `pr_cycle` card, which follows the branch from there.
     """
     if not summary:
         return
@@ -420,6 +433,7 @@ def _record_publish_outcome(session: Session, chat_session_id: str, summary: str
             role="system",
             content=summary,
             status="complete",
+            parts_json=json.dumps(parts_to_jsonable([cycle])) if cycle else EMPTY_PARTS_JSON,
         )
     )
     session.commit()
@@ -450,7 +464,12 @@ def execute_chat_publish_background(chat_session_id: str, run_id: str) -> None:
                 )
                 return
             if outcome is not None:
-                _record_publish_outcome(session, chat_session_id, outcome.summary())
+                _record_publish_outcome(
+                    session,
+                    chat_session_id,
+                    outcome.summary(),
+                    outcome.cycle_part(workspace.slug),
+                )
     except Exception:
         # The reply has already settled, so nothing here can wedge the composer.
         # It can still lose the only record of where an operator's work went,

@@ -304,3 +304,73 @@ def test_the_overview_lists_each_workspace_that_has_held_an_entry(client, isolat
 
     assert [view["workspace_slug"] for view in body["queues"]] == ["mq"]
     assert [entry["pr_number"] for entry in body["queues"][0]["entries"]] == [7, 8]
+
+
+def _gh_view(pr_number: int, *, returncode: int = 0, stderr: str = ""):
+    payload = {
+        "number": pr_number,
+        "url": f"https://github.com/o/r/pull/{pr_number}",
+        "title": "Rename the editor",
+        "state": "OPEN",
+        "headRefName": "publish/integration/lg-1",
+        "statusCheckRollup": [
+            {"name": "Server (Python)", "status": "COMPLETED", "conclusion": "SUCCESS"}
+        ],
+    }
+    proc = mock.Mock(
+        returncode=returncode, stdout="" if returncode else json.dumps(payload), stderr=stderr
+    )
+    return mock.patch("loregarden.services.ticket_pull_request.run_gh", return_value=proc)
+
+
+def test_pr_cycle_reads_the_branchs_pr_and_its_queue_entry(client, queue):
+    head_id, _ = queue
+    with _gh_view(7) as run_gh:
+        response = client.get(
+            "/api/merge-queue/mq/pr-cycle", params={"branch": "publish/integration/lg-1"}
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert run_gh.call_args.args[0][:3] == ["pr", "view", "publish/integration/lg-1"]
+    assert body["pull_request"]["lookup"] == "found"
+    assert body["pull_request"]["pull_request"]["checks"] == [
+        {"name": "Server (Python)", "outcome": "passing", "url": ""}
+    ]
+    assert body["entry"]["id"] == head_id
+    assert body["entry"]["state"] == "testing"
+
+
+def test_pr_cycle_asks_by_number_when_given_one(client, queue):
+    _, behind_id = queue
+    with _gh_view(8) as run_gh:
+        response = client.get(
+            "/api/merge-queue/mq/pr-cycle", params={"branch": "x", "pr_number": 8}
+        )
+
+    assert run_gh.call_args.args[0][:3] == ["pr", "view", "8"]
+    assert response.json()["entry"]["id"] == behind_id
+
+
+def test_pr_cycle_for_a_pr_never_queued_has_no_entry(client, queue):
+    with _gh_view(99):
+        body = client.get("/api/merge-queue/mq/pr-cycle", params={"branch": "chat/x"}).json()
+
+    assert body["pull_request"]["lookup"] == "found"
+    assert body["entry"] is None
+
+
+def test_pr_cycle_keeps_no_pr_apart_from_a_failed_read(client, queue):
+    with _gh_view(0, returncode=1, stderr='no pull requests found for branch "chat/x"'):
+        none = client.get("/api/merge-queue/mq/pr-cycle", params={"branch": "chat/x"}).json()
+    with _gh_view(0, returncode=1, stderr="HTTP 502: bad gateway"):
+        failed = client.get("/api/merge-queue/mq/pr-cycle", params={"branch": "chat/x"}).json()
+
+    assert none["pull_request"] == {"lookup": "none", "pull_request": None, "error": ""}
+    assert failed["pull_request"]["lookup"] == "failed"
+    assert failed["pull_request"]["error"] == "HTTP 502: bad gateway"
+    assert failed["entry"] is None
+
+
+def test_pr_cycle_for_an_unknown_workspace_is_a_404(client):
+    assert client.get("/api/merge-queue/nope/pr-cycle", params={"branch": "x"}).status_code == 404

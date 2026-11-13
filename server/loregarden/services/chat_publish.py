@@ -35,6 +35,7 @@ from loregarden.models.domain import (
     Workspace,
     Worktree,
 )
+from loregarden.models.domain.chat_primitives import PrCyclePart
 from loregarden.services.git_automation import (
     AutomationResult,
     StepResult,
@@ -73,6 +74,24 @@ class TurnPublishOutcome:
     #: Distinct from an automation of None with no handler: "nobody published
     #: this" and "the ticket's pipeline will" need different advice.
     deferred_to: str = ""
+
+    def cycle_part(self, workspace_slug: str) -> PrCyclePart | None:
+        """The `pr_cycle` card for this publish, or None when nothing was pushed.
+
+        Only a push runs the pre-push suite, so a publish whose chain never
+        reached `push` (commit-only, or stopped at `commit`) has no cycle to show.
+        """
+        if not self.branch or self.automation is None:
+            return None
+        push = next((step for step in self.automation.steps if step.step == "push"), None)
+        if push is None:
+            return None
+        return PrCyclePart(
+            workspace_slug=workspace_slug,
+            branch=self.branch,
+            pre_push="passed" if push.ok else "failed",
+            pre_push_detail="" if push.ok else push.detail,
+        )
 
     def as_note(self) -> str:
         """:meth:`summary` as a block to append to a reply, or "" if silent."""

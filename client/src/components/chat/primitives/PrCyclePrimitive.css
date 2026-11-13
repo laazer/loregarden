@@ -1,0 +1,46 @@
+.lg-primitive-pr-cycle {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lg-primitive-pr-cycle li {
+  display: grid;
+  grid-template-columns: 14px minmax(7rem, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  font-size: var(--fs-small);
+}
+
+.lg-primitive-pr-cycle li .vine-node {
+  display: flex;
+  align-items: center;
+}
+
+.lg-primitive-pr-cycle li .vine-stem {
+  top: 50%;
+}
+
+.lg-primitive-pr-cycle-label {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.lg-primitive-pr-cycle-detail {
+  overflow: hidden;
+  color: var(--txm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-pr-cycle li[data-mark="bud-blocked"] .lg-primitive-pr-cycle-detail {
+  color: var(--red);
+}
+
+.lg-primitive-pr-cycle li[data-mark="bud-closed"] .lg-primitive-pr-cycle-label,
+.lg-primitive-pr-cycle li[data-mark="pruned"] .lg-primitive-pr-cycle-label {
+  color: var(--txl);
+}
