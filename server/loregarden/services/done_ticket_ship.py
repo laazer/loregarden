@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 from loregarden.models.domain import (
@@ -69,7 +70,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.models.domain.enums import utcnow
+from loregarden.models.domain.enums import comparable_utc, utcnow
 from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.ci_checks import (
@@ -471,12 +472,30 @@ def record_probe(session: Session, workspace: Workspace, probe: WorkspaceProbe) 
     return row
 
 
+#: How long a workspace's ship probe stands before the next pass asks GitHub again.
+SHIP_PROBE_INTERVAL = timedelta(minutes=5)
+
+
 def probe_all_workspaces(session: Session) -> list[ShipProbe]:
-    """One pass: ask GitHub per workspace and record each answer."""
-    return [
-        record_probe(session, workspace, probe_workspace(session, workspace))
-        for workspace in active_workspaces(session)
-    ]
+    """One pass: ask GitHub per workspace whose probe is due, and record each answer.
+
+    A workspace probed within `SHIP_PROBE_INTERVAL` keeps its row. The pass runs
+    on the 30s reconcile timer, and every probe was two paged `gh` listings per
+    workspace plus a write whose only change was `probed_at`: a red ship is a
+    person's to fix, and minutes of latency on noticing one costs nothing.
+    """
+    now = utcnow()
+    rows: list[ShipProbe] = []
+    for workspace in active_workspaces(session):
+        row = _probe_row(session, workspace.id)
+        if (
+            row is not None
+            and comparable_utc(now) - comparable_utc(row.probed_at) < SHIP_PROBE_INTERVAL
+        ):
+            rows.append(row)
+            continue
+        rows.append(record_probe(session, workspace, probe_workspace(session, workspace)))
+    return rows
 
 
 def load_probe(session: Session, workspace_id: str) -> ShipProbeView:

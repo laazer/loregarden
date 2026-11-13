@@ -31,6 +31,10 @@ from sqlmodel import Session, select
 #: minutes to hours; a 15s lag in noticing it finished costs nothing.
 CHILD_RUN_POLL_SECONDS = 15.0
 
+#: How often the waiting parent renews its own lease. Reading the child every
+#: poll is cheap; renewing was a write lock every 15s against a 30-minute lease.
+PARENT_RENEW_SECONDS = 120.0
+
 
 def await_child_run(
     session: Session,
@@ -42,10 +46,12 @@ def await_child_run(
     """Block until the child run ``running`` names settles, and return it.
 
     Returns None when the parent is cancelled first: a person stopping the
-    parent must not wait hours for a child they did not start. Each poll renews
-    the parent's lease, because this thread is alive and doing its job.
+    parent must not wait hours for a child they did not start. The wait renews
+    the parent's lease every `PARENT_RENEW_SECONDS`, because this thread is alive
+    and doing its job.
     """
     callbacks = OrchestrationCallbackService(session)
+    renewed_at: float | None = None
     while True:
         child_run = session.exec(
             select(OrchestrationRun).where(OrchestrationRun.run_code == running.run_code)
@@ -55,6 +61,8 @@ def await_child_run(
             return child_run
         if orchestration_cancel_requested(parent_run.id):
             return None
-        callbacks.touch_lease(parent_run)
+        if renewed_at is None or time.monotonic() - renewed_at >= PARENT_RENEW_SECONDS:
+            renewed_at = time.monotonic()
+            callbacks.touch_lease(parent_run)
         session.commit()
         time.sleep(poll_seconds)

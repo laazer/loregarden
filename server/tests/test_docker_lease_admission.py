@@ -29,6 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import docker_leases
 from loregarden.services.docker_capacity import Ceiling
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_workspace
 
@@ -246,6 +247,27 @@ def test_bind_records_what_the_holder_started(session, ceiling) -> None:
     session.refresh(row)
     assert row.compose_project == "myapp"
     assert "myapp-db-1" in row.container_names_json
+
+
+def test_repair_with_nothing_drifted_writes_nothing(session, ceiling) -> None:
+    """The reconcile pass repairs every 30s while anything holds capacity. With
+    the totals already right it must neither take the write lock nor bump the
+    revision a concurrent claim is compare-and-swapping on."""
+    _reserve(session, cpus=1.5, memory_mb=1024)
+    docker_leases.repair_pool(session)
+    revision = docker_leases.load_pool(session).revision
+    writes: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        if statement.lstrip().upper().startswith(("UPDATE", "INSERT")):
+            writes.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", record)
+    docker_leases.repair_pool(session)
+
+    assert writes == []
+    session.expire_all()
+    assert docker_leases.load_pool(session).revision == revision
 
 
 def test_repair_recomputes_the_pool_from_the_ledger(session, ceiling) -> None:

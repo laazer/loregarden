@@ -248,6 +248,31 @@ def test_a_long_running_run_is_reported_as_stalled(db_session: Session):
     assert findings[0].evidence["basis"] in {"stage median", "fallback"}
 
 
+def test_a_stalled_run_reads_the_same_on_every_sweep(db_session: Session):
+    """Text that counted elapsed time changed every 30s sweep, so the finding and
+    its escalation Bug were rewritten for as long as the run stayed stalled."""
+    ticket = make_workspace_ticket(db_session, "monitor-stalled-stable")
+    _run(
+        db_session,
+        ticket,
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+        started_at=datetime.now(timezone.utc) - timedelta(hours=24),
+    )
+
+    def stalled():
+        return next(f for f in scan(db_session) if f.condition is MonitorCondition.STALLED_RUN)
+
+    first = stalled()
+    with patch(
+        "loregarden.services.workflow_monitor._utcnow",
+        return_value=datetime.now(timezone.utc) + timedelta(hours=2),
+    ):
+        later = stalled()
+
+    assert (later.summary, later.evidence) == (first.summary, first.evidence)
+
+
 def test_a_run_that_just_started_is_not_stalled(db_session: Session):
     ticket = make_workspace_ticket(db_session, "monitor-fresh")
     _run(

@@ -48,6 +48,15 @@ logger = logging.getLogger(__name__)
 #: Between polls of our own place in line.
 POLL_SECONDS = 2.0
 
+#: Between liveness writes while waiting: the lease's served poll, and
+#: `on_poll`'s orchestration lease renewal. Reading the line every two seconds
+#: is cheap; writing it was one SQLite write lock per waiter every two seconds,
+#: exactly when the machine is busiest. Well inside every clock that reads the
+#: stamp: the board flags a stalled waiter after 2 x
+#: `docker_poll_max_interval_seconds` (240s), the sweep drops one after
+#: `docker_waiting_ttl_seconds` (600s), and `ORCHESTRATION_LEASE` is 30 minutes.
+HEARTBEAT_SECONDS = 60.0
+
 
 def leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]:
     """Every lease this one waits behind: those holding capacity, and waiters ahead.
@@ -79,11 +88,12 @@ def wait_while_line_moves(
     """Poll our place in line until it is granted or the line stalls.
 
     Returns the reservation either way; the caller reads `granted`. `on_poll`
-    runs on every pass, for a waiter whose own liveness is judged by a lease of
+    runs every `HEARTBEAT_SECONDS`, for a waiter whose own liveness is judged by a lease of
     its own (an orchestration run's): the thread waiting here is alive, and a
     wait longer than that lease must not read as the run having walked away.
     """
     moved_at = clock()
+    beat_at: float | None = None
     ahead: set[str] = set()
     while True:
         reclaim_dead_holders(session)
@@ -108,9 +118,11 @@ def wait_while_line_moves(
                 f"holding: {', '.join(sorted(row.holder_label for row in front.values()))}"
             )
             return reservation
-        note_poll(session, lease, min_interval=0)
-        if on_poll is not None:
-            on_poll()
+        if beat_at is None or clock() - beat_at >= HEARTBEAT_SECONDS:
+            beat_at = clock()
+            note_poll(session, lease, min_interval=0)
+            if on_poll is not None:
+                on_poll()
         session.commit()  # end any read transaction before sleeping on it
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
 
@@ -149,6 +161,7 @@ def retry_while_pool_moves(
     returning the last refusal for the caller to report.
     """
     moved_at = clock()
+    beat_at: float | None = None
     holding = occupying_lease_ids(session)
     warned = False
     while True:
@@ -172,7 +185,8 @@ def retry_while_pool_moves(
                     f"{stalled_for:.0f}s while this waited for room."
                 )
             return reservation
-        if on_poll is not None:
+        if on_poll is not None and (beat_at is None or clock() - beat_at >= HEARTBEAT_SECONDS):
+            beat_at = clock()
             on_poll()
         session.commit()  # end any read transaction before sleeping on it
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))

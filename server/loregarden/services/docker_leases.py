@@ -239,6 +239,55 @@ def refresh_ceiling(
     return ceiling
 
 
+# The running totals `repair_pool` recomputes, as SQL over the ledger.
+_HELD_CPUS = """(SELECT COALESCE(SUM(cpus - covered_cpus), 0) FROM docker_leases
+                 WHERE status IN :occupying AND pool IN :charged_by)"""
+_HELD_MEMORY = """(SELECT COALESCE(SUM(memory_mb - covered_memory_mb), 0) FROM docker_leases
+                   WHERE status IN :occupying AND pool IN :charged_by)"""
+_HELD_COUNT = """(SELECT COUNT(*) FROM docker_leases
+                  WHERE status IN :occupying AND pool IN :charged_by AND takes_slot)"""
+_CHILD_CPUS = """(SELECT COALESCE(SUM(child.covered_cpus), 0) FROM docker_leases AS child
+                  WHERE child.parent_lease_id = docker_leases.id
+                  AND child.status IN :occupying)"""
+_CHILD_MEMORY = """(SELECT COALESCE(SUM(child.covered_memory_mb), 0) FROM docker_leases AS child
+                    WHERE child.parent_lease_id = docker_leases.id
+                    AND child.status IN :occupying)"""
+#: CPU totals are float sums; a claim adds and subtracts them one at a time, so
+#: the stored value can differ from the recomputed sum in the last bits.
+_CPU_EPSILON = "1e-9"
+
+_POOL_DRIFTED = f"""(ABS(held_cpus - {_HELD_CPUS}) > {_CPU_EPSILON}
+                     OR held_memory_mb != {_HELD_MEMORY}
+                     OR held_count != {_HELD_COUNT})"""
+_LEASE_DRIFTED = f"""(ABS(child_covered_cpus - {_CHILD_CPUS}) > {_CPU_EPSILON}
+                      OR child_covered_memory_mb != {_CHILD_MEMORY})"""
+
+_POOL_DRIFT = text(
+    f"SELECT 1 FROM docker_capacity_pool WHERE id = :pool_id AND {_POOL_DRIFTED}"
+).bindparams(bindparam("occupying", expanding=True), bindparam("charged_by", expanding=True))
+_POOL_REPAIR = text(
+    f"""
+    UPDATE docker_capacity_pool
+    SET held_cpus = {_HELD_CPUS},
+        held_memory_mb = {_HELD_MEMORY},
+        held_count = {_HELD_COUNT},
+        revision = revision + 1
+    WHERE id = :pool_id AND {_POOL_DRIFTED}
+    """
+).bindparams(bindparam("occupying", expanding=True), bindparam("charged_by", expanding=True))
+_LEASE_DRIFT = text(
+    f"SELECT 1 FROM docker_leases WHERE status IN :occupying AND {_LEASE_DRIFTED} LIMIT 1"
+).bindparams(bindparam("occupying", expanding=True))
+_LEASE_REPAIR = text(
+    f"""
+    UPDATE docker_leases
+    SET child_covered_cpus = {_CHILD_CPUS},
+        child_covered_memory_mb = {_CHILD_MEMORY}
+    WHERE status IN :occupying AND {_LEASE_DRIFTED}
+    """
+).bindparams(bindparam("occupying", expanding=True))
+
+
 def repair_pool(session: Session) -> None:
     """Recompute every pool's running totals from the ledger, which is authoritative.
 
@@ -248,50 +297,35 @@ def repair_pool(session: Session) -> None:
     sweep interval rather than until a restart. Each pool sums the leases
     charged to it — the host pool counts docker claims too.
     """
-    statement = text(
-        """
-        UPDATE docker_capacity_pool
-        SET held_cpus = (SELECT COALESCE(SUM(cpus - covered_cpus), 0) FROM docker_leases
-                         WHERE status IN :occupying AND pool IN :charged_by),
-            held_memory_mb = (SELECT COALESCE(SUM(memory_mb - covered_memory_mb), 0)
-                              FROM docker_leases
-                              WHERE status IN :occupying AND pool IN :charged_by),
-            held_count = (SELECT COUNT(*) FROM docker_leases
-                          WHERE status IN :occupying AND pool IN :charged_by
-                          AND takes_slot),
-            revision = revision + 1
-        WHERE id = :pool_id
-        """
-    ).bindparams(bindparam("occupying", expanding=True), bindparam("charged_by", expanding=True))
     occupying = [status.value for status in OCCUPYING]
+    pool_params = [
+        {
+            "occupying": occupying,
+            "charged_by": [claim.value for claim in CHARGED_BY[pool]],
+            "pool_id": POOL_ROW_IDS[pool],
+        }
+        for pool in CapacityPool
+    ]
     for pool in CapacityPool:
         load_pool(session, pool)
-        session.connection().execute(
-            statement,
-            {
-                "occupying": occupying,
-                "charged_by": [claim.value for claim in CHARGED_BY[pool]],
-                "pool_id": POOL_ROW_IDS[pool],
-            },
-        )
-    # A parent's drawn total is derived the same way, from its live children.
-    session.connection().execute(
-        text(
-            """
-            UPDATE docker_leases
-            SET child_covered_cpus = (
-                    SELECT COALESCE(SUM(child.covered_cpus), 0) FROM docker_leases AS child
-                    WHERE child.parent_lease_id = docker_leases.id
-                    AND child.status IN :occupying),
-                child_covered_memory_mb = (
-                    SELECT COALESCE(SUM(child.covered_memory_mb), 0) FROM docker_leases AS child
-                    WHERE child.parent_lease_id = docker_leases.id
-                    AND child.status IN :occupying)
-            WHERE status IN :occupying
-            """
-        ).bindparams(bindparam("occupying", expanding=True)),
-        {"occupying": occupying},
-    )
+    # Read first, write only what drifted. This runs on every reconcile pass
+    # while anything holds capacity, and the totals almost always already
+    # match. An unconditional UPDATE took SQLite's write lock every 30s and
+    # bumped `revision`, which made a concurrent `claim_pool_capacity` lose its
+    # compare-and-swap and retry for a change that never happened. The writes
+    # carry the same drift predicate, so each is still one atomic statement.
+    connection = session.connection()
+    drifted_pools = [
+        params
+        for params in pool_params
+        if connection.execute(_POOL_DRIFT, params).first() is not None
+    ]
+    leases_drifted = connection.execute(_LEASE_DRIFT, {"occupying": occupying}).first() is not None
+    for params in drifted_pools:
+        connection.execute(_POOL_REPAIR, params)
+    if leases_drifted:
+        # A parent's drawn total is derived the same way, from its live children.
+        connection.execute(_LEASE_REPAIR, {"occupying": occupying})
     session.commit()
 
 
