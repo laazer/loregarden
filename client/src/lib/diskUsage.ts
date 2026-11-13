@@ -13,7 +13,7 @@ import {
   type HierarchyRectangularNode,
 } from "d3-hierarchy";
 
-import type { DiskKind, DiskNode, DiskVolume } from "../api/diskTypes";
+import type { DiskKind, DiskNode, DiskVolume, ModelSource } from "../api/diskTypes";
 import type { CapacityTone } from "../components/ui/CapacityMeter";
 
 /** A volume's meter tone, from how little is free: red under 5%, amber under 15%. */
@@ -51,6 +51,13 @@ export const DISK_KIND_LABELS: Record<DiskKind, string> = {
   directory: "Folder",
   file: "File",
   other: "Smaller items",
+  docker: "Docker",
+  model: "Model",
+};
+
+export const MODEL_SOURCE_LABELS: Record<ModelSource, string> = {
+  lm_studio: "LM Studio",
+  ollama: "Ollama",
 };
 
 /** The legend's order: what cleanup can usually take first. */

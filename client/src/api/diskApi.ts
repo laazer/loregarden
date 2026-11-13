@@ -2,8 +2,9 @@
  * Machine → Disk: what is using the disk, and the two-step cleanup.
  *
  * Its own module, like `dockerApi`, rather than more of `client.ts`. Cleanup is
- * a person's action by design: no agent action drives `executeCleanup`, and the
- * MCP tool over the same scan (loregarden_disk_usage) only reads sizes.
+ * a person's action by design: no agent action drives `executeCleanup`,
+ * `reclaimDocker` or `deleteModel`, and the MCP tool over the same scan
+ * (loregarden_disk_usage) only reads sizes.
  */
 
 import { request } from "./http";
@@ -14,6 +15,11 @@ import type {
   DiskNode,
   DiskOverview,
   DiskScanStatus,
+  DockerReclaimPreview,
+  DockerReclaimRequest,
+  DockerReclaimResult,
+  LocalModelList,
+  ModelDeleteResult,
 } from "./diskTypes";
 
 const BASE = "/api/machine/disk";
@@ -48,6 +54,22 @@ export const diskApi = {
     request<DiskCleanupResult>(`${BASE}/cleanup/execute`, {
       method: "POST",
       body: JSON.stringify({ plan_id: planId, paths }),
+    }),
+  /** 503 when Docker is not installed or not running. */
+  dockerReclaimable: (): Promise<DockerReclaimPreview> =>
+    request<DockerReclaimPreview>(`${BASE}/docker`),
+  reclaimDocker: (body: DockerReclaimRequest): Promise<DockerReclaimResult> =>
+    request<DockerReclaimResult>(`${BASE}/docker/reclaim`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  models: (): Promise<LocalModelList> =>
+    request<LocalModelList>(`${BASE}/models`),
+  /** Deletes for good: a model is downloaded again, not restored from the Trash. */
+  deleteModel: (id: string): Promise<ModelDeleteResult> =>
+    request<ModelDeleteResult>(`${BASE}/models/delete`, {
+      method: "POST",
+      body: JSON.stringify({ id }),
     }),
   history: (limit = 10): Promise<DiskCleanupEvent[]> =>
     request<DiskCleanupEvent[]>(`${BASE}/cleanup/history?limit=${limit}`),

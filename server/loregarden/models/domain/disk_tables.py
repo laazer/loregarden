@@ -34,6 +34,10 @@ class DiskKind(StrEnum):
     FILE = "file"
     #: The many small entries folded into one tile so the tree stays readable.
     OTHER = "other"
+    #: Images, build cache or volumes Docker holds inside its own disk image.
+    DOCKER = "docker"
+    #: A downloaded LM Studio or Ollama model, which can be downloaded again.
+    MODEL = "model"
 
 
 REGENERABLE_KINDS: frozenset[DiskKind] = frozenset(
@@ -54,10 +58,16 @@ class DiskCleanupMethod(StrEnum):
     TRASH = "trash"
     #: Moved to the Trash, then `git worktree prune` so the repository forgets it.
     TRASH_WORKTREE = "trash_worktree"
+    #: Removed through Docker's own prune or `volume rm`, never by path.
+    DOCKER_PRUNE = "docker_prune"
+    #: Deleted outright: a model, which its app can download again.
+    DELETE = "delete"
 
 
 class DiskCleanupOutcome(StrEnum):
     TRASHED = "trashed"
+    #: Gone for good, and the space is back now (not when the Trash is emptied).
+    DELETED = "deleted"
     #: A safety check that passed at preview failed at execute.
     REFUSED = "refused"
     FAILED = "failed"

@@ -10,7 +10,9 @@ export type DiskKind =
   | "loregarden_data"
   | "directory"
   | "file"
-  | "other";
+  | "other"
+  | "docker"
+  | "model";
 
 export interface DiskNode {
   name: string;
@@ -68,7 +70,8 @@ export interface DiskOverview {
   added_roots: string[];
 }
 
-export type DiskCleanupMethod = "trash" | "trash_worktree";
+export type DiskCleanupMethod =
+  "trash" | "trash_worktree" | "docker_prune" | "delete";
 
 export interface DiskVerdict {
   path: string;
@@ -91,7 +94,7 @@ export interface DiskCleanupPlan {
   covered: string[];
 }
 
-export type DiskCleanupOutcome = "trashed" | "refused" | "failed";
+export type DiskCleanupOutcome = "trashed" | "deleted" | "refused" | "failed";
 
 export interface DiskCleanupResult {
   results: {
@@ -114,4 +117,81 @@ export interface DiskCleanupEvent {
   outcome: DiskCleanupOutcome;
   detail: string;
   created_at: string;
+}
+
+/** `GET /machine/disk/docker`: what Docker holds that nothing uses. */
+export interface DockerVolume {
+  name: string;
+  size_bytes: number;
+}
+
+export interface DockerReclaimPreview {
+  unused_images: number;
+  unused_images_bytes: number;
+  build_cache_entries: number;
+  build_cache_bytes: number;
+  /** Anonymous volumes no container is attached to: what cleanup removes. */
+  volumes: DockerVolume[];
+  volumes_bytes: number;
+  /** Named volumes no container uses: always kept, listed so you can see them. */
+  kept_named_volumes: DockerVolume[];
+  total_bytes: number;
+}
+
+export interface DockerReclaimRequest {
+  images: boolean;
+  build_cache: boolean;
+  volumes: string[];
+}
+
+export interface DockerReclaimStep {
+  label: string;
+  outcome: DiskCleanupOutcome;
+  reclaimed_bytes: number;
+  detail: string;
+}
+
+export interface DockerReclaimResult {
+  steps: DockerReclaimStep[];
+  reclaimed_bytes: number;
+  failed_count: number;
+}
+
+export type ModelSource = "lm_studio" | "ollama";
+
+export interface LocalModel {
+  id: string;
+  source: ModelSource;
+  name: string;
+  path: string;
+  size_bytes: number;
+  /** Space deleting it gives back; less than its size when Ollama shares blobs. */
+  frees_bytes: number;
+  modified_at: string;
+  /** An LM Studio folder made only of links into another app's store. */
+  links_to: ModelSource | null;
+  /** Its links point at files that are gone, so the app cannot load it. */
+  broken: boolean;
+  /** LM Studio link folders removed along with this Ollama model. */
+  linked_by: string[];
+}
+
+export interface ModelLocation {
+  source: ModelSource;
+  path: string;
+  found: boolean;
+  error: string;
+}
+
+export interface LocalModelList {
+  locations: ModelLocation[];
+  models: LocalModel[];
+}
+
+export interface ModelDeleteResult {
+  id: string;
+  name: string;
+  outcome: DiskCleanupOutcome;
+  freed_bytes: number;
+  detail: string;
 }

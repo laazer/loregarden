@@ -161,6 +161,10 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "tab stop in the subtree: <Input> components/NewViewModal.tsx:87",
     sites: [
       {
+        where: "components/machine/ModelDeleteModal.tsx:87",
+        reason: "tabbable",
+      },
+      {
         where: "components/DeleteViewConfirmModal.tsx:44",
         reason: "tabbable",
       },
@@ -431,6 +435,10 @@ export const BASELINE: readonly BaselineEntry[] = [
         reason: "tabbable",
       },
       {
+        where: "components/machine/DockerCleanupModal.tsx:245",
+        reason: "tabbable",
+      },
+      {
         where: "components/machine/DiskFoldersModal.tsx:131",
         reason: "tabbable",
       },
@@ -551,6 +559,10 @@ export const BASELINE: readonly BaselineEntry[] = [
     reason: "focusable-descendant",
     note: "tab stop in the subtree: <Input> components/NewViewModal.tsx:87",
     sites: [
+      {
+        where: "components/machine/ModelDeleteModal.tsx:87",
+        reason: "tabbable",
+      },
       {
         where: "components/DeleteViewConfirmModal.tsx:44",
         reason: "tabbable",

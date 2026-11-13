@@ -52,6 +52,25 @@ export function useDiskHistory(enabled: boolean) {
   });
 }
 
+/**
+ * What Docker could free. Not retried: a 503 means Docker is not running, an
+ * answer the card shows rather than one to keep asking for.
+ */
+export function useDockerReclaimable() {
+  return useQuery({
+    queryKey: [...DISK_KEY, "docker"],
+    queryFn: diskApi.dockerReclaimable,
+    retry: false,
+  });
+}
+
+export function useLocalModels() {
+  return useQuery({
+    queryKey: [...DISK_KEY, "models"],
+    queryFn: diskApi.models,
+  });
+}
+
 /** Added folders: each change answers with the new list, which is the overview's. */
 export function useDiskRoots() {
   const queryClient = useQueryClient();

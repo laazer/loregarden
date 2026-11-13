@@ -22,10 +22,17 @@ runners) that carry them.
 or stops anything, and a human — not a sweep — takes a stack down. "It never
 runs `docker compose down`" written in a docstring is worth nothing. The
 allowlist below is worth something, and it refuses rather than warning.
+
+**One exception, and it is not a verb list.** Machine → Disk lets a *person*
+free what Docker holds that nothing uses. `run_docker_reclaim` is its own entry
+point, so `run_docker` stays read-only, and it allows whole commands, not verbs:
+no flag can widen one (`--volumes`, `--filter`), and `volume rm` takes only
+anonymous volume names. No sweep, agent or MCP tool reaches it.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 
@@ -188,4 +195,56 @@ def run_docker(
         text=True,
         check=False,
         timeout=settings.docker_probe_timeout_seconds if timeout is None else timeout,
+    )
+
+
+#: The exact argv of every docker command the person-run disk cleanup may issue.
+#: Whole commands, not verbs: `image prune -a -f --filter …` is refused, and
+#: there is deliberately no `system prune`, whose `--volumes` deletes the named
+#: volume of any container it removed first.
+DISK_RECLAIM_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("system", "df", "-v", "--format", "{{json .}}"),
+        ("image", "prune", "-a", "-f"),
+        ("builder", "prune", "-a", "-f"),
+    }
+)
+
+#: An anonymous volume's name. Docker gives one to a volume nobody named; a
+#: named volume (a compose stack's database) never matches, so `volume rm` here
+#: cannot reach one. No `-f`, so docker itself refuses a volume still in use.
+ANONYMOUS_VOLUME_NAME = re.compile(r"[0-9a-f]{64}")
+
+
+def assert_disk_reclaim(args: Sequence[str]) -> None:
+    """Refuse anything but the cleanup's own commands, exactly as written above."""
+    tokens = tuple(args)
+    if tokens in DISK_RECLAIM_COMMANDS:
+        return
+    names = tokens[2:]
+    if (
+        tokens[:2] == ("volume", "rm")
+        and names
+        and all(ANONYMOUS_VOLUME_NAME.fullmatch(name) for name in names)
+    ):
+        return
+    raise DockerVerbRefused(
+        f"docker {' '.join(tokens) or '<none>'} is not a disk cleanup command this process runs"
+    )
+
+
+def run_docker_reclaim(args: Sequence[str], *, timeout: float) -> subprocess.CompletedProcess:
+    """Run one of the disk cleanup's docker commands, capturing text output.
+
+    Same environment and non-raising exit as `run_docker`; the caller reads the
+    exit code. Raises `DockerVerbRefused` before spawning anything else.
+    """
+    assert_disk_reclaim(args)
+    return subprocess.run(  # noqa: S603 — argv list, no shell; whole commands allowlisted above
+        [settings.docker_binary, *args],
+        env=scrubbed_docker_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
     )

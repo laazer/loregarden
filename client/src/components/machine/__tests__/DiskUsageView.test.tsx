@@ -144,6 +144,18 @@ beforeAll(() => {
 beforeEach(() => {
   jest.resetAllMocks();
   mockDisk.history.mockResolvedValue([]);
+  // The Quick wins cards have their own tests (DiskReclaimSection.test.tsx).
+  mockDisk.dockerReclaimable.mockResolvedValue({
+    unused_images: 0,
+    unused_images_bytes: 0,
+    build_cache_entries: 0,
+    build_cache_bytes: 0,
+    volumes: [],
+    volumes_bytes: 0,
+    kept_named_volumes: [],
+    total_bytes: 0,
+  });
+  mockDisk.models.mockResolvedValue({ locations: [], models: [] });
   mockDisk.tree.mockImplementation(async (path: string) => {
     const roots = liveShapeRoots();
     if (!path) return roots;

@@ -26,6 +26,22 @@ from loregarden.services.disk_usage.cleanup import (
     preview,
     recent_events,
 )
+from loregarden.services.disk_usage.docker_reclaim import (
+    DockerOutputUnreadable,
+    DockerReclaimPreview,
+    DockerReclaimRequest,
+    DockerReclaimResult,
+    DockerUnavailable,
+)
+from loregarden.services.disk_usage.docker_reclaim import preview as docker_preview
+from loregarden.services.disk_usage.docker_reclaim import reclaim as docker_reclaim
+from loregarden.services.disk_usage.local_models import (
+    LocalModelList,
+    ModelDeleteResult,
+    ModelNotFound,
+    delete_model,
+    list_models,
+)
 from loregarden.services.disk_usage.roots import added_roots
 from loregarden.services.disk_usage.scanner import DiskNode
 from loregarden.services.disk_usage.store import (
@@ -80,6 +96,10 @@ class PreviewRequest(BaseModel):
 class ExecuteRequest(BaseModel):
     plan_id: str = Field(min_length=1)
     paths: list[str] = Field(min_length=1, max_length=MAX_PATHS)
+
+
+class DeleteModelRequest(BaseModel):
+    id: str = Field(min_length=1)
 
 
 class CleanupEventOut(BaseModel):
@@ -208,3 +228,43 @@ def cleanup_history(
         CleanupEventOut.model_validate(event, from_attributes=True)
         for event in recent_events(session, limit)
     ]
+
+
+@router.get("/docker")
+def docker_reclaimable() -> DockerReclaimPreview:
+    """What Docker holds that nothing uses. 503 when Docker cannot be asked."""
+    try:
+        return docker_preview()
+    except DockerUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except DockerOutputUnreadable as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post("/docker/reclaim")
+def docker_reclaim_confirmed(
+    body: DockerReclaimRequest, session: Session = Depends(get_session)
+) -> DockerReclaimResult:
+    try:
+        return docker_reclaim(session, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except DockerUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except DockerOutputUnreadable as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.get("/models")
+def local_models() -> LocalModelList:
+    return list_models()
+
+
+@router.post("/models/delete")
+def delete_local_model(
+    body: DeleteModelRequest, session: Session = Depends(get_session)
+) -> ModelDeleteResult:
+    try:
+        return delete_model(session, body.id)
+    except ModelNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
