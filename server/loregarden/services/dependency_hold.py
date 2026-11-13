@@ -152,7 +152,16 @@ def holding_prerequisites(session: Session, ticket: Ticket) -> list[UnmetPrerequ
     """The unmet prerequisites that still hold ``ticket``: those a person has not
     started it past. An override covers the edges that existed when it was
     made; an edge re-added since holds again."""
-    unmet = unmet_prerequisites(session, ticket)
+    return still_holding(session, ticket, unmet_prerequisites(session, ticket))
+
+
+def still_holding(
+    session: Session, ticket: Ticket, unmet: list[UnmetPrerequisite]
+) -> list[UnmetPrerequisite]:
+    """Which of ``unmet`` (from `unmet_prerequisites`) no override covers.
+
+    For a caller that needs both lists: working out ``unmet`` asks git about
+    every done prerequisite, and asking twice doubled that."""
     if not unmet:
         return []
     overrides = _decision_events(session, ticket.id, OrchestratorDecision.PREREQUISITES_OVERRIDDEN)

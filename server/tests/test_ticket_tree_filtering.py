@@ -216,3 +216,23 @@ def test_the_flat_list_counts_direct_children_per_row(client: TestClient, hierar
     assert counts[hierarchy["capability_mid"]] == 1
     assert counts[hierarchy["task_leaf"]] == 0
     assert counts[hierarchy["lonely_milestone"]] == 0
+
+
+def test_ancestor_filter_returns_only_the_subtree_anchored_under_it(client: TestClient, hierarchy):
+    """The Ticket page reads its children this way rather than building the whole
+    workspace's tree. The ticket is the anchor its subtree hangs from; tickets
+    outside it are absent."""
+    tree = _tree(client, f"ancestor_ticket_id={hierarchy['feature_mid']}")
+
+    feature = _find(tree, hierarchy["feature_mid"])
+    assert feature is not None
+    assert {child["id"] for child in feature["children"]} == {
+        hierarchy["capability_mid"],
+        hierarchy["bug_leaf"],
+    }
+    assert _find(tree, hierarchy["task_leaf"]) is not None
+    assert hierarchy["lonely_milestone"] not in _ids(tree)
+
+
+def test_ancestor_filter_on_a_leaf_is_empty(client: TestClient, hierarchy):
+    assert _tree(client, f"ancestor_ticket_id={hierarchy['task_leaf']}") == []

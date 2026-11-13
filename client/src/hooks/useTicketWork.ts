@@ -113,10 +113,14 @@ export function useTicketWork(ticketId: string | null) {
   const activeWorkspaceRecord = workspaces.data?.find((w) => w.slug === activeWorkspaceSlug);
   const activeWorkspaceRuntime = runtimeFromWorkspace(activeWorkspaceRecord);
 
-  // A child list describes the ticket, so it reads the unfiltered tree of its workspace.
+  // A child list describes the ticket, so it reads the ticket's own subtree,
+  // unfiltered. It used to fetch the whole workspace's tree (thousands of
+  // tickets) every one to five seconds to find these children, and polled at
+  // 1s whenever anything anywhere in the workspace was running.
   const workspaceTree = useQuery({
-    queryKey: ["ticket-tree", activeWorkspaceSlug, "unfiltered"],
-    queryFn: () => api.ticketTree({ workspace: activeWorkspaceSlug, include_members: true }),
+    queryKey: ["ticket-tree", activeWorkspaceSlug, "subtree", ticketId],
+    queryFn: () =>
+      api.ticketTree({ workspace: activeWorkspaceSlug, include_members: true, ancestor_ticket_id: ticketId ?? undefined }),
     enabled: Boolean(ticketId) && Boolean(sel),
     refetchInterval: (query) => (treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000),
   });

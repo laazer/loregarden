@@ -65,7 +65,7 @@ from loregarden.services.compatibility_posture import resolve_compatibility_post
 from loregarden.services.dependency_hold import (
     DependencyHold,
     admit_named_start,
-    holding_prerequisites,
+    still_holding,
     unmet_prerequisites,
 )
 from loregarden.services.hierarchy_service import build_tree, child_count, child_counts
@@ -504,6 +504,7 @@ def ticket_tree(
     milestone: str | None = None,
     search: str | None = None,
     include_members: bool = False,
+    ancestor_ticket_id: str | None = None,
     session: Session = Depends(get_session),
 ) -> list[TicketTreeNode]:
     """The forest of matching tickets, anchored under their ancestors.
@@ -511,6 +512,12 @@ def ticket_tree(
     ``include_members`` also lists each initiative's members under it (see
     `build_tree`), and brings in any initiative tracking a listed ticket:
     initiatives bind to no workspace, so a workspace filter never matches one.
+
+    ``ancestor_ticket_id`` keeps only what sits below that ticket (an
+    initiative's members included), the same filter `GET /api/tickets` takes.
+    The ticket itself comes back as the anchor its subtree hangs from. The
+    Ticket page reads its children this way; it used to build the whole
+    workspace's tree every one to five seconds to find them.
     """
     ws = _workspace_filter(session, workspace)
     if ws is False:
@@ -528,6 +535,8 @@ def ticket_tree(
         search=search,
         blocked_on=blocked_on,
     )
+    if ancestor_ticket_id:
+        query = query.where(col(Ticket.id).in_(covered_ticket_ids(session, ancestor_ticket_id)))
 
     tickets = list(session.exec(query).all())
     if not tickets:
@@ -825,8 +834,9 @@ def _prerequisite_refs(
     refs = _dependency_refs(session, ticket_ids)
     if not refs or ticket.state in RESOLVED_STATES:
         return refs
-    unmet = {entry.ticket.id: entry for entry in unmet_prerequisites(session, ticket)}
-    holding = {entry.ticket.id for entry in holding_prerequisites(session, ticket)}
+    unmet_entries = unmet_prerequisites(session, ticket)
+    unmet = {entry.ticket.id: entry for entry in unmet_entries}
+    holding = {entry.ticket.id for entry in still_holding(session, ticket, unmet_entries)}
     for ref in refs:
         entry = unmet.get(ref.id)
         if entry is None:
