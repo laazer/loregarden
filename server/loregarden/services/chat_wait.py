@@ -326,14 +326,25 @@ def _running_origin(
 
 
 def _detached_from_origin(pid: int, origin: AgentRun) -> bool:
-    """True when pid's POSIX session is neither the server's nor the origin agent's."""
+    """True when pid's POSIX session is neither the server's nor the origin agent's.
+
+    Only `agent_spawn` detaches an agent into its own session, and it records
+    `agent_transport` on every spawn. A run without one, such as every
+    permission-bridge chat turn, is a plain child of this server, so its agent's
+    session is the server's and the check above already covers it. The bridge
+    deliberately records no `agent_pid`, because a pid would make a restarted
+    server try to adopt a run it can no longer answer (see
+    `test_detached_spawn_inventory`). Refusing on that absent pid refused every
+    Home and branch chat registration ever made.
+    """
     child_sid = session_of(pid)
     if child_sid is None:
         return False
     if child_sid == os.getsid(os.getpid()):
         return False
     if origin.agent_pid is None:
-        return False
+        # Detached with a failed identity record: its session is unknowable.
+        return origin.agent_transport is None
     agent_sid = session_of(origin.agent_pid)
     return agent_sid is not None and child_sid != agent_sid
 
