@@ -112,13 +112,10 @@ def _answered(value: str, minimum: int) -> bool:
     return len(value) >= minimum and not value.startswith("<")
 
 
-def registered_invariants(root: Path) -> set[str]:
-    """Every `name=` the registry passes to `Invariant(...)`, read without importing it."""
-    path = root / REGISTRY
-    if not path.is_file():
-        return set()
+def _invariant_names(tree: ast.Module) -> set[str]:
+    """Every `name=` a module passes to `Invariant(...)`."""
     names = set()
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+    for node in ast.walk(tree):
         if (
             node.__class__ is ast.Call
             and node.func.__class__ is ast.Name
@@ -127,6 +124,37 @@ def registered_invariants(root: Path) -> set[str]:
             for keyword in node.keywords:
                 if keyword.arg == "name" and keyword.value.__class__ is ast.Constant:
                     names.add(str(keyword.value.value))
+    return names
+
+
+def _imported_invariant_modules(root: Path, tree: ast.Module) -> list[Path]:
+    """Modules the registry imports constants from — where split-out invariants live.
+
+    `invariant_registry` sits at its line cap, so families of invariants are
+    defined in sibling modules (`scope_invariants`, …) and imported as
+    upper-case constants. Those are registered too, and this check must see them.
+    """
+    modules = []
+    for node in ast.walk(tree):
+        if node.__class__ is not ast.ImportFrom or not node.module:
+            continue
+        if not any(alias.name.isupper() for alias in node.names):
+            continue
+        path = root / Path(*node.module.split(".")).with_suffix(".py")
+        if path.is_file():
+            modules.append(path)
+    return modules
+
+
+def registered_invariants(root: Path) -> set[str]:
+    """Every invariant the registry schedules, read without importing it."""
+    path = root / REGISTRY
+    if not path.is_file():
+        return set()
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names = _invariant_names(tree)
+    for module in _imported_invariant_modules(root / "server", tree):
+        names |= _invariant_names(ast.parse(module.read_text(encoding="utf-8")))
     return names
 
 

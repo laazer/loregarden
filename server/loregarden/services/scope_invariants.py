@@ -10,6 +10,10 @@ from datetime import date
 
 from loregarden.models.domain import InvariantReentry
 from loregarden.services.invariants import Invariant
+from loregarden.services.orphaned_findings import (
+    defer_findings_whose_source_finished,
+    findings_whose_source_finished,
+)
 from loregarden.services.undecided_finding_runs import undecided_findings_that_ran
 from loregarden.services.unsettled_criteria_runs import done_tickets_with_unsettled_criteria
 
@@ -41,5 +45,25 @@ DONE_TICKETS_HAVE_SETTLED_CRITERIA = Invariant(
     unrepaired_action=(
         "Reopen it to verify, or settle the criterion with loregarden_settle_criterion "
         "(met with its tests, or delegated to the ticket that carries it)"
+    ),
+)
+
+
+FINDINGS_OUTLIVE_THEIR_SOURCE = Invariant(
+    name="findings_do_not_outlive_the_source_that_decides_them",
+    ticket="lg-milestone-that-2606",
+    statement="no open finding waits for a scope decision its source can no longer be asked for",
+    detect=findings_whose_source_finished,
+    # Repairable, and only one way: `defer`, which is what `scope_round` already
+    # does for a round that decides nothing. Leaving it for a person is what the
+    # bad state already was — the ticket is refused by every dispatcher until
+    # somebody notices, and nothing surfaces it.
+    repair=defer_findings_whose_source_finished,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 11, 12),
+    expected_because=(
+        "a source ticket legitimately finishes without re-entering a gate: its parent's "
+        "rollup settles it, an operator closes it, or a sweep does. `round_due` fires on "
+        "stage entry, so nothing can force the round once there are no stages left to enter"
     ),
 )
