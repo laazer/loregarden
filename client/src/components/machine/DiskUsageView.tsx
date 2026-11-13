@@ -28,6 +28,7 @@ import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { DiskCleanupModal } from "./DiskCleanupModal";
 import { DiskEntriesTable } from "./DiskEntriesTable";
 import { DiskFoldersModal } from "./DiskFoldersModal";
+import { DiskReclaimSection } from "./DiskReclaimSection";
 import { DiskTreemap } from "./DiskTreemap";
 import "./DiskUsageView.css";
 
@@ -202,6 +203,8 @@ export function DiskUsageView() {
       ) : null}
       {summary ? <ScanNotices summary={summary} /> : null}
 
+      <DiskReclaimSection />
+
       {!summary ? (
         <div className="disk-empty">
           <h2>Where did the disk go?</h2>
@@ -311,7 +314,7 @@ export function DiskUsageView() {
             className="disk-history"
             onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
           >
-            <summary>Recently moved to the Trash</summary>
+            <summary>Recently cleaned up</summary>
             {history.isPending ? (
               <p className="disk-history-empty">Loading…</p>
             ) : history.isError ? (
@@ -323,8 +326,8 @@ export function DiskUsageView() {
               </p>
             ) : history.data.length === 0 ? (
               <p className="disk-history-empty">
-                Nothing yet. Items you clean up are listed here so you can find
-                them in the Trash.
+                Nothing yet. Folders you move to the Trash, models you delete
+                and Docker cleanups are listed here.
               </p>
             ) : (
               <ul className="disk-history-list">

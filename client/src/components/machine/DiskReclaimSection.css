@@ -1,0 +1,151 @@
+/* Machine → Disk → Quick wins: the Docker and downloaded-models cards. */
+
+.disk-reclaim {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.disk-reclaim-heading {
+  margin: 0;
+  font-size: var(--fs-lead);
+  font-weight: 600;
+}
+
+.disk-reclaim-cards {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.disk-reclaim-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+}
+
+.disk-reclaim-card h3 {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.disk-reclaim-card--wide {
+  align-items: stretch;
+}
+
+.disk-reclaim-figure {
+  margin: 0;
+  font-size: var(--fs-lead);
+  font-variant-numeric: tabular-nums;
+}
+
+.disk-reclaim-note {
+  margin: 0;
+  color: var(--txm);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+/* The whole name, wrapped: the version is the part that tells models apart,
+   and the folder table's ellipsis would cut exactly that. */
+.disk-models-table .disk-col-name {
+  max-width: none;
+  white-space: normal;
+}
+
+.disk-models-table .disk-model-name {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.disk-model-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  color: var(--txm);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+}
+
+.disk-model-tag.is-broken {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd));
+  color: var(--tx);
+}
+
+.disk-model-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.disk-reclaim-kept summary {
+  cursor: pointer;
+  color: var(--txm);
+  font-size: var(--fs-small);
+}
+
+.disk-reclaim-volumes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+}
+
+.disk-reclaim-volumes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 960px) {
+  .disk-reclaim-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* At phone width the models table reads as a list: one block per model. */
+@media (max-width: 600px) {
+  .disk-models-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .disk-models-table tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .disk-models-table th,
+  .disk-models-table td {
+    display: block;
+    padding: 0;
+    text-align: left;
+  }
+
+  .disk-models-table .disk-col-name {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .disk-models-table td[data-label]::before {
+    content: attr(data-label) " · ";
+    color: var(--txm);
+  }
+}
