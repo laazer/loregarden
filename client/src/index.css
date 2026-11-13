@@ -2676,8 +2676,10 @@ label:is(
   /* Whole or wrapped, never shrunk: a chip cut to "Wh…" is not a suggestion. */
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
+  max-width: 100%;
 }
 
 .app-action-bar-quick-btn {
