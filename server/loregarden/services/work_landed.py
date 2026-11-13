@@ -28,6 +28,7 @@ and fails any module other than this one that reaches for the building blocks.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from loregarden.services.git_merge_noco import (
@@ -44,9 +45,21 @@ def landing_commit(repo_root: Path, branch_sha: str, ref_sha: str) -> str:
     "" when there is none. Raises `RuntimeError` when git cannot tell, which is
     not an answer either way: the caller decides whether "unknown" waits,
     blocks or retries, and says so.
+
+    Remembered per process. Both inputs are commit hashes, and commits are
+    immutable, so the answer for a pair never changes. The ticket page asks it
+    for every done prerequisite on every one-to-three-second poll, at up to
+    four git subprocesses each. A commit git does not have makes `merge-base`
+    raise, and a raise is never remembered, so a later fetch is seen.
     """
     if not branch_sha or not ref_sha:
         return ""
+    return _landing_commit(str(repo_root), branch_sha, ref_sha)
+
+
+@lru_cache(maxsize=4096)
+def _landing_commit(repo: str, branch_sha: str, ref_sha: str) -> str:
+    repo_root = Path(repo)
     if branch_sha == ref_sha or is_ancestor(repo_root, branch_sha, ref_sha):
         return branch_sha
     holder = superseding_commit(repo_root, branch_sha, ref_sha)

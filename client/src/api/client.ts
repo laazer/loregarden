@@ -336,6 +336,8 @@ export const api = {
     /** List initiative members under their initiative too (`member_link` copies). */
     include_members?: boolean;
     blocked_on?: BlockedOn[];
+    /** Only what sits below this ticket, anchored under it. */
+    ancestor_ticket_id?: string;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
   stopTicket: (id: string) =>

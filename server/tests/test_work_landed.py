@@ -21,8 +21,10 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 import pytest
+from loregarden.services import work_landed
 from loregarden.services.work_landed import landing_commit
 
 SERVICES = Path(__file__).resolve().parents[1] / "loregarden"
@@ -211,3 +213,29 @@ def test_no_surface_asks_the_question_any_other_way():
         "Ask whether a branch's work is on a ref with work_landed.landing_commit: "
         f"{sorted(set(offenders))}"
     )
+
+
+def test_the_answer_for_a_commit_pair_is_remembered(tmp_path):
+    """Commits are immutable, so a pair's answer never changes; the ticket page
+    asked it for every prerequisite on every poll, at up to four git calls."""
+    work_landed._landing_commit.cache_clear()
+    with mock.patch.object(work_landed, "is_ancestor", return_value=True) as asked:
+        first = work_landed.landing_commit(tmp_path, "a" * 40, "b" * 40)
+        second = work_landed.landing_commit(tmp_path, "a" * 40, "b" * 40)
+
+    assert first == second == "a" * 40
+    assert asked.call_count == 1
+
+
+def test_git_failing_to_answer_is_not_remembered(tmp_path):
+    """A commit git does not have yet raises; once fetched, it must be asked again."""
+    work_landed._landing_commit.cache_clear()
+    with (
+        mock.patch.object(work_landed, "is_ancestor", return_value=False),
+        mock.patch.object(
+            work_landed, "superseding_commit", side_effect=[RuntimeError("bad object"), "c" * 40]
+        ),
+    ):
+        with pytest.raises(RuntimeError):
+            work_landed.landing_commit(tmp_path, "a" * 40, "b" * 40)
+        assert work_landed.landing_commit(tmp_path, "a" * 40, "b" * 40) == "c" * 40

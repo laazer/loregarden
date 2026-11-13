@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from unittest import mock
 
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 
@@ -52,6 +54,29 @@ def test_add_and_remove_dependency_via_api(client, db_session):
     removed = client.delete(f"/api/tickets/{a.id}/dependencies/{b.id}")
     assert removed.status_code == 200
     assert removed.json()["dependencies"] == []
+
+
+def test_reading_a_ticket_works_out_its_unmet_prerequisites_once(client, db_session):
+    """Each pass asks git about every done prerequisite. The detail view needs
+    both the unmet and the still-holding lists, and used to ask twice."""
+    a = _feature(db_session, "Dep once A")
+    b = _feature(db_session, "Dep once B")
+    assert (
+        client.post(
+            f"/api/tickets/{a.id}/dependencies", json={"depends_on": b.external_id}
+        ).status_code
+        == 200
+    )
+
+    with mock.patch(
+        "loregarden.services.dependency_hold.unmet_prerequisites_for_start",
+        wraps=unmet_prerequisites_for_start,
+    ) as asked:
+        detail = client.get(f"/api/tickets/{a.id}").json()
+
+    assert asked.call_count == 1
+    assert [d["id"] for d in detail["dependencies"]] == [b.id]
+    assert detail["dependencies"][0]["unmet_reason"] == "not_done"
 
 
 def test_api_rejects_dependency_on_parent_with_400(client, db_session):
