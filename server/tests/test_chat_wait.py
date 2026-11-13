@@ -8,18 +8,23 @@ system message. Never drop. The named regression is
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import os
+import signal
 import subprocess
+import time
 from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from loregarden.agents.chat_wait_recipe import DETACH_RECIPE
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
+from loregarden.mcp.chat_wait_tool import TOOL_DEFINITIONS
 from loregarden.mcp.tool_ids import (
     AUTO_APPROVED_MCP_TOOLS,
     ORCHESTRATED_DENIED_MCP_TOOLS,
@@ -46,6 +51,7 @@ from loregarden.models.domain.chat_wait_enums import (
 )
 from loregarden.models.domain.chat_wait_tables import ChatWait
 from loregarden.models.domain.enums import utcnow
+from loregarden.models.domain.process_enums import AgentTransport
 from loregarden.services.baxter_chat_run_service import (
     cancel_baxter_chat_turn,
     start_baxter_chat_turn,
@@ -437,9 +443,12 @@ def test_registering_the_originating_agent_pid_is_same_session(db_session, ticke
         assert result["error_kind"] == ChatWaitRefuseReason.SAME_SESSION.value
 
 
-def test_missing_agent_pid_cannot_prove_detach(db_session, ticket, tmp_path):
+def test_detached_origin_without_agent_pid_cannot_prove_detach(db_session, ticket, tmp_path):
+    """A detached agent (it has a transport) whose identity record failed has an
+    unknowable session, so a child cannot be proven to be outside it."""
     origin = _running_triage(db_session, ticket)
     origin.agent_pid = None
+    origin.agent_transport = AgentTransport.FILE
     db_session.add(origin)
     db_session.commit()
     log_path = _log(tmp_path)
@@ -450,6 +459,56 @@ def test_missing_agent_pid_cannot_prove_detach(db_session, ticket, tmp_path):
             command=COMMAND,
             log_path=str(log_path),
             ticket_id=ticket.id,
+        )
+        assert result["ok"] is False
+        assert result["error_kind"] == ChatWaitRefuseReason.SAME_SESSION.value
+
+
+def _as_bridge_run(db_session: Session, run: AgentRun) -> AgentRun:
+    """What `PermissionBridgeRunner` leaves on a chat run: no pid, no transport.
+
+    The fixtures above stamp the test process as the agent, which no chat turn
+    ever has. Every home-chat run in the live database has neither field.
+    """
+    run.agent_pid = None
+    run.agent_pid_identity = ""
+    run.agent_transport = None
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+def test_home_turn_spawned_by_the_bridge_registers_a_detached_child(
+    db_session, workspace, tmp_path
+):
+    """Regression: every Home registration was refused `same_session`, because
+    the bridge records no agent_pid and a missing pid read as "not detached"."""
+    chat = _home_session(db_session, workspace)
+    _as_bridge_run(db_session, _running_home(db_session, workspace, chat))
+    with _child(new_session=True) as child:
+        result = register(
+            db_session,
+            pid=child.pid,
+            command=COMMAND,
+            log_path=str(_log(tmp_path)),
+            chat_session_id=chat.id,
+        )
+        assert result["ok"] is True, result
+        assert outstanding_for(db_session, ChatSurface.HOME, chat.id) is not None
+
+
+def test_bridge_turn_child_still_in_the_server_session_is_refused(db_session, workspace, tmp_path):
+    """`cmd &` and `nohup cmd &` keep the server's session: still refused."""
+    chat = _home_session(db_session, workspace)
+    _as_bridge_run(db_session, _running_home(db_session, workspace, chat))
+    with _child(new_session=False) as child:
+        result = register(
+            db_session,
+            pid=child.pid,
+            command=COMMAND,
+            log_path=str(_log(tmp_path)),
+            chat_session_id=chat.id,
         )
         assert result["ok"] is False
         assert result["error_kind"] == ChatWaitRefuseReason.SAME_SESSION.value
@@ -814,12 +873,51 @@ def test_chat_orchestrated_false_auto_approves_and_does_not_spawn(db_session, ti
         assert body["ok"] is True
 
 
-def test_mcp_tool_description_documents_the_setsid_wrap():
-    from loregarden.mcp.chat_wait_tool import TOOL_DEFINITIONS
-
+def test_mcp_tool_description_documents_the_detach_recipe():
     description = TOOL_DEFINITIONS[0]["description"]
-    assert "setsid" in description
+    assert DETACH_RECIPE in description
+    assert "setsid sh" not in description
     assert "inbox" in description.lower()
+
+
+def test_the_documented_detach_recipe_runs_and_registers(db_session, workspace, tmp_path):
+    """Run the recipe exactly as agents are told to, on this host.
+
+    The wrap it replaced was `setsid sh -c …`, and macOS has no `setsid`
+    binary, so the documented recipe could not start a child at all here.
+    """
+    chat = _home_session(db_session, workspace)
+    _as_bridge_run(db_session, _running_home(db_session, workspace, chat))
+    log_path = tmp_path / "push.log"
+    script = DETACH_RECIPE.replace("<command>", "echo started; sleep 1; exit 3")
+    started = subprocess.run(
+        ["sh", "-c", script],
+        env={**os.environ, "LOG": str(log_path)},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    pid = int(started.stdout.strip())
+    try:
+        assert session_of(pid) == pid
+        result = register(
+            db_session,
+            pid=pid,
+            command="echo started; sleep 1; exit 3",
+            log_path=str(log_path),
+            chat_session_id=chat.id,
+        )
+        assert result["ok"] is True, result
+        rc_path = log_path.with_name(log_path.name + ".rc")
+        deadline = time.monotonic() + 10
+        while not rc_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert rc_path.read_text(encoding="utf-8").strip() == "3"
+        assert log_path.read_text(encoding="utf-8") == "started\n"
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
 
 
 # ---- R3 continuation_blocks ---------------------------------------------

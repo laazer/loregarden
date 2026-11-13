@@ -1,8 +1,8 @@
 """Register a detached child a chat turn started. Thin MCP wrapper around chat_wait.
 
 Auto-approved: an inbox click would expire the turn. Orchestrated pipeline
-agents are denied. The tool does not spawn the command — the agent wraps with
-setsid and names the pid.
+agents are denied. The tool does not spawn the command: the agent detaches it
+with `DETACH_RECIPE` and names the pid.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import ConfigDict, Field, ValidationError
 from sqlmodel import Session, SQLModel
 
+from loregarden.agents.chat_wait_recipe import DETACH_RECIPE
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.services.chat_wait import register
 
@@ -21,8 +22,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.REGISTER_CHAT_WAIT,
         "description": (
             "Register a detached child this chat turn started so the control plane "
-            "resumes the thread when it exits. Wrap with "
-            '`setsid sh -c \'(cmd > "$LOG" 2>&1; echo $? > "$LOG.rc")\'` and pass '
+            "resumes the thread when it exits. Start it detached (there is no `setsid` "
+            f"binary on macOS) with `LOG=/tmp/<name>.log; PID=$({DETACH_RECIPE})` and pass "
             "that pid, the command, the log path, and exactly one locator: ticket_id, "
             "chat_session_id, or workspace_slug+branch. The tool does not spawn the "
             "command. Auto-approved because an inbox click would expire the turn."
@@ -33,7 +34,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "pid": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "description": "Pid of the detached setsid child.",
+                    "description": "Pid the detach recipe printed.",
                 },
                 "command": {
                     "type": "string",
