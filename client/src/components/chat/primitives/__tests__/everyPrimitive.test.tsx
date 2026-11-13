@@ -44,6 +44,7 @@ const MINIMAL_PARTS: { [K in PrimitiveKind]: Extract<ChatPart, { primitive: K }>
   research_claim: { primitive: "research_claim", url: "https://github.com/acme/rigger", capability: "rigs" },
   research_project: { primitive: "research_project", url: "https://github.com/acme/rigger" },
   research_diff: { primitive: "research_diff", question_id: "q1" },
+  pr_cycle: { primitive: "pr_cycle", workspace_slug: "loregarden", branch: "chat/x" },
 };
 
 function renderPart(part: ChatPart) {

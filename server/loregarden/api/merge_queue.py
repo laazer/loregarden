@@ -31,6 +31,7 @@ from loregarden.services.merge_queue_requests import (
     queue_view,
     ticket_queue_view,
 )
+from loregarden.services.pr_cycle import PrCycleView, pr_cycle_view
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, select
@@ -121,6 +122,22 @@ def read_merge_queue_entry(
         raise HTTPException(404, str(exc)) from exc
     except GitHubReadError as exc:
         raise HTTPException(502, f"Could not read the entry's checks from GitHub: {exc}") from exc
+
+
+@router.get("/{slug}/pr-cycle", response_model=PrCycleView)
+def read_pr_cycle(
+    slug: str,
+    branch: str = Query(..., min_length=1),
+    pr_number: int | None = Query(None, gt=0),
+    session: Session = Depends(get_session),
+) -> PrCycleView:
+    """A branch's PR, live from GitHub, and its latest queue entry (the `pr_cycle` card).
+
+    A failed GitHub read is a 200 whose `pull_request.lookup` is `failed` with
+    `gh`'s words, as the ticket PR tab reads it: the card shows the reason
+    beside what it still knows (the recorded pre-push result).
+    """
+    return pr_cycle_view(session, _workspace(session, slug), branch=branch, pr_number=pr_number)
 
 
 @router.post("/{slug}/entries", response_model=EnqueueResponse)

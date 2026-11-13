@@ -348,28 +348,54 @@ def _lookup(
     return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=ships_with or branches[-1])
 
 
-def _view(session: Session, ticket: Ticket, repo_root: Path, branch: str) -> TicketPullRequest:
+class PullRequestRead(BaseModel):
+    """One `gh pr view` answer: found, none, or failed (with `gh`'s words)."""
+
+    lookup: PullRequestLookup
+    pull_request: PullRequestStatus | None = None
+    #: Why the lookup failed. Empty unless `lookup` is FAILED.
+    error: str = ""
+
+
+def read_pull_request(repo_root: Path, ref: str) -> PullRequestRead:
+    """The PR `ref` names (a branch, a number or a URL), live from GitHub.
+
+    Keeps "there is none" apart from "the lookup failed"; the caller decides how
+    to report the second. A caller with no ticket (a chat thread's branch) uses
+    this directly; a ticket's lookup goes through `_view`.
+    """
     try:
         proc = run_gh(
-            ["pr", "view", branch, "--json", _GH_FIELDS], cwd=repo_root, timeout=GH_TIMEOUT_SECONDS
+            ["pr", "view", ref, "--json", _GH_FIELDS], cwd=repo_root, timeout=GH_TIMEOUT_SECONDS
         )
     except subprocess.TimeoutExpired:
-        return _failed(session, ticket, branch, f"gh did not answer within {GH_TIMEOUT_SECONDS}s")
+        return _read_failed(f"gh did not answer within {GH_TIMEOUT_SECONDS}s")
     except OSError as exc:
-        return _failed(session, ticket, branch, f"could not run gh: {exc}")
+        return _read_failed(f"could not run gh: {exc}")
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
         if _NO_PR_MARKER in detail:
-            return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=branch)
-        return _failed(session, ticket, branch, detail or f"gh pr view exited {proc.returncode}")
+            return PullRequestRead(lookup=PullRequestLookup.NONE)
+        return _read_failed(detail or f"gh pr view exited {proc.returncode}")
     try:
         raw = GhPullRequest.model_validate(json.loads(proc.stdout or "{}"))
     except (ValueError, ValidationError) as exc:
-        return _failed(session, ticket, branch, f"unexpected gh output: {exc}")
+        return _read_failed(f"unexpected gh output: {exc}")
     status = pull_request_status(raw)
     if raw.state == "OPEN" and raw.merge_state == "BLOCKED":  # py-org: allow-string
         status.unsigned_commits = _unsigned_commits(repo_root, raw.number)
-    return TicketPullRequest(lookup=PullRequestLookup.FOUND, branch=branch, pull_request=status)
+    return PullRequestRead(lookup=PullRequestLookup.FOUND, pull_request=status)
+
+
+def _read_failed(error: str) -> PullRequestRead:
+    return PullRequestRead(lookup=PullRequestLookup.FAILED, error=error)
+
+
+def _view(session: Session, ticket: Ticket, repo_root: Path, branch: str) -> TicketPullRequest:
+    read = read_pull_request(repo_root, branch)
+    if read.lookup is PullRequestLookup.FAILED:
+        return _failed(session, ticket, branch, read.error)
+    return TicketPullRequest(lookup=read.lookup, branch=branch, pull_request=read.pull_request)
 
 
 _UNSIGNED_JQ = (

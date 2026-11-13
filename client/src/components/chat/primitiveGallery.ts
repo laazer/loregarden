@@ -393,6 +393,20 @@ export function primitiveGallerySections(
       title: "Latest commit",
     }),
     section(
+      "pr-cycle",
+      "Where is my change on its way to main?",
+      "Pre-push, PR checks, merge queue — and the one thing to do next.",
+      {
+        primitive: "pr_cycle",
+        workspace_slug: workspaceSlug,
+        branch,
+        pre_push: "failed",
+        pre_push_detail: "client-tests: 2 failed\n  ● ChatPanel › keeps the draft on a failed send",
+        title: "A push the pre-push suite refused",
+      },
+      { primitive: "pr_cycle", workspace_slug: workspaceSlug, branch, pre_push: "passed" },
+    ),
+    section(
       "qa",
       "Ask me whatever you still need to know.",
       "Two questions — answer them and I will pick the work back up.",

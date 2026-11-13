@@ -29,6 +29,7 @@ const ICON_PATHS: Record<string, string> = {
   gif: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
   card: "M5 5h14v14H5z",
   research: "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20",
+  pr_cycle: "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 9v6M18 15V8a2 2 0 0 0-2-2h-4M14 4l-2 2 2 2",
 };
 
 /** A primitive kind's icon and default tint. */
@@ -58,6 +59,7 @@ const KINDS: Record<string, { icon: keyof typeof ICON_PATHS; tint: PrimitiveTint
   research_claim: { icon: "research", tint: "work" },
   research_project: { icon: "research", tint: "work" },
   research_diff: { icon: "research", tint: "work" },
+  pr_cycle: { icon: "pr_cycle", tint: "run" },
 };
 
 export function primitiveTint(kind: string): PrimitiveTint {

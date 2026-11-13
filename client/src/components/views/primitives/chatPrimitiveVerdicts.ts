@@ -218,6 +218,13 @@ export const CHAT_PRIMITIVE_VERDICTS: Record<PrimitiveKind, ChatPrimitiveAudit> 
       "It answers one re-run of one question, in the thread that re-ran it; the candidates " +
       "table is where the question's current state lives.",
   },
+  pr_cycle: {
+    verdict: "chat-bound",
+    needs: "`workspace_slug` and `branch`, plus the push's `pre_push` result, which only the writer saw.",
+    reason:
+      "Its Repair button asks the thread's agent to fix the failure, so it needs the thread; " +
+      "the merge queue board is where a PR's place in line lives outside a conversation.",
+  },
   giphy: {
     verdict: "chat-bound",
     needs: "`giphy_id` or a Giphy media `url`, and an alt/caption.",

@@ -29,7 +29,8 @@ export type PrimitiveKind =
   | "research_candidates"
   | "research_claim"
   | "research_project"
-  | "research_diff";
+  | "research_diff"
+  | "pr_cycle";
 
 export interface TextPart {
   primitive: "text";
@@ -297,6 +298,20 @@ export interface ResearchDiffPart {
   title?: string | null;
 }
 
+/** A branch's way to the base: pre-push, then PR checks, then the merge queue. */
+export interface PrCyclePart {
+  primitive: "pr_cycle";
+  workspace_slug: string;
+  branch: string;
+  /** When the PR's head is not `branch`; otherwise the PR is found by branch. */
+  pr_number?: number | null;
+  /** Recorded by whoever saw the push finish; nothing can read it back later. */
+  pre_push?: "passed" | "failed" | "unknown";
+  /** The failing push's output, handed to the repair turn. */
+  pre_push_detail?: string;
+  title?: string | null;
+}
+
 export type ChatPart =
   | TextPart
   | ThinkingPart
@@ -324,7 +339,8 @@ export type ChatPart =
   | ResearchCandidatesPart
   | ResearchClaimPart
   | ResearchProjectPart
-  | ResearchDiffPart;
+  | ResearchDiffPart
+  | PrCyclePart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
 

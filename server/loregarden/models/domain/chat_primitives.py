@@ -314,6 +314,27 @@ class ResearchDiffPart(BaseModel):
     title: str | None = None
 
 
+class PrCyclePart(BaseModel):
+    """A branch's way to the base: pre-push checks, then PR checks, then the merge queue.
+
+    ``pre_push`` is the one stage nothing can read back later, so the writer
+    records it; the card reads the PR and its queue entry live by ``branch``
+    (or ``pr_number`` when the PR's head is not that branch).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    primitive: Literal["pr_cycle"] = "pr_cycle"
+    workspace_slug: str
+    branch: str
+    pr_number: int | None = Field(default=None, gt=0)
+    #: How the push's pre-push suite went; "unknown" when nothing recorded it.
+    pre_push: Literal["passed", "failed", "unknown"] = "unknown"
+    #: The failing push's output, which is what a repair turn needs to read.
+    pre_push_detail: str = ""
+    title: str | None = None
+
+
 ChatPart = Annotated[
     TextPart
     | ThinkingPart
@@ -341,7 +362,8 @@ ChatPart = Annotated[
     | ResearchCandidatesPart
     | ResearchClaimPart
     | ResearchProjectPart
-    | ResearchDiffPart,
+    | ResearchDiffPart
+    | PrCyclePart,
     Field(discriminator="primitive"),
 ]
 
@@ -374,5 +396,6 @@ KNOWN_PRIMITIVES = frozenset(
         "research_claim",
         "research_project",
         "research_diff",
+        "pr_cycle",
     }
 )

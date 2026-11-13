@@ -221,6 +221,23 @@ def ticket_queue_view(session: Session, ticket: Ticket) -> TicketQueueView:
     )
 
 
+def pull_request_queue_entry(
+    session: Session, workspace: Workspace, pr_number: int
+) -> EntryView | None:
+    """The latest entry for PR ``pr_number`` in ``workspace``'s queue, or None if never queued."""
+    latest = session.exec(
+        select(MergeQueueEntry)
+        .where(MergeQueueEntry.workspace_id == workspace.id)
+        .where(MergeQueueEntry.pr_number == pr_number)
+        .order_by(col(MergeQueueEntry.enqueued_at).desc())
+        .limit(1)
+    ).first()
+    if latest is None:
+        return None
+    ahead = merge_queue.ahead_of(session, latest)
+    return EntryView(**_fields(session, latest, _head_id(session, workspace.id), ahead))
+
+
 def entry_detail(
     session: Session,
     entry_id: str,

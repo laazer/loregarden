@@ -12,6 +12,7 @@ in any test that only checks the end state.
 
 from __future__ import annotations
 
+import json
 import threading
 from unittest import mock
 
@@ -25,6 +26,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import baxter_chat_run_service as runsvc
 from loregarden.services.chat_publish import TurnPublishOutcome
+from loregarden.services.git_automation import AutomationResult, StepResult
 from sqlmodel import Session, select
 from tests.worktree_helpers import make_repo
 
@@ -87,6 +89,67 @@ def test_the_result_lands_in_the_thread_as_its_own_message(session, chat, isolat
     assert "chat/rename-the-editor-abcd1234" in messages[0].content
     # A message of its own, so no leading rule across an empty bubble.
     assert not messages[0].content.startswith("\n\n---")
+
+
+@pytest.mark.parametrize(
+    ("push", "pre_push", "detail"),
+    [
+        (StepResult("push", True), "passed", ""),
+        (
+            StepResult("push", False, "client-tests failed: 3 suites"),
+            "failed",
+            "client-tests failed: 3 suites",
+        ),
+    ],
+)
+def test_a_publish_that_pushed_carries_a_pr_cycle_card(
+    session, chat, isolated_db, tmp_path, push, pre_push, detail
+):
+    """The push ran the pre-push suite; its verdict is the card's first stage."""
+    chat_session, run = chat
+    outcome = TurnPublishOutcome(
+        repo_root=tmp_path,
+        branch="chat/rename-abcd1234",
+        dirty=True,
+        automation=AutomationResult(steps=[StepResult("commit", True), push]),
+    )
+    with (
+        mock.patch.object(runsvc, "engine", isolated_db),
+        mock.patch.object(runsvc, "publish_chat_turn", return_value=outcome),
+    ):
+        runsvc.execute_chat_publish_background(chat_session.id, run.id)
+
+    (message,) = _system_messages(session, chat_session.id)
+    assert json.loads(message.parts_json) == [
+        {
+            "primitive": "pr_cycle",
+            "workspace_slug": "loregarden",
+            "branch": "chat/rename-abcd1234",
+            "pr_number": None,
+            "pre_push": pre_push,
+            "pre_push_detail": detail,
+            "title": None,
+        }
+    ]
+
+
+def test_a_commit_only_publish_carries_no_pr_cycle_card(session, chat, isolated_db, tmp_path):
+    """Nothing was pushed, so no pre-push ran and there is no PR to follow."""
+    chat_session, run = chat
+    outcome = TurnPublishOutcome(
+        repo_root=tmp_path,
+        branch="chat/rename-abcd1234",
+        dirty=True,
+        automation=AutomationResult(steps=[StepResult("commit", True)]),
+    )
+    with (
+        mock.patch.object(runsvc, "engine", isolated_db),
+        mock.patch.object(runsvc, "publish_chat_turn", return_value=outcome),
+    ):
+        runsvc.execute_chat_publish_background(chat_session.id, run.id)
+
+    (message,) = _system_messages(session, chat_session.id)
+    assert json.loads(message.parts_json) == []
 
 
 def test_a_turn_that_changed_nothing_posts_no_message(session, chat, isolated_db, tmp_path):
