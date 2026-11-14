@@ -43,6 +43,9 @@ GATES = [
     pytest.param(
         [sys.executable, str(_SCRIPTS / "py_git_subprocess_check.py")], "src/pkg/m.py", id="py-git"
     ),
+    pytest.param(
+        [sys.executable, str(_SCRIPTS / "py_ref_writers_check.py")], "src/pkg/m.py", id="py-ref"
+    ),
     pytest.param([sys.executable, str(_SCRIPTS / "md_report_check.py")], "notes/m.md", id="md"),
     pytest.param(
         ["node", str(_SCRIPTS / "ts_organization_check.cjs")], "client/src/m.ts", id="ts-org"

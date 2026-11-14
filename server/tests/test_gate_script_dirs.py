@@ -264,6 +264,12 @@ TRANSITION_GATES = [
         '    return subprocess.run(["git", "status"], cwd=repo, check=False)\n',
         id="py-git-subprocess",
     ),
+    pytest.param(
+        "py_ref_writers_check.py",
+        "def drop(repo, branch):\n"
+        '    return run_git(["branch", "-D", branch], cwd=repo, check=False)\n',
+        id="py-ref-writers",
+    ),
 ]
 
 

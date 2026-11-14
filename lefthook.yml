@@ -100,6 +100,11 @@ pre-commit:
       priority: 1
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
+    py-ref-writers:
+      name: Python branch moves outside integration_branch_moves
+      priority: 1
+      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_ref_writers_check.py {staged_files}
     py-mypy:
       name: Python (mypy, staged files)
       priority: 1
