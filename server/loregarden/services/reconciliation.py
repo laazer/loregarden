@@ -75,6 +75,7 @@ from loregarden.services.invariant_registry import (
     LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
     LANDINGS_CARRY_THE_WORK,
+    LANDINGS_SURVIVE_THEIR_BRANCH,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN,
@@ -331,6 +332,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     _invariant(NO_WAIT_LOOP_THROUGH_A_PARENT, at_startup=False),
     _invariant(FOLLOW_UPS_LEAVE_THEIR_SOURCE, at_startup=False),
     _invariant(RUN_FILINGS_ARE_FINDINGS, at_startup=False),
+    _invariant(LANDINGS_SURVIVE_THEIR_BRANCH, at_startup=False),
     # Two hand repairs failed to prevent the next instance of "a ticket is done,
     # its tests landed, its implementation is missing" (lg-milestone-that-1419).
     # Report-only and bounded by its own `since`: it reads R3's land-verification

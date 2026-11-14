@@ -14,9 +14,11 @@ import pytest
 from loregarden.models.domain import Delivery
 from loregarden.services import git_automation
 from loregarden.services.base_delivery import delivery_of, record_base_holdings
+from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.publish_tree import PublishOutcome
 from loregarden.services.reconciliation import PERIODIC_STEPS
+from loregarden.services.target_branch import _fast_forward_superseded
 from loregarden.services.tree_publish_scheduler import publish_and_settle, report_publish_failure
 from sqlmodel import Session
 from tests.tree_publish_helpers import (
@@ -103,15 +105,17 @@ def test_a_squash_merged_publish_is_recorded_for_every_ticket_in_the_tree(sessio
 
 def test_a_child_landed_before_the_branch_was_reset_is_still_held(session, workspace, repo):
     """After the base holds the branch the next cut moves it to the base tip, and the
-    child's landing commit is in no branch's history any more, so git may collect it."""
+    child's landing is in the branch's history no more. The reset keeps the tip it
+    left, so neither the record nor git's collection loses the child."""
     _, child, branch = landed_tree(session, workspace, repo)
     squash_onto_remote_main(repo)
-    git(repo, "branch", "-f", branch, "main")
+    assert _fast_forward_superseded(repo, read_branch_tips(repo, branch, "main"), branch, "main")
     git(repo, "branch", "-D", child.branch)
     git(repo, "reflog", "expire", "--expire=now", "--all")
     git(repo, "gc", "-q", "--prune=now")
+    assert git(repo, "rev-parse", branch).stdout == git(repo, "rev-parse", "main").stdout
     with pytest.raises(subprocess.CalledProcessError):
-        git(repo, "cat-file", "-e", child.landed_sha)
+        git(repo, "merge-base", "--is-ancestor", child.landed_sha, branch)
 
     assert record_base_holdings(session) >= 1
 

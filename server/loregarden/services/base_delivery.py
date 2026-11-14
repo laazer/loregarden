@@ -20,11 +20,18 @@ every `FETCH_EVERY_SECONDS`) and the local one. Asked of a child's own
 `landed_sha`, it misses most squash-published children: measured read-only on
 the live database 2026-11-03, 84 of 280 landed tickets read "not held" that
 way though their trees' tips were on main. Asked of the tree instead it does
-not: an integration branch only moves forward, or is reset to the base once
-the base holds it (`integration_branch_health`), so when its current tip is
-held, every ticket that ever landed on it is. With that rule this module's own
-code read 279 of 282 as held in 9.3s; the 3 left are the genuinely unpublished
-679 and 1923, and 804, whose tree branch no longer exists to ask.
+not: a held tip holds every landing it contains. With that rule this module's
+own code read 279 of 282 as held in 9.3s; the 3 left are the genuinely
+unpublished 679 and 1923, and 804, whose tree branch no longer exists to ask.
+
+"Contains" is asked of each landing, by ancestry. This module once took a held
+tip to hold *every* ticket that ever landed on the branch, on the reasoning
+that an integration branch only moves forward. It does not always:
+`integration/lg-milestone-that-491` lost lg-milestone-that-1316's landing
+between 10-20 and 10-30, and the tip that was later published was recorded as
+delivering it, so six files that never reached main read "on main". A landing
+the tip does not contain is asked on its own, and reads not held until the
+base holds its work (`landing_survival` guards the moves and reports the loss).
 
 So per integration branch, the tip and the root's last published tip are asked
 once; a ticket with no tree, or a child neither covers, is asked on its own.
@@ -47,7 +54,7 @@ from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import is_ancestor, rev
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
-from loregarden.services.target_branch import subtree_root
+from loregarden.services.target_branch import settled_tips, subtree_root
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import pending_publish_card
 from loregarden.services.work_landed import landing_commit
@@ -242,25 +249,54 @@ def _tree_holdings(
     tickets: list[Ticket],
     bases: Sequence[str],
 ) -> dict[str, str]:
+    held: dict[str, str] = {}
     tip = rev(repo_root, f"refs/heads/{branch}")
     if tip:
         found = holder(repo_root, tip, bases)
         if found:
-            # The branch only moves forward or is reset once the base holds it,
-            # so everything that ever landed on it is held.
-            return {ticket.id: found for ticket in tickets}
+            held = _contained(repo_root, tickets, tip, found)
     root = _root_of(session, workspace, branch)
     published = root.landed_sha if root and root.landed_branch == branch else ""
-    if not published or published == tip:
-        return {}
-    found = holder(repo_root, published, bases)
-    if not found:
-        return {}
+    # The tips the branch was published from or reset away from: held ones hold
+    # the landings they contain, though the branch has moved off them.
+    for earlier in [published, *settled_tips(repo_root, branch)]:
+        rest = [ticket for ticket in tickets if ticket.id not in held]
+        if not rest:
+            break
+        if not earlier or earlier == tip:
+            continue
+        found = holder(repo_root, earlier, bases)
+        if found:
+            held.update(_contained(repo_root, rest, earlier, found))
+    return held
+
+
+def _contained(repo_root: Path, tickets: list[Ticket], tip: str, found: str) -> dict[str, str]:
+    """Ticket id → ``found``, for the tickets whose landing ``tip`` contains."""
     return {
         ticket.id: found
         for ticket in tickets
-        if ticket.landed_sha == published or is_ancestor(repo_root, ticket.landed_sha, published)
+        if ticket.landed_sha == tip or is_ancestor(repo_root, ticket.landed_sha, tip)
     }
+
+
+def held_landings(
+    session: Session,
+    repo_root: Path,
+    workspace: Workspace,
+    branch: str,
+    tickets: list[Ticket],
+    bases: Sequence[str],
+) -> dict[str, str]:
+    """Ticket id → base commit, for those of ``tickets`` (landed on ``branch``) the base holds.
+
+    The tree's held tips first, then each remaining landing on its own: the
+    same answer `record_workspace` records. Raises `RuntimeError` when git
+    cannot tell.
+    """
+    held = _tree_holdings(session, repo_root, workspace, branch, tickets, bases)
+    held.update(_held_on_their_own(repo_root, [t for t in tickets if t.id not in held], bases))
+    return held
 
 
 def _root_of(session: Session, workspace: Workspace, branch: str) -> Ticket | None:
