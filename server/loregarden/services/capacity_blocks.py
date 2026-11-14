@@ -51,7 +51,7 @@ class CapacityWorkBlock:
     blocked_at: datetime | None
 
 
-def _latest_orchestration(session: Session, ticket_id: str) -> OrchestrationRun | None:
+def latest_orchestration(session: Session, ticket_id: str) -> OrchestrationRun | None:
     return session.exec(
         select(OrchestrationRun)
         .where(OrchestrationRun.ticket_id == ticket_id)
@@ -73,7 +73,7 @@ def work_blocks_from_capacity_waits(session: Session) -> list[CapacityWorkBlock]
         )
     ).all()
     for ticket in blocked:
-        run = _latest_orchestration(session, ticket.id)
+        run = latest_orchestration(session, ticket.id)
         if run is None or run.status is not OrchestrationRunStatus.BLOCKED:
             continue
         if not _is_capacity_failure(run):

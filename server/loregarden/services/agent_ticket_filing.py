@@ -26,8 +26,15 @@ the undecided findings a single ticket may hold.
 
 from __future__ import annotations
 
-from loregarden.models.domain import AgentRun, Ticket, TicketDiscovery
-from loregarden.services.discovered_work import record_discovery
+from dataclasses import dataclass
+
+from loregarden.models.domain import (
+    VALID_HIERARCHY,
+    AgentRun,
+    Ticket,
+    TicketDiscovery,
+    WorkItemType,
+)
 from loregarden.services.ticket_relations import TicketRelationService
 from sqlalchemy import func
 from sqlmodel import Session, col, select
@@ -105,8 +112,64 @@ def check_filing_budget(session: Session, run: AgentRun) -> None:
 
 
 def record_filing(session: Session, run: AgentRun, filed: Ticket) -> None:
-    """Record the filing as an undecided finding, and relate the two tickets."""
-    record_discovery(session, run, filed)
+    """Relate a filed ticket to the ticket the run was working on.
+
+    Its discovery row is written with the ticket itself (`record_discovery`
+    as `TicketService.create_ticket`'s ``on_insert``), so a failure here
+    leaves a finding without its relation, never a ticket without its finding.
+    """
     TicketRelationService(session).add_relation(run.ticket_id, filed.id, created_by=filed_by(run))
     # `add_relation` returns an existing pair without committing.
     session.commit()
+
+
+@dataclass(frozen=True)
+class FindingPlacement:
+    """Where a run's filing goes, and in words how that differs from what it asked."""
+
+    parent_ticket_id: str | None
+    work_item_type: WorkItemType
+    moved: str = ""
+
+
+def place_finding(
+    session: Session, run: AgentRun, parent_ticket_id: str | None, work_item_type: WorkItemType
+) -> FindingPlacement:
+    """A filing under the run's own ticket goes beside it, under that ticket's parent.
+
+    Filed under its source, a finding made the source a parent, and a parent
+    never runs its own stages: lg-milestone-that-1420's verify, review and
+    gate could never run once 1431 was filed under it (lg-milestone-that-2604).
+    Nor could a `follow_up` decision ever move it, since a bug holds only
+    tasks and no parent of a bug holds a task. Beside its source, the
+    discovery row still names the source, the source's parent holds it out
+    until the scope is decided, and `follow_up` is true where it already is.
+
+    The type asked for is kept where that parent can hold it, else it is filed
+    as a bug where the parent holds bugs; otherwise it is refused, naming what
+    the parent holds.
+    """
+    source = session.get(Ticket, run.ticket_id) if run.ticket_id else None
+    if source is None or parent_ticket_id != source.id or source.parent_ticket_id is None:
+        return FindingPlacement(parent_ticket_id, work_item_type)
+    above = session.get(Ticket, source.parent_ticket_id)
+    if above is None:
+        return FindingPlacement(parent_ticket_id, work_item_type)
+    allowed = VALID_HIERARCHY.get(above.work_item_type, [])
+    if work_item_type in allowed:
+        kind = work_item_type
+    elif WorkItemType.BUG in allowed:
+        kind = WorkItemType.BUG
+    else:
+        raise FilingRefused(
+            f"A finding of {source.external_id} is filed beside it, under "
+            f"{above.external_id}, which holds only "
+            f"{', '.join(t.value for t in allowed) or 'nothing'}. File it as one of those."
+        )
+    retyped = f", as a {kind.value}" if kind is not work_item_type else ""
+    return FindingPlacement(
+        above.id,
+        kind,
+        f"filed under {above.external_id}, beside its source {source.external_id}{retyped}, "
+        "so the source keeps running its own stages",
+    )

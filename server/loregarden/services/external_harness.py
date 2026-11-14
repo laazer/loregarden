@@ -40,6 +40,7 @@ from loregarden.models.domain import (
     RunUsageStatus,
     StageStatus,
     Ticket,
+    TicketState,
     WorkflowStageDef,
     Workspace,
 )
@@ -509,6 +510,9 @@ def _aggregator_view(session: Session, ticket: Ticket, stage_key: str) -> Extern
     if not incomplete:
         finalize_aggregator_ticket(session, orch, ticket)
         session.refresh(ticket)
+        if ticket.state is TicketState.BLOCKED:
+            # Held open over its own unlanded work (`parent_own_work`); the note says why.
+            return ExternalStageView(stage_key=stage_key, message=ticket.blocking_issues)
         return ExternalStageView(stage_key=ticket.workflow_stage_key, message=_FINISHED_MESSAGE)
     order = ", ".join(child.external_id for child in incomplete)
     return ExternalStageView(

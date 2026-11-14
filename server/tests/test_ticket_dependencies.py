@@ -7,7 +7,10 @@ import pytest
 from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.models.domain import Ticket, TicketDependency, TicketState, WorkItemType, Workspace
 from loregarden.services.hierarchy_service import reparent_ticket
-from loregarden.services.invariant_registry import NO_TICKET_DEPENDS_ON_AN_ANCESTOR
+from loregarden.services.invariant_registry import (
+    NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
+    NO_WAIT_LOOP_THROUGH_A_PARENT,
+)
 from loregarden.services.invariants import run_invariant
 from loregarden.services.subtree_auto_run import order_children_for_subtree
 from loregarden.services.ticket_dependencies import (
@@ -354,3 +357,93 @@ def test_blocked_by_is_the_subset_actually_holding_the_ticket_up(db_session: Ses
 
     assert {e["external_id"] for e in payload["depends_on"]} == {"finished", "still-open"}
     assert [e["external_id"] for e in payload["blocked_by"]] == ["still-open"]
+
+
+# --- loops that close through a parent's wait for its children (10-30) -------
+
+
+def _parented(db_session: Session, child: str, parent: str) -> None:
+    row = db_session.get(Ticket, child)
+    assert row is not None
+    row.parent_ticket_id = parent
+    db_session.add(row)
+    db_session.commit()
+
+
+@pytest.fixture(name="family_1420")
+def family_1420_fixture(db_session: Session):
+    """1420 with its child 1431, and 1661 outside, as on 10-30."""
+    _rows(db_session, "t1420", "t1431", "t1661")
+    _parented(db_session, "t1431", "t1420")
+    return db_session
+
+
+def _add_edge(session: Session, dependent: str, prerequisite: str) -> None:
+    TicketDependencyService(session).add_dependency(dependent, prerequisite)
+
+
+def _reparent(session: Session, ticket: str, parent: str) -> None:
+    row = session.get(Ticket, ticket)
+    assert row is not None
+    reparent_ticket(session, row, parent)
+
+
+@pytest.mark.parametrize(
+    ("first", "closing"),
+    [
+        # 1661 waits for 1420, then its child 1431 is made to wait for 1661.
+        (("t1661", "t1420"), ("t1431", "t1661")),
+        # The same two edges, written in the other order.
+        (("t1431", "t1661"), ("t1661", "t1420")),
+    ],
+    ids=["child-edge-last", "parent-edge-last"],
+)
+def test_no_writer_closes_a_wait_loop_through_a_parent(family_1420, first, closing):
+    session = family_1420
+    _add_edge(session, *first)
+
+    with pytest.raises(DependencyCycleError) as refused:
+        _add_edge(session, *closing)
+
+    assert "child t1431" in str(refused.value), str(refused.value)
+    assert TicketDependencyService(session).prerequisites(closing[0]) == []
+    assert NO_WAIT_LOOP_THROUGH_A_PARENT.detect(session) == []
+
+
+def test_a_reparent_that_closes_a_wait_loop_is_refused(db_session: Session):
+    """1431 waits for 1661, which waits for 1420; moving 1431 under 1420 closes it."""
+    _rows(db_session, "t1420", "t1431", "t1661")
+    for tid, wtype in (("t1420", WorkItemType.CAPABILITY), ("t1431", WorkItemType.TASK)):
+        row = db_session.get(Ticket, tid)
+        assert row is not None
+        row.work_item_type = wtype
+        db_session.add(row)
+    db_session.commit()
+    _add_edge(db_session, "t1431", "t1661")
+    _add_edge(db_session, "t1661", "t1420")
+
+    with pytest.raises(DependencyCycleError, match="t1661"):
+        _reparent(db_session, "t1431", "t1420")
+    assert db_session.get(Ticket, "t1431").parent_ticket_id is None
+
+
+def test_waiting_on_a_cousin_is_not_a_loop(family_1420):
+    session = family_1420
+    _rows(session, "t1700")
+    _add_edge(session, "t1661", "t1431")
+    _add_edge(session, "t1700", "t1420")
+    _add_edge(session, "t1700", "t1661")
+
+    assert set(TicketDependencyService(session).prerequisites("t1700")) == {"t1420", "t1661"}
+
+
+def test_the_invariant_reports_a_loop_written_around_the_guard(family_1420):
+    session = family_1420
+    session.add(TicketDependency(ticket_id="t1661", depends_on_ticket_id="t1420"))
+    session.add(TicketDependency(ticket_id="t1431", depends_on_ticket_id="t1661"))
+    session.commit()
+
+    violations = NO_WAIT_LOOP_THROUGH_A_PARENT.detect(session)
+
+    assert violations, "a loop must be reported"
+    assert all("child t1431" in v.detail for v in violations), [v.detail for v in violations]

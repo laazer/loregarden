@@ -20,6 +20,15 @@ pool, and at these sizes that would take dozens of concurrent runs.
 **Never waits while holding.** A stage that declared a docker footprint takes
 that lease first (waiting, holding nothing), and the host lease is then a child
 of it — granted from the docker lease's own host share, never queued.
+
+**Nor behind its own orchestration.** An orchestration holds one standing host
+lease from its first gate to its last exit (`orchestration_capacity`), and the
+run is work inside it. Claimed top-level, a 0.25-cpu run queued FIFO behind a
+4-cpu pre-push suite while its own parent sat on capacity, and gave up after the
+stall window: lg-milestone-that-1425's spec twice and lg-milestone-that-1431's
+test-break on 2026-11-13. So the run is a child of that lease when one is held.
+A child never waits; one the parent cannot cover is refused at once, and the run
+then takes its ordinary place in line, exactly as it did before.
 """
 
 from __future__ import annotations
@@ -28,6 +37,7 @@ import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
@@ -39,6 +49,7 @@ from loregarden.models.domain import (
     DockerGrantState,
     DockerHolderKind,
     DockerLeaseEndReason,
+    OrchestrationRun,
     Ticket,
     Workspace,
 )
@@ -54,6 +65,7 @@ from loregarden.services.docker_leases import (
     release_lease,
     reserve,
 )
+from loregarden.services.orchestration_capacity import parent_lease_for
 from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from sqlmodel import Session
 
@@ -144,6 +156,55 @@ def host_capacity_for_run(
         release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.RUN_COMPLETED)
 
 
+def _child_of_orchestration(
+    session: Session, run: AgentRun, common: dict[str, Any]
+) -> DockerReservation | None:
+    """A grant drawn on the run's orchestration lease, or None to queue as before."""
+    if run.orchestration_run_id is None:
+        return None
+    orch_run = session.get(OrchestrationRun, run.orchestration_run_id)
+    parent = parent_lease_for(session, orch_run) if orch_run is not None else None
+    if parent is None:
+        return None
+    child = reserve_child(session, parent_lease_id=parent.id, pool=CapacityPool.HOST, **common)
+    if child.granted:
+        return child
+    logger.warning(
+        "Run %s could not draw on its orchestration's host lease (%s); queueing in line",
+        run.id,
+        child.message,
+    )
+    return None
+
+
+def _wait_in_line(
+    session: Session, run: AgentRun, common: dict[str, Any], wait_seconds: float | None
+) -> DockerReservation:
+    """The ordinary top-level claim, waiting while the line moves."""
+    reservation = reserve(session, pool=CapacityPool.HOST, takes_slot=False, **common)
+    if reservation.state is not DockerGrantState.QUEUED:
+        return reservation
+    stall = settings.agent_run_capacity_wait_seconds if wait_seconds is None else wait_seconds
+    logger.warning(
+        "Run %s is waiting in line for host capacity (giving up only if nothing "
+        "ahead finishes for %.0fs): %s",
+        run.id,
+        stall,
+        reservation.message,
+    )
+    orchestration_run_id = run.orchestration_run_id
+    return wait_while_line_moves(
+        session,
+        reservation,
+        stall_seconds=stall,
+        on_poll=(
+            (lambda: renew_orchestration_lease(session, orchestration_run_id))
+            if orchestration_run_id
+            else None
+        ),
+    )
+
+
 def _acquire(
     session: Session,
     run: AgentRun,
@@ -153,7 +214,7 @@ def _acquire(
 ) -> DockerReservation:
     cpus, memory_mb = weights
     label = f"agent run {run.agent_id} · stage {run.stage_key or '-'}"
-    common = {
+    common: dict[str, Any] = {
         "holder_label": label,
         "footprint": DockerFootprint.CUSTOM,
         "cpus": cpus,
@@ -173,29 +234,9 @@ def _acquire(
             **common,
         )
     else:
-        reservation = reserve(session, pool=CapacityPool.HOST, takes_slot=False, **common)
-        if reservation.state is DockerGrantState.QUEUED:
-            stall = (
-                settings.agent_run_capacity_wait_seconds if wait_seconds is None else wait_seconds
-            )
-            logger.warning(
-                "Run %s is waiting in line for host capacity (giving up only if nothing "
-                "ahead finishes for %.0fs): %s",
-                run.id,
-                stall,
-                reservation.message,
-            )
-            orchestration_run_id = run.orchestration_run_id
-            reservation = wait_while_line_moves(
-                session,
-                reservation,
-                stall_seconds=stall,
-                on_poll=(
-                    (lambda: renew_orchestration_lease(session, orchestration_run_id))
-                    if orchestration_run_id
-                    else None
-                ),
-            )
+        reservation = _child_of_orchestration(session, run, common) or _wait_in_line(
+            session, run, common, wait_seconds
+        )
 
     if reservation.granted:
         return reservation

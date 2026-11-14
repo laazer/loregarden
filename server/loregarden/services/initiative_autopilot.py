@@ -120,18 +120,43 @@ BREAKER_LIMIT = 3
 #: Events shown on the page and to the planner.
 RECENT_EVENTS = 8
 
+#: Picks one tick tries and fails before it stops looking. Each refusal costs
+#: git calls (prerequisites landed, the subtree startable).
+MAX_REFUSALS_PER_TICK = 12
+
 
 def select_next(
     ctx: PlanContext, max_parallel: int, retryable: frozenset[str] = frozenset()
 ) -> list[PlanNode]:
     """The tickets it would start now, in order: ready ones, and the blocked ones
-    in `retryable` (see `autopilot_retry`) once nothing they depend on is open."""
+    in `retryable` (see `autopilot_retry`) once nothing they depend on is open.
+
+    A preview: the tick itself walks `_candidates` past a pick it cannot start.
+    """
+    in_flight, candidates = _candidates(ctx, retryable)
+    # A parent's run works through its children, so a ticket whose parent or
+    # child is running, or picked this tick, would run twice.
+    taken = {n.id for n in in_flight}
+    picked: list[PlanNode] = []
+    for node in candidates:
+        if len(picked) >= max_parallel - len(in_flight):
+            break
+        if _related(ctx.graph.nodes, node) & taken:
+            continue
+        picked.append(node)
+        taken.add(node.id)
+    return picked
+
+
+def _candidates(
+    ctx: PlanContext, retryable: frozenset[str]
+) -> tuple[list[PlanNode], list[PlanNode]]:
+    """What holds a lane now, and every ticket it may start, best first."""
     graph = ctx.graph
     # A parent's plan never starts the parent itself: a childless one would be
     # its own only node, and running it is the Run button's job.
     own = [n for n in graph.nodes.values() if not n.external and n.id != ctx.initiative.id]
     in_flight = [n for n in own if n.holds_lane]
-    budget = max_parallel - len(in_flight)
     candidates = sorted(
         (
             n
@@ -149,18 +174,7 @@ def select_next(
             n.ticket.external_id,
         ),
     )
-    # A parent's run works through its children, so a ticket whose parent or
-    # child is running, or picked this tick, would run twice.
-    taken = {n.id for n in in_flight}
-    picked: list[PlanNode] = []
-    for node in candidates:
-        if len(picked) >= budget:
-            break
-        if _related(graph.nodes, node) & taken:
-            continue
-        picked.append(node)
-        taken.add(node.id)
-    return picked
+    return in_flight, candidates
 
 
 def _related(nodes: dict[str, PlanNode], node: PlanNode) -> set[str]:
@@ -231,6 +245,30 @@ def _blocked_since_enabled(session: Session, plan: InitiativePlan) -> list[Ticke
         ).all()
         if ticket.id in retried or retry_reason(session, ticket) is None
     ]
+
+
+def pause_reason_now(session: Session, plan: InitiativePlan | None) -> str:
+    """Why it stopped itself, as of now: "" when it did not.
+
+    The reason is written once, when the breaker trips, and names the tickets
+    blocked then. Those get unblocked, requeued or finished while it stays
+    off, and the stored words went on naming 782 and 1607 days after both were
+    done. So the breaker's own question is asked again here, and the answer
+    follows the stored words.
+    """
+    if plan is None or not plan.paused_reason:
+        return ""
+    still = _blocked_since_enabled(session, plan)
+    if len(still) >= BREAKER_LIMIT:
+        return plan.paused_reason
+    if not still:
+        now = "none of the tickets it started is blocked any more; turn it back on"
+    else:
+        now = (
+            f"only {', '.join(t.external_id for t in still)} still blocked, under the "
+            f"{BREAKER_LIMIT} that stop it; turn it back on once that is looked at"
+        )
+    return f"It stopped itself: {plan.paused_reason}. Since then {now}."
 
 
 def _pause(session: Session, plan: InitiativePlan, reason: str) -> None:
@@ -444,12 +482,17 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
     ctx = build_plan(session, load_plan_root(session, initiative_id), now=now or utcnow())
     lanes = QueueLaneService(session)
     retry = _retryable(session, plan, ctx)
-    dispatched = 0
-    for node in select_next(ctx, plan.max_parallel, frozenset(retry)):
-        if node.ticket.id in resuming:
-            continue
-        dispatched += int(_dispatch(session, plan, node, lanes, retry=retry.get(node.id)))
-        session.commit()
+    in_flight, candidates = _candidates(ctx, frozenset(retry))
+    dispatched, refused = _dispatch_candidates(
+        session,
+        plan,
+        ctx,
+        lanes,
+        retry,
+        resuming=resuming,
+        in_flight=in_flight,
+        candidates=candidates,
+    )
     if dispatched == 0:
         # Nothing else could start: the plan's deferred tickets get their sweep.
         dispatched = sweep_deferred(
@@ -460,7 +503,75 @@ def run_autopilot(session: Session, initiative_id: str, *, now: datetime | None 
                 session, plan, node, lanes, retry=why, retried_as=AutopilotAction.SWEEP_RETRIED
             ),
         )
+    if dispatched == 0 and refused and not in_flight:
+        _record_stalled(session, plan, refused)
     return dispatched
+
+
+def _dispatch_candidates(
+    session: Session,
+    plan: InitiativePlan,
+    ctx: PlanContext,
+    lanes: QueueLaneService,
+    retry: dict[str, str],
+    *,
+    resuming: set[str],
+    in_flight: list[PlanNode],
+    candidates: list[PlanNode],
+) -> tuple[int, list[PlanNode]]:
+    """Queue candidates until the budget is spent; returns how many, and the refused.
+
+    A pick it cannot start does not spend a slot: the next one is tried. One
+    refused pick at the head of the order used to fill the budget every tick,
+    and the refusal is logged once, so the page read "on, idle" for hours
+    with ready work behind it.
+    """
+    budget = plan.max_parallel - len(in_flight)
+    taken = {n.id for n in in_flight}
+    dispatched = 0
+    refused: list[PlanNode] = []
+    for node in candidates:
+        if len(taken) - len(in_flight) >= budget or len(refused) >= MAX_REFUSALS_PER_TICK:
+            break
+        if _related(ctx.graph.nodes, node) & taken:
+            continue
+        if node.ticket.id in resuming:
+            # Its sign-off resumes it on another thread: it holds a slot now.
+            taken.add(node.id)
+            continue
+        if _dispatch(session, plan, node, lanes, retry=retry.get(node.id)):
+            dispatched += 1
+            taken.add(node.id)
+        else:
+            refused.append(node)
+        session.commit()
+    return dispatched, refused
+
+
+def _record_stalled(session: Session, plan: InitiativePlan, refused: list[PlanNode]) -> None:
+    """Say, once while it stays true, why an autopilot that is on starts nothing.
+
+    Each refusal is logged once against its ticket, so a stall that lasts
+    hours leaves those lines behind the newer events the page shows.
+    """
+    first = refused[0].ticket
+    last = _last_event_for(session, plan.initiative_id, first.id)
+    why = last.detail if last is not None else "refused"
+    more = len(refused) - 1
+    detail = f"on, but nothing it may start can start: {first.external_id}: {why}" + (
+        f"; {more} more refused this tick" if more else ""
+    )
+    previous = session.exec(
+        select(AutopilotEvent)
+        .where(
+            AutopilotEvent.initiative_id == plan.initiative_id,
+            col(AutopilotEvent.ticket_id).is_(None),
+        )
+        .order_by(col(AutopilotEvent.created_at).desc())
+    ).first()
+    if previous is None or previous.detail != detail:
+        _record(session, plan.initiative_id, AutopilotAction.IDLE, detail=detail)
+        session.commit()
 
 
 def _retryable(session: Session, plan: InitiativePlan, ctx: PlanContext) -> dict[str, str]:
@@ -570,7 +681,7 @@ def autopilot_view(
     return AutopilotView(
         enabled=bool(plan and plan.autopilot),
         max_parallel=max_parallel,
-        paused_reason=plan.paused_reason if plan is not None else "",
+        paused_reason=pause_reason_now(session, plan),
         in_flight=sum(1 for n in ctx.graph.nodes.values() if n.holds_lane and not n.external),
         next_up=[n.id for n in select_next(ctx, max_parallel)],
         available=not settings.sandbox,

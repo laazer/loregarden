@@ -49,6 +49,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.capacity_children import reserve_child
 from loregarden.services.capacity_environment import child_environment
+from loregarden.services.capacity_errors import CapacityUnavailable
 from loregarden.services.capacity_line import (
     renew_orchestration_lease,
     retry_while_pool_moves,
@@ -79,8 +80,14 @@ class GateLease:
             release_lease(session, self.lease_id, reason=DockerLeaseEndReason.RELEASED)
 
 
-class GateCapacityUnavailable(RuntimeError):
-    """The gate's lease could not be had within its budget. Carries the reason."""
+class GateCapacityUnavailable(CapacityUnavailable):
+    """The gate's lease could not be had within its budget. Carries the reason.
+
+    A `CapacityUnavailable`, so one that escapes to a run boundary is filed as the
+    machine's block (HARNESS) and resumed when the line clears, not handed to a
+    person as WORK: the criteria check let one escape, and lg-milestone-that-1425
+    sat blocked on 'verify' for a person with nothing to decide.
+    """
 
 
 def acquire_gate_capacity(

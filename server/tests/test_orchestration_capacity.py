@@ -74,6 +74,7 @@ from loregarden.services.autopilot_sign_off import (
     signer_for_gate,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.docker_ledger import OCCUPYING, load_pool
 from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.orchestration_profile import (
@@ -594,6 +595,31 @@ def test_a_run_that_could_not_get_capacity_blocks_as_harness_not_work(
     session.refresh(runnable)
     assert runnable.state is TicketState.BLOCKED
     assert runnable.block_kind is BlockKind.HARNESS
+
+
+def test_the_run_that_waited_for_capacity_says_so_on_its_own_record(
+    session, workspace, runnable, monkeypatch
+) -> None:
+    """lg-machine-resource-2621: recorded as an orphan of a terminal parent, the
+    run's own stderr sent the triage agent after a dead driver, not a full machine."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from tests.test_capacity_host_pool import _reserve
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", CliAdapter.CLAUDE.value)
+    monkeypatch.setattr("loregarden.config.settings.agent_run_capacity_wait_seconds", 0.3)
+    assert _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=7.0).granted
+    monkeypatch.setattr(
+        CliAgentExecutor, "execute", lambda *a, **k: pytest.fail("ran without its lease")
+    )
+
+    BuiltinOrchestrator(session).execute(
+        runnable, OrchestrationProfile(slug="no-capacity", gates=GatesConfig(enabled=False))
+    )
+
+    session.expire_all()
+    (run,) = session.exec(select(AgentRun).where(AgentRun.ticket_id == runnable.id)).all()
+    assert run.status is RunStatus.FAILED
+    assert run.stderr.startswith(CAPACITY_UNAVAILABLE_PREFIX)
 
 
 @pytest.mark.parametrize("exit_path", EXECUTE_EXITS)

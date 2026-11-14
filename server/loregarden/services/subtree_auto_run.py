@@ -33,8 +33,9 @@ from loregarden.services.design_plan_gate import (
 from loregarden.services.exit_action_ledger import gate_is_operator_judgment_only
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.parent_own_work import unlanded_own_work
 from loregarden.services.studio_routing import is_terminal_stage
-from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_rollup import reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
@@ -48,11 +49,19 @@ def finalize_aggregator_ticket(
     to marking it DONE directly when it doesn't (an older instance / template drift,
     which would otherwise raise "Workflow has no done stage" and block the parent).
     A parent whose own stage is mid-flight (RUNNING/AWAITING from a pre-aggregator
-    run) is left as-is rather than force-finalized."""
+    run) is left as-is rather than force-finalized, and so is one whose own branch
+    carries work that landed nowhere: forcing its stages shut would close it
+    unlanded, so the rollup holds it blocked and says why (`parent_own_work`)."""
     if ticket.state in StateMachine.TERMINAL_TICKET_STATES or ticket.workflow_stage_status in (
         StageStatus.RUNNING,
         StageStatus.AWAITING,
     ):
+        return
+    if unlanded_own_work(session, ticket):
+        if reconcile_parent(session, ticket):
+            session.add(ticket)
+            session.commit()
+            reconcile_ancestors(session, ticket)
         return
     _, stages = orch._resolve_stages(ticket)
     if stages and any(is_terminal_stage(s) for s in stages):

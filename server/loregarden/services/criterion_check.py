@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     CriterionDisposition,
     CriterionSettlement,
     GateOutcome,
+    OrchestrationRun,
     Ticket,
 )
 from loregarden.models.domain.enums_capacity import DockerFootprint
@@ -35,9 +36,10 @@ from loregarden.services.criterion_ledger import (
     settlements_of,
     test_ids,
 )
-from loregarden.services.gate_capacity import acquire_gate_capacity
+from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.land_verification import run_verify_command
+from loregarden.services.orchestration_capacity import parent_lease_for
 from loregarden.services.orchestration_profile import (
     CriterionTestCommand,
     resolve_orchestration_profile,
@@ -156,8 +158,18 @@ def _rerun(
     root: Path,
     tests_of: dict[str, list[str]],
     check: CriteriaCheck,
+    orch_run: OrchestrationRun | None,
 ) -> None:
-    """Rerun each criterion's tests, recording failures against that criterion."""
+    """Rerun each criterion's tests, recording failures against that criterion.
+
+    Inside an orchestration the lease is a child of the run's parent, the claim
+    `run_transition_gates` makes, so it never takes a place in line behind the
+    capacity its own run already holds. A top-level claim did: the check queued
+    behind two pre-push suites and its own orchestration, and gave up after the
+    stall window (lg-milestone-that-1425). A lease that cannot be had is
+    `unavailable`, which blocks as HARNESS, never an exception that escapes the
+    run boundary as the orchestrator stopping.
+    """
     workspace = workspace_for_ticket(session, ticket)
     commands = (
         resolve_orchestration_profile(workspace).gates.criterion_test_commands if workspace else []
@@ -165,14 +177,21 @@ def _rerun(
     batches = _batches(tests_of, commands, check)
     if not batches or workspace is None:
         return
-    lease = acquire_gate_capacity(
-        session,
-        DockerFootprint.SERVICE,
-        ticket=ticket,
-        workspace=workspace,
-        transition="criteria check",
-        ttl_seconds=_LEASE_TTL_SECONDS,
-    )
+    parent = parent_lease_for(session, orch_run) if orch_run is not None else None
+    try:
+        lease = acquire_gate_capacity(
+            session,
+            DockerFootprint.SERVICE,
+            ticket=ticket,
+            workspace=workspace,
+            transition="criteria check",
+            ttl_seconds=_LEASE_TTL_SECONDS,
+            parent_lease_id=parent.id if parent is not None else None,
+            orchestration_run_id=orch_run.id if orch_run is not None else None,
+        )
+    except GateCapacityUnavailable as exc:
+        check.unavailable = str(exc)
+        return
     try:
         for criterion, command, ids in batches:
             outcome = run_verify_command(
@@ -192,8 +211,14 @@ def _rerun(
         lease.release(session)
 
 
-def check_criteria(session: Session, ticket: Ticket) -> CriteriaCheck:
-    """Every current criterion of ``ticket``, checked against its settlement at HEAD."""
+def check_criteria(
+    session: Session, ticket: Ticket, *, orch_run: OrchestrationRun | None = None
+) -> CriteriaCheck:
+    """Every current criterion of ``ticket``, checked against its settlement at HEAD.
+
+    ``orch_run`` is the orchestration running the check, whose parent host lease
+    the test rerun claims under; None outside one.
+    """
     rows = settlements_of(session, ticket)
     check = CriteriaCheck(
         gaps=[
@@ -210,5 +235,5 @@ def check_criteria(session: Session, ticket: Ticket) -> CriteriaCheck:
     root = resolve_ticket_root(session, ticket, workspace)
     met_gaps, tests_of = _met_gaps(session, root, rows)
     check.gaps.extend(met_gaps)
-    _rerun(session, ticket, root, tests_of, check)
+    _rerun(session, ticket, root, tests_of, check, orch_run)
     return check

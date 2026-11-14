@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
@@ -42,7 +42,10 @@ from loregarden.services.acceptance_criteria import guard_criteria_growth, seria
 from loregarden.services.hierarchy_service import child_count, validate_parent_assignment
 from loregarden.services.initiative_coverage import initiatives_tracking
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_dependencies import (
+    TicketDependencyService,
+    refuse_prerequisites_for_new_child,
+)
 from loregarden.services.ticket_growth_guard import guard_description_growth
 from loregarden.services.ticket_ids import assign_external_id, assign_initiative_external_id
 from loregarden.services.ticket_rollup import reconcile_lineage
@@ -110,8 +113,12 @@ class TicketService:
         is_integration_review: bool = False,
         depends_on: Sequence[Ticket] = (),
         created_by: str = "user",
+        on_insert: Callable[[Ticket], object] | None = None,
     ) -> Ticket:
         """Create a ticket, and with ``depends_on`` the prerequisites it waits for.
+
+        ``on_insert`` adds rows that must exist exactly when the ticket does
+        (a finding's discovery row): it runs before the ticket's first commit.
 
         The edges are written before the ticket can be seen by any dispatcher,
         so a ticket filed as waiting on unfinished work is never picked up
@@ -132,6 +139,7 @@ class TicketService:
                 is_integration_review=is_integration_review,
                 depends_on=depends_on,
                 created_by=created_by,
+                on_insert=on_insert,
             )
 
     def _validated_parent(
@@ -252,6 +260,7 @@ class TicketService:
         is_integration_review: bool = False,
         depends_on: Sequence[Ticket] = (),
         created_by: str = "user",
+        on_insert: Callable[[Ticket], object] | None = None,
     ) -> Ticket:
         title = title.strip()
         if not title:
@@ -298,7 +307,17 @@ class TicketService:
             workspace_slug=workspace_slug,
         )
 
+        # Every refusal before the first commit, so a refused create leaves nothing.
+        refuse_prerequisites_for_new_child(self.session, parent_ticket_id, depends_on)
         self.session.add(ticket)
+        if on_insert is not None:
+            try:
+                self.session.flush()
+                on_insert(ticket)
+            except Exception:
+                # Neither row is written: the caller's commit must not carry a half.
+                self.session.rollback()
+                raise
         ticket_id = ticket.id
         self.session.commit()
         ticket = self.session.get(Ticket, ticket_id) or ticket

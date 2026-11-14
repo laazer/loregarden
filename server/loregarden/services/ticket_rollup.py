@@ -28,6 +28,9 @@ What this will not touch:
 - Tickets with no children. A leaf's state comes from its own workflow; this
   module has nothing to say about it.
 
+And it will not close a parent whose own branch carries work that landed
+nowhere (`parent_own_work`): it holds it blocked for a person instead.
+
 An initiative is the one parent whose "children" are not only its children: it
 summarizes every top-level ticket it covers, members included
 (`initiative_coverage`). So a member's change also reconciles each initiative
@@ -47,6 +50,7 @@ from loregarden.services.initiative_coverage import (
     initiatives_tracking,
     member_initiative_ids,
 )
+from loregarden.services.parent_own_work import unlanded_own_work
 from loregarden.services.ticket_state_service import RESOLVED_STATES, derive
 from sqlmodel import Session, col, select
 
@@ -87,11 +91,16 @@ def has_children(session: Session, ticket_id: str) -> bool:
 
 
 def _child_states(session: Session, parent_id: str) -> list[TicketState]:
+    return [child.state for child in _children(session, parent_id)]
+
+
+def _children(session: Session, parent_id: str) -> list[Ticket]:
+    """What a parent summarizes: its owned children, and an initiative's members too."""
     parent = session.get(Ticket, parent_id)
     if parent is not None and parent.work_item_type == WorkItemType.INITIATIVE:
         # Its children and its members (`initiative_coverage`).
-        return [t.state for t in initiative_roots(session, [parent_id])[parent_id].roots]
-    return [child.state for child in session.exec(owned_children(parent_id)).all()]
+        return list(initiative_roots(session, [parent_id])[parent_id].roots)
+    return list(session.exec(owned_children(parent_id)).all())
 
 
 def reconcile_parent(session: Session, parent: Ticket) -> bool:
@@ -102,48 +111,138 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
     target = derive_parent_state(_child_states(session, parent.id))
     if target is None:
         return False
+    held = _held_open(session, parent, target)
+    if held:
+        target = TicketState.BLOCKED
     # `derive` owns the state_locked / wont_do guards and the bookkeeping; a
     # parent's state is a function of its children, not a move anyone chose.
     moved = derive(parent, target, actor="rollup")
+    noted = _note_own_work(parent, held)
     stamped = _stamp_tickets_kind(parent, target)
-    return _note_deferred_children(session, parent) or stamped or moved
+    return _note_deferred_children(session, parent) or noted or stamped or moved
+
+
+#: How a rollup note holding a parent open over its own unlanded work starts,
+#: so the rollup only ever clears a note it wrote.
+OWN_WORK_NOTE = "Not closed: "
+
+
+def _held_open(session: Session, parent: Ticket, target: TicketState) -> str:
+    """Why a parent the rollup would close must stay open, or "".
+
+    Asked only on the way to `done` (git is the only witness, and this is the
+    rare moment), and not of a ticket `derive` would refuse anyway.
+    """
+    if target is not TicketState.DONE or parent.state is TicketState.DONE:
+        return ""
+    if parent.state_locked or parent.state in (TicketState.WONT_DO, TicketState.PARKED):
+        return ""
+    return unlanded_own_work(session, parent)
+
+
+def _note_own_work(parent: Ticket, held: str) -> bool:
+    """Say why a parent whose children are resolved is held open. True when it changed.
+
+    Blocked for a person (`human_action`): only landing its branch or closing it
+    by hand clears it, and the next pass after a landing closes it. A block its
+    own run recorded keeps that run's kind and words.
+    """
+    ours = parent.block_kind in (None, BlockKind.TICKETS) or parent.blocking_issues.startswith(
+        OWN_WORK_NOTE
+    )
+    if held:
+        if not ours:
+            return False
+        note = f"{OWN_WORK_NOTE}{held}"
+        if parent.block_kind is BlockKind.HUMAN_ACTION and parent.blocking_issues == note:
+            return False
+        parent.block_kind = BlockKind.HUMAN_ACTION
+        parent.blocking_issues = note
+        return True
+    if not parent.blocking_issues.startswith(OWN_WORK_NOTE):
+        return False
+    parent.blocking_issues = ""
+    if parent.block_kind is BlockKind.HUMAN_ACTION:
+        parent.block_kind = None
+    return True
 
 
 #: How a rollup note naming deferred children starts, so the rollup only ever
 #: clears a note it wrote.
 DEFERRED_NOTE = "Waits on deferred "
-#: Deferred children the note names before the rest become a count.
+#: How a rollup note naming the blocked tickets under a parent starts.
+BLOCKED_UNDER_NOTE = "Blocked under it: "
+#: Tickets a note names before the rest become a count.
 _DEFERRED_NAMED = 3
+#: How much of a blocked descendant's own reason the note repeats.
+_BLOCKER_WORDS = 90
 
 
 def _note_deferred_children(session: Session, parent: Ticket) -> bool:
-    """Say which deferred children keep a rolled-up parent from done, and why.
+    """Say what keeps a rolled-up parent blocked: deferred children, else the
+    blocked tickets under it. True when it changed.
 
     A deferred child stays blocked, so the parent is blocked by the rollup
     (`ticket_deferral`); without this its card read "blocked" with no hint
-    that the block was a decision someone made. True when it changed.
+    that the block was a decision someone made. A parent blocked by any other
+    descendant read "blocked" and nothing: an initiative over 493 over 1420
+    over 1431, and the operator asked on four dates which ticket it meant.
     """
-    deferred = [
-        child for child in session.exec(owned_children(parent.id)).all() if is_deferred(child)
-    ]
-    if deferred and parent.block_kind is BlockKind.TICKETS:
-        named = "; ".join(
-            f"{child.external_id} ({child.deferred_reason})" for child in deferred[:_DEFERRED_NAMED]
-        )
-        more = (
-            f"; and {len(deferred) - _DEFERRED_NAMED} more"
-            if len(deferred) > _DEFERRED_NAMED
-            else ""
-        )
-        note = f"{DEFERRED_NOTE}{named}{more}"
-    elif parent.blocking_issues.startswith(DEFERRED_NOTE):
-        note = ""
-    else:
+    note = _rolled_up_note(session, parent) if parent.block_kind is BlockKind.TICKETS else ""
+    ours = parent.blocking_issues.startswith((DEFERRED_NOTE, BLOCKED_UNDER_NOTE))
+    if not note and not ours:
         return False
+    if note and parent.blocking_issues and not ours:
+        return False  # words the parent's own run wrote are not the rollup's to replace
     if parent.blocking_issues == note:
         return False
     parent.blocking_issues = note
     return True
+
+
+def _rolled_up_note(session: Session, parent: Ticket) -> str:
+    deferred = [child for child in _children(session, parent.id) if is_deferred(child)]
+    if deferred:
+        return DEFERRED_NOTE + _named(
+            [f"{child.external_id} ({child.deferred_reason})" for child in deferred]
+        )
+    blockers = _blocked_leaves(session, parent)
+    if not blockers:
+        return ""
+    return BLOCKED_UNDER_NOTE + _named([_blocker(leaf) for leaf in blockers])
+
+
+def _named(items: list[str]) -> str:
+    named = "; ".join(items[:_DEFERRED_NAMED])
+    rest = len(items) - _DEFERRED_NAMED
+    return named + (f"; and {rest} more" if rest > 0 else "")
+
+
+def _blocked_leaves(session: Session, parent: Ticket) -> list[Ticket]:
+    """The blocked tickets under ``parent`` that are blocked for a reason of their
+    own, not because something under them is. A cycle stops the walk."""
+    found: list[Ticket] = []
+    seen = {parent.id}
+    frontier = [parent]
+    while frontier:
+        node = frontier.pop(0)
+        for child in _children(session, node.id):
+            if child.id in seen or child.state is not TicketState.BLOCKED:
+                continue
+            seen.add(child.id)
+            if child.block_kind is BlockKind.TICKETS:
+                frontier.append(child)
+            else:
+                found.append(child)
+    return found
+
+
+def _blocker(ticket: Ticket) -> str:
+    kind = ticket.block_kind.value if ticket.block_kind is not None else "unclassified"
+    words = " ".join(ticket.blocking_issues.split())
+    if len(words) > _BLOCKER_WORDS:
+        words = words[: _BLOCKER_WORDS - 1].rstrip() + "…"
+    return f"{ticket.external_id} ({kind}: {words})" if words else f"{ticket.external_id} ({kind})"
 
 
 def _stamp_tickets_kind(parent: Ticket, target: TicketState) -> bool:

@@ -55,6 +55,7 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     AWAITING_STAGES_ARE_ASKED,
+    CAPACITY_BLOCKS_RESUME,
     CAPACITY_WAITS_ARE_NOT_WORK,
     CHECKOUTS_KEEP_THEIR_BRANCH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
@@ -66,6 +67,7 @@ from loregarden.services.invariant_registry import (
     EXHAUSTED_GATES_BLOCK,
     FINDINGS_OUTLIVE_THEIR_SOURCE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
+    FOLLOW_UPS_LEAVE_THEIR_SOURCE,
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
     LAND_VERIFICATION_RAN,
@@ -76,8 +78,11 @@ from loregarden.services.invariant_registry import (
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN,
+    NO_WAIT_LOOP_THROUGH_A_PARENT,
+    PARENTS_CLOSE_WITH_THEIR_OWN_WORK,
     PUBLISH_CARDS_CLOSE,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
+    RUN_FILINGS_ARE_FINDINGS,
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
     SURVEY_CARDS_CLOSE,
@@ -232,6 +237,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # work: re-filed as harness in the same pass (lg-machine-resource-2112).
     _invariant(UNAVAILABLE_GATES_ARE_NOT_WORK),
     _invariant(CAPACITY_WAITS_ARE_NOT_WORK),
+    # After the re-filing above, so a capacity block it just re-filed as harness
+    # is resumed in the same pass once the line is clear (lg-machine-resource-2621).
+    _invariant(CAPACITY_BLOCKS_RESUME),
     # Periodic by the same rule: it acts only on tickets still blocked on the
     # stage a network wait parked, with no orchestration behind them, and only
     # once the provider answers. It probes nothing when nothing is waiting.
@@ -280,6 +288,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # reports one that reached done some other way. Only tickets resolved since
     # the guard, so a handful of `rev-list`s a pass.
     _invariant(LANDINGS_CARRY_THE_WORK),
+    # Report-only, like the two above: a parent the rollup or the aggregator
+    # finalise closed with its own branch's work landed nowhere
+    # (lg-milestone-that-2604). Not at startup: an unlanded branch costs a
+    # superseding-commit scan per ref, memoized until a tip moves.
+    _invariant(PARENTS_CLOSE_WITH_THEIR_OWN_WORK, at_startup=False),
     # A branch that merged a squash of its integration branch conflicts on every
     # later checkout merge (lg-external-harness-1318). The next checkout repairs
     # it too; this catches the idle ones and reports one entering after #654.
@@ -315,6 +328,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After holds resume: dropping a parent-edge must not unpark a ticket whose
     # only remaining wait was the illegal one (release requires an edge).
     _invariant(NO_TICKET_DEPENDS_ON_AN_ANCESTOR),
+    _invariant(NO_WAIT_LOOP_THROUGH_A_PARENT, at_startup=False),
+    _invariant(FOLLOW_UPS_LEAVE_THEIR_SOURCE, at_startup=False),
+    _invariant(RUN_FILINGS_ARE_FINDINGS, at_startup=False),
     # Two hand repairs failed to prevent the next instance of "a ticket is done,
     # its tests landed, its implementation is missing" (lg-milestone-that-1419).
     # Report-only and bounded by its own `since`: it reads R3's land-verification

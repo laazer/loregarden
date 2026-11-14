@@ -31,9 +31,10 @@ from dataclasses import dataclass
 
 from loregarden.models.domain import Ticket, TicketDependency, TicketState
 from loregarden.services.deferral_state import is_deferred
+from loregarden.services.discovered_work import owned_children
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import TicketNotFound, resolve_one
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 #: Raised when an edge would wait on a parent (or further ancestor). Cycle
 #: detection only walks ``ticket_dependencies``; the parent→child wait is
@@ -106,6 +107,40 @@ def refuse_reparent_onto_a_prerequisite(
     ).all()
     if any(row.depends_on_ticket_id in new_ancestors for row in rows):
         raise ValueError(REPARENT_ONTO_PREREQUISITE_REFUSED)
+    # Under its new parent the subtree is waited for by every new ancestor, so
+    # one it already waits for, through edges or children, closes a loop.
+    path = wait_path(session, ticket_id, new_ancestors)
+    if path:
+        raise DependencyCycleError(
+            f"{REPARENT_ONTO_PREREQUISITE_REFUSED}: {' → '.join(path)}, and {path[-1]} would "
+            f"then wait for {path[0]}"
+        )
+
+
+def refuse_prerequisites_for_new_child(
+    session: Session, parent_id: str | None, prerequisites: Sequence[Ticket]
+) -> None:
+    """Raise before a ticket is created under ``parent_id`` if one of its
+    prerequisites would close a loop of waits.
+
+    The new ticket has no edges or children yet, so the only loop it can close
+    runs through its ancestors: each waits for it once it exists. Asked before
+    the ticket is written, so a refusal leaves nothing behind. lg-milestone-
+    that-2596 was committed first and refused after, and stayed as an ordinary
+    child of its source with no finding recorded.
+    """
+    if parent_id is None:
+        return
+    ancestors = {parent_id} | ancestor_ids(session, parent_id)
+    for prerequisite in prerequisites:
+        if prerequisite.id in ancestors:
+            raise ValueError(ANCESTOR_WAIT_REFUSED)
+        path = wait_path(session, prerequisite.id, ancestors)
+        if path:
+            raise DependencyCycleError(
+                f"{prerequisite.external_id} already waits for {path[-1]} "
+                f"({' → '.join(path)}), and a ticket under it would close the loop"
+            )
 
 
 def _subtree_ids(session: Session, root_id: str) -> set[str]:
@@ -190,11 +225,13 @@ class TicketDependencyService:
         ).first()
         if existing:
             return existing
-        # A cycle would form iff the prospective prerequisite already (transitively)
-        # depends on the dependent.
-        if self._reaches(depends_on_ticket_id, ticket_id):
+        # A cycle would form iff the prospective prerequisite already waits,
+        # by edges or through its children, for the dependent.
+        path = wait_path(self.session, depends_on_ticket_id, {ticket_id})
+        if path:
             raise DependencyCycleError(
-                f"{depends_on_ticket_id} already depends on {ticket_id}; edge would cycle"
+                f"{path[0]} already waits for {path[-1]} ({' → '.join(path)}); "
+                "this edge would close the loop and nothing in it could start"
             )
         edge = TicketDependency(
             ticket_id=ticket_id,
@@ -278,22 +315,65 @@ class TicketDependencyService:
             result[row.ticket_id].add(row.depends_on_ticket_id)
         return result
 
-    def _reaches(self, start: str, target: str) -> bool:
-        """Whether ``start`` reaches ``target`` by following depends-on edges."""
-        seen: set[str] = set()
-        stack = [start]
-        while stack:
-            current = stack.pop()
-            if current == target:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            stack.extend(
-                self.session.exec(
-                    select(TicketDependency.depends_on_ticket_id).where(
-                        TicketDependency.ticket_id == current
-                    )
-                ).all()
+
+def wait_path(session: Session, start: str, targets: set[str]) -> list[str]:
+    """How ``start`` comes to wait for one of ``targets``, or [] when it does not.
+
+    Two things make a ticket wait: a depends-on edge, and being a parent,
+    which is done only once its owned children are. Following only the edges
+    let lg-milestone-that-1661 wait for 1420 while 1431, a child of 1420,
+    waited for 1661: no edge path closes that loop, but 1420 waits for 1431,
+    and all three sat for a week (10-30). Returns the external ids along the
+    way, each child step marked, for a refusal to name.
+    """
+    came_from: dict[str, tuple[str, bool] | None] = {start: None}
+    queue = [start]
+    while queue:
+        current = queue.pop(0)
+        if current in targets:
+            return _spell(session, came_from, current)
+        prerequisites = session.exec(
+            select(TicketDependency.depends_on_ticket_id).where(
+                TicketDependency.ticket_id == current
             )
-        return False
+        ).all()
+        children = session.exec(owned_children(current)).all()
+        for nxt, is_child in [(p, False) for p in prerequisites] + [(c.id, True) for c in children]:
+            if nxt not in came_from:
+                came_from[nxt] = (current, is_child)
+                queue.append(nxt)
+    return []
+
+
+@dataclass(frozen=True)
+class WaitLoop:
+    """One edge whose prerequisite already waits for its dependent."""
+
+    edge: TicketDependency
+    path: list[str]
+
+
+def wait_loops(session: Session) -> list[WaitLoop]:
+    """Every edge that closes a loop of waits, through edges or children."""
+    found: list[WaitLoop] = []
+    for edge in session.exec(select(TicketDependency)).all():
+        path = wait_path(session, edge.depends_on_ticket_id, {edge.ticket_id})
+        if path:
+            found.append(WaitLoop(edge=edge, path=path))
+    return found
+
+
+def _spell(session: Session, came_from: dict[str, tuple[str, bool] | None], end: str) -> list[str]:
+    steps: list[tuple[str, bool]] = []
+    cursor: str | None = end
+    while cursor is not None:
+        back = came_from[cursor]
+        steps.append((cursor, back[1] if back else False))
+        cursor = back[0] if back else None
+    steps.reverse()
+    names = dict(
+        session.exec(
+            select(Ticket.id, Ticket.external_id).where(col(Ticket.id).in_([t for t, _ in steps]))
+        ).all()
+    )
+    return [f"{'child ' if is_child else ''}{names.get(tid, tid)}" for tid, is_child in steps]

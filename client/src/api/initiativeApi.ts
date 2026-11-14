@@ -165,7 +165,8 @@ export type AutopilotAction =
   | "stopped"
   | "sweep"
   | "swept"
-  | "sweep_end";
+  | "sweep_end"
+  | "idle";
 
 /** Stop at a fixed instant ("run until 07:00"); spent once it fires. */
 export interface DeadlineStop {
