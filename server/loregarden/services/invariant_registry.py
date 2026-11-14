@@ -80,6 +80,10 @@ from loregarden.services.scope_invariants import (
     FINDINGS_OUTLIVE_THEIR_SOURCE,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
 )
+from loregarden.services.settled_hold_checks import (
+    reblock_settled_violations,
+    settled_hold_violations,
+)
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
@@ -1131,6 +1135,23 @@ HELD_REPAIRS_READ_IN_PROGRESS = Invariant(
 )
 
 
+SETTLED_HOLDS_READ_BLOCKED = Invariant(
+    name="settled_holds_read_blocked",
+    ticket="lg-milestone-that-1420",
+    statement=(
+        "no ticket whose lane hold ended without its repair reads in progress with nothing "
+        "running it"
+    ),
+    detect=settled_hold_violations,
+    repair=reblock_settled_violations,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 14),
+    prevented_by=(
+        "server/tests/test_held_repairs_settle_blocked.py::"
+        "test_every_way_a_hold_settles_leaves_the_ticket_blocked"
+    ),
+)
+
 DONE_TICKET_SHIP_IS_OBSERVABLE = Invariant(
     # Spelled out, not imported: `pr_fix_coverage_check` reads names off this
     # file without importing it. test_done_ticket_ship finds it by
@@ -1419,6 +1440,7 @@ TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS = Invariant(
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     HELD_REPAIRS_READ_IN_PROGRESS,
+    SETTLED_HOLDS_READ_BLOCKED,
     EXHAUSTED_GATES_BLOCK,
     EVERY_BLOCK_IS_SETTLED,
     UNAVAILABLE_GATES_ARE_NOT_WORK,

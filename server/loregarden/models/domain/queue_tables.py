@@ -22,6 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
+from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.enums import (
     QueueEntryKind,
     QueuePosition,
@@ -124,6 +125,13 @@ class QueuedRun(SQLModel, table=True):
     #: wall-clock cap is measured from here, so it starts fresh for each hold
     #: rather than aging across the run that the last repair bought.
     repairing_since: datetime | None = None
+    #: The kind of block the current hold re-armed, or null. Re-arming clears
+    #: `Ticket.block_kind` (the stage is no longer blocked), so a hold that ends
+    #: without its repair restores the kind from here (`queue_repair_settle`).
+    held_block_kind: BlockKind | None = Field(
+        default=None,
+        sa_column=str_enum_column(BlockKind, None, nullable=True),
+    )
     estimated_start_at: datetime | None = None
     promoted_at: datetime | None = None
     started_at: datetime | None = None
