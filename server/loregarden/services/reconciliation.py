@@ -86,6 +86,7 @@ from loregarden.services.invariant_registry import (
     RUN_FILINGS_ARE_FINDINGS,
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
+    SETTLED_HOLDS_READ_BLOCKED,
     SURVEY_CARDS_CLOSE,
     SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
     TICKET_BRANCHES_HOLD_HISTORY,
@@ -191,6 +192,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # state, so either order gives the same answer.
     _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
     SweepStep("reconcile_lanes", _reconcile_lanes),
+    # After the lanes are driven, which is where a hold settles: a settled hold
+    # whose stage is still re-armed is blocked again here (1420).
+    _invariant(SETTLED_HOLDS_READ_BLOCKED),
     # Periodic by the same rule: it consults liveness predicates (a pid, the
     # run behind the lease, and docker itself) rather than assuming everything
     # in flight is an orphan. It also never frees a lease it could not verify,

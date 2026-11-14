@@ -338,6 +338,12 @@ BLOCK_WRITERS: dict[str, str] = {
     "services/run_completion.py:advance_stage_after_run": "settles",
     "services/run_completion.py:_block_on_report": "settles",
     "services/run_service.py:settle_stranded_stages": "settles",
+    "services/queue_repair_settle.py:reblock_settled": (
+        "exempt: it restores a block that was already settled when it first blocked, with the "
+        "kind recorded then; the lane hold that re-armed it was that settlement's repair, and "
+        "it only ends once the hold's caps refuse another attempt, so a fresh settlement would "
+        "arm the very repair turn that was just refused"
+    ),
     "services/criterion_gate.py:_block": "delegates: orchestration_callbacks.block_ticket",
     "services/readiness_gate.py:block_if_unready": "delegates: orchestration_callbacks.block_ticket",
     "services/stage_retry_budget.py:enforce_stage_retry_budget": (

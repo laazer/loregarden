@@ -60,6 +60,7 @@ from loregarden.services.queue_repair import (
     rerun_refusal,
     resolve_repair_route,
 )
+from loregarden.services.queue_repair_settle import reblock_settled
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.slot_claim_healing import (
     claim_orphaned_orchestrations,
@@ -984,6 +985,12 @@ class QueueLaneService:
         self.session.commit()
         if slot is not None:
             release_slot(self.session, slot)
+        # After the release, so a ticket that restarted elsewhere is seen holding
+        # that lane, and before the next head starts, which may be this ticket.
+        ticket = self.session.get(Ticket, entry.ticket_id)
+        if ticket is not None:
+            reblock_settled(self.session, entry, ticket)
+        if slot is not None:
             self.start_lane_head(slot.slot_number)
 
     def _slot_holding(self, entry: QueuedRun) -> AgentSlot | None:

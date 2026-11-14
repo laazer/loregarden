@@ -192,9 +192,13 @@ def hold_for_repair(session: Session, entry: QueuedRun, ticket: Ticket, route: R
     one for half a minute. Re-armed, it reads in progress from the moment it is
     held. An interrupted stage is left as it is (`prepare_rerun` says why).
     """
+    # Read before the re-arm clears it: a hold that ends without its repair
+    # puts this kind back (`queue_repair_settle.reblock_settled`).
+    held_kind = ticket.block_kind
     refused = prepare_rerun(session, ticket)
     if refused:
         return refused
+    entry.held_block_kind = held_kind
     begin_repair(entry, route)
     session.add(entry)
     session.commit()
