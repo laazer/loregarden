@@ -20,7 +20,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
-from loregarden.services.ticket_rollup import has_children
+from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from sqlmodel import Session, col, select
@@ -362,7 +362,7 @@ class WorkflowService:
         ticket.workflow_stage_key = first_stage.key
         ticket.workflow_stage_status = StageStatus.PENDING
         reconcile_workflow_state(
-            ticket, instance, stages, owns_state=not has_children(self.session, ticket.id)
+            ticket, instance, stages, owns_state=not has_owned_children(self.session, ticket.id)
         )
         self.session.add(instance)
         self.session.add(ticket)
@@ -402,7 +402,7 @@ class WorkflowService:
                 instance.template_version = template.version
                 instance.stages_json = initial_stages_json(stages)
             reconcile_workflow_state(
-                ticket, instance, stages, owns_state=not has_children(self.session, ticket.id)
+                ticket, instance, stages, owns_state=not has_owned_children(self.session, ticket.id)
             )
             self.session.add(instance)
             self.session.add(ticket)

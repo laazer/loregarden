@@ -33,7 +33,7 @@ from loregarden.services.ticket_deferral import (
     undefer_ticket,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
-from loregarden.services.ticket_rollup import DEFERRED_NOTE, reconcile_parent
+from loregarden.services.ticket_rollup import BLOCKED_UNDER_NOTE, DEFERRED_NOTE, reconcile_parent
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
 from tests.test_initiative_graph import (  # noqa: F401 - fixtures are used by name
@@ -180,7 +180,12 @@ def test_taking_the_deferral_back_clears_the_parents_note(db_session, tree):
     undefer_ticket(db_session, blocker, actor="t")
 
     db_session.refresh(root)
-    assert root.blocking_issues == ""
+    assert not root.blocking_issues.startswith(DEFERRED_NOTE)
+    # Still blocked by the same child, now for its own reason, and the note says so.
+    db_session.refresh(blocker)
+    assert (root.state, blocker.state) == (TicketState.BLOCKED, TicketState.BLOCKED)
+    assert root.blocking_issues.startswith(BLOCKED_UNDER_NOTE)
+    assert blocker.external_id in root.blocking_issues
     assert TicketDependencyService(db_session).unmet_prerequisites(tree[2].id) != []
 
 

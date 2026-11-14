@@ -110,6 +110,7 @@ export const AUTOPILOT_ACTION_LABEL: Record<AutopilotAction, string> = {
   sweep: "Began a sweep of deferred tickets",
   swept: "Retried a deferred ticket",
   sweep_end: "Stopped sweeping deferred tickets",
+  idle: "Nothing could start",
 };
 
 /** "Oct 2, 14:05" — when an autopilot event happened. */

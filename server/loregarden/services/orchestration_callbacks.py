@@ -37,6 +37,7 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
+from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.discovered_work import refuse_undecided
 from loregarden.services.finding_bar import settle_stage_claim
@@ -252,7 +253,20 @@ class OrchestrationCallbackService:
         self._release_execution_lane(run)
 
     def _fail_in_flight_children(self, orch_run: OrchestrationRun) -> None:
-        """Fail leftover agent runs so they stop reading as live work."""
+        """Fail leftover agent runs so they stop reading as live work.
+
+        A run left in flight because the orchestration ended on a capacity wait
+        never started: it is the run that waited. It is failed with that
+        message, not the generic orphan one, so the run's own record names the
+        cause. Recorded as an orphan, lg-milestone-that-1425's spec runs read as
+        "parent orchestration is already terminal" and sent the triage agent
+        looking for a dead driver instead of a full machine.
+        """
+        stderr = (
+            orch_run.error_message
+            if orch_run.error_message.startswith(CAPACITY_UNAVAILABLE_PREFIX)
+            else ORPHAN_OF_TERMINAL_ORCH_MESSAGE
+        )
         children = self.session.exec(
             select(AgentRun)
             .where(AgentRun.orchestration_run_id == orch_run.id)
@@ -279,7 +293,7 @@ class OrchestrationCallbackService:
             self.orch.complete_run(
                 child,
                 status=RunStatus.FAILED,
-                stderr=ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+                stderr=stderr,
                 advance_workflow=False,
             )
 

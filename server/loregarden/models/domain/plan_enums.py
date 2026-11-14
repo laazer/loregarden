@@ -144,6 +144,9 @@ class AutopilotAction(StrEnum):
     #: Stopped sweeping: the last sweep finished nothing, or the bound was
     #: reached. The detail lists the deferred tickets that remain.
     SWEEPS_ENDED = "sweep_end"
+    #: On, with nothing in flight, and every ticket it tried this tick refused.
+    #: The detail names the first and why; recorded once while it stays true.
+    IDLE = "idle"
 
 
 class AutopilotStopKind(StrEnum):

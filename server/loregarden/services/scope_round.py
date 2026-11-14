@@ -24,6 +24,8 @@ are deferred, recorded on the ticket's history, and the ticket goes on.
 
 from __future__ import annotations
 
+import logging
+
 from loregarden.agents.registry import SPEC_AGENT_ID
 from loregarden.models.domain import (
     FindingDecision,
@@ -41,6 +43,7 @@ from loregarden.models.domain import (
 from loregarden.models.domain.stage_types import StageType
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.discovered_work import undecided, undecided_findings_of
+from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.rework_feedback import latest_rework_context, record_rework_feedback
@@ -53,6 +56,8 @@ from loregarden.services.workflow_state import (
     set_stage_status,
 )
 from sqlmodel import Session, col, func, select
+
+logger = logging.getLogger(__name__)
 
 #: Rounds in which a ticket may amend its own criteria. One round is the spec
 #: missing an instance of its own class; a second is a reviewer seeing what
@@ -165,20 +170,39 @@ def decide_finding(
     reason: str,
     decided_by: str,
     criterion: str = "",
+    revise: bool = False,
 ) -> TicketDiscovery:
     """Record the scope decision on one finding and apply it. Commits.
 
     ``criterion`` is required for AMEND: it is what the source ticket will be
     held to. ``decided_by`` is ``run:<id>`` for a spec run, which is what
     `MAX_AMEND_ROUNDS` counts.
+
+    ``revise`` changes a decision already made: a wrong `follow_up` had no way
+    back but closing the finding and filing it again (lg-milestone-that-2604).
+    The row keeps who changed it, why, and what it was.
     """
-    discovery = undecided(session, finding.id)
-    if discovery is None:
-        raise ValueError(f"{finding.external_id} is not a finding waiting for a scope decision")
     if not reason.strip():
         raise ValueError("A reason is required: it is the record of why this was decided.")
+    discovery = undecided(session, finding.id)
+    previous = ""
+    if discovery is None:
+        discovery = _revisable(session, finding, decision, revise=revise)
+        previous = (
+            f" (revised from {discovery.decision.value if discovery.decision else 'undecided'}"
+            f" by {discovery.decided_by or 'unknown'}: {discovery.decision_reason})"
+        )
     orch = OrchestrationService(session)
     source = session.get(Ticket, discovery.source_ticket_id)
+    if decision is FindingDecision.FOLLOW_UP:
+        _beside_its_source(session, finding, source)
+    if previous and finding.state is TicketState.WONT_DO and decision in _OPEN_DECISIONS:
+        # It was dropped; real work again, so it is open and its state is derived.
+        orch.update_ticket_manual(
+            finding, UpdateTicketRequest(state=TicketState.BACKLOG, auto_state=True)
+        )
+        finding.blocking_issues = ""
+        session.add(finding)
     if decision is FindingDecision.AMEND:
         if not criterion.strip():
             raise ValueError("amend needs the criterion the source ticket will be held to")
@@ -208,10 +232,79 @@ def decide_finding(
     discovery.decision = decision
     discovery.decided_at = utcnow()
     discovery.decided_by = decided_by
-    discovery.decision_reason = reason.strip()
+    discovery.decision_reason = reason.strip() + previous
     session.add(discovery)
     session.commit()
+    if previous:
+        logger.warning(
+            "Scope decision on %s revised to %s by %s%s",
+            finding.external_id,
+            decision.value,
+            decided_by,
+            previous,
+        )
     return discovery
+
+
+#: Decisions under which a finding is work that stays open.
+_OPEN_DECISIONS = (FindingDecision.FOLLOW_UP, FindingDecision.DEFER)
+
+
+def _revisable(
+    session: Session, finding: Ticket, decision: FindingDecision, *, revise: bool
+) -> TicketDiscovery:
+    """The decided finding row ``revise`` may change, or why it may not."""
+    decided = session.exec(
+        select(TicketDiscovery)
+        .where(
+            TicketDiscovery.filed_ticket_id == finding.id,
+            col(TicketDiscovery.decision).is_not(None),
+        )
+        .order_by(col(TicketDiscovery.filed_at).desc())
+    ).first()
+    if decided is None or decided.decision is None:
+        raise ValueError(f"{finding.external_id} is not a finding waiting for a scope decision")
+    if not revise:
+        raise ValueError(
+            f"{finding.external_id} was already decided {decided.decision.value}; to change "
+            "that, decide it again with revise=true and say why."
+        )
+    if decided.decision is decision:
+        raise ValueError(f"{finding.external_id} is already decided {decision.value}.")
+    if decided.decision is FindingDecision.AMEND:
+        raise ValueError(
+            f"{finding.external_id} was folded into its source as a criterion. Remove that "
+            "criterion from the source first; a revision cannot take it back."
+        )
+    if finding.state is TicketState.DONE:
+        raise ValueError(f"{finding.external_id} is done; its scope is no longer a decision.")
+    return decided
+
+
+def _beside_its_source(session: Session, finding: Ticket, source: Ticket | None) -> None:
+    """Move a follow-up out from under its source, to the parent that owns it.
+
+    Under its source, a follow-up is the source's owned child, and a parent
+    never runs its own stages: lg-milestone-that-1420 sat at verify with 1431
+    under it. Filings now go beside their source (`place_finding`); this is
+    for one filed before that, or by hand.
+    """
+    if source is None or finding.parent_ticket_id != source.id:
+        return
+    if source.parent_ticket_id is None:
+        raise ValueError(
+            f"{source.external_id} has no parent to own a follow-up of it. Decide "
+            f"{finding.external_id} amend, defer or drop."
+        )
+    try:
+        reparent_ticket(session, finding, source.parent_ticket_id)
+    except ValueError as exc:
+        raise ValueError(
+            f"follow_up would leave {finding.external_id} under {source.external_id}, so "
+            f"{source.external_id} could never run its own stages again, and it cannot "
+            f"move to {source.external_id}'s parent: {exc}. Decide it amend, defer or drop, "
+            "or file it again beside its source."
+        ) from exc
 
 
 def _same_round(session: Session, source_id: str, decided_by: str) -> bool:

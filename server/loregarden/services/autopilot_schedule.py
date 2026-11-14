@@ -31,6 +31,7 @@ from loregarden.models.domain import (
 from loregarden.services.autopilot_timing import load_schedule, save_schedule
 from loregarden.services.initiative_autopilot import (
     AutopilotRefusedError,
+    pause_reason_now,
     run_autopilot,
     set_autopilot,
     stop_autopilot,
@@ -60,8 +61,8 @@ def _start(session: Session, plan: InitiativePlan, why: str) -> bool:
         _refuse(
             session,
             plan,
-            f"did not start for {why}: it stopped itself ({plan.paused_reason}); "
-            "turn it back on by hand once that is looked at",
+            f"did not start for {why}: it stopped itself, and only a person turns it back "
+            f"on ({pause_reason_now(session, plan)})",
         )
         return False
     try:

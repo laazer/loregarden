@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from typing import Any
 
 from sqlmodel import Session
@@ -98,10 +99,12 @@ from loregarden.services.acceptance_criteria import (
 from loregarden.services.agent_ticket_filing import (
     check_filing_budget,
     filing_run,
+    place_finding,
     record_filing,
 )
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.dependency_hold import admit_named_start
+from loregarden.services.discovered_work import record_discovery
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -1163,8 +1166,17 @@ def _create_ticket(
     prerequisites = resolve_prerequisites(session, arguments.get("depends_on") or [])
 
     run = filing_run(session, run_id) if orchestrated else None
+    placed = ""
+    on_insert = None
     if run is not None:
         check_filing_budget(session, run)
+        on_insert = partial(record_discovery, session, run)
+        placement = place_finding(session, run, parent_ticket_id, work_item_type)
+        parent_ticket_id, work_item_type, placed = (
+            placement.parent_ticket_id,
+            placement.work_item_type,
+            placement.moved,
+        )
 
     ticket = TicketService(session).create_ticket(
         workspace_slug=arguments.get("workspace_slug"),
@@ -1177,6 +1189,7 @@ def _create_ticket(
         external_id=arguments.get("external_id", ""),
         depends_on=prerequisites,
         created_by="agent" if run is not None else "user",
+        on_insert=on_insert,
     )
     if run is not None:
         record_filing(session, run, ticket)
@@ -1189,6 +1202,7 @@ def _create_ticket(
             # string than the one it sent.
             "legacy_external_id": ticket.legacy_external_id,
             "title": ticket.title,
+            **({"placed": placed} if placed else {}),
         },
         indent=2,
     )

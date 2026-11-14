@@ -16,6 +16,7 @@ import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Workspace
 from loregarden.services import integration_merge_agent
 from loregarden.services.branch_names import resolve_ticket_branch
+from loregarden.services.branch_replay import replay_own_commits
 from loregarden.services.branch_takes_target import MergeTurnSeat, take_target
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_merge_noco import squash_twin
@@ -355,3 +356,183 @@ def test_without_a_seat_a_conflict_still_blocks_and_runs_no_turn(
     assert _sha(repo, branch) == tip
     assert _merge_runs(session, ticket) == []
     assert len(git(repo, "worktree", "list").stdout.splitlines()) == 1, "no tree was cut"
+
+
+# --- the branch carries history its target squashed away: its own commits replayed -----
+
+
+def _land(repo: Path, onto: str, filename: str, content: str) -> str:
+    """A ticket's commit merged into ``onto`` with a merge commit, as `land_ticket` does."""
+    work = git(repo, "commit-tree", _sha(repo, f"{onto}^{{tree}}"), "-p", onto, "-m", "work")
+    side = work.stdout.strip()
+    git(repo, "branch", "-f", "tmp-land", side)
+    commit_on(repo, "tmp-land", filename, content)
+    merged = git(repo, "merge-tree", "--write-tree", onto, "tmp-land").stdout.split()[0]
+    landed = git(
+        repo, "commit-tree", merged, "-p", onto, "-p", "tmp-land", "-m", f"Land {filename}"
+    ).stdout.strip()
+    git(repo, "branch", "-f", onto, landed)
+    git(repo, "branch", "-D", "tmp-land")
+    return landed
+
+
+def _squash_and_move(repo: Path, snapshot: str) -> None:
+    """What publishing a tree does to its integration branch (#621): one commit on
+    `main` holding ``snapshot``'s tree, and the branch moved there."""
+    squash = git(
+        repo, "commit-tree", _sha(repo, f"{snapshot}^{{tree}}"), "-p", "main", "-m", "publish"
+    ).stdout.strip()
+    git(repo, "branch", "-f", INTEGRATION, squash)
+    commit_on(repo, INTEGRATION, "shared.txt", "landed\nedited after the squash\n")
+
+
+@pytest.fixture(name="presquashed")
+def presquashed_fixture(repo, ticket):
+    """1424's shape, 2026-11-13: cut from an integration branch that was then
+    squashed onto `main` and moved, so the branch carries the old history, and
+    a merge of its target conflicts on files only that history touched."""
+    branch = resolve_ticket_branch(ticket)
+    git(repo, "branch", INTEGRATION, "main")
+    _land(repo, INTEGRATION, "shared.txt", "landed\n")
+    git(repo, "branch", branch, INTEGRATION)
+    own = commit_on(repo, branch, "own.txt", "the ticket's work\n")
+    _land(repo, INTEGRATION, "other.txt", "landed after the cut\n")
+    _squash_and_move(repo, INTEGRATION)
+    probe = _merge_tree_names(repo, branch, INTEGRATION)
+    assert probe.returncode == 1 and "shared.txt" in probe.stdout, "fixture: must conflict"
+    return branch, own
+
+
+def _assert_replayed(path: Path, own: str) -> None:
+    assert _sha(path, "HEAD~1") == _sha(path, INTEGRATION), "one commit, on the target"
+    assert (path / "own.txt").read_text() == "the ticket's work\n"
+    assert (path / "shared.txt").read_text() == "landed\nedited after the squash\n"
+    assert (path / "other.txt").read_text() == "landed after the cut\n"
+    fmt = "--format=%an <%ae> %aI %s"
+    assert git(path, "log", "-1", fmt, "HEAD").stdout == git(path, "log", "-1", fmt, own).stdout
+    assert own in git(path, "log", "-1", "--format=%B", "HEAD").stdout
+    assert _clean(path), git(path, "status", "--porcelain").stdout
+
+
+def test_a_branch_carrying_a_squashed_history_replays_its_own_commits_in_the_checkout(
+    session, workspace, ticket, repo, presquashed
+):
+    branch, own = presquashed
+
+    ensure_ticket_branch(
+        repo,
+        ticket,
+        start_point=INTEGRATION,
+        seat=MergeTurnSeat(session, workspace, ticket),
+        session=session,
+    )
+
+    assert head_branch(repo) == branch
+    _assert_replayed(repo, own)
+    assert _sha(repo, f"{branch}@{{1}}") == own, "the old tip stays in the reflog"
+    assert _merge_runs(session, ticket) == [], "no agent turn for history alone"
+
+
+def test_a_branch_carrying_a_squashed_history_replays_before_its_worktree_is_cut(
+    session, workspace, ticket, repo, presquashed
+):
+    _branch, own = presquashed
+    run = make_run(session, workspace, ticket, "r1")
+
+    tree = WorktreeService(session, repo_path=str(repo)).get_or_create_for_ticket(
+        ticket, run.id, parent_branch=INTEGRATION, seat=MergeTurnSeat(session, workspace, ticket)
+    )
+
+    assert tree is not None
+    _assert_replayed(Path(tree.worktree_path), own)
+    assert _merge_runs(session, ticket) == []
+
+
+@pytest.fixture(name="lost_below")
+def lost_below_fixture(repo, ticket):
+    """1424's real case: its old history also carries 1316's landing, which the
+    squash of its target left out, so the branch is the last place that work is."""
+    branch = resolve_ticket_branch(ticket)
+    git(repo, "branch", INTEGRATION, "main")
+    kept = _land(repo, INTEGRATION, "shared.txt", "landed\n")
+    _land(repo, INTEGRATION, "lost.txt", "landed, then squashed away\n")
+    git(repo, "branch", branch, INTEGRATION)
+    tip = commit_on(repo, branch, "own.txt", "the ticket's work\n")
+    git(repo, "branch", "kept-line", kept)
+    _land(repo, "kept-line", "other.txt", "landed after the cut\n")
+    _squash_and_move(repo, "kept-line")
+    assert squash_twin(repo, tip, _sha(repo, INTEGRATION)) is None, "fixture: no twin"
+    return branch, tip
+
+
+def _take_with_a_seat(repo: Path, session, workspace, ticket) -> str:
+    with pytest.raises(ValueError, match="could not take") as raised:
+        ensure_ticket_branch(
+            repo,
+            ticket,
+            start_point=INTEGRATION,
+            seat=MergeTurnSeat(session, workspace, ticket),
+            session=session,
+        )
+    return str(raised.value)
+
+
+def test_history_holding_work_its_target_lacks_is_not_replayed_away(
+    session, workspace, ticket, repo, lost_below
+):
+    branch, tip = lost_below
+
+    why = _take_with_a_seat(repo, session, workspace, ticket)
+
+    assert "lost.txt" in why and "not replayed" in why, why
+    assert _sha(repo, branch) == tip, "the branch keeps the only copy"
+    [run] = _merge_runs(session, ticket)
+    assert run.status == RunStatus.FAILED, "the merge turn still had its chance"
+
+
+def test_a_merge_of_work_its_target_lacks_is_not_replayed_away(
+    session, workspace, ticket, repo, presquashed
+):
+    """A refresh merged into the branch counts as history it would leave behind."""
+    branch, _own = presquashed
+    git(repo, "branch", "side", "main")
+    side = commit_on(repo, "side", "lost.txt", "only ever merged into the ticket\n")
+    merged = git(repo, "merge-tree", "--write-tree", branch, side).stdout.split()[0]
+    refresh = git(
+        repo, "commit-tree", merged, "-p", branch, "-p", side, "-m", "Refresh"
+    ).stdout.strip()
+    git(repo, "branch", "-f", branch, refresh)
+    tip = commit_on(repo, branch, "own2.txt", "more of the ticket's work\n")
+
+    why = _take_with_a_seat(repo, session, workspace, ticket)
+
+    assert "lost.txt" in why, why
+    assert _sha(repo, branch) == tip
+
+
+def test_an_own_commit_that_conflicts_with_the_target_goes_to_the_turn(
+    session, workspace, ticket, repo, presquashed
+):
+    branch, _own = presquashed
+    tip = commit_on(repo, branch, "shared.txt", "landed\nthe ticket's own edit\n")
+
+    why = _take_with_a_seat(repo, session, workspace, ticket)
+
+    assert "does not apply to its target: shared.txt" in why, why
+    assert _sha(repo, branch) == tip
+    [run] = _merge_runs(session, ticket)
+    assert run.status == RunStatus.FAILED
+
+
+def test_an_own_commit_the_target_already_holds_is_not_replayed(repo, presquashed):
+    branch, own = presquashed
+    commit_on(repo, branch, "other.txt", "landed after the cut\n")
+
+    replay = replay_own_commits(repo, _sha(repo, branch), _sha(repo, INTEGRATION), "main")
+
+    assert replay.replayed == 1
+    assert _sha(repo, f"{replay.sha}~1") == _sha(repo, INTEGRATION)
+    assert (
+        git(repo, "show", "-s", "--format=%s", replay.sha).stdout
+        == git(repo, "show", "-s", "--format=%s", own).stdout
+    )

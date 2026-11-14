@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     CliAdapter,
     DockerFootprint,
     DockerGrantState,
+    DockerHolderKind,
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
@@ -42,7 +43,7 @@ from loregarden.services.run_capacity import (
 from loregarden.services.run_service import RunService
 from loregarden.services.stage_docker_capacity import docker_capacity_for_stage
 from sqlmodel import Session, select
-from tests.factories import make_agent_run, make_ticket, make_workspace
+from tests.factories import make_agent_run, make_orchestration_run, make_ticket, make_workspace
 from tests.test_capacity_host_pool import _reserve, _set_ceiling
 
 
@@ -214,3 +215,58 @@ def test_dispatch_holds_the_lease_while_the_agent_executes(session, pools) -> No
     assert seen == [DockerLeaseStatus.HELD]
     assert [lease.status for lease in _run_leases(session, run)] == [DockerLeaseStatus.RELEASED]
     assert docker_leases.load_pool(session, CapacityPool.HOST).held_cpus == 0
+
+
+def _orchestration_parent(session, run, *, cpus: float, memory_mb: int) -> DockerLease:
+    """The standing host lease `orchestration_capacity` holds for the run's orchestration."""
+    orch = make_orchestration_run(
+        session,
+        workspace_id=run.workspace_id,
+        ticket_id=make_ticket(session, workspace_id=run.workspace_id).id,
+    )
+    run.orchestration_run_id = orch.id
+    session.add(run)
+    session.commit()
+    parent = docker_leases.reserve(
+        session,
+        holder_label="orchestration parent",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=cpus,
+        memory_mb=memory_mb,
+        pool=CapacityPool.HOST,
+        holder_kind=DockerHolderKind.ORCHESTRATION,
+        orchestration_run_id=orch.id,
+        takes_slot=False,
+    )
+    assert parent.granted, "the fixture's premise"
+    lease = session.get(DockerLease, parent.lease_id)
+    assert lease is not None
+    return lease
+
+
+def test_a_run_draws_on_its_orchestrations_lease_instead_of_queueing_behind_it(
+    session, run
+) -> None:
+    """lg-machine-resource-2621: a 0.25-cpu run waited in line behind a 4-cpu
+    pre-push while its own orchestration held the capacity it needed."""
+    _set_ceiling(session, CapacityPool.HOST, cpus=4, memory_mb=8192, leases=4)
+    parent = _orchestration_parent(session, run, cpus=0.5, memory_mb=1024)
+    assert _reserve(session, CapacityPool.HOST, label="pre-push", cpus=3.5).granted
+
+    with host_capacity_for_run(session, run, wait_seconds=0.3) as reservation:
+        assert reservation is not None and reservation.granted
+        (lease,) = _run_leases(session, run)
+        assert lease.parent_lease_id == parent.id
+
+    (lease,) = _run_leases(session, run)
+    assert lease.status is DockerLeaseStatus.RELEASED
+
+
+def test_a_run_its_orchestration_cannot_cover_still_waits_in_line(session, run) -> None:
+    _set_ceiling(session, CapacityPool.HOST, cpus=4, memory_mb=8192, leases=4)
+    _orchestration_parent(session, run, cpus=0.1, memory_mb=128)
+    assert _reserve(session, CapacityPool.HOST, label="pre-push", cpus=3.9).granted
+
+    with pytest.raises(HostCapacityUnavailable, match="the line stopped moving"):
+        with host_capacity_for_run(session, run, wait_seconds=0.3):
+            pytest.fail("the run started without its lease")

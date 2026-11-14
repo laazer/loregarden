@@ -1075,8 +1075,12 @@ def record_blocking_issue(
 ) -> str:
     """Cap what lands in ticket.blocking_issues, which the workflow pane
     renders verbatim — raw agent/gate output over the inline limit is filed
-    as an error artifact for the Timeline tab instead, leaving a short pointer
-    here so the pane stays readable.
+    as an error artifact for the Timeline tab instead, leaving its opening
+    words and a pointer here so the pane stays readable.
+
+    The opening words stay because the pointer alone names no cause: "Stage
+    'spec' hit a blocking issue — see the Timeline tab" was all the board said
+    about lg-milestone-that-1424 and -1431, and the operator had to open each.
 
     ``run_id`` is an ``agent_runs`` id or None. An orchestration run is not an
     agent run: passing one here files an artifact no run-scoped query can find,
@@ -1100,7 +1104,19 @@ def record_blocking_issue(
         },
     )
     pointer = f"Stage '{stage_key}'" if stage_key else "This stage"
-    return f"{pointer} {BLOCKING_POINTER_PHRASE} for details."
+    tail = f" … ({pointer} {BLOCKING_POINTER_PHRASE} for the rest.)"
+    return _opening(message, BLOCKING_ISSUE_INLINE_LIMIT - len(tail)) + tail
+
+
+def _opening(message: str, budget: int) -> str:
+    """The message's first ``budget`` characters, whitespace collapsed, cut at a word."""
+    flat = " ".join(message.split())
+    budget = max(0, budget)
+    if len(flat) <= budget:
+        return flat
+    cut = flat[:budget]
+    space = cut.rfind(" ")
+    return cut[:space] if space > budget // 2 else cut
 
 
 @dataclass(frozen=True)

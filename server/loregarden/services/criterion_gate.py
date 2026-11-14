@@ -197,7 +197,7 @@ def _check_at(
     target: WorkflowStageDef,
 ) -> tuple[CriteriaCheck, bool]:
     """Run the check before ``target`` and act on it. Returns it, and whether it blocked."""
-    check = check_criteria(session, ticket)
+    check = check_criteria(session, ticket, orch_run=orch_run)
     if check.unavailable:
         message = f"The criteria check could not run: {check.unavailable}"
         return check, _block(session, orch_run, ticket, message, BlockKind.HARNESS)

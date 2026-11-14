@@ -27,16 +27,23 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.block_settlement import settle_unclassified_blocks, unclassified_blocks
+from loregarden.services.capacity_block_resume import (
+    cleared_capacity_violations,
+    resume_cleared_capacity_blocks,
+)
 from loregarden.services.capacity_blocks import (
     capacity_block_violations,
     refile_capacity_violations,
 )
-from loregarden.services.checkouts_without_their_branch import checkouts_without_their_branch
-from loregarden.services.cleaned_worktree_rows import cleaned_rows_with_their_checkout
+from loregarden.services.closed_sources import parents_closed_without_their_work
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
 from loregarden.services.done_ticket_ship import (
     violations_for_invariant as _recorded_ship_violations,
+)
+from loregarden.services.finding_placement_checks import (
+    follow_ups_under_their_source,
+    unrecorded_children_of_a_run,
 )
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.git_automation_config import resolve_git_automation
@@ -49,10 +56,6 @@ from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_liv
 from loregarden.services.orchestration_capacity import (
     release_terminal_run_parent,
     terminal_run_parents,
-)
-from loregarden.services.orphaned_worktree_rows import (
-    rows_without_their_checkout,
-    settle_rows_without_their_checkout,
 )
 from loregarden.services.oversized_ticket_census import tickets_over_a_write_cap
 from loregarden.services.parallel_queue import (
@@ -77,16 +80,16 @@ from loregarden.services.scope_invariants import (
     UNDECIDED_FINDINGS_DO_NOT_RUN,
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
-from loregarden.services.stale_parked_at_rows import (
-    clear_vanished_parked_at,
-    rows_whose_parked_at_is_gone,
-)
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
     finish_cleared_landings,
     tickets_whose_landing_cleared,
 )
-from loregarden.services.ticket_dependencies import ancestor_waits, drop_ancestor_waits
+from loregarden.services.ticket_dependencies import (
+    ancestor_waits,
+    drop_ancestor_waits,
+    wait_loops,
+)
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import (
     close_held_cards,
@@ -104,6 +107,12 @@ from loregarden.services.unresolved_ledger import (
 )
 from loregarden.services.unresolved_ledger import (
     repair_unaudited_open_shrink as _repair_open_shrink_findings,
+)
+from loregarden.services.worktree_invariants import (
+    ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
+    CHECKOUTS_KEEP_THEIR_BRANCH,
+    CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
+    WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
 from sqlmodel import Session, col, select
 
@@ -829,6 +838,82 @@ NO_TICKET_DEPENDS_ON_AN_ANCESTOR = Invariant(
 )
 
 
+def _wait_loops(session: Session) -> list[Violation]:
+    return [
+        Violation(
+            subject_id=loop.edge.id,
+            ticket_id=loop.edge.ticket_id,
+            entered_at=loop.edge.created_at,
+            detail=f"a loop of waits nothing in can start: {' → '.join(loop.path)} → back",
+        )
+        for loop in wait_loops(session)
+    ]
+
+
+NO_WAIT_LOOP_THROUGH_A_PARENT = Invariant(
+    name="no_wait_loop_through_a_parent",
+    ticket="lg-milestone-that-1604",
+    statement=(
+        "no dependency edge closes a loop of waits, counting a parent's wait for its "
+        "children as a wait"
+    ),
+    detect=_wait_loops,
+    # Report-only: which edge in the loop is wrong is a planning decision.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 13),
+    prevented_by=(
+        "server/tests/test_ticket_dependencies.py"
+        "::test_no_writer_closes_a_wait_loop_through_a_parent"
+    ),
+    unrepaired_action=(
+        "Remove the edge in the loop that does not reflect a real order "
+        "(loregarden_unlink_dependency), or move the ticket out from under its parent."
+    ),
+)
+
+
+FOLLOW_UPS_LEAVE_THEIR_SOURCE = Invariant(
+    name="follow_ups_leave_their_source",
+    ticket="lg-milestone-that-2604",
+    statement="no open follow-up finding is still parented under its open source",
+    detect=follow_ups_under_their_source,
+    # Report-only: where it can go, or whether it is the source's own work, is a scope decision.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 13),
+    prevented_by=(
+        "server/tests/test_finding_placement.py::test_no_writer_leaves_a_follow_up_under_its_source"
+    ),
+    unrepaired_action=(
+        "Revise the decision (loregarden_decide_finding revise=true): amend, defer or drop, "
+        "or move the finding beside its source."
+    ),
+)
+
+
+RUN_FILINGS_ARE_FINDINGS = Invariant(
+    name="run_filings_are_findings",
+    ticket="lg-milestone-that-2605",
+    statement=(
+        "no open ticket was created under a ticket during a run on it without a finding row, "
+        "unless the run decomposes it"
+    ),
+    detect=unrecorded_children_of_a_run,
+    # Report-only: whether the child is a finding or real decomposition is a person's call.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 13),
+    prevented_by=(
+        "server/tests/test_finding_placement.py"
+        "::test_no_writer_creates_a_run_child_without_its_finding"
+    ),
+    unrepaired_action=(
+        "Decide what the child is: move it beside its parent and decide its scope, or close it."
+    ),
+)
+
+
 def _unasked_awaits(session: Session) -> list[Violation]:
     """`entered_at` is the ticket's `updated_at`: a stage row has no timestamp of its own."""
     return [
@@ -990,174 +1075,6 @@ LAND_VERIFICATION_RAN = Invariant(
         "Run `uv run --directory server pytest -q -n auto` against the ticket's landed "
         "branch. If it is red, reopen the ticket with the failing test named; if it is "
         "green, record the verdict on the ticket."
-    ),
-)
-
-
-def _rows_without_their_checkout(session: Session) -> list[Violation]:
-    """`entered_at` is None: nothing stamps the moment a checkout left.
-
-    `created_at` is when the row was cut, which is not when the directory went
-    — and a `DEFECT`-style "entered after the guard landed" reading off it
-    would call every pre-existing row a re-entry. The policy here is
-    `EXPECTED` anyway, so the state is repaired rather than dated.
-
-    The finding names the path, because that is what a person goes and looks
-    at — and the row and its ticket too, because a row recording no path at
-    all is also a violation, and "go and look at ''" is not something anyone
-    can act on.
-    """
-    return [
-        Violation(
-            subject_id=row.id,
-            ticket_id=row.ticket_id,
-            entered_at=None,
-            detail=f"worktree row {row.id} (ticket {row.ticket_id}) is active and records a "
-            f"checkout at '{row.worktree_path}', which is not there",
-        )
-        for row in rows_without_their_checkout(session)
-    ]
-
-
-def _settle_rows_without_their_checkout(session: Session, violations: Sequence[Violation]) -> int:
-    # Re-detect rather than trust the list: settling a row is a write, and the
-    # reading that justified it must be this pass's.
-    wanted = {v.subject_id for v in violations}
-    return settle_rows_without_their_checkout(
-        session, [row for row in rows_without_their_checkout(session) if row.id in wanted]
-    )
-
-
-ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT = Invariant(
-    name="active_worktree_rows_have_their_checkout",
-    ticket="lg-external-harness-1452",
-    statement="no active worktrees row records a checkout that is not on disk",
-    detect=_rows_without_their_checkout,
-    repair=_settle_rows_without_their_checkout,
-    reentry=InvariantReentry.EXPECTED,
-    since=date(2026, 10, 23),
-    expected_because=(
-        "an operator removes a checkout by hand, outside the control plane — `git worktree "
-        "remove` in a terminal leaves the row with nothing to speak for, and no writer can "
-        "guard against it"
-    ),
-)
-
-
-def _rows_whose_parked_at_is_gone(session: Session) -> list[Violation]:
-    """`entered_at` is None: nothing stamps the moment a park copy left.
-
-    The finding names both paths, because that is what a person goes and looks
-    at — and the row and its ticket too, because a vanished locator with no
-    ticket attached is still a false record.
-    """
-    return [
-        Violation(
-            subject_id=row.id,
-            ticket_id=row.ticket_id,
-            entered_at=None,
-            detail=f"worktree row {row.id} (ticket {row.ticket_id}) records parked_at "
-            f"'{row.parked_at}', which is gone, while the checkout at "
-            f"'{row.worktree_path}' is present",
-        )
-        for row in rows_whose_parked_at_is_gone(session)
-    ]
-
-
-def _clear_vanished_parked_at(session: Session, violations: Sequence[Violation]) -> int:
-    # Re-detect rather than trust the list: clearing parked_at is a write, and
-    # the reading that justified it must be this pass's. A PRESENT parked_at
-    # at repair time is skipped — that locator is live.
-    wanted = {v.subject_id for v in violations}
-    return clear_vanished_parked_at(
-        session, [row for row in rows_whose_parked_at_is_gone(session) if row.id in wanted]
-    )
-
-
-WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH = Invariant(
-    name="worktree_parked_at_names_a_live_path",
-    ticket="lg-external-harness-1416",
-    statement="no worktrees row records a parked_at that is gone while its checkout is present",
-    detect=_rows_whose_parked_at_is_gone,
-    repair=_clear_vanished_parked_at,
-    reentry=InvariantReentry.EXPECTED,
-    since=date(2026, 10, 25),
-    expected_because=(
-        "directory_release._restore's ERROR record asks a person to move it back by hand "
-        "before the next sweep; doing that leaves parked_at naming a path that is gone "
-        "while worktree_path is present"
-    ),
-    prevented_by=(
-        "server/tests/test_worktree_lifecycle.py"
-        "::test_every_writer_of_parked_at_sets_it_only_from_an_unrestored_release"
-    ),
-)
-
-
-def _cleaned_rows_with_their_checkout(session: Session) -> list[Violation]:
-    """`entered_at` is the row's `cleaned_at`: the moment a writer said it was gone."""
-    return [
-        Violation(
-            subject_id=row.id,
-            ticket_id=row.ticket_id,
-            entered_at=row.cleaned_at,
-            detail=f"worktree row {row.id} (ticket {row.ticket_id}) is cleanup and records a "
-            f"checkout at '{row.worktree_path}', which is still there and owned by no row",
-        )
-        for row in cleaned_rows_with_their_checkout(session)
-    ]
-
-
-CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT = Invariant(
-    name="cleaned_worktree_rows_leave_no_checkout",
-    ticket="lg-external-harness-954",
-    statement="no cleanup worktrees row records a checkout that is still on disk",
-    detect=_cleaned_rows_with_their_checkout,
-    repair=None,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 10, 16),
-    prevented_by=(
-        "server/tests/test_remove_checkout_refusal.py"
-        "::test_a_removal_that_raises_answers_remove_raised"
-    ),
-    unrepaired_action=(
-        "Open the directory the finding names. If it holds work, commit or move it; then remove "
-        "it (`git worktree remove --force <path>`, or delete the directory). Nothing owns it, so "
-        "no sweep will, and the finding clears once it is gone."
-    ),
-)
-
-
-def _checkouts_without_their_branch(session: Session) -> list[Violation]:
-    """`entered_at` is None: nothing stamps the moment a branch was deleted."""
-    return [
-        Violation(
-            subject_id=row.id,
-            ticket_id=row.ticket_id,
-            entered_at=None,
-            detail=f"worktree row {row.id} (ticket {row.ticket_id}) has a checkout at "
-            f"'{row.worktree_path}' but its branch '{row.branch}' no longer exists",
-        )
-        for row in checkouts_without_their_branch(session)
-    ]
-
-
-CHECKOUTS_KEEP_THEIR_BRANCH = Invariant(
-    name="checkouts_keep_their_branch",
-    ticket="lg-external-harness-1166",
-    statement="no worktrees row has a checkout on disk whose recorded branch is gone",
-    detect=_checkouts_without_their_branch,
-    repair=None,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 10, 16),
-    prevented_by=(
-        "server/tests/test_stage_fanout_service.py"
-        "::test_a_losing_branch_survives_a_failed_worktree_removal"
-    ),
-    unrepaired_action=(
-        "Open the checkout the finding names. If its HEAD holds commits you want, recreate the "
-        "branch there (`git branch <name> HEAD`); otherwise remove the checkout. Nothing else "
-        "references those commits, so the next `git gc` may take them."
     ),
 )
 
@@ -1376,6 +1293,47 @@ CAPACITY_WAITS_ARE_NOT_WORK = Invariant(
     ),
 )
 
+PARENTS_CLOSE_WITH_THEIR_OWN_WORK = Invariant(
+    name="parents_close_with_their_own_work_landed",
+    ticket="lg-milestone-that-2604",
+    statement=(
+        "no parent is closed as its children's summary while its own branch holds work "
+        "that is on neither its target nor the base"
+    ),
+    detect=parents_closed_without_their_work,
+    # Report-only: reopening re-drives work that may be stale or have reached
+    # the base another way; only a person knows which.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 13),
+    prevented_by=(
+        "server/tests/test_parent_own_work.py"
+        "::test_no_closing_path_closes_a_parent_over_its_own_unlanded_work"
+    ),
+    unrepaired_action=(
+        "Land its branch (loregarden_land_ticket), or, if the work reached the base another "
+        "way or is not wanted, say so on the ticket and leave it closed."
+    ),
+)
+
+
+CAPACITY_BLOCKS_RESUME = Invariant(
+    name="capacity_blocks_resume_when_the_line_clears",
+    ticket="lg-machine-resource-2621",
+    statement=(
+        "no ticket a capacity wait blocked stays blocked, with nothing driving it, once no "
+        "lease is waiting for capacity"
+    ),
+    detect=cleared_capacity_violations,
+    repair=resume_cleared_capacity_blocks,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 11, 13),
+    expected_because=(
+        "a busy machine blocks a stage legitimately: the line stalls behind long holders "
+        "(a pre-push suite, a docker stack) and clears when they finish"
+    ),
+)
+
 
 FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
     name="finished_survey_passes_close_their_carrier",
@@ -1444,6 +1402,11 @@ INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BLOCK_IS_SETTLED,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     CAPACITY_WAITS_ARE_NOT_WORK,
+    CAPACITY_BLOCKS_RESUME,
+    PARENTS_CLOSE_WITH_THEIR_OWN_WORK,
+    NO_WAIT_LOOP_THROUGH_A_PARENT,
+    FOLLOW_UPS_LEAVE_THEIR_SOURCE,
+    RUN_FILINGS_ARE_FINDINGS,
     LANDING_BLOCKS_CLEAR,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     PUBLISH_CARDS_CLOSE,

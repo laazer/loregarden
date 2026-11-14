@@ -18,7 +18,7 @@ from sqlmodel import Session
 
 from loregarden.agents.registry import SPEC_AGENT_ID
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import enum_string_prop, string_prop, tool_schema
+from loregarden.mcp.tool_schemas import boolean_prop, enum_string_prop, string_prop, tool_schema
 from loregarden.models.domain import AgentRun, FindingDecision, Ticket
 from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -35,7 +35,9 @@ DISCOVERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "owns and waits for. defer: real, but not this tree's work; it stays in the "
             "backlog and nothing waits for it. drop: not worth doing; closed wont_do. A reason "
             "is always required. Findings about the tests, guards or fixtures the ticket "
-            "itself built are its own work: amend."
+            "itself built are its own work: amend. A follow_up moves the finding beside its "
+            "source, under the parent that owns it. revise (operators only) changes a decision "
+            "already made; the old one stays on the record."
         ),
         "inputSchema": tool_schema(
             properties={
@@ -46,6 +48,9 @@ DISCOVERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "reason": string_prop("Why, in a sentence a person can check."),
                 "criterion": string_prop(
                     "amend only: the acceptance criterion the source ticket is held to."
+                ),
+                "revise": boolean_prop(
+                    "Change a decision already made. Operators only; a spec run decides once."
                 ),
             },
             required=["ticket_id", "decision", "reason"],
@@ -85,6 +90,7 @@ def decide_finding_tool(
         reason=arguments.get("reason") or "",
         decided_by=decided_by,
         criterion=arguments.get("criterion") or "",
+        revise=bool(arguments.get("revise")),
     )
     session.refresh(finding)
     return json.dumps(

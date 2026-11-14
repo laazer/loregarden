@@ -560,6 +560,7 @@ def test_r5_rollup_child_parent_queries_have_no_workspace_id_predicate():
         name: inspect.getsource(getattr(ticket_rollup, name))
         for name in (
             "_child_states",
+            "_children",
             "has_children",
             "reconcile_ancestors",
             "reconcile_all_parents",
@@ -572,7 +573,8 @@ def test_r5_rollup_child_parent_queries_have_no_workspace_id_predicate():
         # that names workspace_id. parent_ticket_id walks must remain.
         assert "workspace_id" not in src, f"{name} must not filter on workspace_id; got:\n{src}"
     assert "parent_ticket_id" in sources["owned_children"]
-    assert "owned_children" in sources["_child_states"]
+    assert "_children" in sources["_child_states"]
+    assert "owned_children" in sources["_children"]
     assert "has_owned_children" in sources["has_children"]
 
 

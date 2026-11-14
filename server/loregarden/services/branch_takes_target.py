@@ -9,7 +9,7 @@ only commits were 801's from before 491's tree reached main (so their work was
 already on the target, and only history conflicted), and 954, with seven
 commits of real work against a `chat_branch_sweep.py` main had rewritten.
 
-Three answers, tried in order, before a person is asked:
+Four answers, tried in order, before a person is asked:
 
 1. **The branch adds nothing the target lacks** (`work_landed.landing_commit`: some
    commit in the target's history already holds all of it, which a squash
@@ -23,7 +23,14 @@ Three answers, tried in order, before a person is asked:
    2026-10-20 lg-external-harness-1026 had merged `publish_tree`'s squash of
    its integration branch; two checkout merges then conflicted in seven test
    files it already held, each costing a 900s merge turn.
-3. **It has work of its own**: the agent's merge turn
+3. **Its own commits apply to the target, and the rest is held there**
+   (`branch_replay`): the branch was cut from an integration branch that has
+   since been squashed and moved, so it carries history its target replaced.
+   Its own commits are replayed onto the target and the branch moved by
+   compare-and-swap. Needs the workspace's base, so only where a merge turn
+   could run. On 2026-11-13 lg-milestone-that-1424 conflicted in 201 files;
+   its six commits touched one.
+4. **It has work of its own**: the agent's merge turn
    (`integration_merge_agent.merge_base_by_agent`) merges the target in, in a
    throwaway worktree. Loregarden writes the commit, the workspace gates grade
    what the merge adds, and the branch moves only when it passes. Under the
@@ -37,6 +44,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
+from loregarden.services.branch_replay import replay_own_commits
+from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import (
     SquashTwin,
     merge_preview,
@@ -98,6 +107,14 @@ def take_target(
     files = ", ".join(conflicted)
     if seat is None:
         return TakeTarget(False, f"conflicts in {files}, and no merge turn can run on this path")
+    current = rev(repo_root, f"refs/heads/{branch}")
+    replayed, unreplayed = _replay(
+        repo_root, branch, target, current, target_sha, base=base_branch(seat.workspace)
+    )
+    if replayed is not None:
+        if not replayed.ok:
+            return replayed
+        return TakeTarget(True, moved_from=original, moved_to=replayed.moved_to)
     resolution = merge_base_by_agent(
         seat.session,
         seat.workspace,
@@ -109,7 +126,9 @@ def take_target(
         about=ticket_branch_brief(seat.ticket, branch=branch, target=target),
     )
     if not resolution.ok:
-        return TakeTarget(False, f"conflicts in {files}; {resolution.detail}")
+        return TakeTarget(
+            False, f"conflicts in {files}; {resolution.detail}; not replayed: {unreplayed}"
+        )
     return TakeTarget(True, moved_from=original, moved_to=rev(repo_root, f"refs/heads/{branch}"))
 
 
@@ -134,7 +153,15 @@ def _without_a_turn(
             TakeTarget(False, f"could not tell whether {target!r} holds {branch!r}: {exc}")
         )
     if superseded:
-        return _Settled(_move(repo_root, branch, branch_sha, target_sha, holds=superseded))
+        return _Settled(
+            _move(
+                repo_root,
+                branch,
+                branch_sha,
+                target_sha,
+                why=f"superseded; {superseded[:12]} holds its work",
+            )
+        )
     try:
         twin = squash_twin(repo_root, branch_sha, target_sha)
     except RuntimeError as exc:
@@ -156,6 +183,28 @@ def _without_a_turn(
     return _Settled(conflicted_files=preview.conflicted_files)
 
 
+def _replay(
+    repo_root: Path, branch: str, target: str, branch_sha: str, target_sha: str, *, base: str
+) -> tuple[TakeTarget | None, str]:
+    """Answer 3 of the module docstring: a final answer, or None and why it did not replay."""
+    try:
+        replay = replay_own_commits(repo_root, branch_sha, target_sha, base)
+    except RuntimeError as exc:
+        logger.warning("Could not replay %s's own commits onto %s: %s", branch, target, exc)
+        return None, f"git could not replay it ({exc})"
+    if not replay.sha:
+        logger.warning("Not replaying %s onto %s: %s", branch, target, replay.detail)
+        return None, replay.detail
+    moved = _move(
+        repo_root,
+        branch,
+        branch_sha,
+        replay.sha,
+        why=f"replayed its {replay.replayed} own commit(s) onto {target}",
+    )
+    return moved, ""
+
+
 def ticket_branch_brief(ticket: Ticket, *, branch: str, target: str) -> str:
     """What the merge turn is told ``branch`` is, in place of an integration branch's brief."""
     return (
@@ -166,12 +215,12 @@ def ticket_branch_brief(ticket: Ticket, *, branch: str, target: str) -> str:
     )
 
 
-def _move(repo_root: Path, branch: str, old: str, new: str, *, holds: str) -> TakeTarget:
+def _move(repo_root: Path, branch: str, old: str, new: str, *, why: str) -> TakeTarget:
     moved = run_git(
         [
             "update-ref",
             "-m",
-            f"loregarden: {branch} superseded; {holds[:12]} holds its work",
+            f"loregarden: {branch} {why}",
             f"refs/heads/{branch}",
             new,
             old,
@@ -188,12 +237,11 @@ def _move(repo_root: Path, branch: str, old: str, new: str, *, holds: str) -> Ta
             f"{(moved.stderr or moved.stdout).strip()}",
         )
     logger.warning(
-        "Moved %s from %s to its target's %s: %s already holds everything it adds "
-        "(the old tip stays in the reflog)",
+        "Moved %s from %s to %s: %s (the old tip stays in the reflog)",
         branch,
         old[:12],
         new[:12],
-        holds[:12],
+        why,
     )
     return TakeTarget(True, moved_from=old, moved_to=new)
 

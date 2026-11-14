@@ -309,7 +309,7 @@ def test_the_sweep_reads_the_error_artifact_behind_a_timeline_tab_pointer(db_ses
     ticket.workflow_stage_status = StageStatus.BLOCKED
     db_session.add(ticket)
     db_session.commit()
-    assert BLOCKING_POINTER_PHRASE in ticket.blocking_issues  # the pointer, not the words
+    assert BLOCKING_POINTER_PHRASE in ticket.blocking_issues  # the opening, then the pointer
 
     assert sweep_unclassified_blocks(db_session) == 1
     db_session.refresh(ticket)
@@ -331,6 +331,38 @@ def test_the_block_message_follows_either_pointer_wording(db_session, ticket, ph
     db_session.commit()
 
     assert block_message_for(db_session, ticket) == long_message
+
+
+def test_a_long_block_keeps_its_opening_words_inline(db_session, ticket):
+    """lg-milestone-that-1424 and -1431 said only "Stage 'spec' hit a blocking
+    issue — see the Timeline tab", which names no cause on the board."""
+    from loregarden.services.artifact_service import (
+        BLOCKING_ISSUE_INLINE_LIMIT,
+        record_blocking_issue,
+    )
+
+    long_message = "Merging integration/x conflicts in\n  client/a.tsx and server/b.py; " + (
+        "detail " * 100
+    )
+    inline = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key=IMPLEMENT, message=long_message
+    )
+    ticket.blocking_issues = inline
+
+    assert inline.startswith("Merging integration/x conflicts in client/a.tsx and server/b.py;")
+    assert len(inline) <= BLOCKING_ISSUE_INLINE_LIMIT
+    assert BLOCKING_POINTER_PHRASE in inline
+    assert block_message_for(db_session, ticket) == long_message, "the full text is one read away"
+
+
+def test_a_stage_key_longer_than_the_limit_still_leaves_the_pointer(db_session, ticket):
+    from loregarden.services.artifact_service import record_blocking_issue
+
+    inline = record_blocking_issue(
+        db_session, ticket, run_id=None, stage_key="s" * 250, message="m " * 300
+    )
+
+    assert BLOCKING_POINTER_PHRASE in inline and not inline.startswith("m")
 
 
 def test_an_editor_trust_refusal_is_harness():

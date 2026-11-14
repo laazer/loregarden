@@ -18,6 +18,7 @@ import pytest
 from loregarden.models.domain import (
     BlockKind,
     CriterionDisposition,
+    DockerLease,
     DomainEvent,
     EventType,
     OrchestrationDriver,
@@ -34,6 +35,7 @@ from loregarden.models.domain import (
 from loregarden.services import criterion_split_creator  # noqa: F401 — installs the creator
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.auto_decisions import auto_decisions_under
+from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.criterion_check import _render, _runner_for
 from loregarden.services.criterion_gate import check_criteria_if_due
 from loregarden.services.criterion_gate_stages import check_due, gate_of
@@ -42,6 +44,7 @@ from loregarden.services.criterion_ledger import (
     settle_met,
     settlements_of,
 )
+from loregarden.services.gate_capacity import GateCapacityUnavailable, GateLease
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
     CriterionTestCommand,
@@ -502,3 +505,38 @@ def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():
     argv = shlex.split(_render(runner, [test_id]))
     assert argv == ["node", "client/scripts/criterion-jest.cjs", test_id]
     assert (orchestration_dir().parents[1] / argv[1]).is_file()
+
+
+ACQUIRE = "loregarden.services.criterion_check.acquire_gate_capacity"
+
+
+def test_a_criteria_check_that_cannot_get_capacity_blocks_as_harness(db_session, ticket, env):
+    """lg-machine-resource-2621: the refusal escaped as the orchestrator stopping, filed WORK."""
+    _met(db_session, ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_names_the_arm")
+    refused = GateCapacityUnavailable(
+        "Gate commands for criteria check did not run: no service host capacity "
+        "(the line stopped moving)"
+    )
+    with patch(ACQUIRE, side_effect=refused):
+        blocked = check_criteria_if_due(db_session, _orch_run(db_session, ticket), ticket)
+    assert blocked
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.BLOCKED
+    assert ticket.block_kind is BlockKind.HARNESS
+    assert CAPACITY_UNAVAILABLE_PREFIX in ticket.blocking_issues
+
+
+def test_the_criteria_check_claims_under_its_runs_parent_lease(db_session, ticket, env):
+    """A top-level claim queued behind the capacity its own orchestration held."""
+    _met(db_session, ticket, CRITERIA[0], "server/tests/test_arms.py::test_reads_width")
+    run = _orch_run(db_session, ticket)
+    parent = DockerLease(holder_label="parent", orchestration_run_id=run.id)
+    with (
+        patch("loregarden.services.criterion_check.parent_lease_for", return_value=parent),
+        patch(ACQUIRE, return_value=GateLease()) as acquire,
+    ):
+        check_criteria_if_due(db_session, run, ticket)
+    acquire.assert_called_once()
+    assert acquire.call_args.kwargs["parent_lease_id"] == parent.id
+    assert acquire.call_args.kwargs["orchestration_run_id"] == run.id
