@@ -20,7 +20,7 @@
  * across the pair or is the path AC3 forbids in a name.
  */
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 
@@ -336,7 +336,9 @@ describe("S8.8 — no accessible name carries the path (AC3)", () => {
     raiseBothRefusals();
 
     const [first, second] = screen.getAllByRole("alert");
-    expect(within(first).getByText(CHAT_DELETE_REFUSAL_MESSAGE)).toBeInTheDocument();
-    expect(within(second).getByText(SECOND_REFUSAL_MESSAGE)).toBeInTheDocument();
+    // Read off the message node: its path is split into segment spans
+    // (lg-milestone-that-1316), so no single element holds the whole string.
+    expect(first.querySelector(".toast__message")?.textContent).toBe(CHAT_DELETE_REFUSAL_MESSAGE);
+    expect(second.querySelector(".toast__message")?.textContent).toBe(SECOND_REFUSAL_MESSAGE);
   });
 });

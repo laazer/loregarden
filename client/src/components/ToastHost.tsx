@@ -1,14 +1,31 @@
 import { AnimatePresence, m } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type FocusEvent } from "react";
+import {
+  type FocusEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { IS_DEV } from "../api/viteEnv";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { DURATION, EASE_OUT } from "../lib/motionTokens";
 import { toastCopyWhat, toastDismissLabel } from "../lib/toastControlNames";
+import { splitMessageForWrap } from "../lib/toastWrap";
 
-import { type Toast, useToastStore } from "../state/toastStore";
+import { type Toast, pushToast, useToastStore } from "../state/toastStore";
 import { CopyValueButton } from "./CopyValueButton";
 import { IconCloseButton } from "./IconCloseButton";
 import "./ToastHost.css";
+
+declare global {
+  interface Window {
+    /** Dev-build-only handle on `pushToast`, for driving a toast from Playwright. */
+    __loregardenPushToast?: typeof pushToast;
+  }
+}
 
 const TONE_GLYPH: Record<Toast["tone"], string> = {
   error: "✕",
@@ -16,6 +33,44 @@ const TONE_GLYPH: Record<Toast["tone"], string> = {
   success: "✓",
   info: "ℹ",
 };
+
+/**
+ * The message, with each path segment made unbreakable.
+ *
+ * A `/`-separated segment of a path token becomes a `.toast__path-part` span —
+ * `white-space: nowrap` is the one declaration that suppresses the hyphen
+ * soft-wrap inside a worktree directory name, and it needs an element to hang
+ * off. Prose renders as a bare text node, so it keeps wrapping at its own
+ * spaces and the common case gains nothing. A `<wbr/>` goes between two
+ * segments of the same token and nowhere else.
+ *
+ * A span and a `<wbr>` both contribute no text, so the node's `textContent`
+ * stays byte-identical to `message`: the rendered text, the `aria-live` announcement and the copy control's
+ * payload (built from `toast.message`, not the DOM) all agree byte for byte
+ * (lg-milestone-that-1316 AC13).
+ */
+function useWrappedMessage(message: string): ReactNode[] {
+  return useMemo(() => {
+    const parts = splitMessageForWrap(message);
+    const children: ReactNode[] = [];
+    parts.forEach((part, index) => {
+      if (!part.nowrap) {
+        children.push(part.text);
+        return;
+      }
+      const previous = parts[index - 1];
+      if (previous?.nowrap && previous.text.endsWith("/")) {
+        children.push(<wbr key={`wbr-${index}`} />);
+      }
+      children.push(
+        <span key={`part-${index}`} className="toast__path-part">
+          {part.text}
+        </span>,
+      );
+    });
+    return children;
+  }, [message]);
+}
 
 /**
  * One toast, and the two things that make its message usable.
@@ -46,7 +101,8 @@ function ToastItem({
   dismissLabel: string;
   onDismiss: (id: string) => void;
 }) {
-  const { id, duration, revision } = toast;
+  const { id, duration, revision, message } = toast;
+  const children = useWrappedMessage(message);
   const root = useRef<HTMLDivElement | null>(null);
   /**
    * Whatever held focus when focus FIRST arrived from outside this toast.
@@ -98,7 +154,7 @@ function ToastItem({
       </span>
       <div className="toast__body">
         <div className="toast__title">{toast.title}</div>
-        {toast.message ? <div className="toast__message">{toast.message}</div> : null}
+        {message ? <div className="toast__message">{children}</div> : null}
       </div>
       {/* No message, no control: a disabled button is a promise the surface
           cannot keep, and it costs a tab stop to say so. */}
@@ -164,6 +220,17 @@ export function ToastHost() {
   const toasts = useToastStore((s) => s.toasts);
   const dismiss = useToastStore((s) => s.dismiss);
   const corner = useScreenAreaCorner();
+
+  useEffect(() => {
+    if (!IS_DEV) return;
+    // Dev-only harness: the only way to render an exact 269-character message
+    // in a real browser. Never read by app code, and inert in a production
+    // build, where IS_DEV is false.
+    window.__loregardenPushToast = pushToast;
+    return () => {
+      delete window.__loregardenPushToast;
+    };
+  }, []);
 
   return (
     <div className="toast-host" aria-live="polite" style={corner}>
