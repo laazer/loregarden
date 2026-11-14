@@ -84,3 +84,20 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+
+/* A single "/"-separated segment of a path token (lg-milestone-that-1316 AC3).
+   `white-space: nowrap` is the one declaration that suppresses the hyphen
+   soft-wrap opportunity inside a worktree directory name, which is what was
+   cutting a path mid-identifier; `overflow-wrap` above has no effect inside it,
+   so the line breaks only at the `<wbr>` between segments. The remaining four
+   are the last resort for a segment wider than the line box: it shrinks to the
+   box and renders its own ellipsis rather than being clipped off the right edge.
+   The 4-line clamp on `.toast__message` is unchanged (lg-external-harness-954). */
+.toast__path-part {
+  white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}

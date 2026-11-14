@@ -221,6 +221,9 @@ describe("S7.5 — a clipboard refusal does not take the source toast with it", 
     // message, still on screen. The dedupe cannot match it — different title.
     expect(toasts[0].id).toBe(sourceId);
     expect(toasts[0].message).toBe(CHAT_DELETE_REFUSAL_MESSAGE);
-    expect(screen.getByText(CHAT_DELETE_REFUSAL_MESSAGE)).toBeInTheDocument();
+    // Read off the message node: its path is split into segment spans
+    // (lg-milestone-that-1316), so no single element holds the whole string.
+    const messages = Array.from(document.querySelectorAll(".toast__message"));
+    expect(messages.map((node) => node.textContent)).toContain(CHAT_DELETE_REFUSAL_MESSAGE);
   });
 });
