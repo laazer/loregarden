@@ -368,6 +368,10 @@ class DoctorCheck(str, Enum):
     #: several signed in and none configured, it is whichever is active — one
     #: here was read-only on every workspace repo while `git push` still worked.
     GH_ACCOUNT = "gh_account"
+    #: A done ticket whose landing added files the base's history has never
+    #: had: the landing was dropped before it was published, and the ticket
+    #: still reads delivered (lg-milestone-that-1316's six files).
+    LANDED_FILES_REACH_BASE = "landed_files_reach_base"
 
 
 class PortabilityState(str, Enum):

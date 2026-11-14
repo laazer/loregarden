@@ -23,6 +23,7 @@ from tests.test_gate_scope_visibility import (
     GIT_SUBPROCESS_GATE,
     PY_ORGANIZATION_GATE,
     PY_SILENT_EXCEPT_GATE,
+    REF_WRITERS_GATE,
     REFUSAL_SENTENCE,
     _build_repo,
     _commit_agent_work,
@@ -36,6 +37,7 @@ PY_GATES = [
     pytest.param(PY_ORGANIZATION_GATE, id="py-org"),
     pytest.param(PY_SILENT_EXCEPT_GATE, id="py-silent-except"),
     pytest.param(GIT_SUBPROCESS_GATE, id="py-git-subprocess"),
+    pytest.param(REF_WRITERS_GATE, id="py-ref-writers"),
 ]
 
 #: The same gates by module, for driving `main` in-process under a patched parser.
@@ -43,6 +45,7 @@ PY_GATE_MODULES = [
     pytest.param("py_organization_check", id="py-org"),
     pytest.param("py_silent_except_check", id="py-silent-except"),
     pytest.param("py_git_subprocess_check", id="py-git-subprocess"),
+    pytest.param("py_ref_writers_check", id="py-ref-writers"),
 ]
 
 RELPATH = "src/pkg/new_mod.py"

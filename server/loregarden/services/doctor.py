@@ -50,6 +50,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
+from loregarden.services.doctor_landings import check_landed_files_reach_base
 from loregarden.services.git_subprocess import (
     GH_USER_ENV,
     GIT_LOCATION_ENV_VARS,
@@ -715,6 +716,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.MIGRATION_CHAIN: check_migration_chain,
     DoctorCheck.GH_ACCOUNT: check_gh_account,
     DoctorCheck.AGENT_DETACH_TRANSPORT: check_agent_detach_transport,
+    DoctorCheck.LANDED_FILES_REACH_BASE: check_landed_files_reach_base,
 }
 
 

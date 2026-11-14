@@ -2213,6 +2213,7 @@ def test_the_bytes_graded_come_from_the_path_that_was_validated(tmp_path: Path) 
 
 
 GIT_SUBPROCESS_GATE = [sys.executable, str(_SCRIPTS / "py_git_subprocess_check.py")]
+REF_WRITERS_GATE = [sys.executable, str(_SCRIPTS / "py_ref_writers_check.py")]
 
 #: An unscrubbed git call: `cwd` says one repository, GIT_DIR may say another.
 GIT_SUBPROCESS_VIOLATION = (
