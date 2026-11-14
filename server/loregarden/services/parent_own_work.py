@@ -78,6 +78,22 @@ def own_gate_pending(session: Session, ticket: Ticket) -> str:
     )
 
 
+def _holders(target: str, base: str) -> list[str]:
+    """Every ref that may hold the work: each branch locally and as `origin` has it.
+
+    A target merged on GitHub and pruned locally exists only as its tracking
+    ref, and a local base can trail the remote. Reading `refs/heads` alone
+    reported lg-improved-memory-662 and lg-initiatives-cross-732 unlanded,
+    though their targets held the work (squash-merged, which `landing_commit`
+    already recognises).
+    """
+    return [
+        f"{prefix}{ref}"
+        for ref in dict.fromkeys((target, base))
+        for prefix in ("refs/heads/", "refs/remotes/origin/")
+    ]
+
+
 def unlanded_own_work(session: Session, ticket: Ticket) -> str:
     """Why ``ticket`` must not be closed as a summary, or "" when nothing of its own waits.
 
@@ -106,8 +122,8 @@ def unlanded_own_work(session: Session, ticket: Ticket) -> str:
     try:
         if not carries_own_work(repo_root, tip, base):
             return ""
-        for ref in dict.fromkeys((target, base)):
-            held_by = rev(repo_root, f"refs/heads/{ref}")
+        for ref in _holders(target, base):
+            held_by = rev(repo_root, ref)
             if held_by and landing_commit(repo_root, tip, held_by):
                 return ""
     except RuntimeError as exc:
