@@ -43,6 +43,7 @@ from loregarden.services.github_pr_listing import (
     PullRequestStates,
     list_pull_requests,
 )
+from loregarden.services.landing_survival import refuse_dropping_landings
 from loregarden.services.publish_ref import branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, Field, TypeAdapter
@@ -980,6 +981,10 @@ def delete_branch(
     if not _branch_exists(repo_root, branch):
         return BranchDeletion(outcome=RemovalOutcome.DELETED, deleted=False)
 
+    # Before `force` is consulted: a ticket branch cut from the tree keeps the
+    # landing's commits "elsewhere", so the commit check passes a deletion that
+    # loses delivered work (lg-milestone-that-1316).
+    refuse_dropping_landings(session, workspace, branch)
     worktree_paths = worktree_paths_for_branch(repo_root, branch)
     _refuse_branch_delete(
         repo_root, branch, worktree_paths, remove_worktrees=remove_worktrees, force=force

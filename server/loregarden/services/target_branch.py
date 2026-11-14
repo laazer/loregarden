@@ -256,6 +256,47 @@ def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_bran
     raise TargetBranchError(f"Cannot refresh {branch!r} from {base_branch!r}: {outcome.detail}")
 
 
+#: Where a tip the branch is reset away from is kept: the base held it whole,
+#: so every landing it contains is delivered, and `base_delivery` reads them
+#: from here once the branch no longer contains them (lg-milestone-that-2624).
+SETTLED_PREFIX = "refs/loregarden/settled/"
+
+
+def settled_tips(repo_root: Path, branch: str) -> list[str]:
+    """The tips ``branch`` was reset away from because the base held them, newest first."""
+    listed = run_git(
+        [
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(objectname)",
+            f"{SETTLED_PREFIX}{branch}/",
+        ],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if listed.returncode != 0:
+        raise RuntimeError(f"git for-each-ref failed: {(listed.stderr or listed.stdout).strip()}")
+    return listed.stdout.split()
+
+
+def _settle(repo_root: Path, branch: str, tip: str) -> None:
+    """Keep ``tip`` under `SETTLED_PREFIX` before ``branch`` leaves it; raises when git refuses."""
+    kept = run_git(
+        ["update-ref", f"{SETTLED_PREFIX}{branch}/{tip}", tip],
+        cwd=str(repo_root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if kept.returncode != 0:
+        detail = (kept.stderr or kept.stdout or "git update-ref refused").strip()
+        raise TargetBranchError(
+            f"Could not keep {branch!r} at {tip[:12]} before resetting it: {detail}"
+        )
+
+
 def _fast_forward_superseded(
     repo_root: Path, tips: BranchTips, branch: str, base_branch: str
 ) -> bool:
@@ -269,6 +310,7 @@ def _fast_forward_superseded(
     holder = landing_commit(repo_root, branch_sha, base_sha)
     if not holder:
         return False
+    _settle(repo_root, branch, branch_sha)
     moved = run_git(
         ["update-ref", f"refs/heads/{branch}", base_sha, branch_sha],
         cwd=str(repo_root),

@@ -51,6 +51,7 @@ from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
+from loregarden.services.landing_survival import landings_lost_from_their_branch
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
 from loregarden.services.orchestration_capacity import (
@@ -892,6 +893,26 @@ FOLLOW_UPS_LEAVE_THEIR_SOURCE = Invariant(
 )
 
 
+LANDINGS_SURVIVE_THEIR_BRANCH = Invariant(
+    name="landings_survive_their_branch",
+    ticket="lg-milestone-that-2624",
+    statement="no done ticket's landing is on neither its integration branch nor the base",
+    detect=landings_lost_from_their_branch,
+    # Report-only: recovering the work, or deciding it is not wanted, is a person's call.
+    repair=None,
+    reentry=InvariantReentry.DEFECT,
+    since=date(2026, 11, 14),
+    prevented_by=(
+        "server/tests/test_landing_survival.py"
+        "::test_no_writer_moves_an_integration_branch_off_a_landing_the_base_lacks"
+    ),
+    unrepaired_action=(
+        "Recover the work: apply the landing's changes (git show <landed_sha>) onto its "
+        "integration branch or the base, or reopen the ticket if the work is not wanted."
+    ),
+)
+
+
 RUN_FILINGS_ARE_FINDINGS = Invariant(
     name="run_filings_are_findings",
     ticket="lg-milestone-that-2605",
@@ -1407,6 +1428,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     NO_WAIT_LOOP_THROUGH_A_PARENT,
     FOLLOW_UPS_LEAVE_THEIR_SOURCE,
     RUN_FILINGS_ARE_FINDINGS,
+    LANDINGS_SURVIVE_THEIR_BRANCH,
     LANDING_BLOCKS_CLEAR,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     PUBLISH_CARDS_CLOSE,
