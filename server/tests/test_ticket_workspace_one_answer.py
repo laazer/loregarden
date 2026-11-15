@@ -27,6 +27,19 @@ And it **fails closed**. A receiver whose type this walk cannot resolve fails
 `test_every_workspace_lookup_receiver_resolves_to_a_class`, naming the site. A
 detector that silently skips what it cannot parse is the exact failure this module
 exists to prevent: it would report zero and read as green.
+
+Scoped by nullability, not by `Ticket` (lg-milestone-that-1420). `Ticket` is not the
+only receiver that can carry this defect — `DomainEvent.workspace_id` is nullable too,
+and a `session.get(Workspace, event.workspace_id)` site is the identical NULL-primary-key
+read for the identical reason. The ban therefore filters on the set of classes the modules under
+`models/domain/` declare a nullable `workspace_id` on, derived at test time by
+`nullable_workspace_id_classes`, which is also what
+`test_the_model_package_declares_exactly_the_known_nullable_workspace_id_classes`
+asserts over. One derivation, two readers: a third nullable column cannot make the
+census say so while the ban keeps covering `Ticket` alone. The derivation is scoped by
+the *property* and by the directory that declares row types, not by one filename:
+`tables.py` is not the only module there with a nullable `workspace_id` column. `NON_NULLABLE_RECEIVER_LOOKUPS` pins the complement,
+so widening the ban is distinguishable from the resolver's reach moving.
 """
 
 from __future__ import annotations
@@ -44,36 +57,56 @@ from loregarden.services import ticket_workspace_binding as binding_module
 ACCESSOR_MODULE = Path("services/ticket_workspace_binding.py")
 ACCESSOR_NAME = "workspace_for_ticket"
 
-#: The row type whose `workspace_id` is nullable, and therefore the receiver type
-#: that makes a `session.get(Workspace, X.workspace_id)` call this defect.
+#: The row type the accessor answers for, and so the one this census can name a
+#: guard for. It is **not** the scope of the ban: what makes a
+#: `session.get(Workspace, X.workspace_id)` call this defect is that `X`'s
+#: `workspace_id` is *nullable*, and that set is derived from `MODEL_PACKAGE` at
+#: test time by `nullable_workspace_id_classes`. `Ticket` is one member of it.
 TICKET_CLASS = "Ticket"
+
+#: Where the nullable receiver set comes from: every module under this directory,
+#: not one file inside it. Read once, in `package_scan`, inside the loop that
+#: already walks the package. Scoping the derivation to `tables.py` alone was the
+#: same defect one level out — `DockerLease` (`docker_tables.py`), `AgentSlot`
+#: (`queue_tables.py`) and `EventView` (`schemas.py`) each declare a nullable
+#: `workspace_id` and were invisible to it.
+MODEL_PACKAGE = Path("models/domain")
+
+#: The modules under `MODEL_PACKAGE` the scan must actually read. A derivation
+#: that reached one module would read exactly as green as one that reached all of
+#: them, so the floor is a pin rather than a comment. 54 were there when written.
+MIN_MODEL_MODULES_SCANNED = 20
 
 #: The detector scans the whole package; a scan that found nothing because it
 #: looked nowhere is the failure mode this floor exists to catch. 648 `.py` files
 #: were under the package when this was written.
 MIN_FILES_SCANNED = 500
 
-#: The lookups keyed on a row whose `workspace_id` is **not** nullable, measured
-#: at HEAD `1e62353f`: 90 resolved lookups, 64 of them Ticket-keyed. Explicitly
-#: out of this ticket's scope, and so a number the migration does not move —
-#: which makes it the one pin that says whether the walk's reach changed.
-#: 28 since: this same walk still finds 26 at `1e62353f`, and the two added
-#: are new code, not new reach (`chat_feature_loop`'s BaxterChatSession and
-#: `reference_survey/queue`'s SurveySource, both non-nullable). 29 since the
-#: merge of main's `worktree_receipt` (its Worktree-keyed lookup), again new
-#: code rather than new reach.
-#: 29, plus 2 from the merge queue (2026-11-03): `merge_queue.py` and
-#: `merge_queue_reports.py` read a `MergeQueueEntry`'s own workspace — the
-#: entry is the row, not a ticket — so they are out of this census by design.
-#: 30 since `reference_survey/feeder._create_carrier` files a carrier in its
-#: parent's workspace (`workspace_for_ticket`) rather than reading its source's
-#: SurveySource-keyed one: removed code, not lost reach.
-#: 31 since `reference_survey/areas.update_area` reads a project area's own
-#: workspace — the `SurveyArea` is the row, not a ticket — new code, not new reach.
-#: 32 since `reference_survey/research_library` queues research picks into their
-#: question's own workspace — the `SurveyResearchQuestion` is the row, not a
-#: ticket — new code, not new reach.
-NON_TICKET_LOOKUPS = 32
+#: The lookups keyed on a row whose `workspace_id` is **not** nullable: re-measured
+#: at HEAD `ed2fd03d` as 27 of 27 resolved lookups, 0 of them keyed on a nullable
+#: receiver (0 `Ticket`, 0 `DomainEvent`). A non-nullable receiver cannot carry this
+#: defect, so this number does not move when the ban widens — which makes it the one
+#: pin that says whether the walk's *reach* changed.
+#:
+#: It was 26 at `4ec80c15` and `8c97ab2b`. The 27th is
+#: `services/reference_survey/queue.py:397`, a `SurveySource` receiver
+#: (`workspace_id: str`, `models/domain/survey_tables.py:82` — not nullable, so it
+#: cannot carry this defect), added by merge `ed2fd03d`. That is the package
+#: growing a site, not the walk's reach moving: at both HEADs the walk resolved
+#: every lookup it found, and the narrow and widened filters agreed exactly.
+#:
+#: 32 on `integration/lg-milestone-that-491` at `73a70f6a` (2026-11-15), when this
+#: branch was rebuilt onto it: 32 of 32 resolved lookups, 0 nullable-keyed, the
+#: walk's own count unchanged by the rebuild. Main added six sites, every one on a
+#: non-nullable row, and removed one: `chat_feature_loop` (`BaxterChatSession`),
+#: `worktree_receipt` (`Worktree`), `merge_queue` and `merge_queue_reports`
+#: (`MergeQueueEntry`), `reference_survey/areas` (`SurveyArea`) and
+#: `reference_survey/research_library` (`SurveyResearchQuestion`) arrived;
+#: `reference_survey/feeder`'s `SurveySource` lookup left with the code that held it.
+#: Package growth again, not reach: the list differs from `ed2fd03d`'s by exactly
+#: those seven files.
+#: Move this number only with that distinction measured and written down.
+NON_NULLABLE_RECEIVER_LOOKUPS = 32
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and
@@ -180,6 +213,71 @@ def _annotation_type(node: ast.AST | None) -> Ty | None:
     if isinstance(node, ast.Subscript):
         return _subscript_annotation_type(node)
     return None
+
+
+def _declares_nullable(annotation: ast.AST | None) -> bool:
+    """Does this annotation admit `None`? `str | None` and `Optional[str]` do.
+
+    Deliberately **not** `_annotation_type`. That function answers *which class*
+    an annotation names, and for a `BinOp`/`BitOr` it returns
+    `_annotation_type(node.left) or _annotation_type(node.right)` — it unwraps
+    and discards the `| None`, answering `Ty('str')` for `str | None`, and the
+    same for `Optional[str]`. It is structurally incapable of answering this
+    question: routed through it, every annotated `workspace_id` column reads as
+    nullable and the ban widens to all 18 of them at once.
+    """
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return any(
+            isinstance(operand, ast.Constant) and operand.value is None
+            for operand in (annotation.left, annotation.right)
+        )
+    if isinstance(annotation, ast.Subscript):
+        return _name_of(annotation.value) in _OPTIONAL_WRAPPERS
+    return False
+
+
+def nullable_workspace_id_classes(source: str) -> frozenset[str]:
+    """The classes declaring a nullable `workspace_id`, read off one module's source.
+
+    The one home of the ban's scope: `package_scan` calls this on **every** module
+    under `MODEL_PACKAGE` and unions the results, and both the census test and the
+    ban read that. One edit to any `models/domain/` module therefore widens the ban
+    and makes the census test say so, with no second walk and no per-class allowlist
+    to keep in step.
+
+    Takes source **text** rather than a `Path`, which is what lets the derivation be
+    exercised on a synthetic declaration — the only way to prove a further nullable
+    class is picked up without editing a real model module — and what makes it
+    accumulable over a directory without knowing any filename.
+    """
+    tree = ast.parse(source)
+    nullable: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for child in node.body:
+            if not isinstance(child, ast.AnnAssign) or not isinstance(child.target, ast.Name):
+                continue
+            if child.target.id != "workspace_id":
+                continue
+            if _declares_nullable(child.annotation):
+                nullable.add(node.name)
+    return frozenset(nullable)
+
+
+def nullable_receiver_names(index: TypeIndex, roots: frozenset[str]) -> frozenset[str]:
+    """Every spelling of a nullable receiver: each root, its subclasses, its aliases.
+
+    The ban filters on this and not on the roots themselves, because a subclass
+    inherits the nullable column and a module-level alias renames it, and both
+    are the same defect under another spelling. Lifted out of `package_scan`'s
+    wiring so the expansion can be exercised on a synthetic index: at this HEAD
+    `names_for` is the identity on both real roots (`{'Ticket'}`, `{'DomainEvent'}`),
+    so no assertion over the real package can tell this recipe from `roots`.
+    """
+    if not roots:
+        return frozenset()
+    return frozenset().union(*(index.names_for(root) for root in roots))
 
 
 class TypeIndex:
@@ -713,6 +811,22 @@ class PackageScan(NamedTuple):
     lookups: list[Lookup]
     scanned: int
     index: TypeIndex
+    #: The classes the modules under `MODEL_PACKAGE` declare a nullable
+    #: `workspace_id` on, unioned over all of them.
+    nullable_roots: frozenset[str]
+    #: How many of those modules were read. A derivation that reached one module
+    #: derives a narrower set and reads exactly as green, so the count is pinned.
+    model_modules: int
+    #: Those roots plus every subclass and module-level alias of each, which is
+    #: what the ban filters on: a subclass inherits the nullable column and an
+    #: alias renames it, and both are the same defect under another spelling.
+    nullable_names: frozenset[str]
+    #: The same derivation run over every package module *outside*
+    #: `MODEL_PACKAGE`. Not part of the ban's scope — that boundary is the
+    #: directory, deliberately — but the material for the one assertion that
+    #: says whether the boundary still holds. Accumulated in the same loop, so
+    #: the package is still read off disk exactly once.
+    outside_nullable_roots: frozenset[str] = frozenset()
 
 
 @pytest.fixture(scope="module")
@@ -720,7 +834,10 @@ def package_scan() -> PackageScan:
     """Every workspace-by-`workspace_id` lookup outside the accessor module.
 
     Built in a fixture, not a test body, so a scan that cannot run is an ERROR
-    naming its own failure rather than a zero that reads as a clean tree.
+    naming its own failure rather than a zero that reads as a clean tree. The
+    nullable receiver set is derived here too, inside the same loop and for the
+    same reason, so the package — every `MODEL_PACKAGE` module included — is read
+    off disk exactly once and no second walk is added.
     """
     sources = _package_sources()
     index = TypeIndex()
@@ -728,12 +845,38 @@ def package_scan() -> PackageScan:
         index.add_module(ast.parse(source))
     lookups: list[Lookup] = []
     scanned = 0
+    model_modules = 0
+    roots: set[str] = set()
+    outside_roots: set[str] = set()
     for relative, source in sources:
+        if MODEL_PACKAGE in relative.parents:
+            model_modules += 1
+            roots |= nullable_workspace_id_classes(source)
+        else:
+            outside_roots |= nullable_workspace_id_classes(source)
         if relative == ACCESSOR_MODULE:
             continue
         scanned += 1
         lookups.extend(workspace_lookups(source, str(relative), index))
-    return PackageScan(sorted(lookups), scanned, index)
+    if model_modules < MIN_MODEL_MODULES_SCANNED:
+        raise AssertionError(
+            f"the package scan reached {model_modules} modules under {MODEL_PACKAGE}, "
+            f"fewer than the {MIN_MODEL_MODULES_SCANNED} floor, so the nullable receiver "
+            "set is derived off part of the package and this census would ban too little "
+            "while reading green. The package moved, or `_package_root()` no longer "
+            "resolves to it."
+        )
+    nullable_roots = frozenset(roots)
+    nullable_names = nullable_receiver_names(index, nullable_roots)
+    return PackageScan(
+        sorted(lookups),
+        scanned,
+        index,
+        nullable_roots,
+        model_modules,
+        nullable_names,
+        frozenset(outside_roots),
+    )
 
 
 # --- the positive control ---------------------------------------------------
@@ -839,25 +982,445 @@ def test_the_detector_scans_the_whole_package(package_scan):
     )
 
 
-def test_only_ticket_and_domain_event_declare_a_nullable_workspace_id():
-    """A third nullable column makes this test say so instead of quietly narrowing."""
-    tables = _package_root() / "models" / "domain" / "tables.py"
-    tree = ast.parse(tables.read_text(encoding="utf-8"))
-    nullable: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef):
-            continue
-        for child in node.body:
-            if not isinstance(child, ast.AnnAssign) or not isinstance(child.target, ast.Name):
+def test_the_model_package_declares_exactly_the_known_nullable_workspace_id_classes(
+    package_scan,
+):
+    """The census, and the *input* to the ban rather than a claim beside it.
+
+    It reads the same `nullable_workspace_id_classes` result the ban filters on,
+    unioned over every module under `MODEL_PACKAGE`, so a further nullable column
+    anywhere in that directory cannot make this test say so while the ban keeps
+    covering a narrower set — the two cannot disagree, because there is only one
+    derivation.
+
+    `EventView` is in the set deliberately. It is a read DTO rather than a
+    `table=True` row class, but `session.get(Workspace, view.workspace_id)` on it
+    is the identical NULL-primary-key load, so keeping it fails closed wider at no
+    cost and spares the derivation a second predicate.
+    """
+    assert package_scan.model_modules >= MIN_MODEL_MODULES_SCANNED, (
+        f"only {package_scan.model_modules} modules under {MODEL_PACKAGE} were read, "
+        "so the set below is derived off part of the package"
+    )
+    assert package_scan.nullable_roots == {
+        "Ticket",
+        "DomainEvent",
+        "DockerLease",
+        "AgentSlot",
+        "EventView",
+    }, (
+        f"the nullable `workspace_id` columns are now {sorted(package_scan.nullable_roots)}, "
+        "measured over every module under "
+        f"{MODEL_PACKAGE} (at `07bee000e1`: `Ticket` tables.py:166, `DomainEvent` "
+        "tables.py:898, `DockerLease` docker_tables.py:135, `AgentSlot` "
+        "queue_tables.py:43, `EventView` schemas.py:467). "
+        "This set is the ban's scope, so a change here widens or narrows what "
+        "`test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_"
+        "workspace_id` covers. A newly nullable receiver needs its own answer — an "
+        f"accessor like `{ACCESSOR_NAME}`, or the inline `is not None` guard — not "
+        f"`{TICKET_CLASS}`'s.\n"
+        f"Boundary: the derivation reads {MODEL_PACKAGE} and nothing outside it. A "
+        "nullable `workspace_id` declared elsewhere in the package is out of reach of "
+        "this census. When that boundary was drawn the only two were the service-layer "
+        "value objects `CapacityRequest` (services/capacity_run.py) and `TrendFilter` "
+        "(services/token_usage_trend.py), neither a row type and neither keying a "
+        "lookup; a row type declared outside this directory would need the boundary "
+        "widened, not a name added to a list.\n"
+        "Honest limit: this is read from the *annotation*. A column made nullable only "
+        "through `sa_column=Column(..., nullable=True)` is out of reach of any AST read "
+        "of the annotation and would be missed. 0 `workspace_id` columns under "
+        f"{MODEL_PACKAGE} used `sa_column` at all when this was measured (16 other "
+        "columns there did, via `str_enum_column(..., nullable=True)`, none of them a "
+        "`workspace_id`), and the directory held 0 `Optional[`, so the annotation read "
+        "was complete; if that changes, this derivation needs a second source, not a "
+        "wider predicate."
+    )
+
+
+def test_the_derived_scope_is_wired_into_the_scan_the_ban_actually_reads(package_scan):
+    """The ban reads `nullable_names`, and only the fixture decides what that holds.
+
+    Every other assertion about the expansion is taken over a *synthetic*
+    `PackageScan` built by `_scan_over`, which calls `nullable_receiver_names`
+    itself. So they pin the recipe and not the wiring: replacing the fixture's
+    line with `nullable_names = frozenset()` disables the ban over the real
+    package — 0 nullable-keyed sites becomes 0 out of a scope of nothing — and
+    the whole module still passes, because there are no nullable-keyed sites for
+    the difference to show up on and the complement pin counts the same 32
+    lookups either way. Measured: that one-line mutant left 29 passed, 0 failed.
+
+    This is the assertion that makes the ban's scope non-blank over the real
+    package, so lg-milestone-that-1420 is not revertible in the fixture.
+    """
+    assert package_scan.nullable_roots, (
+        "the scan derived no nullable receiver classes at all, so the ban's scope is "
+        "empty and it cannot fire on anything. The derivation stopped reading "
+        f"{MODEL_PACKAGE}."
+    )
+    assert package_scan.nullable_names >= package_scan.nullable_roots, (
+        f"the ban filters on {sorted(package_scan.nullable_names)}, which does not even "
+        f"contain the derived roots {sorted(package_scan.nullable_roots)}. The fixture "
+        "is not handing the ban the set this module derives, so every test about the "
+        "derivation is about a value the ban never reads."
+    )
+    assert package_scan.nullable_names == nullable_receiver_names(
+        package_scan.index, package_scan.nullable_roots
+    ), (
+        f"the scan's `nullable_names` is {sorted(package_scan.nullable_names)}, not the "
+        "`names_for` expansion of its own roots. The ban's scope is then whatever the "
+        "fixture happened to build rather than what the derivation says, and with 0 "
+        "nullable-keyed sites in the package nothing else in this module can tell."
+    )
+
+
+def test_no_lookup_is_keyed_on_a_nullable_receiver_declared_outside_the_model_package(
+    package_scan,
+):
+    """The directory boundary, as a detector rather than a sentence in a message.
+
+    The derivation reads `MODEL_PACKAGE` and nothing else, on purpose: a
+    whole-package sweep also picks up service-layer value objects that are not
+    row types and key no lookup, and the census assertion would then churn with
+    unrelated service code. The cost of that boundary is that a nullable
+    `workspace_id` declared *outside* the directory is banned nowhere.
+
+    That cost was recorded as prose. It is checked here instead, without widening
+    the ban: a class outside `MODEL_PACKAGE` declaring a nullable `workspace_id`
+    is fine right up until a lookup is keyed on it, and that is the condition
+    asserted. Fail-closed, and it does not move with code that declares such a
+    class and never reads a Workspace by it.
+
+    Measured by injecting one such class plus its lookup into
+    `services/capacity_run.py`: the suite reds only on
+    `test_the_non_nullable_receiver_denominator_is_unchanged`, at 33 lookups
+    against the pinned 32, telling the author the package gained a lookup on a
+    *non-nullable* receiver and to re-pin the constant. The receiver is nullable
+    and carries the exact NULL-primary-key defect — which is this ticket's own
+    diagnosis-points-the-wrong-way failure, one directory out.
+    """
+    stranded = (
+        frozenset().union(
+            *(package_scan.index.names_for(root) for root in package_scan.outside_nullable_roots)
+        )
+        if package_scan.outside_nullable_roots
+        else frozenset()
+    )
+    offenders = [lookup for lookup in package_scan.lookups if lookup.resolved in stranded]
+    assert not offenders, (
+        f"{len(offenders)} sites read a Workspace by a nullable `workspace_id` whose "
+        f"class is declared outside {MODEL_PACKAGE}, so the ban "
+        "(`test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_"
+        "workspace_id`) does not cover them and the complement pin counts them as "
+        "non-nullable receivers — which tells the author to re-pin a count when the "
+        "site is the defect:\n"
+        + "\n".join(
+            f"  {lookup.site}  session.get(Workspace, {lookup.receiver}.workspace_id)"
+            f"  — receiver resolves to `{lookup.resolved}`, whose `workspace_id` is "
+            "nullable. When it is NULL the key is fully NULL and SQLAlchemy loads "
+            "nothing. Guard the site with the inline `is not None` check or an "
+            f"accessor beside `{ACCESSOR_NAME}`; if `{lookup.resolved}` is a row type "
+            f"that belongs under {MODEL_PACKAGE}, move it there and the ban covers it."
+            for lookup in offenders
+        )
+    )
+
+
+def test_a_third_nullable_class_widens_the_derived_set_with_no_second_edit():
+    """One edit to any `models/domain/` module is the whole change.
+
+    No allowlist to keep in step, and no filename to add. Proven on a synthetic
+    source rather than by editing a real model module,
+    which is what `nullable_workspace_id_classes` taking source *text* buys.
+    The non-nullable declaration in the same source is the control: were the
+    predicate routed through `_annotation_type`, it would be picked up too.
+    """
+    synthetic = """
+class Ticket(SQLModel, table=True):
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
+
+class DomainEvent(SQLModel, table=True):
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
+
+class StageFanoutGroup(SQLModel, table=True):
+    workspace_id: str = Field(foreign_key="workspaces.id")
+
+class Approval(SQLModel, table=True):
+    workspace_id: Optional[str] = Field(default=None, foreign_key="workspaces.id")
+"""
+    derived = nullable_workspace_id_classes(synthetic)
+    assert derived == {"Ticket", "DomainEvent", "Approval"}, (
+        f"a third class declaring a nullable `workspace_id` derived as {sorted(derived)}. "
+        "The ban's scope must follow one edit to any `models/domain/` module; if this "
+        "set does not grow, "
+        "the new receiver is banned nowhere and no test says so."
+    )
+    assert "StageFanoutGroup" not in derived, (
+        "a non-nullable `workspace_id` was derived as nullable, which widens the ban to "
+        "every receiver in the package. `_declares_nullable` must read whether the "
+        "annotation admits `None`, not which class it names."
+    )
+
+
+def test_the_nullability_predicate_does_not_route_through_annotation_type():
+    """`_annotation_type` discards `| None`; the ban's scope cannot be built on it."""
+    assert _declares_nullable(ast.parse("str | None", mode="eval").body)
+    assert _declares_nullable(ast.parse("None | str", mode="eval").body)
+    assert _declares_nullable(ast.parse("Optional[str]", mode="eval").body)
+    assert not _declares_nullable(ast.parse("str", mode="eval").body)
+    assert not _declares_nullable(ast.parse("str | int", mode="eval").body)
+    assert not _declares_nullable(ast.parse("list[str]", mode="eval").body)
+    #: The reason for a dedicated predicate: `_annotation_type` answers the same
+    #: class for both spellings, so it cannot tell them apart.
+    assert _annotation_type(ast.parse("str | None", mode="eval").body) == _annotation_type(
+        ast.parse("str", mode="eval").body
+    ), "`_annotation_type` no longer discards `| None`; re-check why this predicate exists"
+
+
+#: A nullable receiver that is not a `Ticket`, bound to a name that is neither
+#: `event` nor `ticket` nor `domain_event`, so the resolution is provably from the
+#: annotation and not from the spelling of the binding. This is the shape AC2
+#: injected into a real module by hand, kept here as a permanent oracle: with the
+#: ban scoped to `Ticket` alone, every assertion in this module still passed.
+_DOMAIN_EVENT_KEYED = """
+class DomainEvent:
+    workspace_id: str | None
+
+def f(session, row: DomainEvent):
+    return session.get(Workspace, row.workspace_id)
+"""
+
+#: The control: the same shape on a receiver whose `workspace_id` is not
+#: nullable. It must stay out of the ban, or the widening has swallowed the
+#: whole package rather than the one property that carries the defect.
+_NON_NULLABLE_KEYED = """
+class GithubSyncSettings:
+    workspace_id: str
+
+def f(session, row: GithubSyncSettings):
+    return session.get(Workspace, row.workspace_id)
+"""
+
+
+def _scan_over(source: str, label: str, nullable_roots: frozenset[str]) -> PackageScan:
+    """A `PackageScan` over one synthetic module, built the way the fixture is.
+
+    The ban is a function of a `PackageScan`, so handing it a synthetic one is
+    how its *own* filter gets exercised. Nothing here reads the package off
+    disk: the derivation and the expansion are the real ones, the sources are
+    not.
+    """
+    index = _index_for(ast.parse(source))
+    lookups = workspace_lookups(source, label, index)
+    return PackageScan(
+        sorted(lookups),
+        1,
+        index,
+        nullable_roots,
+        MIN_MODEL_MODULES_SCANNED,
+        nullable_receiver_names(index, nullable_roots),
+    )
+
+
+def test_the_ban_fires_on_a_nullable_receiver_that_is_not_a_ticket():
+    """The widening, as an assertion instead of a measurement taken once by hand.
+
+    Every other test in this module passes with the ban scoped to `Ticket`:
+    there are 0 nullable-keyed sites in the package, so the real census cannot
+    tell the narrow filter from the wide one, and the complement pin is 26 under
+    both. Without this test the whole of lg-milestone-that-1420 is revertible in
+    one line, green.
+    """
+    scan = _scan_over(_DOMAIN_EVENT_KEYED, "injected.py", frozenset({"DomainEvent"}))
+    assert [lookup.resolved for lookup in scan.lookups] == ["DomainEvent"], (
+        f"the synthetic site did not resolve, so this oracle proves nothing: {scan.lookups}"
+    )
+    assert "DomainEvent" not in scan.index.names_for(TICKET_CLASS), (
+        "the control is void: this receiver already reads as a `Ticket`"
+    )
+    with pytest.raises(AssertionError) as raised:
+        test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_workspace_id(scan)
+    message = str(raised.value)
+    assert "injected.py:6" in message, f"the offender's file:line is not named:\n{message}"
+    assert "row.workspace_id" in message, f"the receiver expression is not named:\n{message}"
+    assert "`DomainEvent`" in message, f"the resolved receiver class is not named:\n{message}"
+    assert "NULL primary key" in message, f"the defect is not named:\n{message}"
+    assert ACCESSOR_NAME in message, f"no guard is prescribed:\n{message}"
+    assert "its own answer" in message, (
+        f"`{ACCESSOR_NAME}(session, ticket)` was prescribed for a receiver that is not a "
+        f"`{TICKET_CLASS}` and has no accessor:\n{message}"
+    )
+    lowered = message.lower()
+    assert "re-measure" not in lowered and "resolver changed" not in lowered, (
+        "the ban told the author the resolver's reach moved, which is the diagnosis "
+        f"this ticket exists to stop giving them:\n{message}"
+    )
+
+
+def test_the_ban_is_silent_on_a_receiver_whose_workspace_id_is_not_nullable():
+    """R3: a predicate that answers `True` for every column reds 26 sites at once.
+
+    `_annotation_type` discards `| None`, so routed through it the derived set is
+    every class with an annotated `workspace_id`. This is what that mistake looks
+    like from the ban's side.
+    """
+    scan = _scan_over(_NON_NULLABLE_KEYED, "control.py", frozenset({"GithubSyncSettings"}))
+    assert [lookup.resolved for lookup in scan.lookups] == ["GithubSyncSettings"], (
+        f"the control site did not resolve, so it clears nothing: {scan.lookups}"
+    )
+    clean = _scan_over(_NON_NULLABLE_KEYED, "control.py", frozenset({"DomainEvent"}))
+    test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_workspace_id(clean)
+    assert clean.nullable_names == frozenset({"DomainEvent"}), (
+        "a receiver with a non-nullable `workspace_id` was pulled into the ban's scope"
+    )
+
+
+def test_a_subclass_or_alias_of_a_nullable_root_is_in_the_bans_scope():
+    """`names_for` is the identity on both real roots, so this needs a synthetic one.
+
+    A `class ArchivedEvent(DomainEvent)` inherits the nullable column and an
+    `EventRow = DomainEvent` renames it. Dropping the expansion and filtering on
+    the roots alone passes every other test in this module.
+    """
+    source = """
+class DomainEvent:
+    workspace_id: str | None
+
+class ArchivedEvent(DomainEvent):
+    pass
+
+EventRow = DomainEvent
+
+def f(session, row: ArchivedEvent):
+    return session.get(Workspace, row.workspace_id)
+"""
+    roots = nullable_workspace_id_classes(source)
+    assert roots == {"DomainEvent"}, f"the synthetic root did not derive: {sorted(roots)}"
+    index = _index_for(ast.parse(source))
+    names = nullable_receiver_names(index, roots)
+    assert {"ArchivedEvent", "EventRow"} <= names, (
+        f"the nullable receiver set is {sorted(names)}: a subclass inherits the nullable "
+        "column and an alias renames it, and filtering on the roots alone bans neither"
+    )
+    scan = _scan_over(source, "subclassed.py", roots)
+    with pytest.raises(AssertionError) as raised:
+        test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_workspace_id(scan)
+    assert "ArchivedEvent" in str(raised.value)
+    assert nullable_receiver_names(index, frozenset()) == frozenset(), (
+        "an empty root set must expand to an empty name set, not raise: a census that "
+        "errors on its own wiring is indistinguishable from a package with no tables"
+    )
+
+
+def test_the_derivation_is_not_keyed_on_the_names_ticket_and_domain_event():
+    """The set is derived from the column, not from the two names found first."""
+    source = """
+class Zebra(SQLModel, table=True):
+    workspace_id: str | None = Field(default=None)
+"""
+    assert nullable_workspace_id_classes(source) == {"Zebra"}, (
+        "a nullable `workspace_id` on a class named neither `Ticket` nor `DomainEvent` "
+        "was not derived, so the ban's scope is still keyed on the class name"
+    )
+
+
+def test_the_derivation_is_not_keyed_on_a_filename():
+    """Two module sources in, one set out: the directory is the only boundary.
+
+    `nullable_workspace_id_classes` takes source *text*, so it cannot tell
+    `tables.py` from `docker_tables.py` even in principle — which is exactly why
+    `package_scan` can accumulate it over a directory. Scoping the derivation to
+    one filename was the gap this closed: `DockerLease`, `AgentSlot` and
+    `EventView` declare nullable `workspace_id` columns outside `tables.py` and
+    were banned nowhere while the census read green.
+
+    Both sources are read; only the one with a nullable column contributes.
+    """
+    nullable_module = """
+class Zebra(SQLModel, table=True):
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
+"""
+    plain_module = """
+class Quagga(SQLModel, table=True):
+    workspace_id: str = Field(foreign_key="workspaces.id")
+
+class Okapi(SQLModel, table=True):
+    name: str
+"""
+    assert nullable_workspace_id_classes(plain_module) == frozenset(), (
+        "a module with no nullable `workspace_id` contributed to the derived set, "
+        "which would widen the ban to receivers that cannot carry this defect"
+    )
+    assert nullable_workspace_id_classes(nullable_module) == {"Zebra"}, (
+        "a nullable `workspace_id` in a module that is not `tables.py` was not derived"
+    )
+    accumulated = frozenset().union(
+        *(nullable_workspace_id_classes(source) for source in (plain_module, nullable_module))
+    )
+    assert accumulated == {"Zebra"}, (
+        f"accumulating the derivation over two module sources gave {sorted(accumulated)}. "
+        "`package_scan` unions this over every module under "
+        f"{MODEL_PACKAGE}; if the union does not carry a class declared outside "
+        "`tables.py`, the ban is keyed on a filename again and a receiver in a sibling "
+        "model module is banned nowhere while this census reads green."
+    )
+
+
+def test_every_workspace_id_annotation_in_the_model_package_is_readable():
+    """The honest limit of A1, as a detector rather than a sentence in a message.
+
+    `_declares_nullable` reads three spellings: a bare name, a `BinOp`/`BitOr`
+    with a direct `None` operand, and an `Optional[...]` subscript. Every other
+    spelling of a nullable column answers `False` — `Union[str, None]`, the
+    quoted `"str | None"` this module's own `_annotation_type` *does* resolve,
+    `str | None | int` with the `None` in the middle, and a bare `str` made
+    nullable through `sa_column=Column(..., nullable=True)`.
+
+    A respelling of an existing nullable column fails closed: the census's set
+    shrinks and that test reds. A *further*, newly added column in one of those
+    spellings does not: the census stays as it was, the ban stays narrow, and the
+    new receiver is banned nowhere while every assertion here reads green. That is
+    the one way this module can report a zero because it looked the wrong way, so
+    it is checked rather than confessed — over every module under `MODEL_PACKAGE`,
+    because that is the whole of the derivation's reach.
+    """
+    unreadable: list[str] = []
+    model_modules = 0
+    for path in sorted((_package_root() / MODEL_PACKAGE).rglob("*.py")):
+        model_modules += 1
+        relative = path.relative_to(_package_root())
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.ClassDef):
                 continue
-            if child.target.id != "workspace_id":
-                continue
-            annotation = child.annotation
-            if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
-                nullable.add(node.name)
-    assert nullable == {"Ticket", "DomainEvent"}, (
-        f"the nullable `workspace_id` columns are now {sorted(nullable)}. This census only "
-        f"covers `Ticket`; a third nullable column needs its own answer, not this one."
+            for child in node.body:
+                if not isinstance(child, ast.AnnAssign) or not isinstance(child.target, ast.Name):
+                    continue
+                if child.target.id != "workspace_id":
+                    continue
+                spelling = ast.unparse(child.annotation)
+                where = f"{relative}:{child.lineno}"
+                readable = _declares_nullable(child.annotation) or isinstance(
+                    child.annotation, (ast.Name, ast.Attribute)
+                )
+                if not readable:
+                    unreadable.append(f"{node.name}.workspace_id: {spelling}  ({where})")
+                elif isinstance(child.value, ast.Call) and any(
+                    keyword.arg == "sa_column" for keyword in child.value.keywords
+                ):
+                    unreadable.append(
+                        f"{node.name}.workspace_id: {spelling} = ...sa_column=...  ({where})"
+                    )
+    assert model_modules >= MIN_MODEL_MODULES_SCANNED, (
+        f"only {model_modules} modules under {MODEL_PACKAGE} were read, so a clean "
+        "result below would mean this check looked nowhere"
+    )
+    assert not unreadable, (
+        "a `workspace_id` column under "
+        f"{MODEL_PACKAGE} is spelled in a way `_declares_nullable` cannot read:\n"
+        + "\n".join(f"  {entry}" for entry in unreadable)
+        + "\nIf it is nullable, the ban does not cover it and nothing else says so: the "
+        "census set stays as it was and reads green. Respell the annotation as "
+        "`X | None` or `Optional[X]`, which is what the derivation reads, or give "
+        "`nullable_workspace_id_classes` a second source — not a wider guess."
     )
 
 
@@ -899,19 +1462,42 @@ def test_every_receiver_resolves_to_a_class_the_package_declares(package_scan):
     )
 
 
-def test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_tickets_workspace_id(
+def _guard_for(receiver_class: str, ticket_names: frozenset[str]) -> str:
+    """What the author of an offending site is supposed to do about it."""
+    if receiver_class in ticket_names:
+        return (
+            f"call `{ACCESSOR_NAME}(session, ticket)` from `{ACCESSOR_MODULE}`, which "
+            "owns this read"
+        )
+    return (
+        f"`{receiver_class}` has no accessor, so this site needs its own answer: add one "
+        f"beside `{ACCESSOR_NAME}`, or carry the inline `is not None` guard here"
+    )
+
+
+def test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_workspace_id(
     package_scan,
 ):
-    """The census. One accessor owns the read; every other site calls it."""
-    lookups = package_scan.lookups
+    """The census. A nullable `workspace_id` is never read as a primary key raw.
+
+    Scoped by the property that makes the defect possible — the receiver's
+    `workspace_id` is nullable — and not by the one class it was first found on.
+    `Ticket` has an accessor and `DomainEvent` does not, so the message answers
+    per receiver rather than prescribing `Ticket`'s guard to every site.
+    """
     ticket_names = package_scan.index.names_for(TICKET_CLASS)
-    offenders = [lookup for lookup in lookups if lookup.resolved in ticket_names]
+    offenders = [
+        lookup for lookup in package_scan.lookups if lookup.resolved in package_scan.nullable_names
+    ]
     assert not offenders, (
-        f"{len(offenders)} sites look up a Workspace by a Ticket's nullable "
-        f"`workspace_id` instead of calling `{ACCESSOR_NAME}(session, ticket)` from "
-        f"`{ACCESSOR_MODULE}`:\n"
+        f"{len(offenders)} sites read a Workspace by a nullable `workspace_id` as a "
+        "primary key. When that column is NULL the key is fully NULL, and SQLAlchemy "
+        "answers `SAWarning: fully NULL primary key identity cannot load any object` "
+        "and loads nothing — a miss that reads as an absent Workspace:\n"
         + "\n".join(
             f"  {lookup.site}  session.get(Workspace, {lookup.receiver}.workspace_id)"
+            f"  — receiver resolves to `{lookup.resolved}`; "
+            f"{_guard_for(lookup.resolved, ticket_names)}"
             for lookup in offenders
         )
     )
@@ -1103,25 +1689,34 @@ def f(session, ticket: TicketRow):
     )
 
 
-def test_the_real_package_denominator_is_unchanged_by_the_hardening(package_scan):
-    """The hardening must widen what the walk *sees*, not what it *counts*.
+def test_the_non_nullable_receiver_denominator_is_unchanged(package_scan):
+    """Widening the ban must change what it *bans*, not what the walk *sees*.
 
-    AC8 makes the denominator the check: 64 Ticket-keyed sites of 90 resolved
-    lookups at HEAD `1e62353f`, derived independently by receiver name with an
-    empty symmetric difference. A change to the resolver that moved either
-    number would have broken that agreement, so both are pinned until the
-    migration drops the count to zero.
+    A receiver whose `workspace_id` is not nullable cannot carry this defect, so
+    scoping the ban by nullability leaves this complement alone — and the proof
+    is that the narrow filter and the widened one return the *same* lookups, at
+    every HEAD this has been measured at. That is the pin that separates "the ban
+    grew" from "the resolver's reach moved".
+
+    The count itself tracks the package: 26 at `4ec80c15` and `8c97ab2b`, 27 at
+    `ed2fd03d` after one `SurveySource` site landed, 32 at `73a70f6a`. See
+    `NON_NULLABLE_RECEIVER_LOOKUPS`.
     """
-    ticket_names = package_scan.index.names_for(TICKET_CLASS)
     out_of_scope = [
-        lookup for lookup in package_scan.lookups if lookup.resolved not in ticket_names
+        lookup
+        for lookup in package_scan.lookups
+        if lookup.resolved not in package_scan.nullable_names
     ]
-    assert len(out_of_scope) == NON_TICKET_LOOKUPS, (
-        f"{len(out_of_scope)} lookups resolved to a non-`Ticket` row, not the "
-        f"{NON_TICKET_LOOKUPS} last measured (26 at HEAD 1e62353f: 90 resolved lookups, 64 of "
-        "them Ticket-keyed). This number does not move when the migration lands, so a "
-        "change here means the resolver changed what it can see — and the 64 that AC8 "
-        "pins was derived against this same walk. Re-measure before moving it."
+    assert len(out_of_scope) == NON_NULLABLE_RECEIVER_LOOKUPS, (
+        f"{len(out_of_scope)} lookups resolved to a receiver whose `workspace_id` is not "
+        f"nullable, not the {NON_NULLABLE_RECEIVER_LOOKUPS} measured at HEAD 73a70f6a "
+        "(32 of 32 resolved lookups, 0 nullable-keyed). Widening the ban does not move "
+        "this number, so a change here is one of two things, and they need different "
+        "answers: the package gained or lost a lookup on a non-nullable receiver (re-pin, "
+        "naming the site and its receiver class), or the walk's reach moved and it is now "
+        "resolving a different set of sites (diagnose that first — the other assertions in "
+        "this module rest on the walk seeing everything it did before). Re-measure before "
+        "moving it; never move it to make this red go away."
     )
 
 
