@@ -172,6 +172,22 @@ def _gate_argv(scripts: Path, checker: str) -> list[str] | None:
     return None if runner is None else [*runner, str(scripts / checker)]
 
 
+#: Not a workspace gate: it grades one merge commit, not a diff scope.
+MERGE_DROPS_CHECK = "merge_drops_check.py"
+
+
+def check_merge_drops(repo: Path, commit: str) -> CheckerResult:
+    """Files only ``commit``'s first-parent branch added, which the merge deleted.
+
+    One finding per dropped path; ``ok`` False with no findings when the check
+    could not run.
+    """
+    argv = _gate_argv(_scripts_dir(), MERGE_DROPS_CHECK)
+    if argv is None:
+        return CheckerResult(MERGE_DROPS_CHECK, ok=False, message="no runner for a .py checker")
+    return _checker_result(MERGE_DROPS_CHECK, [*argv, "--commit", commit, "--repo", str(repo)])
+
+
 class GateListError(RuntimeError):
     """The dispatcher could not say which gates exist."""
 

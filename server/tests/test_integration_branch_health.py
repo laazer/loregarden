@@ -449,6 +449,31 @@ def test_an_open_conflict_card_gets_a_merge_turn_and_closes(session, repo, tree)
     assert _cards(session, ms) == []
 
 
+def _keep_both_sides_but_drop_the_landing(*args, tree, **kwargs) -> str:
+    _keep_both_sides(*args, tree=tree, **kwargs)
+    git(tree, "rm", "-q", "landed.txt")
+    return "Kept both sides of shared.txt; landed.txt went with main's design."
+
+
+def test_a_turn_that_deletes_a_file_only_the_branch_added_is_refused(session, repo, tree):
+    """8ee19bc68 dropped lg-milestone-that-1316's six files resolving a conflict."""
+    ms, _ = tree
+    commit_on(repo, BRANCH, "landed.txt", "a landed ticket's work\n")
+    _conflict(repo)
+    before = git(repo, "rev-parse", BRANCH).stdout.strip()
+
+    with mock.patch.object(
+        integration_merge_agent, "_run_agent", side_effect=_keep_both_sides_but_drop_the_landing
+    ):
+        check_integration_branches(session)
+
+    assert git(repo, "rev-parse", BRANCH).stdout.strip() == before
+    [run] = _merge_runs(session, ms)
+    assert run.status == RunStatus.FAILED
+    [card] = _cards(session, ms)
+    assert "landed.txt" in card.impact
+
+
 def test_a_turn_that_does_not_resolve_it_leaves_the_card_saying_why(session, repo, tree):
     ms, _ = tree
     _conflict(repo)

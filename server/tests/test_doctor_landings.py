@@ -13,7 +13,7 @@ from loregarden.services.doctor import CHECKS, run_checks
 from loregarden.services.doctor_landings import check_landed_files_reach_base
 from sqlmodel import Session
 from tests.tree_publish_helpers import make_workspace
-from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
+from tests.worktree_helpers import commit_on, delete_on, git, make_repo, make_tree_ticket
 
 BRANCH = "integration/lg-tree-1"
 
@@ -106,6 +106,18 @@ def test_a_delivery_record_is_checked_even_while_the_tree_still_holds_the_landin
 
     assert finding.status is DoctorStatus.FAIL
     assert "lg-claimed-1" in finding.finding
+
+
+def test_a_landing_its_tree_holds_only_in_history_is_not_waiting(session, workspace, repo):
+    """8ee19bc68: a merge deleted 1316's files and the tree kept the landing as an ancestor."""
+    sha = _landing_on_tree(repo, "client/src/lib/toastWrap.ts")
+    _done(session, workspace, "lg-merged-away-1", sha)
+    delete_on(repo, BRANCH, "client/src/lib/toastWrap.ts")
+
+    finding = _check(session, workspace, repo)
+
+    assert finding.status is DoctorStatus.FAIL
+    assert "lg-merged-away-1" in finding.finding
 
 
 def test_a_landing_waiting_on_its_tree_is_not_lost(session, workspace, repo):

@@ -151,6 +151,16 @@ pre-commit:
       glob: "client/**/*.css"
       run: bash .lefthook/scripts/ts-motion.sh {staged_files}
 
+# commit-msg — the one hook that sees both a merge's result and its message:
+#   - merge-drops: a merge concluded by hand may not delete a file only its own
+#     branch added (8ee19bc68 dropped lg-milestone-that-1316's landing that way)
+#     unless the message names it: `Drops: <path> — <why>`. Not a merge: no-op.
+commit-msg:
+  commands:
+    merge-drops:
+      name: A merge keeps the files its own branch added
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/merge_drops_check.py --msg-file {1}
+
 pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`
   # without capping both runners' worker counts so they fit on the box together.
