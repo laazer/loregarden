@@ -51,6 +51,11 @@ def landing_commit(repo_root: Path, branch_sha: str, ref_sha: str) -> str:
     for every done prerequisite on every one-to-three-second poll, at up to
     four git subprocesses each. A commit git does not have makes `merge-base`
     raise, and a raise is never remembered, so a later fetch is seen.
+
+    `is_ancestor` answers False when git fails as well as when the answer is
+    no. That is safe here only because every route past it proves the answer
+    with calls that raise on failure; keep it so, or a git error is remembered
+    as "not landed" (`test_a_failing_ancestry_check_never_reads_as_not_landed`).
     """
     if not branch_sha or not ref_sha:
         return ""
