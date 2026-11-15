@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from loregarden.models.domain import InvariantReentry
+from loregarden.services.criteria_answered import CRITERIA_CHECKED_SINCE
 from loregarden.services.invariants import Invariant
 from loregarden.services.orphaned_findings import (
     defer_findings_whose_source_finished,
@@ -40,7 +41,7 @@ DONE_TICKETS_HAVE_SETTLED_CRITERIA = Invariant(
     # criterion on is a person's call, and inventing a settlement would be a lie.
     repair=None,
     reentry=InvariantReentry.DEFECT,
-    since=date(2026, 11, 7),
+    since=CRITERIA_CHECKED_SINCE,
     prevented_by="server/tests/test_criterion_gate.py::test_the_gate_is_not_entered_with_a_criterion_unanswered",
     unrepaired_action=(
         "Reopen it to verify, or settle the criterion with loregarden_settle_criterion "

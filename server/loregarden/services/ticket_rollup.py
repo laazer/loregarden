@@ -43,6 +43,7 @@ import logging
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import BlockKind, EventType, Ticket, TicketState, WorkItemType
+from loregarden.services.criteria_answered import criteria_left_unanswered
 from loregarden.services.deferral_state import is_deferred
 from loregarden.services.discovered_work import has_owned_children, owned_children
 from loregarden.services.initiative_coverage import (
@@ -137,7 +138,35 @@ def _held_open(session: Session, parent: Ticket, target: TicketState) -> str:
         return ""
     if parent.state_locked or parent.state in (TicketState.WONT_DO, TicketState.PARKED):
         return ""
-    return unlanded_own_work(session, parent)
+    return own_reason_to_stay_open(session, parent)
+
+
+def own_reason_to_stay_open(session: Session, parent: Ticket) -> str:
+    """Why a parent's own record keeps it open whatever its children say, or "".
+
+    Its own work landed nowhere (`parent_own_work`), or its own criteria are
+    unanswered. Every path that would close a parent as its children's summary
+    asks this: the rollup here and the aggregator finalise (`subtree_auto_run`).
+    """
+    return unlanded_own_work(session, parent) or _unanswered_criteria(session, parent)
+
+
+def _unanswered_criteria(session: Session, parent: Ticket) -> str:
+    """Why a parent's own criteria keep it open, or "".
+
+    Its children all resolving does not answer for the criteria its own run was
+    held to: lg-milestone-that-1429 was closed here on 2026-11-12 with 12 of them
+    unanswered, past the check every other path to `done` runs. Settling each
+    (met with its tests, or delegated to the child that carries it) releases it
+    on the next pass.
+    """
+    unanswered = criteria_left_unanswered(session, parent)
+    if not unanswered:
+        return ""
+    return (
+        f"{len(unanswered)} of its own criteria are not answered for; settle each, "
+        "met or delegated to a child"
+    )
 
 
 def _note_own_work(parent: Ticket, held: str) -> bool:

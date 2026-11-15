@@ -14,6 +14,9 @@ import pytest
 from loregarden.models.domain import (
     AgentRun,
     BlockKind,
+    OrchestrationDriver,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     RunStatus,
     StageStatus,
     Ticket,
@@ -22,8 +25,11 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.stage_types import StageType
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.closed_sources import parents_closed_without_their_work
+from loregarden.services.criterion_ledger import settle_met
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.subtree_auto_run import finalize_aggregator_ticket
 from loregarden.services.target_branch import resolve_target_branch
@@ -265,3 +271,78 @@ def test_a_parent_that_only_planned_before_it_split_still_closes(session, repo, 
 
     assert reconcile_parent(session, source) is True
     assert source.state is TicketState.DONE
+
+
+# --- a parent's own criteria ---------------------------------------------------
+#
+# lg-milestone-that-1429 was closed by the rollup on 2026-11-12 with 12 of its
+# own criteria unanswered: its children resolving answered none of them, and the
+# rollup never ran the check every other path to `done` runs.
+
+_OWN_CRITERIA = ["Every block says why", "The payload names what to open next"]
+
+
+def _planned_and_driven_with_criteria(session: Session, repo, source: Ticket, target: str) -> None:
+    """A parent that would close (planned only, nothing of its own on its branch),
+    driven since the check landed, with two criteria of its own unanswered."""
+    git(repo, "branch", "-f", source.branch, target)
+    _reviewed_with_gate_pending(session, source)
+    instance = OrchestrationService(session).get_workflow_instance(source.id)
+    _, stages = resolve_ticket_stages(session, source)
+    for stage in stages:
+        status = StageStatus.DONE if stage.key in ("triage", "plan") else StageStatus.PENDING
+        set_stage_status(source, instance, stages, stage.key, status)
+    source.acceptance_criteria_json = serialize_criteria(_OWN_CRITERIA)
+    session.add_all([instance, source])
+    session.add(
+        OrchestrationRun(
+            run_code=f"o-{source.external_id}",
+            ticket_id=source.id,
+            workspace_id=source.workspace_id,
+            profile_slug="loregarden",
+            driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
+            status=OrchestrationRunStatus.SUCCEEDED,
+            started_at=utcnow(),
+        )
+    )
+    session.commit()
+
+
+@pytest.mark.parametrize("close", CLOSING_PATHS.values(), ids=CLOSING_PATHS.keys())
+def test_no_closing_path_closes_a_parent_over_its_own_unanswered_criteria(
+    session, repo, family, close
+):
+    source, child, target = family
+    _planned_and_driven_with_criteria(session, repo, source, target)
+
+    close(session, source, child)
+
+    session.refresh(source)
+    assert source.state is TicketState.BLOCKED
+    assert source.block_kind is BlockKind.HUMAN_ACTION
+    assert source.blocking_issues.startswith(f"{OWN_WORK_NOTE}2 of its own criteria")
+
+
+def test_once_its_criteria_are_answered_the_rollup_closes_it(session, repo, family):
+    source, _, target = family
+    _planned_and_driven_with_criteria(session, repo, source, target)
+    reconcile_parent(session, source)
+    session.commit()
+    assert source.state is TicketState.BLOCKED
+
+    for criterion in _OWN_CRITERIA:
+        settle_met(
+            session,
+            source,
+            criterion,
+            tests=["server/tests/test_x.py::test_y"],
+            evidence_artifact_id=None,
+            commit_sha="",
+            settled_by="run:v",
+            reason="r",
+        )
+    reconcile_parent(session, source)
+    session.commit()
+
+    assert source.state is TicketState.DONE
+    assert source.blocking_issues == ""
