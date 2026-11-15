@@ -24,7 +24,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from loregarden.services import work_landed
+from loregarden.services import git_merge_noco, work_landed
 from loregarden.services.work_landed import landing_commit
 
 SERVICES = Path(__file__).resolve().parents[1] / "loregarden"
@@ -181,6 +181,37 @@ def test_every_shape_of_history_gets_its_answer(repo: _Repo, shape: Shape):
     if holder:
         # The holder is on the base, and holds everything the branch adds.
         repo.git("merge-base", "--is-ancestor", holder, repo.tip("main"))
+
+
+def _ancestry_check_fails(real_git: Callable[..., subprocess.CompletedProcess[str]]):
+    """`git merge-base --is-ancestor` exiting 128, as it does when git cannot tell."""
+
+    def git(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ("merge-base", "--is-ancestor"):
+            return subprocess.CompletedProcess(list(args), 128, "", "fatal: simulated")
+        return real_git(repo_root, *args)
+
+    return git
+
+
+@pytest.mark.parametrize("shape", SHAPES.values(), ids=SHAPES.keys())
+def test_a_failing_ancestry_check_never_reads_as_not_landed(repo: _Repo, shape: Shape):
+    """`is_ancestor` answers False when git fails, not only when the answer is no.
+
+    The answer is remembered for the life of the process, so a failure read as
+    "no" would pin a landed branch as unlanded until a restart. It cannot today:
+    every route past a False ancestry check either proves the answer with git
+    calls that raise on failure, or raises itself. This holds that in place for
+    every shape, so a change to the fallbacks that broke it fails here.
+    """
+    shape.build(repo)
+    work_landed._landing_commit.cache_clear()
+    with mock.patch.object(
+        git_merge_noco, "_git", side_effect=_ancestry_check_fails(git_merge_noco._git)
+    ):
+        holder = landing_commit(repo.root, repo.tip("feature"), repo.tip("main"))
+
+    assert bool(holder) is shape.landed
 
 
 # ---- one owner -------------------------------------------------------------
