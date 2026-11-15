@@ -128,6 +128,10 @@ class SweepStep:
     #: read of a world that has not changed since the last tick adds seconds to
     #: every start and repairs nothing, and the timer runs it a minute later.
     at_startup: bool = True
+    #: The invariant this step runs, if any, so a test can hold every scheduled
+    #: invariant to the registry's contract: one left out of `INVARIANTS` ran on
+    #: the timer with no check of its ticket, its prevention test or its repair.
+    invariant: Invariant | None = None
 
 
 def _invariant(invariant: Invariant, *, at_startup: bool = True) -> SweepStep:
@@ -136,7 +140,7 @@ def _invariant(invariant: Invariant, *, at_startup: bool = True) -> SweepStep:
     def run(session: Session) -> object:
         return run_invariant(session, invariant)
 
-    return SweepStep(invariant.name, run, at_startup=at_startup)
+    return SweepStep(invariant.name, run, at_startup=at_startup, invariant=invariant)
 
 
 def _probe_and_report_ships(session: Session) -> object:
@@ -385,6 +389,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
         DONE_TICKET_SHIP_IS_OBSERVABLE.name,
         _probe_and_report_ships,
         at_startup=False,
+        invariant=DONE_TICKET_SHIP_IS_OBSERVABLE,
     ),
 )
 

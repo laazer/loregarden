@@ -69,6 +69,19 @@ def test_every_invariant_is_scheduled_exactly_once():
         )
 
 
+def test_every_scheduled_invariant_is_registered():
+    """The other direction: `no_ticket_is_blocked_by_a_live_run_refusal` ran on the
+    timer for a week while absent from `INVARIANTS`, so none of the contract tests
+    here ever looked at it."""
+    registered = {invariant.name for invariant in INVARIANTS}
+    unregistered = [
+        step.invariant.name
+        for step in PERIODIC_STEPS
+        if step.invariant is not None and step.invariant.name not in registered
+    ]
+    assert unregistered == [], "scheduled but missing from invariant_registry.INVARIANTS"
+
+
 def test_invariant_names_are_unique():
     names = [invariant.name for invariant in INVARIANTS]
     assert len(names) == len(set(names))
