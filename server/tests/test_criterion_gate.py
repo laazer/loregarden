@@ -11,6 +11,7 @@ import json
 import shlex
 import subprocess
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +55,7 @@ from loregarden.services.orchestration_profile import (
     orchestration_dir,
 )
 from loregarden.services.rework_feedback import latest_rework_context
+from loregarden.services.scope_invariants import DONE_TICKETS_HAVE_SETTLED_CRITERIA
 from loregarden.services.seed import seed_database
 from loregarden.services.unsettled_criteria_runs import done_tickets_with_unsettled_criteria
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
@@ -372,6 +374,26 @@ def test_the_detector_reports_a_ticket_done_with_a_criterion_unanswered(db_sessi
 
     _met(db_session, ticket, CRITERIA[1], "server/tests/test_arms.py::test_names_the_arm")
     assert done_tickets_with_unsettled_criteria(db_session) == []
+
+
+@pytest.mark.parametrize(
+    ("started_at", "reported"),
+    [(datetime(2026, 11, 7, 11, 44), False), (datetime(2026, 11, 8, 0, 0), True)],
+    ids=["the morning the check landed", "the first whole day after"],
+)
+def test_the_bound_is_the_day_after_the_check_landed(db_session, ticket, started_at, reported):
+    """#813 merged at 18:29 UTC on 2026-11-07. lg-milestone-that-1216's last run
+    started at 11:44 that morning, before the check existed, and a midnight bound
+    reported it as a falsified guard."""
+    run = _orch_run(db_session, ticket)
+    run.started_at = started_at
+    ticket.state = TicketState.DONE
+    db_session.add_all([run, ticket])
+    db_session.commit()
+
+    found = [v.ticket_id for v in done_tickets_with_unsettled_criteria(db_session)]
+    assert found == ([ticket.id] if reported else [])
+    assert DONE_TICKETS_HAVE_SETTLED_CRITERIA.since == date(2026, 11, 8)
 
 
 def test_a_split_shows_in_the_digest_of_the_tree_above_it(db_session, ticket, env):

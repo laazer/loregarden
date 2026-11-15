@@ -7,35 +7,21 @@ invariant machinery reaches the orchestrator through `workflow_monitor`.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from loregarden.models.domain import OrchestrationRun, Ticket, TicketState
-from loregarden.services.criterion_gate_stages import runs_check
-from loregarden.services.criterion_ledger import delegation_gaps, unsettled
+from loregarden.services.criteria_answered import CHECKED_SINCE, criteria_left_unanswered
 from loregarden.services.invariants import Violation
-from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session, col, select
-
-#: When the check before the gate landed. Tickets done before it were never
-#: asked to settle their criteria, and recording them as met now would invent
-#: evidence, so only tickets driven since are held to it.
-CHECKED_SINCE = datetime(2026, 11, 7)
-
-
-def _checked_by_workflow(session: Session, ticket: Ticket) -> bool:
-    """Whether this ticket's workflow runs the check: it has a stage that settles criteria."""
-    _, stages = resolve_ticket_stages(session, ticket)
-    return runs_check(stages)
 
 
 def done_tickets_with_unsettled_criteria(session: Session) -> list[Violation]:
     """Done tickets, driven since the check landed, with a criterion not answered for.
 
     The check refuses such a ticket on every path that starts or finishes the
-    stage it guards (`gate_dispatch_check`), so one here was finished by a path
-    that test missed, had a criterion added after it passed, or had a delegate
-    dropped after it finished. Entered at the ticket's last update,
-    the closest record of when it finished.
+    stage it guards (`gate_dispatch_check`), and the rollup holds a parent open
+    over its own (`ticket_rollup`), so one here was finished by a path neither
+    covers, had a criterion added after it passed, or had a delegate dropped
+    after it finished. Entered at the ticket's last update, the closest record
+    of when it finished.
     """
     tickets = session.exec(
         select(Ticket)
@@ -47,11 +33,7 @@ def done_tickets_with_unsettled_criteria(session: Session) -> list[Violation]:
     ).all()
     violations: list[Violation] = []
     for ticket in tickets:
-        if not _checked_by_workflow(session, ticket):
-            continue
-        open_criteria = unsettled(session, ticket) + [
-            g.criterion for g in delegation_gaps(session, ticket)
-        ]
+        open_criteria = criteria_left_unanswered(session, ticket)
         if open_criteria:
             violations.append(
                 Violation(
