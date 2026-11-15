@@ -8,6 +8,7 @@ from loregarden.services.dependency_readiness import (
     UnmetReason,
     unmet_prerequisites_for_start,
 )
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.target_branch import (
     TargetBranchError,
@@ -211,9 +212,10 @@ def test_a_refresh_that_conflicts_refuses_to_cut_the_ticket(session, workspace, 
         resolve_target_branch(session, b, workspace, repo_root=repo)
 
 
-def test_refresh_is_a_no_op_when_the_base_has_not_moved(repo):
+def test_refresh_is_a_no_op_when_the_base_has_not_moved(session, workspace, repo):
     git(repo, "branch", "integration/x", "main")
-    assert refresh_integration_branch(repo, "integration/x", "main") is False
+    move = mover(session, workspace, writer="test.refresh", why="refresh", repo_root=repo)
+    assert refresh_integration_branch(repo, "integration/x", "main", move=move) is False
     assert _sha(repo, "integration/x") == _sha(repo, "main")
 
 

@@ -34,32 +34,29 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.branch_names import validate_branch_name
 from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import (
     BranchTips,
+    MoveRef,
     describe_signing,
     merge_tips,
     read_branch_tips,
 )
-from loregarden.services.git_subprocess import run_git
-from loregarden.services.hierarchy_service import validate_parent_child
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.integration_conflict_card import (
     clear_integration_conflict,
     report_integration_conflict,
 )
 from loregarden.services.integration_merge_agent import merge_base_by_agent
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
+from loregarden.services.tree_root import TargetBranchError, refuse_initiative, subtree_root
 from loregarden.services.work_landed import landing_commit
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
-
-
-class TargetBranchError(RuntimeError):
-    """The target branch could not be resolved or created."""
 
 
 class IntegrationConflictError(TargetBranchError):
@@ -84,55 +81,9 @@ class IntegrationConflictError(TargetBranchError):
         return f"{super().__str__()} (automatic merge: {self.automatic})"
 
 
-def subtree_root(session: Session, ticket: Ticket) -> Ticket:
-    """The topmost ancestor of ``ticket`` below any initiative — ``ticket``
-    itself when it has none.
-
-    The one definition of a tree's root: landing, publishing and dependency
-    readiness all reach it through here. A dangling ``parent_ticket_id`` (the
-    parent row is gone) ends the walk at the last ticket that exists: it is the
-    effective root of what remains.
-
-    Raises :class:`TargetBranchError` for an initiative, which roots no tree,
-    and for a ticket under one that the hierarchy does not allow there.
-    """
-    _refuse_initiative(ticket)
-    current = ticket
-    seen = {ticket.id}
-    while current.parent_ticket_id:
-        parent = session.get(Ticket, current.parent_ticket_id)
-        if parent is None or parent.id in seen:
-            break
-        if parent.work_item_type is WorkItemType.INITIATIVE:
-            _require_initiative_child(parent, current)
-            break
-        seen.add(parent.id)
-        current = parent
-    return current
-
-
-def _refuse_initiative(ticket: Ticket) -> None:
-    if ticket.work_item_type is WorkItemType.INITIATIVE:
-        raise TargetBranchError(
-            f"Initiative {ticket.external_id or ticket.id[:8]} is not a landing tree: "
-            "its milestones each land on their own integration branch"
-        )
-
-
-def _require_initiative_child(initiative: Ticket, child: Ticket) -> None:
-    try:
-        validate_parent_child(WorkItemType.INITIATIVE, child.work_item_type)
-    except ValueError as exc:
-        raise TargetBranchError(
-            f"{child.work_item_type.value} {child.external_id or child.id[:8]} sits directly "
-            f"under initiative {initiative.external_id or initiative.id[:8]}, which the "
-            f"hierarchy does not allow, so it has no tree to land in: {exc}"
-        ) from exc
-
-
 def integration_branch_for(root: Ticket) -> str:
     """The integration branch a tree rooted at ``root`` lands on."""
-    _refuse_initiative(root)
+    refuse_initiative(root)
     slug = root.external_id.strip() or root.id[:8]
     branch = f"{INTEGRATION_PREFIX}{slug}"
     validate_branch_name(branch)
@@ -176,7 +127,9 @@ def target_branch_name(session: Session, ticket: Ticket, workspace: Workspace) -
     return landing_target(session, ticket, workspace).branch
 
 
-def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) -> BranchTips:
+def ensure_integration_branch(
+    repo_root: Path, branch: str, base_branch: str, *, move: MoveRef
+) -> BranchTips:
     """Create ``branch`` from ``base_branch`` if it is missing.
 
     Returns both tips as they stand afterwards — read again after a creation,
@@ -197,21 +150,16 @@ def ensure_integration_branch(repo_root: Path, branch: str, base_branch: str) ->
             f"Cannot create {branch!r}: base branch {base_branch!r} does not exist "
             f"in {repo_root}{reason}"
         )
-    result = run_git(
-        ["branch", branch, base_branch],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "git branch failed").strip()
-        raise TargetBranchError(f"Cannot create {branch!r} from {base_branch!r}: {detail}")
+    refused = move(branch, tips.of(base_branch), "")
+    if refused:
+        raise TargetBranchError(f"Cannot create {branch!r} from {base_branch!r}: {refused}")
     logger.info("Created integration branch %s from %s in %s", branch, base_branch, repo_root)
     return read_branch_tips(repo_root, branch, base_branch)
 
 
-def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
+def refresh_integration_branch(
+    repo_root: Path, branch: str, base_branch: str, *, move: MoveRef
+) -> bool:
     """Bring ``branch`` up to ``base_branch``. True when ``branch`` moved.
 
     A tree lands on its integration branch for as long as it runs, while the
@@ -227,17 +175,24 @@ def refresh_integration_branch(repo_root: Path, branch: str, base_branch: str) -
     branch is moved to the base tip instead (`_fast_forward_superseded`).
     """
     return _refresh_from_tips(
-        repo_root, read_branch_tips(repo_root, branch, base_branch), branch, base_branch
+        repo_root,
+        read_branch_tips(repo_root, branch, base_branch),
+        branch,
+        base_branch,
+        move=move,
     )
 
 
-def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_branch: str) -> bool:
+def _refresh_from_tips(
+    repo_root: Path, tips: BranchTips, branch: str, base_branch: str, *, move: MoveRef
+) -> bool:
     outcome = merge_tips(
         repo_root,
         tips,
         target=branch,
         source=base_branch,
         subject=f"Refresh {branch} from {base_branch}",
+        move=move,
     )
     if outcome.ok:
         if not outcome.already_contained:
@@ -250,55 +205,14 @@ def _refresh_from_tips(repo_root: Path, tips: BranchTips, branch: str, base_bran
             )
         return not outcome.already_contained
     if outcome.conflicted:
-        if _fast_forward_superseded(repo_root, tips, branch, base_branch):
+        if _fast_forward_superseded(repo_root, tips, branch, base_branch, move=move):
             return True
         raise IntegrationConflictError(branch, base_branch, outcome.conflicted_files)
     raise TargetBranchError(f"Cannot refresh {branch!r} from {base_branch!r}: {outcome.detail}")
 
 
-#: Where a tip the branch is reset away from is kept: the base held it whole,
-#: so every landing it contains is delivered, and `base_delivery` reads them
-#: from here once the branch no longer contains them (lg-milestone-that-2624).
-SETTLED_PREFIX = "refs/loregarden/settled/"
-
-
-def settled_tips(repo_root: Path, branch: str) -> list[str]:
-    """The tips ``branch`` was reset away from because the base held them, newest first."""
-    listed = run_git(
-        [
-            "for-each-ref",
-            "--sort=-committerdate",
-            "--format=%(objectname)",
-            f"{SETTLED_PREFIX}{branch}/",
-        ],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if listed.returncode != 0:
-        raise RuntimeError(f"git for-each-ref failed: {(listed.stderr or listed.stdout).strip()}")
-    return listed.stdout.split()
-
-
-def _settle(repo_root: Path, branch: str, tip: str) -> None:
-    """Keep ``tip`` under `SETTLED_PREFIX` before ``branch`` leaves it; raises when git refuses."""
-    kept = run_git(
-        ["update-ref", f"{SETTLED_PREFIX}{branch}/{tip}", tip],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if kept.returncode != 0:
-        detail = (kept.stderr or kept.stdout or "git update-ref refused").strip()
-        raise TargetBranchError(
-            f"Could not keep {branch!r} at {tip[:12]} before resetting it: {detail}"
-        )
-
-
 def _fast_forward_superseded(
-    repo_root: Path, tips: BranchTips, branch: str, base_branch: str
+    repo_root: Path, tips: BranchTips, branch: str, base_branch: str, *, move: MoveRef
 ) -> bool:
     """Move ``branch`` to the base tip when the base already holds all its work.
 
@@ -310,16 +224,9 @@ def _fast_forward_superseded(
     holder = landing_commit(repo_root, branch_sha, base_sha)
     if not holder:
         return False
-    _settle(repo_root, branch, branch_sha)
-    moved = run_git(
-        ["update-ref", f"refs/heads/{branch}", base_sha, branch_sha],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if moved.returncode != 0:
-        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
+    # The owner keeps the tip it leaves under the settled refs before moving.
+    detail = move(branch, base_sha, branch_sha)
+    if detail:
         raise TargetBranchError(
             f"{branch!r} is already in {base_branch!r} (as {holder[:12]}) but could not be "
             f"moved to it: {detail}"
@@ -392,11 +299,24 @@ def _refresh_or_merge(
     *,
     merge_conflicts: bool,
 ) -> None:
+    move = mover(
+        session,
+        workspace,
+        writer="target_branch.refresh",
+        why=f"bring {target} up to {base} before a ticket is cut from it",
+        repo_root=repo_root,
+    )
     try:
         # One reading of both refs decides creation and the refresh alike.
-        _refresh_from_tips(
-            repo_root, ensure_integration_branch(repo_root, target, base), target, base
+        create = mover(
+            session,
+            workspace,
+            writer="target_branch.create",
+            why=f"create {target} from {base} for the tree's first ticket",
+            repo_root=repo_root,
         )
+        tips = ensure_integration_branch(repo_root, target, base, move=create)
+        _refresh_from_tips(repo_root, tips, target, base, move=move)
         return
     except IntegrationConflictError as exc:
         if not merge_conflicts:
@@ -409,4 +329,6 @@ def _refresh_or_merge(
             raise
     # Merged: the refresh is a no-op now, unless the base moved again meanwhile,
     # which raises for the next dispatch rather than looping here.
-    _refresh_from_tips(repo_root, read_branch_tips(repo_root, target, base), target, base)
+    _refresh_from_tips(
+        repo_root, read_branch_tips(repo_root, target, base), target, base, move=move
+    )

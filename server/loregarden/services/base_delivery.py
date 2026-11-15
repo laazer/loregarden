@@ -31,10 +31,12 @@ that an integration branch only moves forward. It does not always:
 between 10-20 and 10-30, and the tip that was later published was recorded as
 delivering it, so six files that never reached main read "on main". A landing
 the tip does not contain is asked on its own, and reads not held until the
-base holds its work (`landing_survival` guards the moves and reports the loss).
+base holds its work (`integration_branch_moves` guards every move with
+`landing_survival`, and `landing_survival_checks` reports a loss).
 
-So per integration branch, the tip and the root's last published tip are asked
-once; a ticket with no tree, or a child neither covers, is asked on its own.
+So per integration branch, the tip, the root's last published tip, and each tip
+the branch was moved away from (`settled_refs`) are asked once; a ticket with
+no tree, or a child none of them covers, is asked on its own.
 A "no" is cached until the base moves, so a pass with nothing new costs one
 `for-each-ref`.
 """
@@ -53,10 +55,11 @@ from loregarden.services.active_workspaces import active_workspaces
 from loregarden.services.git_automation_config import base_branch
 from loregarden.services.git_merge_noco import is_ancestor, rev
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.publish_cards import pending_publish_card
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
-from loregarden.services.target_branch import settled_tips, subtree_root
+from loregarden.services.settled_refs import settled_tips
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
-from loregarden.services.tree_publish_scheduler import pending_publish_card
+from loregarden.services.tree_root import subtree_root
 from loregarden.services.work_landed import landing_commit
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select

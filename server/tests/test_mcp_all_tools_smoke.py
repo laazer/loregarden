@@ -368,6 +368,7 @@ def _args_for(
         },
         # No rescan: a smoke call reads the last scan (or says there is none).
         "loregarden_disk_usage": {},
+        "loregarden_branch_moves": {"workspace_slug": ws},
         "loregarden_doctor": {
             "workspace_slug": ws,
             "checks": ["git_core_bare", "git_env_leak"],
@@ -517,6 +518,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_check_organization",
         "loregarden_doctor",
         "loregarden_disk_usage",
+        "loregarden_branch_moves",
         "loregarden_get_initiative_plan",
         "loregarden_propose_initiative_schedule",
         "loregarden_propose_feature_criteria",

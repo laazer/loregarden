@@ -22,6 +22,7 @@ from unittest import mock
 import pytest
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.git_merge_noco import MergeOutcome
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.target_branch import refresh_integration_branch, resolve_target_branch
 from sqlmodel import Session
@@ -170,17 +171,20 @@ def _integration_branch_behind_main(repo: Path) -> str:
     return branch
 
 
-def test_a_refresh_log_line_distinguishes_signed_from_unsigned(repo: Path, caplog):
+def test_a_refresh_log_line_distinguishes_signed_from_unsigned(
+    session, workspace, repo: Path, caplog
+):
     branch = _integration_branch_behind_main(repo)
+    move = mover(session, workspace, writer="test.refresh", why="refresh", repo_root=repo)
 
     with caplog.at_level(logging.INFO, logger=TARGET_LOGGER):
         with mock.patch(
             "loregarden.services.target_branch.merge_tips",
             return_value=MergeOutcome(ok=True, sha="b" * 40, signed=True),
         ):
-            assert refresh_integration_branch(repo, branch, "main")
+            assert refresh_integration_branch(repo, branch, "main", move=move)
         signed_line = _lines(caplog, TARGET_LOGGER)[-1]
-        assert refresh_integration_branch(repo, branch, "main")
+        assert refresh_integration_branch(repo, branch, "main", move=move)
         unsigned_line = _lines(caplog, TARGET_LOGGER)[-1]
 
     assert _anonymise(signed_line, branch, "main") != _anonymise(unsigned_line, branch, "main"), (
@@ -189,13 +193,16 @@ def test_a_refresh_log_line_distinguishes_signed_from_unsigned(repo: Path, caplo
     )
 
 
-def test_a_refresh_with_nothing_to_merge_reports_no_refresh_line(repo: Path, caplog):
+def test_a_refresh_with_nothing_to_merge_reports_no_refresh_line(
+    session, workspace, repo: Path, caplog
+):
     branch = _integration_branch_behind_main(repo)
-    refresh_integration_branch(repo, branch, "main")
+    move = mover(session, workspace, writer="test.refresh", why="refresh", repo_root=repo)
+    refresh_integration_branch(repo, branch, "main", move=move)
 
     caplog.clear()
     with caplog.at_level(logging.INFO, logger=TARGET_LOGGER):
-        assert refresh_integration_branch(repo, branch, "main") is False
+        assert refresh_integration_branch(repo, branch, "main", move=move) is False
 
     assert not _lines(caplog, TARGET_LOGGER), (
         f"nothing was merged, so nothing is reported as merged: {_lines(caplog, TARGET_LOGGER)}"

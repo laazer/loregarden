@@ -48,6 +48,11 @@ from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.git_automation_config import base_branch, resolve_git_automation
 from loregarden.services.git_merge_noco import rev
 from loregarden.services.prepared_action import PreparedAction
+from loregarden.services.publish_cards import (
+    PUBLISH_CARD_PREFIX,
+    pending_publish_cards,
+    publish_card_title,
+)
 from loregarden.services.publish_tree import (
     PublishOutcome,
     publish_base,
@@ -155,33 +160,6 @@ def publish_and_settle(session: Session, root: Ticket, workspace: Workspace) -> 
     return outcome
 
 
-#: Every publish card's title starts with this; the sweep finds them by it.
-PUBLISH_CARD_PREFIX = "Publish failed: "
-
-
-def publish_card_title(root: Ticket) -> str:
-    return f"{PUBLISH_CARD_PREFIX}{root.external_id or root.id[:8]}"
-
-
-def _pending(session: Session, root: Ticket) -> list[Approval]:
-    return list(
-        session.exec(
-            select(Approval).where(
-                Approval.ticket_id == root.id,
-                Approval.kind == ApprovalKind.HUMAN_ACTION,
-                Approval.status == ApprovalStatus.PENDING,
-                Approval.title == publish_card_title(root),
-            )
-        ).all()
-    )
-
-
-def pending_publish_card(session: Session, root: Ticket) -> Approval | None:
-    """The pending publish card on ``root``, if there is one."""
-    cards = _pending(session, root)
-    return cards[0] if cards else None
-
-
 def report_publish_failure(session: Session, root: Ticket, outcome: PublishOutcome) -> Approval:
     """File the card, or refresh the pending one with the latest reason and action."""
     where, command = _what_failed(root, outcome)
@@ -195,7 +173,7 @@ def report_publish_failure(session: Session, root: Ticket, outcome: PublishOutco
         attempted=f"Published {outcome.branch or 'the tree'} after a landing.",
         command=command,
     )
-    existing = _pending(session, root)
+    existing = pending_publish_cards(session, root)
     if existing:
         card = existing[0]
         # The command follows the same outcome as the impact, so one check covers both.
@@ -282,7 +260,7 @@ def _republish_command(root: Ticket) -> str:
 
 def close_publish_card(session: Session, root: Ticket, *, reason: str = "") -> int:
     """Close the pending publish card on ``root``, if any. Returns how many closed."""
-    return _resolve(session, root, _pending(session, root), reason=reason)
+    return _resolve(session, root, pending_publish_cards(session, root), reason=reason)
 
 
 def _resolve(session: Session, root: Ticket, cards: list[Approval], *, reason: str) -> int:

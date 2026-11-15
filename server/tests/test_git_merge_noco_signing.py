@@ -62,13 +62,13 @@ def signing_repo(tmp_path: Path) -> Path:
 def unsigned_repo(tmp_path: Path) -> Path:
     """A repo with signing explicitly off, and a landing waiting to be made.
 
-    `integration/x` and `feature` both branch from `main`; `feature` carries one
+    `landing/x` and `feature` both branch from `main`; `feature` carries one
     commit the target does not. Needs no key, so every assertion built on it
     runs on a host with no `ssh-keygen`.
     """
     repo = make_repo(tmp_path)
     git(repo, "config", "commit.gpgsign", "false")
-    git(repo, "branch", "integration/x", "main")
+    git(repo, "branch", "landing/x", "main")
     git(repo, "branch", "feature", "main")
     commit_on(repo, "feature", "f.txt", "feature work\n")
     return repo
@@ -88,18 +88,18 @@ def _signature_status(repo: Path, ref: str) -> str:
 @needs_ssh_keygen
 def test_a_landing_in_a_signing_repository_is_signed(signing_repo: Path):
     repo = signing_repo
-    git(repo, "branch", "integration/x", "main")
+    git(repo, "branch", "landing/x", "main")
     git(repo, "branch", "feature", "main")
     commit_on(repo, "feature", "f.txt", "feature work\n")
     assert signs_commits(repo)
 
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert outcome.ok and not outcome.already_contained
-    assert _signature_status(repo, "integration/x") in ("G", "U"), (
-        f"landing commit is not signed: %G?={_signature_status(repo, 'integration/x')!r}"
+    assert _signature_status(repo, "landing/x") in ("G", "U"), (
+        f"landing commit is not signed: %G?={_signature_status(repo, 'landing/x')!r}"
     )
 
 
@@ -108,11 +108,11 @@ def test_a_landing_in_an_unsigned_repository_is_not_signed(unsigned_repo: Path):
     assert not signs_commits(repo)
 
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert outcome.ok
-    assert _signature_status(repo, "integration/x") == "N"
+    assert _signature_status(repo, "landing/x") == "N"
 
 
 # --- AC-A1: the field is tri-state, and defaults to "no commit written" ----
@@ -141,12 +141,12 @@ def test_signed_is_a_tristate_defaulting_to_no_commit_written():
 @needs_ssh_keygen
 def test_a_landing_in_a_signing_repository_reports_signed_true(signing_repo: Path):
     repo = signing_repo
-    git(repo, "branch", "integration/x", "main")
+    git(repo, "branch", "landing/x", "main")
     git(repo, "branch", "feature", "main")
     commit_on(repo, "feature", "f.txt", "feature work\n")
 
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert outcome.ok and not outcome.already_contained
@@ -156,7 +156,7 @@ def test_a_landing_in_a_signing_repository_reports_signed_true(signing_repo: Pat
 def test_a_landing_in_an_unsigned_repository_reports_signed_false(unsigned_repo: Path):
     """The case AC-A5 requires to run with no `ssh-keygen` on the host."""
     outcome = merge_without_checkout(
-        unsigned_repo, target="integration/x", source="feature", subject="Land feature"
+        unsigned_repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert outcome.ok and not outcome.already_contained
@@ -172,7 +172,7 @@ def test_the_reported_flag_is_the_decision_not_a_re_read_of_the_commit(unsigned_
     """
     repo = unsigned_repo
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert outcome.signed is signs_commits(repo)
@@ -183,10 +183,10 @@ def test_the_reported_flag_is_the_decision_not_a_re_read_of_the_commit(unsigned_
 
 def test_an_already_contained_landing_wrote_no_commit_and_reports_none(unsigned_repo: Path):
     repo = unsigned_repo
-    merge_without_checkout(repo, target="integration/x", source="feature", subject="Land feature")
+    merge_without_checkout(repo, target="landing/x", source="feature", subject="Land feature")
 
     again = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert again.ok and again.already_contained
@@ -196,10 +196,10 @@ def test_an_already_contained_landing_wrote_no_commit_and_reports_none(unsigned_
 def test_a_conflicted_landing_wrote_no_commit_and_reports_none(unsigned_repo: Path):
     repo = unsigned_repo
     commit_on(repo, "feature", "shared.txt", "feature\n")
-    commit_on(repo, "integration/x", "shared.txt", "target\n")
+    commit_on(repo, "landing/x", "shared.txt", "target\n")
 
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert not outcome.ok and outcome.conflicted_files == ("shared.txt",)
@@ -216,7 +216,7 @@ def test_a_merge_tree_failure_wrote_no_commit_and_reports_none(unsigned_repo: Pa
     """
     repo = unsigned_repo
     tips = BranchTips(
-        shas={"ghost-target": rev(repo, "integration/x"), "ghost-source": rev(repo, "feature")}
+        shas={"ghost-target": rev(repo, "landing/x"), "ghost-source": rev(repo, "feature")}
     )
 
     outcome = merge_tips(
@@ -232,14 +232,14 @@ def test_a_merge_tree_failure_wrote_no_commit_and_reports_none(unsigned_repo: Pa
 def test_a_preview_writes_nothing_so_it_reports_none(unsigned_repo: Path, shape: str):
     """Every `merge_preview` result, which is all `integration_branch_health` sees."""
     repo = unsigned_repo
-    target = rev(repo, "integration/x")
+    target = rev(repo, "landing/x")
     source = rev(repo, "feature")
     if shape == "already_contained":
         source = target
     if shape == "conflict":
         commit_on(repo, "feature", "shared.txt", "feature\n")
-        commit_on(repo, "integration/x", "shared.txt", "target\n")
-        target = rev(repo, "integration/x")
+        commit_on(repo, "landing/x", "shared.txt", "target\n")
+        target = rev(repo, "landing/x")
         source = rev(repo, "feature")
 
     outcome = merge_preview(repo, target, source)
@@ -266,10 +266,10 @@ def test_a_refused_ref_update_wrote_nothing_the_branch_kept_and_reports_none(
     race itself reaches it — tips read a moment before the target moved.
     """
     repo = unsigned_repo
-    stale = read_branch_tips(repo, "integration/x", "feature")
-    commit_on(repo, "integration/x", "someone_else.txt", "moved under us\n")
+    stale = read_branch_tips(repo, "landing/x", "feature")
+    commit_on(repo, "landing/x", "someone_else.txt", "moved under us\n")
 
-    outcome = merge_tips(repo, stale, target="integration/x", source="feature", subject="Land")
+    outcome = merge_tips(repo, stale, target="landing/x", source="feature", subject="Land")
 
     assert not outcome.ok, "the target moved since the reading; the merge must be refused"
     assert outcome.detail, "git's own words about the refusal are kept"
@@ -287,7 +287,7 @@ def test_a_commit_tree_failure_wrote_no_commit_and_reports_none(tmp_path: Path):
     reports a signed landing for a commit git refused to write.
     """
     repo = make_repo(tmp_path)
-    git(repo, "branch", "integration/x", "main")
+    git(repo, "branch", "landing/x", "main")
     git(repo, "branch", "feature", "main")
     commit_on(repo, "feature", "f.txt", "feature work\n")
     # Configured last: `git commit` honours gpgsign too, so the branch has to
@@ -298,13 +298,13 @@ def test_a_commit_tree_failure_wrote_no_commit_and_reports_none(tmp_path: Path):
     assert signs_commits(repo), "the decision is to sign; the host just cannot"
 
     outcome = merge_without_checkout(
-        repo, target="integration/x", source="feature", subject="Land feature"
+        repo, target="landing/x", source="feature", subject="Land feature"
     )
 
     assert not outcome.ok and not outcome.conflicted_files
     assert outcome.detail, "git's own words about the failed signature are kept"
     assert outcome.signed is None, "no commit was written; 'signed' would be a claim about nothing"
-    assert rev(repo, "integration/x") == rev(repo, "main"), "the target must not have moved"
+    assert rev(repo, "landing/x") == rev(repo, "main"), "the target must not have moved"
 
 
 # --- AC-A2: the flag is the decision, and costs no second git call ----------
@@ -331,7 +331,7 @@ def test_the_flag_costs_no_second_git_call_and_nothing_reads_the_commit_back(
 
     with mock.patch.object(git_merge_noco, "_git", record):
         outcome = merge_without_checkout(
-            repo, target="integration/x", source="feature", subject="Land feature"
+            repo, target="landing/x", source="feature", subject="Land feature"
         )
 
     assert outcome.ok and outcome.signed is False

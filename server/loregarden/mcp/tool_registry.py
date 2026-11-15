@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.branch_moves_tool import branch_moves_tool
 from loregarden.mcp.chat_wait_tool import HANDLERS as CHAT_WAIT_HANDLERS
 from loregarden.mcp.chat_wait_tool import (
     TOOL_DEFINITIONS as CHAT_WAIT_TOOL_DEFINITIONS,  # noqa: F401 — re-export for tools.py
@@ -76,6 +77,7 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
     McpTool.DOCTOR.value: doctor,
     McpTool.DISK_USAGE.value: disk_usage_tool,
+    McpTool.BRANCH_MOVES.value: branch_moves_tool,
     McpTool.DEFER_TICKET.value: defer_ticket_tool,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
     McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,

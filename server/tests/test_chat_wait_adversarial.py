@@ -598,13 +598,29 @@ def test_one_poll_continues_only_the_gone_wait(db_session, ticket, workspace, tm
         dead.kill()
         dead.wait()
         poll_chat_waits(db_session, on_unknown=ChatWaitUnknownPolicy.SKIP)
-        assert outstanding_for(db_session, ChatSurface.HOME, chat.id) is not None
-        assert identify(live.pid).state is ProcessState.ALIVE
-    assert len(_runs_for_ticket(db_session, ticket.id)) == 2
+        # This test failed under load and never on its own; the failure printed
+        # no cause. Each wait's end state and the identity it captured name the
+        # branch of `_handle_wait` it took (an empty identity is skipped, a
+        # continuation that could not start is INTERRUPTED).
+        seen = _wait_states(db_session, live=live.pid, dead=dead.pid)
+        assert outstanding_for(db_session, ChatSurface.HOME, chat.id) is not None, seen
+        assert identify(live.pid).state is ProcessState.ALIVE, seen
+    assert len(_runs_for_ticket(db_session, ticket.id)) == 2, seen
     home_runs = db_session.exec(
         select(AgentRun).where(AgentRun.stage_key == HOME_CHAT_STAGE_KEY)
     ).all()
-    assert len(home_runs) == 1
+    assert len(home_runs) == 1, seen
+
+
+def _wait_states(db_session: Session, **pids: int) -> str:
+    """Every wait's surface, status and captured identity, and each pid's reading now."""
+    rows = [
+        f"{w.surface.value} pid={w.pid} status={w.status.value} "
+        f"identity={w.pid_identity!r} exit={w.exit_code}"
+        for w in db_session.exec(select(ChatWait)).all()
+    ]
+    readings = [f"{name}={identify(pid).state.value}" for name, pid in pids.items()]
+    return "; ".join(rows + readings)
 
 
 # ---- R4 cap / boot / copy ------------------------------------------------

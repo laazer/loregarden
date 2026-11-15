@@ -51,7 +51,7 @@ from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification import RECEIPT_PASSED
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
-from loregarden.services.landing_survival import landings_lost_from_their_branch
+from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
 from loregarden.services.orchestration_capacity import (
