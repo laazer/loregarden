@@ -162,6 +162,17 @@ def commit_on(repo: Path, branch: str, filename: str, content: str) -> str:
     return sha
 
 
+def delete_on(repo: Path, branch: str, filename: str) -> str:
+    """One commit deleting `filename` from `branch` (not checked out), as a merge resolution might."""
+    tree = repo.parent / f"tmp-del-{branch.replace('/', '-')}"
+    git(repo, "worktree", "add", "-q", str(tree), branch)
+    git(tree, "rm", "-q", filename)
+    git(tree, "commit", "-q", "-m", f"drop {filename} on {branch}")
+    sha = git(tree, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "worktree", "remove", "--force", str(tree))
+    return sha
+
+
 def make_orch_run(session, ticket):
     """A running orchestration on `ticket`, for driving `complete_orchestration`."""
     from loregarden.models.domain import OrchestrationRun, OrchestrationRunStatus

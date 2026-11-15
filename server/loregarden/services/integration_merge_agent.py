@@ -70,7 +70,11 @@ from loregarden.services.integration_merge_budget import (
     merge_turn_refusal,
     refused_turns,
 )
-from loregarden.services.organization_gate_service import OrganizationScope, check_repo
+from loregarden.services.organization_gate_service import (
+    OrganizationScope,
+    check_merge_drops,
+    check_repo,
+)
 from loregarden.services.run_concurrency import new_run_code
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
@@ -415,7 +419,29 @@ def _settle(
     verdict = _verify(tree, branch_sha=branch_sha, base_sha=base_sha, files=files)
     if not verdict.ok:
         return verdict
+    verdict = _keeps_branch_work(tree, branch=branch)
+    if not verdict.ok:
+        return verdict
     return _grade(tree, base=base, base_sha=base_sha)
+
+
+def _keeps_branch_work(tree: Path, *, branch: str) -> MergeResolution:
+    """Refuse a resolution that deleted a file only ``branch`` added.
+
+    Such a file holds a landing the base has never had, and dropping it is a
+    person's decision (8ee19bc68 dropped lg-milestone-that-1316's six files
+    this way, and every ancestry check read them as held).
+    """
+    checked = check_merge_drops(tree, "HEAD")
+    if checked.ok:
+        return MergeResolution(True)
+    if not checked.findings:
+        return _unable(f"cannot check what the merge deleted: {checked.message}")
+    return _refused(
+        f"the merge deletes files only {branch} added, so the work they hold would never "
+        f"reach the base: {', '.join(checked.findings)}. Keep them; if dropping one is "
+        "right, leave its conflict unresolved and say why, so a person decides."
+    )
 
 
 def _paths(tree: Path, *args: str) -> tuple[str, str]:
@@ -573,6 +599,8 @@ def merge_brief(
         "they pass.\n\n"
         "## Do not\n"
         "- commit, push, switch branches, rebase, reset, or abort the merge;\n"
+        f"- delete a file that only `{branch}` added: it holds a landed ticket's work, and a "
+        "merge that drops it is refused;\n"
         "- build another checkout or worktree to compare test results against; a failure "
         "this merge did not cause is not yours to fix here;\n"
         "- run the whole suite, or rerun a test file that already passed;\n"

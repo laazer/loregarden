@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.db.versions.landing_lost_delivery_cleared import m_landing_lost_delivery_cleared
 from loregarden.models.domain import Delivery, Ticket, TicketState
 from loregarden.services.base_delivery import delivery_of, record_base_holdings
 from loregarden.services.branch_triage_service import delete_branch
+from loregarden.services.doctor_landings import DELIVERED_IN_PART, DeliveredInPart
 from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.invariant_registry import LANDINGS_SURVIVE_THEIR_BRANCH
 from loregarden.services.land_ticket import land_ticket
@@ -32,7 +34,7 @@ from tests.tree_publish_helpers import (
     repo_with_remote,
     squash_onto_remote_main,
 )
-from tests.worktree_helpers import commit_on, git, make_tree_ticket
+from tests.worktree_helpers import commit_on, delete_on, git, make_tree_ticket
 
 PACKAGE = Path(__file__).resolve().parents[1] / "loregarden"
 
@@ -194,6 +196,37 @@ def test_the_invariant_reports_a_landing_on_neither_its_branch_nor_the_base(
     [violation] = landings_lost_from_their_branch(session)
     assert violation.subject_id == child.id
     assert LANDINGS_SURVIVE_THEIR_BRANCH.detect is landings_lost_from_their_branch
+
+
+def test_the_invariant_reports_a_landing_whose_files_its_branch_deleted(session, workspace, repo):
+    """8ee19bc68: a merge deleted 1316's files; the branch kept the landing as an ancestor."""
+    _ms, child, branch = landed_tree(session, workspace, repo)
+    _done(session, child)
+    delete_on(repo, branch, "c1.txt")
+
+    [violation] = landings_lost_from_their_branch(session)
+
+    assert violation.subject_id == child.id
+    assert "c1.txt" in violation.detail
+
+
+def test_a_file_a_person_excused_is_not_reported(session, workspace, repo):
+    _ms, child, branch = landed_tree(session, workspace, repo)
+    _done(session, child)
+    delete_on(repo, branch, "c1.txt")
+    excused = DeliveredInPart(files=frozenset({"c1.txt"}), decided_in="#test")
+
+    with mock.patch.dict(DELIVERED_IN_PART, {child.external_id: excused}):
+        assert landings_lost_from_their_branch(session) == []
+
+
+def test_a_file_the_base_already_has_may_leave_the_branch(session, workspace, repo):
+    _ms, child, branch = landed_tree(session, workspace, repo)
+    _done(session, child)
+    squash_onto_remote_main(repo)
+    delete_on(repo, branch, "c1.txt")
+
+    assert landings_lost_from_their_branch(session) == []
 
 
 def test_a_landing_the_base_holds_is_not_reported_though_its_branch_moved(session, workspace, repo):

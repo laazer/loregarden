@@ -14,7 +14,10 @@ added files only, which is what caught 1316 (`landings_survive_their_branch`
 is the ancestry check that sees the rest).
 
 A landing its integration branch still holds and the base does not is waiting
-to be published, not lost, and is skipped. Its own module for the reason
+to be published, not lost, and is skipped, but only while the branch still has
+the files it added. History alone is not holding: `8ee19bc68` resolved a merge
+by deleting 1316's files, and the branch went on carrying the landing as an
+ancestor with none of its work (lg-milestone-that-2622). Its own module for the reason
 `doctor_docker` is: `doctor.py` is near its size cap. Read-only, and it does
 not fetch: it reads the local `origin/<base>` and `<base>` refs as they are.
 """
@@ -22,6 +25,7 @@ not fetch: it reads the local `origin/<base>` and `<base>` refs as they are.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from loregarden.models.domain import (
@@ -97,7 +101,7 @@ def _git_lines(repo_root: Path, args: list[str]) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def _base_tips(repo_root: Path, base: str) -> list[str]:
+def base_tips(repo_root: Path, base: str) -> list[str]:
     tips: list[str] = []
     for ref in (f"refs/remotes/origin/{base}", f"refs/heads/{base}"):
         sha = rev(repo_root, ref)
@@ -106,7 +110,7 @@ def _base_tips(repo_root: Path, base: str) -> list[str]:
     return tips
 
 
-def _ever_added(repo_root: Path, tips: list[str]) -> set[str]:
+def ever_added(repo_root: Path, tips: list[str]) -> set[str]:
     """Every path any commit reachable from ``tips`` added."""
     return set(
         _git_lines(
@@ -115,18 +119,48 @@ def _ever_added(repo_root: Path, tips: list[str]) -> set[str]:
     )
 
 
-def _added_by(repo_root: Path, landed_sha: str) -> list[str]:
-    """The files a landing added: its change against its first parent."""
-    return _git_lines(
-        repo_root,
-        ["diff", "--name-only", "--no-renames", "--diff-filter=A", f"{landed_sha}^1", landed_sha],
+@lru_cache(maxsize=4096)
+def _added_by(repo_root: Path, landed_sha: str) -> tuple[str, ...]:
+    """The files a landing added: its change against its first parent.
+
+    Cached: a commit's change never changes, and the invariant asks every pass.
+    A failure raises, so it is never cached.
+    """
+    return tuple(
+        _git_lines(
+            repo_root,
+            [
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--diff-filter=A",
+                f"{landed_sha}^1",
+                landed_sha,
+            ],
+        )
     )
+
+
+def files_dropped_at(repo_root: Path, ticket: Ticket, tip: str) -> tuple[str, ...]:
+    """Files ``ticket``'s landing added that ``tip`` no longer has.
+
+    Files `DELIVERED_IN_PART` excuses for the ticket are left out. Raises
+    `RuntimeError` when git cannot read the landing or the tip.
+    """
+    added = _added_by(repo_root, ticket.landed_sha)
+    if not added:
+        return ()
+    present = set(_git_lines(repo_root, ["ls-tree", "-r", "--name-only", tip, "--", *added]))
+    exemption = DELIVERED_IN_PART.get(ticket.external_id)
+    excused = exemption.files if exemption is not None else frozenset()
+    return tuple(path for path in added if path not in present and path not in excused)
 
 
 def _awaiting_publish(repo_root: Path, ticket: Ticket, base: str, tips: dict[str, str]) -> bool:
     """Whether the ticket's own branch still holds its landing and nothing recorded delivery.
 
-    A landing on the base itself is delivered, never waiting.
+    Holding is the landing in the tip's history *and* its added files in the
+    tip's tree. A landing on the base itself is delivered, never waiting.
     """
     if ticket.on_base_sha:
         return False
@@ -134,9 +168,9 @@ def _awaiting_publish(repo_root: Path, ticket: Ticket, base: str, tips: dict[str
     if not branch or branch == base:
         return False
     tip = tips.setdefault(branch, rev(repo_root, f"refs/heads/{branch}"))
-    return bool(tip) and (
-        tip == ticket.landed_sha or is_ancestor(repo_root, ticket.landed_sha, tip)
-    )
+    if not tip or not (tip == ticket.landed_sha or is_ancestor(repo_root, ticket.landed_sha, tip)):
+        return False
+    return not files_dropped_at(repo_root, ticket, tip)
 
 
 def audit_landed_files(session: Session, workspace: Workspace, repo_root: Path) -> LandingFileAudit:
@@ -147,10 +181,10 @@ def audit_landed_files(session: Session, workspace: Workspace, repo_root: Path) 
     when the base exists and git cannot read its history.
     """
     base = base_branch(workspace)
-    base_tips = _base_tips(repo_root, base)
-    if not base_tips:
+    tips = base_tips(repo_root, base)
+    if not tips:
         return LandingFileAudit(base=base, has_base=False, lost=(), unreadable=(), examined=0)
-    history = _ever_added(repo_root, base_tips)
+    history = ever_added(repo_root, tips)
 
     tickets = session.exec(
         select(Ticket)
