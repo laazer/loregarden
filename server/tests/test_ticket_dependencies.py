@@ -4,7 +4,6 @@ test_auto_mode_subtree.py and test_studio_workflow_assignment.py.
 """
 
 import pytest
-from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.models.domain import Ticket, TicketDependency, TicketState, WorkItemType, Workspace
 from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.invariant_registry import (
@@ -17,6 +16,7 @@ from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,
 )
+from loregarden.services.ticket_state_payload import ticket_state_payload
 from sqlmodel import Session, select
 from tests.factories import make_ticket
 

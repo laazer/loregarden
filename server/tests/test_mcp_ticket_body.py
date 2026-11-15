@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import json
 
-from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import UpdateTicketRequest, WorkItemType
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_state_payload import ticket_state_payload
 
 _BODY_KEYS = {"title", "description", "acceptance_criteria"}
 

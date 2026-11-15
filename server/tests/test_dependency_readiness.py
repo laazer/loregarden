@@ -255,7 +255,7 @@ def test_the_mcp_blocked_by_entry_keeps_its_reason_and_target_and_gains_no_remed
     orchestrator's prose hold line (`builtin_orchestrator._why`); this payload
     is a different reader and must not pick it up.
     """
-    from loregarden.mcp.ticket_edit_tools import blocked_by_summaries
+    from loregarden.services.ticket_state_payload import blocked_by_summaries
 
     ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
     a = _ticket(session, workspace, "a", parent=ms, state=TicketState.DONE)
