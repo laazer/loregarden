@@ -12,6 +12,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden sandbox snapshot --into data/sandbox
     loregarden eval gates --workspace blobert
     loregarden git change-pr --all-workspaces --branch B --title T -- <command> {worktree}
+    loregarden git calls --writes
     loregarden capacity run --footprint heavy --label L -- <command>
     loregarden local_main
     loregarden instance run --name client --kind client --port 5173 -- <command>
@@ -25,6 +26,7 @@ import sys
 from loregarden.cli import (
     capacity,
     gate_eval,
+    git_calls,
     git_tools,
     init_db,
     instance,
@@ -61,9 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     eval_commands = eval_group.add_subparsers(dest="command", required=True)
     gate_eval.register(eval_commands)
 
-    git_group = groups.add_parser("git", help="Git chores across managed workspaces.")
+    git_group = groups.add_parser(
+        "git", help="Git chores across managed workspaces, and where code runs git."
+    )
     git_commands = git_group.add_subparsers(dest="command", required=True)
     git_tools.register(git_commands)
+    git_calls.register(git_commands)
 
     capacity_group = groups.add_parser("capacity", help="Hold machine capacity while running.")
     capacity_commands = capacity_group.add_subparsers(dest="command", required=True)

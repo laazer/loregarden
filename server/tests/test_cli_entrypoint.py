@@ -43,6 +43,7 @@ def test_every_console_script_resolves_to_a_callable(target):
         ["mcp", "serve"],
         ["db", "init", "--empty"],
         ["local_main"],
+        ["git", "calls", "--writes"],
         ["instance", "run", "--name", "client", "--kind", "client", "--port", "5173", "--", "true"],
     ],
 )
