@@ -41,7 +41,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
-from loregarden.services.drain import is_draining, stamp_refusal
+from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     LIVE_RUN_STATUSES,
@@ -50,6 +50,11 @@ from loregarden.services.parallel_queue import (
     claim_lane_slot,
     release_slot,
     tickets_holding_lanes,
+)
+from loregarden.services.queue_refusals import (
+    record_refusal,
+    refuse_second_lane,
+    refused_before_claim,
 )
 from loregarden.services.queue_repair import (
     REPAIR_ATTEMPT_CAP,
@@ -322,12 +327,20 @@ class QueueLaneService:
         property, that a refused dispatch must not strand a lane, so the release
         below is what makes claiming first safe.
         """
+        # Every refusal that needs no dispatch is answered before the claim. The
+        # reconcile pass retries each idle lane with work every 30 seconds, and a
+        # head refused for a standing reason used to cost a claim, a re-stamp of
+        # the same reason, and a release on every pass: three write transactions
+        # that changed nothing, each taking SQLite's file lock.
+        waiting = next(iter(self.waiting_in_lane(slot_number)), None)
+        if waiting is None:
+            return None
         if is_draining():
-            # Before the claim: taking a lane for work that will not start is
-            # the strand this path was rewritten to avoid.
-            head = next(iter(self.waiting_in_lane(slot_number)), None)
-            if head is not None:
-                stamp_refusal(self.session, head)
+            # Taking a lane for work that will not start is the strand this path
+            # was rewritten to avoid.
+            record_refusal(self.session, waiting, refuse_reason())
+            return None
+        if refused_before_claim(self.session, waiting, slot_number):
             return None
 
         slot = claim_lane_slot(self.session, slot_number)
@@ -364,23 +377,9 @@ class QueueLaneService:
             release_slot(self.session, slot)
             return self.start_lane_head(slot_number)
 
-        # 645: this lane is already claimed, so ask about the others. A ticket
-        # holding one lane must not take a second — whichever column recorded
-        # the first, and whichever way this one would be recorded.
-        elsewhere = tickets_holding_lanes(self.session, exclude_slot=slot_number).get(ticket.id)
-        if elsewhere:
-            logger.warning(
-                "Lane %d refused for ticket %s: it already holds lane(s) %s",
-                slot_number,
-                ticket.id,
-                elsewhere,
-            )
-            head.failure_reason = (
-                f"ticket already occupies lane(s) {elsewhere}; one lane per ticket"
-            )
-            head.last_failed_at = datetime.now(timezone.utc)
-            self.session.add(head)
-            self.session.commit()
+        # 645, asked again under the claim: the read before it raced any
+        # admission that landed in between.
+        if refuse_second_lane(self.session, head, slot_number):
             release_slot(self.session, slot)
             return None
 

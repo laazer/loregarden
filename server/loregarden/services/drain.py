@@ -33,7 +33,6 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus
@@ -167,16 +166,3 @@ def wait_for_quiescence(*, timeout_seconds: float, poll_seconds: float = 0.25) -
 def refuse_reason() -> str:
     """The message a caller records when it declines to start something."""
     return DRAIN_REFUSED_REASON
-
-
-def stamp_refusal(session: Session, entry, *, commit: bool = True) -> None:
-    """Record on a queue entry that drain is why it did not start.
-
-    The entry keeps its status: it is still queued, and the next process starts
-    it. Only the reason is written, so the board can say why nothing is moving.
-    """
-    entry.failure_reason = DRAIN_REFUSED_REASON
-    entry.last_failed_at = datetime.now(timezone.utc)
-    session.add(entry)
-    if commit:
-        session.commit()

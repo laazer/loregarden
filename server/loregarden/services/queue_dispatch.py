@@ -28,7 +28,6 @@ run anything (see `start_lane_head`).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from loregarden.models.domain import (
     AgentRun,
@@ -40,22 +39,16 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
 from loregarden.services.queue_lanes import set_lane_dispatcher_factory
+from loregarden.services.queue_refusals import (
+    external_owner_reason,
+    live_external_orchestration,
+    record_refusal,
+)
 from loregarden.services.run_service import schedule_agent_run, schedule_orchestration
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
-
-
-def _live_external_orchestration(session: Session, ticket_id: str) -> OrchestrationRun | None:
-    """The external-harness orchestration currently driving this ticket, if any."""
-    return session.exec(
-        select(OrchestrationRun)
-        .where(OrchestrationRun.ticket_id == ticket_id)
-        .where(OrchestrationRun.driver == OrchestrationDriver.EXTERNAL_MCP)
-        .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
-    ).first()
 
 
 class LaneDispatch:
@@ -72,7 +65,7 @@ class LaneDispatch:
         of these is released by `complete_run_tail` (which frees whatever slot
         names the finished run) rather than by `complete_orchestration`.
         """
-        owner = _live_external_orchestration(self.session, ticket.id)
+        owner = live_external_orchestration(self.session, ticket.id)
         if owner is not None:
             # 645 AC2. `driver=external_mcp` is a claim that something outside
             # this control plane is advancing the stage map. Racing it for the
@@ -84,13 +77,7 @@ class LaneDispatch:
                 ticket.id,
                 owner.id,
             )
-            entry.failure_reason = (
-                f"external orchestration {owner.id} is driving this ticket; "
-                "the builtin dispatcher does not race it"
-            )
-            entry.last_failed_at = datetime.now(timezone.utc)
-            self.session.add(entry)
-            self.session.commit()
+            record_refusal(self.session, entry, external_owner_reason(owner))
             return None
 
         try:
@@ -110,10 +97,7 @@ class LaneDispatch:
             # Written onto the entry, not only logged: the lane card is where an
             # operator finds out their stage never started, and a refusal that
             # only reaches the server log is a silent failure.
-            entry.failure_reason = str(exc)
-            entry.last_failed_at = datetime.now(timezone.utc)
-            self.session.add(entry)
-            self.session.commit()
+            record_refusal(self.session, entry, str(exc))
             return None
 
         schedule_agent_run(run.id)

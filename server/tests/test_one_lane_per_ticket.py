@@ -16,6 +16,8 @@ working tree — so a test that wanted to observe lane bookkeeping would instead
 be running an agent.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
@@ -27,6 +29,9 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_queue import tickets_holding_lanes
 from loregarden.services.queue_dispatch import LaneDispatch
+from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.queue_refusals import record_refusal
+from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import (
     make_agent_run,
@@ -196,3 +201,115 @@ def test_a_finished_external_orchestration_does_not_block_the_dispatcher(session
 
     session.refresh(entry)
     assert done.id not in (entry.failure_reason or ""), entry.failure_reason
+
+
+@contextmanager
+def _writes(session: Session) -> Iterator[list[str]]:
+    """Every INSERT/UPDATE/DELETE on the session's engine while the block runs."""
+    writes: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest) -> None:
+        if statement.lstrip().upper().startswith(("UPDATE", "INSERT", "DELETE")):
+            writes.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield writes
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
+def _external_owner(session, workspace_id, ticket_id):
+    owner = make_orchestration_run(
+        session, workspace_id=workspace_id, ticket_id=ticket_id, run_code="ORCH-EXT"
+    )
+    owner.driver = OrchestrationDriver.EXTERNAL_MCP
+    owner.status = OrchestrationRunStatus.RUNNING
+    session.add(owner)
+    session.commit()
+    return owner
+
+
+def _waiting_stage(session, workspace_id, ticket_id, lane=1) -> QueuedRun:
+    entry = QueuedRun(
+        workspace_id=workspace_id,
+        ticket_id=ticket_id,
+        slot_number=lane,
+        position=1,
+        entry_kind="stage",
+    )
+    session.add(entry)
+    session.commit()
+    return entry
+
+
+def _lanes(session) -> QueueLaneService:
+    return QueueLaneService(session, max_concurrent=3, dispatcher=LaneDispatch(session))
+
+
+def test_a_lane_wedged_behind_an_external_owner_writes_nothing_on_a_retry(session, workspace):
+    """The reconcile pass retries every idle lane with work every 30 seconds.
+
+    A head refused for a standing reason used to claim the lane, re-stamp the
+    same reason and release the lane each time: three write transactions that
+    changed nothing. The first refusal is recorded; the retry must be read-only.
+    """
+    slots = _slots(session)
+    make_ticket(session, workspace_id=workspace.id, ticket_id="t-1")
+    owner = _external_owner(session, workspace.id, "t-1")
+    entry = _waiting_stage(session, workspace.id, "t-1")
+    lanes = _lanes(session)
+
+    assert lanes.start_lane_head(1) is None
+    session.refresh(entry)
+    assert owner.id in entry.failure_reason, entry.failure_reason
+    first_refused_at = entry.last_failed_at
+
+    with _writes(session) as writes:
+        assert lanes.start_lane_head(1) is None
+    assert writes == []
+    session.refresh(entry)
+    session.refresh(slots[0])
+    assert entry.last_failed_at == first_refused_at, "the first refusal's time is kept"
+    assert slots[0].is_available, "a refused head must not strand its lane"
+
+
+def test_a_lane_whose_ticket_holds_another_writes_nothing_on_a_retry(session, workspace):
+    slots = _slots(session)
+    make_ticket(session, workspace_id=workspace.id, ticket_id="t-1")
+    _hold_with_orchestration(session, slots[1], workspace.id, "t-1")
+    entry = _waiting_stage(session, workspace.id, "t-1")
+    lanes = _lanes(session)
+
+    assert lanes.start_lane_head(1) is None
+    session.refresh(entry)
+    assert "lane(s) [2]" in entry.failure_reason, entry.failure_reason
+
+    with _writes(session) as writes:
+        assert lanes.start_lane_head(1) is None
+    assert writes == []
+    session.refresh(slots[0])
+    assert slots[0].is_available
+
+
+def test_an_empty_lane_is_not_claimed_and_released(session, workspace):
+    """A lane freed on a pass with nothing behind it used to be claimed, found
+    empty and given back: two writes for no work."""
+    _slots(session)
+
+    with _writes(session) as writes:
+        assert _lanes(session).start_lane_head(1) is None
+    assert writes == []
+
+
+def test_a_refusal_whose_reason_changes_is_written(session, workspace):
+    """Read-only retries must not freeze the board on a reason that stopped being true."""
+    make_ticket(session, workspace_id=workspace.id, ticket_id="t-1")
+    entry = _waiting_stage(session, workspace.id, "t-1")
+
+    assert record_refusal(session, entry, "first reason")
+    assert not record_refusal(session, entry, "first reason")
+    assert record_refusal(session, entry, "second reason")
+    session.refresh(entry)
+    assert entry.failure_reason == "second reason"
