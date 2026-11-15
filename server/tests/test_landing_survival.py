@@ -7,7 +7,6 @@ anyway (lg-milestone-that-2624).
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from unittest import mock
 
@@ -17,6 +16,7 @@ from loregarden.models.domain import Delivery, Ticket, TicketState
 from loregarden.services.base_delivery import delivery_of, record_base_holdings
 from loregarden.services.branch_triage_service import delete_branch
 from loregarden.services.doctor_landings import DELIVERED_IN_PART, DeliveredInPart
+from loregarden.services.git_call_index import index_git_calls
 from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.integration_branch_moves import mover
 from loregarden.services.invariant_registry import LANDINGS_SURVIVE_THEIR_BRANCH
@@ -86,9 +86,11 @@ def _land_second(session, workspace, repo, ms: Ticket, branch: str) -> Ticket:
 # --- every writer -------------------------------------------------------------------------
 
 
-#: Every module that moves or deletes a branch ref, and why it cannot drop an
-#: integration branch's landing. A new writer fails the enumeration below until
-#: it is listed here with its reason.
+#: Every module where a command that moves or deletes a ref runs, and why it
+#: cannot drop an integration branch's landing. The set is read from the git
+#: call index (`loregarden git calls --writes`), which follows wrappers to the
+#: `run_git`/`run_gh` line, so a new writer fails the enumeration below until it
+#: is listed here with its reason.
 KNOWN_REF_WRITERS = {
     "services/integration_branch_moves.py": "the owner: guards, keeps the tip it leaves, records",
     "services/git_merge_noco.py": "never an integration branch: those need the owner's mover",
@@ -99,16 +101,17 @@ KNOWN_REF_WRITERS = {
     "services/change_pr.py": "deletes the branch it created a moment before",
     "services/chat_branch_sweep.py": "chat branches",
     "services/stage_fanout_service.py": "parallel attempt branches",
+    "services/git_automation.py": "push_commit_as: a remote PR branch, leased on what it just read",
+    "services/merge_queue_loop.py": "delete_staging_ref: the queue's own staging ref on GitHub",
+    "services/pull_request_merge.py": "a merged PR's head on GitHub; the local one is delete_branch",
 }
-
-_WRITES_A_REF = re.compile(r'"update-ref"|"branch",\s*"-[Dd]"|\["branch",\s*"-[Dd]"')
 
 
 def test_every_module_that_moves_a_branch_ref_is_accounted_for():
     found = {
-        str(path.relative_to(PACKAGE))
-        for path in PACKAGE.rglob("*.py")
-        if _WRITES_A_REF.search(path.read_text())
+        str(Path(call.runs_at.rpartition(":")[0]).relative_to(PACKAGE.name))
+        for call in index_git_calls(PACKAGE)
+        if call.ref_write
     }
     assert found == set(KNOWN_REF_WRITERS)
 
