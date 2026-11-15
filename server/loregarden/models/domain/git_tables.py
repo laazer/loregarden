@@ -223,3 +223,27 @@ class ConflictReport(SQLModel, table=True):
             files = data.pop("conflicting_files")
             data["conflicting_files_json"] = json.dumps(files)
         return data
+
+
+class IntegrationBranchMove(SQLModel, table=True):
+    """One move of a branch, written by `integration_branch_moves` as it moves it.
+
+    Append-only. The reflog says a ref moved; this says which writer moved it,
+    why, and under which run, and it outlives the branch: deleting and
+    recreating `integration/lg-milestone-that-491` took its reflog with it, and
+    with that the only record of who dropped lg-milestone-that-1316's landing.
+    ``new_tip`` empty is a deletion; ``old_tip`` empty is a creation.
+    """
+
+    __tablename__ = "integration_branch_moves"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    branch: str = Field(index=True)
+    old_tip: str = ""
+    new_tip: str = ""
+    #: The writer that moved it, as ``module.function``.
+    writer: str
+    why: str
+    run_id: str | None = None
+    moved_at: datetime = Field(default_factory=utcnow, index=True)

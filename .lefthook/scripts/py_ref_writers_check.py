@@ -19,7 +19,8 @@ writers that predate it are not this change's problem): a call whose literal
 argv carries
 
 - `update-ref` (any form, `-d` included);
-- `branch` with `-D`, `-f` or `--force`;
+- `branch` with `-D`, `-d`, `--delete`, `-f` or `--force` (`-d` deletes too:
+  it asks git a different question first, then drops the ref the same way);
 - `checkout` or `switch` with `-B` / `-C`;
 - `push` with `-f` or any `--force*`;
 - `api` with `DELETE` and a `git/refs` path (`gh api -X DELETE .../git/refs/...`).
@@ -134,8 +135,8 @@ def _ref_write(tokens: list[str]) -> str | None:
     present = set(tokens)
     if "update-ref" in present:
         return "update-ref"
-    if "branch" in present and present & {"-D", "-f", "--force"}:
-        return "branch -D/-f"
+    if "branch" in present and present & {"-D", "-d", "--delete", "-f", "--force"}:
+        return "branch -D/-d/-f"
     if present & {"checkout", "switch"} and present & {"-B", "-C"}:
         return "checkout -B"
     if "push" in present and ("-f" in present or any(t.startswith("--force") for t in tokens)):

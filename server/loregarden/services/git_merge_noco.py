@@ -44,6 +44,36 @@ class VerifyVerdict(Protocol):
 #: Called with the candidate merge commit between `commit-tree` and `update-ref`.
 Verify = Callable[[str], VerifyVerdict]
 
+#: Moves a branch from ``old`` to ``new`` (``branch, new, old``) and returns ""
+#: on success or why it could not. `integration_branch_moves.mover` supplies the
+#: real one; an integration branch is refused without it (`_move`).
+MoveRef = Callable[[str, str, str], str]
+
+#: Kept here rather than imported from `publish_ref`, which is not a leaf.
+_INTEGRATION_PREFIX = "integration/"
+
+
+def _move(repo_root: Path, branch: str, new: str, old: str, move: MoveRef | None) -> str:
+    """Compare-and-swap ``branch`` from ``old`` to ``new``; "" or git's words.
+
+    An integration branch moves only through its owner, which guards its
+    landings and records the move: a caller that passes no ``move`` for one is
+    a bug, and is refused before anything is touched.
+    """
+    if move is not None:
+        return move(branch, new, old)
+    if branch.startswith(_INTEGRATION_PREFIX):
+        raise ValueError(
+            f"{branch} is an integration branch: move it with "
+            "integration_branch_moves.mover(...), not a bare update-ref"
+        )
+    # py-org: allow-ref-write - never an integration branch (refused just above); a ticket or
+    # root branch, whose moves are compare-and-swap and only ever forward
+    moved = _git(repo_root, "update-ref", f"refs/heads/{branch}", new, old)
+    if moved.returncode != 0:
+        return (moved.stderr or moved.stdout or "git update-ref refused").strip()
+    return ""
+
 
 @dataclass(frozen=True)
 class MergeOutcome:
@@ -381,7 +411,13 @@ def _trees(repo_root: Path, tip: str, exclude: str) -> list[tuple[str, str]]:
 
 
 def record_merged(
-    repo_root: Path, *, branch: str, branch_sha: str, merged_sha: str, subject: str
+    repo_root: Path,
+    *,
+    branch: str,
+    branch_sha: str,
+    merged_sha: str,
+    subject: str,
+    move: MoveRef | None = None,
 ) -> MergeOutcome:
     """Record ``merged_sha`` as merged into ``branch`` without changing a file.
 
@@ -399,10 +435,9 @@ def record_merged(
         detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
         return MergeOutcome(ok=False, detail=detail)
     merge_sha = committed.stdout.strip()
-    moved = _git(repo_root, "update-ref", f"refs/heads/{branch}", merge_sha, branch_sha)
-    if moved.returncode != 0:
-        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
-        return MergeOutcome(ok=False, detail=detail)
+    refused = _move(repo_root, branch, merge_sha, branch_sha, move)
+    if refused:
+        return MergeOutcome(ok=False, detail=refused)
     return MergeOutcome(ok=True, sha=merge_sha, signed=signing)
 
 
@@ -420,6 +455,7 @@ def merge_without_checkout(
     source: str,
     subject: str,
     verify: Verify | None = None,
+    move: MoveRef | None = None,
 ) -> MergeOutcome:
     """Merge ``source`` into ``target`` (both local branch names) and move ``target``."""
     return merge_tips(
@@ -429,6 +465,7 @@ def merge_without_checkout(
         source=source,
         subject=subject,
         verify=verify,
+        move=move,
     )
 
 
@@ -440,6 +477,7 @@ def merge_tips(
     source: str,
     subject: str,
     verify: Verify | None = None,
+    move: MoveRef | None = None,
 ) -> MergeOutcome:
     """`merge_without_checkout` from tips the caller has just read.
 
@@ -500,18 +538,23 @@ def merge_tips(
             # collect. Nothing points at it, so there is nothing to undo.
             return MergeOutcome(ok=False, detail=verdict.detail)
 
-    moved = _git(repo_root, "update-ref", f"refs/heads/{target}", merge_sha, target_sha)
-    if moved.returncode != 0:
+    refused = _move(repo_root, target, merge_sha, target_sha, move)
+    if refused:
         # The old value did not match: something else moved the target since
         # we read it. Nothing was written; the caller re-reads and retries.
-        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
-        return MergeOutcome(ok=False, detail=detail)
+        return MergeOutcome(ok=False, detail=refused)
     # Only here, past the ref move: before it, no landing exists to describe.
     return MergeOutcome(ok=True, sha=merge_sha, signed=signing)
 
 
 def advance_tips(
-    repo_root: Path, tips: BranchTips, *, target: str, source: str, subject: str
+    repo_root: Path,
+    tips: BranchTips,
+    *,
+    target: str,
+    source: str,
+    subject: str,
+    move: MoveRef | None = None,
 ) -> MergeOutcome:
     """`merge_tips`, except a target ``source`` already contains is fast-forwarded.
 
@@ -522,11 +565,10 @@ def advance_tips(
     source_sha = tips.of(source)
     target_sha = tips.of(target)
     if not (source_sha and target_sha) or not is_ancestor(repo_root, target_sha, source_sha):
-        return merge_tips(repo_root, tips, target=target, source=source, subject=subject)
+        return merge_tips(repo_root, tips, target=target, source=source, subject=subject, move=move)
     if source_sha == target_sha:
         return MergeOutcome(ok=True, sha=source_sha, already_contained=True)
-    moved = _git(repo_root, "update-ref", f"refs/heads/{target}", source_sha, target_sha)
-    if moved.returncode != 0:
-        detail = (moved.stderr or moved.stdout or "git update-ref refused").strip()
-        return MergeOutcome(ok=False, detail=detail)
+    refused = _move(repo_root, target, source_sha, target_sha, move)
+    if refused:
+        return MergeOutcome(ok=False, detail=refused)
     return MergeOutcome(ok=True, sha=source_sha)

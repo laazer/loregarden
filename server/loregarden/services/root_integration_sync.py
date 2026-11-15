@@ -38,6 +38,7 @@ from loregarden.models.domain import Ticket
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_merge_noco import (
     MergeOutcome,
+    MoveRef,
     advance_tips,
     is_ancestor,
     read_branch_tips,
@@ -153,7 +154,9 @@ def _take(repo_root: Path, *, own: str, integration: str) -> SyncOutcome:
     return SyncOutcome(False, f"{own} cannot take {integration}: {outcome.detail}")
 
 
-def fold_root_branch(repo_root: Path, root: Ticket, integration: str) -> MergeOutcome | None:
+def fold_root_branch(
+    repo_root: Path, root: Ticket, integration: str, *, move: MoveRef
+) -> MergeOutcome | None:
     """Move ``integration`` onto the commits a turn made on the root's branch.
 
     None when there is nothing to fold: no turn took ``integration`` into the
@@ -177,6 +180,7 @@ def fold_root_branch(repo_root: Path, root: Ticket, integration: str) -> MergeOu
         target=integration,
         source=own,
         subject=f"Fold {own} into {integration}",
+        move=move,
     )
     if outcome.ok:
         _forget(repo_root, own)

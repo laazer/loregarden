@@ -181,7 +181,32 @@ def _tree_of(repo, ref):
 
 def _merge(repo, **kwargs):
     tips = read_branch_tips(Path(repo), TARGET, BRANCH)
-    return merge_tips(Path(repo), tips, target=TARGET, source=BRANCH, subject="Land it", **kwargs)
+    return merge_tips(
+        Path(repo),
+        tips,
+        target=TARGET,
+        source=BRANCH,
+        subject="Land it",
+        move=_bare_move(repo),
+        **kwargs,
+    )
+
+
+def _bare_move(repo):
+    """A plain compare-and-swap, for driving the merge plumbing on its own: these
+    tests make a candidate and put the ref back, so no owner or ledger is involved."""
+
+    def move(branch: str, new: str, old: str) -> str:
+        moved = subprocess.run(
+            ["git", "update-ref", f"refs/heads/{branch}", new, old],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return "" if moved.returncode == 0 else (moved.stderr or "update-ref refused").strip()
+
+    return move
 
 
 def _verifier(outcome):
@@ -383,7 +408,14 @@ def test_merge_tips_with_no_verifier_behaves_exactly_as_it_does_today(diverged, 
 
     plain = _merge(diverged)
     tips = read_branch_tips(Path(control), TARGET, BRANCH)
-    expected = merge_tips(Path(control), tips, target=TARGET, source=BRANCH, subject="Land it")
+    expected = merge_tips(
+        Path(control),
+        tips,
+        target=TARGET,
+        source=BRANCH,
+        subject="Land it",
+        move=_bare_move(control),
+    )
 
     assert plain.ok == expected.ok is True
     assert _tree_of(diverged, plain.sha) == _tree_of(control, expected.sha)
@@ -860,7 +892,9 @@ def _merge_candidate(repo, target, branch) -> str:
     be driven on its own without going through a land."""
     tips = read_branch_tips(Path(repo), target, branch)
     before = _sha(repo, target)
-    outcome = merge_tips(Path(repo), tips, target=target, source=branch, subject="candidate")
+    outcome = merge_tips(
+        Path(repo), tips, target=target, source=branch, subject="candidate", move=_bare_move(repo)
+    )
     assert outcome.ok, outcome.detail
     candidate = outcome.sha
     # Put the ref back: the candidate exists as an object, which is all a

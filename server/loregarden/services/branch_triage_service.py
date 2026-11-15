@@ -43,8 +43,9 @@ from loregarden.services.github_pr_listing import (
     PullRequestStates,
     list_pull_requests,
 )
+from loregarden.services.integration_branch_moves import BranchMoveRefused, move_integration_branch
 from loregarden.services.landing_survival import refuse_dropping_landings
-from loregarden.services.publish_ref import branch_for_pr_head
+from loregarden.services.publish_ref import INTEGRATION_PREFIX, branch_for_pr_head
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlmodel import Session, select
@@ -952,6 +953,39 @@ def _branch_delete_failure(
     raise ValueError(detail)
 
 
+def _delete_integration_branch(
+    session: Session,
+    workspace: Workspace,
+    repo_root: Path,
+    branch: str,
+    worktree_paths: list[str],
+) -> BranchDeletion:
+    """Delete an integration branch through its owner, which records who did.
+
+    `update-ref -d` does not refuse a branch a checkout still holds, as
+    `branch -D` does, so that refusal is made here: by now the checkouts were
+    released, or the caller was refused for keeping them.
+    """
+    held = worktree_paths_for_branch(repo_root, branch)
+    if held:
+        raise ValueError(_format_worktree_block_message(branch, held))
+    try:
+        move_integration_branch(
+            session,
+            workspace,
+            branch,
+            "",
+            "deleted through branch triage or pull-request cleanup",
+            writer="branch_triage_service.delete_branch",
+            repo_root=repo_root,
+        )
+    except BranchMoveRefused as exc:
+        raise ValueError(str(exc)) from exc
+    return BranchDeletion(
+        outcome=RemovalOutcome.DELETED, deleted=True, removed_worktrees=bool(worktree_paths)
+    )
+
+
 def delete_branch(
     session: Session,
     workspace: Workspace,
@@ -993,6 +1027,8 @@ def delete_branch(
     if refused is not None:
         return refused
 
+    if branch.startswith(INTEGRATION_PREFIX):
+        return _delete_integration_branch(session, workspace, repo_root, branch, worktree_paths)
     # `-D` because `_refuse_lost_commits` (or the caller's `force`) has already
     # decided: git's `-d` would re-ask "merged into HEAD?", the wrong question.
     proc = _git(repo_root, "branch", "-D", branch)

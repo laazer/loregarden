@@ -63,6 +63,7 @@ class McpTool(StrEnum):
     CHECK_ORGANIZATION = "loregarden_check_organization"
     DOCTOR = "loregarden_doctor"
     DISK_USAGE = "loregarden_disk_usage"
+    BRANCH_MOVES = "loregarden_branch_moves"
     DEFER_TICKET = "loregarden_defer_ticket"
     FETCH_REFERENCE = "loregarden_fetch_reference"
     SEARCH_REFERENCE = "loregarden_search_reference"
@@ -272,6 +273,8 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.DOCTOR,
         # Names and sizes from the disk scan; `rescan` walks metadata only.
         McpTool.DISK_USAGE,
+        # The branch-move ledger's rows; nothing on disk or in git is touched.
+        McpTool.BRANCH_MOVES,
         McpTool.DOCKER_CAPACITY_STATUS,
         # The queue's rows, plus one GitHub read of a testing entry's checks.
         McpTool.MERGE_QUEUE_STATUS,

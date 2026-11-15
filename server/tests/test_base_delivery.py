@@ -15,6 +15,7 @@ from loregarden.models.domain import Delivery
 from loregarden.services import git_automation
 from loregarden.services.base_delivery import delivery_of, record_base_holdings
 from loregarden.services.git_merge_noco import read_branch_tips
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.publish_tree import PublishOutcome
 from loregarden.services.reconciliation import PERIODIC_STEPS
@@ -109,7 +110,10 @@ def test_a_child_landed_before_the_branch_was_reset_is_still_held(session, works
     left, so neither the record nor git's collection loses the child."""
     _, child, branch = landed_tree(session, workspace, repo)
     squash_onto_remote_main(repo)
-    assert _fast_forward_superseded(repo, read_branch_tips(repo, branch, "main"), branch, "main")
+    move = mover(session, workspace, writer="test.reset", why="reset to main", repo_root=repo)
+    assert _fast_forward_superseded(
+        repo, read_branch_tips(repo, branch, "main"), branch, "main", move=move
+    )
     git(repo, "branch", "-D", child.branch)
     git(repo, "reflog", "expire", "--expire=now", "--all")
     git(repo, "gc", "-q", "--prune=now")

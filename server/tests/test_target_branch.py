@@ -19,6 +19,7 @@ from loregarden.models.domain import (
 from loregarden.services import integration_merge_agent
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.hierarchy_service import reparent_ticket
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.integration_conflict_card import report_integration_conflict
 from loregarden.services.integration_merge_budget import INTEGRATION_MERGE_STAGE
 from loregarden.services.target_branch import (
@@ -292,9 +293,12 @@ def test_creation_does_not_move_any_checkout(db_session: Session, workspace: Wor
     assert _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo) == "elsewhere"
 
 
-def test_a_missing_base_is_an_error_not_an_empty_branch(repo: Path):
+def test_a_missing_base_is_an_error_not_an_empty_branch(
+    db_session: Session, workspace: Workspace, repo: Path
+):
+    move = mover(db_session, workspace, writer="test.create", why="create", repo_root=repo)
     with pytest.raises(TargetBranchError, match="does not exist"):
-        ensure_integration_branch(repo, "integration/x", "no-such-base")
+        ensure_integration_branch(repo, "integration/x", "no-such-base", move=move)
     assert "integration/x" not in _branches(repo)
 
 

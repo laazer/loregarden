@@ -38,6 +38,7 @@ from loregarden.services.git_merge_noco import (
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.land_verification import (
     LandVerifier,
     VerifyOutcome,
@@ -193,7 +194,18 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         if target == base:
             return LandResult(ok=True, branch=branch, target=target, skipped=LandSkip.BASE_TARGET)
 
-        ensure_integration_branch(repo_root, target, base)
+        ensure_integration_branch(
+            repo_root,
+            target,
+            base,
+            move=mover(
+                session,
+                workspace,
+                writer="land_ticket.create",
+                why=f"create {target} from {base} for the tree's first landing",
+                repo_root=repo_root,
+            ),
+        )
 
         held = _held_without_shared_history(session, ticket, repo_root, landing, base)
         if held is not None:
@@ -213,7 +225,18 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         # outside this block can read it however this function exits.
         landing.verifier = verification
         outcome = merge_without_checkout(
-            repo_root, target=target, source=branch, subject=subject, verify=verification
+            repo_root,
+            target=target,
+            source=branch,
+            subject=subject,
+            verify=verification,
+            move=mover(
+                session,
+                workspace,
+                writer="land_ticket.land",
+                why=f"land {ticket.external_id or ticket.id[:8]} from {branch}",
+                repo_root=repo_root,
+            ),
         )
         if not outcome.ok:
             return LandResult(

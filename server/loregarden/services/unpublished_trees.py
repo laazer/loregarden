@@ -47,14 +47,11 @@ from loregarden.services.git_automation_config import (
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.invariants import Violation
+from loregarden.services.publish_cards import pending_publish_card
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
 from loregarden.services.publish_tree import tree_chain
 from loregarden.services.target_branch import subtree_root
-from loregarden.services.tree_publish_scheduler import (
-    pending_publish_card,
-    publish_in_flight,
-    schedule_tree_publish,
-)
+from loregarden.services.tree_publish_scheduler import publish_in_flight, schedule_tree_publish
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 

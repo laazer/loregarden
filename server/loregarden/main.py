@@ -86,6 +86,7 @@ from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescenc
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
 from loregarden.services.initiative_planner_service import fail_interrupted_planner_turns
+from loregarden.services.integration_branch_moves import enable_ref_logs_in_workspaces
 from loregarden.services.local_instances import register_main
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
@@ -148,6 +149,9 @@ def _recover_previous_boot(session: Session) -> None:
     # no ticket whose state could say it is finished — and removes only the
     # branches whose content is already in base, where the ref was keeping
     # nothing reachable. Opt-in per workspace; see `chat_branch_sweep`.
+    # Before anything below moves or deletes a branch: git then keeps a
+    # reflog for every ref, so a move is recorded twice (the ledger is the other).
+    enable_ref_logs_in_workspaces(session)
     sweep_all_chat_branches(session)
     # Lanes and parents, from the same pass the timer runs. After the reaps,
     # so the runs they just failed count as finished and the slots they held

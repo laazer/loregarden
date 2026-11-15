@@ -18,14 +18,14 @@ from loregarden.services.base_delivery import delivery_of, record_base_holdings
 from loregarden.services.branch_triage_service import delete_branch
 from loregarden.services.doctor_landings import DELIVERED_IN_PART, DeliveredInPart
 from loregarden.services.git_merge_noco import read_branch_tips
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.invariant_registry import LANDINGS_SURVIVE_THEIR_BRANCH
 from loregarden.services.land_ticket import land_ticket
-from loregarden.services.landing_survival import (
-    LandingsWouldBeLost,
-    landings_lost_from_their_branch,
-)
+from loregarden.services.landing_survival import LandingsWouldBeLost
+from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
 from loregarden.services.pull_request_merge import _delete_local_branch
-from loregarden.services.target_branch import _fast_forward_superseded, settled_tips
+from loregarden.services.settled_refs import settled_tips
+from loregarden.services.target_branch import _fast_forward_superseded
 from sqlmodel import Session
 from tests.tree_publish_helpers import (
     clear_process_state,
@@ -66,6 +66,14 @@ def _sha(repo: Path, ref: str) -> str:
     return git(repo, "rev-parse", ref).stdout.strip()
 
 
+def _reset(session, workspace, repo: Path, branch: str) -> bool:
+    """The real reset to the base, through the owner, as `resolve_target_branch` runs it."""
+    move = mover(session, workspace, writer="test.reset", why="reset to main", repo_root=repo)
+    return _fast_forward_superseded(
+        repo, read_branch_tips(repo, branch, "main"), branch, "main", move=move
+    )
+
+
 def _land_second(session, workspace, repo, ms: Ticket, branch: str) -> Ticket:
     second = make_tree_ticket(session, workspace, "ms-c2", parent=ms)
     git(repo, "branch", second.branch, branch)
@@ -82,10 +90,9 @@ def _land_second(session, workspace, repo, ms: Ticket, branch: str) -> Ticket:
 #: integration branch's landing. A new writer fails the enumeration below until
 #: it is listed here with its reason.
 KNOWN_REF_WRITERS = {
-    "services/git_merge_noco.py": "merges and fast-forwards: compare-and-swap onto a descendant",
-    "services/integration_merge_agent.py": "_verify refuses a HEAD without the branch's tip",
-    "services/target_branch.py": "resets only when the base holds the whole tip, settled first",
-    "services/branch_triage_service.py": "delete_branch: refuse_dropping_landings",
+    "services/integration_branch_moves.py": "the owner: guards, keeps the tip it leaves, records",
+    "services/git_merge_noco.py": "never an integration branch: those need the owner's mover",
+    "services/branch_triage_service.py": "non-integration branches; integration ones go to the owner",
     "services/branch_takes_target.py": "ticket branches only, never an integration branch",
     "services/root_integration_sync.py": "its own fix-base refs, not the branch",
     "services/merge_queue_pull_heads.py": "the queue's pull refs",
@@ -121,9 +128,7 @@ def test_no_writer_moves_an_integration_branch_off_a_landing_the_base_lacks(
     assert not step.ok and child.external_id in step.detail
 
     # The reset to the base: refused while the base lacks the tip.
-    assert not _fast_forward_superseded(
-        repo, read_branch_tips(repo, branch, "main"), branch, "main"
-    )
+    assert not _reset(session, workspace, repo, branch)
 
     assert _sha(repo, branch) == tip
 
@@ -151,7 +156,7 @@ def test_the_reset_keeps_the_tip_it_leaves(session, workspace, repo):
     tip = _sha(repo, branch)
     squash_onto_remote_main(repo)
 
-    assert _fast_forward_superseded(repo, read_branch_tips(repo, branch, "main"), branch, "main")
+    assert _reset(session, workspace, repo, branch)
 
     assert settled_tips(repo, branch) == [tip]
 
@@ -248,7 +253,7 @@ def test_a_landing_a_later_sibling_rewrote_is_held_after_the_reset(session, work
     assert land_ticket(session, second, workspace).ok
     commit_on(repo, "main", "c1.txt", "rewritten\n")  # the tree's squash: its net change only
     git(repo, "push", "-q", "origin", "main")
-    assert _fast_forward_superseded(repo, read_branch_tips(repo, branch, "main"), branch, "main")
+    assert _reset(session, workspace, repo, branch)
 
     record_base_holdings(session)
 

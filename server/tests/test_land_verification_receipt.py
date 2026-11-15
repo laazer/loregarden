@@ -311,12 +311,34 @@ def test_the_verify_callback_writes_no_receipt_of_its_own(session, tmp_path):
     )
 
 
+def _bare_move(repo):
+    """A plain compare-and-swap, for driving the merge plumbing on its own: these
+    tests make a candidate and put the ref back, so no owner or ledger is involved."""
+
+    def move(branch: str, new: str, old: str) -> str:
+        moved = subprocess.run(
+            ["git", "update-ref", f"refs/heads/{branch}", new, old],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return "" if moved.returncode == 0 else (moved.stderr or "update-ref refused").strip()
+
+    return move
+
+
 def _candidate(landing) -> str:
     """The merge commit a land would write, made here and left unpublished."""
     before = helpers.sha(landing.repo, landing.target)
     tips = read_branch_tips(landing.repo, landing.target, landing.ticket.branch)
     outcome = merge_tips(
-        landing.repo, tips, target=landing.target, source=landing.ticket.branch, subject="candidate"
+        landing.repo,
+        tips,
+        target=landing.target,
+        source=landing.ticket.branch,
+        subject="candidate",
+        move=_bare_move(landing.repo),
     )
     assert outcome.ok, outcome.detail
     git(landing.repo, "update-ref", f"refs/heads/{landing.target}", before, outcome.sha)

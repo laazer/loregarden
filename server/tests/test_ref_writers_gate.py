@@ -37,6 +37,9 @@ FLAGGED = {
     "update_ref_delete": 'run_git(["update-ref", "-d", ref], cwd=r)\n',
     "update_ref_varargs": '_git(repo_root, "update-ref", f"refs/heads/{b}", head, expected)\n',
     "branch_force_delete": '_git(repo_root, "branch", "-D", branch)\n',
+    # `-d` deletes too: it only asks git "merged into HEAD?" first.
+    "branch_delete": '_git(repo_root, "branch", "-d", branch)\n',
+    "branch_long_delete": 'run_git(["branch", "--delete", branch], cwd=r)\n',
     "branch_force_move": 'run_git(["branch", "-f", branch, "main"], cwd=r)\n',
     "branch_long_force": 'run_git(["branch", "--force", branch, sha], cwd=r)\n',
     "checkout_reset_branch": 'run_git(["checkout", "-B", branch, sha], cwd=r)\n',
@@ -56,7 +59,6 @@ FLAGGED = {
 CLEAN = {
     "worktree_remove_force": 'run_git(["worktree", "remove", "--force", str(tree)], cwd=r)\n',
     "plain_branch_list": 'run_git(["branch", "--list"], cwd=r)\n',
-    "safe_branch_delete": '_git(repo_root, "branch", "-d", branch)\n',
     "plain_push": 'run_git(["push", "origin", b], cwd=r)\n',
     "cli_force_flag": 'argv.append("--force")\n',
     "flag_vocabulary": '_FORCE = frozenset({"--force", "-f", "-D"})\n',
@@ -161,7 +163,8 @@ def test_a_new_module_with_a_bare_writer_fails(repo_with_an_old_writer, capsys):
 
     assert checker.main(["--repo", str(repo), "--scope", "staged", str(module)]) == 1
     assert (
-        "sweeper.py:1: `branch -D/-f` outside integration_branch_moves" in capsys.readouterr().out
+        "sweeper.py:1: `branch -D/-d/-f` outside integration_branch_moves"
+        in capsys.readouterr().out
     )
 
 

@@ -58,12 +58,14 @@ from loregarden.services.cli_auth_errors import format_cli_auth_hint, format_cli
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_merge_noco import (
+    MoveRef,
     is_ancestor,
     read_branch_tips,
     rev,
     signs_commits,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.integration_merge_budget import (
     INTEGRATION_MERGE_STAGE,
     harness_retry_at,
@@ -199,6 +201,14 @@ def merge_base_by_agent(
                     # and what it said, so it is not the same turn again.
                     refused=_previous_turn(refused[-1]) if refused else "",
                     about=about,
+                    move=mover(
+                        session,
+                        workspace,
+                        writer="integration_merge_agent.merge_turn",
+                        why=f"merge {base} into {branch} (turn {run.run_code})",
+                        run_id=run.id,
+                        repo_root=repo_root,
+                    ),
                 )
         except Exception as exc:
             # Loregarden's own failure, not the agent's: settle the run so it
@@ -286,6 +296,7 @@ def _merge_in_worktree(
     files: tuple[str, ...],
     refused: str,
     about: str,
+    move: MoveRef,
 ) -> tuple[MergeResolution, str]:
     branch_sha, base_sha = tips
     holder = Path(tempfile.mkdtemp(prefix="loregarden-integration-merge-"))
@@ -322,7 +333,7 @@ def _merge_in_worktree(
                     False, f"the merge turn failed ({turn.error}); {verdict.detail}", kind
                 ), turn.reply
             return verdict, turn.reply
-        return _move_branch(repo_root, tree, branch=branch, expected=branch_sha), turn.reply
+        return _move_branch(tree, branch=branch, expected=branch_sha, move=move), turn.reply
     finally:
         _remove_worktree(repo_root, tree)
         shutil.rmtree(holder, ignore_errors=True)
@@ -661,15 +672,14 @@ def _grade(tree: Path, *, base: str, base_sha: str) -> MergeResolution:
     return _unable(detail)
 
 
-def _move_branch(repo_root: Path, tree: Path, *, branch: str, expected: str) -> MergeResolution:
+def _move_branch(tree: Path, *, branch: str, expected: str, move: MoveRef) -> MergeResolution:
     head = rev(tree, "HEAD")
-    moved = _git(repo_root, "update-ref", f"refs/heads/{branch}", head, expected)
-    if moved.returncode != 0:
+    refused = move(branch, head, expected)
+    if refused:
         # A sibling landed while the turn ran. Its work is kept; the next
         # dispatch finds the branch still behind the base and merges again.
         return _unable(
-            f"{branch} moved while the merge ran, so {head[:12]} was not applied: "
-            f"{_words(moved, 'git update-ref refused')}"
+            f"{branch} moved while the merge ran, so {head[:12]} was not applied: {refused}"
         )
     logger.warning("Merged the base into %s as %s (was %s)", branch, head[:12], expected[:12])
     return MergeResolution(True)

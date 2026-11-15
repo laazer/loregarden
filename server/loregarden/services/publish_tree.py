@@ -70,6 +70,7 @@ from loregarden.services.git_automation_config import (
 )
 from loregarden.services.git_merge_noco import MergeOutcome, rev, squash_onto
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.integration_branch_moves import mover
 from loregarden.services.orchestration_profile import GitAutomationConfig
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.root_integration_sync import fold_root_branch
@@ -112,7 +113,18 @@ def publish_tree(session: Session, ticket: Ticket, workspace: Workspace) -> Publ
         return PublishOutcome(ok=True, branch="", skipped=True)
     base = base_branch(workspace)
     integration = integration_branch_for(ticket)
-    folded = fold_root_branch(repo_root, ticket, integration)
+    folded = fold_root_branch(
+        repo_root,
+        ticket,
+        integration,
+        move=mover(
+            session,
+            workspace,
+            writer="publish_tree.fold",
+            why=f"fold the root's own commits into {integration} before publishing",
+            repo_root=repo_root,
+        ),
+    )
     if folded is not None and not folded.ok:
         failed = PublishOutcome(
             ok=False,
