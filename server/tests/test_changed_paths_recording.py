@@ -115,6 +115,53 @@ def test_paths_already_dirty_before_the_run_are_not_claimed(repo: Path):
     assert _recorded(repo, before, base) == ["mine.py"]
 
 
+def _commit_on_side_branch(repo: Path, name: str) -> None:
+    """A commit on `main-side`, standing in for whatever `origin/main` gained."""
+    run_branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    _git(repo, "checkout", "-qb", "main-side")
+    (repo / name).write_text("theirs\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", f"someone else's {name}")
+    _git(repo, "checkout", "-q", run_branch)
+
+
+def test_work_a_merge_brought_in_is_not_claimed_by_the_run(repo: Path):
+    """lg-reference-sources-2160: `origin/main` merged into a survey carrier's
+    branch mid-run, the run recorded main's 35 files, and the carried-work guard
+    refused to land a branch with no commit of its own."""
+    base, before = _head(repo), working_tree_paths(repo) or set()
+    _commit_on_side_branch(repo, "theirs.py")
+    (repo / "mine.py").write_text("mine\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "the run's own commit")
+    merged = _git(repo, "merge", "--no-ff", "-qm", "Merge main-side", "main-side")
+    assert merged.returncode == 0, merged.stderr
+
+    assert (repo / "theirs.py").exists(), "precondition: the merge brought the file in"
+    assert _recorded(repo, before, base) == ["mine.py"]
+
+
+def test_a_run_whose_only_commit_is_a_merge_records_nothing(repo: Path):
+    """The carrier's exact shape: a survey writes no files, so a refresh merge
+    was the only thing on its branch."""
+    base, before = _head(repo), working_tree_paths(repo) or set()
+    _commit_on_side_branch(repo, "theirs.py")
+    merged = _git(repo, "merge", "--no-ff", "-qm", "Merge main-side", "main-side")
+    assert merged.returncode == 0, merged.stderr
+
+    assert _recorded(repo, before, base) == []
+
+
+def test_several_own_commits_are_all_recorded(repo: Path):
+    base, before = _head(repo), working_tree_paths(repo) or set()
+    for name in ("a.py", "b.py"):
+        (repo / name).write_text(f"{name}\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-qm", name)
+
+    assert _recorded(repo, before, base) == ["a.py", "b.py"]
+
+
 def test_a_run_that_changed_nothing_records_nothing(repo: Path):
     base, before = _head(repo), working_tree_paths(repo) or set()
     assert _recorded(repo, before, base) == []

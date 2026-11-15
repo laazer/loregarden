@@ -22,7 +22,7 @@ class NothingToCommitError(ValueError):
     """Raised when the workspace has no working-tree changes to commit."""
 
 
-def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
+def paths_committed_since(repo_root: Path, base_sha: str, tip: str = "HEAD") -> set[str] | None:
     """Paths the commits after `base_sha` touched, or None if git could not say.
 
     The companion to `working_tree_paths`, and the reason it is needed: a run
@@ -39,17 +39,54 @@ def paths_committed_since(repo_root: Path, base_sha: str) -> set[str] | None:
     An empty `base_sha` is not a failure — a repository with no commit at its
     start has nothing to diff against, and its work will be uncommitted anyway,
     so the dirty set already covers it.
+
+    Only the run's own commits count: the non-merge commits on HEAD's first
+    parents since `base_sha`. A `git diff base..HEAD` also charged the run with
+    everything a merge brought in. lg-reference-sources-2160's survey run had
+    `origin/main` merged into its branch mid-run, recorded the 35 files main
+    carried, and the carried-work guard then refused to land a branch with "no
+    commit of its own". Merged-in commits sit on a merge's second parent, so the
+    first-parent walk skips them, the same walk `carries_own_work` takes. A
+    fast-forward onto another branch has no merge to skip and is still counted.
     """
     if not base_sha:
         return set()
     proc = git_reading(
-        ["diff", "--name-only", "-z", f"{base_sha}..HEAD"],
+        [
+            "log",
+            "--first-parent",
+            "--no-merges",
+            "--format=",
+            "--name-only",
+            "-z",
+            f"{base_sha}..{tip}",
+        ],
         repo_root=repo_root,
-        describing=f"diff {base_sha}..HEAD",
+        describing=f"log {base_sha}..{tip}",
     )
     if proc is None:
         return None
     return {path for path in proc.stdout.split("\0") if path}
+
+
+def paths_merged_in_since(repo_root: Path, base_sha: str, tip: str) -> set[str] | None:
+    """Paths `base_sha..tip` changed that no own commit on its first parents touched.
+
+    What merges alone brought onto the branch, which a run recorded before
+    `paths_committed_since` walked first parents claimed as its own. None when
+    git could not say, for the same reason as there.
+    """
+    if not base_sha:
+        return set()
+    own = paths_committed_since(repo_root, base_sha, tip)
+    proc = git_reading(
+        ["diff", "--name-only", "-z", f"{base_sha}..{tip}"],
+        repo_root=repo_root,
+        describing=f"diff {base_sha}..{tip}",
+    )
+    if own is None or proc is None:
+        return None
+    return {path for path in proc.stdout.split("\0") if path} - own
 
 
 def working_tree_paths(repo_root: Path) -> set[str] | None:

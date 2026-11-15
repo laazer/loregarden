@@ -9,15 +9,12 @@ pass picks it up from `INVARIANTS` by name (`reconciliation.PERIODIC_STEPS`).
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Sequence
 from datetime import date, datetime, timezone
 
 from loregarden.models.domain import (
     AgentSlot,
-    Artifact,
-    ArtifactKind,
     InvariantReentry,
     Ticket,
     TicketState,
@@ -48,7 +45,7 @@ from loregarden.services.finding_placement_checks import (
 from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
-from loregarden.services.land_verification import RECEIPT_PASSED
+from loregarden.services.land_verification_coverage import covered_landings
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
@@ -364,34 +361,6 @@ def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
 LAND_VERIFICATION_SINCE = date(2026, 10, 24)
 
 
-def _has_a_passing_receipt(bodies: Sequence[str | None]) -> bool:
-    """Whether any of these receipt bodies says the suite passed.
-
-    `content_json` is a text column every `loregarden_attach_artifact` caller
-    and every hand repair can write, so this is a `json.loads` and a subscript
-    over operator-supplied text. A body that cannot be read is NOT a passing
-    verdict and must not take the pass down with it: `run_invariant` is one step
-    of `PERIODIC_STEPS`, and a detector that raises reports nothing for any
-    ticket from then on while the surface says "no violations" — a guard failing
-    that reads exactly like a guard working.
-
-    The comparison is exact. `status` is one of three words this ticket's own
-    writer controls and the client's `PASSING` set matches them exactly, so
-    `.strip().lower()` here would be defensive normalization — and would clear a
-    landing whose receipt the client itself colours `warn`.
-    """
-    for body in bodies:
-        try:
-            status = json.loads(body or "").get("status")
-        except (ValueError, AttributeError):
-            # Unreadable, or JSON that is not an object: no verdict, so this
-            # receipt clears nothing and the landing stays reported below.
-            continue
-        if status == RECEIPT_PASSED:
-            return True
-    return False
-
-
 def _landed_without_a_verified_suite(session: Session) -> list[Violation]:
     """Done tickets whose recorded landing has no passing land-verification receipt.
 
@@ -435,7 +404,9 @@ def _landed_without_a_verified_suite(session: Session) -> list[Violation]:
     Condition "no PASSING receipt" is not "no receipt": a verified landing
     re-landed later writes a `disabled`/`already_contained` row beside the
     passing one, and reading "the latest receipt" would turn that into a
-    violation.
+    violation. A contained landing from a ticket whose runs all recorded writing
+    nothing is covered too: no candidate existed, and none of the ticket's code
+    moved. `land_verification_coverage` holds both readings.
 
     `entered_at` is the ticket's `resolved_at` — `Ticket` carries no landing
     timestamp, and `_landed_with_uncommitted_work` makes the same choice for the
@@ -475,14 +446,7 @@ def _landed_without_a_verified_suite(session: Session) -> list[Violation]:
         judged.extend(tickets)
     if not judged:
         return violations
-    receipts: dict[str, list[str | None]] = {}
-    for ticket_id, body in session.exec(
-        select(col(Artifact.ticket_id), col(Artifact.content_json)).where(
-            col(Artifact.kind) == ArtifactKind.LAND_VERIFICATION,
-            col(Artifact.ticket_id).in_([ticket.id for ticket in judged]),
-        )
-    ).all():
-        receipts.setdefault(ticket_id, []).append(body)
+    covered = covered_landings(session, judged)
     violations.extend(
         Violation(
             subject_id=ticket.id,
@@ -494,7 +458,7 @@ def _landed_without_a_verified_suite(session: Session) -> list[Violation]:
             ),
         )
         for ticket in judged
-        if not _has_a_passing_receipt(receipts.get(ticket.id, []))
+        if ticket.id not in covered
     )
     return violations
 
@@ -1085,7 +1049,10 @@ LANDINGS_CARRY_THE_WORK = Invariant(
 LAND_VERIFICATION_RAN = Invariant(
     name="land_verification_ran",
     ticket="lg-milestone-that-1419",
-    statement="every recorded landing has a passing land-verification receipt",
+    statement=(
+        "every recorded landing has a passing land-verification receipt, or merged "
+        "nothing from a ticket whose runs wrote nothing"
+    ),
     detect=_landed_without_a_verified_suite,
     # Report-only: only a person can run a suite and judge what it says. A
     # repair here would be the control plane deciding its own landing passed.
