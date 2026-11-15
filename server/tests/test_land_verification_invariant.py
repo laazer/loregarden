@@ -54,7 +54,12 @@ from loregarden.services.invariant_registry import INVARIANTS, LAND_VERIFICATION
 from loregarden.services.invariants import run_invariant
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.reconciliation import PERIODIC_STEPS
-from loregarden.testing.factories import make_artifact, make_ticket, make_workspace
+from loregarden.testing.factories import (
+    make_agent_run,
+    make_artifact,
+    make_ticket,
+    make_workspace,
+)
 from loregarden.testing.prod_shape import build_prod_shape
 from sqlmodel import Session, col, select
 
@@ -151,7 +156,8 @@ def test_the_invariant_is_registered_as_this_ticket_declares_it():
     assert LAND_VERIFICATION_RAN.name == "land_verification_ran"
     assert LAND_VERIFICATION_RAN.ticket == "lg-milestone-that-1419"
     assert LAND_VERIFICATION_RAN.statement == (
-        "every recorded landing has a passing land-verification receipt"
+        "every recorded landing has a passing land-verification receipt, or merged "
+        "nothing from a ticket whose runs wrote nothing"
     )
     assert LAND_VERIFICATION_RAN.reentry is InvariantReentry.DEFECT, (
         "a writer is supposed to make this unreachable; EXPECTED would say the "
@@ -880,6 +886,63 @@ def test_a_disabled_receipt_in_an_armed_workspace_is_still_an_unverified_landing
     swallow along with the off workspace's.
     """
     ticket = _landed(session, workspace, "lg-armed-disabled-1", days_from_since=2)
+    _receipt(session, ticket, DISABLED, outcome="disabled")
+
+    assert _subjects(session) == {ticket.id}
+
+
+# ---------------------------------------------------------------------------
+# A contained landing merged nothing, so no suite could run. It is covered only
+# when the ticket's runs show none of its code moved: 270 of the 345 live
+# violations on 2026-11-15 were survey carriers in exactly that state.
+# ---------------------------------------------------------------------------
+
+
+def _run(session: Session, ticket: Ticket, *, wrote: list[str] | None, code: str = "RUN-1") -> None:
+    """One run on `ticket`. `wrote=None` is a run that recorded nothing at all."""
+    make_agent_run(
+        session,
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        run_code=code,
+        changed_paths_json=json.dumps(wrote or []),
+        changed_paths_recorded_at=None if wrote is None else datetime.now(timezone.utc),
+    )
+
+
+def test_a_contained_landing_from_a_ticket_that_wrote_nothing_is_covered(session, workspace):
+    ticket = _landed(session, workspace, "lg-contained-1")
+    _run(session, ticket, wrote=[], code="RUN-A")
+    _run(session, ticket, wrote=[], code="RUN-B")
+    _receipt(session, ticket, DISABLED, outcome="already_contained")
+
+    assert _subjects(session) == set()
+
+
+def test_a_contained_landing_whose_runs_wrote_code_is_still_a_violation(session, workspace):
+    """The work reached the target some other way; a person checks that way."""
+    ticket = _landed(session, workspace, "lg-contained-2")
+    _run(session, ticket, wrote=[], code="RUN-A")
+    _run(session, ticket, wrote=["server/loregarden/x.py"], code="RUN-B")
+    _receipt(session, ticket, DISABLED, outcome="already_contained")
+
+    assert _subjects(session) == {ticket.id}
+
+
+def test_a_run_with_no_record_cannot_say_its_ticket_wrote_nothing(session, workspace):
+    ticket = _landed(session, workspace, "lg-contained-3")
+    _run(session, ticket, wrote=[], code="RUN-A")
+    _run(session, ticket, wrote=None, code="RUN-B")
+    _receipt(session, ticket, DISABLED, outcome="already_contained")
+
+    assert _subjects(session) == {ticket.id}
+
+
+def test_a_ticket_that_wrote_nothing_still_needs_a_contained_receipt(session, workspace):
+    """Writing nothing is not a verdict: a `disabled` landing that merged a
+    candidate nobody ran is unverified whatever the runs recorded."""
+    ticket = _landed(session, workspace, "lg-contained-4")
+    _run(session, ticket, wrote=[])
     _receipt(session, ticket, DISABLED, outcome="disabled")
 
     assert _subjects(session) == {ticket.id}
