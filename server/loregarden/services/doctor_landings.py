@@ -42,6 +42,32 @@ _NAMED = 5
 
 
 @dataclass(frozen=True)
+class DeliveredInPart:
+    """Files a person decided a ticket's delivery leaves out, and where that was decided."""
+
+    files: frozenset[str]
+    decided_in: str
+
+
+#: Reviewed exemptions, by ticket. Only the named files are excused: any other
+#: file the ticket added that never reached the base still fails the check, and
+#: an excused one is named in every finding so it is never silently passed.
+DELIVERED_IN_PART: dict[str, DeliveredInPart] = {
+    # Rescued by #865; these two pinned an expand-on-hover toast that main's
+    # clamp fence (lg-external-harness-954) replaced, so they were left out.
+    "lg-milestone-that-1316": DeliveredInPart(
+        files=frozenset(
+            {
+                "client/src/components/__tests__/ToastHostRecovery.test.tsx",
+                "client/src/components/__tests__/ToastHostTimer.test.tsx",
+            }
+        ),
+        decided_in="#865",
+    ),
+}
+
+
+@dataclass(frozen=True)
 class LostFiles:
     """A done ticket whose landing added files no base history has ever had."""
 
@@ -59,6 +85,8 @@ class LandingFileAudit:
     #: cleared, so the finding says how many went unexamined.
     unreadable: tuple[str, ...]
     examined: int
+    #: Files `DELIVERED_IN_PART` excused, as (ticket, files, where decided).
+    excused: tuple[tuple[str, tuple[str, ...], str], ...] = ()
 
 
 def _git_lines(repo_root: Path, args: list[str]) -> list[str]:
@@ -137,6 +165,7 @@ def audit_landed_files(session: Session, workspace: Workspace, repo_root: Path) 
     lost: list[LostFiles] = []
     unreadable: list[str] = []
     branch_tips: dict[str, str] = {}
+    excused: list[tuple[str, tuple[str, ...], str]] = []
     examined = 0
     for ticket in tickets:
         try:
@@ -148,6 +177,12 @@ def audit_landed_files(session: Session, workspace: Workspace, repo_root: Path) 
             continue
         examined += 1
         missing = tuple(path for path in added if path not in history)
+        exemption = DELIVERED_IN_PART.get(ticket.external_id)
+        if exemption is not None:
+            left_out = tuple(path for path in missing if path in exemption.files)
+            if left_out:
+                excused.append((ticket.external_id, left_out, exemption.decided_in))
+            missing = tuple(path for path in missing if path not in exemption.files)
         if missing:
             lost.append(LostFiles(ticket=ticket, missing=missing))
     return LandingFileAudit(
@@ -156,7 +191,19 @@ def audit_landed_files(session: Session, workspace: Workspace, repo_root: Path) 
         lost=tuple(lost),
         unreadable=tuple(unreadable),
         examined=examined,
+        excused=tuple(excused),
     )
+
+
+def _excused_note(audit: LandingFileAudit) -> str:
+    """The exemptions that applied, named, so a pass never hides what it excused."""
+    if not audit.excused:
+        return ""
+    named = "; ".join(
+        f"{ticket} ({len(files)} file(s) left out by decision in {where}: {', '.join(files)})"
+        for ticket, files, where in audit.excused
+    )
+    return f" Excused by DELIVERED_IN_PART: {named}."
 
 
 def check_landed_files_reach_base(
@@ -179,6 +226,7 @@ def check_landed_files_reach_base(
         if audit.unreadable
         else ""
     )
+    skipped += _excused_note(audit)
     if not audit.lost:
         status = DoctorStatus.WARN if audit.unreadable else DoctorStatus.PASS
         return DoctorFinding(
