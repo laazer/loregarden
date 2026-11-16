@@ -22,6 +22,7 @@ lstart=` answers on both platforms.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
@@ -257,7 +258,17 @@ def _linux_boot_id() -> str:
     return boot_id
 
 
+@functools.cache
 def _darwin_boot_sec() -> str:
+    """The boot's `sec`, read once per process: a process never outlives its boot.
+
+    Cached because the claim gate asks on every retirement, and a `sysctl` that
+    misses its timeout on a loaded box turned a tree this process owns into
+    CLAIM_UNPROVEN. `functools.cache` keeps successes only — a raise is not
+    cached, so a read that failed is attempted again next time. Caching also
+    keeps the boot stamp in this process's own claims from moving if a later
+    read came back different.
+    """
     try:
         result = subprocess.run(
             ["sysctl", "-n", "kern.boottime"],
@@ -274,6 +285,28 @@ def _darwin_boot_sec() -> str:
             f"sysctl kern.boottime gave no sec field: {(result.stdout or '').strip()[:120]!r}"
         )
     return found.group(1)
+
+
+#: This process's own start time, keyed by pid so a forked child reads its own.
+#: Filled only from an ALIVE reading; an unanswered `ps` is asked again next time.
+_OWN_BIRTH: dict[int, str] = {}
+
+
+def own_birth() -> str:
+    """This process's start time, read by `ps` once and then remembered.
+
+    It cannot change while the process runs, and it is asked for on every
+    claim stamp and every claim check. Asked fresh each time, a `ps` that timed
+    out under load made this process's own claim unprovable. `""` when `ps` has
+    never answered; `identify` has already logged why.
+    """
+    pid = os.getpid()
+    if pid not in _OWN_BIRTH:
+        reading = identify(pid)
+        if reading.state is not ProcessState.ALIVE:
+            return ""
+        _OWN_BIRTH[pid] = reading.stamp
+    return _OWN_BIRTH[pid]
 
 
 @dataclass(frozen=True)
@@ -296,7 +329,7 @@ class ClaimIdentity:
         Raises :class:`BootIdentityUnavailable` on a box that cannot say which
         boot it is on, for the reason that exception's docstring gives.
         """
-        return cls(pid=os.getpid(), birth=identify(os.getpid()).stamp, boot_id=boot_identity())
+        return cls(pid=os.getpid(), birth=own_birth(), boot_id=boot_identity())
 
 
 def claim_fields(claim: ClaimIdentity) -> dict[str, str]:
@@ -353,6 +386,15 @@ def claim_is_live(claim: ClaimIdentity) -> ProcessState:
     `liveness` and not already covered by it. What the third column buys is
     the raise above and a durable record of which boot the claim was taken
     under, for the reader of a tree that has been sitting there for a month.
+
+    THIS PROCESS'S PID is answered without `ps`. If we hold the pid, the
+    claimant is us when the birth matches, and otherwise an earlier holder of
+    the pid, which cannot still be running. Asking `ps` about ourselves only
+    gave a loaded machine a way to answer UNKNOWN.
     """
     boot_identity()
+    if claim.pid == os.getpid():
+        mine = own_birth()
+        if mine:
+            return ProcessState.ALIVE if claim.birth == mine else ProcessState.GONE
     return liveness(claim.pid, claim.birth)
