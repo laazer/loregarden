@@ -291,8 +291,9 @@ BLOCK_WRITERS: dict[str, str] = {
         "dispatch (a denied permission, a scope denial) and the run it is inside then finishes "
         "through complete_run, which settles the block with the run's own message"
     ),
-    "api/orchestration.py:callback_block": "delegates: orchestration_callbacks.block_ticket",
-    "mcp/tools.py:execute_tool": "delegates: orchestration_callbacks.block_ticket",
+    "services/operations/run_callbacks.py:_block_ticket": (
+        "delegates: orchestration_callbacks.block_ticket"
+    ),
     "services/approval_resolution.py:apply_park_resolution": (
         "exempt: a person rejected the park, so the block is their own decision, taken in the "
         "inbox item that is still in front of them — there is nothing to classify for them and "

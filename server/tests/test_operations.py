@@ -161,7 +161,7 @@ def test_the_cli_is_held_to_its_own_opt_out(db_session):
     assert over_mcp["ticket_id"] == ticket.id
 
 
-def _renaming_read(session, ref: TicketRef) -> dict:
+def _renaming_read(session, ref: TicketRef, _caller: Caller) -> dict:
     ticket = ref.resolve(session)
     ticket.title = "renamed by a read"
     session.add(ticket)

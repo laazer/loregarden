@@ -14,7 +14,13 @@ from typing import Any
 
 from loregarden.models.domain import BlockedOn, TicketState, TicketSummary, WorkItemType
 from loregarden.services.artifact_service import list_ticket_artifacts
-from loregarden.services.operations.spec import Effect, Operation, OperationId, Transport
+from loregarden.services.operations.spec import (
+    Caller,
+    Effect,
+    Operation,
+    OperationId,
+    Transport,
+)
 from loregarden.services.operations.ticket_reads import TicketKey
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_discovery import list_tickets_mcp
@@ -73,7 +79,7 @@ class ArtifactFeedQuery(TicketKey):
     limit: int = Field(default=200, ge=1)
 
 
-def _search(session: Session, query: TicketSearch) -> dict[str, Any]:
+def _search(session: Session, query: TicketSearch, _caller: Caller) -> dict[str, Any]:
     return list_tickets_mcp(
         session,
         workspace_slug=query.workspace_slug,
@@ -87,11 +93,11 @@ def _search(session: Session, query: TicketSearch) -> dict[str, Any]:
     )
 
 
-def _summaries(session: Session, query: TicketSummaryQuery) -> list[TicketSummary]:
+def _summaries(session: Session, query: TicketSummaryQuery, _caller: Caller) -> list[TicketSummary]:
     return ticket_summaries(session, SummaryFilters(**query.model_dump()))
 
 
-def _index(session: Session, query: ArtifactIndexQuery) -> dict[str, Any]:
+def _index(session: Session, query: ArtifactIndexQuery, _caller: Caller) -> dict[str, Any]:
     ticket = OrchestrationCallbackService(session).resolve_ticket(
         ticket_id=query.ticket_id, workspace_slug=query.workspace_slug
     )
@@ -105,7 +111,7 @@ def _index(session: Session, query: ArtifactIndexQuery) -> dict[str, Any]:
     )
 
 
-def _feed(session: Session, query: ArtifactFeedQuery) -> dict[str, Any]:
+def _feed(session: Session, query: ArtifactFeedQuery, _caller: Caller) -> dict[str, Any]:
     return list_ticket_artifacts(session, query.resolve(session).id, limit=query.limit)
 
 

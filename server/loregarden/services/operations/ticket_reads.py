@@ -11,7 +11,13 @@ from __future__ import annotations
 from typing import Any
 
 from loregarden.models.domain import Ticket, TicketDetail
-from loregarden.services.operations.spec import Effect, Operation, OperationId, Transport
+from loregarden.services.operations.spec import (
+    Caller,
+    Effect,
+    Operation,
+    OperationId,
+    Transport,
+)
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_detail_view import ticket_detail
 from loregarden.services.ticket_ids import TicketNotFound
@@ -58,15 +64,15 @@ class TicketKey(BaseModel):
         return ticket
 
 
-def _brief(session: Session, ref: TicketRef) -> dict[str, Any]:
+def _brief(session: Session, ref: TicketRef, _caller: Caller) -> dict[str, Any]:
     return ticket_brief(session, ref.resolve(session))
 
 
-def _state(session: Session, ref: TicketRef) -> dict[str, Any]:
+def _state(session: Session, ref: TicketRef, _caller: Caller) -> dict[str, Any]:
     return ticket_state_for_read(session, ref.resolve(session))
 
 
-def _detail(session: Session, key: TicketKey) -> TicketDetail:
+def _detail(session: Session, key: TicketKey, _caller: Caller) -> TicketDetail:
     return ticket_detail(session, key.resolve(session))
 
 

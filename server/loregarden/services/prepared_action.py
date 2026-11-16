@@ -32,6 +32,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from loregarden.models.domain import HumanActionTier
 from loregarden.services.git_subprocess import scrubbed_git_env
@@ -240,3 +241,28 @@ def run_prepared_action(
         output=stdout,
         error="" if completed.returncode == 0 else (stderr or stdout or "no output"),
     )
+
+
+def prepared_action_from(arguments: dict[str, Any]) -> PreparedAction | None:
+    """The prepared action a block carries, or None when it carries none.
+
+    An unknown tier is refused rather than defaulted. Defaulting would quietly
+    file work at the rung the agent did not claim, and MANUAL — the rung that
+    costs a person the most — is exactly the one a silent default would pick.
+    """
+    supplied = {
+        key: arguments[key]
+        for key in ("tier", "attempted", "prepared", "command", "script_path", "captures")
+        if arguments.get(key)
+    }
+    if not supplied:
+        return None
+    raw_tier = str(supplied.pop("tier", "")).strip()
+    try:
+        tier = HumanActionTier(raw_tier)
+    except ValueError:
+        allowed = ", ".join(t.value for t in HumanActionTier)
+        raise ValueError(
+            f"tier must be one of {allowed} when a prepared action is supplied (got {raw_tier!r})"
+        ) from None
+    return PreparedAction(tier=tier, **supplied)

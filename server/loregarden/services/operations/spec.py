@@ -48,6 +48,25 @@ class OperationId(StrEnum):
     ARTIFACT_INDEX = "artifact_index"
     #: Every artifact on one ticket, newest first, for the Artifacts tab.
     ARTIFACT_FEED = "artifact_feed"
+    #: Start a ticket's orchestration on the profile's driver, admitted to a lane.
+    ORCHESTRATION_START = "orchestration_start"
+    #: The calls a run makes back as it works (`run_callbacks.py`).
+    STAGE_START = "stage_start"
+    STAGE_COMPLETE = "stage_complete"
+    STAGE_SKIP = "stage_skip"
+    TICKET_BLOCK = "ticket_block"
+    ARTIFACT_ATTACH = "artifact_attach"
+    APPROVAL_REQUEST = "approval_request"
+    ORCHESTRATION_COMPLETE = "orchestration_complete"
+
+
+@dataclass(frozen=True)
+class Caller:
+    transport: Transport
+    #: A run Loregarden itself supervises (MCP's `X-Loregarden-Orchestrated`).
+    orchestrated: bool = False
+    #: The supervised agent run whose MCP config made the call, when known.
+    run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,7 +75,8 @@ class Operation:
     effect: Effect
     #: Validates the caller's arguments; every transport passes the same model.
     args: type[BaseModel]
-    handler: Callable[[Session, Any], Any]
+    #: Called with the session, the validated args and the caller.
+    handler: Callable[[Session, Any, Caller], Any]
     #: Transports this operation is not offered on, each with the reason. An
     #: absent transport is offered, and must be bound (`test_operations.py`).
     unavailable_on: Mapping[Transport, str] = field(default_factory=dict)

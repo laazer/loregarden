@@ -109,7 +109,7 @@ def test_external_orchestration_never_reserves_a_lane(db_session: Session):
     def _fail(*args, **kwargs):
         raise AssertionError("an external-harness run must not go through admission")
 
-    with patch("loregarden.mcp.tools.start_orchestration_admitted", _fail):
+    with patch("loregarden.services.operations.run_callbacks.start_orchestration_admitted", _fail):
         payload = json.loads(
             execute_tool(
                 db_session,

@@ -12,13 +12,8 @@ from loregarden.agents.executors.tool_auto_approve import (
     reject_orchestrated_argument_denial,
     reject_orchestrated_tool_denial,
 )
-from loregarden.mcp.admission import (
-    queued_response,
-    run_admitted,
-    start_orchestration_admitted,
-)
-from loregarden.mcp.artifact_tools import attach_artifact, attach_evidence
-from loregarden.mcp.block_ticket_args import normalize_block_ticket, prepared_action_from
+from loregarden.mcp.artifact_tools import attach_evidence
+from loregarden.mcp.block_ticket_args import normalize_block_ticket
 from loregarden.mcp.branch_moves_tool import TOOL_DEFINITION as BRANCH_MOVES_TOOL_DEFINITION
 from loregarden.mcp.criterion_tools import CRITERION_TOOL_DEFINITIONS, settle_criterion_tool
 from loregarden.mcp.deferral_tool import TOOL_DEFINITION as DEFER_TICKET_TOOL_DEFINITION
@@ -52,12 +47,6 @@ from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOO
 from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.research_tools import RESEARCH_TOOL_DEFINITIONS
-from loregarden.mcp.run_resolution import (
-    ORCHESTRATION_RUN_ID_DESCRIPTION,
-    TICKET_RUN_ID_DESCRIPTION,
-    attributed_agent_run_id,
-    resolve_run_ref,
-)
 from loregarden.mcp.survey_tools import TOOL_DEFINITIONS as SURVEY_TOOL_DEFINITIONS
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
@@ -87,11 +76,9 @@ from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.mcp.ui_action_tools import TOOL_DEFINITIONS as UI_ACTION_TOOL_DEFINITIONS
 from loregarden.mcp.ux_answers_tools import UX_ANSWERS_TOOL_DEFINITIONS
 from loregarden.models.domain import (
-    BlockOrigin,
     ExternalHarness,
     HumanActionTier,
     MemoryRelationType,
-    OrchestrationRunStatus,
     WorkItemType,
 )
 from loregarden.services.acceptance_criteria import (
@@ -103,16 +90,16 @@ from loregarden.services.agent_ticket_filing import (
     place_finding,
     record_filing,
 )
-from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
-from loregarden.services.dependency_hold import admit_named_start
 from loregarden.services.discovered_work import record_discovery
 from loregarden.services.evidence import EVIDENCE_KINDS
-from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.operations import Caller, Transport
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.prepared_action import assess_handover
-from loregarden.services.stage_report import findings_from
-from loregarden.services.stage_shape import current_stage_shape
+from loregarden.services.run_resolution import (
+    ORCHESTRATION_RUN_ID_DESCRIPTION,
+    TICKET_RUN_ID_DESCRIPTION,
+    attributed_agent_run_id,
+    resolve_run_ref,
+)
 from loregarden.services.ticket_dependencies import resolve_prerequisites
 from loregarden.services.ticket_service import TicketService
 
@@ -390,22 +377,6 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     # least the tool's required field — so `or` reads the same as an
     # `is not None` chain here, and `args` remains the fallthrough it always was.
     return normalize_memory_tool_args(name, args) or _normalize_ticket_ops_args(name, args) or args
-
-
-def _run_view(run) -> dict[str, Any]:
-    return {
-        "id": run.id,
-        "run_code": run.run_code,
-        "ticket_id": run.ticket_id,
-        "driver": run.driver.value,
-        "profile_slug": run.profile_slug,
-        "status": run.status.value,
-        "external_harness": run.external_harness.value if run.external_harness else "",
-        "current_stage_key": run.current_stage_key,
-        "error_message": run.error_message,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
-    }
 
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -1210,25 +1181,6 @@ def _create_ticket(
     )
 
 
-def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Start a run on whichever driver the workspace profile selects.
-
-    An external harness skips admission entirely: the lane pool bounds agents
-    this machine spawns, and this one spawns none here. Reserving for it would
-    idle a slot and make the operator queue behind capacity they never use.
-    """
-    harness = arguments.get("external_harness")
-    if harness:
-        ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-        run = start_external_orchestration(session, ticket, harness=ExternalHarness(harness))
-        return json.dumps(_run_view(run), indent=2)
-
-    reservation, run = start_orchestration_admitted(session, svc, arguments)
-    if not reservation.admitted:
-        return queued_response(reservation, ticket_id=arguments["ticket_id"])
-    return json.dumps(_run_view(run), indent=2)
-
-
 def _decide_finding(
     session: Session, _svc, arguments: dict[str, Any], *, orchestrated: bool, run_id: str
 ) -> str:
@@ -1292,9 +1244,6 @@ def execute_tool(
     if operation_reply is not None:
         return operation_reply
 
-    if name == "loregarden_start_orchestration":
-        return _start_orchestration(session, svc, arguments)
-
     # The modules that own their own ticket tools, tried in one branch rather
     # than one branch each: this chain is already well past the complexity cap,
     # so a per-module `if` would tax the next tool anyone adds. Each returns None
@@ -1337,125 +1286,9 @@ def execute_tool(
     ticket = svc.resolve_ticket(ticket_id=run_ref.ticket_id)
     source_run_id = attributed_agent_run_id(session, run_ref, transport_run_id=run_id)
 
-    # Ticket-scoped: a standalone stage run, with no orchestration, may use these.
-    if name == McpTool.ATTACH_ARTIFACT:
-        return attach_artifact(svc, ticket, arguments, run_id=source_run_id)
-
+    # Ticket-scoped: a standalone stage run, with no orchestration, may use it.
     if name == McpTool.ATTACH_EVIDENCE:
         return attach_evidence(session, svc, ticket, arguments, run_id=source_run_id)
-
-    if name == McpTool.REQUEST_APPROVAL:
-        approval = svc.request_approval(
-            ticket,
-            stage_key=arguments["stage_key"],
-            title=arguments.get("title", ""),
-            impact=arguments.get("impact", ""),
-        )
-        return json.dumps({"ok": True, "approval_id": approval.id}, indent=2)
-
-    run = run_ref.require_orchestration(name)
-
-    if name == "loregarden_start_stage":
-        admit_named_start(
-            session,
-            ticket,
-            stage_key=arguments["stage_key"],
-            ignore_prerequisites=bool(arguments.get("ignore_prerequisites")),
-            actor="mcp",
-        )
-        reservation, _ = run_admitted(
-            session,
-            ticket,
-            stage_key=arguments["stage_key"],
-            force=bool(arguments.get("force")),
-            orchestration_run_id=run.id,
-            start=lambda: svc.start_stage(
-                run,
-                ticket,
-                stage_key=arguments["stage_key"],
-                agent_id=arguments.get("agent_id", ""),
-                force=bool(arguments.get("force")),
-            ),
-        )
-        if not reservation.admitted:
-            return queued_response(reservation, stage_key=arguments["stage_key"])
-        # `_get_run` resolves an OrchestrationRun, so it binds to the slot's
-        # orchestration column. `run_id` is the agent-run column, and writing
-        # this id there names a row that does not exist in the table it
-        # references (`run_admitted` leaves the choice to the caller precisely
-        # because only the caller knows which kind of run it produced).
-        reservation.bind(orchestration_run_id=run.id)
-        return json.dumps({"ok": True, "stage_key": arguments["stage_key"]}, indent=2)
-
-    if name == "loregarden_complete_stage":
-        svc.complete_stage(
-            run,
-            ticket,
-            stage_key=arguments["stage_key"],
-            next_agent=arguments.get("next_agent", ""),
-            next_stage_key=arguments.get("next_stage_key", ""),
-            outcome=arguments.get("outcome", "pass"),
-            blocking_issues=arguments.get("blocking_issues", ""),
-            findings=findings_from(arguments.get("findings") or []),
-        )
-        session.refresh(ticket)
-        return json.dumps(
-            {
-                "ok": True,
-                "workflow_stage_key": ticket.workflow_stage_key,
-                "ticket_state": ticket.state.value,
-                # What the cursor now sits on, in words — a parallel stage and a
-                # human gate look identical by agent_id alone (745).
-                "next_stage_shape": current_stage_shape(session, ticket),
-            },
-            indent=2,
-        )
-
-    if name == "loregarden_skip_stage":
-        svc.skip_stage(
-            run,
-            ticket,
-            stage_key=arguments["stage_key"],
-            reason=arguments.get("reason", ""),
-        )
-        return json.dumps({"ok": True, "stage_key": arguments["stage_key"]}, indent=2)
-
-    if name == "loregarden_block_ticket":
-        action = prepared_action_from(arguments)
-        svc.block_ticket(
-            run,
-            ticket,
-            # The agent's own words, via `loregarden_block_ticket` — the one
-            # path where a block may legitimately be a handover of human work.
-            origin=BlockOrigin.AGENT,
-            repair=AGENT_ASKED_FOR_A_PERSON,
-            stage_key=arguments.get("stage_key", ""),
-            message=arguments["message"],
-            prepared_action=action,
-        )
-        # The findings come back in the response rather than only onto the
-        # approval, so an agent that handed over a chore is told so while it can
-        # still do something about it.
-        assessment = assess_handover(message=arguments["message"], action=action)
-        return json.dumps(
-            {
-                "ok": True,
-                "ticket_state": ticket.state.value,
-                "handover_ok": assessment.ok,
-                "handover_findings": assessment.findings,
-            },
-            indent=2,
-        )
-
-    if name == "loregarden_complete_orchestration":
-        status = OrchestrationRunStatus(arguments.get("status", "succeeded"))
-        run = svc.complete_orchestration(
-            run,
-            ticket,
-            status=status,
-            message=arguments.get("message", ""),
-        )
-        return json.dumps(_run_view(run), indent=2)
 
     raise ValueError(f"Unknown tool: {name}")
 

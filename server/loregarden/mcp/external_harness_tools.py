@@ -19,7 +19,6 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.mcp.run_resolution import resolve_run_ref
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
     boolean_prop,
@@ -30,6 +29,7 @@ from loregarden.mcp.tool_schemas import (
 )
 from loregarden.models.domain import AgentRun, RunUsage
 from loregarden.services.external_harness import begin_external_stage, finish_external_stage
+from loregarden.services.run_resolution import resolve_run_ref
 
 #: Fields of ``RunUsage`` a harness may report on finish_external_stage. Flat
 #: on the tool rather than nested, matching the arguments already there.

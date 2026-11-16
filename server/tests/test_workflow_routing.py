@@ -138,7 +138,7 @@ def test_complete_stage_routes_upstream_via_api(client: TestClient, db_session: 
             "blocking_issues": "AC-2 missing test evidence",
         },
     )
-    assert complete.status_code == 200
+    assert complete.status_code == 200, complete.text
     body = complete.json()
     assert body["workflow_stage_key"] == "implement"
 
