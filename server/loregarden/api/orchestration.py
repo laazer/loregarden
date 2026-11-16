@@ -37,7 +37,6 @@ from loregarden.services.gate_runner import (
     sample_gate_context,
     transition_name,
 )
-from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
     PRESERVED_GATE_KEYS,
@@ -52,7 +51,7 @@ from loregarden.services.orchestration_profile import (
 )
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.scope_round import decide_finding
-from loregarden.services.studio_routing import ticket_stage_agent
+from loregarden.services.ticket_state_payload import ticket_state_for_read
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, select
 
@@ -330,24 +329,10 @@ def get_ticket_orchestration_state(
     ticket_id: str,
     session: Session = Depends(get_session),
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(ticket_id=ticket_id)
-    active = svc.get_active_orchestration_run(ticket.id)
-    orch = OrchestrationService(session)
-    return {
-        "ticket_id": ticket.id,
-        "external_id": ticket.external_id,
-        # A caller that reached this route under a pre-restructure id gets to see
-        # that it is the same ticket, not a different one than it asked for.
-        "legacy_external_id": ticket.legacy_external_id,
-        "state": ticket.state.value,
-        "workflow_stage_key": ticket.workflow_stage_key,
-        "workflow_stage_status": ticket.workflow_stage_status.value,
-        "current_stage_agent": ticket_stage_agent(session, ticket),
-        "blocking_issues": ticket.blocking_issues,
-        "active_orchestration": _run_view(active).model_dump() if active else None,
-        "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],
-    }
+    # The same payload and the same read path as `loregarden_get_ticket`: a GET
+    # derives the stage map and commits nothing.
+    ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=ticket_id)
+    return ticket_state_for_read(session, ticket)
 
 
 @router.get("/tickets/by-external/{workspace_slug}/{external_id}/state", response_model=dict)

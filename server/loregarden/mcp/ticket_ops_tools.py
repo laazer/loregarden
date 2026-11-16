@@ -21,7 +21,6 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from loregarden.mcp.ticket_edit_tools import ticket_state_payload
 from loregarden.mcp.tool_args import coerce_optional_int
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import enum_string_prop, integer_prop, string_prop, tool_schema
@@ -45,6 +44,7 @@ from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_state_payload import ticket_state_payload
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import publish_and_settle
 from loregarden.services.workflow_state import parse_stage_map

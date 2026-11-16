@@ -1,4 +1,5 @@
-"""`loregarden_get_ticket` and `_by_external` are reads, and write nothing.
+"""Every read of a ticket's state writes nothing: the two MCP read tools and
+the two REST state routes, which build the same payload on the same read path.
 
 Both returned `ticket_state_payload`, whose stage map came from
 `build_stage_views`, which commits the ticket and its workflow instance. So every
@@ -13,9 +14,10 @@ import json
 from contextlib import contextmanager
 
 import pytest
-from loregarden.mcp.ticket_edit_tools import ticket_state_payload
+from fastapi.testclient import TestClient
 from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import WorkflowInstance
+from loregarden.services.ticket_state_payload import ticket_state_payload
 from sqlalchemy import event
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
@@ -38,20 +40,34 @@ def _writes(engine):
         event.remove(engine, "before_cursor_execute", record)
 
 
-def _read(session: Session, tool: str, ticket) -> dict:
-    arguments = (
-        {"ticket_id": ticket.id}
-        if tool == "loregarden_get_ticket"
-        else {"workspace_slug": "loregarden", "external_id": ticket.external_id}
+def _read(client: TestClient, session: Session, reader: str, ticket) -> dict:
+    if reader == "loregarden_get_ticket":
+        return json.loads(execute_tool(session, reader, {"ticket_id": ticket.id}))
+    if reader == "loregarden_get_ticket_by_external":
+        arguments = {"workspace_slug": "loregarden", "external_id": ticket.external_id}
+        return json.loads(execute_tool(session, reader, arguments))
+    path = (
+        f"/api/orchestration/tickets/{ticket.id}/state"
+        if reader == "GET /tickets/{id}/state"
+        else f"/api/orchestration/tickets/by-external/loregarden/{ticket.external_id}/state"
     )
-    return json.loads(execute_tool(session, tool, arguments))
+    res = client.get(path)
+    assert res.status_code == 200, res.text
+    return res.json()
 
 
-READ_TOOLS = ["loregarden_get_ticket", "loregarden_get_ticket_by_external"]
+READERS = [
+    "loregarden_get_ticket",
+    "loregarden_get_ticket_by_external",
+    "GET /tickets/{id}/state",
+    "GET /tickets/by-external/{slug}/{external_id}/state",
+]
 
 
-@pytest.mark.parametrize("tool", READ_TOOLS)
-def test_reading_a_ticket_with_a_workflow_instance_writes_nothing(db_session, isolated_db, tool):
+@pytest.mark.parametrize("reader", READERS)
+def test_reading_a_ticket_with_a_workflow_instance_writes_nothing(
+    client, db_session, isolated_db, reader
+):
     ticket = make_workspace_ticket(db_session, "lg-read-only-1")
     written_stages = ticket_state_payload(db_session, ticket.id)["stages"]
     assert db_session.exec(
@@ -59,18 +75,20 @@ def test_reading_a_ticket_with_a_workflow_instance_writes_nothing(db_session, is
     ).first(), "the write path should have created the instance this case is about"
 
     with _writes(isolated_db) as writes:
-        payload = _read(db_session, tool, ticket)
+        payload = _read(client, db_session, reader, ticket)
 
     assert writes == []
     assert payload["stages"] == written_stages
 
 
-@pytest.mark.parametrize("tool", READ_TOOLS)
-def test_reading_a_ticket_with_no_workflow_instance_creates_none(db_session, isolated_db, tool):
+@pytest.mark.parametrize("reader", READERS)
+def test_reading_a_ticket_with_no_workflow_instance_creates_none(
+    client, db_session, isolated_db, reader
+):
     ticket = make_workspace_ticket(db_session, "lg-read-only-2")
 
     with _writes(isolated_db) as writes:
-        payload = _read(db_session, tool, ticket)
+        payload = _read(client, db_session, reader, ticket)
 
     assert writes == []
     assert payload["stages"], "a ticket with no instance still shows the stages it would have"
@@ -80,3 +98,20 @@ def test_reading_a_ticket_with_no_workflow_instance_creates_none(db_session, iso
         ).first()
         is None
     )
+
+
+def test_rest_and_mcp_return_one_payload(client, db_session):
+    """The REST route was a hand-kept copy that had lost `revision` and
+    `current_stage_shape`; now both transports return the same state."""
+    ticket = make_workspace_ticket(db_session, "lg-read-only-3")
+    over_mcp = _read(client, db_session, "loregarden_get_ticket", ticket)
+    over_rest = _read(client, db_session, "GET /tickets/{id}/state", ticket)
+
+    assert over_rest == {key: over_mcp[key] for key in over_rest}
+    assert set(over_rest) == set(over_mcp) - {
+        "title",
+        "description",
+        "acceptance_criteria",
+        "out_of_scope",
+        "documents",
+    }
