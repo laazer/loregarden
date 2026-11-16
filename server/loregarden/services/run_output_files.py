@@ -258,6 +258,35 @@ def recorded_exit_status(path: Path) -> int | None:
         return None
 
 
+#: What a finished run says when its wrapper recorded no exit code.
+NO_EXIT_CODE_STDERR = (
+    "Agent exited without recording an exit code; its run is reported failed "
+    "rather than assumed complete."
+)
+
+
+def settled_stderr(paths: RunOutputPaths, *, code: int | None) -> str:
+    """The stderr a finished run is recorded with, from `.err` and `code`.
+
+    One function for the live path and the reattached one, so they cannot
+    disagree about what the same run said. With no exit code the stderr says
+    so; and when none of the run's output files exist at all it names them,
+    because that is a run whose output went somewhere this process does not
+    read (a `run_log_dir` resolved against two different cwds once did it to
+    every run), and "no reason recorded" would leave nowhere to look.
+    """
+    stderr = read_output_text(paths.err)
+    if code is not None:
+        return stderr
+    reason = NO_EXIT_CODE_STDERR
+    if not any(path.exists() for path in (paths.out, paths.err, paths.rc)):
+        reason = (
+            f"{reason} None of its output files exist ({paths.out}, {paths.err}, "
+            f"{paths.rc}): it wrote them somewhere else, or never started."
+        )
+    return f"{stderr.rstrip()}\n{reason}" if stderr.strip() else reason
+
+
 class RunOutputTail:
     """Read complete lines out of a file something else is still appending to.
 

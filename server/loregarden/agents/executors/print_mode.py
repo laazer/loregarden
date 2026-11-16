@@ -62,9 +62,9 @@ from loregarden.services.run_output_files import (
     RunOutputPaths,
     RunOutputTail,
     paths_for,
-    read_output_text,
     recorded_exit_status,
     run_file_stem,
+    settled_stderr,
 )
 
 logger = logging.getLogger(__name__)
@@ -425,12 +425,12 @@ def _print_mode_result(
     The status comes from `.rc`, because that is also what the reattached path
     reads and the two must not disagree about what one run did.
     """
-    stderr = read_output_text(paths.err)
     stdout = "\n".join(stdout_lines)
     if cancelled:
         return stdout, "Cancelled by operator", RunStatus.CANCELLED
-    status = RunStatus.SUCCEEDED if recorded_exit_status(paths.rc) == 0 else RunStatus.FAILED
-    return stdout, stderr, status
+    code = recorded_exit_status(paths.rc)
+    status = RunStatus.SUCCEEDED if code == 0 else RunStatus.FAILED
+    return stdout, settled_stderr(paths, code=code), status
 
 
 def _timeout_expired(
