@@ -318,6 +318,33 @@ def test_a_run_whose_agent_writes_nothing_still_returns(db_session: Session, run
     assert status is RunStatus.SUCCEEDED
 
 
+def test_a_run_whose_output_files_never_appear_names_them(
+    db_session: Session, run_log_dir, run_key, tmp_path
+):
+    """The agent's shell wrote its files where this process does not read them.
+
+    A relative `run_log_dir` did exactly that: the wrapper resolved it against
+    its own cwd and the server against another, and the run failed with "no
+    reason recorded". The reason must name the files that were never found,
+    or the operator has nowhere to look.
+    """
+    elsewhere = tmp_path / "where-the-server-reads"
+
+    def read_side(run_code: str, run_id: str) -> RunOutputPaths:
+        written = paths_for(run_code, run_id)
+        return RunOutputPaths(
+            **{field: elsewhere / path.name for field, path in vars(written).items()}
+        )
+
+    with mock.patch.object(print_mode, "paths_for", side_effect=read_side):
+        _stdout, stderr, status = _run(db_session, run_key, "print('did the work')")
+
+    missing = read_side(run_key.code, run_key.id)
+    assert status is RunStatus.FAILED
+    assert str(missing.out) in stderr
+    assert str(missing.rc) in stderr
+
+
 # --- AC1: the spawn's shape --------------------------------------------------
 
 

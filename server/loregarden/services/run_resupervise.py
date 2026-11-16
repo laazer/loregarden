@@ -71,6 +71,7 @@ from loregarden.services.run_output_files import (
     paths_for,
     read_output_text,
     recorded_exit_status,
+    settled_stderr,
 )
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -78,16 +79,11 @@ from sqlmodel import Session, col, update
 
 logger = logging.getLogger(__name__)
 
+
 #: What an operator reads when the agent left no exit code behind. A run whose
 #: `.rc` is absent or unparseable is reported FAILED rather than assumed
 #: complete — that is the honest outcome of tmux's own server dying, and the
 #: reason tmux is sequenced last in this ticket.
-NO_EXIT_CODE_STDERR = (
-    "Agent exited without recording an exit code; its run is reported failed "
-    "rather than assumed complete."
-)
-
-
 @dataclass(frozen=True)
 class _Adopted:
     """What supervising an adopted run needs, read once off its row.
@@ -298,7 +294,7 @@ def _settle(run_id: str, *, paths: RunOutputPaths, streamer: RunLogStreamer) -> 
         session.refresh(run)
         code = recorded_exit_status(paths.rc)
         status = RunStatus.SUCCEEDED if code == 0 else RunStatus.FAILED
-        stderr = _stderr_for(paths, code=code)
+        stderr = settled_stderr(paths, code=code)
         stdout = _transcript(paths)
         streamer.finalize(status=status, stderr=stderr)
         try:
@@ -312,13 +308,6 @@ def _settle(run_id: str, *, paths: RunOutputPaths, streamer: RunLogStreamer) -> 
             logger.exception("Could not settle reattached run %s", run.run_code)
             raise
     _delete_output_files(paths)
-
-
-def _stderr_for(paths: RunOutputPaths, *, code: int | None) -> str:
-    stderr = read_output_text(paths.err)
-    if code is not None:
-        return stderr
-    return f"{stderr}\n{NO_EXIT_CODE_STDERR}".strip() if stderr else NO_EXIT_CODE_STDERR
 
 
 def _transcript(paths: RunOutputPaths) -> str:
