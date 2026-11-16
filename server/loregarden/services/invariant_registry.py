@@ -51,6 +51,7 @@ from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
 from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
+from loregarden.services.merge_queue_closed_prs import STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR
 from loregarden.services.orchestration_capacity import (
     release_terminal_run_parent,
     terminal_run_parents,
@@ -1447,4 +1448,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     LANDED_WORK_REACHES_THE_BASE,
     RUNS_COMPLETE_ONCE,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
+    STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
 )
