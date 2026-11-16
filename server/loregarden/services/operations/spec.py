@@ -58,6 +58,11 @@ class OperationId(StrEnum):
     ARTIFACT_ATTACH = "artifact_attach"
     APPROVAL_REQUEST = "approval_request"
     ORCHESTRATION_COMPLETE = "orchestration_complete"
+    #: The edges between tickets (`ticket_links.py`).
+    TICKET_DEPENDENCY_ADD = "ticket_dependency_add"
+    TICKET_DEPENDENCY_REMOVE = "ticket_dependency_remove"
+    TICKET_RELATION_ADD = "ticket_relation_add"
+    TICKET_RELATION_REMOVE = "ticket_relation_remove"
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,11 @@ class Operation:
     #: Transports this operation is not offered on, each with the reason. An
     #: absent transport is offered, and must be bound (`test_operations.py`).
     unavailable_on: Mapping[Transport, str] = field(default_factory=dict)
+    #: How a transport words the handler's result, where its callers have always
+    #: been answered in their own shape (an agent with the state payload, the
+    #: ticket page with its detail). The effect is one; the reply is the
+    #: transport's. A transport absent here gets the result as it is.
+    replies: Mapping[Transport, Callable[[Session, Any], Any]] = field(default_factory=dict)
 
 
 class OperationUnavailable(Exception):  # noqa: N818 — reads as the condition, like StopIteration

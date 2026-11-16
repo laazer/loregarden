@@ -329,10 +329,6 @@ tickets.py::create_ticket
 tickets.py::preview_ticket_import
 tickets.py::preview_ticket_import_paths
 tickets.py::import_tickets
-tickets.py::add_ticket_dependency
-tickets.py::remove_ticket_dependency
-tickets.py::add_ticket_relation
-tickets.py::remove_ticket_relation
 tickets.py::preview_workflow_reassignment
 tickets.py::get_ticket_ledger
 tickets.py::update_ticket

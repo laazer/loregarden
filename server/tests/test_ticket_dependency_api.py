@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
-from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.models.domain import Ticket, TicketDependency, WorkItemType, Workspace
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
@@ -122,7 +122,35 @@ def test_api_rejects_dependency_cycle_with_409(client, db_session):
 def test_api_missing_prerequisite_is_an_error(client, db_session):
     a = _feature(db_session, "Solo")
     resp = client.post(f"/api/tickets/{a.id}/dependencies", json={"depends_on": "no-such-ticket"})
-    assert resp.status_code in (400, 404)
+    assert resp.status_code == 404
+
+
+def test_api_removes_a_prerequisite_named_by_external_ids(client, db_session):
+    """The route took `depends_on_id` raw: an external id matched no edge, and
+    the 200 it answered claimed a removal that never happened."""
+    a = _feature(db_session, "Ext unlink A")
+    b = _feature(db_session, "Ext unlink B")
+    client.post(f"/api/tickets/{a.id}/dependencies", json={"depends_on": b.id})
+
+    removed = client.delete(f"/api/tickets/{a.external_id}/dependencies/{b.external_id}")
+
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["dependencies"] == []
+    assert db_session.exec(select(TicketDependency)).all() == []
+
+
+def test_an_edge_records_who_drew_it_by_transport(client, db_session):
+    a = _feature(db_session, "Author A")
+    b = _feature(db_session, "Author B")
+    c = _feature(db_session, "Author C")
+    client.post(f"/api/tickets/{a.id}/dependencies", json={"depends_on": b.id})
+    _call(db_session, "loregarden_link_dependency", {"ticket_id": a.id, "depends_on": c.id})
+
+    authors = {
+        edge.depends_on_ticket_id: edge.created_by
+        for edge in db_session.exec(select(TicketDependency)).all()
+    }
+    assert authors == {b.id: "user", c.id: "agent"}
 
 
 # --- MCP -------------------------------------------------------------------

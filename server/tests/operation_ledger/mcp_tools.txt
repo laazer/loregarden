@@ -22,8 +22,6 @@ loregarden_instance_status
 loregarden_invoke_ui_action
 loregarden_land_ticket
 loregarden_launch_instance
-loregarden_link_dependency
-loregarden_link_relation
 loregarden_list_instances
 loregarden_list_ui_actions
 loregarden_mark_needs_person
@@ -59,8 +57,6 @@ loregarden_survey_queue
 loregarden_survey_record
 loregarden_survey_write
 loregarden_sync_github_issues
-loregarden_unlink_dependency
-loregarden_unlink_relation
 loregarden_update_ticket
 loregarden_upsert_blog_post
 loregarden_upsert_memory

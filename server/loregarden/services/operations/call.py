@@ -17,6 +17,7 @@ from loregarden.services.operations.spec import (
     OperationUnavailable,
     ReadOperationWrote,
 )
+from loregarden.services.operations.ticket_links import TICKET_LINKS
 from loregarden.services.operations.ticket_lists import TICKET_LISTS
 from loregarden.services.operations.ticket_reads import TICKET_READS
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 OPERATIONS: Mapping[OperationId, Operation] = {
-    op.id: op for op in (*TICKET_READS, *TICKET_LISTS, *RUN_CALLBACKS)
+    op.id: op for op in (*TICKET_READS, *TICKET_LISTS, *TICKET_LINKS, *RUN_CALLBACKS)
 }
 
 #: Set to "1" (the test suite does) to make a read operation that writes raise
@@ -60,10 +61,13 @@ def run_operation(
     arguments: Mapping[str, Any],
     caller: Caller,
 ) -> Any:
-    """Validate `arguments` against the operation's model and run it."""
+    """Validate `arguments` against the operation's model, run it, and word the
+    result for the caller's transport (`Operation.replies`)."""
     with operation_call(session, operation_id, caller) as operation:
         args: BaseModel = operation.args.model_validate(arguments)
-        return operation.handler(session, args, caller)
+        result = operation.handler(session, args, caller)
+        reply = operation.replies.get(caller.transport)
+        return result if reply is None else reply(session, result)
 
 
 @contextmanager
