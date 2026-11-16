@@ -807,3 +807,36 @@ def test_a_late_reply_does_not_resurrect_a_stopped_turn(client: TestClient, monk
     assert after["messages"][-1]["content"] == ticket_studio_run_service.CANCELLED_TURN_MESSAGE
     # The half that is not cosmetic: the scope was never applied.
     assert after["draft"] == []
+
+
+def test_grilled_answers_survive_past_the_history_window(client: TestClient):
+    """A long grill must not lose its first answers before scope is generated."""
+    from loregarden.db.session import engine
+    from loregarden.models.domain import TicketStudioMessage, TicketStudioSession, Workspace
+    from loregarden.services.ticket_studio_service import (
+        ANSWERS_MESSAGE_HEADER,
+        MAX_STUDIO_HISTORY_MESSAGES,
+        build_studio_prompt,
+    )
+    from sqlmodel import Session, select
+
+    session_id = _draft_session(client, "Long grill")
+    first_round = (
+        f"{ANSWERS_MESSAGE_HEADER}\n- Who is it for?\n  Operators running unattended milestones"
+    )
+    history = [TicketStudioMessage(session_id=session_id, role="user", content=first_round)]
+    history += [
+        TicketStudioMessage(session_id=session_id, role="assistant", content=f"filler {index}")
+        for index in range(MAX_STUDIO_HISTORY_MESSAGES)
+    ]
+    with Session(engine) as db:
+        row = db.get(TicketStudioSession, session_id)
+        workspace = db.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        assert row is not None and workspace is not None
+        prompt = build_studio_prompt(row, workspace, history, "go", session=db, mode="scope")
+        # Rounds still inside the window are not repeated as settled decisions.
+        recent = build_studio_prompt(row, workspace, history[:2], "go", session=db, mode="scope")
+
+    assert "## Settled decisions" in prompt
+    assert "Operators running unattended milestones" in prompt.split("## Conversation")[0]
+    assert "## Settled decisions" not in recent

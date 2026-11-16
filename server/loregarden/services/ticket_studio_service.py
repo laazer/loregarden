@@ -29,6 +29,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.models.domain.enums import StudioPromptMode
 from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
@@ -77,6 +78,8 @@ STUDIO_PROMPT_MODES = {
 
 MAX_STUDIO_HISTORY_MESSAGES = 16
 MAX_STUDIO_MESSAGE_CHARS = 3000
+# Opens the user message that answering a round posts; marks it as a settled round.
+ANSWERS_MESSAGE_HEADER = "Answers to your clarifying questions:"
 MAX_STUDIO_BRIEF_CHARS = 8000
 SCOPE_REPLY_CAP = 200_000
 
@@ -355,7 +358,7 @@ def format_studio_reply_for_display(content: str) -> str:
 
 
 def _format_answers_message(questions: list[str], answers: list[str]) -> str:
-    lines = ["Answers to your clarifying questions:"]
+    lines = [ANSWERS_MESSAGE_HEADER]
     for index, question in enumerate(questions):
         lines.append(f"- {question}")
         lines.append(f"  {answers[index] if index < len(answers) else ''}")
@@ -371,6 +374,24 @@ def _clarifications_block(questions: list[str], answers: list[str]) -> list[str]
         lines.append(f"Q: {question}")
         lines.append(f"A: {answer or '—'}")
     return lines
+
+
+def _settled_rounds_block(history: list[TicketStudioMessage]) -> list[str]:
+    """Answered rounds that have scrolled out of the conversation window.
+
+    Grilling runs many rounds, and each one replaces the stored questions, so
+    without this an early decision drops out of the prompt before scope is
+    generated, and the ticket ends up with an invented answer in its place.
+    """
+    older = history[:-MAX_STUDIO_HISTORY_MESSAGES]
+    rounds = [
+        msg.content
+        for msg in older
+        if msg.role == "user" and msg.content.startswith(ANSWERS_MESSAGE_HEADER)
+    ]
+    if not rounds:
+        return []
+    return ["## Settled decisions (earlier rounds)", *rounds]
 
 
 def _message_view(msg: TicketStudioMessage) -> dict:
@@ -560,6 +581,10 @@ def build_studio_prompt(
     if clarification_lines:
         sections.extend([*clarification_lines, ""])
 
+    settled_lines = _settled_rounds_block(history)
+    if settled_lines:
+        sections.extend([*settled_lines, ""])
+
     if history:
         sections.append("## Conversation")
         for msg in history[-MAX_STUDIO_HISTORY_MESSAGES:]:
@@ -572,104 +597,102 @@ def build_studio_prompt(
 
     sections.extend(["## Latest operator message", latest_user_message, ""])
 
-    if mode == "survey":
-        sections.extend(
-            [
-                "## Task",
-                "Survey the reference repos above against this repo and report which parts "
-                "are worth bringing over for the brief. This is the only job this turn — "
-                "do not propose tickets.",
-                "Work from the actual source: read and grep both the reference repo and "
-                "this repo before judging anything. A finding that does not name real "
-                "paths in the reference repo is worthless.",
-                "For each candidate part, decide honestly between:",
-                "- adopt: port it largely as-is, it fits our stack",
-                "- adapt: the idea and much of the code carry over, but it needs reshaping "
-                "to our models/services",
-                "- inspire: worth copying the approach, not the code",
-                "- skip: looked at it, not worth it here (say why — a skipped finding saves "
-                "the next person the same look)",
-                "Reject parts we already have. Check this repo first and say so in `fit` "
-                "when something duplicates existing code.",
-                "Reuse before you port. Find the module here that already does the nearest "
-                "thing — a service, a model, a client component — and name it in `fit` as what "
-                "the work would extend. A finding that rebuilds a primitive we own is a defect, "
-                "not a finding.",
-                "Carry only what the brief needs. A capability the reference repo is proud of, "
-                "that nothing in the brief asks for, is a `skip` — say so and move on.",
-                "We build what we keep. A finding is a pattern to reimplement here on our own "
-                "components — not a dependency to take on. Say in `risks` what porting it costs "
-                "us to own, not whether to own it.",
-                "Order findings by value to this project, highest first. Ten sharp findings "
-                "beat forty shallow ones.",
-                "Output JSON with `summary`, `clarifying_questions` (usually empty), and "
-                "`findings`.",
-                SURVEY_JSON_SCHEMA,
-            ]
-        )
-    elif mode == "clarify":
-        sections.extend(
-            [
-                "## Task",
-                "Review the feature brief and identify ambiguities before ticket generation.",
-                "You have real Read/Grep/Bash access to this repo — investigate existing code, "
-                "similar features, and config defaults first, and answer what you can from that "
-                "instead of asking. Only list a question when it is a genuine product/design call "
-                "the operator must make and would materially change the ticket hierarchy.",
-                "Output JSON with `summary`, `clarifying_questions`, and `tickets: []`.",
-                "Do not propose tickets yet.",
-                "If the brief is already clear (or answerable from the codebase), return an empty "
-                "`clarifying_questions` array.",
-                "The operator's answers may appear above. Re-ask only what they genuinely left "
-                "unresolved. Once nothing material is outstanding, return an empty "
-                "`clarifying_questions` array and use `summary` to say you have what you need to "
-                "generate tickets.",
-                SCOPE_JSON_SCHEMA,
-            ]
-        )
-    elif mode == "scope":
-        sections.extend(
-            [
-                "## Task",
-                "Produce the full ticket breakdown using operator clarifications when provided.",
-                "Output JSON with `summary`, `clarifying_questions: []`, and populated `tickets`.",
-                "Do not ask new clarifying questions — use reasonable defaults for anything still ambiguous.",
-                SCOPE_JSON_SCHEMA,
-                "",
-                "Rules:",
-                "- Size the hierarchy to the brief: a small, self-contained change should be a single",
-                "  task or bug ticket rather than a deep tree, and work scoped under an existing parent",
-                "  should start as close to that parent as the hierarchy allows.",
-                "- Keeping it small means fewer siblings, never a skipped layer. Do not invent extra",
-                "  capabilities to fill out the tree — but every task you emit still needs a capability",
-                "  parent, and every capability a feature parent, up to the root.",
-                "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
-                "- Each ticket needs testable acceptance_criteria.",
-                "- Keep tasks small enough for one agent run.",
-                "- When a ticket comes from a selected reference part, name the reference "
-                "  repo and the exact source paths in its description, and say whether the "
-                "  implementer should port, adapt, or merely take the approach. The "
-                "  implementer cannot see this survey.",
-            ]
-        )
-    else:
-        sections.extend(
-            [
-                "## Task",
-                "Reply conversationally in 2–6 sentences to refine the scope.",
-                "You have real Read/Grep/Bash access to this repo — before asking the operator "
-                "anything, check whether the codebase already answers it (existing similar "
-                "features, models/services, naming conventions, config defaults).",
-                "You've already asked one round of clarifying questions in this conversation if "
-                "any appear above — do not open a new round of questions. Instead, state your best "
-                "reasonable assumption for anything still unresolved and move toward scope, "
-                "inviting a correction rather than blocking on an answer.",
-                "If the operator asks to generate tickets, remind them to answer clarifying questions first,",
-                "then use Generate tickets. Only include JSON when explicitly asked to draft tickets.",
-            ]
-        )
-
+    sections.extend(_task_section(StudioPromptMode(mode)))
     return "\n".join(sections)
+
+
+def _task_section(mode: StudioPromptMode) -> list[str]:
+    """The per-mode instructions that close the scoper prompt."""
+    if mode == StudioPromptMode.SURVEY:
+        return [
+            "## Task",
+            "Survey the reference repos above against this repo and report which parts "
+            "are worth bringing over for the brief. This is the only job this turn — "
+            "do not propose tickets.",
+            "Work from the actual source: read and grep both the reference repo and "
+            "this repo before judging anything. A finding that does not name real "
+            "paths in the reference repo is worthless.",
+            "For each candidate part, decide honestly between:",
+            "- adopt: port it largely as-is, it fits our stack",
+            "- adapt: the idea and much of the code carry over, but it needs reshaping "
+            "to our models/services",
+            "- inspire: worth copying the approach, not the code",
+            "- skip: looked at it, not worth it here (say why — a skipped finding saves "
+            "the next person the same look)",
+            "Reject parts we already have. Check this repo first and say so in `fit` "
+            "when something duplicates existing code.",
+            "Reuse before you port. Find the module here that already does the nearest "
+            "thing — a service, a model, a client component — and name it in `fit` as what "
+            "the work would extend. A finding that rebuilds a primitive we own is a defect, "
+            "not a finding.",
+            "Carry only what the brief needs. A capability the reference repo is proud of, "
+            "that nothing in the brief asks for, is a `skip` — say so and move on.",
+            "We build what we keep. A finding is a pattern to reimplement here on our own "
+            "components — not a dependency to take on. Say in `risks` what porting it costs "
+            "us to own, not whether to own it.",
+            "Order findings by value to this project, highest first. Ten sharp findings "
+            "beat forty shallow ones.",
+            "Output JSON with `summary`, `clarifying_questions` (usually empty), and `findings`.",
+            SURVEY_JSON_SCHEMA,
+        ]
+    if mode == StudioPromptMode.CLARIFY:
+        return [
+            "## Task",
+            "Grill the operator on the feature brief until the scope is complete. "
+            "Completeness beats speed: a decision left open here gets invented downstream.",
+            "You have real Read/Grep/Bash access to this repo. Investigate existing code, "
+            "similar features, and config defaults first, and never ask what the repo answers.",
+            "Walk the decision tree branch by branch, most foundational first. Ask the next "
+            "3-5 open decisions, each with your recommended answer and its reason, so the "
+            "operator can accept it in one word. There is no cap on rounds; follow the new "
+            "branches each answer opens.",
+            "Before stopping, check the scope covers: the question it answers for the operator "
+            "and the action it leads to; what is out of scope; a testable acceptance criterion "
+            "per outcome; how failures surface; data and migration effects; dependencies; and, "
+            "for a user-facing surface, its loading, empty, error, in-flight and keyboard states.",
+            "Output JSON with `summary`, `clarifying_questions`, and `tickets: []`.",
+            "Do not propose tickets yet.",
+            "The operator's answers and settled decisions may appear above; never re-ask them. "
+            "A point the operator deferred takes your recommendation as a stated assumption.",
+            "Once nothing material is open, return an empty `clarifying_questions` array and "
+            "list the settled decisions in `summary`.",
+            SCOPE_JSON_SCHEMA,
+        ]
+    if mode == StudioPromptMode.SCOPE:
+        return [
+            "## Task",
+            "Produce the full ticket breakdown using operator clarifications when provided.",
+            "Output JSON with `summary`, `clarifying_questions: []`, and populated `tickets`.",
+            "Do not ask new clarifying questions — use reasonable defaults for anything still ambiguous.",
+            SCOPE_JSON_SCHEMA,
+            "",
+            "Rules:",
+            "- Size the hierarchy to the brief: a small, self-contained change should be a single",
+            "  task or bug ticket rather than a deep tree, and work scoped under an existing parent",
+            "  should start as close to that parent as the hierarchy allows.",
+            "- Keeping it small means fewer siblings, never a skipped layer. Do not invent extra",
+            "  capabilities to fill out the tree — but every task you emit still needs a capability",
+            "  parent, and every capability a feature parent, up to the root.",
+            "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
+            "- Each ticket needs testable acceptance_criteria.",
+            "- Keep tasks small enough for one agent run.",
+            "- When a ticket comes from a selected reference part, name the reference "
+            "  repo and the exact source paths in its description, and say whether the "
+            "  implementer should port, adapt, or merely take the approach. The "
+            "  implementer cannot see this survey.",
+        ]
+    return [
+        "## Task",
+        "Reply conversationally in 2–6 sentences to refine the scope.",
+        "You have real Read/Grep/Bash access to this repo — before asking the operator "
+        "anything, check whether the codebase already answers it (existing similar "
+        "features, models/services, naming conventions, config defaults).",
+        "If the conversation leaves a decision open that would change the hierarchy, the "
+        "scope or an acceptance criterion, ask it, with your recommended answer. "
+        "Completeness beats speed.",
+        "If the operator asks to generate tickets, remind them to answer clarifying questions first,",
+        "then use Generate tickets. Only include JSON when explicitly asked to draft tickets.",
+    ]
 
 
 def _readable_reference_dirs(session: Session, session_row: TicketStudioSession) -> list[str]:
