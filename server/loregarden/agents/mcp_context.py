@@ -37,6 +37,13 @@ MCP_DOC_REL = Path("agents/common_assets/loregarden_mcp_v1.md")
 MEMORY_DOC_REL = Path("agents/common_assets/memory_protocol_v1.md")
 WORKFLOW_ENFORCEMENT_DOC_REL = Path("agents/common_assets/workflow_enforcement_v1.md")
 UI_PRIMITIVES_DOC_REL = Path("agents/common_assets/ui_primitives_v1.md")
+
+# Prompt-block caps for the common assets the CLI executor embeds. A doc over its
+# cap is cut at a section boundary at runtime and the tail never reaches the agent,
+# so `test_common_asset_caps` renders each one against these and fails first.
+CONTROL_PLANE_MODULE_CAP = 12000
+MEMORY_PROTOCOL_MODULE_CAP = 8000
+UI_PRIMITIVES_MODULE_CAP = 6000
 STAGE_REPORT_SECTION_TITLE = "STAGE REPORT CONTRACT"
 _SECTION_DIVIDER_RE = re.compile(r"^-{20,}\s*$", re.MULTILINE)
 MCP_SERVER_NAME = "loregarden"
