@@ -20,7 +20,7 @@ from loregarden.models.domain import (
     PullRequestState,
 )
 from loregarden.services.git_automation import push_commit_as
-from loregarden.services.merge_queue import QueueRefusal
+from loregarden.services.merge_queue import QueueRefusal, retry
 from loregarden.services.merge_queue_github import StagedPullRequest
 from loregarden.services.merge_queue_pull_heads import pin_ref
 from loregarden.services.merge_queue_reports import queue_card_title, report_stopped
@@ -213,3 +213,63 @@ def test_a_push_leased_on_a_stale_head_is_refused(repo, origin, opened):
 
     assert not pushed.ok
     assert git(origin, "rev-parse", f"refs/heads/{BRANCH}") == newer
+
+
+def _conflicting_pr(repo) -> None:
+    """The author's branch and main each rewrite `shared.txt`, so the PR conflicts."""
+    _author_pushes(repo, "shared.txt")
+    commit_file(repo, "main", "shared.txt", "shared.txt as main has it\n")
+    git(repo, "push", "-q", "origin", "main")
+
+
+def _author_resolves(repo) -> str:
+    """The author merges main into their branch, keeps main's side, and pushes."""
+    git(repo, "checkout", "-q", BRANCH)
+    git(repo, "fetch", "-q", "origin", "main")
+    git(repo, "merge", "-q", "-X", "theirs", "--no-edit", "origin/main")
+    sha = git(repo, "rev-parse", "HEAD")
+    git(repo, "checkout", "-q", "main")
+    git(repo, "push", "-q", "--force", "origin", f"{sha}:refs/heads/{BRANCH}")
+    return sha
+
+
+def test_a_resolving_push_while_queued_is_adopted_before_the_stale_head_conflicts(
+    session, workspace, repo, authors, opened
+):
+    """The author's head is read before the cut, not after it.
+
+    It used to be read only after a clean cut, so a stale head that conflicted
+    failed the entry before the queue ever looked at the push that fixed it.
+    """
+    _conflicting_pr(repo)
+    entry = _enqueue(session, workspace, authors)
+    resolved = _author_resolves(repo)
+
+    _cycle(session, workspace, authors)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.QUEUED, entry.detail
+    assert entry.head_sha == resolved
+
+    _cycle(session, workspace, authors)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.TESTING, entry.detail
+
+
+def test_a_retry_after_a_conflict_stages_the_push_that_resolved_it(
+    session, workspace, repo, authors, opened
+):
+    """laazer/loregarden#879: a fix pushed after the failure, then a retry."""
+    _conflicting_pr(repo)
+    entry = _enqueue(session, workspace, authors)
+    _cycle(session, workspace, authors)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.FAILED, entry.detail
+
+    resolved = _author_resolves(repo)
+    retry(session, entry.id)
+    _cycle(session, workspace, authors)  # adopt the resolving push
+    _cycle(session, workspace, authors)  # stage it
+    session.refresh(entry)
+
+    assert entry.head_sha == resolved
+    assert entry.state is MergeQueueState.TESTING, entry.detail
