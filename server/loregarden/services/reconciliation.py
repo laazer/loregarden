@@ -87,6 +87,7 @@ from loregarden.services.invariant_registry import (
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
     SETTLED_HOLDS_READ_BLOCKED,
+    STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     SURVEY_CARDS_CLOSE,
     SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
     TICKET_BRANCHES_HOLD_HISTORY,
@@ -383,14 +384,18 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # walked around one (lg-milestone-that-2250). Report-only — only a person
     # decides what a too-large ticket splits into.
     _invariant(TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS),
-    # Last of the invariants: the only one that reaches the network, so a slow
-    # or unreachable GitHub delays nothing else in the pass.
+    # Last of the invariants: the two that reach the network, so a slow or
+    # unreachable GitHub delays nothing else in the pass.
     SweepStep(
         DONE_TICKET_SHIP_IS_OBSERVABLE.name,
         _probe_and_report_ships,
         at_startup=False,
         invariant=DONE_TICKET_SHIP_IS_OBSERVABLE,
     ),
+    # Also asks GitHub, once per stopped queue entry: a PR closed outside the
+    # queue after its entry stopped leaves nothing for anyone to do
+    # (lg-milestone-that-2641).
+    _invariant(STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR, at_startup=False),
 )
 
 

@@ -105,8 +105,14 @@ MIN_FILES_SCANNED = 500
 #: `reference_survey/feeder`'s `SurveySource` lookup left with the code that held it.
 #: Package growth again, not reach: the list differs from `ed2fd03d`'s by exactly
 #: those seven files.
+#:
+#: 33 at `40bf2578` (2026-11-16): one site added,
+#: `services/merge_queue_closed_prs.py:70`, a `MergeQueueEntry` receiver
+#: (`workspace_id: str`, `models/domain/merge_queue_tables.py:50`, not nullable).
+#: 33 of 33 resolved, 0 nullable-keyed, and the other 32 sites unchanged, so this is
+#: package growth, not reach.
 #: Move this number only with that distinction measured and written down.
-NON_NULLABLE_RECEIVER_LOOKUPS = 32
+NON_NULLABLE_RECEIVER_LOOKUPS = 33
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and
@@ -1699,7 +1705,7 @@ def test_the_non_nullable_receiver_denominator_is_unchanged(package_scan):
     grew" from "the resolver's reach moved".
 
     The count itself tracks the package: 26 at `4ec80c15` and `8c97ab2b`, 27 at
-    `ed2fd03d` after one `SurveySource` site landed, 32 at `73a70f6a`. See
+    `ed2fd03d` after one `SurveySource` site landed, 32 at `73a70f6a`, 33 at `40bf2578`. See
     `NON_NULLABLE_RECEIVER_LOOKUPS`.
     """
     out_of_scope = [
@@ -1709,8 +1715,8 @@ def test_the_non_nullable_receiver_denominator_is_unchanged(package_scan):
     ]
     assert len(out_of_scope) == NON_NULLABLE_RECEIVER_LOOKUPS, (
         f"{len(out_of_scope)} lookups resolved to a receiver whose `workspace_id` is not "
-        f"nullable, not the {NON_NULLABLE_RECEIVER_LOOKUPS} measured at HEAD 73a70f6a "
-        "(32 of 32 resolved lookups, 0 nullable-keyed). Widening the ban does not move "
+        f"nullable, not the {NON_NULLABLE_RECEIVER_LOOKUPS} measured at HEAD 40bf2578 "
+        "(33 of 33 resolved lookups, 0 nullable-keyed). Widening the ban does not move "
         "this number, so a change here is one of two things, and they need different "
         "answers: the package gained or lost a lookup on a non-nullable receiver (re-pin, "
         "naming the site and its receiver class), or the walk's reach moved and it is now "
