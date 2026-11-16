@@ -935,10 +935,10 @@ def test_stored_vs_main_diff_is_recaptured_for_an_integration_parent(session, tm
 
 
 def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(session, tmp_path):
-    """R2 grouped twin: plant vs-main with sections; _artifacts_grouped recaptures.
+    """R2 grouped twin: plant vs-main with sections; artifacts_grouped recaptures.
 
     Covering only ensure_diff_artifact is not done. Must fail on the
-    sections-only short-circuit in api.tickets._artifacts_grouped.
+    sections-only short-circuit in services.ticket_detail_view.artifacts_grouped.
 
     Cheats this refuses (test-break). Recapture is the proof — inspect.getsource
     that the if is gone is not enough. # CHECKPOINT
@@ -950,7 +950,7 @@ def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(s
     (f) parent-ahead only on build_verify_context — this test never calls it
     (g) inspect.getsource that the if is gone — recapture runs first
     """
-    from loregarden.api.tickets import _artifacts_grouped
+    from loregarden.services.ticket_detail_view import artifacts_grouped
 
     graph = _ticket_local_graph(tmp_path)
     assert graph.merge_base != "main"
@@ -982,7 +982,7 @@ def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(s
     assert json.loads(pre[0].content_json)["range"] == "main"
 
     with mock.patch.object(artifact_service, "capture_git_diff", wraps=capture_git_diff) as capture:
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
 
     # (e) did not take the live-log early return
     assert grouped.get("live") != "Agent running…"
@@ -1016,12 +1016,14 @@ def test_artifacts_grouped_hoists_ensure_and_keeps_tests_and_log_paths():
 
     inspect.getsource that the if is gone is not enough — see the grouped twin.
     """
-    from loregarden.api import tickets as tickets_api
+    from loregarden.services import ticket_detail_view as tickets_api
 
     assert tickets_api.ensure_diff_artifact is ensure_diff_artifact
     assert tickets_api.ensure_test_artifact is artifact_service.ensure_test_artifact
     assert tickets_api._test_artifact_is_valid is artifact_service._test_artifact_is_valid
-    grouped_src = inspect.getsource(tickets_api._artifacts_grouped)
+    grouped_src = inspect.getsource(tickets_api.artifacts_grouped) + inspect.getsource(
+        tickets_api._backfill
+    )
     assert "from loregarden.services.artifact_service import" not in grouped_src
     assert "_diff_artifact_is_valid" not in grouped_src
     assert "_test_artifact_is_valid" in grouped_src

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.mcp.operation_tools import OPERATION_TOOLS
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import _RUN_AWARE_HANDLERS, TOOL_DEFINITIONS, normalize_tool_arguments
@@ -105,15 +106,15 @@ def _advertised(client: TestClient) -> set[str]:
 def _dispatched() -> set[str]:
     """Tool names the dispatcher actually routes — by branch or by handler table.
 
-    Four spellings count: the `name == "loregarden_x"` literal, the
+    Five spellings count: the `name == "loregarden_x"` literal, the
     `name == McpTool.X` form the organization gate requires of new branches, the
-    run-aware handler table in tools.py, and the EXTENDED_TOOLS table a tool registers in instead of growing
-    `execute_tool`'s chain. Reading the table through its import rather than by
+    run-aware handler table in tools.py, the EXTENDED_TOOLS table a tool registers in instead of growing
+    `execute_tool`'s chain, and OPERATION_TOOLS, where a tool runs an operation. Reading the table through its import rather than by
     regex is deliberate: its keys are enum members, so pattern-matching the
     source would miss them and report a routed tool as undispatched — the
     detector would be enforcing the anti-pattern.
     """
-    names: set[str] = set(EXTENDED_TOOLS) | set(_RUN_AWARE_HANDLERS)
+    names: set[str] = set(EXTENDED_TOOLS) | set(_RUN_AWARE_HANDLERS) | set(OPERATION_TOOLS)
     for src in MCP_DISPATCH_SRCS:
         text = src.read_text()
         names |= set(re.findall(r'name == "(loregarden_[a-z_]+)"', text))

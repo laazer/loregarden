@@ -191,6 +191,11 @@ def _ticket_label(session: Session, ticket: Ticket) -> dict[str, str]:
     }
 
 
+#: Cap on one artifact listing. Documents sit on a handful of ancestors; a ticket
+#: with hundreds of run artifacts should be narrowed with `kind`, not paged.
+MAX_ARTIFACT_LIST_LIMIT = 200
+
+
 def list_artifacts(
     session: Session,
     ticket: Ticket,

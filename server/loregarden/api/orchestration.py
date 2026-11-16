@@ -1,6 +1,7 @@
 """REST API for orchestration callbacks — used by MCP server and external drivers."""
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.terminal_text import strip_ansi
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
@@ -37,6 +38,7 @@ from loregarden.services.gate_runner import (
     sample_gate_context,
     transition_name,
 )
+from loregarden.services.operations import OperationId
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
     PRESERVED_GATE_KEYS,
@@ -51,7 +53,6 @@ from loregarden.services.orchestration_profile import (
 )
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.scope_round import decide_finding
-from loregarden.services.ticket_state_payload import ticket_state_for_read
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, select
 
@@ -329,10 +330,7 @@ def get_ticket_orchestration_state(
     ticket_id: str,
     session: Session = Depends(get_session),
 ) -> dict:
-    # The same payload and the same read path as `loregarden_get_ticket`: a GET
-    # derives the stage map and commits nothing.
-    ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=ticket_id)
-    return ticket_state_for_read(session, ticket)
+    return run_rest_operation(session, OperationId.TICKET_STATE, {"ticket_id": ticket_id})
 
 
 @router.get("/tickets/by-external/{workspace_slug}/{external_id}/state", response_model=dict)
@@ -341,9 +339,11 @@ def get_ticket_state_by_external(
     external_id: str,
     session: Session = Depends(get_session),
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(external_id=external_id, workspace_slug=workspace_slug)
-    return get_ticket_orchestration_state(ticket.id, session)
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_STATE,
+        {"external_id": external_id, "workspace_slug": workspace_slug},
+    )
 
 
 @router.post("/runs/{run_id}/start_stage", response_model=dict)

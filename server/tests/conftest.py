@@ -201,6 +201,9 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
     monkeypatch.setenv("LOREGARDEN_SYNC_RUNS", "1")
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
+    # A read operation that writes fails the test instead of logging a warning
+    # (`services.operations.STRICT_READS_ENV`).
+    monkeypatch.setenv("LOREGARDEN_STRICT_READ_OPERATIONS", "1")
     # The integration-branch sweep hands any conflict it finds to a merge turn,
     # which spawns the agent's own CLI whatever the adapter above says. A test
     # that wants a resolving turn patches `integration_merge_agent._run_agent`.

@@ -9,6 +9,7 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.tool_ids import McpTool
+from loregarden.services.operations import Transport
 from loregarden.services.spec_snapshot import own_edit_baseline, rebaseline_after_own_edit
 
 #: Tools a run uses to write its own ticket's spec.
@@ -28,9 +29,12 @@ def keeps_own_spec_edits(dispatch: Callable[..., str]) -> Callable[..., str]:
         *,
         orchestrated: bool = False,
         run_id: str = "",
+        transport: Transport = Transport.MCP,
     ) -> str:
         baseline = own_edit_baseline(session, run_id) if name in SPEC_WRITING_TOOLS else None
-        result = dispatch(session, name, arguments, orchestrated=orchestrated, run_id=run_id)
+        result = dispatch(
+            session, name, arguments, orchestrated=orchestrated, run_id=run_id, transport=transport
+        )
         if baseline is not None:
             rebaseline_after_own_edit(session, *baseline)
         return result
