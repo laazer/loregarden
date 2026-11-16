@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from loregarden.models.domain import Ticket, WorkflowStageView
+from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -20,6 +21,7 @@ from loregarden.services.stage_shape import current_stage_shape
 from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_discovery import ticket_neighbors_mcp
+from loregarden.services.ticket_documents import document_index
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_tags import load_tags
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -138,3 +140,50 @@ def ticket_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, 
                 }
             )
     return out
+
+
+def ticket_body(ticket: Ticket) -> dict[str, Any]:
+    """What the ticket *asks for*, as against where it sits in the pipeline.
+
+    Empty is a real answer here. A ticket with no description returns ``""`` and
+    no criteria returns ``[]`` rather than omitting the keys: an agent that can
+    tell "nobody wrote a requirement" from "I cannot see the requirement" will
+    ask instead of inventing one, and inventing one is the failure this exists
+    to stop — the invention lands in a test docstring at test-design and every
+    later stage treats it as the spec.
+    """
+    return {
+        "title": ticket.title,
+        "description": ticket.description,
+        "acceptance_criteria": load_criteria(ticket.acceptance_criteria_json),
+        # What the spec ruled out, with reasons: a finding on one of these is
+        # not new scope unless the reason is wrong.
+        "out_of_scope": load_criteria(ticket.out_of_scope_json),
+    }
+
+
+def ticket_brief(session: Session, ticket: Ticket) -> dict[str, Any]:
+    """What an agent reads before acting: the ticket's position *and* its requirement.
+
+    The body rides on the brief rather than on
+    ``ticket_state_payload``, which every write tool also returns. Those are two
+    different questions asked at two different moments: a `complete_stage` reply
+    is asking "where am I now", and answering it with a thousand-word
+    description would put the whole requirement back into context on every
+    write. A read is where "what am I meant to do" is actually being asked.
+
+    Widening the brief is preferred over a separate `get_ticket_body` tool
+    because the failure being fixed is an agent not knowing the body exists at
+    all — a second tool it must first think to call would reproduce that, and a
+    `fields=` parameter has the same defect with more surface.
+    """
+    # Planning documents on this ticket and every ancestor up to its initiative,
+    # for the same reason the body rides here: an agent that is not told they
+    # exist will not think to list them. Read one with loregarden_read_artifact.
+    return (
+        # A read, so the stage map is derived and not persisted; that once read
+        # as a state change at 19:26 on lg-milestone-that-2196.
+        ticket_state_for_read(session, ticket)
+        | ticket_body(ticket)
+        | {"documents": document_index(session, ticket)}
+    )

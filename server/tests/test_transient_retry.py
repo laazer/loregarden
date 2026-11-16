@@ -436,13 +436,13 @@ def test_the_retry_reaches_the_ticket_payload_the_ui_reads(db_session: Session):
     ticket is deliberately unblocked and `blocking_issues` is empty, so nothing
     the detail view already renders says the stage was attempted twice.
     """
-    from loregarden.api.tickets import _artifacts_grouped
+    from loregarden.services.ticket_detail_view import artifacts_grouped
 
     ticket = _ticket_on_stage(db_session)
     _die(db_session, ticket, stderr=LEASE_STDERR)
     _die(db_session, ticket, stderr=KEYCHAIN_STDERR)
 
-    grouped = _artifacts_grouped(db_session, ticket)
+    grouped = artifacts_grouped(db_session, ticket)
     notices = grouped["transient_retries"]
 
     assert len(notices) == 2
@@ -458,8 +458,8 @@ def test_a_ticket_with_no_retries_reports_an_empty_list_not_a_missing_key(
 ):
     """An absent key and an empty list read differently in TypeScript, and the
     view distinguishes "nothing happened" from "retries happened"."""
-    from loregarden.api.tickets import _artifacts_grouped
+    from loregarden.services.ticket_detail_view import artifacts_grouped
 
     ticket = _ticket_on_stage(db_session)
 
-    assert _artifacts_grouped(db_session, ticket)["transient_retries"] == []
+    assert artifacts_grouped(db_session, ticket)["transient_retries"] == []

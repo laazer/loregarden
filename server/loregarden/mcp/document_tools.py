@@ -19,14 +19,13 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.mcp.tool_args import MAX_ARTIFACT_LIST_LIMIT
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import boolean_prop, integer_prop, string_prop, tool_schema
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_documents import (
     DEFAULT_DOCUMENT_KIND,
+    MAX_ARTIFACT_LIST_LIMIT,
     MAX_DOCUMENT_CHARS,
-    list_artifacts,
     read_artifact,
     write_document,
 )
@@ -133,26 +132,11 @@ def write_document_tool(session: Session, arguments: dict[str, Any]) -> str:
     )
 
 
-def list_artifacts_tool(session: Session, arguments: dict[str, Any]) -> str:
-    return json.dumps(
-        list_artifacts(
-            session,
-            _ticket(session, arguments),
-            kind=arguments.get("kind") or "",
-            include_ancestors=arguments["include_ancestors"],
-            latest_only=arguments["latest_only"],
-            limit=arguments["limit"],
-        ),
-        indent=2,
-    )
-
-
 def read_artifact_tool(session: Session, arguments: dict[str, Any]) -> str:
     return json.dumps(read_artifact(session, arguments["artifact_id"]), indent=2)
 
 
 HANDLERS = {
     McpTool.WRITE_DOCUMENT.value: write_document_tool,
-    McpTool.LIST_ARTIFACTS.value: list_artifacts_tool,
     McpTool.READ_ARTIFACT.value: read_artifact_tool,
 }

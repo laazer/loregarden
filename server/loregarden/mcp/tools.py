@@ -47,6 +47,7 @@ from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTAN
 from loregarden.mcp.memory_tool_args import normalize_memory_tool_args
 from loregarden.mcp.memory_tools import execute_memory_tool
 from loregarden.mcp.merge_queue_tools import TOOL_DEFINITIONS as MERGE_QUEUE_TOOL_DEFINITIONS
+from loregarden.mcp.operation_tools import execute_operation_tool
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
@@ -61,7 +62,6 @@ from loregarden.mcp.survey_tools import TOOL_DEFINITIONS as SURVEY_TOOL_DEFINITI
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
     normalize_update_ticket_args,
-    resolve_ticket_payload,
 )
 from loregarden.mcp.ticket_ops_tools import (
     TICKET_OPS_TOOL_DEFINITIONS,
@@ -108,12 +108,12 @@ from loregarden.services.dependency_hold import admit_named_start
 from loregarden.services.discovered_work import record_discovery
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.external_harness import start_external_orchestration
+from loregarden.services.operations import Caller, Transport
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover
 from loregarden.services.stage_report import findings_from
 from loregarden.services.stage_shape import current_stage_shape
 from loregarden.services.ticket_dependencies import resolve_prerequisites
-from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
 _ALIAS_MAP: dict[str, tuple[str, ...]] = {
@@ -257,7 +257,7 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return _normalize_get_ticket(args)
 
     if name == "loregarden_list_tickets":
-        # Optional: listing initiatives is global; list_tickets_mcp owns the error.
+        # Optional: listing initiatives is global; ticket_search owns the error.
         payload = {"workspace_slug": _coerce_optional_string(args.get("workspace_slug")) or ""}
         for field in (
             "state",
@@ -1258,8 +1258,12 @@ def execute_tool(
     *,
     orchestrated: bool = False,
     run_id: str = "",
+    transport: Transport = Transport.MCP,
 ) -> str:
     """Dispatch a tool call. `run_id` names the orchestrated run, when known.
+
+    `transport` is MCP unless the CLI is running the tool in-process; an
+    operation offered on one and not the other refuses accordingly.
 
     `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
     supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
@@ -1283,42 +1287,10 @@ def execute_tool(
     if table_handler is not None:
         return table_handler(session, arguments)
 
-    if name == "loregarden_get_ticket":
-        return json.dumps(
-            resolve_ticket_payload(
-                session,
-                ticket_id=arguments.get("ticket_id"),
-                external_id=arguments.get("external_id"),
-                workspace_slug=arguments.get("workspace_slug"),
-            ),
-            indent=2,
-        )
-
-    if name == "loregarden_list_tickets":
-        return json.dumps(
-            list_tickets_mcp(
-                session,
-                workspace_slug=arguments.get("workspace_slug") or "",
-                state=arguments.get("state"),
-                work_item_type=arguments.get("work_item_type"),
-                search=arguments.get("search"),
-                parent_ticket_id=arguments.get("parent_ticket_id"),
-                parent_external_id=arguments.get("parent_external_id"),
-                roots_only=bool(arguments.get("roots_only")),
-                limit=int(arguments.get("limit") or 50),
-            ),
-            indent=2,
-        )
-
-    if name == "loregarden_get_ticket_by_external":
-        return json.dumps(
-            resolve_ticket_payload(
-                session,
-                external_id=arguments["external_id"],
-                workspace_slug=arguments["workspace_slug"],
-            ),
-            indent=2,
-        )
+    caller = Caller(transport=transport, orchestrated=orchestrated, run_id=run_id)
+    operation_reply = execute_operation_tool(session, name, arguments, caller)
+    if operation_reply is not None:
+        return operation_reply
 
     if name == "loregarden_start_orchestration":
         return _start_orchestration(session, svc, arguments)

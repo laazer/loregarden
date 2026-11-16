@@ -2,11 +2,11 @@ import json
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
-from loregarden.api.tickets import _artifacts_grouped
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
+from loregarden.services.ticket_detail_view import artifacts_grouped
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
@@ -79,7 +79,7 @@ def test_artifacts_grouped_prefers_active_run_without_stale_fallback():
         )
         session.commit()
 
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
         assert grouped["logs"] == []
         assert "Awaiting your approval" in grouped["live"]
         assert "runs" not in grouped
@@ -128,7 +128,7 @@ def test_artifacts_grouped_single_running_run_has_no_runs_key():
         )
         session.commit()
 
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
         assert "runs" not in grouped
         assert grouped["logs"] == [{"time": "01:00:00", "tag": "CMD", "text": "solo"}]
         assert grouped["live"] == "Agent running…"
@@ -194,7 +194,7 @@ def test_artifacts_grouped_multiple_running_runs_has_no_runs_key():
         session.commit()
         session.refresh(run_no_log)
 
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
 
         assert "runs" not in grouped
         assert grouped["logs"] == []
@@ -245,7 +245,7 @@ def test_artifacts_grouped_zero_running_runs_with_completed_run_log_has_no_runs_
         )
         session.commit()
 
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
         assert "runs" not in grouped
         assert grouped["logs"] == [{"time": "01:00:00", "tag": "CMD", "text": "done"}]
 
@@ -285,7 +285,7 @@ def test_artifacts_grouped_no_log_artifacts_anywhere_on_ticket_has_no_runs_key()
         session.add_all([run_a, run_b])
         session.commit()
 
-        grouped = _artifacts_grouped(session, ticket)
+        grouped = artifacts_grouped(session, ticket)
 
         assert "runs" not in grouped
         assert grouped["logs"] == []
@@ -297,7 +297,7 @@ def test_ticket_detail_endpoint_never_serializes_runs_key_with_concurrent_runnin
     """R1-AC3: TicketDetail.artifacts is a raw ``dict[str, Any]`` (no Pydantic field
     named 'runs' to strip it), so a regression that resurrects the dead branch would
     round-trip a 'runs' key straight into the real HTTP response body. Every other
-    test in this module calls `_artifacts_grouped`/`_apply_log_artifacts` directly and
+    test in this module calls `artifacts_grouped`/`_apply_log_artifacts` directly and
     would not catch that — this one drives the actual endpoint a client hits."""
     ticket = db_session.exec(
         select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")

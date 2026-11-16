@@ -1,30 +1,24 @@
-import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
     AgentRun,
-    Artifact,
     BlockedOn,
     FinalizeHierarchyRequest,
     FinalizeHierarchyResponse,
     OrchestrationRun,
     OrchestrationRunStatus,
-    OrchestrationRunView,
     RouteWorkflowRequest,
     RunStatus,
-    StageBudgetArtifactKind,
-    StageStatus,
     StartOrchestrationRequest,
     StartRunRequest,
     Ticket,
-    TicketActivity,
     TicketCreate,
-    TicketDependencyRef,
     TicketDependencyRequest,
     TicketDetail,
     TicketImportPreviewPathsRequest,
@@ -37,55 +31,31 @@ from loregarden.models.domain import (
     TicketStatusSummary,
     TicketSummary,
     TicketTreeNode,
-    WorkflowTransitionView,
     WorkItemType,
-    Workspace,
-    comparable_utc,
 )
 from loregarden.services import artifact_service
-from loregarden.services.acceptance_criteria import load_checked, load_criteria
-from loregarden.services.agent_retry import spent_agent_blocks
-from loregarden.services.artifact_service import (
-    ensure_diff_artifact,
-    ensure_test_artifact,
-    list_ticket_artifacts,
-)
-from loregarden.services.base_delivery import delivery_of
-from loregarden.services.block_classification import block_message_for
 from loregarden.services.blocked_on import (
-    StuckPage,
-    blocked_on_clause,
     blocked_on_with_retry,
     prerequisite_refs_map,
 )
-from loregarden.services.cli_settings import (
-    get_ticket_orchestration_runtime,
-)
-from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.dependency_hold import (
     DependencyHold,
     admit_named_start,
-    still_holding,
-    unmet_prerequisites,
 )
-from loregarden.services.hierarchy_service import build_tree, child_count, child_counts
+from loregarden.services.hierarchy_service import build_tree
 from loregarden.services.initiative_coverage import covered_ticket_ids, members_among
-from loregarden.services.log_storage import read_log_lines
+from loregarden.services.operations import OperationId
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.path_browser import read_import_files
 from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.run_cancellation import request_cancel, request_orchestration_cancel
-from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import capacity_waits, failed_run_error_tails, ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.stage_retry_budget import (
     StageRetryBudgetExceeded,
 )
-from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_activity import (
-    activity_for,
-    classify_ticket_activity,
     summarize_ticket_status,
 )
 from loregarden.services.ticket_dependencies import (
@@ -93,27 +63,25 @@ from loregarden.services.ticket_dependencies import (
     TicketDependencyService,
     resolve_prerequisites,
 )
+from loregarden.services.ticket_detail_view import (
+    ticket_detail,
+)
 from loregarden.services.ticket_growth_guard import SizeCapError
 from loregarden.services.ticket_ids import TicketNotFound
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
-from loregarden.services.ticket_pull_request import ships_with_branch
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_revision_guard import (
     TicketRevisionConflict,
     guard_ticket_revision,
 )
 from loregarden.services.ticket_service import TicketService
-from loregarden.services.ticket_split_view import ticket_split
-from loregarden.services.ticket_state_service import RESOLVED_STATES
-from loregarden.services.ticket_tags import load_tags
+from loregarden.services.ticket_summaries import apply_ticket_query_filters, workspace_scope
 from loregarden.services.workflow_reassignment import describe_reassignment
 from loregarden.services.workflow_service import (
     prime_workflow_instances,
     stage_resolution_memo,
-    workspace_for,
 )
-from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
 
 # Bound, not ImportFrom: py_organization rejects importing a `_` name, and this
@@ -123,343 +91,6 @@ _test_artifact_is_valid = artifact_service._test_artifact_is_valid
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
-
-
-def _latest_run_code(session: Session, ticket_id: str) -> str:
-    # The column, not the row: `agent_runs.stdout` holds a run's whole
-    # transcript, and every ticket summary calls this — once per ticket on the
-    # list endpoint, which made a page of summaries fetch a page of transcripts.
-    run_code = session.exec(
-        select(AgentRun.run_code)
-        .where(AgentRun.ticket_id == ticket_id)
-        .order_by(AgentRun.created_at.desc())
-    ).first()
-    return run_code or ""
-
-
-#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.
-_ID_CHUNK = 400
-
-
-def _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]:
-    """Every ticket's latest run code, in one scan per chunk rather than per ticket.
-
-    `agent_runs` has no index behind `ORDER BY created_at DESC`, so asking
-    `_latest_run_code` once per row scanned the table once per row — measured on
-    a copy of the live database, 837 queries and 17.5s of an 85s ticket list.
-    Ascending order lets a later run overwrite an earlier one, so what lands is
-    the latest.
-
-    A ticket with no runs is absent from the result; callers pass `""`, which is
-    what `_latest_run_code` answers for the same case.
-    """
-    codes: dict[str, str] = {}
-    for start in range(0, len(ticket_ids), _ID_CHUNK):
-        chunk = ticket_ids[start : start + _ID_CHUNK]
-        rows = session.exec(
-            select(AgentRun.ticket_id, AgentRun.run_code)
-            .where(col(AgentRun.ticket_id).in_(chunk))
-            .order_by(col(AgentRun.created_at))
-        ).all()
-        for ticket_id, run_code in rows:
-            codes[ticket_id] = run_code
-    return codes
-
-
-def _ticket_summary(
-    session: Session,
-    ticket: Ticket,
-    activity: TicketActivity | None = None,
-    run_code: str | None = None,
-    stuck: StuckPage | None = None,
-    children: int | None = None,
-) -> TicketSummary:
-    """``activity``, ``run_code``, ``stuck`` and ``children`` are passed in by list endpoints,
-    which resolve the whole page in one batch each; single-ticket callers let
-    them resolve themselves."""
-    stuck = stuck or StuckPage.of(session, [ticket])
-    ws = workspace_for(session, ticket.workspace_id)
-    orch = OrchestrationService(session)
-    template = orch.get_template_for_ticket(ticket)
-    # Derived, not read off the row: the column is only authoritative once
-    # something has run, and the read path used to backfill it as a side effect
-    # of serializing (lg-workflow-integrity-606).
-    stage_key, stage_status = orch.stage_cursor_for_read(ticket)
-    stage_name = ""
-    if template and stage_key:
-        stage_name = stage_display_name(template, stage_key)
-    stages = orch.stage_views_for_read(ticket)
-    return TicketSummary(
-        id=ticket.id,
-        external_id=ticket.external_id,
-        legacy_external_id=ticket.legacy_external_id,
-        title=ticket.title,
-        state=ticket.state,
-        priority=ticket.priority,
-        workspace_slug=ws.slug if ws else "",
-        workflow_stage_key=stage_key,
-        workflow_stage_status=stage_status,
-        workflow_stage_name=stage_name,
-        run_code=run_code if run_code is not None else _latest_run_code(session, ticket.id),
-        work_item_type=ticket.work_item_type,
-        parent_ticket_id=ticket.parent_ticket_id,
-        milestone=ticket.milestone,
-        branch=ticket.branch,
-        tags=load_tags(ticket.tags_json),
-        child_count=children if children is not None else child_count(session, ticket.id),
-        current_stage_agent=ticket_stage_agent(session, ticket),
-        activity=activity if activity is not None else activity_for(session, ticket.id),
-        stages=stages,
-        block_kind=ticket.block_kind,
-        blocked_on=stuck.blocked_on.get(ticket.id),
-        agent_retry=stuck.agent_retry.get(ticket.id),
-        waiting_on=stuck.waiting_on.get(ticket.id, []),
-        root_blockers=stuck.root_blockers.get(ticket.id, []),
-    )
-
-
-def _run_statuses(session: Session, run_ids: list[str | None]) -> dict[str, RunStatus]:
-    """Status of each named run, by id — the two columns, not the rows."""
-    wanted = {run_id for run_id in run_ids if run_id}
-    if not wanted:
-        return {}
-    return dict(
-        session.exec(select(AgentRun.id, AgentRun.status).where(col(AgentRun.id).in_(wanted))).all()
-    )
-
-
-def _apply_log_artifacts(
-    session: Session,
-    ticket_id: str,
-    log_artifacts: list[Artifact],
-    grouped: dict,
-) -> bool:
-    """Populate ``grouped['logs']`` / ``grouped['live']`` from a ticket's log
-    artifacts.
-
-    Returns ``True`` when the caller should stop and return immediately — an
-    active run exists but has not emitted its log artifact yet — matching the
-    original early return so the workspace diff/test backfill is skipped.
-    """
-    running_runs = session.exec(
-        select(AgentRun.id, AgentRun.status)
-        .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
-        .order_by(AgentRun.created_at.desc())
-    ).all()
-    active_run = running_runs[0] if running_runs else None
-
-    if not active_run:
-        active_run = session.exec(
-            select(AgentRun.id, AgentRun.status)
-            .where(
-                AgentRun.ticket_id == ticket_id,
-                AgentRun.status == RunStatus.AWAITING_PERMISSION,
-            )
-            .order_by(AgentRun.created_at.desc())
-        ).first()
-
-    best: Artifact | None = None
-    if active_run:
-        active_run_id, active_run_status = active_run
-        best = next((art for art in log_artifacts if art.run_id == active_run_id), None)
-        if not best:
-            grouped["logs"] = []
-            grouped["live"] = (
-                "Awaiting your approval in Triage or Inbox…"
-                if active_run_status == RunStatus.AWAITING_PERMISSION
-                else "Agent running…"
-            )
-            return True
-
-    active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
-    # One read for every run these artifacts name. This used to sit inside the
-    # sort comparator below, so choosing among N log artifacts fetched N whole
-    # runs — transcripts included — to read N statuses.
-    run_statuses = _run_statuses(session, [art.run_id for art in log_artifacts])
-
-    if not best:
-
-        def _log_sort_key(item: Artifact) -> tuple:
-            body = json.loads(item.content_json or "{}")
-            status = run_statuses.get(item.run_id or "")
-            is_live = bool(body.get("live")) and status in active_log_statuses
-            live_rank = 0 if is_live else 1
-            return (live_rank, -item.created_at.timestamp())
-
-        best = sorted(log_artifacts, key=_log_sort_key)[0]
-
-    content = json.loads(best.content_json or "{}")
-    grouped["logs"] = read_log_lines(session, best.run_id or "", content)
-    live = content.get("live")
-    status = run_statuses.get(best.run_id or "")
-    if live and status is not None and status not in active_log_statuses:
-        live = None
-    grouped["live"] = live
-    return False
-
-
-def _retry_payload(art: Artifact) -> dict:
-    """A transient-retry marker's payload, or {} if it will not parse.
-
-    Its own reader because `_artifacts_grouped` parses every artifact's
-    `content_json` in one pass and these are collected in a separate filter —
-    see there for why. An unparseable marker yields an empty message rather than
-    breaking the whole ticket payload: the row's existence is the load-bearing
-    part, since the count is what says the stage ran more than once.
-    """
-    try:
-        return json.loads(art.content_json or "{}")
-    except json.JSONDecodeError:
-        logger.warning(
-            "Transient-retry marker %s does not parse; rendering it without a message", art.id
-        )
-        return {}
-
-
-class _ErrorArtifactContent(BaseModel):
-    """An error artifact's payload: a message, plus whatever its writer recorded."""
-
-    model_config = ConfigDict(extra="allow")
-
-    message: str = ""
-
-
-def _current_error(
-    session: Session, ticket_id: str, error_artifacts: list[Artifact]
-) -> dict | None:
-    """The latest error artifact, while it still describes where the ticket is.
-
-    Error artifacts are never cleared, so "the latest one" alone kept a block
-    from hours ago on screen, labelled Blocked, after later stages ran green
-    (lg-durable-remote-336: a 23:27 implement block, test-break succeeded at
-    23:38, implement running again). Once any run has started since the error
-    was written, the work moved on and the error is history — it stays on the
-    Timeline as an output, and a live block is in `blocking_issues`.
-    """
-    if not error_artifacts:
-        return None
-    latest = max(error_artifacts, key=lambda a: comparable_utc(a.created_at))
-    newer_run = session.exec(
-        select(AgentRun.id)
-        .where(AgentRun.ticket_id == ticket_id)
-        .where(col(AgentRun.created_at) > latest.created_at)
-        .limit(1)
-    ).first()
-    if newer_run is not None:
-        return None
-    try:
-        content = _ErrorArtifactContent.model_validate_json(latest.content_json or "{}")
-    except ValidationError:
-        # Still shown: an operator reading a raw payload beats a block with no reason.
-        logger.warning("Error artifact %s has an unreadable payload", latest.id, exc_info=True)
-        return {"message": latest.content_json or ""}
-    content.message = normalize_timeout_stderr(content.message)
-    return content.model_dump()
-
-
-def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
-    ticket_id = ticket.id
-    grouped: dict = {
-        "diff": None,
-        "logs": [],
-        "tests": None,
-        "context": [],
-        "live": None,
-        "error": None,
-        "pr": None,
-        # Stages re-dispatched automatically after an infrastructure death. A
-        # list, not a latest-wins single value like `error`: the count IS the
-        # information, and the ticket is deliberately NOT blocked while these
-        # accumulate, so nothing else on this payload reveals that a stage ran
-        # more than once.
-        "transient_retries": [],
-    }
-    artifacts = session.exec(select(Artifact).where(Artifact.ticket_id == ticket_id)).all()
-    log_artifacts: list[Artifact] = []
-    error_artifacts: list[Artifact] = []
-    for art in artifacts:
-        content = json.loads(art.content_json or "{}")
-        if art.kind == "diff":
-            grouped["diff"] = content
-        elif art.kind == "log":
-            log_artifacts.append(art)
-        elif art.kind == "error":
-            error_artifacts.append(art)
-        elif art.kind == "test":
-            grouped["tests"] = content
-        elif art.kind == "context":
-            # Run-context artifacts nest their sections under a `sections` key;
-            # stage reports are already a single flat section.
-            nested = content.get("sections")
-            if isinstance(nested, list):
-                grouped["context"].extend(s for s in nested if isinstance(s, dict))
-            else:
-                grouped["context"].append(content)
-        elif art.kind == "pr":
-            grouped["pr"] = content
-    # A filter rather than another `elif` in the fold above. That chain is at
-    # McCabe 16 — grandfathered, since the gate only fails growth on touched
-    # lines — and one more branch tipped it to 17. Collecting these separately is
-    # also the better shape: they are selected, not folded, and unlike `error`
-    # every row is kept because the count is the information.
-    grouped["transient_retries"] = sorted(
-        (
-            {
-                "stage_key": art.title.removeprefix("stage-transient-retry:"),
-                "message": _retry_payload(art).get("message", ""),
-                "reason": _retry_payload(art).get("reason", ""),
-                "at": art.created_at.isoformat() if art.created_at else "",
-            }
-            for art in artifacts
-            if art.kind == StageBudgetArtifactKind.TRANSIENT_RETRY
-        ),
-        key=lambda row: row["at"],
-    )
-    grouped["error"] = _current_error(session, ticket_id, error_artifacts)
-    if log_artifacts and _apply_log_artifacts(session, ticket_id, log_artifacts, grouped):
-        return grouped
-
-    workspace = workspace_for(session, ticket.workspace_id)
-    if workspace:
-        grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
-        if not grouped["tests"] or not _test_artifact_is_valid(grouped["tests"] or {}):
-            grouped["tests"] = ensure_test_artifact(session, ticket=ticket)
-    if not grouped.get("live") and ticket.workflow_stage_status == StageStatus.AWAITING:
-        grouped["live"] = "Awaiting your approval in Triage or Inbox…"
-    return grouped
-
-
-def _workspace_filter(session: Session, workspace: str | None):
-    if not workspace:
-        return None
-    ws = session.exec(select(Workspace).where(Workspace.slug == workspace)).first()
-    if not ws:
-        return False
-    return ws
-
-
-def _apply_ticket_query_filters(
-    session: Session,
-    query,
-    *,
-    states: list[TicketState] | None,
-    work_item_types: list[WorkItemType] | None,
-    milestone: str | None,
-    search: str | None,
-    blocked_on: list[BlockedOn] | None = None,
-):
-    if states:
-        query = query.where(col(Ticket.state).in_(states))
-    if blocked_on:
-        query = query.where(blocked_on_clause(blocked_on, spent_agent_blocks(session)))
-    if work_item_types:
-        query = query.where(col(Ticket.work_item_type).in_(work_item_types))
-    if milestone:
-        query = query.where(Ticket.milestone == milestone)
-    if search:
-        term = f"%{search.strip()}%"
-        query = query.where((col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term)))
-    return query
 
 
 def _collect_ancestors(session: Session, tickets: list[Ticket]) -> list[Ticket]:
@@ -519,14 +150,14 @@ def ticket_tree(
     Ticket page reads its children this way; it used to build the whole
     workspace's tree every one to five seconds to find them.
     """
-    ws = _workspace_filter(session, workspace)
-    if ws is False:
+    scope = workspace_scope(session, workspace)
+    if scope.unknown:
         return []
 
     query = select(Ticket)
-    if ws:
-        query = query.where(Ticket.workspace_id == ws.id)
-    query = _apply_ticket_query_filters(
+    if scope.workspace:
+        query = query.where(Ticket.workspace_id == scope.workspace.id)
+    query = apply_ticket_query_filters(
         session,
         query,
         states=state,
@@ -582,67 +213,24 @@ def list_tickets(
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
 ) -> list[TicketSummary]:
-    """Ticket summaries matching the filters, cheapest state first.
-
-    `limit` is opt-in and unset by default. Callers here ask for a whole
-    filtered set and count it themselves — the children of a parent, every
-    dispatchable ticket — so a default page size would silently truncate them
-    into answering a different question. A caller that wants a page asks for
-    one; `offset` without `limit` is meaningless and rejected.
-    """
-    if limit is None and offset:
-        raise HTTPException(400, "offset requires limit")
-
-    ws = _workspace_filter(session, workspace)
-    if ws is False:
-        return []
-
-    query = select(Ticket)
-    if ws:
-        query = query.where(Ticket.workspace_id == ws.id)
-    query = _apply_ticket_query_filters(
+    """The board's ticket list; see `services.ticket_summaries`."""
+    return run_rest_operation(
         session,
-        query,
-        states=state,
-        work_item_types=work_item_type,
-        milestone=milestone,
-        search=search,
-        blocked_on=blocked_on,
+        OperationId.TICKET_SUMMARIES,
+        {
+            "workspace": workspace,
+            "states": state,
+            "work_item_types": work_item_type,
+            "parent_ticket_id": parent_ticket_id,
+            "ancestor_ticket_id": ancestor_ticket_id,
+            "roots_only": roots_only,
+            "blocked_on": blocked_on,
+            "milestone": milestone,
+            "search": search,
+            "limit": limit,
+            "offset": offset,
+        },
     )
-    if parent_ticket_id:
-        query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
-    if roots_only:
-        query = query.where(Ticket.parent_ticket_id.is_(None))
-    if ancestor_ticket_id:
-        # Every level below it, in whichever workspaces they live — an
-        # initiative's board spans repositories, and shows its members too.
-        query = query.where(col(Ticket.id).in_(covered_ticket_ids(session, ancestor_ticket_id)))
-    query = query.order_by(Ticket.priority, Ticket.created_at)
-    if limit is not None:
-        # Paged in SQL, not after the fact: the cost this endpoint carries is
-        # building a summary per row, and slicing a materialised list would
-        # have paid it for every row before throwing most of them away.
-        query = query.offset(offset).limit(limit)
-    tickets = session.exec(query).all()
-
-    ticket_ids = [t.id for t in tickets]
-    activity = classify_ticket_activity(session, ticket_ids)
-    run_codes = _latest_run_codes(session, ticket_ids)
-    children = child_counts(session, ticket_ids)
-    stuck = StuckPage.of(session, list(tickets))
-    with stage_resolution_memo():
-        prime_workflow_instances(session, ticket_ids)
-        return [
-            _ticket_summary(
-                session,
-                t,
-                activity.get(t.id, TicketActivity.IDLE),
-                run_code=run_codes.get(t.id, ""),
-                stuck=stuck,
-                children=children.get(t.id, 0),
-            )
-            for t in tickets
-        ]
 
 
 @router.get("/status-summary", response_model=TicketStatusSummary)
@@ -656,10 +244,11 @@ def ticket_status_summary(
     Separate from `list_tickets` because the board wants the whole workspace's
     totals, not a page of rows it would have to count client-side.
     """
-    ws = _workspace_filter(session, workspace)
-    if ws is False:
+    scope = workspace_scope(session, workspace)
+    if scope.unknown:
         return TicketStatusSummary()
-    return summarize_ticket_status(session, workspace_id=ws.id if ws else None)
+    workspace_id = scope.workspace.id if scope.workspace else None
+    return summarize_ticket_status(session, workspace_id=workspace_id)
 
 
 @router.post("", response_model=TicketDetail, status_code=201)
@@ -691,7 +280,7 @@ def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -
         raise HTTPException(400, detail=exc.payload) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket.id, session)
+    return _detail_reply(session, ticket.id)
 
 
 @router.post("/import/preview")
@@ -743,108 +332,20 @@ def import_tickets(
     return result
 
 
+def _detail_reply(session: Session, ticket_id: str) -> TicketDetail:
+    """The detail a write route replies with, built the way the read builds it."""
+    ticket = session.get(Ticket, ticket_id) or resolve_external_id(session, ticket_id)
+    if ticket is None:
+        raise HTTPException(404, "Ticket not found")
+    return ticket_detail(session, ticket)
+
+
 @router.get("/{ticket_id}", response_model=TicketDetail)
 def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
     # The shareable id resolves here as well as the UUID: this is the endpoint a
     # pasted `lor-mcp-gateway-142` reaches, and the response carries the UUID the
     # rest of the API is keyed by.
-    ticket = session.get(Ticket, ticket_id) or resolve_external_id(session, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    orch = OrchestrationService(session)
-    orch.reconcile_ticket(ticket)
-    session.refresh(ticket)
-    summary = _ticket_summary(session, ticket)
-    template = orch.get_template_for_ticket(ticket)
-    from loregarden.services.workflow_routing import normalize_transitions_for_api
-
-    transitions = normalize_transitions_for_api(template.transitions_json) if template else []
-    posture = resolve_compatibility_posture(session, ticket)
-    prereq_ids, dependent_ids = _dependency_edge_ids(session, ticket.id)
-    criteria = load_criteria(ticket.acceptance_criteria_json)
-    return TicketDetail(
-        **summary.model_dump(),
-        description=ticket.description,
-        acceptance_criteria=criteria,
-        checked_acceptance_criteria=load_checked(ticket.checked_criteria_json, criteria),
-        out_of_scope=load_criteria(ticket.out_of_scope_json),
-        dependencies=_prerequisite_refs(session, ticket, prereq_ids),
-        dependents=_dependency_refs(session, dependent_ids),
-        related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),
-        revision=ticket.revision,
-        last_updated_by=ticket.last_updated_by,
-        next_status=ticket.next_status,
-        blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
-        block_message=normalize_timeout_stderr(block_message_for(session, ticket)),
-        state_locked=ticket.state_locked,
-        workflow_template_slug=template.slug if template else "",
-        workflow_template_name=template.name if template else "",
-        workflow_transitions=[WorkflowTransitionView.model_validate(item) for item in transitions],
-        artifacts=_artifacts_grouped(session, ticket),
-        orchestration_runtime=get_ticket_orchestration_runtime(ticket),
-        compatibility_posture=ticket.compatibility_posture,
-        resolved_compatibility_posture=posture.posture.value,
-        compatibility_posture_source=posture.source,
-        split=ticket_split(session, ticket),
-        active_orchestration=_active_orchestration_view(session, ticket),
-        ships_with=ships_with_branch(session, ticket),
-        delivery=delivery_of(session, ticket),
-    )
-
-
-def _active_orchestration_view(session: Session, ticket: Ticket) -> OrchestrationRunView | None:
-    active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
-    return OrchestrationRunView.model_validate(active, from_attributes=True) if active else None
-
-
-def _dependency_edge_ids(session: Session, ticket_id: str) -> tuple[list[str], list[str]]:
-    svc = TicketDependencyService(session)
-    return svc.prerequisites(ticket_id), svc.dependents(ticket_id)
-
-
-def _dependency_refs(session: Session, ticket_ids: list[str]) -> list[TicketDependencyRef]:
-    refs: list[TicketDependencyRef] = []
-    for tid in ticket_ids:
-        dep = session.get(Ticket, tid)
-        if dep is None:
-            continue
-        ws = workspace_for(session, dep.workspace_id)
-        refs.append(
-            TicketDependencyRef(
-                id=dep.id,
-                external_id=dep.external_id,
-                title=dep.title,
-                state=dep.state,
-                work_item_type=dep.work_item_type,
-                is_integration_review=dep.is_integration_review,
-                workspace_slug=ws.slug if ws else "",
-            )
-        )
-    return refs
-
-
-def _prerequisite_refs(
-    session: Session, ticket: Ticket, ticket_ids: list[str]
-) -> list[TicketDependencyRef]:
-    """The prerequisites, each saying whether and why it still holds the ticket.
-
-    Judged the way a dispatch judges them (`dependency_hold`), git included, so
-    "done, not landed" reads here as it holds there.
-    """
-    refs = _dependency_refs(session, ticket_ids)
-    if not refs or ticket.state in RESOLVED_STATES:
-        return refs
-    unmet_entries = unmet_prerequisites(session, ticket)
-    unmet = {entry.ticket.id: entry for entry in unmet_entries}
-    holding = {entry.ticket.id for entry in still_holding(session, ticket, unmet_entries)}
-    for ref in refs:
-        entry = unmet.get(ref.id)
-        if entry is None:
-            continue
-        ref.unmet_reason = entry.reason.value
-        ref.landing_target = entry.target
-        ref.overridden = ref.id not in holding
-    return refs
+    return run_rest_operation(session, OperationId.TICKET_DETAIL, {"ticket_id": ticket_id})
 
 
 @router.post("/{ticket_id}/dependencies", response_model=TicketDetail)
@@ -871,7 +372,7 @@ def add_ticket_dependency(
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.delete("/{ticket_id}/dependencies/{depends_on_id}", response_model=TicketDetail)
@@ -884,7 +385,7 @@ def remove_ticket_dependency(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     TicketDependencyService(session).remove_dependency(ticket.id, depends_on_id)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/relations", response_model=TicketDetail)
@@ -908,7 +409,7 @@ def add_ticket_relation(
         TicketRelationService(session).add_relation(ticket.id, other.id, created_by="user")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.delete("/{ticket_id}/relations/{related_id}", response_model=TicketDetail)
@@ -921,7 +422,7 @@ def remove_ticket_relation(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     TicketRelationService(session).remove_relation(ticket.id, related_id)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.get("/{ticket_id}/workflow-reassignment", response_model=dict)
@@ -974,10 +475,9 @@ def get_ticket_artifacts(
     Unlike the grouped `ticket.artifacts` view, this includes every kind agents
     attach — including ad-hoc kinds that never map to Diff/Logs/Context tabs.
     """
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    return list_ticket_artifacts(session, ticket_id, limit=limit)
+    return run_rest_operation(
+        session, OperationId.ARTIFACT_FEED, {"ticket_id": ticket_id, "limit": limit}
+    )
 
 
 @router.patch("/{ticket_id}", response_model=TicketDetail)
@@ -1020,7 +520,7 @@ def update_ticket(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     session.refresh(ticket)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.delete("/{ticket_id}")
@@ -1086,7 +586,7 @@ def orchestrate_ticket(
     )
     if not reservation.admitted:
         session.refresh(ticket)
-        detail = get_ticket(ticket_id, session)
+        detail = _detail_reply(session, ticket_id)
         detail.admission = reservation.as_dict()
         return detail
 
@@ -1123,7 +623,7 @@ def orchestrate_ticket(
         raise HTTPException(400, str(exc)) from exc
 
     session.refresh(ticket)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/open-pr", response_model=TicketDetail)
@@ -1137,7 +637,7 @@ def open_ticket_pr(ticket_id: str, session: Session = Depends(get_session)) -> T
         create_ticket_pull_request(session, ticket)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/commit-push", response_model=TicketDetail)
@@ -1156,7 +656,7 @@ def commit_push_ticket(ticket_id: str, session: Session = Depends(get_session)) 
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/start", response_model=TicketDetail)
@@ -1186,7 +686,7 @@ def start_run(
     )
     if not reservation.admitted:
         session.refresh(ticket)
-        detail = get_ticket(ticket_id, session)
+        detail = _detail_reply(session, ticket_id)
         detail.admission = reservation.as_dict()
         return detail
 
@@ -1216,7 +716,7 @@ def start_run(
         # run that does not exist.
         reservation.release()
     session.refresh(ticket)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/stop", response_model=TicketDetail)
@@ -1273,7 +773,7 @@ def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Tick
             continue
 
     session.refresh(ticket)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/advance", response_model=TicketDetail)
@@ -1291,7 +791,7 @@ def advance_stage(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     session.refresh(ticket)
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/{ticket_id}/route-workflow", response_model=TicketDetail)
@@ -1315,7 +815,7 @@ def route_workflow_stage(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return get_ticket(ticket_id, session)
+    return _detail_reply(session, ticket_id)
 
 
 @router.post("/finalize-hierarchy", response_model=FinalizeHierarchyResponse, status_code=201)

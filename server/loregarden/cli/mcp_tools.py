@@ -29,6 +29,7 @@ from loregarden.db.migrations_runner import unknown_migration_ids
 from loregarden.mcp.caller import orchestrated_from_env, run_id_from_env
 from loregarden.mcp.tool_ids import READ_ONLY_MCP_TOOLS, McpTool
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
+from loregarden.services.operations import Transport
 from sqlmodel import Session
 
 TOOL_PREFIX = "loregarden_"
@@ -226,7 +227,14 @@ def _run_tool(
     db_session.init_db()
     refuse_stale_write(name, allow_stale=allow_stale, supervised=orchestrated)
     with Session(db_session.engine) as session:
-        return execute_tool(session, name, arguments, orchestrated=orchestrated, run_id=run_id)
+        return execute_tool(
+            session,
+            name,
+            arguments,
+            orchestrated=orchestrated,
+            run_id=run_id,
+            transport=Transport.CLI,
+        )
 
 
 def register(sub: argparse._SubParsersAction) -> None:

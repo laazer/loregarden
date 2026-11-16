@@ -23,7 +23,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import FindingDisposition
-from loregarden.services.ticket_documents import DEFAULT_DOCUMENT_KIND
+from loregarden.services.ticket_documents import DEFAULT_DOCUMENT_KIND, MAX_ARTIFACT_LIST_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -314,11 +314,6 @@ def normalize_instance_status(args: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_stop_instance(args: dict[str, Any]) -> dict[str, Any]:
     return {"instance_id": coerce_string(args.get("instance_id"), field="instance_id")}
-
-
-#: Cap on one artifact listing. Documents sit on a handful of ancestors; a ticket
-#: with hundreds of run artifacts should be narrowed with `kind`, not paged.
-MAX_ARTIFACT_LIST_LIMIT = 200
 
 
 def _default_true(value: Any) -> bool:
