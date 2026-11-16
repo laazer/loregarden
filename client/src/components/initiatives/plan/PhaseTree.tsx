@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { NodeStatus, PlanNode } from "../../../api/initiativeApi";
 import type { TicketSummary } from "../../../api/types";
@@ -21,9 +21,20 @@ interface TreeContext {
   nodeById: Map<string, PlanNode>;
 }
 
+/** Done and won't-do: closed, drawn muted and below the open work. */
+function isResolved(ticket: TicketSummary): boolean {
+  return ticket.state === "done" || ticket.state === "wont_do";
+}
+
+/** Open work first, resolved last; each group keeps its order, so the cap cuts closed tickets before open ones. */
+function openFirst(items: TicketSummary[]): TicketSummary[] {
+  return [...items.filter((t) => !isResolved(t)), ...items.filter(isResolved)];
+}
+
 function Branch({ items, ctx, above }: { items: TicketSummary[]; ctx: TreeContext; above: ReadonlySet<string> }) {
   const [all, setAll] = useState(false);
-  const shown = all ? items : items.slice(0, SHOWN);
+  const ordered = useMemo(() => openFirst(items), [items]);
+  const shown = all ? ordered : ordered.slice(0, SHOWN);
   return (
     <>
       {shown.map((ticket) => (
@@ -45,7 +56,7 @@ function TreeItem({ ticket, ctx, above }: { ticket: TicketSummary; ctx: TreeCont
   // A parent loop would otherwise unfold forever.
   const kids = (ctx.childrenOf.get(ticket.id) ?? []).filter((kid) => !above.has(kid.id));
   const hint = NODE_HINT[ctx.nodeById.get(ticket.id)?.status ?? "done"];
-  const resolved = ticket.state === "done" || ticket.state === "wont_do";
+  const resolved = isResolved(ticket);
   const listId = `plan-tree-${ticket.id}`;
   return (
     <li className={resolved ? "plan-row-done" : undefined}>
