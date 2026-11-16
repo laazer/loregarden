@@ -12,9 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeVar
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import AgentRun, OrchestrationRun
+from sqlmodel import Session, select
 
 RunT = TypeVar("RunT", AgentRun, OrchestrationRun)
 
@@ -32,6 +31,10 @@ ORCHESTRATION_RUN_ID_DESCRIPTION = (
     "The orchestration run: `orchestration_run_id`, or the `agent_run` code (run_…) "
     "or UUID of a stage run inside it."
 )
+
+
+class RunNotFound(ValueError):  # noqa: N818 — reads as the condition, like TicketNotFound
+    """No run carries the id or code a caller named."""
 
 
 @dataclass(frozen=True)
@@ -68,7 +71,7 @@ def resolve_run_ref(session: Session, run_ref: str) -> RunRef:
 
     agent_run = session.get(AgentRun, run_ref) or _one_by_code(session, AgentRun, run_ref)
     if agent_run is None:
-        raise ValueError(f"Run not found: '{run_ref}'. run_id accepts {_ACCEPTED_FORMS}.")
+        raise RunNotFound(f"Run not found: '{run_ref}'. run_id accepts {_ACCEPTED_FORMS}.")
     if not agent_run.ticket_id:
         raise ValueError(
             f"Agent run '{run_ref}' belongs to no ticket, so it has nothing to act on."

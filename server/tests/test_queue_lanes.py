@@ -740,10 +740,10 @@ def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
     """
     from unittest.mock import patch
 
-    from loregarden.mcp.admission import start_orchestration_admitted
     from loregarden.models.domain import OrchestrationDriver
     from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
     from loregarden.services.queue_status import build_queue_status
+    from loregarden.services.work_admission import OrchestrationStart, start_orchestration_admitted
 
     dispatcher = _Dispatcher(session)
     lanes = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
@@ -779,7 +779,9 @@ def test_a_restart_on_a_settled_entry_runs_inside_the_board(session, workspace):
 
     with patch("loregarden.services.builtin_orchestrator.BuiltinOrchestrator.execute", _execute):
         reservation, run = start_orchestration_admitted(
-            session, svc, {"ticket_id": ticket.id, "driver": "builtin_autopilot"}
+            session,
+            svc,
+            OrchestrationStart(ticket_id=ticket.id, driver=OrchestrationDriver.BUILTIN_AUTOPILOT),
         )
 
     assert reservation.admitted

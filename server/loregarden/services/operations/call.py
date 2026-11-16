@@ -6,16 +6,16 @@ import logging
 import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import Any
 
+from loregarden.services.operations.run_callbacks import RUN_CALLBACKS
 from loregarden.services.operations.spec import (
+    Caller,
     Effect,
     Operation,
     OperationId,
     OperationUnavailable,
     ReadOperationWrote,
-    Transport,
 )
 from loregarden.services.operations.ticket_lists import TICKET_LISTS
 from loregarden.services.operations.ticket_reads import TICKET_READS
@@ -25,19 +25,13 @@ from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
-OPERATIONS: Mapping[OperationId, Operation] = {op.id: op for op in (*TICKET_READS, *TICKET_LISTS)}
+OPERATIONS: Mapping[OperationId, Operation] = {
+    op.id: op for op in (*TICKET_READS, *TICKET_LISTS, *RUN_CALLBACKS)
+}
 
 #: Set to "1" (the test suite does) to make a read operation that writes raise
 #: instead of logging a warning.
 STRICT_READS_ENV = "LOREGARDEN_STRICT_READ_OPERATIONS"
-
-
-@dataclass(frozen=True)
-class Caller:
-    transport: Transport
-    #: A run Loregarden itself supervises (MCP's `X-Loregarden-Orchestrated`).
-    orchestrated: bool = False
-    run_id: str = ""
 
 
 @contextmanager
@@ -69,7 +63,7 @@ def run_operation(
     """Validate `arguments` against the operation's model and run it."""
     with operation_call(session, operation_id, caller) as operation:
         args: BaseModel = operation.args.model_validate(arguments)
-        return operation.handler(session, args)
+        return operation.handler(session, args, caller)
 
 
 @contextmanager

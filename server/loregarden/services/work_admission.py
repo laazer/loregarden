@@ -1,6 +1,6 @@
-"""Admission control for the MCP tools that start work.
+"""Admission control for the operations that start work.
 
-Both `loregarden_start_orchestration` and `loregarden_start_stage` need the
+Both `orchestration_start` and `stage_start` need the
 same three beats — reserve a slot, start the work, bind the slot to it or give
 it back — and inlining that twice pushed `tools.py` past the organization
 gate's line cap and its own statement cap. They differ in one place: a stage
@@ -15,13 +15,11 @@ unbounded concurrent work while the queue board showed idle lanes.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
-from sqlmodel import Session, col, select
-
 from loregarden.models.domain import (
+    ExternalHarness,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -31,18 +29,47 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.queue_admission import QueueAdmissionService, Reservation
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
+from pydantic import BaseModel, ConfigDict
+from sqlmodel import Session, col, select
 
 
-def queued_response(reservation: Reservation, **extra: Any) -> str:
-    """What an MCP caller gets when the machine is full.
+class WorkQueued(Exception):  # noqa: N818 — reads as the condition, like StopIteration
+    """The machine is full, so the work waits in line rather than starting.
 
-    Not an error: the work is queued and will run. An agent driving this
-    control plane should wait its turn, not learn a new failure mode.
+    Not a failure: the work is queued and will run. Each transport says so in
+    its own way (MCP replies `status: queued`, REST answers 409), and an agent
+    driving this control plane should wait its turn, not learn a new failure.
     """
-    return json.dumps(
-        {"ok": False, "status": "queued", **extra, **reservation.as_dict()},
-        indent=2,
-    )
+
+    def __init__(self, reservation: Reservation, **context: Any) -> None:
+        super().__init__(reservation.message or "queued")
+        self.reservation = reservation
+        self.context = context
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"ok": False, "status": "queued", **self.context, **self.reservation.as_dict()}
+
+
+class OrchestrationStart(BaseModel):
+    """What a caller may ask of an orchestration start, on any transport."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    ticket_id: str
+    #: None takes the workspace profile's driver.
+    driver: OrchestrationDriver | None = None
+    #: An outside harness drives the run; no slot is taken (see `start_external`).
+    external_harness: ExternalHarness | None = None
+    #: A retry carrying the same key gets the run its first attempt created.
+    idempotency_key: str = ""
+    max_stages: int | None = None
+    stop_at_stage_key: str | None = None
+    auto_approve: bool = False
+    approve_design_plans: bool = True
+    auto_repair: bool = True
+    timeout_seconds: int | None = None
+    #: The lane to run in; None lets the pool pick.
+    slot_number: int | None = None
 
 
 def run_admitted(
@@ -112,21 +139,20 @@ def _run_on_bound_claim(
 
 
 def start_orchestration_admitted(
-    session: Session, svc, arguments: dict[str, Any]
+    session: Session, svc, start: OrchestrationStart
 ) -> tuple[Reservation, Any]:
     """Start a run on whichever driver the workspace profile selects, gated.
 
-    Lives here rather than in `tools.py` because it is now mostly admission:
-    resolve the driver, take a slot, dispatch, bind. The caller renders the
-    result, which keeps this module from importing back into `tools`.
+    Mostly admission: resolve the driver, take a slot, dispatch, bind. The
+    caller renders the result.
     """
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    ticket = svc.resolve_ticket(ticket_id=start.ticket_id)
 
     # Before anything is spent: a caller retrying an ambiguous failure gets the
     # run its first attempt may or may not have created. Two writes failed this
     # way during one recovery, and both times the only safe move was to re-read
     # the ticket by hand before retrying (lg-workflow-integrity-696).
-    idempotency_key = (arguments.get("idempotency_key") or "").strip()
+    idempotency_key = start.idempotency_key.strip()
     if idempotency_key:
         existing = session.exec(
             select(OrchestrationRun).where(
@@ -143,10 +169,11 @@ def start_orchestration_admitted(
     if not ws:
         raise ValueError("Workspace not found")
     profile = resolve_orchestration_profile(ws)
-    driver_name = arguments.get("driver") or profile.driver.value
-    driver = OrchestrationDriver(driver_name)
+    driver = start.driver or profile.driver
     if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
-        raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
+        raise ValueError(
+            f"An orchestration cannot start on the {driver.value} driver; start a single stage"
+        )
     active = svc.get_active_orchestration_run(ticket.id)
     if active is not None:
         # Before the reservation, so a refused start takes no slot; and before
@@ -154,12 +181,22 @@ def start_orchestration_admitted(
         # failure path below to abandon.
         raise ValueError(f"Orchestration already running: {active.run_code}")
 
-    admission = QueueAdmissionService(session)
-    # Carried for the parked case only: an entry is the whole record of the ask
-    # by the time a lane reaches it, and a dropped override is a different run
-    # from the one requested.
-    reservation = admission.reserve_orchestration(
-        ticket, driver=arguments.get("driver") or "", max_stages=arguments.get("max_stages")
+    run_options = {
+        "auto_approve": start.auto_approve,
+        "approve_design_plans": start.approve_design_plans,
+        "auto_repair": start.auto_repair,
+    }
+    # The overrides are carried for the parked case too: an entry is the whole
+    # record of the ask by the time a lane reaches it, and a dropped override
+    # is a different run from the one requested.
+    reservation = QueueAdmissionService(session).reserve_orchestration(
+        ticket,
+        **run_options,
+        stop_at_stage_key=start.stop_at_stage_key,
+        preferred_slot=start.slot_number,
+        driver=start.driver.value if start.driver else "",
+        max_stages=start.max_stages,
+        timeout_seconds=start.timeout_seconds,
     )
     if not reservation.admitted:
         return reservation, None
@@ -170,15 +207,29 @@ def start_orchestration_admitted(
     # slot named nothing, the board drew a lane busy with nothing in it, and
     # the reclaim sweep would have handed the lane to a second ticket (775).
     # `start_orchestration_run` adopts the claim on either driver.
-    claim = svc.claim_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
+    claim_options = {
+        **run_options,
+        "stop_at_stage_key": start.stop_at_stage_key or "",
+        "timeout_override_seconds": start.timeout_seconds,
+    }
+    claim = svc.claim_orchestration_run(
+        ticket, driver=driver, profile_slug=profile.slug, **claim_options
+    )
     reservation.bind(orchestration_run_id=claim.id)
 
     def _start() -> OrchestrationRun:
         if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
             return BuiltinOrchestrator(session).execute(
-                ticket, profile, max_stages=arguments.get("max_stages")
+                ticket,
+                profile,
+                max_stages=start.max_stages,
+                stop_at_stage_key=start.stop_at_stage_key,
+                timeout_seconds=start.timeout_seconds,
+                **run_options,
             )
-        return svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
+        return svc.start_orchestration_run(
+            ticket, driver=driver, profile_slug=profile.slug, **claim_options
+        )
 
     run = _run_on_bound_claim(session, svc, reservation=reservation, claim=claim, start=_start)
     if idempotency_key and not run.idempotency_key:

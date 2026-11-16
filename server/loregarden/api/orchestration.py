@@ -1,12 +1,13 @@
 """REST API for orchestration callbacks — used by MCP server and external drivers."""
 
+from typing import Any
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.terminal_text import strip_ansi
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AttachArtifactRequest,
-    BlockOrigin,
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
@@ -17,10 +18,7 @@ from loregarden.models.domain import (
     GateTestReport,
     GateTestRequest,
     GitAutomationView,
-    OrchestrationDriver,
     OrchestrationProfileView,
-    OrchestrationRun,
-    OrchestrationRunStatus,
     OrchestrationRunView,
     RequestApprovalRequest,
     SkipStageRequest,
@@ -28,8 +26,6 @@ from loregarden.models.domain import (
     StartStageRequest,
     Workspace,
 )
-from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
-from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.discovered_work import undecided
 from loregarden.services.gate_runner import (
     dry_run_gate_commands,
@@ -51,28 +47,10 @@ from loregarden.services.orchestration_profile import (
     update_gates_config,
     update_git_config,
 )
-from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.scope_round import decide_finding
-from loregarden.services.ticket_workspace_binding import workspace_for_ticket
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
-
-
-def _run_view(run: OrchestrationRun) -> OrchestrationRunView:
-    return OrchestrationRunView(
-        id=run.id,
-        run_code=run.run_code,
-        ticket_id=run.ticket_id,
-        driver=run.driver,
-        profile_slug=run.profile_slug,
-        external_harness=run.external_harness,
-        status=run.status,
-        current_stage_key=run.current_stage_key,
-        error_message=run.error_message,
-        started_at=run.started_at,
-        finished_at=run.finished_at,
-    )
 
 
 def _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:
@@ -98,13 +76,6 @@ def _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:
         max_stages_per_run=profile.max_stages_per_run,
         source_path=profile.source_path,
     )
-
-
-def _get_run(session: Session, run_id: str) -> OrchestrationRun:
-    run = session.get(OrchestrationRun, run_id)
-    if not run:
-        raise HTTPException(404, "Orchestration run not found")
-    return run
 
 
 @router.get("/workspaces/{slug}/profile", response_model=OrchestrationProfileView)
@@ -231,18 +202,11 @@ def start_orchestration(
     body: StartOrchestrationRequest = Body(default_factory=StartOrchestrationRequest),
     session: Session = Depends(get_session),
 ) -> OrchestrationRunView:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(ticket_id=ticket_id)
-    ws = workspace_for_ticket(session, ticket)
-    if not ws:
-        raise HTTPException(404, "Workspace not found")
-    profile = resolve_orchestration_profile(ws)
-    driver = body.driver or profile.driver
-    if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
-        raise HTTPException(400, "Use POST /api/tickets/{id}/start for manual_stage driver")
+    ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=ticket_id)
     if undecided(session, ticket.id) is not None:
         # A run's finding is held out of the work until its scope is decided.
         # A person pressing Run on it has decided: it is work, its parent's.
+        # Only a person decides that, so it stays here, ahead of the operation.
         decide_finding(
             session,
             ticket,
@@ -250,79 +214,11 @@ def start_orchestration(
             reason="An operator started it.",
             decided_by="operator",
         )
-    active = svc.get_active_orchestration_run(ticket.id)
-    if active is not None:
-        # Before the reservation and the claim: `claim_orchestration_run` hands
-        # back a live run, and the failure path below must never abandon one.
-        raise HTTPException(400, f"Orchestration already running: {active.run_code}")
-
-    # Same pool as /orchestrate and MCP: this path used to start work with no
-    # slot, so the board showed idle lanes while agents ran.
-    reservation = QueueAdmissionService(session).reserve_orchestration(
-        ticket,
-        auto_approve=body.auto_approve,
-        approve_design_plans=body.approve_design_plans,
-        auto_repair=body.auto_repair,
-        stop_at_stage_key=body.stop_at_stage_key,
-        preferred_slot=body.slot_number,
-        driver=driver.value if driver else "",
-        max_stages=body.max_stages,
-        timeout_seconds=body.timeout_seconds,
+    return run_rest_operation(
+        session,
+        OperationId.ORCHESTRATION_START,
+        {**body.model_dump(exclude={"ignore_prerequisites"}), "ticket_id": ticket.id},
     )
-    if not reservation.admitted:
-        raise HTTPException(
-            409,
-            detail={"status": "queued", **reservation.as_dict()},
-        )
-
-    # Claimed and bound before the work starts. The builtin driver runs the
-    # whole pipeline inside `execute`, so binding on return bound to a finished
-    # run and the slot named nothing for as long as the ticket ran (775).
-    # `start_orchestration_run` adopts the claim on either driver.
-    claim = svc.claim_orchestration_run(
-        ticket,
-        driver=driver,
-        profile_slug=profile.slug,
-        auto_approve=body.auto_approve,
-        approve_design_plans=body.approve_design_plans,
-        auto_repair=body.auto_repair,
-        stop_at_stage_key=body.stop_at_stage_key or "",
-        timeout_override_seconds=body.timeout_seconds,
-    )
-    reservation.bind(orchestration_run_id=claim.id)
-    try:
-        if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
-            run = BuiltinOrchestrator(session).execute(
-                ticket,
-                profile,
-                max_stages=body.max_stages,
-                stop_at_stage_key=body.stop_at_stage_key,
-                auto_approve=body.auto_approve,
-                approve_design_plans=body.approve_design_plans,
-                auto_repair=body.auto_repair,
-                timeout_seconds=body.timeout_seconds,
-            )
-        else:
-            run = svc.start_orchestration_run(
-                ticket,
-                driver=driver,
-                profile_slug=profile.slug,
-                auto_approve=body.auto_approve,
-                approve_design_plans=body.approve_design_plans,
-                auto_repair=body.auto_repair,
-                stop_at_stage_key=body.stop_at_stage_key or "",
-                timeout_override_seconds=body.timeout_seconds,
-            )
-    except ValueError as exc:
-        session.rollback()
-        session.refresh(claim)
-        if claim.status == OrchestrationRunStatus.QUEUED:
-            # Never adopted, so nothing else will ever finish it.
-            svc.abandon_claim(claim, message=str(exc))
-        reservation.release()
-        raise HTTPException(400, str(exc)) from exc
-
-    return _run_view(run)
 
 
 @router.get("/tickets/{ticket_id}/state", response_model=dict)
@@ -346,142 +242,57 @@ def get_ticket_state_by_external(
     )
 
 
+def _naming_run(run_id: str, body: SQLModel) -> dict[str, Any]:
+    """A callback's arguments: its body, and the run its path names."""
+    return {**body.model_dump(), "run_id": run_id}
+
+
 @router.post("/runs/{run_id}/start_stage", response_model=dict)
 def callback_start_stage(
-    run_id: str,
-    body: StartStageRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: StartStageRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    try:
-        svc.start_stage(run, ticket, stage_key=body.stage_key, agent_id=body.agent_id)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    session.refresh(ticket)
-    return {"ok": True, "stage_key": body.stage_key, "ticket_state": ticket.state.value}
+    return run_rest_operation(session, OperationId.STAGE_START, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/complete_stage", response_model=dict)
 def callback_complete_stage(
-    run_id: str,
-    body: CompleteStageRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: CompleteStageRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    try:
-        svc.complete_stage(
-            run,
-            ticket,
-            stage_key=body.stage_key,
-            next_agent=body.next_agent,
-            next_stage_key=body.next_stage_key,
-            outcome=body.outcome,
-            blocking_issues=body.blocking_issues,
-            advance=body.advance,
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    session.refresh(ticket)
-    return {
-        "ok": True,
-        "stage_key": body.stage_key,
-        "workflow_stage_key": ticket.workflow_stage_key,
-        "ticket_state": ticket.state.value,
-    }
+    return run_rest_operation(session, OperationId.STAGE_COMPLETE, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/skip_stage", response_model=dict)
 def callback_skip_stage(
-    run_id: str,
-    body: SkipStageRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: SkipStageRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    try:
-        svc.skip_stage(run, ticket, stage_key=body.stage_key, reason=body.reason)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "stage_key": body.stage_key}
+    return run_rest_operation(session, OperationId.STAGE_SKIP, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/block", response_model=dict)
 def callback_block(
-    run_id: str,
-    body: BlockTicketRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: BlockTicketRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    # Relayed from an agent over the callback API, so it carries the agent's
-    # words and may describe work for a person.
-    svc.block_ticket(
-        run,
-        ticket,
-        origin=BlockOrigin.AGENT,
-        repair=AGENT_ASKED_FOR_A_PERSON,
-        stage_key=body.stage_key,
-        message=body.message,
-    )
-    return {"ok": True, "ticket_state": ticket.state.value}
+    return run_rest_operation(session, OperationId.TICKET_BLOCK, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/attach_artifact", response_model=dict)
 def callback_attach_artifact(
-    run_id: str,
-    body: AttachArtifactRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: AttachArtifactRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    artifact = svc.attach_artifact(
-        ticket,
-        kind=body.kind,
-        title=body.title,
-        content=body.content,
-    )
-    return {"ok": True, "artifact_id": artifact.id}
+    return run_rest_operation(session, OperationId.ARTIFACT_ATTACH, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/request_approval", response_model=dict)
 def callback_request_approval(
-    run_id: str,
-    body: RequestApprovalRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: RequestApprovalRequest, session: Session = Depends(get_session)
 ) -> dict:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    approval = svc.request_approval(
-        ticket,
-        stage_key=body.stage_key,
-        title=body.title,
-        impact=body.impact,
-        level=body.level,
-    )
-    return {"ok": True, "approval_id": approval.id}
+    return run_rest_operation(session, OperationId.APPROVAL_REQUEST, _naming_run(run_id, body))
 
 
 @router.post("/runs/{run_id}/complete", response_model=OrchestrationRunView)
 def callback_complete_orchestration(
-    run_id: str,
-    body: CompleteOrchestrationRequest,
-    session: Session = Depends(get_session),
+    run_id: str, body: CompleteOrchestrationRequest, session: Session = Depends(get_session)
 ) -> OrchestrationRunView:
-    svc = OrchestrationCallbackService(session)
-    run = _get_run(session, run_id)
-    ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
-    run = svc.complete_orchestration(
-        run,
-        ticket,
-        status=body.status,
-        message=body.message,
+    return run_rest_operation(
+        session, OperationId.ORCHESTRATION_COMPLETE, _naming_run(run_id, body)
     )
-    return _run_view(run)

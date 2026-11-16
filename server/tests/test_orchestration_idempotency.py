@@ -19,9 +19,9 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
-from loregarden.mcp.admission import start_orchestration_admitted
 from loregarden.models.domain import OrchestrationRun, OrchestrationRunStatus
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.work_admission import OrchestrationStart, start_orchestration_admitted
 from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
 
@@ -39,7 +39,7 @@ def _start(session: Session, ticket_id: str, key: str | None = None):
     args = {"ticket_id": ticket_id, "driver": "external_mcp"}
     if key is not None:
         args["idempotency_key"] = key
-    return start_orchestration_admitted(session, svc, args)
+    return start_orchestration_admitted(session, svc, OrchestrationStart.model_validate(args))
 
 
 def test_a_retry_with_the_same_key_returns_the_original_run(db_session: Session):

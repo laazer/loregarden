@@ -159,14 +159,6 @@ orchestration.py::update_workspace_gates
 orchestration.py::test_workspace_gates
 orchestration.py::get_workspace_git_automation
 orchestration.py::update_workspace_git_automation
-orchestration.py::start_orchestration
-orchestration.py::callback_start_stage
-orchestration.py::callback_complete_stage
-orchestration.py::callback_skip_stage
-orchestration.py::callback_block
-orchestration.py::callback_attach_artifact
-orchestration.py::callback_request_approval
-orchestration.py::callback_complete_orchestration
 parallel.py::create_parallel_run
 parallel.py::get_parallel_status
 parallel.py::cancel_queued_run

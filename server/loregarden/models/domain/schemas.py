@@ -641,16 +641,30 @@ class CompleteStageRequest(SQLModel):
     outcome: str = "pass"  # pass | reject
     blocking_issues: str = ""
     advance: bool = True
+    #: The stage report's findings, as `loregarden_complete_stage` takes them.
+    #: Omitted, the outcome stands as given (see `settle_stage_claim`).
+    findings: list[dict[str, Any]] | None = None
 
 
 class StartStageRequest(SQLModel):
     stage_key: str
     agent_id: str = ""
+    #: Dispatch the stage although it has reached its retry budget; recorded.
+    force: bool = False
+    #: Start it although prerequisites are not done and landed; recorded.
+    ignore_prerequisites: bool = False
 
 
 class BlockTicketRequest(SQLModel):
     stage_key: str = ""
     message: str
+    #: The prepared action, as `loregarden_block_ticket` takes it; all optional.
+    tier: str | None = None
+    attempted: str | None = None
+    prepared: str | None = None
+    command: str | None = None
+    script_path: str | None = None
+    captures: list[str] | None = None
 
 
 class SkipStageRequest(SQLModel):
@@ -668,7 +682,6 @@ class RequestApprovalRequest(SQLModel):
     stage_key: str
     title: str = ""
     impact: str = ""
-    level: str = "medium"
 
 
 class CompleteOrchestrationRequest(SQLModel):

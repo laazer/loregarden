@@ -15,6 +15,7 @@ from sqlmodel import Session
 
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.services.operations import Caller, OperationId, run_operation
+from loregarden.services.work_admission import WorkQueued
 
 #: Keyed by the wire name, as `tool_registry.EXTENDED_TOOLS` is.
 OPERATION_TOOLS: Mapping[str, OperationId] = {
@@ -22,6 +23,14 @@ OPERATION_TOOLS: Mapping[str, OperationId] = {
     McpTool.GET_TICKET_BY_EXTERNAL.value: OperationId.TICKET_BRIEF,
     McpTool.LIST_TICKETS.value: OperationId.TICKET_SEARCH,
     McpTool.LIST_ARTIFACTS.value: OperationId.ARTIFACT_INDEX,
+    McpTool.START_ORCHESTRATION.value: OperationId.ORCHESTRATION_START,
+    McpTool.START_STAGE.value: OperationId.STAGE_START,
+    McpTool.COMPLETE_STAGE.value: OperationId.STAGE_COMPLETE,
+    McpTool.SKIP_STAGE.value: OperationId.STAGE_SKIP,
+    McpTool.BLOCK_TICKET.value: OperationId.TICKET_BLOCK,
+    McpTool.ATTACH_ARTIFACT.value: OperationId.ARTIFACT_ATTACH,
+    McpTool.REQUEST_APPROVAL.value: OperationId.APPROVAL_REQUEST,
+    McpTool.COMPLETE_ORCHESTRATION.value: OperationId.ORCHESTRATION_COMPLETE,
 }
 
 
@@ -32,5 +41,9 @@ def execute_operation_tool(
     operation_id = OPERATION_TOOLS.get(name)
     if operation_id is None:
         return None
-    result = run_operation(session, operation_id, arguments, caller)
+    try:
+        result = run_operation(session, operation_id, arguments, caller)
+    except WorkQueued as queued:
+        # Not an error: the work waits its turn and will run.
+        result = queued.as_dict()
     return json.dumps(to_jsonable_python(result), indent=2)
