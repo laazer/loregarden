@@ -58,6 +58,17 @@ from tests.worktree_helpers import make_repo
 DARWIN_BOOTTIME = "{ sec = 1785351732, usec = 726777 } Wed Jul 29 15:02:12 2026\n"
 
 
+@pytest.fixture(autouse=True)
+def _forget_cached_identity():
+    """The boot and own-birth reads are cached per process; these tests patch
+    what they read, so each one starts from an empty cache and leaves one."""
+    process_identity._darwin_boot_sec.cache_clear()
+    process_identity._OWN_BIRTH.clear()
+    yield
+    process_identity._darwin_boot_sec.cache_clear()
+    process_identity._OWN_BIRTH.clear()
+
+
 @pytest.fixture(name="session")
 def session_fixture(isolated_db):
     with Session(isolated_db) as session:
@@ -302,6 +313,35 @@ def test_the_boot_component_never_makes_a_tree_more_deletable_than_liveness_alon
             assert answer is not ProcessState.GONE, (
                 f"a boot stamp of {stamp!r} turned {state.name} into GONE"
             )
+
+
+def test_a_self_claim_is_decided_without_asking_ps_or_sysctl_again(monkeypatch):
+    """A loaded box once made this process's own claim unprovable.
+
+    `ps` on our own pid and `sysctl kern.boottime` both missed their 5s timeout
+    under load, so a tree this process cut and owned was kept as CLAIM_UNPROVEN.
+    Neither answer can change while the process runs, so after the first reading
+    neither is asked again, and a claim on our pid is decided from that reading.
+    """
+    monkeypatch.setattr(sys, "platform", "darwin")
+    printed = {"sysctl": DARWIN_BOOTTIME, "ps": "Ss   Mon Sep  7 11:02:13 2026\n"}
+
+    def answers(args, *rest, **kwargs):
+        return subprocess.CompletedProcess(args, 0, printed[args[0]], "")
+
+    def times_out(args, *rest, **kwargs):
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    with mock.patch.object(process_identity.subprocess, "run", side_effect=answers):
+        claim = ClaimIdentity.current()
+
+    with mock.patch.object(process_identity.subprocess, "run", side_effect=times_out) as run:
+        assert claim_is_live(claim) is ProcessState.ALIVE
+        assert ClaimIdentity.current() == claim
+        earlier_holder = ClaimIdentity(pid=claim.pid, birth="an earlier start", boot_id="x")
+        assert claim_is_live(earlier_holder) is ProcessState.GONE
+
+    assert run.call_count == 0
 
 
 def test_an_unreadable_boot_stamp_propagates_out_of_claim_is_live():
