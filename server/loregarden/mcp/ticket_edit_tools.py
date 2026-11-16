@@ -1,5 +1,6 @@
-"""MCP handlers that read or edit one ticket: its state payload, its content,
-and the edges between it and other tickets.
+"""MCP handlers that edit one ticket's content.
+
+The edges between tickets are operations now (`services/operations/ticket_links.py`).
 
 Split out of ``mcp.tools`` — that module owns the tool catalog and the dispatch
 spine, and every ticket-shaped handler landing there was the reason it kept
@@ -26,11 +27,6 @@ from loregarden.services.acceptance_criteria import (
     merge_criteria,
 )
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.ticket_dependencies import (
-    DependencyCycleError,
-    TicketDependencyService,
-)
-from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_revision_guard import guard_ticket_revision
 from loregarden.services.ticket_state_payload import ticket_state_payload
 from loregarden.services.ticket_tags import normalize_tags
@@ -132,48 +128,9 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
 
 
-def _link_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Make ``ticket_id`` wait for ``depends_on``. Both accept a UUID or external_id."""
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
-    try:
-        TicketDependencyService(session).add_dependency(
-            ticket.id, prerequisite.id, created_by="agent"
-        )
-    except DependencyCycleError as exc:
-        raise ValueError(str(exc)) from exc
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _unlink_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
-    TicketDependencyService(session).remove_dependency(ticket.id, prerequisite.id)
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _link_relation(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Relate ``ticket_id`` and ``related_to``. Both accept a UUID or external_id."""
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    other = svc.resolve_ticket(ticket_id=arguments["related_to"])
-    TicketRelationService(session).add_relation(ticket.id, other.id, created_by="agent")
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _unlink_relation(session: Session, svc, arguments: dict[str, Any]) -> str:
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    other = svc.resolve_ticket(ticket_id=arguments["related_to"])
-    TicketRelationService(session).remove_relation(ticket.id, other.id)
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
-
-
 #: Handlers this module owns, keyed by tool name.
-_EDGE_HANDLERS = {
+_HANDLERS = {
     "loregarden_update_ticket": update_ticket,
-    "loregarden_link_dependency": _link_dependency,
-    "loregarden_unlink_dependency": _unlink_dependency,
-    "loregarden_link_relation": _link_relation,
-    "loregarden_unlink_relation": _unlink_relation,
 }
 
 
@@ -181,7 +138,7 @@ def execute_ticket_edit_tool(
     name: str, session: Session, svc, arguments: dict[str, Any]
 ) -> str | None:
     """Run ``name`` if this module owns it, else return None so the caller continues."""
-    handler = _EDGE_HANDLERS.get(name)
+    handler = _HANDLERS.get(name)
     if handler is None:
         return None
     return handler(session, svc, arguments)

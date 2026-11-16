@@ -130,6 +130,15 @@ def test_every_rest_route_runs_an_operation_or_is_in_the_ledger():
     )
 
 
+@pytest.mark.parametrize("operation", OPERATIONS.values(), ids=lambda op: op.id.value)
+def test_a_reply_is_worded_only_for_a_transport_the_operation_is_offered_on(
+    operation: Operation,
+):
+    assert not set(operation.replies) & set(operation.unavailable_on), (
+        f"{operation.id} words a reply for a transport it refuses"
+    )
+
+
 def test_a_transport_an_operation_is_not_offered_on_is_refused(db_session):
     ticket = make_workspace_ticket(db_session, "lg-operation-optout")
     with pytest.raises(OperationUnavailable, match="not available over mcp"):

@@ -60,6 +60,18 @@ def test_relation_removal_works_from_either_end(client, db_session):
     assert client.get(f"/api/tickets/{a.id}").json()["related"] == []
 
 
+def test_relation_removal_takes_external_ids(client, db_session):
+    a = _feature(db_session, "Rel ext A")
+    b = _feature(db_session, "Rel ext B")
+    client.post(f"/api/tickets/{a.id}/relations", json={"related_to": b.id})
+
+    removed = client.delete(f"/api/tickets/{a.external_id}/relations/{b.external_id}")
+
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["related"] == []
+    assert client.get(f"/api/tickets/{b.id}").json()["related"] == []
+
+
 def test_relating_is_idempotent_in_both_directions(client, db_session):
     a = _feature(db_session, "Rel dup A")
     b = _feature(db_session, "Rel dup B")

@@ -59,8 +59,6 @@ from loregarden.services.ticket_activity import (
     summarize_ticket_status,
 )
 from loregarden.services.ticket_dependencies import (
-    DependencyCycleError,
-    TicketDependencyService,
     resolve_prerequisites,
 )
 from loregarden.services.ticket_detail_view import (
@@ -70,7 +68,6 @@ from loregarden.services.ticket_growth_guard import SizeCapError
 from loregarden.services.ticket_ids import TicketNotFound
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
-from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_revision_guard import (
     TicketRevisionConflict,
     guard_ticket_revision,
@@ -354,25 +351,12 @@ def add_ticket_dependency(
     body: TicketDependencyRequest,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
-    """Link this ticket to wait for another (``depends_on`` is a UUID or external_id)."""
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    try:
-        prerequisite = OrchestrationCallbackService(session).resolve_ticket(
-            ticket_id=body.depends_on
-        )
-    except ValueError as exc:
-        raise HTTPException(404, f"Prerequisite ticket not found: {body.depends_on}") from exc
-    try:
-        TicketDependencyService(session).add_dependency(
-            ticket.id, prerequisite.id, created_by="user"
-        )
-    except DependencyCycleError as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return _detail_reply(session, ticket_id)
+    """Link this ticket to wait for another; both a UUID or an external id."""
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_DEPENDENCY_ADD,
+        {"ticket_id": ticket_id, "depends_on": body.depends_on},
+    )
 
 
 @router.delete("/{ticket_id}/dependencies/{depends_on_id}", response_model=TicketDetail)
@@ -381,11 +365,11 @@ def remove_ticket_dependency(
     depends_on_id: str,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    TicketDependencyService(session).remove_dependency(ticket.id, depends_on_id)
-    return _detail_reply(session, ticket_id)
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_DEPENDENCY_REMOVE,
+        {"ticket_id": ticket_id, "depends_on": depends_on_id},
+    )
 
 
 @router.post("/{ticket_id}/relations", response_model=TicketDetail)
@@ -394,22 +378,15 @@ def add_ticket_relation(
     body: TicketRelationRequest,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
-    """Relate this ticket to another (``related_to`` is a UUID or external_id).
+    """Relate this ticket to another; both a UUID or an external id.
 
     Symmetric and non-blocking: both tickets list the other, and neither waits.
     """
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    try:
-        other = OrchestrationCallbackService(session).resolve_ticket(ticket_id=body.related_to)
-    except ValueError as exc:
-        raise HTTPException(404, f"Related ticket not found: {body.related_to}") from exc
-    try:
-        TicketRelationService(session).add_relation(ticket.id, other.id, created_by="user")
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return _detail_reply(session, ticket_id)
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_RELATION_ADD,
+        {"ticket_id": ticket_id, "related_to": body.related_to},
+    )
 
 
 @router.delete("/{ticket_id}/relations/{related_id}", response_model=TicketDetail)
@@ -418,11 +395,11 @@ def remove_ticket_relation(
     related_id: str,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    TicketRelationService(session).remove_relation(ticket.id, related_id)
-    return _detail_reply(session, ticket_id)
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_RELATION_REMOVE,
+        {"ticket_id": ticket_id, "related_to": related_id},
+    )
 
 
 @router.get("/{ticket_id}/workflow-reassignment", response_model=dict)
