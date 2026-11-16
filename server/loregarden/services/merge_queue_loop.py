@@ -279,6 +279,14 @@ class MergeQueueLoop:
         message = self._staged_message(entry)
         if message is None:
             return False
+        # Read before the cut, not after it: a stale head that conflicts would
+        # otherwise fail the entry before the push that fixed it was ever seen,
+        # and a retry would stage the same stale head again (laazer/loregarden#879).
+        lease: str | None = None
+        if author_owns_head(entry):
+            lease = self._authors_head(entry)
+            if lease is None:
+                return False
         staged = self.cut(entry, message)
         if staged.verdict is MergeVerdict.CONFLICTED:
             return self._conflicted(entry, staged)
@@ -290,12 +298,6 @@ class MergeQueueLoop:
                 detail=f"whether it merges onto {entry.base_branch} could not be determined: "
                 f"{staged.detail}",
             )
-        lease: str | None = None
-        if author_owns_head(entry):
-            held = self._authors_head(entry)
-            if held is None:
-                return False
-            lease = held
         pushed = push_commit_as(
             self.repo_root, entry.pr_head_branch, staged.sha, base=entry.base_branch, lease=lease
         )
