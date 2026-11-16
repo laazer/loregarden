@@ -57,11 +57,9 @@ approval.
 
 ## Failure handling
 
-If the MCP tools error or the server is unreachable, the same tools also run in-process from
-Bash: `./scripts/loregarden-cli.sh mcp call <tool> key=value…` (`mcp list` / `mcp describe
-<tool>` for the arguments). Only if that also fails: log the error in your output and continue
-read-only work where possible. Do not invent workflow state — escalate via checkpoint protocol
-or block the ticket with a clear message.
+If the MCP tools error or the server is unreachable, run the same tool from Bash:
+`./scripts/loregarden-cli.sh mcp call <tool> key=value…` (`mcp describe <tool>` for arguments).
+If that fails too, see *When the control plane fails* below.
 <!-- /loregarden:transport -->
 
 <!-- loregarden:transport=cli -->
@@ -89,109 +87,42 @@ write because no MCP tool is listed.
 
 ## Failure handling
 
-If a call fails, read stderr and fix the invocation — exit `2` means the arguments were wrong,
-and `describe` lists the accepted ones. Only if the tool itself keeps failing: log the error in
-your output and continue read-only work where possible. Do not invent workflow state — escalate
-via checkpoint protocol or block the ticket with a clear message.
+If a call fails, read stderr and fix the invocation (exit `2`: `describe` lists the accepted
+arguments). If the tool itself keeps failing, see *When the control plane fails* below.
 <!-- /loregarden:transport -->
+
+## When the control plane fails
+
+Log the error in your output and continue read-only work where possible. Do not invent
+workflow state: escalate via checkpoint protocol or block the ticket with a clear message.
 
 ## Docker capacity — reserve before you start containers
 
-This machine has one Docker daemon and several agents that may want it at once. If you are
-about to run `docker compose up`, `docker run`, or a test suite that starts containers,
-**book the capacity first**. Nothing enforces this at the daemon; the ledger is only as
-accurate as the callers using it.
+One Docker daemon serves every agent on this machine, and nothing enforces sharing at the
+daemon. Before `docker compose up`, `docker run`, or a suite that starts containers, **book it**:
+`loregarden_reserve_docker_capacity holder_label="<ticket>: e2e suite" footprint=stack`
+(`light`/`service`/`stack`/`heavy`, or `cpus` + `memory_mb`). Its description has the full contract:
 
-```
-loregarden_reserve_docker_capacity holder_label="<ticket>: e2e suite" footprint=stack
-```
-
-`footprint` is `light`, `service`, `stack` or `heavy` — or pass `cpus` and `memory_mb`
-together if you know your own numbers. The reply's `state` is one of three, and they need
-three different responses:
-
-| `state` | What it means | What to do |
-|---|---|---|
-| `granted` | The capacity is yours | Start your containers. Note `lease_id` and `expires_at`. |
-| `queued` | The machine is full | **Do not start anything.** Wait `poll_after_seconds`, then poll `loregarden_docker_capacity_status` with your `lease_id`. Your place in line is kept. |
-| `rejected` | It will never be granted | Read `error_kind`: `exceeds_capacity` means ask for less; `docker_unavailable` means Docker is down. |
-
-Being queued is not a failure and not a reason to proceed anyway.
-
-A queued reply carries `estimated_wait_seconds` — how long the claims ahead of
-yours are expected to take, based on what leases have actually cost on this
-machine. It is `null` when there is no history to judge from; that means unknown,
-not "soon". `poll_after_seconds` is scaled to it, so **use the number you were
-given** rather than a loop of your own: it is a few seconds when the queue is
-about to move and a couple of minutes when it is not.
-
-Polling faster than that is refused. You still get the real state back — if your
-lease was granted in the meantime the reply says so — but the response carries
-`poll.throttled: true` and a `retry_after_seconds`, and nothing else advances.
-Reserving again instead of polling does not help either: an identical claim
-returns the place in line you already hold (`reused: true`), not a second one.
-
-Once your containers are up, call `loregarden_renew_docker_lease` with what you started:
-
-```
-loregarden_renew_docker_lease lease_id=<id> compose_project=<project>
-```
-
-That matters more than it looks. A lease that names nothing can only be reclaimed by its
-clock — so if your stage runs long, capacity you are still using can be handed to somebody
-else. A lease that names its containers is checked against Docker before anything is taken
-back. Renew again before `expires_at` for as long as you need it.
-
-**Release as soon as your containers are down:**
-
-```
-loregarden_release_docker_capacity lease_id=<id>
-```
-
-A lease left to expire holds capacity nobody is using until the reaper notices.
-
-**You do not need any of this if your stage declared a `docker_footprint`** — the
-orchestrator takes the lease around your whole run, and it is already held before your first
-turn. This is for containers you start outside that.
+- `granted`: start, and note `lease_id` and `expires_at`. `queued`: **start nothing**; poll
+  `loregarden_docker_capacity_status` after the `poll_after_seconds` you were given (faster polls
+  are throttled; reserving again returns the same place). Queued is not a failure, and a `null`
+  `estimated_wait_seconds` means unknown, not soon. `rejected`: read `error_kind`
+  (`exceeds_capacity`: ask for less; `docker_unavailable`: Docker is down).
+- Once up, `loregarden_renew_docker_lease lease_id=<id> compose_project=<project>`: a lease that
+  names its containers is checked against Docker before it is reclaimed; one that names nothing
+  can be handed away by its clock mid-run. Renew before `expires_at`.
+- **Release** (`loregarden_release_docker_capacity`) as soon as the containers are down.
+- Not needed if your stage declared a `docker_footprint`: the orchestrator already holds the lease.
 
 ## Reference docs (fetch-through cache)
 
-Two tools, and for framework or library docs they are a **two-step flow**: search for the page,
-then read the URL it gives you. Both go through one cache, so the raw HTML for a URL is fetched
-and extracted once and every later read — by a later stage, a later run, or a different agent —
-is served from that copy. WebFetch pays for it again every time.
-
-**Step 1 — find the page.** Do not guess a documentation URL; the guess is usually a 404 you
-pay for anyway.
-
-```
-tools/call loregarden_search_reference {"query": "useEffect", "docset": "react"}
-```
-
-Returns ranked entries with a `url` each, plus `total_matches` (uncapped, so you can tell
-"these are all of them" from "these are the first ten"). **Omit `docset` and you get
-suggestions instead of results** — that is the way to find the slug, not a failure. A name that
-matches several docsets (two Python releases share one) comes back as `docset_ambiguous` with
-candidates rather than a silent answer from the wrong release.
-
-**Step 2 — read it.** Pass a returned `url` straight through:
-
-```
-tools/call loregarden_fetch_reference {"url": "https://documents.devdocs.io/react/hooks/use_effect.html"}
-```
-
-`loregarden_fetch_reference` also takes any http(s) URL directly, which is what to use for a
-page outside DevDocs — a project's own docs, a changelog, an RFC.
-
-- **It never raises.** Every failure comes back as a payload that classifies itself: check
-  `error` for the reason and `cache` to tell a fresh copy from a served-stale one. A stale copy
-  is labelled rather than silently passed off as current.
-- **`refresh: true` only with a reason** to believe the page changed. It discards the saving,
-  which is the whole point of the tool.
-- **`max_chars` for a very long page.** Truncation affects only what you are handed, never what
-  is stored, so a later call can ask for more without re-fetching.
-- Only public http(s) addresses are reachable. Private, loopback and link-local addresses are
-  refused on every redirect hop, so this is not a way to reach an internal service.
+For framework or library docs: **search, then read** — never a guessed URL, never WebFetch.
+`loregarden_search_reference` (`query`, `docset`) returns ranked `url`s; omit `docset` to get
+docset suggestions, and `docset_ambiguous` lists candidates. Pass a returned `url` to
+`loregarden_fetch_reference`, which also takes any public http(s) URL (private addresses are
+refused). Pages are cached once for every later run. It never raises: read `error` and `cache`
+(a stale copy is labelled). `refresh: true` only with a reason to think the page changed;
+`max_chars` trims only what you are handed.
 
 ## Which tool for which situation
 

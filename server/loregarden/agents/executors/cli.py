@@ -26,6 +26,9 @@ from loregarden.agents.executors.run_evidence import (
 from loregarden.agents.executors.stage_turn import spawn_stage_turn
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
+    CONTROL_PLANE_MODULE_CAP,
+    MEMORY_PROTOCOL_MODULE_CAP,
+    UI_PRIMITIVES_MODULE_CAP,
     build_mcp_run_context,
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
@@ -1116,14 +1119,20 @@ class CliAgentExecutor:
             titled_block(
                 "## Loregarden control-plane module",
                 mcp_doc,
-                cap=12000,
+                cap=CONTROL_PLANE_MODULE_CAP,
                 truncations=truncations,
             ),
             titled_block(
-                "## Memory protocol module", memory_doc, cap=8000, truncations=truncations
+                "## Memory protocol module",
+                memory_doc,
+                cap=MEMORY_PROTOCOL_MODULE_CAP,
+                truncations=truncations,
             ),
             titled_block(
-                "## Chat UI primitives", ui_primitives_doc, cap=6000, truncations=truncations
+                "## Chat UI primitives",
+                ui_primitives_doc,
+                cap=UI_PRIMITIVES_MODULE_CAP,
+                truncations=truncations,
             ),
             [
                 "",
