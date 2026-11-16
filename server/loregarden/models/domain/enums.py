@@ -1478,3 +1478,12 @@ class RemovalOutcome(StrEnum):
     #: Every premise held, the removal failed, and the checkout is now under an
     #: unguessable name that only the reported path knows.
     PARKED = "parked"
+
+
+class StudioPromptMode(StrEnum):
+    """Which instructions close a Ticket Studio scoper prompt."""
+
+    CHAT = "chat"
+    CLARIFY = "clarify"
+    SCOPE = "scope"
+    SURVEY = "survey"
