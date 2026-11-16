@@ -8,10 +8,10 @@ import warnings
 from typing import Any
 
 import pytest
-from loregarden.mcp.ticket_edit_tools import blocked_by_summaries
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool, normalize_tool_arguments
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_state_payload import blocked_by_summaries
 from sqlmodel import Session, select
 
 
