@@ -13,7 +13,6 @@ import json
 from uuid import uuid4
 
 import pytest
-from loregarden.mcp.ticket_edit_tools import resolve_ticket_payload
 from loregarden.models.domain import (
     AgentRun,
     ClassifyRoute,
@@ -29,6 +28,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.stage_shape import current_stage_shape, describe_stage_shape
+from loregarden.services.ticket_state_payload import ticket_brief
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session
 
@@ -183,7 +183,7 @@ def test_the_shape_says_what_has_run(db_session, ticket):
 
 
 def test_get_ticket_carries_the_current_stage_shape(db_session, ticket):
-    payload = resolve_ticket_payload(db_session, ticket_id=ticket.id)
+    payload = ticket_brief(db_session, ticket)
 
     assert payload["current_stage_shape"] == current_stage_shape(db_session, ticket)
     assert payload["current_stage_shape"].startswith("script_review: parallel")
