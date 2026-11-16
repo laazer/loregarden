@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from pydantic import field_validator
@@ -15,9 +14,8 @@ from loregarden.services.path_resolve import (
 
 
 def _find_repo_root() -> Path:
-    env = os.environ.get("LOREGARDEN_REPO_ROOT")
-    if env:
-        return Path(env).resolve()
+    """The checkout this package sits in. `LOREGARDEN_REPO_ROOT` overrides it,
+    read by pydantic-settings into the field and resolved by its validator."""
     here = Path(__file__).resolve()
     for parent in [here, *here.parents]:
         if (parent / "agent_context").is_dir() and (parent / "server").is_dir():
@@ -261,6 +259,14 @@ class Settings(BaseSettings):
     # nothing ahead has finished for this long the gate reports UNAVAILABLE naming
     # who holds the line — never passes unexamined (services/capacity_line.py).
     gate_capacity_wait_seconds: float = 1800.0
+
+    @field_validator("repo_root")
+    @classmethod
+    def _absolute_repo_root(cls, value: Path) -> Path:
+        """Every data dir is joined onto this, and a detached agent's shell
+        resolves those paths against its own cwd, not the server's: a relative
+        root writes run output where the server never reads it."""
+        return value.expanduser().resolve()
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod

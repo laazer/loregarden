@@ -1,3 +1,6 @@
+import os
+from unittest import mock
+
 import pytest
 from loregarden import config
 from loregarden.services.claude_oauth_env import prime_claude_oauth_token_env
@@ -22,7 +25,7 @@ def test_prime_claude_oauth_token_env_loads_cached_token(tmp_path, monkeypatch):
         prime_claude_oauth_token_env(repo_root=tmp_path)
         == tmp_path / "data" / ".claude-oauth-token"
     )
-    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "a-clean-token"
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "a-clean-token"
 
 
 def _git(cwd, *args):
@@ -58,7 +61,7 @@ def test_prime_claude_oauth_token_env_reads_the_primary_checkout_from_a_worktree
     found = prime_claude_oauth_token_env(repo_root=worktree)
 
     assert found is not None and found.resolve() == primary / "data" / ".claude-oauth-token"
-    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-token"
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-token"
 
 
 def test_prime_claude_oauth_token_env_prefers_the_worktrees_own_token(
@@ -71,7 +74,7 @@ def test_prime_claude_oauth_token_env_prefers_the_worktrees_own_token(
 
     prime_claude_oauth_token_env(repo_root=worktree)
 
-    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "worktree-token"
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "worktree-token"
 
 
 def test_prime_claude_oauth_token_env_does_not_override_existing_env_var(tmp_path, monkeypatch):
@@ -79,7 +82,7 @@ def test_prime_claude_oauth_token_env_does_not_override_existing_env_var(tmp_pat
     _cache_token(tmp_path, "cached-token")
 
     assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
-    assert config.os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "already-set"
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "already-set"
 
 
 def test_prime_claude_oauth_token_env_ignores_malformed_cached_file(tmp_path, monkeypatch):
@@ -89,14 +92,14 @@ def test_prime_claude_oauth_token_env_ignores_malformed_cached_file(tmp_path, mo
     _cache_token(tmp_path, "garbled\n✳ output")
 
     assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in config.os.environ
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
 
 
 def test_prime_claude_oauth_token_env_noop_when_file_absent(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
     assert prime_claude_oauth_token_env(repo_root=tmp_path) is None
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in config.os.environ
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ
 
 
 def test_prime_cursor_api_key_env_loads_cached_key(tmp_path, monkeypatch):
@@ -111,7 +114,7 @@ def test_prime_cursor_api_key_env_loads_cached_key(tmp_path, monkeypatch):
     from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
 
     assert prime_cursor_api_key_env(repo_root=tmp_path) == "file"
-    assert config.os.environ["CURSOR_API_KEY"] == "cursor_test_key"
+    assert os.environ["CURSOR_API_KEY"] == "cursor_test_key"
 
 
 def test_prime_cursor_api_key_env_falls_back_to_ide_token(tmp_path, monkeypatch):
@@ -123,7 +126,7 @@ def test_prime_cursor_api_key_env_falls_back_to_ide_token(tmp_path, monkeypatch)
     from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
 
     assert prime_cursor_api_key_env(repo_root=tmp_path) == "ide"
-    assert config.os.environ["CURSOR_API_KEY"] == "ide_session_token"
+    assert os.environ["CURSOR_API_KEY"] == "ide_session_token"
 
 
 def test_prime_cursor_api_key_env_does_not_override_existing_env_var(tmp_path, monkeypatch):
@@ -134,7 +137,7 @@ def test_prime_cursor_api_key_env_does_not_override_existing_env_var(tmp_path, m
     from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
 
     assert prime_cursor_api_key_env(repo_root=tmp_path) == "env"
-    assert config.os.environ["CURSOR_API_KEY"] == "already-set"
+    assert os.environ["CURSOR_API_KEY"] == "already-set"
 
 
 def test_format_cli_auth_hint_for_cursor_headless():
@@ -222,3 +225,19 @@ def test_format_agent_unavailable_compacts_codex_mcp_noise():
     assert "JSON-RPC handshake" in msg or "JsonRpcMessage" in msg
     assert "prompt line" not in msg or msg.count("prompt line") <= 1
     assert len(msg) < 1200
+
+
+def test_a_relative_repo_root_from_the_environment_is_made_absolute(tmp_path, monkeypatch):
+    """pydantic-settings reads LOREGARDEN_REPO_ROOT straight into the field, past
+    the `.resolve()` in `_find_repo_root`. A relative root then made
+    `run_log_dir` relative too: a detached agent's shell wrote its `.out`/`.rc`
+    beside its own cwd, the server read them beside a different one, and every
+    run failed with "no reason recorded"."""
+    (tmp_path / "checkout").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    with mock.patch.dict(os.environ, {"LOREGARDEN_REPO_ROOT": "checkout"}):
+        loaded = config.Settings()
+
+    assert loaded.repo_root.is_absolute()
+    assert loaded.repo_root == (tmp_path / "checkout").resolve()
