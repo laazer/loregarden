@@ -112,6 +112,11 @@ class MemoryNodeNotFoundError(LookupError):
     """No graph node has this id in this workspace's shard."""
 
 
+class MemoryGraphNotConfiguredError(ValueError):
+    """This installation has no memory graph for the workspace: a setup state,
+    not a bad request. A ValueError, as it was before it had a name."""
+
+
 class MemoryWriteNotAppliedError(RuntimeError):
     """A write returned but the row read back does not carry it.
 
@@ -1178,10 +1183,10 @@ class AgentMemoryService:
         return result
 
     def require_graph(self, workspace_slug: str) -> MemoryGraphStore:
-        """The workspace's graph store; raises ValueError when none is configured."""
+        """The workspace's graph store; raises MemoryGraphNotConfiguredError when none is."""
         graph = self._graph_for_workspace(workspace_slug)
         if not graph:
-            raise ValueError("Memory graph SQLite is not configured.")
+            raise MemoryGraphNotConfiguredError("Memory graph SQLite is not configured.")
         return graph
 
     def list_graph_nodes(

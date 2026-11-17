@@ -24,7 +24,12 @@ from loregarden.config import settings
 from loregarden.models.domain import PrimaryCheckoutUse, Workspace
 from loregarden.services import workspace_integration as integration
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
-from loregarden.services.workspace_integration import Installer, InstallerError, InstallState
+from loregarden.services.workspace_integration import (
+    Installer,
+    InstallerError,
+    InstallerStatus,
+    InstallState,
+)
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -238,25 +243,32 @@ def check_repo(root: Path, scope: OrganizationScope, *, base: str = "") -> list[
 HOOK_CONFIG_FILE = "lefthook.yml"
 
 
+def install_guarded(workspace: Workspace, installer: Installer) -> InstallerStatus:
+    """Install or refresh one block, refusing to overwrite uncommitted edits to
+    the file it rewrites.
+
+    The one install path for an agent (`install_hooks`) and the page alike.
+    The hook installer rewrites `lefthook.yml`, so it refuses
+    (`DirtyPrimaryCheckoutError`) only when that file holds uncommitted edits,
+    and leaves unrelated work-in-progress alone (864).
+    """
+    if installer is Installer.HOOKS:
+        require_clean_checkout(
+            resolve_workspace_root(workspace),
+            use=PrimaryCheckoutUse.HOOK_INSTALL,
+            watching=(HOOK_CONFIG_FILE,),
+        )
+    return integration.install(workspace, installer)
+
+
 def hooks_result(workspace: Workspace, *, install: bool) -> CheckerResult:
-    if install:
-        # The installer rewrites this one file; refuse only if it holds
-        # uncommitted edits, and leave unrelated work-in-progress alone (864).
-        try:
-            require_clean_checkout(
-                resolve_workspace_root(workspace),
-                use=PrimaryCheckoutUse.HOOK_INSTALL,
-                watching=(HOOK_CONFIG_FILE,),
-            )
-        except DirtyPrimaryCheckoutError as exc:
-            return CheckerResult("hooks", ok=False, message=str(exc))
     try:
         status = (
-            integration.install(workspace, Installer.HOOKS)
+            install_guarded(workspace, Installer.HOOKS)
             if install
             else integration.installer_status(workspace, Installer.HOOKS)
         )
-    except InstallerError as exc:
+    except (DirtyPrimaryCheckoutError, InstallerError) as exc:
         return CheckerResult("hooks", ok=False, message=str(exc))
     return CheckerResult("hooks", ok=status.state is InstallState.CURRENT, message=status.detail)
 

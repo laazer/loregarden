@@ -19,9 +19,18 @@ from loregarden.mcp.operation_tools import OPERATION_TOOLS
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import _RUN_AWARE_HANDLERS, TOOL_DEFINITIONS, normalize_tool_arguments
-from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from loregarden.models.domain import (
+    AgentRun,
+    DockerLease,
+    DockerLeaseStatus,
+    RunStatus,
+    Ticket,
+)
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session
+
+#: A docker lease the smoke test seeds already released.
+SETTLED_LEASE_ID = "smoke-settled-lease"
 
 MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
 #: Every module that owns dispatch for some slice of the tool surface. tools.py
@@ -320,8 +329,10 @@ def _args_for(
         # `no_tab` failure payload rather than hanging or raising.
         "loregarden_list_ui_actions": {},
         "loregarden_invoke_ui_action": {"action": "navigate.page", "arguments": {"page": "queue"}},
+        # An unknown lease is an error for force release, so it names a lease
+        # seeded already settled: the call is wired up and releases nothing.
         "loregarden_force_release_docker_lease": {
-            "lease_id": "smoke-no-such-lease",
+            "lease_id": SETTLED_LEASE_ID,
             "reason": "smoke",
         },
         # hooks_status only reads: the smoke test must not rewrite a real repo's
@@ -454,15 +465,20 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     with Session(isolated_db) as session:
         seeded = session.get(Ticket, ticket_id)
         assert seeded is not None
-        session.add(
-            AgentRun(
-                run_code="smoke-run",
-                ticket_id=ticket_id,
-                workspace_id=seeded.workspace_id,
-                agent_id="planner",
-                stage_key=stage_key,
-                status=RunStatus.SUCCEEDED,
-            )
+        session.add_all(
+            [
+                AgentRun(
+                    run_code="smoke-run",
+                    ticket_id=ticket_id,
+                    workspace_id=seeded.workspace_id,
+                    agent_id="planner",
+                    stage_key=stage_key,
+                    status=RunStatus.SUCCEEDED,
+                ),
+                DockerLease(
+                    id=SETTLED_LEASE_ID, holder_label="smoke", status=DockerLeaseStatus.RELEASED
+                ),
+            ]
         )
         session.commit()
     detail = client.get(f"/api/tickets/{ticket_id}").json()

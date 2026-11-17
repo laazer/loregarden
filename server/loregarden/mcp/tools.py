@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from functools import partial
 from typing import Any
 
 from sqlmodel import Session
@@ -48,10 +47,7 @@ from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.research_tools import RESEARCH_TOOL_DEFINITIONS
 from loregarden.mcp.survey_tools import TOOL_DEFINITIONS as SURVEY_TOOL_DEFINITIONS
-from loregarden.mcp.ticket_edit_tools import (
-    execute_ticket_edit_tool,
-    normalize_update_ticket_args,
-)
+from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.ticket_ops_tools import (
     TICKET_OPS_TOOL_DEFINITIONS,
     execute_ticket_ops_tool,
@@ -79,18 +75,10 @@ from loregarden.models.domain import (
     ExternalHarness,
     HumanActionTier,
     MemoryRelationType,
-    WorkItemType,
 )
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
 )
-from loregarden.services.agent_ticket_filing import (
-    check_filing_budget,
-    filing_run,
-    place_finding,
-    record_filing,
-)
-from loregarden.services.discovered_work import record_discovery
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.operations import Caller, Transport
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -100,8 +88,6 @@ from loregarden.services.run_resolution import (
     attributed_agent_run_id,
     resolve_run_ref,
 )
-from loregarden.services.ticket_dependencies import resolve_prerequisites
-from loregarden.services.ticket_service import TicketService
 
 _ALIAS_MAP: dict[str, tuple[str, ...]] = {
     "ticket_id": ("ticketId", "id"),
@@ -905,8 +891,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Workspace slug (required — scopes note and graph DB)."
                 ),
                 "discredited": _boolean_prop(
-                    "If true, keep the node but drop it from every memory read path. "
-                    "Set false to restore it. Omit to leave the existing flag unchanged."
+                    "Omit it. A change to the flag needs a reason recorded in the node's "
+                    "history, which this tool does not carry, so a value that would change "
+                    "it is refused, naming where an operator makes the change."
                 ),
             },
             required=["title", "workspace_slug"],
@@ -1110,77 +1097,6 @@ TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(SURVEY_TOOL_DEFINITIONS)
 
 
-def _create_ticket(
-    session: Session,
-    svc: OrchestrationCallbackService,
-    arguments: dict[str, Any],
-    *,
-    orchestrated: bool,
-    run_id: str,
-) -> str:
-    """`parent` is resolved via `svc.resolve_ticket` — the same UUID/external_id
-    resolution `loregarden_get_ticket` uses — rather than a second lookup, so the two
-    never disagree. Deliberately not workspace-scoped here: TicketService.create_ticket
-    already rejects a parent from another workspace ("Parent work item not found in
-    workspace"), so scoping twice would only risk the two checks disagreeing."""
-    work_item_type_raw = arguments.get("work_item_type") or "task"
-    try:
-        work_item_type = WorkItemType(work_item_type_raw)
-    except ValueError as exc:
-        raise ValueError(f"Unknown work_item_type: {work_item_type_raw}") from exc
-
-    parent = (arguments.get("parent") or "").strip()
-    parent_ticket_id = None
-    if parent:
-        try:
-            parent_ticket_id = svc.resolve_ticket(ticket_id=parent).id
-        except ValueError as exc:
-            raise ValueError(f"Parent ticket not found: {parent}") from exc
-    prerequisites = resolve_prerequisites(session, arguments.get("depends_on") or [])
-
-    run = filing_run(session, run_id) if orchestrated else None
-    placed = ""
-    on_insert = None
-    if run is not None:
-        check_filing_budget(session, run)
-        on_insert = partial(record_discovery, session, run)
-        placement = place_finding(session, run, parent_ticket_id, work_item_type)
-        parent_ticket_id, work_item_type, placed = (
-            placement.parent_ticket_id,
-            placement.work_item_type,
-            placement.moved,
-        )
-
-    ticket = TicketService(session).create_ticket(
-        workspace_slug=arguments.get("workspace_slug"),
-        title=arguments["title"],
-        work_item_type=work_item_type,
-        parent_ticket_id=parent_ticket_id,
-        description=arguments.get("description", ""),
-        acceptance_criteria=arguments.get("acceptance_criteria") or [],
-        priority=arguments.get("priority", 3),
-        external_id=arguments.get("external_id", ""),
-        depends_on=prerequisites,
-        created_by="agent" if run is not None else "user",
-        on_insert=on_insert,
-    )
-    if run is not None:
-        record_filing(session, run, ticket)
-    return json.dumps(
-        {
-            "id": ticket.id,
-            "external_id": ticket.external_id,
-            # Echoed back so a caller that supplied an id of its own can see where
-            # it landed, rather than reading `external_id` and finding a different
-            # string than the one it sent.
-            "legacy_external_id": ticket.legacy_external_id,
-            "title": ticket.title,
-            **({"placed": placed} if placed else {}),
-        },
-        indent=2,
-    )
-
-
 def _decide_finding(
     session: Session, _svc, arguments: dict[str, Any], *, orchestrated: bool, run_id: str
 ) -> str:
@@ -1193,10 +1109,9 @@ def _settle_criterion(
     return settle_criterion_tool(session, arguments, orchestrated=orchestrated, run_id=run_id)
 
 
-#: Tools whose answer depends on which run is calling: who filed a ticket, and
-#: whether the caller is the stage that may decide a finding or settle a criterion.
+#: Tools whose answer depends on which run is calling: whether the caller is the
+#: stage that may decide a finding or settle a criterion.
 _RUN_AWARE_HANDLERS = {
-    "loregarden_create_ticket": _create_ticket,
     McpTool.DECIDE_FINDING.value: _decide_finding,
     McpTool.SETTLE_CRITERION.value: _settle_criterion,
 }
@@ -1244,14 +1159,8 @@ def execute_tool(
     if operation_reply is not None:
         return operation_reply
 
-    # The modules that own their own ticket tools, tried in one branch rather
-    # than one branch each: this chain is already well past the complexity cap,
-    # so a per-module `if` would tax the next tool anyone adds. Each returns None
-    # for a name it does not own, and a handler that runs always returns a
-    # non-empty JSON document, so `or` reads the same as an `is not None` chain.
-    delegated = execute_ticket_edit_tool(name, session, svc, arguments) or (
-        execute_ticket_ops_tool(name, session, svc, arguments)
-    )
+    # The module that owns its own ticket tools: None for a name it does not own.
+    delegated = execute_ticket_ops_tool(name, session, svc, arguments)
     if delegated is not None:
         return delegated
 

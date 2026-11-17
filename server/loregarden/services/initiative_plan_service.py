@@ -14,7 +14,6 @@ from the plan's dependency graph (`initiative_graph`).
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from datetime import date, datetime
@@ -411,8 +410,3 @@ def discard_proposal(session: Session, initiative_id: str, proposal_id: str) -> 
     session.add(proposal)
     session.commit()
     return plan_view(session, initiative.id)
-
-
-def plan_payload(view: InitiativePlanView) -> str:
-    """The plan as the planner agent reads it."""
-    return json.dumps(view.model_dump(mode="json"), indent=2)

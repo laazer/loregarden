@@ -85,12 +85,3 @@ class MergeQueueAction(StrEnum):
     WITHDRAW = "withdraw"
     #: Send a failed, timed-out or withdrawn entry to the back of the queue.
     RETRY = "retry"
-
-    @classmethod
-    def try_parse(cls, name: str) -> MergeQueueAction | None:
-        try:
-            return cls(name)
-        except (
-            ValueError
-        ):  # silent-ok: None is the caller's "unknown action" answer, which it raises on
-            return None

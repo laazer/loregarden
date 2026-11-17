@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     Approval,
@@ -17,14 +18,14 @@ from loregarden.services.approval_views import (
     approval_to_view,
 )
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
-from loregarden.services.orchestration import ApprovalService, OrchestrationService
+from loregarden.services.operations import OperationId
+from loregarden.services.orchestration import ApprovalService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import (
     PREPARED_ACTION_EVIDENCE_KIND,
     PreparedAction,
     run_prepared_action,
 )
-from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import ValidationError
 from sqlmodel import Session
@@ -151,6 +152,10 @@ def _runnable_human_action(
     workspace = workspace_for_ticket(session, ticket)
     if not workspace:
         raise HTTPException(400, "Ticket has no workspace")
+    if not (approval.stage_key or ticket.workflow_stage_key):
+        # Checked before the script runs: success lifts the block by requeueing
+        # a stage, and with none to requeue the run would answer nothing.
+        raise HTTPException(400, "Neither the card nor its ticket names a stage to requeue")
     return approval, action, ticket, workspace
 
 
@@ -197,15 +202,22 @@ def run_human_action(
             "ticket_state": ticket.state.value,
         }
 
+    # Resolving the card is this route's; lifting the block is a requeue, the
+    # same one an operator makes, so its reason is recorded and the state is
+    # not pinned. The requeue commits the card's approval with it.
     approval.status = ApprovalStatus.APPROVED
     session.add(approval)
-    ticket.blocking_issues = ""
-    if ticket.state is TicketState.BLOCKED:
-        choose(session, ticket, TicketState.IN_PROGRESS, actor="human", emit=False)
-    if approval.stage_key:
-        OrchestrationService(session).refresh_stage_retry_budget(ticket, approval.stage_key)
-    session.add(ticket)
-    session.commit()
+    run_rest_operation(
+        session,
+        OperationId.TICKET_REQUEUE,
+        {
+            "ticket_id": ticket.id,
+            "stage_key": approval.stage_key,
+            "reason": f"Human action ran: {action.command or action.script_path} "
+            f"(inbox card {approval.id})",
+            "state": TicketState.IN_PROGRESS,
+        },
+    )
     return {
         "ok": True,
         "exit_code": result.exit_code,

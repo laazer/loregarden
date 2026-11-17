@@ -16,8 +16,8 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.tool_ids import READ_ONLY_MCP_TOOLS, McpTool
+from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import (
     DiskCleanupEvent,
     DiskCleanupMethod,
@@ -38,6 +38,7 @@ from loregarden.services.disk_usage.scanner import (
     scan_roots,
 )
 from loregarden.services.git_subprocess import run_git
+from pydantic import ValidationError
 from sqlmodel import Session, select
 from tests.factories import make_agent_run, make_ticket, make_workspace
 
@@ -587,7 +588,7 @@ def test_the_tool_is_read_only_and_returns_names_and_sizes_only(isolated_db, tmp
     )
 
     with Session(isolated_db) as session:
-        answer = json.loads(disk_usage_tool(session, {}))
+        answer = json.loads(execute_tool(session, McpTool.DISK_USAGE.value, {}))
 
     assert McpTool.DISK_USAGE in READ_ONLY_MCP_TOOLS
     assert answer["tree"][0]["children"][0]["name"] == "secret.txt"
@@ -595,8 +596,8 @@ def test_the_tool_is_read_only_and_returns_names_and_sizes_only(isolated_db, tmp
 
 
 def test_the_tool_rejects_unknown_arguments(isolated_db) -> None:
-    with Session(isolated_db) as session, pytest.raises(ValueError, match="invalid arguments"):
-        disk_usage_tool(session, {"delete": "/"})
+    with Session(isolated_db) as session, pytest.raises(ValidationError, match="delete"):
+        execute_tool(session, McpTool.DISK_USAGE.value, {"delete": "/"})
 
 
 # --- API -------------------------------------------------------------------------

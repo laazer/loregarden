@@ -258,3 +258,18 @@ def test_release_names_an_unknown_lease_and_requires_a_reason(client, ceiling) -
     assert missing.status_code == 404
     blank = client.post("/api/docker/capacity/leases/nope/release", json={"reason": ""})
     assert blank.status_code == 422
+
+
+def test_a_reason_of_only_whitespace_is_refused_and_the_lease_kept(
+    client, isolated_db, ceiling
+) -> None:
+    """As an agent's call is: a reason nobody can read later is no reason."""
+    holder_id, _ = _hold_and_queue(isolated_db)
+
+    response = client.post(
+        f"/api/docker/capacity/leases/{holder_id}/release", json={"reason": "   "}
+    )
+
+    assert response.status_code == 422
+    with Session(isolated_db) as session:
+        assert session.get(DockerLease, holder_id).status is DockerLeaseStatus.HELD

@@ -14,6 +14,11 @@ one round trip beats three — and is clamped hard for exactly those reasons.
 Every payload is self-classifying: a refusal comes back with an `error_kind`
 rather than as an exception, because an agent that cannot tell "wait your turn"
 from "this will never fit" will do the wrong one of the two.
+
+The board (`docker_capacity_status`) and force release are operations, shared
+with the page's routes: see `services/operations/docker_capacity_operations.py`.
+Their schemas stay here with the rest of the family. Force release is an
+operator's act, not a queue state, so an unknown lease is an error there.
 """
 
 from __future__ import annotations
@@ -41,27 +46,18 @@ from loregarden.models.domain import (
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
-    DockerWaitBasis,
 )
 from loregarden.services.docker_board import capacity_status
 from loregarden.services.docker_capacity import CLASS_WEIGHTS, ClaimTooVague
 from loregarden.services.docker_leases import (
     REJECT_LEASE_NOT_HELD,
     REJECT_UNKNOWN_LEASE,
-    UnknownLease,
     drain_waiters,
-    force_release_lease,
     release_lease,
     renew_lease,
     reserve,
 )
 from loregarden.services.docker_ledger import as_utc
-from loregarden.services.docker_poll_guard import PollDecision, note_poll
-from loregarden.services.docker_wait_estimate import (
-    UNKNOWN_WAIT,
-    WaitEstimate,
-    poll_interval_for,
-)
 
 _FOOTPRINT_VALUES = [f.value for f in CLASS_WEIGHTS]
 
@@ -358,94 +354,5 @@ def release_docker_capacity_tool(session: Session, arguments: dict[str, Any]) ->
             "message": ("Released." if released else "Already settled; nothing to release."),
             "available": board["available"],
             "waiting": len(board["waiting"]),
-        }
-    )
-
-
-def docker_capacity_status_tool(session: Session, arguments: dict[str, Any]) -> str:
-    """The board, and the poll a queued caller uses.
-
-    Naming a `lease_id` marks this call as a poll, which is what gets the
-    back-pressure: a caller asking again inside the minimum interval is served
-    from the row it already has and told when to come back, without a promotion
-    pass. Skipping that delays nothing — the reconciliation timer runs it
-    regardless — and it is the difference between a retry loop costing a read
-    and one costing a write per iteration.
-    """
-    lease_id = arguments.get("lease_id") or ""
-    lease = session.get(DockerLease, lease_id) if lease_id else None
-
-    decision: PollDecision | None = None
-    if lease is not None:
-        decision = note_poll(session, lease)
-        if not decision.throttled:
-            # A served poll advances the queue for a caller that has no timer of
-            # its own — additive to the sweep, never a substitute for it.
-            drain_waiters(session)
-            session.refresh(lease)
-
-    board = capacity_status(session)
-    estimate = _waiting_estimate(board, lease_id) if lease_id else UNKNOWN_WAIT
-    if not arguments.get("include_waiting", True):
-        board.pop("waiting", None)
-
-    if lease_id:
-        board["lease"] = (
-            {"lease_id": lease_id, "found": False}
-            if lease is None
-            else {
-                "lease_id": lease.id,
-                "found": True,
-                "status": lease.status.value,
-                "position": lease.position or None,
-                **estimate.as_dict(),
-                "poll_after_seconds": poll_interval_for(estimate),
-                "expires_at": (as_utc(lease.expires_at).isoformat() if lease.expires_at else None),
-            }
-        )
-    if decision is not None:
-        board["poll"] = decision.as_dict()
-        if decision.throttled:
-            board["poll"]["message"] = (
-                "Polled again after less than "
-                f"{int(settings.docker_poll_min_interval_seconds)}s. The state below is "
-                f"current; wait {decision.retry_after_seconds}s before asking again."
-            )
-    return _dump(board)
-
-
-def _waiting_estimate(board: dict, lease_id: str) -> WaitEstimate:
-    """This lease's projected wait, read off the board rather than recomputed.
-
-    Recomputing would walk the queue a second time and could disagree with the
-    `waiting` list in the same payload — two numbers for one question is worse
-    than one imperfect number.
-    """
-    for entry in board.get("waiting", []):
-        if entry.get("lease_id") == lease_id:
-            return WaitEstimate(
-                seconds=entry.get("estimated_wait_seconds"),
-                basis=DockerWaitBasis(entry.get("estimate_basis", DockerWaitBasis.UNKNOWN.value)),
-            )
-    return UNKNOWN_WAIT
-
-
-def force_release_docker_lease_tool(session: Session, arguments: dict[str, Any]) -> str:
-    lease_id = arguments["lease_id"]
-    try:
-        released = force_release_lease(session, lease_id, reason=arguments["reason"])
-    except UnknownLease:
-        return _dump({"ok": False, "error_kind": REJECT_UNKNOWN_LEASE, "lease_id": lease_id})
-    return _dump(
-        {
-            "ok": True,
-            "released": released,
-            "lease_id": lease_id,
-            "reason": arguments["reason"],
-            "warning": (
-                "The ledger no longer accounts for this lease. Any containers it "
-                "started are still running — stop them yourself if they are stale."
-            ),
-            "available": capacity_status(session)["available"],
         }
     )

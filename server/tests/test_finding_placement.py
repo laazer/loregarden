@@ -16,7 +16,6 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
-from loregarden.mcp import tools
 from loregarden.mcp.discovery_tools import decide_finding_tool
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
@@ -33,6 +32,7 @@ from loregarden.services.finding_placement_checks import (
     follow_ups_under_their_source,
     unrecorded_children_of_a_run,
 )
+from loregarden.services.operations import ticket_writes
 from loregarden.services.scope_round import decide_finding
 from sqlmodel import Session, func, select
 from tests.test_discovered_work import family_fixture  # noqa: F401 - fixture used by name
@@ -99,7 +99,7 @@ def test_no_writer_creates_a_run_child_without_its_finding(db_session, family):
     filed = _create(db_session, run, parent=child, kind="bug")
     # A throw while writing the row leaves no ticket behind.
     with (
-        patch.object(tools, "record_discovery", side_effect=RuntimeError("boom")),
+        patch.object(ticket_writes, "record_discovery", side_effect=RuntimeError("boom")),
         pytest.raises(RuntimeError),
     ):
         _create(db_session, run, parent=parent, kind="bug")
@@ -118,7 +118,7 @@ def test_no_writer_creates_a_run_child_without_its_finding(db_session, family):
 def test_a_throw_relating_the_filing_leaves_no_orphan_ticket(db_session, family):
     parent, child, run = family
     with (
-        patch.object(tools, "record_filing", side_effect=RuntimeError("boom")),
+        patch.object(ticket_writes, "record_filing", side_effect=RuntimeError("boom")),
         pytest.raises(RuntimeError),
     ):
         _create(db_session, run, parent=parent, kind="bug")

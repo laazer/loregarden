@@ -1,8 +1,11 @@
-"""The initiative planner's two MCP tools: read a plan, propose a schedule.
+"""The initiative planner's MCP tools: read a plan, propose a schedule, drive
+the autopilot.
 
 Own module, like `doctor_tool`, so `mcp/tools.py` stops growing. The planner
 never writes targets: `loregarden_propose_initiative_schedule` files a pending
-proposal that a person accepts on the Initiatives page.
+proposal that a person accepts on the Initiatives page. Every tool here but
+that one runs as an operation (`services/operations/initiatives.py`); this
+holds their schemas.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ from sqlmodel import Session, SQLModel, select
 
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
-    AutopilotUpdate,
     ProposalSource,
     ScheduleMode,
     ScheduleProposalCreate,
@@ -23,17 +25,7 @@ from loregarden.models.domain import (
     Ticket,
     WorkItemType,
 )
-from loregarden.services.initiative_autopilot import (
-    mark_needs_person,
-    run_autopilot,
-    set_autopilot,
-    start_ready_work,
-)
-from loregarden.services.initiative_plan_service import (
-    plan_payload,
-    plan_view,
-    propose_schedule,
-)
+from loregarden.services.initiative_plan_service import propose_schedule
 
 INITIATIVE_PROP = {
     "type": "string",
@@ -173,31 +165,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 _Request = TypeVar("_Request", bound=SQLModel)
 
 
-class _AutopilotRequest(SQLModel):
-    model_config = ConfigDict(extra="forbid")
-
-    initiative_id: str
-    enabled: bool | None = None
-    max_parallel: int | None = None
-
-
-class _TicketsRequest(SQLModel):
-    model_config = ConfigDict(extra="forbid")
-
-    initiative_id: str
-    ticket_ids: list[str]
-
-
-class _NeedsPersonRequest(_TicketsRequest):
-    needs_person: bool = True
-
-
-class _PlanRequest(SQLModel):
-    model_config = ConfigDict(extra="forbid")
-
-    initiative_id: str
-
-
 class _ProposeRequest(SQLModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -231,22 +198,6 @@ def resolve_initiative_id(session: Session, ref: str) -> str:
     return match
 
 
-def resolve_plan_root_id(session: Session, ref: str) -> str:
-    """Like `resolve_initiative_id`, for any ticket a plan can be rooted at."""
-    ref = ref.strip()
-    if session.get(Ticket, ref) is not None:
-        return ref
-    match = session.exec(select(Ticket.id).where(Ticket.external_id == ref)).first()
-    if match is None:
-        raise ValueError(f"Ticket not found: {ref}")
-    return match
-
-
-def get_initiative_plan(session: Session, arguments: dict[str, Any]) -> str:
-    request = _parse(_PlanRequest, McpTool.GET_INITIATIVE_PLAN, arguments)
-    return plan_payload(plan_view(session, resolve_initiative_id(session, request.initiative_id)))
-
-
 def propose_initiative_schedule(session: Session, arguments: dict[str, Any]) -> str:
     request = _parse(_ProposeRequest, McpTool.PROPOSE_INITIATIVE_SCHEDULE, arguments)
     initiative_id = resolve_initiative_id(session, request.initiative_id)
@@ -261,46 +212,6 @@ def propose_initiative_schedule(session: Session, arguments: dict[str, Any]) -> 
     )
 
 
-def set_initiative_autopilot(session: Session, arguments: dict[str, Any]) -> str:
-    request = _parse(_AutopilotRequest, McpTool.SET_INITIATIVE_AUTOPILOT, arguments)
-    initiative_id = resolve_plan_root_id(session, request.initiative_id)
-    try:
-        update = AutopilotUpdate(enabled=request.enabled, max_parallel=request.max_parallel)
-    except ValidationError as exc:
-        raise ValueError(
-            f"invalid arguments for {McpTool.SET_INITIATIVE_AUTOPILOT.value}: {exc}"
-        ) from exc
-    try:
-        plan = set_autopilot(session, initiative_id, update, actor="planner")
-    except LookupError as exc:
-        raise ValueError(str(exc)) from exc
-    queued = run_autopilot(session, initiative_id) if plan.autopilot else 0
-    return json.dumps(
-        {"enabled": plan.autopilot, "max_parallel": plan.max_parallel, "queued_now": queued}
-    )
-
-
-def start_initiative_work(session: Session, arguments: dict[str, Any]) -> str:
-    request = _parse(_TicketsRequest, McpTool.START_INITIATIVE_WORK, arguments)
-    initiative_id = resolve_initiative_id(session, request.initiative_id)
-    return json.dumps(
-        start_ready_work(session, initiative_id, request.ticket_ids, actor="planner"), indent=2
-    )
-
-
-def mark_needs_person_tool(session: Session, arguments: dict[str, Any]) -> str:
-    request = _parse(_NeedsPersonRequest, McpTool.MARK_NEEDS_PERSON, arguments)
-    initiative_id = resolve_initiative_id(session, request.initiative_id)
-    changed = mark_needs_person(
-        session, initiative_id, request.ticket_ids, needs_person=request.needs_person
-    )
-    return json.dumps({"changed": changed, "needs_person": request.needs_person})
-
-
 HANDLERS = {
-    McpTool.GET_INITIATIVE_PLAN.value: get_initiative_plan,
     McpTool.PROPOSE_INITIATIVE_SCHEDULE.value: propose_initiative_schedule,
-    McpTool.SET_INITIATIVE_AUTOPILOT.value: set_initiative_autopilot,
-    McpTool.START_INITIATIVE_WORK.value: start_initiative_work,
-    McpTool.MARK_NEEDS_PERSON.value: mark_needs_person_tool,
 }

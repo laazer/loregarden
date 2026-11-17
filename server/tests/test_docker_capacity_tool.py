@@ -317,3 +317,14 @@ def test_every_stage_agent_is_offered_the_tools_the_prompt_documents() -> None:
         "force-release must not be handed to every stage; it can take capacity "
         "from work that is still running"
     )
+
+
+def test_force_release_of_an_unknown_lease_is_an_error(client) -> None:
+    """The page answers 404; an agent must not get an `ok` it could misread."""
+    response = call_mcp(
+        client,
+        McpTool.FORCE_RELEASE_DOCKER_LEASE.value,
+        {"lease_id": "no-such-lease", "reason": "owner is gone"},
+    )
+    assert response["result"]["isError"] is True
+    assert "no-such-lease" in response["result"]["content"][0]["text"]

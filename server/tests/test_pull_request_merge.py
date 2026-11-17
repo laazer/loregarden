@@ -11,6 +11,8 @@ import subprocess
 from unittest import mock
 
 import pytest
+from fastapi import HTTPException
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.mcp.tool_ids import AUTO_APPROVED_MCP_TOOLS, ORCHESTRATED_DENIED_MCP_TOOLS, McpTool
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
@@ -23,6 +25,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import pull_request_merge, ticket_pull_request
 from loregarden.services.branch_names import resolve_ticket_branch
+from loregarden.services.operations import OperationId
 from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.pull_request_merge import MergeFailed, MergeRefused, merge_and_clean_up
 from sqlmodel import Session, select
@@ -351,6 +354,47 @@ def test_an_agent_is_refused_what_a_person_would_be(session, workspace, ticket, 
     fake = github(FakeGitHub(_pr(mergeStateStatus="BLOCKED")))
     with pytest.raises(ValueError, match="cannot merge yet"):
         _mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA})
+    assert not fake.did("pr", "merge")
+
+
+def test_an_agents_failed_merge_is_an_error_not_a_refusal(session, workspace, ticket, github):
+    """GitHub was asked and did not merge: the agent gets an error of its own
+    kind, not the `ValueError` a refusal (nothing attempted) carries."""
+    github(FakeGitHub(_pr(), merge_exit=1))
+    with pytest.raises(MergeFailed, match="merge refused by test"):
+        _mcp(session, {"ticket_id": "lg-1", "number": 7, "head_sha": SHA})
+
+
+@pytest.mark.parametrize(
+    ("fake", "status"),
+    [
+        (FakeGitHub(_pr(mergeStateStatus="BLOCKED")), 409),
+        (FakeGitHub(_pr(), merge_exit=1), 502),
+    ],
+    ids=["refused", "failed"],
+)
+def test_the_page_reads_a_refusal_and_a_failure_apart(
+    session, workspace, ticket, github, fake, status
+):
+    github(fake)
+    with pytest.raises(HTTPException) as answered:
+        run_rest_operation(
+            session,
+            OperationId.TICKET_PULL_REQUEST_MERGE,
+            {"ticket_id": ticket.id, "number": 7, "head_sha": SHA},
+        )
+    assert answered.value.status_code == status
+
+
+def test_the_page_is_never_merged_at_a_head_it_did_not_show(session, workspace, ticket, github):
+    """An agent's empty head means "as it stands"; the page's never does."""
+    fake = github(FakeGitHub(_pr()))
+    with pytest.raises(HTTPException):
+        run_rest_operation(
+            session,
+            OperationId.TICKET_PULL_REQUEST_MERGE,
+            {"ticket_id": ticket.id, "number": 7, "head_sha": ""},
+        )
     assert not fake.did("pr", "merge")
 
 

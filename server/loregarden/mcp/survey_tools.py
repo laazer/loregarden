@@ -1,6 +1,9 @@
 """MCP tools for the reference survey (`services.reference_survey`).
 
-Four tools, each with an `action`, registered in `tool_registry.EXTENDED_TOOLS`:
+Four tools, each with an `action`. Three are registered in
+`tool_registry.EXTENDED_TOOLS`; the queue is an operation shared with the
+reference library's routes (`services/operations/survey_queue.py`), and only its
+schema is here:
 
 - `loregarden_survey_queue` — propose a source, list the queue, request a
   continuation or scoped pass, read a source's whole record or its coverage.
@@ -23,7 +26,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, Json, TypeAdapter
 from sqlmodel import Session
 
-from loregarden.mcp.tool_args import coerce_mapping, coerce_optional_bool, coerce_string_list
+from loregarden.mcp.tool_args import coerce_mapping, coerce_string_list
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
     boolean_prop,
@@ -45,22 +48,13 @@ from loregarden.models.domain.survey_enums import (
     SurveySourceKind,
 )
 from loregarden.models.domain.work_item_types import WorkItemType
-from loregarden.services.reference_survey import passes, queue, record, report
-from loregarden.services.reference_survey.discovery import enqueue_found
-from loregarden.services.reference_survey.errors import SurveyError
-from loregarden.services.reference_survey.initiatives import link_initiative, unlink_initiative
-from loregarden.services.reference_survey.library import library_row
-from loregarden.services.reference_survey.rereview import set_excluded
-from loregarden.services.reference_survey.research_library import link_enqueued
-from loregarden.services.reference_survey.schedule import ReviewNowIn, review_now
+from loregarden.services.reference_survey import passes, record, report
 from loregarden.services.reference_survey.schemas import (
     EvidenceIn,
     FindingIn,
     PassFinishIn,
-    PassRequestIn,
     ReadIn,
     RetractIn,
-    SourceIn,
     TicketWriteIn,
     UnknownOpenIn,
     UnknownUpdateIn,
@@ -69,7 +63,6 @@ from loregarden.services.reference_survey.ticket_writer import (
     publish_retraction,
     write_findings_to_ticket,
 )
-from loregarden.services.reference_survey.upstream import check_upstream_by_id
 
 
 def _values(enum: type) -> list[str]:
@@ -357,87 +350,6 @@ def _dump(payload: Any) -> str:
 Handler = Callable[[Session, dict[str, Any]], Any]
 
 
-def _enqueue(session: Session, args: dict[str, Any]) -> dict:
-    body = _model(SourceIn, args)
-    enqueued = (
-        enqueue_found(session, body, args["discovery_id"])
-        if args.get("discovery_id")
-        else queue.enqueue_source(session, body)
-    )
-    if args.get("research_question_id"):
-        link_enqueued(session, enqueued.source.id, args["research_question_id"])
-    return {
-        "ok": True,
-        "source_id": enqueued.source.id,
-        "status": enqueued.source.status.value,
-        "approval_id": enqueued.source.approval_id,
-        "workspaces_attached": enqueued.attached,
-        "scoped_pass_id": enqueued.scoped_pass.id if enqueued.scoped_pass else None,
-    }
-
-
-def _list(session: Session, args: dict[str, Any]) -> dict:
-    workspace_id = (
-        report.workspace_id_for(session, args["workspace_slug"])
-        if args.get("workspace_slug")
-        else None
-    )
-    return {
-        "queue": queue.queue_listing(
-            session, workspace_id=workspace_id, limit=args.get("limit") or 50
-        )
-    }
-
-
-def _request_pass(session: Session, args: dict[str, Any]) -> dict:
-    survey_pass = queue.request_pass(session, _model(PassRequestIn, args))
-    return {"ok": True, "pass_id": survey_pass.id, "ordinal": survey_pass.ordinal}
-
-
-def _link(session: Session, args: dict[str, Any]) -> dict:
-    result = link_initiative(session, args["source_id"], args["initiative_id"], actor="agent")
-    return result.model_dump()
-
-
-def _check_upstream(session: Session, args: dict[str, Any]) -> dict:
-    row = library_row(session, check_upstream_by_id(session, args["source_id"]))
-    return row.model_dump(mode="json")
-
-
-def _review_now(session: Session, args: dict[str, Any]) -> dict:
-    body = ReviewNowIn(question=args.get("question") or "", reason=args.get("queued_reason") or "")
-    return review_now(session, args["source_id"], body).model_dump()
-
-
-def _set_auto_rereview(session: Session, args: dict[str, Any]) -> dict:
-    if "excluded" not in args:
-        raise SurveyError(
-            "set_auto_rereview needs `excluded`: true to take the source out, false to put it back"
-        )
-    source = set_excluded(
-        session, args["source_id"], excluded=coerce_optional_bool(args["excluded"])
-    )
-    return library_row(session, source).model_dump(mode="json")
-
-
-def _unlink(session: Session, args: dict[str, Any]) -> dict:
-    return unlink_initiative(session, args["source_id"], args["initiative_id"]).model_dump()
-
-
-_QUEUE: dict[SurveyQueueAction, Handler] = {
-    SurveyQueueAction.ENQUEUE: _enqueue,
-    SurveyQueueAction.LIST: _list,
-    SurveyQueueAction.REQUEST_PASS: _request_pass,
-    SurveyQueueAction.STATUS: lambda s, a: report.source_status(s, a["source_id"]),
-    SurveyQueueAction.COVERAGE: lambda s, a: passes.coverage_report(s, a["source_id"]),
-    SurveyQueueAction.LINK_INITIATIVE: _link,
-    SurveyQueueAction.UNLINK_INITIATIVE: _unlink,
-    SurveyQueueAction.CHECK_UPSTREAM: _check_upstream,
-    SurveyQueueAction.REVIEW_NOW: _review_now,
-    SurveyQueueAction.SET_AUTO_REREVIEW: _set_auto_rereview,
-}
-
-
 def _reads(session: Session, args: dict[str, Any]) -> dict:
     reads = _READS.validate_python(args.get("reads") or [])
     if not reads:
@@ -530,10 +442,6 @@ def _dispatch(
     return _dump(table[action](session, args))
 
 
-def survey_queue_tool(session: Session, arguments: dict[str, Any]) -> str:
-    return _dispatch(_QUEUE, SurveyQueueAction, session, arguments)
-
-
 def survey_pass_tool(session: Session, arguments: dict[str, Any]) -> str:
     return _dispatch(_PASS, SurveyPassAction, session, arguments)
 
@@ -547,7 +455,6 @@ def survey_write_tool(session: Session, arguments: dict[str, Any]) -> str:
 
 
 HANDLERS = {
-    McpTool.SURVEY_QUEUE.value: survey_queue_tool,
     McpTool.SURVEY_PASS.value: survey_pass_tool,
     McpTool.SURVEY_RECORD.value: survey_record_tool,
     McpTool.SURVEY_WRITE.value: survey_write_tool,

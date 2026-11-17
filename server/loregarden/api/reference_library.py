@@ -1,22 +1,22 @@
 """The reference library: the survey record for the Memory section.
 
-Reads, plus the writes a person makes here: proposing a source (it still waits
-for its admission card in the inbox), reviewing one now, and linking an
-initiative so the source's open tickets join it. Agents do the same through
-`loregarden_survey_queue`; every other write to the record goes through the
-survey's MCP tools.
+Reads, plus the writes a person makes here: adding a source (a person adding
+it is its admission, so no inbox card is filed), reviewing one now, and linking
+an initiative so the source's open tickets join it. Those writes and
+`loregarden_survey_queue` are one operation (`operations/survey_queue.py`); an
+agent's proposal still waits for its admission card. Every other write to the
+record goes through the survey's MCP tools.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
+from loregarden.models.domain.survey_enums import SurveyQueueAction
 from loregarden.models.domain.survey_tables import SurveySource
-from loregarden.services.reference_survey.areas import (
-    link_picks,
-    resolve_picks,
-    with_area_workspaces,
-)
+from loregarden.services.operations import OperationId
+from loregarden.services.operations.survey_queue import AddSourceResult
 from loregarden.services.reference_survey.bulk import BulkAddItem, enqueue_many
 from loregarden.services.reference_survey.discovery import (
     DiscoveryIn,
@@ -28,9 +28,7 @@ from loregarden.services.reference_survey.initiatives import (
     LinkResult,
     UnlinkResult,
     follow,
-    link_initiative,
     resolve_initiatives,
-    unlink_initiative,
 )
 from loregarden.services.reference_survey.library import (
     LibraryDetail,
@@ -50,14 +48,11 @@ from loregarden.services.reference_survey.rereview import (
     RereviewSettingsIn,
     RereviewSettingsView,
     save_settings,
-    set_excluded,
     settings_view,
 )
-from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult, review_now
+from loregarden.services.reference_survey.schedule import ReviewNowIn, ReviewNowResult
 from loregarden.services.reference_survey.schemas import BulkSourceIn, SourceIn
 from loregarden.services.reference_survey.topics import TopicView, topic_list
-from loregarden.services.reference_survey.upstream import check_upstream_by_id
-from loregarden.services.ticket_ids import TicketNotFound
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -81,48 +76,27 @@ def list_library(workspace_slug: str, session: Session = Depends(get_session)) -
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-class AddSourceResult(BaseModel):
-    source: LibraryRow
-    #: Workspaces this call added to the source (empty when it already served them all).
-    attached: list[str]
-    #: A scoped pass was queued because a surveyed source gained a workspace.
-    scoped_pass: int | None
-    #: Initiatives now following the source, by external id.
-    initiatives_linked: list[str]
+def _already_refused(exc: AlreadyRefused) -> HTTPException:
+    # Structured, so the form can link the source it names.
+    return HTTPException(status_code=409, detail={"message": str(exc), "source_id": exc.source_id})
+
+
+#: The statuses these routes always gave the survey's refusals.
+_NOT_FOUND = {SurveyNotFound: refusal(404)}
+_INVALID = {**_NOT_FOUND, SurveyError: refusal(422)}
 
 
 @router.post("/sources", response_model=AddSourceResult)
 def add_source(body: SourceIn, session: Session = Depends(get_session)) -> AddSourceResult:
-    """Propose a repository or site. A new one waits for its admission card in the
-    inbox; a known one gains the workspaces, as `loregarden_survey_queue` does."""
-    try:
-        return _added(session, body)
-    except SurveyNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except AlreadyRefused as exc:
-        # Structured, so the form can link the source it names.
-        raise HTTPException(
-            status_code=409, detail={"message": str(exc), "source_id": exc.source_id}
-        ) from exc
-    except SurveyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-def _added(session: Session, body: SourceIn) -> AddSourceResult:
-    initiatives = resolve_initiatives(session, body.initiative_ids)
-    picks = resolve_picks(session, body.areas)
-    body = body.model_copy(
-        update={"workspace_slugs": with_area_workspaces(body.workspace_slugs, picks)}
-    )
-    # A person adding it here is its admission: no inbox card (see enqueue_source).
-    added = enqueue_source(session, body, admitted=True)
-    linked = follow(session, added.source.id, initiatives, actor="operator")
-    link_picks(session, added.source.id, picks)
-    return AddSourceResult(
-        source=library_row(session, added.source),
-        attached=added.attached,
-        scoped_pass=added.scoped_pass.ordinal if added.scoped_pass else None,
-        initiatives_linked=[link.initiative for link in linked],
+    """Add a repository or site. A person adding it here is its admission, so a new
+    one is queued with no inbox card; a known one gains the workspaces, as
+    `loregarden_survey_queue` enqueue does (where an agent's proposal does wait
+    for its card)."""
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {"action": SurveyQueueAction.ENQUEUE, **body.model_dump()},
+        refusals={**_INVALID, AlreadyRefused: _already_refused},
     )
 
 
@@ -264,12 +238,20 @@ def review_source_now(
 ) -> ReviewNowResult:
     """Put the source first in line and dispatch its pass now, unless the pass limit,
     a sandbox or a missing carrier parent holds it (then `waiting` says which)."""
-    try:
-        return review_now(session, source_id, body)
-    except SurveyNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except SurveyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {
+            "action": SurveyQueueAction.REVIEW_NOW,
+            "source_id": source_id,
+            "question": body.question,
+            "queued_reason": body.reason,
+            "workspace_slugs": body.workspace_slugs,
+            "initiative_ids": body.initiative_ids,
+            "only_for": body.only_for,
+        },
+        refusals={**_NOT_FOUND, SurveyError: refusal(409)},
+    )
 
 
 @router.get("/{source_id}", response_model=LibraryDetail)
@@ -287,12 +269,16 @@ def link(
     source_id: str, body: LinkInitiativeRequest, session: Session = Depends(get_session)
 ) -> LinkResult:
     """Link an initiative; the source's open tickets join it, now and as passes add more."""
-    try:
-        return link_initiative(session, source_id, body.initiative_id, actor="operator")
-    except (SurveyNotFound, TicketNotFound) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except SurveyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {
+            "action": SurveyQueueAction.LINK_INITIATIVE,
+            "source_id": source_id,
+            "initiative_id": body.initiative_id,
+        },
+        refusals=_INVALID,
+    )
 
 
 @router.delete("/{source_id}/initiatives/{initiative_id}", response_model=UnlinkResult)
@@ -300,22 +286,28 @@ def unlink(
     source_id: str, initiative_id: str, session: Session = Depends(get_session)
 ) -> UnlinkResult:
     """Remove the link, and the memberships only this link added."""
-    try:
-        return unlink_initiative(session, source_id, initiative_id)
-    except (SurveyNotFound, TicketNotFound) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except SurveyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {
+            "action": SurveyQueueAction.UNLINK_INITIATIVE,
+            "source_id": source_id,
+            "initiative_id": initiative_id,
+        },
+        refusals=_INVALID,
+    )
 
 
 @router.post("/{source_id}/check-upstream", response_model=LibraryRow)
 def check_upstream(source_id: str, session: Session = Depends(get_session)) -> LibraryRow:
     """Read the repository's newest commit now. A check that cannot answer still
     returns 200 with the reason in `upstream_check_error`: the row is the answer."""
-    try:
-        return library_row(session, check_upstream_by_id(session, source_id))
-    except SurveyNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {"action": SurveyQueueAction.CHECK_UPSTREAM, "source_id": source_id},
+        refusals=_NOT_FOUND,
+    )
 
 
 @router.put("/{source_id}/auto-rereview", response_model=LibraryRow)
@@ -323,7 +315,13 @@ def exclude_from_auto_rereview(
     source_id: str, body: AutoRereviewExclusion, session: Session = Depends(get_session)
 ) -> LibraryRow:
     """Take the source out of auto re-review (withdrawing a queued re-review), or put it back."""
-    try:
-        return library_row(session, set_excluded(session, source_id, excluded=body.excluded))
-    except SurveyNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.SURVEY_QUEUE,
+        {
+            "action": SurveyQueueAction.SET_AUTO_REREVIEW,
+            "source_id": source_id,
+            "excluded": body.excluded,
+        },
+        refusals=_NOT_FOUND,
+    )

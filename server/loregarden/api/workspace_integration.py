@@ -11,39 +11,23 @@ the same block as a pull request against the repository's default branch. Agents
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import Workspace
 from loregarden.services import workspace_integration as integration
 from loregarden.services.change_pr import ChangeOutcome, ChangePrError
 from loregarden.services.git_subprocess import GhAccountUnavailable, configured_gh_token
+from loregarden.services.operations import OperationId
+from loregarden.services.operations.organization_operations import WorkspaceIntegrationView
 from loregarden.services.organization_gate_service import UnknownWorkspaceError, workspace_for_slug
 from loregarden.services.workspace_integration import (
     Installer,
     InstallerError,
-    InstallerStatus,
-    InstallState,
 )
-from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel
 from sqlmodel import Session
 
 router = APIRouter(prefix="/workspace-integration", tags=["instances"])
-
-
-class InstallerView(BaseModel):
-    installer: Installer
-    state: InstallState
-    detail: str
-
-
-class WorkspaceIntegrationView(BaseModel):
-    slug: str
-    repo_root: str
-    installers: list[InstallerView]
-
-
-def _installer_view(found: InstallerStatus) -> InstallerView:
-    return InstallerView(installer=found.installer, state=found.state, detail=found.detail)
 
 
 def _workspace(session: Session, slug: str) -> Workspace:
@@ -53,34 +37,24 @@ def _workspace(session: Session, slug: str) -> Workspace:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
-def _view(workspace: Workspace) -> WorkspaceIntegrationView:
-    return WorkspaceIntegrationView(
-        slug=workspace.slug,
-        repo_root=str(resolve_workspace_root(workspace)),
-        installers=[
-            _installer_view(integration.installer_status(workspace, installer))
-            for installer in Installer
-        ],
-    )
-
-
 @router.get("/{slug}", response_model=WorkspaceIntegrationView)
 def workspace_integration(
     slug: str, session: Session = Depends(get_session)
 ) -> WorkspaceIntegrationView:
-    return _view(_workspace(session, slug))
+    return run_rest_operation(session, OperationId.WORKSPACE_INTEGRATION, {"slug": slug})
 
 
 @router.post("/{slug}/{installer}", response_model=WorkspaceIntegrationView)
 def install_into_workspace(
     slug: str, installer: Installer, session: Session = Depends(get_session)
 ) -> WorkspaceIntegrationView:
-    workspace = _workspace(session, slug)
-    try:
-        integration.install(workspace, installer)
-    except InstallerError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return _view(workspace)
+    """409 when the installer cannot run here; 400 when the hook installer would
+    overwrite uncommitted edits to the workspace's lefthook.yml."""
+    return run_rest_operation(
+        session,
+        OperationId.WORKSPACE_INTEGRATION_INSTALL,
+        {"slug": slug, "installer": installer},
+    )
 
 
 class InstallPullRequestView(BaseModel):

@@ -28,14 +28,12 @@ import json
 from unittest.mock import patch
 
 import pytest
-from loregarden.mcp.ticket_edit_tools import (
-    _collect_update_fields,
-    normalize_update_ticket_args,
-)
+from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.tool_args import coerce_optional_bool
 from loregarden.mcp.tools import TOOL_DEFINITIONS
 from loregarden.models.domain import Ticket, UpdateTicketRequest
 from loregarden.models.domain.schemas import TicketPatchRequest
+from loregarden.services.operations.ticket_writes import TicketUpdateArgs, collect_update_fields
 from pydantic import ValidationError
 from tests.mcp_helpers import call_mcp
 
@@ -138,7 +136,7 @@ def test_omitting_the_token_patches_exactly_as_today(client) -> None:
     """No token, no claim — so no system caller can be made to fail on contention."""
     ticket = _ticket(client)
 
-    with patch("loregarden.api.tickets.guard_ticket_revision") as guard:
+    with patch("loregarden.services.operations.ticket_writes.guard_ticket_revision") as guard:
         res = client.patch(f"/api/tickets/{ticket['id']}", json={"title": "Renamed, unguarded"})
 
     assert res.status_code == 200, res.text
@@ -246,14 +244,15 @@ def test_the_normalizer_omits_the_token_when_it_is_not_supplied() -> None:
 
 
 def test_the_token_never_becomes_an_update_field() -> None:
-    """It must not reach `_collect_update_fields` or `UpdateTicketRequest`.
+    """It must not reach `collect_update_fields` or `UpdateTicketRequest`.
 
     If it did, `{ticket_id, expected_revision}` would stop being a no-op and
     become a legal write that burns a revision and changes nothing.
     """
     ticket = Ticket(workspace_id="w", title="t")
 
-    fields = _collect_update_fields(ticket, {"ticket_id": "lg-x-1", "expected_revision": 3})
+    args = TicketUpdateArgs(ticket_id="lg-x-1", expected_revision=3)
+    fields = collect_update_fields(ticket, args)
 
     assert fields == {}
 

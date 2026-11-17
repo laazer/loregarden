@@ -3,7 +3,9 @@
 `research_repo` reads another project's source in the reference cache's clone
 and always reports the commit it read. `research_record` puts a research run on
 the record: the question, its candidates, a claim per capability, and a
-person's corrections. The rules (a verified claim names a real file at that
+person's corrections; it is an operation shared with the research page's
+refute route (`services/operations/research_record.py`), and only its schema is
+here. The rules (a verified claim names a real file at that
 commit; a person's refutation stands) are enforced in
 `services.reference_survey.research`, not here.
 """
@@ -13,7 +15,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import TypeAdapter
 from sqlmodel import Session
 
 from loregarden.mcp.tool_ids import McpTool
@@ -29,10 +30,8 @@ from loregarden.models.domain.survey_enums import (
     ResearchRecordAction,
     ResearchRepoAction,
 )
-from loregarden.services.reference_survey import research, research_repo
+from loregarden.services.reference_survey import research_repo
 from loregarden.services.reference_survey.errors import SurveyError
-
-_CANDIDATES = TypeAdapter(list[research.CandidateIn])
 
 _CLAIM_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -149,44 +148,7 @@ def _repo(session: Session, args: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2)
 
 
-def _record(session: Session, args: dict[str, Any]) -> str:
-    action = ResearchRecordAction(args["action"])
-    if action is ResearchRecordAction.QUESTION:
-        question = research.open_question(
-            session,
-            research.QuestionIn(
-                thread_id=args.get("thread_id") or "",
-                question=args.get("question") or "",
-                capabilities=list(args.get("capabilities") or []),
-            ),
-        )
-        payload: dict[str, Any] = {
-            "question_id": question.id,
-            "capabilities": research.capabilities(question),
-        }
-    elif action is ResearchRecordAction.CANDIDATES:
-        result = research.record_candidates(
-            session,
-            args.get("question_id") or "",
-            _CANDIDATES.validate_python(args.get("candidates") or []),
-        )
-        payload = result.model_dump(mode="json")
-    else:
-        claim = research.refute(
-            session,
-            research.RefuteIn(
-                url=args.get("url") or "",
-                capability=args.get("capability") or "",
-                note=args.get("note") or "",
-                question_id=args.get("question_id") or None,
-            ),
-        )
-        payload = {"claim_id": claim.id, "url": claim.url, "status": claim.status.value}
-    return json.dumps(payload, indent=2)
-
-
 #: Registered in `tool_registry.EXTENDED_TOOLS`, not `execute_tool`'s chain.
 HANDLERS = {
     McpTool.RESEARCH_REPO.value: _repo,
-    McpTool.RESEARCH_RECORD.value: _record,
 }

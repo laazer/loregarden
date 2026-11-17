@@ -19,10 +19,10 @@ cannot leave the ledger in two different states for one decision.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
-from loregarden.services.docker_board import capacity_status
-from loregarden.services.docker_leases import UnknownLease, force_release_lease
+from loregarden.services.operations import OperationId
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -38,7 +38,7 @@ def read_docker_capacity(session: Session = Depends(get_session)) -> dict:
     never-probed pool row would show. Every later call reads the stored ceiling —
     the probe is cached, and the reconciliation sweep keeps it current.
     """
-    return capacity_status(session)
+    return run_rest_operation(session, OperationId.DOCKER_CAPACITY_STATUS, {})
 
 
 class ForceReleaseRequest(BaseModel):
@@ -58,8 +58,8 @@ def force_release_docker_lease(
     the sweep getting there first — which is not a failure: the lease is gone
     either way. An id nothing answers to is a 404.
     """
-    try:
-        released = force_release_lease(session, lease_id, reason=body.reason)
-    except UnknownLease as exc:
-        raise HTTPException(status_code=404, detail=f"No capacity lease {lease_id}") from exc
-    return {"lease_id": lease_id, "released": released}
+    return run_rest_operation(
+        session,
+        OperationId.DOCKER_LEASE_FORCE_RELEASE,
+        {"lease_id": lease_id, "reason": body.reason},
+    )

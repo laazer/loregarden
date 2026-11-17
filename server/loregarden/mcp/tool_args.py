@@ -348,6 +348,22 @@ def normalize_read_artifact(args: dict[str, Any]) -> dict[str, Any]:
     return {"artifact_id": coerce_string(args.get("artifact_id"), field="artifact_id")}
 
 
+#: `loregarden_survey_queue`'s list arguments, which the bridge may send as JSON text.
+_SURVEY_QUEUE_LISTS = ("workspace_slugs", "paths", "initiative_ids", "only_for")
+
+
+def normalize_survey_queue(args: dict[str, Any]) -> dict[str, Any]:
+    """Decode the list arguments; the operation's model validates the rest."""
+    return {
+        **args,
+        **{
+            field: coerce_string_list(args[field], field=field)
+            for field in _SURVEY_QUEUE_LISTS
+            if args.get(field) is not None
+        },
+    }
+
+
 #: Normalizers dispatched by table instead of another branch in the chain below.
 #:
 #: `execute_tool` got this seam first, as `EXTENDED_TOOLS` — the chain was past
@@ -372,6 +388,7 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.WRITE_DOCUMENT.value: normalize_write_document,
     McpTool.LIST_ARTIFACTS.value: normalize_list_artifacts,
     McpTool.READ_ARTIFACT.value: normalize_read_artifact,
+    McpTool.SURVEY_QUEUE.value: normalize_survey_queue,
 }
 
 

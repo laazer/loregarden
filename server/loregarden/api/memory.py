@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import MemoryNodeType, MemoryRelationType
 from loregarden.services import memory_curation, memory_graph_health
@@ -24,6 +25,7 @@ from loregarden.services.memory_store import (
     MemoryNodeNotFoundError,
     MemoryWriteNotAppliedError,
 )
+from loregarden.services.operations import OperationId
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
@@ -51,8 +53,10 @@ def _memory_config_response() -> dict:
 
 
 @router.get("/status")
-def memory_status(workspace_slug: str = "") -> dict:
-    return AgentMemoryService.from_settings().status(workspace_slug=workspace_slug)
+def memory_status(workspace_slug: str = "", session: Session = Depends(get_session)) -> dict:
+    return run_rest_operation(
+        session, OperationId.MEMORY_STATUS, {"workspace_slug": workspace_slug}
+    )
 
 
 @router.get("/briefings")
@@ -203,17 +207,15 @@ def set_memory_node_discredited(
     node_id: str, body: DiscreditBody, session: Session = Depends(get_session)
 ) -> MemoryNodeRecord:
     """Mark a node wrong, or restore it. The reason is stored with the change."""
-    service = AgentMemoryService.from_settings()
-    _graph_call(
-        lambda: service.set_discredited(
-            node_id=node_id,
-            workspace_slug=body.workspace_slug,
-            discredited=body.discredited,
-            reason=body.reason,
-            writer="operator",
+    return _graph_call(
+        lambda: run_rest_operation(
+            session,
+            OperationId.MEMORY_DISCREDIT,
+            {"node_id": node_id, **body.model_dump()},
+            # Graph not configured: a state of this installation, as `_graph_call` says.
+            refusals={ValueError: refusal(409)},
         )
     )
-    return _record(session, service, node_id, body.workspace_slug)
 
 
 class WorkspaceBody(BaseModel):
@@ -328,16 +330,10 @@ class RelationBody(BaseModel):
 
 
 @router.post("/relations")
-def create_memory_relation(body: RelationBody) -> dict:
+def create_memory_relation(body: RelationBody, session: Session = Depends(get_session)) -> dict:
     """Assert a typed edge — how an operator resolves a contradiction by marking
     one side superseded. Same rules as the MCP tool: both nodes must exist, no
     self-edges, and restating an edge returns it."""
-    service = AgentMemoryService.from_settings()
-    return _graph_call(
-        lambda: service.create_relation(
-            source_id=body.source_id,
-            target_id=body.target_id,
-            relation_type=body.relation_type,
-            workspace_slug=body.workspace_slug,
-        )
+    return run_rest_operation(
+        session, OperationId.MEMORY_RELATION_CREATE, body.model_dump(mode="json")
     )

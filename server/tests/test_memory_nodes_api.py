@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from loregarden.services.memory_store import AgentMemoryService
 
@@ -127,3 +129,17 @@ def test_an_operator_can_mark_one_side_superseded(client, node_id):
         },
     )
     assert bad.status_code == 422
+
+
+def test_a_relation_with_no_graph_configured_is_a_conflict_not_a_bad_request(client):
+    with mock.patch.object(AgentMemoryService, "_graph_for_workspace", return_value=None):
+        response = client.post(
+            "/api/memory/relations",
+            json={
+                "workspace_slug": "ws",
+                "source_id": "a",
+                "target_id": "b",
+                "relation_type": "related",
+            },
+        )
+    assert response.status_code == 409, response.text

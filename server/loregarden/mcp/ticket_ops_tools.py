@@ -35,19 +35,14 @@ from loregarden.models.domain import (
 from loregarden.services.land_ticket import LandSkip, land_ticket
 from loregarden.services.landing import parked_on_failed_landing
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.pull_request_merge import MergeFailed, merge_and_clean_up
-from loregarden.services.requeue import requeue_stage
-from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.stage_agent_pin import pin_stage_agent
 from loregarden.services.ticket_dependencies import refuse_reparent_onto_a_prerequisite
 from loregarden.services.ticket_ids import reissue_in_workspace
-from loregarden.services.ticket_pull_request import ticket_pull_request
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_payload import ticket_state_payload
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.tree_publish_scheduler import publish_and_settle
-from loregarden.services.workflow_state import parse_stage_map
 
 
 def _workspace_by_slug(session: Session, slug: str) -> Workspace:
@@ -139,64 +134,6 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
     )
 
 
-def _set_ticket_workflow(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Put a ticket on a workflow template, or move it to a different stage.
-
-    Both halves go through ``update_ticket_manual`` rather than writing the
-    columns here, so a stage reset gets the retry-budget refresh and the state
-    reconciliation the panel's own edit gets.
-    """
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    fields: dict[str, Any] = {}
-
-    if "workflow_template_slug" in arguments:
-        fields["workflow_template_slug"] = arguments["workflow_template_slug"]
-
-    stage_key = (arguments.get("stage_key") or "").strip()
-    stage_status = (arguments.get("stage_status") or "").strip()
-    if stage_key and not stage_status:
-        fields["workflow_stage_key"] = stage_key
-    elif stage_key and stage_status:
-        fields["stage_key"] = stage_key
-        fields["stage_status"] = StageStatus(stage_status)
-    elif stage_status:
-        raise ValueError("stage_status was given without stage_key.")
-
-    if not fields:
-        raise ValueError("Nothing to change — supply workflow_template_slug, stage_key, or both.")
-
-    OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
-    return json.dumps(ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Clear a block and hand the stage back its dispatch budget.
-
-    The circuit breaker persists its dispatch markers across orchestration runs
-    precisely so a stage cannot refresh its own budget by restarting. Only a
-    deliberate operator decision clears it, which is what this call records: the
-    reason is required and lands on the ticket, so the next reader sees why the
-    counter was reset rather than finding it mysteriously empty.
-    """
-    reason = (arguments.get("reason") or "").strip()
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    stage_key = (arguments.get("stage_key") or ticket.workflow_stage_key or "").strip()
-    requeue_stage(
-        session,
-        OrchestrationService(session),
-        ticket,
-        stage_key=stage_key,
-        reason=reason,
-        # Not "triage": this tool is called by operators' sessions and agents
-        # alike, and the history rail prints the actor beside the reason.
-        actor="mcp",
-        state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
-    )
-    payload = ticket_state_payload(session, ticket.id)
-    payload["requeued"] = _requeue_outcome(session, svc, ticket, stage_key)
-    return json.dumps(payload, indent=2)
-
-
 def _pin_stage_agent(session: Session, svc, arguments: dict[str, Any]) -> str:
     """Steer the next dispatch of a stage to a named agent, once.
 
@@ -259,93 +196,6 @@ def _land_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             "detail": outcome.detail,
         }
     return json.dumps(payload, indent=2)
-
-
-def _merge_pull_request(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """The PR tab's "Merge and clean up", for an agent.
-
-    Refused unless GitHub says the PR can merge now, and pinned to ``head_sha``
-    when given (the commit the agent checked); without it, to the head as it
-    stands at the call. A failed cleanup step is in the result, not an error.
-    """
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    workspace = workspace_for_ticket(session, ticket)
-    if workspace is None:
-        raise ValueError(f"Ticket {ticket.external_id} has no workspace")
-    head_sha = arguments.get("head_sha") or ""
-    if not head_sha:
-        current = ticket_pull_request(session, ticket, workspace).pull_request
-        head_sha = current.head_sha if current else ""
-    try:
-        result = merge_and_clean_up(
-            session, ticket, workspace, number=arguments["number"], head_sha=head_sha
-        )
-    except MergeFailed as exc:
-        raise ValueError(f"Merge of #{arguments['number']} failed: {exc}") from exc
-    return result.model_dump_json(indent=2)
-
-
-def _requeue_outcome(session: Session, svc, ticket: Ticket, stage_key: str) -> dict[str, Any]:
-    """What a requeue actually arranged, said out loud.
-
-    A requeue makes a stage ELIGIBLE to run; it does not cause it to run. It
-    mints no orchestration and enqueues no dispatch. That is a defensible
-    design - clearing a breaker is usually the prelude to a HUMAN decision, and
-    auto-dispatching would spend an agent run on that decision's behalf - but it
-    was invisible, and "requeued" reads as "it will run again". At least one
-    recovery has been lost to the difference (lg-workflow-integrity-694).
-
-    `scheduled` is DERIVED, never asserted: it is read back from the same tables
-    a dispatcher would consult. A hardcoded "nothing is scheduled" would be a
-    claim that could drift out of agreement with the code that makes it true.
-
-    `blocked_stages` is read back the same way, and for the same reason: a
-    requeue clears the block on the stage it was asked about, and a stage
-    *elsewhere* in the workflow can still hold the ticket BLOCKED. Reporting the
-    requeue without them reads as "the block is gone" when it is not.
-    """
-    active = svc.get_active_orchestration_run(ticket.id)
-    in_flight = find_active_stage_run(session, ticket.id)
-    scheduled = active is not None or in_flight is not None
-
-    instance, stages = svc.orch._resolve_stages(ticket)
-    blocked_stages = (
-        [
-            key
-            for key, status in parse_stage_map(instance, stages).items()
-            if status is StageStatus.BLOCKED
-        ]
-        if instance and stages
-        else []
-    )
-
-    outcome: dict[str, Any] = {
-        "stage_key": stage_key,
-        "cursor_stage_key": ticket.workflow_stage_key,
-        "ticket_state": ticket.state.value,
-        "scheduled": scheduled,
-    }
-    if blocked_stages:
-        outcome["blocked_stages"] = blocked_stages
-        listed = ", ".join(repr(key) for key in blocked_stages)
-        subject = "stage" if len(blocked_stages) == 1 else "stages"
-        outcome["note"] = (
-            f"Stage '{stage_key}' is pending, but {subject} {listed} still blocked, so the "
-            "ticket is not clear to run. Resolve those too."
-        )
-        return outcome
-    if scheduled:
-        outcome["note"] = (
-            f"Stage '{stage_key}' is pending and something is already running against "
-            "this ticket; it will be picked up."
-        )
-        return outcome
-    outcome["note"] = (
-        f"Stage '{stage_key}' is pending. Nothing is scheduled to run it - a requeue "
-        "clears the block, it does not dispatch."
-    )
-    outcome["start_with"] = McpTool.START_ORCHESTRATION.value
-    return outcome
 
 
 def _supersede_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
@@ -685,11 +535,8 @@ def normalize_ticket_ops_args(
 #: Handlers this module owns, keyed by tool name.
 _OPS_HANDLERS = {
     "loregarden_move_ticket_workspace": _move_ticket_workspace,
-    "loregarden_set_ticket_workflow": _set_ticket_workflow,
-    "loregarden_requeue_ticket": _requeue_ticket,
     "loregarden_pin_stage_agent": _pin_stage_agent,
     "loregarden_land_ticket": _land_ticket,
-    "loregarden_merge_pull_request": _merge_pull_request,
     "loregarden_supersede_ticket": _supersede_ticket,
 }
 
