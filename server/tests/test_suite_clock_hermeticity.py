@@ -69,6 +69,20 @@ ALLOWED: dict[tuple[str, str], str] = {
     "already in flight must not queue behind them. Also genuinely wall-clock, also "
     "with no relative form that the defect would fail — the unfixed code made this "
     "caller wait the full probe. Timed on the payload for the same reason as above.",
+    (
+        "test_code_signals.py",
+        "report.elapsed_seconds < 22",
+    ): "The 22s ceiling IS acceptance criterion AC10 of lg-code-knowledge-299, not an "
+    "incidental timing: it is the reference against which the plan rejected `git blame` "
+    "as the ownership mechanism (78-202s measured over this tree) and an SZZ inducing-"
+    "commit walk as the bug-fix mechanism. The quantity is genuinely wall-clock, and "
+    "there is no second measured quantity to compare it against — a relative bound "
+    "would be satisfied by exactly the defect the criterion exists to exclude, since "
+    "the rejected designs are slower by construction rather than by load. The margin "
+    "is 8.5x: measured 2.59s against this checkout at 1025 commits in the window, "
+    "3735 signal rows and 9526 pair rows. The expression also appears on the "
+    "eight-commit fixture repo, where the same ceiling carries three further orders "
+    "of magnitude of slack.",
 }
 
 
