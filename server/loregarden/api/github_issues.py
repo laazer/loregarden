@@ -10,16 +10,15 @@ import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from loregarden.api.github_signature import verify_github_signature
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
-    ConflictPolicy,
     GithubIssueLinkView,
     GithubSyncSettingsView,
     LinkSyncResult,
     Ticket,
     UpdateGithubSyncSettings,
-    WorkItemType,
     Workspace,
     WorkspaceSyncResult,
 )
@@ -34,23 +33,22 @@ from loregarden.services.organization_gate_service import (
     UnknownWorkspaceError,
     workspace_for_slug,
 )
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from sqlmodel import Session
 
 router = APIRouter(tags=["github-issues"])
 
 
-class SyncLinkRequest(BaseModel):
-    policy: ConflictPolicy = ConflictPolicy.REPORT
+class SyncLinkRequest(
+    OperationBody, operation=OperationId.GITHUB_ISSUE_SYNC, supplied={"ticket_id"}
+):
+    """How to settle a conflict between the ticket and its issue."""
 
 
-class SyncWorkspaceRequest(BaseModel):
-    #: Where unlinked open issues are imported. Blank imports nothing.
-    import_parent_ticket_id: str = ""
-    import_work_item_type: WorkItemType = WorkItemType.BUG
-    #: Only import issues carrying this label. Blank imports every open issue.
-    import_label: str = ""
-    policy: ConflictPolicy = ConflictPolicy.REPORT
+class SyncWorkspaceRequest(
+    OperationBody, operation=OperationId.GITHUB_ISSUES_SYNC_WORKSPACE, supplied={"workspace_slug"}
+):
+    """Where a workspace sync imports the open issues no ticket links."""
 
 
 def _ticket(session: Session, ticket_id: str) -> Ticket:
@@ -78,9 +76,9 @@ def sync_ticket_issue(
     body: SyncLinkRequest | None = None,
     session: Session = Depends(get_session),
 ) -> LinkSyncResult:
-    policy = body.policy if body else ConflictPolicy.REPORT
+    request = body or SyncLinkRequest()
     return run_rest_operation(
-        session, OperationId.GITHUB_ISSUE_SYNC, {"ticket_id": ticket_id, "policy": policy}
+        session, OperationId.GITHUB_ISSUE_SYNC, {**request.model_dump(), "ticket_id": ticket_id}
     )
 
 

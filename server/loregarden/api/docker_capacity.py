@@ -20,10 +20,10 @@ cannot leave the ledger in two different states for one decision.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.services.operations import OperationId
-from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 router = APIRouter(prefix="/docker", tags=["docker-capacity"])
@@ -41,9 +41,10 @@ def read_docker_capacity(session: Session = Depends(get_session)) -> dict:
     return run_rest_operation(session, OperationId.DOCKER_CAPACITY_STATUS, {})
 
 
-class ForceReleaseRequest(BaseModel):
-    #: Kept on the lease, so whoever finds it ended knows why.
-    reason: str = Field(min_length=1)
+class ForceReleaseRequest(
+    OperationBody, operation=OperationId.DOCKER_LEASE_FORCE_RELEASE, supplied={"lease_id"}
+):
+    """Why the lease is ended; kept on it."""
 
 
 @router.post("/capacity/leases/{lease_id}/release")

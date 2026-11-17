@@ -13,6 +13,7 @@ is merging) is a 409 carrying the queue's own reason.
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import MergeQueueAction, Ticket, Workspace
@@ -28,30 +29,23 @@ from loregarden.services.merge_queue_requests import (
 from loregarden.services.operations import OperationId
 from loregarden.services.operations.merge_queue_ops import EnqueueResponse
 from loregarden.services.pr_cycle import PrCycleView, pr_cycle_view
-from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/merge-queue", tags=["merge-queue"])
 
 
-class EnqueueRequest(BaseModel):
+class EnqueueRequest(
+    OperationBody, operation=OperationId.MERGE_QUEUE_ENQUEUE, supplied={"workspace_slug"}
+):
     """Exactly one of the two: a tree's PR by its ticket, or any other PR by number."""
 
-    #: Any ticket in the tree; its root's PR is what is queued.
-    ticket_id: str = ""
-    #: A pull request with no ticket behind it, such as an interactive session's.
-    pr_number: int = Field(default=0, ge=0)
 
-    @model_validator(mode="after")
-    def _one_candidate(self) -> EnqueueRequest:
-        if bool(self.ticket_id) == bool(self.pr_number):
-            raise ValueError("pass exactly one of ticket_id or pr_number")
-        return self
-
-
-class WithdrawRequest(BaseModel):
-    #: Kept on the entry, so whoever finds it withdrawn knows why.
-    reason: str = ""
+class WithdrawRequest(
+    OperationBody,
+    operation=OperationId.MERGE_QUEUE_ENTRY_ACTION,
+    supplied={"entry_id", "action"},
+):
+    """Why the entry is withdrawn; kept on it."""
 
 
 def _workspace(session: Session, slug: str) -> Workspace:
@@ -134,7 +128,7 @@ def enqueue_merge(
     return run_rest_operation(
         session,
         OperationId.MERGE_QUEUE_ENQUEUE,
-        {"workspace_slug": slug, "ticket_id": body.ticket_id, "pr_number": body.pr_number},
+        {**body.model_dump(), "workspace_slug": slug},
     )
 
 
@@ -148,7 +142,7 @@ def withdraw_merge(
     return run_rest_operation(
         session,
         OperationId.MERGE_QUEUE_ENTRY_ACTION,
-        {"entry_id": entry_id, "action": MergeQueueAction.WITHDRAW, "reason": body.reason},
+        {**body.model_dump(), "entry_id": entry_id, "action": MergeQueueAction.WITHDRAW},
     )
 
 

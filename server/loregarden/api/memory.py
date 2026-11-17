@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import MemoryNodeType, MemoryRelationType
@@ -92,15 +93,8 @@ def put_memory_config(body: MemoryConfigBody) -> dict:
     return _memory_config_response()
 
 
-class DiscreditBody(BaseModel):
-    # Stripped before validation, so a whitespace-only reason fails `min_length`.
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    workspace_slug: str = ""
-    discredited: bool
-    #: Required: this changes what every future agent run is briefed with, and
-    #: a change nobody can explain later is the thing history exists to prevent.
-    reason: str = Field(min_length=1, max_length=2000)
+class DiscreditBody(OperationBody, operation=OperationId.MEMORY_DISCREDIT, supplied={"node_id"}):
+    """A node marked wrong or restored, and why."""
 
 
 def _graph_call(action):
@@ -322,11 +316,14 @@ def merge_memory_nodes(
     )
 
 
-class RelationBody(BaseModel):
-    workspace_slug: str = ""
-    source_id: str = Field(min_length=1)
-    target_id: str = Field(min_length=1)
-    relation_type: MemoryRelationType
+class RelationBody(
+    OperationBody,
+    operation=OperationId.MEMORY_RELATION_CREATE,
+    # The page always names the edge's type; an agent's defaults to `related`.
+    required={"relation_type"},
+    typed={"relation_type": MemoryRelationType},
+):
+    """A typed edge between two memory nodes."""
 
 
 @router.post("/relations")

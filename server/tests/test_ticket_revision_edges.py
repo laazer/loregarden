@@ -28,11 +28,11 @@ import json
 from unittest.mock import patch
 
 import pytest
+from loregarden.api.tickets import TicketPatchRequest
 from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.tool_args import coerce_optional_bool
 from loregarden.mcp.tools import TOOL_DEFINITIONS
 from loregarden.models.domain import Ticket, UpdateTicketRequest
-from loregarden.models.domain.schemas import TicketPatchRequest
 from loregarden.services.operations.ticket_writes import TicketUpdateArgs, collect_update_fields
 from pydantic import ValidationError
 from tests.mcp_helpers import call_mcp
@@ -105,20 +105,20 @@ def _mcp_text(body: dict) -> str:
 
 
 def test_the_patch_model_adds_only_the_token() -> None:
-    """Every parent field, plus one — and the shared DTO is untouched.
+    """Every field of the shared DTO, by the key the page sends, plus one.
 
-    The token lives here rather than on `UpdateTicketRequest` because that model
-    is `extra="forbid"` and is built by eight internal callers; a field there
-    that the applier never reads would read as supported on paths where it does
-    nothing.
+    The token lives on the PATCH body rather than on `UpdateTicketRequest`
+    because that model is `extra="forbid"` and is built by eight internal
+    callers; a field there that the applier never reads would read as supported
+    on paths where it does nothing.
     """
     parent = set(UpdateTicketRequest.model_fields)
-    child = set(TicketPatchRequest.model_fields)
+    child = {field.alias or name for name, field in TicketPatchRequest.model_fields.items()}
 
     assert parent < child, "the patch model must carry every field a caller can already send"
     assert child - parent == {"expected_revision"}
     assert "expected_revision" not in parent, "the shared DTO must not grow the token"
-    assert TicketPatchRequest().expected_revision is None
+    assert TicketPatchRequest().model_dump()["expected_revision"] is None
 
 
 def test_the_patch_model_still_refuses_an_unknown_key() -> None:

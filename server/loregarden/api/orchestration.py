@@ -3,14 +3,11 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.terminal_text import strip_ansi
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
-    AttachArtifactRequest,
-    BlockTicketRequest,
-    CompleteOrchestrationRequest,
-    CompleteStageRequest,
     FindingDecision,
     GateOutcome,
     GatesConfigUpdate,
@@ -20,10 +17,6 @@ from loregarden.models.domain import (
     GitAutomationView,
     OrchestrationProfileView,
     OrchestrationRunView,
-    RequestApprovalRequest,
-    SkipStageRequest,
-    StartOrchestrationRequest,
-    StartStageRequest,
     Workspace,
 )
 from loregarden.services.discovered_work import undecided
@@ -48,7 +41,8 @@ from loregarden.services.orchestration_profile import (
     update_git_config,
 )
 from loregarden.services.scope_round import decide_finding
-from sqlmodel import Session, SQLModel, select
+from pydantic import BaseModel
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
 
@@ -196,10 +190,60 @@ def update_workspace_git_automation(
     return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
 
 
+class StartStageRequest(OperationBody, operation=OperationId.STAGE_START, supplied={"run_id"}):
+    """A stage to start on the run the path names."""
+
+
+class CompleteStageRequest(
+    OperationBody, operation=OperationId.STAGE_COMPLETE, supplied={"run_id"}
+):
+    """A stage's result, on the run the path names."""
+
+
+class SkipStageRequest(OperationBody, operation=OperationId.STAGE_SKIP, supplied={"run_id"}):
+    """A stage to skip on the run the path names."""
+
+
+class BlockTicketRequest(OperationBody, operation=OperationId.TICKET_BLOCK, supplied={"run_id"}):
+    """Why the run the path names cannot go on."""
+
+
+class AttachArtifactRequest(
+    OperationBody,
+    operation=OperationId.ARTIFACT_ATTACH,
+    supplied={"run_id"},
+    # An object here; `content_json` is MCP's way to send it as text.
+    hidden={"content_json"},
+):
+    """An artifact for the run the path names."""
+
+
+class RequestApprovalRequest(
+    OperationBody, operation=OperationId.APPROVAL_REQUEST, supplied={"run_id"}
+):
+    """A question for a person, from the run the path names."""
+
+
+class CompleteOrchestrationRequest(
+    OperationBody, operation=OperationId.ORCHESTRATION_COMPLETE, supplied={"run_id"}
+):
+    """How the run the path names ended."""
+
+
+class OrchestrationStartRequest(
+    OperationBody, operation=OperationId.ORCHESTRATION_START, supplied={"ticket_id"}
+):
+    """An orchestration of the ticket the path names.
+
+    `/api/tickets/{id}/orchestrate` keeps its own model: it admits past
+    prerequisites, which an orchestration start never checks.
+    """
+
+
 @router.post("/tickets/{ticket_id}/start", response_model=OrchestrationRunView)
 def start_orchestration(
     ticket_id: str,
-    body: StartOrchestrationRequest = Body(default_factory=StartOrchestrationRequest),
+    body: OrchestrationStartRequest = Body(default_factory=OrchestrationStartRequest),
     session: Session = Depends(get_session),
 ) -> OrchestrationRunView:
     ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=ticket_id)
@@ -217,7 +261,7 @@ def start_orchestration(
     return run_rest_operation(
         session,
         OperationId.ORCHESTRATION_START,
-        {**body.model_dump(exclude={"ignore_prerequisites"}), "ticket_id": ticket.id},
+        {**body.model_dump(), "ticket_id": ticket.id},
     )
 
 
@@ -242,7 +286,7 @@ def get_ticket_state_by_external(
     )
 
 
-def _naming_run(run_id: str, body: SQLModel) -> dict[str, Any]:
+def _naming_run(run_id: str, body: BaseModel) -> dict[str, Any]:
     """A callback's arguments: its body, and the run its path names."""
     return {**body.model_dump(), "run_id": run_id}
 
