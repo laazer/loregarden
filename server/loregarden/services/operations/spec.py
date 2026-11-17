@@ -63,6 +63,55 @@ class OperationId(StrEnum):
     TICKET_DEPENDENCY_REMOVE = "ticket_dependency_remove"
     TICKET_RELATION_ADD = "ticket_relation_add"
     TICKET_RELATION_REMOVE = "ticket_relation_remove"
+    #: The merge queue (`merge_queue_ops.py`): read it, put a PR in it, and
+    #: withdraw or retry an entry.
+    MERGE_QUEUE_READ = "merge_queue_read"
+    MERGE_QUEUE_ENQUEUE = "merge_queue_enqueue"
+    MERGE_QUEUE_ENTRY_ACTION = "merge_queue_entry_action"
+    #: An initiative's membership and plan (`initiatives.py`).
+    INITIATIVE_MEMBER_ADD = "initiative_member_add"
+    INITIATIVE_MEMBER_REMOVE = "initiative_member_remove"
+    INITIATIVE_PLAN = "initiative_plan"
+    #: Any plan root's autopilot: an initiative, a milestone or a parent ticket.
+    PLAN_AUTOPILOT_SET = "plan_autopilot_set"
+    #: The Initiatives page's switch, which takes an initiative and nothing else.
+    INITIATIVE_AUTOPILOT_SET = "initiative_autopilot_set"
+    INITIATIVE_WORK_START = "initiative_work_start"
+    INITIATIVE_NEEDS_PERSON = "initiative_needs_person"
+    #: Near-twins unified to the stricter rule (`ticket_requeue.py`,
+    #: `memory_discredit.py`, `survey_queue.py`, `research_record.py`).
+    TICKET_REQUEUE = "ticket_requeue"
+    MEMORY_DISCREDIT = "memory_discredit"
+    SURVEY_QUEUE = "survey_queue"
+    RESEARCH_RECORD = "research_record"
+    #: Memory, docker capacity, disk, GitHub issues and workspace integration
+    #: (`memory_operations.py`, `docker_capacity_operations.py`,
+    #: `disk_operations.py`, `github_issue_operations.py`,
+    #: `organization_operations.py`).
+    MEMORY_STATUS = "memory_status"
+    MEMORY_RELATION_CREATE = "memory_relation_create"
+    DOCKER_CAPACITY_STATUS = "docker_capacity_status"
+    DOCKER_LEASE_FORCE_RELEASE = "docker_lease_force_release"
+    #: An agent's one-call answer about disk use; may start a scan.
+    DISK_USAGE = "disk_usage"
+    DISK_OVERVIEW = "disk_overview"
+    DISK_SCAN = "disk_scan"
+    DISK_TREE = "disk_tree"
+    #: The `loregarden_sync_github_issues` tool, dispatching on its action.
+    GITHUB_ISSUES = "github_issues"
+    GITHUB_ISSUE_LINK = "github_issue_link"
+    GITHUB_ISSUE_PUBLISH = "github_issue_publish"
+    GITHUB_ISSUE_SYNC = "github_issue_sync"
+    GITHUB_ISSUES_SYNC_WORKSPACE = "github_issues_sync_workspace"
+    ORGANIZATION_CHECK = "organization_check"
+    WORKSPACE_INTEGRATION = "workspace_integration"
+    WORKSPACE_INTEGRATION_INSTALL = "workspace_integration_install"
+    #: Filing a ticket and editing one (`ticket_writes.py`), and merging its PR
+    #: (`pull_request_merges.py`).
+    TICKET_CREATE = "ticket_create"
+    TICKET_UPDATE = "ticket_update"
+    TICKET_WORKFLOW_SET = "ticket_workflow_set"
+    TICKET_PULL_REQUEST_MERGE = "ticket_pull_request_merge"
 
 
 @dataclass(frozen=True)

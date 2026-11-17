@@ -131,6 +131,10 @@ class QueueRefusal(ValueError):
     """A withdraw or retry the entry's state does not allow; nothing was changed."""
 
 
+class QueueNotFound(LookupError):
+    """The entry, or the workspace, a merge queue request names does not exist."""
+
+
 def live_entries(session: Session, workspace_id: str) -> list[MergeQueueEntry]:
     """Every entry not yet terminal, in queue order."""
     return list(
@@ -484,5 +488,5 @@ def retry(session: Session, entry_id: str) -> MergeQueueEntry:
 def _entry(session: Session, entry_id: str) -> MergeQueueEntry:
     entry = session.get(MergeQueueEntry, entry_id)
     if entry is None:
-        raise LookupError(f"no merge queue entry {entry_id}")
+        raise QueueNotFound(f"no merge queue entry {entry_id}")
     return entry

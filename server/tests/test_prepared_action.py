@@ -359,3 +359,51 @@ def test_a_manual_action_is_not_runnable_from_the_inbox(client, db_session, tmp_
     res = client.post(f"/api/inbox/approvals/{approval.id}/run")
     assert res.status_code == 400
     assert "not runnable" in res.text
+
+
+def test_running_it_from_the_inbox_is_a_requeue_with_a_reason(client, db_session, tmp_path):
+    """The block lifts the way an operator's requeue lifts it: the reason names
+    the card, the stage is pending again, and nothing is left marking the block."""
+    import json
+
+    from loregarden.models.domain import Artifact, StageStatus
+    from sqlmodel import select
+
+    _script(tmp_path, "echo done")
+    action = PreparedAction(tier=HumanActionTier.ONE_CLICK, attempted="x", script_path="capture.sh")
+    ticket, approval = _blocked_with(db_session, tmp_path, action, "Needs a display.")
+
+    res = client.post(f"/api/inbox/approvals/{approval.id}/run")
+    assert res.status_code == 200, res.text
+
+    db_session.expire_all()
+    requeued = db_session.exec(
+        select(Artifact).where(
+            Artifact.ticket_id == ticket.id, Artifact.title == "Requeued — implement"
+        )
+    ).one()
+    rows = {row["k"]: row["v"] for row in json.loads(requeued.content_json)["rows"]}
+    assert approval.id in rows["Reason"]
+    assert rows["Actor"] == "human"
+    db_session.refresh(ticket)
+    assert ticket.block_kind is None
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    assert ticket.state_locked is False
+
+
+def test_a_card_naming_no_stage_is_refused_before_its_script_runs(client, db_session, tmp_path):
+    """Success lifts the block by requeueing a stage; with none named, running
+    the script would capture a result nothing can act on."""
+    marker = tmp_path / "ran"
+    _script(tmp_path, f"touch {marker}")
+    action = PreparedAction(tier=HumanActionTier.ONE_CLICK, attempted="x", script_path="capture.sh")
+    ticket, approval = _blocked_with(db_session, tmp_path, action, "Needs a display.")
+    approval.stage_key = ""
+    ticket.workflow_stage_key = ""
+    db_session.add_all([approval, ticket])
+    db_session.commit()
+
+    res = client.post(f"/api/inbox/approvals/{approval.id}/run")
+
+    assert res.status_code == 400
+    assert not marker.exists()

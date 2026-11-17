@@ -30,6 +30,17 @@ def repo_fixture(client: TestClient, isolated_db) -> Path:
         return Path(workspace.repo_path)
 
 
+def _commit_lefthook(repo: Path) -> None:
+    (repo / "lefthook.yml").write_text(LEFTHOOK, encoding="utf-8")
+    run_git(["add", "lefthook.yml"], cwd=repo, check=True, capture_output=True)
+    run_git(
+        ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "lefthook"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
 def _states(response) -> dict[str, tuple[str, str]]:
     assert response.status_code == 200, response.text
     return {i["installer"]: (i["state"], i["detail"]) for i in response.json()["installers"]}
@@ -55,13 +66,28 @@ def test_installing_docs_writes_the_section_with_the_workspace_slug(
 def test_installing_hooks_points_the_block_at_the_primary_checkout(
     client: TestClient, repo: Path
 ) -> None:
-    (repo / "lefthook.yml").write_text(LEFTHOOK, encoding="utf-8")
+    _commit_lefthook(repo)
     assert _states(client.get("/api/workspace-integration/loregarden"))["hooks"][0] == "missing"
     states = _states(client.post("/api/workspace-integration/loregarden/hooks"))
     assert states["hooks"][0] == "current"
     config = (repo / "lefthook.yml").read_text(encoding="utf-8")
     assert str(primary_checkout()) in config
     assert "run: echo lint" in config
+
+
+def test_installing_hooks_over_uncommitted_edits_is_refused_and_leaves_them(
+    client: TestClient, repo: Path
+) -> None:
+    """The page's install refuses as the agent's `install_hooks` does: the
+    installer rewrites lefthook.yml, so a person's uncommitted edit there stops it."""
+    _commit_lefthook(repo)
+    edited = LEFTHOOK + "    format:\n      run: echo format\n"
+    (repo / "lefthook.yml").write_text(edited, encoding="utf-8")
+
+    response = client.post("/api/workspace-integration/loregarden/hooks")
+
+    assert response.status_code == 400, response.text
+    assert (repo / "lefthook.yml").read_text(encoding="utf-8") == edited
 
 
 def test_a_refused_install_says_why(client: TestClient, repo: Path) -> None:

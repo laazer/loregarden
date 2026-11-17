@@ -23,7 +23,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services import merge_queue
 from loregarden.services.git_automation_config import base_branch
-from loregarden.services.merge_queue import STATE_STEP, STEPS, Admission, Candidate, QueueRefusal
+from loregarden.services.merge_queue import (
+    STATE_STEP,
+    STEPS,
+    Admission,
+    Candidate,
+    QueueNotFound,
+    QueueRefusal,
+)
 from loregarden.services.merge_queue_github import (
     CheckReading,
     GhQueueGitHub,
@@ -247,14 +254,14 @@ def entry_detail(
 ) -> EntryDetail:
     """One entry; a testing entry's checks are read from GitHub when ``live``.
 
-    Raises `LookupError` for an unknown id and `GitHubReadError` when the live
+    Raises `QueueNotFound` for an unknown id and `GitHubReadError` when the live
     read fails. The recorded checks are not offered in that case: they are a
     cycle old, and passing them off as the answer is what the caller asked
     not to get.
     """
     entry = session.get(MergeQueueEntry, entry_id)
     if entry is None:
-        raise LookupError(f"no merge queue entry {entry_id}")
+        raise QueueNotFound(f"no merge queue entry {entry_id}")
     head_id = _head_id(session, entry.workspace_id)
     checks = _READINGS.validate_python(entry.checks())
     checks_live = False

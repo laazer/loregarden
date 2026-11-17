@@ -13,6 +13,8 @@ import pytest
 from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.tool_args import coerce_optional_bool
 from loregarden.mcp.tools import TOOL_DEFINITIONS
+from loregarden.models.domain import Ticket
+from loregarden.services.operations.ticket_writes import TicketUpdateArgs, collect_update_fields
 
 
 def _coerce_string(value, *, field):
@@ -63,18 +65,13 @@ def test_priority_is_omitted_when_not_supplied() -> None:
 
 @pytest.mark.parametrize("bad", [0, 4, -1])
 def test_a_priority_outside_the_range_is_refused(bad: int) -> None:
-    from loregarden.mcp.ticket_edit_tools import _collect_update_fields
-    from loregarden.models.domain import Ticket
-
     ticket = Ticket(workspace_id="w", title="t")
     with pytest.raises(ValueError, match="must be in"):
-        _collect_update_fields(ticket, {"ticket_id": "lg-x-1", "priority": bad})
+        collect_update_fields(ticket, TicketUpdateArgs(ticket_id="lg-x-1", priority=bad))
 
 
 def test_priority_alone_is_enough_to_be_a_real_update() -> None:
     """The 'nothing to update' guard must not reject a priority-only edit."""
-    from loregarden.mcp.ticket_edit_tools import _collect_update_fields
-    from loregarden.models.domain import Ticket
-
     ticket = Ticket(workspace_id="w", title="t")
-    assert _collect_update_fields(ticket, {"ticket_id": "lg-x-1", "priority": 2}) == {"priority": 2}
+    args = TicketUpdateArgs(ticket_id="lg-x-1", priority=2)
+    assert collect_update_fields(ticket, args) == {"priority": 2}

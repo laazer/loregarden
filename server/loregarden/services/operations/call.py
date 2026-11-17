@@ -8,6 +8,16 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
+from loregarden.services.operations.disk_operations import DISK_OPERATIONS
+from loregarden.services.operations.docker_capacity_operations import DOCKER_CAPACITY_OPERATIONS
+from loregarden.services.operations.github_issue_operations import GITHUB_ISSUE_OPERATIONS
+from loregarden.services.operations.initiatives import INITIATIVES
+from loregarden.services.operations.memory_discredit import MEMORY_DISCREDIT
+from loregarden.services.operations.memory_operations import MEMORY_OPERATIONS
+from loregarden.services.operations.merge_queue_ops import MERGE_QUEUE_OPS
+from loregarden.services.operations.organization_operations import ORGANIZATION_OPERATIONS
+from loregarden.services.operations.pull_request_merges import PULL_REQUEST_MERGES
+from loregarden.services.operations.research_record import RESEARCH_RECORD
 from loregarden.services.operations.run_callbacks import RUN_CALLBACKS
 from loregarden.services.operations.spec import (
     Caller,
@@ -17,9 +27,12 @@ from loregarden.services.operations.spec import (
     OperationUnavailable,
     ReadOperationWrote,
 )
+from loregarden.services.operations.survey_queue import SURVEY_QUEUE
 from loregarden.services.operations.ticket_links import TICKET_LINKS
 from loregarden.services.operations.ticket_lists import TICKET_LISTS
 from loregarden.services.operations.ticket_reads import TICKET_READS
+from loregarden.services.operations.ticket_requeue import TICKET_REQUEUE
+from loregarden.services.operations.ticket_writes import TICKET_WRITES
 from pydantic import BaseModel
 from sqlalchemy import event
 from sqlmodel import Session
@@ -27,7 +40,26 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 OPERATIONS: Mapping[OperationId, Operation] = {
-    op.id: op for op in (*TICKET_READS, *TICKET_LISTS, *TICKET_LINKS, *RUN_CALLBACKS)
+    op.id: op
+    for op in (
+        *TICKET_READS,
+        *TICKET_LISTS,
+        *TICKET_LINKS,
+        *RUN_CALLBACKS,
+        *MERGE_QUEUE_OPS,
+        *INITIATIVES,
+        *TICKET_REQUEUE,
+        *MEMORY_DISCREDIT,
+        *SURVEY_QUEUE,
+        *RESEARCH_RECORD,
+        *MEMORY_OPERATIONS,
+        *DOCKER_CAPACITY_OPERATIONS,
+        *DISK_OPERATIONS,
+        *GITHUB_ISSUE_OPERATIONS,
+        *ORGANIZATION_OPERATIONS,
+        *TICKET_WRITES,
+        *PULL_REQUEST_MERGES,
+    )
 }
 
 #: Set to "1" (the test suite does) to make a read operation that writes raise

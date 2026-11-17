@@ -10,11 +10,15 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.agents.tool_grants import claude_tool_flags, effective_allowlist
 from loregarden.mcp.research_tools import HANDLERS
+from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import BaxterChatSession, ChatSurface, Workspace
 from loregarden.models.domain.chat_enums import ChatThreadMode
 from loregarden.models.domain.enums import ChatAdvisoryCause
 from loregarden.models.domain.survey_enums import ClaimRecorder, ClaimStatus, SurveySourceKind
-from loregarden.models.domain.survey_research_tables import SurveyResearchCandidate
+from loregarden.models.domain.survey_research_tables import (
+    SurveyCapabilityClaim,
+    SurveyResearchCandidate,
+)
 from loregarden.models.domain.survey_tables import SurveySource
 from loregarden.services import baxter_chat_service
 from loregarden.services.agent_turn_runner import AgentTurnResult
@@ -360,7 +364,10 @@ def test_the_repo_tool_reads_and_reports_the_commit_it_read(ctx, cache):
 
 def test_the_record_tool_opens_records_and_refutes(ctx, cache):
     session, _, thread, _ = ctx
-    tool = HANDLERS["loregarden_research_record"]
+
+    def tool(session, arguments):
+        return execute_tool(session, "loregarden_research_record", arguments)
+
     opened = json.loads(tool(session, {"action": "question", "thread_id": thread.id,
                                        "question": "Which repos compute weights?",
                                        "capabilities": [SKINNING]}))  # fmt: skip
@@ -373,6 +380,21 @@ def test_the_record_tool_opens_records_and_refutes(ctx, cache):
     refuted = json.loads(tool(session, {"action": "refute", "url": RIGGER, "capability": SKINNING,
                                         "note": "operator: weights are manual"}))  # fmt: skip
     assert refuted["status"] == "refuted"
+
+
+def test_an_agents_refutation_does_not_stand_as_a_persons(ctx, cache):
+    """Only the page speaks for a person: an agent's refute is recorded as the
+    agent's, so it never stands over other agents' claims as a person's would."""
+    session, *_ = ctx
+    execute_tool(
+        session,
+        "loregarden_research_record",
+        {"action": "refute", "url": RIGGER, "capability": SKELETON, "note": "agent: no"},
+    )
+    claim = session.exec(
+        select(SurveyCapabilityClaim).where(SurveyCapabilityClaim.capability == SKELETON)
+    ).one()
+    assert claim.recorded_by is ClaimRecorder.AGENT
 
 
 # --- the API ------------------------------------------------------------------

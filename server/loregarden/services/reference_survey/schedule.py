@@ -245,11 +245,14 @@ def _narrow(session: Session, source: SurveySource, body: ReviewNowIn) -> str:
     return json.dumps(list(dict.fromkeys(only_for)))
 
 
-def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNowResult:
+def review_now(
+    session: Session, source_id: str, body: ReviewNowIn, *, actor: str = "operator"
+) -> ReviewNowResult:
     """Put the source first in line and dispatch its pass now if nothing holds it.
 
     A queued pass is dispatched as it is; a surveyed source gets a scoped pass
-    against `body.question` (or its own question) first.
+    against `body.question` (or its own question) first. `actor` is who links
+    the initiatives in `body`, as each link records it.
     """
     source = session.get(SurveySource, source_id)
     if source is None:
@@ -270,7 +273,7 @@ def review_now(session: Session, source_id: str, body: ReviewNowIn) -> ReviewNow
     if body.only_for:
         survey_pass.workspaces_json = scope
         session.add(survey_pass)
-    linked = follow(session, source.id, initiatives, actor="operator")
+    linked = follow(session, source.id, initiatives, actor=actor)
     source.priority = FIRST_IN_LINE
     session.add(source)
     session.commit()

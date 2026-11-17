@@ -10,6 +10,7 @@ import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from loregarden.api.github_signature import verify_github_signature
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     ConflictPolicy,
@@ -22,17 +23,13 @@ from loregarden.models.domain import (
     Workspace,
     WorkspaceSyncResult,
 )
-from loregarden.services.github_issue_client import GithubIssueError
 from loregarden.services.github_issue_sync import (
     IssueWebhookEvent,
     handle_issue_event,
-    link_for_ticket,
-    publish_ticket,
-    sync_link,
-    sync_workspace,
     unlink_ticket,
 )
 from loregarden.services.github_sync_scheduler import get_sync_settings, update_sync_settings
+from loregarden.services.operations import OperationId
 from loregarden.services.organization_gate_service import (
     UnknownWorkspaceError,
     workspace_for_slug,
@@ -67,18 +64,12 @@ def _ticket(session: Session, ticket_id: str) -> Ticket:
 def get_ticket_issue_link(
     ticket_id: str, session: Session = Depends(get_session)
 ) -> GithubIssueLinkView | None:
-    _ticket(session, ticket_id)
-    link = link_for_ticket(session, ticket_id)
-    return GithubIssueLinkView.model_validate(link, from_attributes=True) if link else None
+    return run_rest_operation(session, OperationId.GITHUB_ISSUE_LINK, {"ticket_id": ticket_id})
 
 
 @router.post("/tickets/{ticket_id}/github-issue", response_model=LinkSyncResult)
 def publish_ticket_issue(ticket_id: str, session: Session = Depends(get_session)) -> LinkSyncResult:
-    ticket = _ticket(session, ticket_id)
-    try:
-        return publish_ticket(session, ticket)
-    except (ValueError, LookupError) as exc:  # GithubIssueError is a ValueError
-        raise HTTPException(400, str(exc)) from exc
+    return run_rest_operation(session, OperationId.GITHUB_ISSUE_PUBLISH, {"ticket_id": ticket_id})
 
 
 @router.post("/tickets/{ticket_id}/github-issue/sync", response_model=LinkSyncResult)
@@ -87,12 +78,10 @@ def sync_ticket_issue(
     body: SyncLinkRequest | None = None,
     session: Session = Depends(get_session),
 ) -> LinkSyncResult:
-    _ticket(session, ticket_id)
-    link = link_for_ticket(session, ticket_id)
-    if link is None:
-        raise HTTPException(404, "Ticket is not linked to a GitHub issue")
     policy = body.policy if body else ConflictPolicy.REPORT
-    return sync_link(session, link, policy=policy)
+    return run_rest_operation(
+        session, OperationId.GITHUB_ISSUE_SYNC, {"ticket_id": ticket_id, "policy": policy}
+    )
 
 
 @router.delete("/tickets/{ticket_id}/github-issue", status_code=204)
@@ -110,18 +99,11 @@ def sync_workspace_issues(
     session: Session = Depends(get_session),
 ) -> WorkspaceSyncResult:
     request = body or SyncWorkspaceRequest()
-    workspace = _workspace(session, workspace_slug)
-    try:
-        return sync_workspace(
-            session,
-            workspace,
-            import_parent_ticket_id=request.import_parent_ticket_id,
-            import_work_item_type=request.import_work_item_type,
-            import_label=request.import_label,
-            policy=request.policy,
-        )
-    except (GithubIssueError, ValueError, LookupError) as exc:
-        raise HTTPException(400, str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.GITHUB_ISSUES_SYNC_WORKSPACE,
+        {"workspace_slug": workspace_slug, **request.model_dump()},
+    )
 
 
 def _workspace(session: Session, workspace_slug: str) -> Workspace:

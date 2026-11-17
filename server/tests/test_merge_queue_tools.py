@@ -23,9 +23,18 @@ from loregarden.mcp.tool_ids import (
     TRIAGE_OPS_MCP_TOOLS,
     McpTool,
 )
-from loregarden.models.domain import PullRequestState, Ticket, WorkItemType, Workspace
+from loregarden.models.domain import (
+    MergeQueueEntry,
+    MergeQueueState,
+    PullRequestState,
+    Ticket,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services import merge_queue_requests
-from sqlmodel import Session
+from loregarden.services.merge_queue import Candidate, enqueue, transition
+from loregarden.services.operations.merge_queue_ops import STATUS_HISTORY
+from sqlmodel import Session, select
 
 WRITES = (McpTool.ENQUEUE_MERGE, McpTool.DEQUEUE_MERGE)
 
@@ -157,3 +166,44 @@ def test_a_pr_with_no_ticket_is_enqueued_by_number(client, tree):  # noqa: ARG00
 def test_enqueue_takes_exactly_one_candidate(client, tree, args):  # noqa: ARG001
     reply = _call(client, McpTool.ENQUEUE_MERGE, args)
     assert "result" not in reply or reply["result"].get("isError"), reply
+
+
+def test_enqueue_refuses_a_ticket_named_with_a_workspace_it_is_not_in(client, tree, isolated_db):
+    """The tool once ignored the slug and queued the ticket under its own workspace."""
+    with Session(isolated_db) as session:
+        session.add(Workspace(slug="elsewhere", name="elsewhere", repo_path="/nonexistent"))
+        session.commit()
+    with (
+        mock.patch.object(
+            merge_queue_requests, "published_branch", return_value=("integration/mqt-1", "e" * 40)
+        ),
+        mock.patch.object(merge_queue_requests, "GhQueueGitHub") as gh,
+    ):
+        gh.return_value.open_pull_request.return_value = (3, "https://github.com/o/r/pull/3")
+        reply = _call(
+            client, McpTool.ENQUEUE_MERGE, {"ticket_id": tree, "workspace_slug": "elsewhere"}
+        )
+
+    assert "result" not in reply or reply["result"].get("isError"), reply
+    with Session(isolated_db) as session:
+        assert session.exec(select(MergeQueueEntry)).all() == []
+
+
+def test_status_lists_at_most_status_history_finished_entries(client, tree, isolated_db):
+    """An agent's read is the line plus a few outcomes, whatever limit it sends."""
+    with Session(isolated_db) as session:
+        ticket = session.get(Ticket, tree)
+        ws = session.get(Workspace, ticket.workspace_id)
+        for pr in range(1, STATUS_HISTORY + 3):
+            entry = enqueue(
+                session,
+                ticket,
+                ws,
+                Candidate(pr, f"u/{pr}", "publish/x", "integration/x", f"{pr:040d}", "main"),
+            ).entry
+            transition(session, entry, entry.state, state=MergeQueueState.WITHDRAWN)
+    status = json.loads(
+        _text(_call(client, McpTool.MERGE_QUEUE_STATUS, {"workspace_slug": "mqt", "limit": 500}))
+    )
+
+    assert len(status["entries"]) == STATUS_HISTORY

@@ -421,8 +421,11 @@ def record_candidates(
     return result
 
 
-def refute(session: Session, body: RefuteIn) -> SurveyCapabilityClaim:
-    """A person's correction: this project does not do this. It stands over agent claims."""
+def refute(
+    session: Session, body: RefuteIn, *, recorded_by: ClaimRecorder = ClaimRecorder.OPERATOR
+) -> SurveyCapabilityClaim:
+    """A correction: this project does not do this. A person's stands over agent claims;
+    an agent's (``recorded_by=AGENT``) is one more claim."""
     url = project_url(body.url)
     if body.question_id is not None:
         _question(session, body.question_id)
@@ -432,7 +435,7 @@ def refute(session: Session, body: RefuteIn) -> SurveyCapabilityClaim:
         capability=body.capability.strip(),
         status=ClaimStatus.REFUTED,
         note=body.note.strip(),
-        recorded_by=ClaimRecorder.OPERATOR,
+        recorded_by=recorded_by,
         question_id=body.question_id,
     )
     _store_claim(session, claim)

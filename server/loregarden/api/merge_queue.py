@@ -2,7 +2,8 @@
 
 Beside the lane routes, in their shape: Pydantic request bodies, `HTTPException`
 for refusals. The board reads the queue and drives it from here; agents use the
-MCP tools, and both go through `merge_queue_requests`, so they cannot disagree.
+MCP tools, and the reads, the enqueue and the entry moves are operations
+(`services/operations/merge_queue_ops.py`) both run, so they cannot disagree.
 
 A read that has to ask GitHub and cannot is a 502 naming what failed, never an
 empty answer. A refusal the queue gives on purpose (no open PR, an entry that
@@ -12,27 +13,21 @@ is merging) is a 409 carrying the queue's own reason.
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
-from loregarden.models.domain import MergeQueueAdmission, Ticket, Workspace
-from loregarden.services import merge_queue
-from loregarden.services.github_pr_listing import GitHubReadError
-from loregarden.services.merge_queue import QueueRefusal
+from loregarden.models.domain import MergeQueueAction, Ticket, Workspace
 from loregarden.services.merge_queue_requests import (
     EntryDetail,
     EntryView,
     QueueOverview,
     QueueView,
     TicketQueueView,
-    admitted_or_refuse,
-    enqueue_pull_request,
-    enqueue_ticket,
-    entry_detail,
     queue_overview,
-    queue_view,
     ticket_queue_view,
 )
+from loregarden.services.operations import OperationId
+from loregarden.services.operations.merge_queue_ops import EnqueueResponse
 from loregarden.services.pr_cycle import PrCycleView, pr_cycle_view
-from loregarden.services.ticket_ids import TicketNotFound, resolve_one
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, select
 
@@ -59,24 +54,11 @@ class WithdrawRequest(BaseModel):
     reason: str = ""
 
 
-class EnqueueResponse(BaseModel):
-    outcome: MergeQueueAdmission
-    detail: str
-    entry: EntryView
-
-
 def _workspace(session: Session, slug: str) -> Workspace:
     workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if workspace is None:
         raise HTTPException(404, f"No workspace {slug}")
     return workspace
-
-
-def _entry_view(session: Session, entry_id: str) -> EntryView:
-    try:
-        return entry_detail(session, entry_id, live=False)
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
 
 
 @router.get("", response_model=QueueOverview)
@@ -106,7 +88,9 @@ def read_merge_queue(
     session: Session = Depends(get_session),
 ) -> QueueView:
     """The live entries in queue order, then the most recent finished ones."""
-    return queue_view(session, _workspace(session, slug), limit=limit)
+    return run_rest_operation(
+        session, OperationId.MERGE_QUEUE_READ, {"workspace_slug": slug, "limit": limit}
+    )
 
 
 @router.get("/entries/{entry_id}", response_model=EntryDetail)
@@ -116,12 +100,9 @@ def read_merge_queue_entry(
     session: Session = Depends(get_session),
 ) -> EntryDetail:
     """One entry, with the required checks it is waiting on."""
-    try:
-        return entry_detail(session, entry_id, live=live)
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except GitHubReadError as exc:
-        raise HTTPException(502, f"Could not read the entry's checks from GitHub: {exc}") from exc
+    return run_rest_operation(
+        session, OperationId.MERGE_QUEUE_READ, {"entry_id": entry_id, "live": live}
+    )
 
 
 @router.get("/{slug}/pr-cycle", response_model=PrCycleView)
@@ -146,27 +127,14 @@ def enqueue_merge(
     body: EnqueueRequest = Body(...),
     session: Session = Depends(get_session),
 ) -> EnqueueResponse:
-    """Queue a tree's open PR by any ticket in it, or any other open PR by number."""
-    workspace = _workspace(session, slug)
-    try:
-        if body.pr_number:
-            admission = admitted_or_refuse(enqueue_pull_request(session, workspace, body.pr_number))
-        else:
-            ticket = resolve_one(session, body.ticket_id, workspace_id=workspace.id)
-            admission = admitted_or_refuse(enqueue_ticket(session, ticket, workspace))
-    except TicketNotFound as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except QueueRefusal as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except ValueError as exc:
-        # An ambiguous ticket reference: it names the candidates.
-        raise HTTPException(400, str(exc)) from exc
-    except GitHubReadError as exc:
-        raise HTTPException(502, f"Could not read the PR from GitHub: {exc}") from exc
-    return EnqueueResponse(
-        outcome=admission.outcome,
-        detail=admission.detail,
-        entry=_entry_view(session, admission.entry.id),
+    """Queue a tree's open PR by any ticket in it, or any other open PR by number.
+
+    A ticket that is not in `slug`'s workspace is refused, never queued there.
+    """
+    return run_rest_operation(
+        session,
+        OperationId.MERGE_QUEUE_ENQUEUE,
+        {"workspace_slug": slug, "ticket_id": body.ticket_id, "pr_number": body.pr_number},
     )
 
 
@@ -177,22 +145,18 @@ def withdraw_merge(
     session: Session = Depends(get_session),
 ) -> EntryView:
     """Take an entry out of the queue. Refused (409) once it is merging or finished."""
-    try:
-        entry = merge_queue.withdraw(session, entry_id, reason=body.reason)
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except QueueRefusal as exc:
-        raise HTTPException(409, str(exc)) from exc
-    return _entry_view(session, entry.id)
+    return run_rest_operation(
+        session,
+        OperationId.MERGE_QUEUE_ENTRY_ACTION,
+        {"entry_id": entry_id, "action": MergeQueueAction.WITHDRAW, "reason": body.reason},
+    )
 
 
 @router.post("/entries/{entry_id}/retry", response_model=EntryView)
 def retry_merge(entry_id: str, session: Session = Depends(get_session)) -> EntryView:
     """Send a failed, timed-out or withdrawn entry to the back of the queue."""
-    try:
-        entry = merge_queue.retry(session, entry_id)
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except QueueRefusal as exc:
-        raise HTTPException(409, str(exc)) from exc
-    return _entry_view(session, entry.id)
+    return run_rest_operation(
+        session,
+        OperationId.MERGE_QUEUE_ENTRY_ACTION,
+        {"entry_id": entry_id, "action": MergeQueueAction.RETRY},
+    )

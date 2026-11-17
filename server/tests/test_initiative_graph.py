@@ -667,3 +667,36 @@ def test_a_sandbox_never_starts_runs(db_session, workspaces, queue):
 
     assert lanes.add_to_lane.call_count == 0
     assert outcome[item.id].startswith("refused")
+
+
+@pytest.mark.parametrize(
+    ("tool", "extra"),
+    [
+        ("loregarden_start_initiative_work", {}),
+        ("loregarden_mark_needs_person", {"needs_person": True}),
+    ],
+)
+def test_the_planner_tools_take_only_an_initiative(db_session, workspaces, queue, tool, extra):
+    """The tools let any ticket's UUID stand in for the initiative, where the
+    page refused anything else; now both refuse it."""
+    lanes, _ = queue
+    here, _ = workspaces
+    initiative = _initiative(db_session)
+    m = _milestone(db_session, here, "M", initiative)
+    item = _item(db_session, here, m, "x")
+
+    with pytest.raises(ValueError, match="Initiative not found"):
+        _call(db_session, tool, {"initiative_id": m.id, "ticket_ids": [item.id], **extra})
+
+    assert _queued(lanes) == []
+    db_session.refresh(item)
+    assert NEEDS_PERSON_TAG not in load_tags(item.tags_json)
+
+
+def test_the_plan_endpoint_takes_an_external_id(client, db_session, workspaces):
+    initiative = _initiative(db_session)
+
+    res = client.get(f"/api/initiatives/{initiative.external_id}/plan")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["id"] == initiative.id

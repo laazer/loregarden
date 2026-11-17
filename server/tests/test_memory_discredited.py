@@ -210,9 +210,12 @@ def test_discredited_related_target_is_not_reachable_via_current_readers(tmp_pat
     assert rel["target_id"] == bad["id"]
 
 
-def test_mcp_upsert_discredited_is_auto_approved_and_filters_search(
+def test_mcp_upsert_refuses_to_change_the_flag_without_a_reason(
     client, vault_dir, tmp_path, monkeypatch
 ):
+    """A discredit drops a node from every briefing, so it needs a reason in the
+    node's history (`OperationId.MEMORY_DISCREDIT`). The upsert tool carries
+    none: it refuses the change, naming where it is made, and writes nothing."""
     monkeypatch.setattr("loregarden.config.settings.obsidian_vault_dir", str(vault_dir))
     monkeypatch.setattr(
         "loregarden.config.settings.memory_sqlite_url",
@@ -235,16 +238,22 @@ def test_mcp_upsert_discredited_is_auto_approved_and_filters_search(
             )
         )
         node_id = created["graph"]["id"]
+        node = {
+            "node_id": node_id,
+            "title": "Hallucinated protocol",
+            "workspace_slug": "loregarden",
+        }
+        with pytest.raises(ValueError, match="/api/memory/nodes/"):
+            execute_tool(
+                session,
+                "loregarden_upsert_memory",
+                {**node, "body": "rewritten", "discredited": True},
+            )
+        # Restating the flag the node has changes nothing, so it passes.
         execute_tool(
             session,
             "loregarden_upsert_memory",
-            {
-                "node_id": node_id,
-                "title": "Hallucinated protocol",
-                "body": "never do this",
-                "workspace_slug": "loregarden",
-                "discredited": True,
-            },
+            {**node, "body": "never do this", "discredited": False},
         )
         search = json.loads(
             execute_tool(
@@ -253,5 +262,34 @@ def test_mcp_upsert_discredited_is_auto_approved_and_filters_search(
                 {"query": "Hallucinated", "workspace_slug": "loregarden"},
             )
         )
-    assert search["graph"] == []
-    assert search["obsidian"] == []
+    assert [hit["id"] for hit in search["graph"]] == [node_id]
+    assert search["graph"][0]["body"] == "never do this"
+
+
+def test_mcp_upsert_refuses_to_restore_a_discredited_node_without_a_reason(
+    client, vault_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("loregarden.config.settings.obsidian_vault_dir", str(vault_dir))
+    monkeypatch.setattr(
+        "loregarden.config.settings.memory_sqlite_url",
+        f"sqlite:///{tmp_path / 'mcp-memory.db'}",
+    )
+    service = AgentMemoryService.from_settings()
+    node_id = service.upsert_memory(
+        title="Wrong", body="x", workspace_slug="loregarden", discredited=True
+    )["graph"]["id"]
+
+    from loregarden.db.session import engine
+
+    with Session(engine) as session, pytest.raises(ValueError, match="Restoring"):
+        execute_tool(
+            session,
+            "loregarden_upsert_memory",
+            {
+                "node_id": node_id,
+                "title": "Wrong",
+                "workspace_slug": "loregarden",
+                "discredited": False,
+            },
+        )
+    assert service.require_graph("loregarden").get_node(node_id)["discredited"] is True

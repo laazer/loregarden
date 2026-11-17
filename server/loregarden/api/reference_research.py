@@ -8,8 +8,11 @@ typed. A person's correction is recorded here too.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
+from loregarden.models.domain.survey_enums import ResearchRecordAction
 from loregarden.services.baxter_chat_service import BaxterChatConflictError
+from loregarden.services.operations import OperationId
 from loregarden.services.reference_survey.bulk import BulkAddItem
 from loregarden.services.reference_survey.errors import SurveyError, SurveyNotFound
 from loregarden.services.reference_survey.report import workspace_id_for
@@ -20,7 +23,6 @@ from loregarden.services.reference_survey.research import (
     RefuteIn,
     claim_card,
     question_view,
-    refute,
 )
 from loregarden.services.reference_survey.research_context import (
     ProjectView,
@@ -136,9 +138,9 @@ def research_claim(url: str, capability: str, session: Session = Depends(get_ses
 @router.post("/claims/refute", response_model=ClaimView)
 def refute_claim(body: RefuteIn, session: Session = Depends(get_session)) -> ClaimView:
     """A person's correction: this project does not do this. It stands over agent claims."""
-    try:
-        return ClaimView.model_validate(refute(session, body), from_attributes=True)
-    except SurveyNotFound as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except SurveyError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.RESEARCH_RECORD,
+        {"action": ResearchRecordAction.REFUTE, **body.model_dump()},
+        refusals={SurveyNotFound: refusal(404)},
+    )

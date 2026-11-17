@@ -25,10 +25,7 @@ from loregarden.mcp.chat_wait_tool import (
 )
 from loregarden.mcp.deferral_tool import defer_ticket_tool
 from loregarden.mcp.devdocs_tool import search_reference_tool
-from loregarden.mcp.disk_usage_tool import disk_usage_tool
 from loregarden.mcp.docker_capacity_tool import (
-    docker_capacity_status_tool,
-    force_release_docker_lease_tool,
     release_docker_capacity_tool,
     renew_docker_lease_tool,
     reserve_docker_capacity_tool,
@@ -41,12 +38,8 @@ from loregarden.mcp.external_harness_tools import (
 )
 from loregarden.mcp.feature_loop_tools import HANDLERS as FEATURE_LOOP_HANDLERS
 from loregarden.mcp.fix_coverage_tools import HANDLERS as FIX_COVERAGE_HANDLERS
-from loregarden.mcp.github_issue_tool import sync_github_issues
-from loregarden.mcp.initiative_membership_tools import HANDLERS as INITIATIVE_MEMBERSHIP_HANDLERS
 from loregarden.mcp.initiative_plan_tools import HANDLERS as INITIATIVE_PLAN_HANDLERS
 from loregarden.mcp.local_instance_tools import HANDLERS as LOCAL_INSTANCE_HANDLERS
-from loregarden.mcp.merge_queue_tools import HANDLERS as MERGE_QUEUE_HANDLERS
-from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.reference_tool import fetch_reference_tool
 from loregarden.mcp.research_tools import HANDLERS as RESEARCH_HANDLERS
 from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
@@ -73,10 +66,8 @@ def _search_prior_work(session: Session, arguments: dict[str, Any]) -> str:
 
 
 EXTENDED_TOOLS: dict[str, ToolHandler] = {
-    McpTool.CHECK_ORGANIZATION.value: check_organization,
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
     McpTool.DOCTOR.value: doctor,
-    McpTool.DISK_USAGE.value: disk_usage_tool,
     McpTool.BRANCH_MOVES.value: branch_moves_tool,
     McpTool.DEFER_TICKET.value: defer_ticket_tool,
     McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
@@ -86,19 +77,14 @@ EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.RESERVE_DOCKER_CAPACITY.value: reserve_docker_capacity_tool,
     McpTool.RENEW_DOCKER_LEASE.value: renew_docker_lease_tool,
     McpTool.RELEASE_DOCKER_CAPACITY.value: release_docker_capacity_tool,
-    McpTool.DOCKER_CAPACITY_STATUS.value: docker_capacity_status_tool,
-    McpTool.FORCE_RELEASE_DOCKER_LEASE.value: force_release_docker_lease_tool,
     **LOCAL_INSTANCE_HANDLERS,
     **INITIATIVE_PLAN_HANDLERS,
-    **INITIATIVE_MEMBERSHIP_HANDLERS,
     **FEATURE_LOOP_HANDLERS,
     **CHAT_WAIT_HANDLERS,
     **UI_ACTION_HANDLERS,
-    McpTool.SYNC_GITHUB_ISSUES.value: sync_github_issues,
     **DOCUMENT_HANDLERS,
     **UX_ANSWERS_HANDLERS,
     **FIX_COVERAGE_HANDLERS,
-    **MERGE_QUEUE_HANDLERS,
     **SURVEY_HANDLERS,
     **RESEARCH_HANDLERS,
 }

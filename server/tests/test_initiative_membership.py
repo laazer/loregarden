@@ -596,3 +596,32 @@ def test_migration_creates_the_table_and_is_idempotent(tmp_path: Path):
                 "VALUES ('i', 't', CURRENT_TIMESTAMP)"
             )
         )
+
+
+def test_api_takes_external_ids_as_the_tools_do(client, db_session, tree):
+    """The routes found the initiative and the ticket by UUID alone, so the
+    external ids an agent hands the operator answered 404."""
+    initiative = _initiative(db_session)
+    url = f"/api/initiatives/{initiative.external_id}/members"
+
+    added = client.post(url, json={"ticket_id": "ft-780"})
+
+    assert added.status_code == 201, added.text
+    assert [m["id"] for m in added.json()["milestones"]] == [tree["feature"].id]
+    assert client.delete(f"{url}/ft-780").status_code == 204
+    assert db_session.exec(select(InitiativeMember)).all() == []
+
+
+def test_a_member_is_attributed_by_transport(client, db_session, tree):
+    initiative = _initiative(db_session)
+    client.post(f"/api/initiatives/{initiative.id}/members", json={"ticket_id": "ft-780"})
+    _call(
+        db_session,
+        "loregarden_add_initiative_member",
+        {"initiative_id": initiative.id, "ticket_id": "ft-landed"},
+    )
+
+    added_by = {
+        row.ticket_id: row.added_by for row in db_session.exec(select(InitiativeMember)).all()
+    }
+    assert added_by == {tree["feature"].id: "human", tree["landed"].id: "agent"}

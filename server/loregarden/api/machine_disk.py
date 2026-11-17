@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import DiskScanRoot
 from loregarden.services.disk_usage.cleanup import (
@@ -44,45 +45,13 @@ from loregarden.services.disk_usage.local_models import (
 )
 from loregarden.services.disk_usage.roots import added_roots
 from loregarden.services.disk_usage.scanner import DiskNode
-from loregarden.services.disk_usage.store import (
-    RootSummary,
-    ScanStatus,
-    VolumeUsage,
-    find_node,
-    latest_result,
-    scan_status,
-    start_scan,
-    trimmed,
-    volume_usage,
-)
-from pydantic import BaseModel, Field, ValidationError
+from loregarden.services.disk_usage.store import ScanStatus
+from loregarden.services.operations import OperationId
+from loregarden.services.operations.disk_operations import MAX_DEPTH, MAX_LIMIT, DiskOverview
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/machine/disk", tags=["machine-disk"])
-
-MAX_DEPTH = 4
-MAX_LIMIT = 200
-
-
-class ScanSummary(BaseModel):
-    started_at: datetime
-    finished_at: datetime
-    entries: int
-    unreadable: int
-    unreadable_samples: list[str]
-    truncated: bool
-    unreadable_workspaces: list[str]
-    missing_added: list[str]
-    total_bytes: int
-    roots: list[RootSummary]
-
-
-class DiskOverview(BaseModel):
-    volume: VolumeUsage
-    status: ScanStatus
-    #: The last finished scan, or None when there has never been one.
-    scan: ScanSummary | None
-    added_roots: list[str]
 
 
 class AddRootRequest(BaseModel):
@@ -112,43 +81,14 @@ class CleanupEventOut(BaseModel):
     created_at: datetime
 
 
-def _latest_or_500():
-    try:
-        return latest_result()
-    except (OSError, ValidationError) as exc:
-        raise HTTPException(
-            500, f"The stored disk scan could not be read: {exc}. Scan again."
-        ) from exc
-
-
 @router.get("")
 def disk_overview(session: Session = Depends(get_session)) -> DiskOverview:
-    result = _latest_or_500()
-    summary = None
-    if result is not None:
-        summary = ScanSummary(
-            started_at=result.started_at,
-            finished_at=result.finished_at,
-            entries=result.entries,
-            unreadable=result.unreadable,
-            unreadable_samples=result.unreadable_samples,
-            truncated=result.truncated,
-            unreadable_workspaces=result.unreadable_workspaces,
-            missing_added=result.missing_added,
-            total_bytes=sum(node.size_bytes for node in result.tree),
-            roots=result.roots,
-        )
-    return DiskOverview(
-        volume=volume_usage(),
-        status=scan_status(),
-        scan=summary,
-        added_roots=[root.path for root in added_roots(session)],
-    )
+    return run_rest_operation(session, OperationId.DISK_OVERVIEW, {})
 
 
 @router.post("/scan", status_code=202)
 def disk_scan(session: Session = Depends(get_session)) -> ScanStatus:
-    return start_scan(session)
+    return run_rest_operation(session, OperationId.DISK_SCAN, {})
 
 
 @router.get("/tree")
@@ -156,16 +96,11 @@ def disk_tree(
     path: str = Query("", description="A node's path; empty for every root."),
     depth: int = Query(2, ge=1, le=MAX_DEPTH),
     limit: int = Query(80, ge=1, le=MAX_LIMIT),
+    session: Session = Depends(get_session),
 ) -> list[DiskNode]:
-    result = _latest_or_500()
-    if result is None:
-        raise HTTPException(404, "There is no disk scan yet.")
-    if not path:
-        return [trimmed(root, depth, limit) for root in result.tree]
-    node = find_node(result, path)
-    if node is None:
-        raise HTTPException(404, f"The last scan has no detail for {path}.")
-    return [trimmed(node, depth, limit)]
+    return run_rest_operation(
+        session, OperationId.DISK_TREE, {"path": path, "depth": depth, "limit": limit}
+    )
 
 
 def _validated_root(raw: str) -> Path:

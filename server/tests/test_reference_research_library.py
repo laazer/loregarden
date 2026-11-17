@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from loregarden.mcp.survey_tools import HANDLERS as SURVEY_HANDLERS
+from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import BaxterChatSession
 from loregarden.models.domain.chat_enums import ChatThreadMode
 from loregarden.models.domain.survey_enums import BulkAddOutcome, ClaimStatus
@@ -110,14 +110,14 @@ def test_queueing_twice_links_once_and_without_a_question_needs_a_workspace(ctx)
 
 def test_the_agents_enqueue_names_its_question_and_is_linked_the_same_way(ctx):
     session, world, _, question = ctx
-    reply = SURVEY_HANDLERS["loregarden_survey_queue"](session, {
+    reply = execute_tool(session, "loregarden_survey_queue", {
         "action": "enqueue", "kind": "repo", "url": RIGGER,
         "workspace_slugs": [world.workspace_slug], "research_question_id": question.id,
     })  # fmt: skip
     source_id = json.loads(reply)["source_id"] if isinstance(reply, str) else reply["source_id"]
     assert session.get(SurveySourceResearch, (source_id, question.id)) is not None
     with pytest.raises(SurveyNotFound):
-        SURVEY_HANDLERS["loregarden_survey_queue"](session, {
+        execute_tool(session, "loregarden_survey_queue", {
             "action": "enqueue", "kind": "repo", "url": OTHER,
             "workspace_slugs": [world.workspace_slug], "research_question_id": "nope",
         })  # fmt: skip

@@ -58,20 +58,11 @@ from loregarden.services.stage_retry_budget import (
 from loregarden.services.ticket_activity import (
     summarize_ticket_status,
 )
-from loregarden.services.ticket_dependencies import (
-    resolve_prerequisites,
-)
 from loregarden.services.ticket_detail_view import (
     ticket_detail,
 )
-from loregarden.services.ticket_growth_guard import SizeCapError
-from loregarden.services.ticket_ids import TicketNotFound
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
-from loregarden.services.ticket_revision_guard import (
-    TicketRevisionConflict,
-    guard_ticket_revision,
-)
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_summaries import apply_ticket_query_filters, workspace_scope
 from loregarden.services.workflow_reassignment import describe_reassignment
@@ -250,34 +241,10 @@ def ticket_status_summary(
 
 @router.post("", response_model=TicketDetail, status_code=201)
 def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -> TicketDetail:
-    svc = TicketService(session)
-    try:
-        prerequisites = resolve_prerequisites(session, body.depends_on)
-    except TicketNotFound as exc:
-        raise HTTPException(404, f"Prerequisite: {exc}") from exc
-    except ValueError as exc:
-        raise HTTPException(400, f"Prerequisite: {exc}") from exc
-    try:
-        ticket = svc.create_ticket(
-            workspace_slug=body.workspace_slug,
-            title=body.title,
-            work_item_type=body.work_item_type,
-            parent_ticket_id=body.parent_ticket_id,
-            description=body.description,
-            acceptance_criteria=body.acceptance_criteria,
-            priority=body.priority,
-            milestone=body.milestone,
-            external_id=body.external_id,
-            depends_on=prerequisites,
-        )
-    except SizeCapError as exc:
-        # Before the generic arm below, which both cap errors would otherwise
-        # reach: they are `ValueError` subclasses, so arm order is what decides
-        # whether the operator gets the structured detail or agent prose.
-        raise HTTPException(400, detail=exc.payload) from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return _detail_reply(session, ticket.id)
+    arguments = body.model_dump()
+    # The operation names the parent `parent`, a UUID or an external id.
+    arguments["parent"] = arguments.pop("parent_ticket_id") or ""
+    return run_rest_operation(session, OperationId.TICKET_CREATE, arguments)
 
 
 @router.post("/import/preview")
@@ -463,41 +430,14 @@ def update_ticket(
     body: TicketPatchRequest,
     session: Session = Depends(get_session),
 ) -> TicketDetail:
-    ticket = session.get(Ticket, ticket_id)
-    if not ticket:
-        raise HTTPException(404, "Ticket not found")
-    if body.expected_revision is not None:
-        # The guard lives here, at the caller-driven edge, and not inside
-        # `update_ticket_manual`: that applier has ten non-test callers, two
-        # caller-driven (this one and the MCP update_ticket handler) and eight
-        # system writers. Inside it, the orchestrator's exemption would be "the
-        # optional field was None" on eight call sites that reach it by
-        # accident; out here those writes never reach the guard at all. It runs
-        # before the try block because a conflict is not a `ValueError` and must
-        # not be reachable by the 400 arm below. It runs after the 404 lookup
-        # because a conflict about a ticket that does not exist would send a
-        # caller hunting a concurrent writer instead of a typo.
-        try:
-            guard_ticket_revision(
-                session, ticket_id=ticket.id, expected_revision=body.expected_revision
-            )
-        except TicketRevisionConflict as exc:
-            # A dict detail, so `current_revision` reaches the client as a
-            # number rather than as prose a caller has to regex back out.
-            raise HTTPException(409, detail=exc.payload) from exc
-    orch = OrchestrationService(session)
-    try:
-        # The body is passed through unchanged: the token is an edge concern and
-        # the applier reads nothing new.
-        orch.update_ticket_manual(ticket, body)
-    except SizeCapError as exc:
-        # Same arm order as `create_ticket`, for the same reason, and the same
-        # structured-detail shape this route already answers its 409 with.
-        raise HTTPException(400, detail=exc.payload) from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    session.refresh(ticket)
-    return _detail_reply(session, ticket_id)
+    # `None` is "not supplied" throughout the model, so it is left out; ""
+    # stays, since it detaches a parent or clears an override.
+    arguments = body.model_dump(exclude_none=True)
+    if "parent_ticket_id" in arguments:
+        arguments["parent"] = arguments.pop("parent_ticket_id")
+    return run_rest_operation(
+        session, OperationId.TICKET_UPDATE, {**arguments, "ticket_id": ticket_id}
+    )
 
 
 @router.delete("/{ticket_id}")

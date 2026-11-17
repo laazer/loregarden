@@ -18,10 +18,10 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.models.domain import AgentRun, MemoryOriginKind, MemoryRelationType
+from loregarden.models.domain import AgentRun, MemoryOriginKind
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
-from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.operations.memory_discredit import refuse_unreasoned_discredit
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 
 logger = logging.getLogger(__name__)
@@ -30,13 +30,11 @@ logger = logging.getLogger(__name__)
 #: `mcp.tools`, so adding a memory tool touches one file.
 MEMORY_TOOL_NAMES = frozenset(
     {
-        "loregarden_memory_status",
         "loregarden_append_learning",
         "loregarden_upsert_memory",
         "loregarden_upsert_blog_post",
         "loregarden_append_checkpoint",
         "loregarden_search_memory",
-        "loregarden_create_memory_relation",
     }
 )
 
@@ -88,11 +86,6 @@ def execute_memory_tool(
 
     memory = AgentMemoryService.from_settings()
 
-    if name == "loregarden_memory_status":
-        return json.dumps(
-            memory.status(workspace_slug=arguments.get("workspace_slug", "")), indent=2
-        )
-
     if name == "loregarden_append_learning":
         origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.append_learning(
@@ -108,6 +101,14 @@ def execute_memory_tool(
         return json.dumps(result, indent=2)
 
     if name == "loregarden_upsert_memory":
+        # A change to the flag needs a reason this tool does not carry
+        # (`OperationId.MEMORY_DISCREDIT`); restating it passes, unchanged.
+        refuse_unreasoned_discredit(
+            memory,
+            node_id=arguments.get("node_id", ""),
+            workspace_slug=arguments["workspace_slug"],
+            discredited=arguments.get("discredited"),
+        )
         origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
         result = memory.upsert_memory(
             node_id=arguments.get("node_id", ""),
@@ -116,7 +117,6 @@ def execute_memory_tool(
             tags=arguments.get("tags"),
             ticket_id=arguments.get("ticket_id", ""),
             workspace_slug=arguments["workspace_slug"],
-            discredited=arguments.get("discredited"),
             origin_kind=origin_kind,
             origin_ref=origin_ref,
         )
@@ -162,21 +162,6 @@ def execute_memory_tool(
             arguments["query"],
             workspace_slug=arguments.get("workspace_slug", ""),
             limit=int(arguments.get("limit") or 20),
-        )
-        return json.dumps(result, indent=2)
-
-    # Named rather than left as the fall-through: `test_mcp_all_tools_smoke`
-    # reads the routed names out of this module's source, and a branch with no
-    # literal reads as advertised-but-undispatched.
-    if name == "loregarden_create_memory_relation":
-        result = memory.create_relation(
-            source_id=arguments["source_id"],
-            target_id=arguments["target_id"],
-            # Parsed at the boundary: an unknown label is refused naming the vocabulary.
-            relation_type=parse_relation_type(
-                arguments.get("relation_type", MemoryRelationType.RELATED.value)
-            ),
-            workspace_slug=arguments["workspace_slug"],
         )
         return json.dumps(result, indent=2)
 

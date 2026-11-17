@@ -6,14 +6,11 @@ its threadpool, so a slow GitHub cannot stall the event loop.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.pull_request_merge import (
-    MergeAndCleanUp,
-    MergeFailed,
-    MergeRefused,
-    merge_and_clean_up,
-)
+from loregarden.services.operations import OperationId
+from loregarden.services.pull_request_merge import MergeAndCleanUp
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_pull_request import TicketPullRequest, ticket_pull_request
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -52,14 +49,14 @@ def get_ticket_pull_request(
 def merge_ticket_pull_request(
     ticket_id: str, body: MergeRequest, session: Session = Depends(get_session)
 ) -> MergeAndCleanUp:
-    """The operator's "Merge and clean up". Not an agent action: no MCP tool or UI
-    action reaches it, so a merge always follows a person's click."""
-    ticket, workspace = _ticket_and_workspace(session, ticket_id)
-    try:
-        return merge_and_clean_up(
-            session, ticket, workspace, number=body.number, head_sha=body.head_sha
-        )
-    except MergeRefused as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except MergeFailed as exc:
-        raise HTTPException(502, str(exc)) from exc
+    """The operator's "Merge and clean up", pinned to the head the PR tab showed.
+
+    Agents reach the same operation through `loregarden_merge_pull_request`,
+    which is never auto-approved and is denied to pipeline stages, so an agent's
+    merge still waits on a person's approval.
+    """
+    return run_rest_operation(
+        session,
+        OperationId.TICKET_PULL_REQUEST_MERGE,
+        {"ticket_id": ticket_id, "number": body.number, "head_sha": body.head_sha},
+    )

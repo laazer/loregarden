@@ -11,6 +11,7 @@ ticket the initiative tracks without parenting it (`initiative_membership`).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     DEFAULT_SPRINT_DAYS,
@@ -31,24 +32,11 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.services.initiative_autopilot import (
-    mark_needs_person,
-    run_autopilot,
-    set_autopilot,
-    start_ready_work,
-)
-from loregarden.services.initiative_membership import (
-    InitiativeMembershipError,
-    MembershipConflictError,
-    add_member,
-    member_candidates,
-    remove_member,
-)
+from loregarden.services.initiative_membership import member_candidates
 from loregarden.services.initiative_plan_service import (
     ScheduleValidationError,
     accept_proposal,
     discard_proposal,
-    plan_view,
     update_plan,
 )
 from loregarden.services.initiative_planner_service import (
@@ -64,7 +52,6 @@ from loregarden.services.initiative_service import (
     attachable_milestones,
     get_initiative,
     list_initiatives,
-    load_initiative,
 )
 from loregarden.services.initiative_suggestion_agent import regroup_with_agent
 from loregarden.services.initiative_suggestions import (
@@ -73,6 +60,7 @@ from loregarden.services.initiative_suggestions import (
     apply_suggestions,
     suggest_initiatives,
 )
+from loregarden.services.operations import OperationId
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -180,15 +168,11 @@ def add_member_endpoint(
     initiative_id: str, body: InitiativeMemberAdd, session: Session = Depends(get_session)
 ) -> InitiativeView:
     """Track a ticket and its subtree without re-parenting it; returns the initiative."""
-    try:
-        add_member(session, initiative_id, body.ticket_id, actor=_OPERATOR)
-        return get_initiative(session, initiative_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except MembershipConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except InitiativeMembershipError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.INITIATIVE_MEMBER_ADD,
+        {"initiative_id": initiative_id, "ticket_id": body.ticket_id},
+    )
 
 
 @router.delete("/{initiative_id}/members/{ticket_id}", status_code=204)
@@ -196,10 +180,11 @@ def remove_member_endpoint(
     initiative_id: str, ticket_id: str, session: Session = Depends(get_session)
 ) -> Response:
     """Stop tracking a member. The ticket itself is not changed."""
-    try:
-        remove_member(session, initiative_id, ticket_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    run_rest_operation(
+        session,
+        OperationId.INITIATIVE_MEMBER_REMOVE,
+        {"initiative_id": initiative_id, "ticket_id": ticket_id},
+    )
     return Response(status_code=204)
 
 
@@ -207,10 +192,9 @@ def remove_member_endpoint(
 def get_plan_endpoint(
     initiative_id: str, session: Session = Depends(get_session)
 ) -> InitiativePlanView:
-    try:
-        return plan_view(session, initiative_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return run_rest_operation(
+        session, OperationId.INITIATIVE_PLAN, {"initiative_id": initiative_id}
+    )
 
 
 @router.patch("/{initiative_id}/plan", response_model=InitiativePlanView)
@@ -258,15 +242,12 @@ def update_autopilot_endpoint(
     initiative_id: str, body: AutopilotUpdate, session: Session = Depends(get_session)
 ) -> InitiativePlanView:
     """Turning it on queues the first batch now rather than at the next tick."""
-    try:
-        # The engine takes any parent (`api.ticket_autopilot`); this page is initiatives'.
-        load_initiative(session, initiative_id)
-        plan = set_autopilot(session, initiative_id, body, actor=_OPERATOR)
-        if plan.autopilot:
-            run_autopilot(session, initiative_id)
-        return plan_view(session, initiative_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # The engine takes any parent (`api.ticket_autopilot`); this page is initiatives'.
+    return run_rest_operation(
+        session,
+        OperationId.INITIATIVE_AUTOPILOT_SET,
+        {"initiative_id": initiative_id, **body.model_dump(exclude_unset=True)},
+    )
 
 
 @router.post("/{initiative_id}/work", response_model=dict[str, str])
@@ -274,25 +255,26 @@ def start_work_endpoint(
     initiative_id: str, body: TicketSelection, session: Session = Depends(get_session)
 ) -> dict[str, str]:
     """Queue named tickets if the plan says they are ready; returns id -> outcome."""
-    try:
-        load_initiative(session, initiative_id)
-        return start_ready_work(session, initiative_id, body.ticket_ids, actor=_OPERATOR)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.INITIATIVE_WORK_START,
+        {"initiative_id": initiative_id, "ticket_ids": body.ticket_ids},
+    )
 
 
 @router.post("/{initiative_id}/needs-person", response_model=InitiativePlanView)
 def needs_person_endpoint(
     initiative_id: str, body: NeedsPersonUpdate, session: Session = Depends(get_session)
 ) -> InitiativePlanView:
-    try:
-        load_initiative(session, initiative_id)
-        mark_needs_person(session, initiative_id, body.ticket_ids, needs_person=body.needs_person)
-        return plan_view(session, initiative_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_rest_operation(
+        session,
+        OperationId.INITIATIVE_NEEDS_PERSON,
+        {
+            "initiative_id": initiative_id,
+            "ticket_ids": body.ticket_ids,
+            "needs_person": body.needs_person,
+        },
+    )
 
 
 @router.get("/{initiative_id}/planner", response_model=PlannerChatSnapshot)

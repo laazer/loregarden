@@ -374,3 +374,45 @@ def test_pr_cycle_keeps_no_pr_apart_from_a_failed_read(client, queue):
 
 def test_pr_cycle_for_an_unknown_workspace_is_a_404(client):
     assert client.get("/api/merge-queue/nope/pr-cycle", params={"branch": "x"}).status_code == 404
+
+
+def _ticket_in_another_workspace(isolated_db) -> str:
+    with Session(isolated_db) as session:
+        other = Workspace(slug="other", name="other", repo_path="/nonexistent")
+        session.add(other)
+        session.commit()
+        ticket = Ticket(
+            external_id="ot-1",
+            workspace_id=other.id,
+            title="elsewhere",
+            work_item_type=WorkItemType.FEATURE,
+        )
+        session.add(ticket)
+        session.commit()
+        return ticket.id
+
+
+@pytest.mark.parametrize("by", ["id", "external_id"])
+def test_enqueue_refuses_a_ticket_from_another_workspace_rather_than_queue_it_here(
+    client, isolated_db, queue, by
+):
+    """The route once queued whatever ticket it resolved under the URL's workspace."""
+    ticket_id = _ticket_in_another_workspace(isolated_db)
+    with (
+        mock.patch.object(
+            merge_queue_requests, "published_branch", return_value=("integration/ot-1", "e" * 40)
+        ),
+        mock.patch.object(merge_queue_requests, "GhQueueGitHub") as gh,
+    ):
+        gh.return_value.open_pull_request.return_value = (9, "https://github.com/o/r/pull/9")
+        response = client.post(
+            "/api/merge-queue/mq/entries",
+            json={"ticket_id": ticket_id if by == "id" else "ot-1"},
+        )
+
+    assert response.status_code == 400, response.text
+    with Session(isolated_db) as session:
+        queued = session.exec(
+            select(MergeQueueEntry).where(MergeQueueEntry.ticket_id == ticket_id)
+        ).all()
+    assert queued == []

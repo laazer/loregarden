@@ -36,7 +36,9 @@ from loregarden.services.github_issue_sync import (
     sync_link,
     sync_workspace,
 )
+from loregarden.services.operations.github_issue_operations import IssueNotLinked
 from loregarden.services.ticket_service import TicketService
+from pydantic import ValidationError
 from sqlmodel import Session, select
 from tests.github_fake import REPO, FakeGh
 
@@ -457,5 +459,27 @@ def test_mcp_status_publish_and_sync(db_session: Session, gh: FakeGh, ticket: Ti
 
 
 def test_mcp_rejects_an_unknown_action(db_session: Session, ticket: Ticket):
-    with pytest.raises(ValueError, match="invalid arguments"):
+    with pytest.raises(ValidationError, match="action"):
         _mcp(db_session, {"action": "delete_everything", "ticket_id": ticket.id})
+
+
+def test_rest_finds_a_ticket_by_its_external_id(client, gh: FakeGh, ticket: Ticket):
+    published = client.post(f"/api/tickets/{ticket.external_id}/github-issue")
+    assert published.status_code == 200, published.text
+
+    status = client.get(f"/api/tickets/{ticket.external_id}/github-issue")
+
+    assert status.json()["issue_number"] == published.json()["issue_number"]
+
+
+def test_mcp_finds_a_ticket_by_its_external_id(db_session: Session, gh: FakeGh, ticket: Ticket):
+    status = _mcp(db_session, {"action": "status", "ticket_id": ticket.external_id})
+    assert status == {"ticket_id": ticket.id, "linked": False, "link": None}
+
+
+def test_syncing_an_unlinked_ticket_is_refused_on_both_transports(
+    client, db_session: Session, gh: FakeGh, ticket: Ticket
+):
+    assert client.post(f"/api/tickets/{ticket.id}/github-issue/sync").status_code == 404
+    with pytest.raises(IssueNotLinked):
+        _mcp(db_session, {"action": "sync", "ticket_id": ticket.id})

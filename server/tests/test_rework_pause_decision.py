@@ -465,15 +465,13 @@ def test_requeue_of_another_stage_moves_the_cursor(db_session: Session, review_t
     """`stage_key` + `stage_status` sets one stage's status and returns without
     touching the cursor, so requeuing `ac_gate` left the ticket pointing at the
     blocked `script_review` and the next start resumed exactly where it stuck."""
-    from loregarden.mcp.ticket_ops_tools import _requeue_ticket
-    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+    from loregarden.mcp.tools import execute_tool
 
     ticket, _, _ = review_ticket
-    svc = OrchestrationCallbackService(db_session)
 
-    _requeue_ticket(
+    execute_tool(
         db_session,
-        svc,
+        "loregarden_requeue_ticket",
         {"ticket_id": ticket.id, "stage_key": "ac_gate", "reason": "script_review really passed"},
     )
     db_session.refresh(ticket)
@@ -486,7 +484,7 @@ def test_requeue_says_when_another_stage_still_holds_the_ticket(db_session: Sess
     is gone" unless the outcome says otherwise."""
     import json
 
-    from loregarden.mcp.ticket_ops_tools import _requeue_ticket
+    from loregarden.mcp.tools import execute_tool
     from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
     from loregarden.services.workflow_state import set_stage_status
 
@@ -498,9 +496,9 @@ def test_requeue_says_when_another_stage_still_holds_the_ticket(db_session: Sess
     db_session.commit()
 
     payload = json.loads(
-        _requeue_ticket(
+        execute_tool(
             db_session,
-            svc,
+            "loregarden_requeue_ticket",
             {"ticket_id": ticket.id, "stage_key": "ac_gate", "reason": "moving on"},
         )
     )

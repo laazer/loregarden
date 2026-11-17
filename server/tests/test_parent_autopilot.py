@@ -237,3 +237,31 @@ def test_the_initiative_endpoint_still_takes_only_initiatives(client, db_session
 
     assert res.status_code == 404
     assert db_session.get(InitiativePlan, m.id) is None
+
+
+def test_the_ticket_endpoint_takes_an_external_id(client, db_session, workspaces, queue):
+    """The route passed the path id raw to the engine, which looks up UUIDs."""
+    here, _ = workspaces
+    m = _standalone_milestone(db_session, here)
+    _item(db_session, here, m, "f")
+
+    on = client.patch(f"/api/tickets/{m.external_id}/autopilot", json={"enabled": True})
+
+    assert on.status_code == 200, on.text
+    assert on.json()["root_id"] == m.id
+    plan = db_session.get(InitiativePlan, m.id)
+    assert plan is not None and plan.autopilot
+
+
+def test_a_refused_initiative_switch_is_a_409(client, db_session, workspaces):
+    """The initiatives route caught only `LookupError`, so a switch the engine
+    refused (here a start time already past) answered 500."""
+    initiative = _initiative(db_session)
+
+    res = client.patch(
+        f"/api/initiatives/{initiative.id}/autopilot",
+        json={"schedule": {"start_at": "2020-01-01T00:00:00Z"}},
+    )
+
+    assert res.status_code == 409, res.text
+    assert "already past" in res.json()["detail"]
