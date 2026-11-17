@@ -11,6 +11,7 @@ ticket the initiative tracks without parenting it (`initiative_membership`).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
@@ -18,7 +19,6 @@ from loregarden.models.domain import (
     MAX_SPRINT_DAYS,
     MIN_SPRINT_DAYS,
     AutopilotUpdate,
-    InitiativeMemberAdd,
     InitiativeMilestoneView,
     InitiativePlanUpdate,
     InitiativePlanView,
@@ -70,12 +70,22 @@ router = APIRouter(prefix="/initiatives", tags=["initiatives"])
 _OPERATOR = "human"
 
 
-class TicketSelection(BaseModel):
-    ticket_ids: list[str]
+class InitiativeMemberAdd(
+    OperationBody, operation=OperationId.INITIATIVE_MEMBER_ADD, supplied={"initiative_id"}
+):
+    """A ticket to track, with its subtree, without re-parenting it."""
 
 
-class NeedsPersonUpdate(TicketSelection):
-    needs_person: bool = True
+class TicketSelection(
+    OperationBody, operation=OperationId.INITIATIVE_WORK_START, supplied={"initiative_id"}
+):
+    """Plan tickets to queue, by the UUIDs the plan's nodes carry."""
+
+
+class NeedsPersonUpdate(
+    OperationBody, operation=OperationId.INITIATIVE_NEEDS_PERSON, supplied={"initiative_id"}
+):
+    """Plan tickets to mark as needing a person, or to clear."""
 
 
 class PlannerMessageCreate(BaseModel):
@@ -171,7 +181,7 @@ def add_member_endpoint(
     return run_rest_operation(
         session,
         OperationId.INITIATIVE_MEMBER_ADD,
-        {"initiative_id": initiative_id, "ticket_id": body.ticket_id},
+        {**body.model_dump(), "initiative_id": initiative_id},
     )
 
 
@@ -258,7 +268,7 @@ def start_work_endpoint(
     return run_rest_operation(
         session,
         OperationId.INITIATIVE_WORK_START,
-        {"initiative_id": initiative_id, "ticket_ids": body.ticket_ids},
+        {**body.model_dump(), "initiative_id": initiative_id},
     )
 
 
@@ -269,11 +279,7 @@ def needs_person_endpoint(
     return run_rest_operation(
         session,
         OperationId.INITIATIVE_NEEDS_PERSON,
-        {
-            "initiative_id": initiative_id,
-            "ticket_ids": body.ticket_ids,
-            "needs_person": body.needs_person,
-        },
+        {**body.model_dump(), "initiative_id": initiative_id},
     )
 
 

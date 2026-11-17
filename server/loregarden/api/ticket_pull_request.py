@@ -6,6 +6,7 @@ its threadpool, so a slow GitHub cannot stall the event loop.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import Ticket, Workspace
@@ -14,17 +15,19 @@ from loregarden.services.pull_request_merge import MergeAndCleanUp
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_pull_request import TicketPullRequest, ticket_pull_request
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
-from pydantic import BaseModel
 from sqlmodel import Session
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
-class MergeRequest(BaseModel):
+class MergeRequest(
+    OperationBody,
+    operation=OperationId.TICKET_PULL_REQUEST_MERGE,
+    supplied={"ticket_id"},
+    # The page is never merged at a head it did not send.
+    required={"head_sha"},
+):
     """The PR and head commit the operator was shown; the merge is pinned to both."""
-
-    number: int
-    head_sha: str
 
 
 def _ticket_and_workspace(session: Session, ticket_id: str) -> tuple[Ticket, Workspace]:
@@ -58,5 +61,5 @@ def merge_ticket_pull_request(
     return run_rest_operation(
         session,
         OperationId.TICKET_PULL_REQUEST_MERGE,
-        {"ticket_id": ticket_id, "number": body.number, "head_sha": body.head_sha},
+        {**body.model_dump(), "ticket_id": ticket_id},
     )

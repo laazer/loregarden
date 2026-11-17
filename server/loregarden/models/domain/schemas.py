@@ -321,19 +321,6 @@ class TicketDependencyRef(SQLModel):
     overridden: bool = False
 
 
-class TicketDependencyRequest(SQLModel):
-    """Add a "this ticket waits for depends_on" edge; accepts a UUID or external_id."""
-
-    depends_on: str
-
-
-class TicketRelationRequest(SQLModel):
-    """Relate this ticket to another (symmetric, non-blocking); accepts a UUID or
-    external_id."""
-
-    related_to: str
-
-
 class TicketSplit(SQLModel):
     """The orchestrator split this ticket into parts, before its own stages could run on."""
 
@@ -634,61 +621,6 @@ class RunUsage(SQLModel):
         )
 
 
-class CompleteStageRequest(SQLModel):
-    stage_key: str
-    next_agent: str = ""
-    next_stage_key: str = ""
-    outcome: str = "pass"  # pass | reject
-    blocking_issues: str = ""
-    advance: bool = True
-    #: The stage report's findings, as `loregarden_complete_stage` takes them.
-    #: Omitted, the outcome stands as given (see `settle_stage_claim`).
-    findings: list[dict[str, Any]] | None = None
-
-
-class StartStageRequest(SQLModel):
-    stage_key: str
-    agent_id: str = ""
-    #: Dispatch the stage although it has reached its retry budget; recorded.
-    force: bool = False
-    #: Start it although prerequisites are not done and landed; recorded.
-    ignore_prerequisites: bool = False
-
-
-class BlockTicketRequest(SQLModel):
-    stage_key: str = ""
-    message: str
-    #: The prepared action, as `loregarden_block_ticket` takes it; all optional.
-    tier: str | None = None
-    attempted: str | None = None
-    prepared: str | None = None
-    command: str | None = None
-    script_path: str | None = None
-    captures: list[str] | None = None
-
-
-class SkipStageRequest(SQLModel):
-    stage_key: str
-    reason: str = ""
-
-
-class AttachArtifactRequest(SQLModel):
-    kind: str = "log"
-    title: str = ""
-    content: dict[str, Any] = {}
-
-
-class RequestApprovalRequest(SQLModel):
-    stage_key: str
-    title: str = ""
-    impact: str = ""
-
-
-class CompleteOrchestrationRequest(SQLModel):
-    status: OrchestrationRunStatus = OrchestrationRunStatus.SUCCEEDED
-    message: str = ""
-
-
 class OrchestrationRunView(SQLModel):
     id: str
     run_code: str
@@ -890,44 +822,6 @@ class UpdateTicketRequest(SQLModel):
     #: override so the ticket inherits again — which is not the same as an
     #: override with every flag false.
     git_automation: dict[str, bool | int | str] | None = None
-
-
-class TicketPatchRequest(UpdateTicketRequest):
-    """`UpdateTicketRequest` plus the optimistic-concurrency token, for the PATCH edge.
-
-    The token lives on this edge model rather than on the shared DTO because
-    `UpdateTicketRequest` is constructed by eight internal system writers and is
-    handed to a shared applier that reads nothing new. A field there that the
-    applier never consults would read as supported on every one of those paths
-    while doing nothing — and the guard is deliberately called from the two
-    caller-driven edges, not from the applier, so the orchestrator's exemption
-    is structural rather than a flag that happened to be None. See
-    `services/ticket_revision_guard`.
-
-    `extra="forbid"` is inherited from the parent, so an unknown key is still a
-    422 rather than a silently discarded write.
-    """
-
-    #: The revision the caller's draft was seeded from. Omit it (or send null)
-    #: for today's last-write-wins behaviour; send it to have the edit refused
-    #: with a 409 if the row moved since.
-    expected_revision: int | None = None
-
-
-class TicketCreate(SQLModel):
-    #: Omitted for an initiative, which spans workspaces and binds to none.
-    workspace_slug: str = ""
-    title: str
-    work_item_type: WorkItemType = WorkItemType.TASK
-    parent_ticket_id: str | None = None
-    description: str = ""
-    acceptance_criteria: list[str] = []
-    priority: int = 3
-    milestone: str = ""
-    external_id: str = ""
-    #: Prerequisites it waits for, as UUIDs or external ids — written with the
-    #: ticket, so nothing can dispatch it before they are recorded.
-    depends_on: list[str] = []
 
 
 class ApprovalAction(SQLModel):

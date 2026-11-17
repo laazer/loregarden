@@ -11,6 +11,7 @@ record goes through the survey's MCP tools.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain.survey_enums import SurveyQueueAction
@@ -59,8 +60,13 @@ from sqlmodel import Session
 router = APIRouter(prefix="/reference-library", tags=["reference-library"])
 
 
-class LinkInitiativeRequest(BaseModel):
-    initiative_id: str
+class LinkInitiativeRequest(
+    OperationBody,
+    operation=OperationId.SURVEY_QUEUE,
+    only={"initiative_id"},
+    required={"initiative_id"},
+):
+    """The initiative to link the source to."""
 
 
 @router.get("", response_model=LibraryList)
@@ -182,8 +188,10 @@ def put_auto_rereview(
     return save_settings(session, body)
 
 
-class AutoRereviewExclusion(BaseModel):
-    excluded: bool
+class AutoRereviewExclusion(
+    OperationBody, operation=OperationId.SURVEY_QUEUE, only={"excluded"}, required={"excluded"}
+):
+    """Whether the source is out of auto re-review."""
 
 
 @router.get("/topics", response_model=list[TopicView])
@@ -273,9 +281,9 @@ def link(
         session,
         OperationId.SURVEY_QUEUE,
         {
+            **body.model_dump(),
             "action": SurveyQueueAction.LINK_INITIATIVE,
             "source_id": source_id,
-            "initiative_id": body.initiative_id,
         },
         refusals=_INVALID,
     )
@@ -319,9 +327,9 @@ def exclude_from_auto_rereview(
         session,
         OperationId.SURVEY_QUEUE,
         {
+            **body.model_dump(),
             "action": SurveyQueueAction.SET_AUTO_REREVIEW,
             "source_id": source_id,
-            "excluded": body.excluded,
         },
         refusals=_NOT_FOUND,
     )

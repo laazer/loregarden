@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from loregarden.api.operation_bodies import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
@@ -18,15 +19,11 @@ from loregarden.models.domain import (
     StartOrchestrationRequest,
     StartRunRequest,
     Ticket,
-    TicketCreate,
-    TicketDependencyRequest,
     TicketDetail,
     TicketImportPreviewPathsRequest,
     TicketImportPreviewRequest,
     TicketImportRequest,
     TicketImportResult,
-    TicketPatchRequest,
-    TicketRelationRequest,
     TicketState,
     TicketStatusSummary,
     TicketSummary,
@@ -239,12 +236,49 @@ def ticket_status_summary(
     return summarize_ticket_status(session, workspace_id=workspace_id)
 
 
+class TicketCreate(
+    OperationBody,
+    operation=OperationId.TICKET_CREATE,
+    required={"title"},
+    # The page names the parent `parent_ticket_id`, and sends null for none.
+    renamed={"parent": "parent_ticket_id"},
+    nullable={"parent"},
+    typed={"work_item_type": WorkItemType},
+):
+    """A new ticket."""
+
+
+class TicketDependencyRequest(
+    OperationBody, operation=OperationId.TICKET_DEPENDENCY_ADD, supplied={"ticket_id"}
+):
+    """Add a "this ticket waits for depends_on" edge; accepts a UUID or external_id."""
+
+
+class TicketRelationRequest(
+    OperationBody, operation=OperationId.TICKET_RELATION_ADD, supplied={"ticket_id"}
+):
+    """Relate this ticket to another (symmetric, non-blocking); accepts a UUID or
+    external_id."""
+
+
+class TicketPatchRequest(
+    OperationBody,
+    operation=OperationId.TICKET_UPDATE,
+    supplied={"ticket_id"},
+    # How MCP's criteria combine with the stored list; the page sends the whole list.
+    hidden={"mode"},
+    renamed={"parent": "parent_ticket_id"},
+    typed={"state": TicketState},
+    # A PATCH answering 200 to a write it silently discarded is what this refuses.
+    extra="forbid",
+):
+    """An edit to one ticket. `None` is "not supplied" throughout; `""` detaches a
+    parent or clears an override."""
+
+
 @router.post("", response_model=TicketDetail, status_code=201)
 def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -> TicketDetail:
-    arguments = body.model_dump()
-    # The operation names the parent `parent`, a UUID or an external id.
-    arguments["parent"] = arguments.pop("parent_ticket_id") or ""
-    return run_rest_operation(session, OperationId.TICKET_CREATE, arguments)
+    return run_rest_operation(session, OperationId.TICKET_CREATE, body.model_dump())
 
 
 @router.post("/import/preview")
@@ -322,7 +356,7 @@ def add_ticket_dependency(
     return run_rest_operation(
         session,
         OperationId.TICKET_DEPENDENCY_ADD,
-        {"ticket_id": ticket_id, "depends_on": body.depends_on},
+        {**body.model_dump(), "ticket_id": ticket_id},
     )
 
 
@@ -352,7 +386,7 @@ def add_ticket_relation(
     return run_rest_operation(
         session,
         OperationId.TICKET_RELATION_ADD,
-        {"ticket_id": ticket_id, "related_to": body.related_to},
+        {**body.model_dump(), "ticket_id": ticket_id},
     )
 
 
@@ -432,11 +466,10 @@ def update_ticket(
 ) -> TicketDetail:
     # `None` is "not supplied" throughout the model, so it is left out; ""
     # stays, since it detaches a parent or clears an override.
-    arguments = body.model_dump(exclude_none=True)
-    if "parent_ticket_id" in arguments:
-        arguments["parent"] = arguments.pop("parent_ticket_id")
     return run_rest_operation(
-        session, OperationId.TICKET_UPDATE, {**arguments, "ticket_id": ticket_id}
+        session,
+        OperationId.TICKET_UPDATE,
+        {**body.model_dump(exclude_none=True), "ticket_id": ticket_id},
     )
 
 

@@ -40,10 +40,6 @@ class InitiativeMilestoneView(BaseModel):
     home_milestone: str
 
 
-class InitiativeMemberAdd(BaseModel):
-    ticket_id: str
-
-
 class InitiativeProgress(BaseModel):
     #: Milestones in `done` or `wont_do` — the same resolution the rollup uses.
     resolved: int
@@ -274,7 +270,6 @@ class SubtreeAutopilotView(BaseModel):
 
 __all__ = [
     "InitiativeMilestoneView",
-    "InitiativeMemberAdd",
     "InitiativeProgress",
     "InitiativeView",
     "WorkspacePace",
