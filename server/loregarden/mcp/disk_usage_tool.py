@@ -29,30 +29,4 @@ TOOL_DEFINITION: dict[str, Any] = {
         "confirmed. Pass `path` to drill into one folder; `rescan` to start a "
         "fresh scan in the background (call again to read it)."
     ),
-    "inputSchema": {
-        "type": "object",
-        "properties": {
-            "path": {
-                "type": "string",
-                "description": "Absolute path of a folder from an earlier answer. Omit for the scan roots.",
-            },
-            "depth": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 3,
-                "description": "Levels below `path` to include. Default 2.",
-            },
-            "limit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 30,
-                "description": "Largest children per folder; the rest are summed into one entry. Default 12.",
-            },
-            "rescan": {
-                "type": "boolean",
-                "description": "Start a fresh scan in the background. Default false.",
-            },
-        },
-        "additionalProperties": False,
-    },
 }

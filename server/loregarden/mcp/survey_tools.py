@@ -40,12 +40,9 @@ from loregarden.models.domain.survey_enums import (
     SurveyEpistemic,
     SurveyFindingClaim,
     SurveyPassAction,
-    SurveyPassMode,
     SurveyPassOutcome,
-    SurveyQueueAction,
     SurveyReadState,
     SurveyRecordAction,
-    SurveySourceKind,
 )
 from loregarden.models.domain.work_item_types import WorkItemType
 from loregarden.services.reference_survey import passes, record, report
@@ -128,54 +125,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "puts it back; status returns a source's whole "
             "record (passes, tickets touched, findings, unknowns, coverage); coverage returns "
             "the directory map with what every pass read, each count with its denominator."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "action": enum_string_prop("What to do.", _values(SurveyQueueAction)),
-                "workspace_slugs": string_list_prop(
-                    "enqueue: every workspace whose backlog the source should answer; the first is "
-                    "home. A URL already known gains these workspaces instead of a second survey."
-                ),
-                "workspace_slug": string_prop("list: only sources serving this workspace."),
-                "kind": enum_string_prop("enqueue: what the source is.", _values(SurveySourceKind)),
-                "url": string_prop("enqueue: repository or https URL."),
-                "name": string_prop("enqueue: display name (default: last URL segment)."),
-                "question": string_prop(
-                    "enqueue/request_pass/review_now: what the source or pass is meant to answer. "
-                    "Optional: without one, a pass reads for what would serve the workspaces and "
-                    "initiatives it serves (review_now: only for a surveyed source)."
-                ),
-                "queued_reason": string_prop(
-                    "enqueue: why it is worth reading now (optional). review_now: why a refused "
-                    "source should be read after all (required to reopen one; the licence gate "
-                    "still runs first)."
-                ),
-                "priority": integer_prop("enqueue: lower runs first (default 100)."),
-                "source_id": _SOURCE_ID,
-                "mode": enum_string_prop(
-                    "request_pass: continuation or scoped.",
-                    [SurveyPassMode.CONTINUATION.value, SurveyPassMode.SCOPED.value],
-                ),
-                "paths": string_list_prop(
-                    "request_pass: map paths to read; empty lets the feeder slice the map."
-                ),
-                "limit": integer_prop("list: max rows (default 50)."),
-                "discovery_id": string_prop(
-                    "enqueue: the discovery run this find belongs to (from its brief); the find "
-                    "then serves the run's workspaces and initiatives."
-                ),
-                "research_question_id": string_prop(
-                    "enqueue: the research question this pick answers; its pass brief then "
-                    "carries the question and the claims to confirm."
-                ),
-                "excluded": boolean_prop(
-                    "set_auto_rereview: true takes the source out of auto re-review, false puts it back."
-                ),
-                "initiative_id": string_prop(
-                    "link_initiative/unlink_initiative: the initiative, by UUID or external id."
-                ),
-            },
-            required=["action"],
         ),
     },
     {

@@ -88,12 +88,16 @@ class DiskOverview(BaseModel):
 class DiskUsageRequest(BaseModel):
     """An agent's question; unknown keys are refused, as the tool's schema says."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     path: str = ""
+    """Absolute path of a folder from an earlier answer. Omit for the scan roots."""
     depth: int = Field(default=2, ge=1, le=3)
+    """Levels below `path` to include. Default 2."""
     limit: int = Field(default=12, ge=1, le=30)
+    """Largest children per folder; the rest are summed into one entry. Default 12."""
     rescan: bool = False
+    """Start a fresh scan in the background. Default false."""
 
 
 class DiskTreeQuery(BaseModel):

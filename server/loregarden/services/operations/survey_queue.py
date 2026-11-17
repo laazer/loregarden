@@ -60,7 +60,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class SurveyQueueCall(BaseModel):
@@ -70,32 +70,67 @@ class SurveyQueueCall(BaseModel):
     model_config = _LENIENT
 
     action: SurveyQueueAction
+    """What to do."""
     source_id: str = ""
+    """Survey source id."""
     # enqueue
     workspace_slugs: list[str] = []
+    """enqueue: every workspace whose backlog the source should answer; the first is home. A URL
+    already known gains these workspaces instead of a second survey.
+    """
     kind: SurveySourceKind | None = None
+    """enqueue: what the source is."""
     url: str | None = None
+    """enqueue: repository or https URL."""
     name: str | None = None
+    """enqueue: display name (default: last URL segment)."""
     question: str = ""
+    """enqueue/request_pass/review_now: what the source or pass is meant to answer. Optional:
+    without one, a pass reads for what would serve the workspaces and initiatives it serves
+    (review_now: only for a surveyed source).
+    """
     #: enqueue: why it is worth reading. review_now: why a refused source is read after all.
     queued_reason: str = ""
+    """enqueue: why it is worth reading now (optional). review_now: why a refused source should be
+    read after all (required to reopen one; the licence gate still runs first).
+    """
     priority: int | None = None
+    """enqueue: lower runs first (default 100)."""
     discovery_id: str = ""
+    """enqueue: the discovery run this find belongs to (from its brief); the find then serves the
+    run's workspaces and initiatives.
+    """
     research_question_id: str = ""
+    """enqueue: the research question this pick answers; its pass brief then carries the question
+    and the claims to confirm.
+    """
     initiative_ids: list[str] = []
+    """enqueue, review_now: initiatives to follow the source (its open tickets join them), by
+    UUID or external id.
+    """
     areas: list[EntryAreaIn] = []
+    """enqueue: project areas the source serves; each also makes it serve that area's workspace."""
     # list
     workspace_slug: str = ""
+    """list: only sources serving this workspace."""
     limit: int | None = None
+    """list: max rows (default 50)."""
     # request_pass
     mode: SurveyPassMode | None = None
+    """request_pass: continuation or scoped."""
     paths: list[str] = []
+    """request_pass: map paths to read; empty lets the feeder slice the map."""
     # review_now
     only_for: list[str] = []
+    """review_now: read for only these of the workspaces the source serves, for this pass alone.
+    Empty reads for all.
+    """
     # link_initiative / unlink_initiative
     initiative_id: str = ""
+    """link_initiative/unlink_initiative: the initiative, by UUID or external id."""
     # set_auto_rereview
     excluded: bool | None = None
+    """set_auto_rereview: true takes the source out of auto re-review, false puts it back."""
 
 
 class AddSourceResult(BaseModel):

@@ -33,7 +33,6 @@ from sqlmodel import Session
 from loregarden.config import settings
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
-    boolean_prop,
     enum_string_prop,
     integer_prop,
     string_list_prop,
@@ -169,15 +168,6 @@ _STATUS_DEFINITION: dict[str, Any] = {
         "`ceiling.source`: `stale_probe` means the number is the last good "
         "measurement and Docker is currently unreachable."
     ),
-    "inputSchema": tool_schema(
-        properties={
-            "lease_id": string_prop(
-                "Optionally report on just this lease, as `lease`, alongside the board."
-            ),
-            "include_waiting": boolean_prop("Include the queue. Defaults to true."),
-        },
-        required=[],
-    ),
 }
 
 _FORCE_RELEASE_DEFINITION: dict[str, Any] = {
@@ -188,13 +178,6 @@ _FORCE_RELEASE_DEFINITION: dict[str, Any] = {
         "capacity can be double-booked if the holder is genuinely still running. "
         "For an operator clearing a lease whose owner is known to be gone. "
         "Requires a reason."
-    ),
-    "inputSchema": tool_schema(
-        properties={
-            "lease_id": string_prop("The lease to take back."),
-            "reason": string_prop("Why this lease is being taken from its holder."),
-        },
-        required=["lease_id", "reason"],
     ),
 }
 

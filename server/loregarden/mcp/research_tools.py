@@ -21,40 +21,14 @@ from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_schemas import (
     enum_string_prop,
     integer_prop,
-    string_list_prop,
     string_prop,
     tool_schema,
 )
 from loregarden.models.domain.survey_enums import (
-    ClaimStatus,
-    ResearchRecordAction,
     ResearchRepoAction,
 )
 from loregarden.services.reference_survey import research_repo
 from loregarden.services.reference_survey.errors import SurveyError
-
-_CLAIM_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "capability": string_prop("One of the question's capabilities, exactly as opened."),
-        "status": enum_string_prop(
-            "verified: lines in a file at the commit you read do it (needs evidence_path, "
-            "evidence_commit, evidence_start and evidence_end). docs_only: only the docs say so. not_found: you looked in "
-            "the source and it is not there. refuted: the source shows it does not; cite those "
-            "lines the same way and they are checked like a verified claim's.",
-            [status.value for status in ClaimStatus],
-        ),
-        "evidence_path": string_prop("Path inside the repository, for verified."),
-        "evidence_commit": string_prop("The commit loregarden_research_repo reported."),
-        "evidence_start": integer_prop("verified: first cited line, as read numbered it."),
-        "evidence_end": integer_prop("verified: last cited line; at most 60 lines in all."),
-        "evidence_url": string_prop(
-            "docs_only: the doc page. For verified the server links the cited lines itself."
-        ),
-        "note": string_prop("What the evidence shows, in a sentence."),
-    },
-    "required": ["capability", "status"],
-}
 
 RESEARCH_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -88,37 +62,6 @@ RESEARCH_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "capability; a verified claim without a real file at the commit you read is "
             "refused and named in `refused`. refute: record the operator's correction "
             "that a project does not do something; it stands over later agent claims."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "action": enum_string_prop(
-                    "What to record.", [a.value for a in ResearchRecordAction]
-                ),
-                "thread_id": string_prop("question: this thread's chat_session_id."),
-                "question": string_prop("question: the capability question, in a sentence."),
-                "capabilities": string_list_prop(
-                    "question: what a candidate must do, one per item (at most 8)."
-                ),
-                "question_id": string_prop("candidates/refute: the question it answers."),
-                "candidates": {
-                    "type": "array",
-                    "description": "candidates: the projects put forward.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "url": string_prop("Project URL."),
-                            "name": string_prop("Its name."),
-                            "summary": string_prop("Why it is a candidate, in a sentence."),
-                            "claims": {"type": "array", "items": _CLAIM_SCHEMA},
-                        },
-                        "required": ["url", "name"],
-                    },
-                },
-                "url": string_prop("refute: the project URL."),
-                "capability": string_prop("refute: what it does not do."),
-                "note": string_prop("refute: the operator's words, or why."),
-            },
-            required=["action"],
         ),
     },
 ]

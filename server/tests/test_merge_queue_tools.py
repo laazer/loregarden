@@ -190,7 +190,7 @@ def test_enqueue_refuses_a_ticket_named_with_a_workspace_it_is_not_in(client, tr
 
 
 def test_status_lists_at_most_status_history_finished_entries(client, tree, isolated_db):
-    """An agent's read is the line plus a few outcomes, whatever limit it sends."""
+    """An agent's read is the line plus a few outcomes; the board's page size is refused."""
     with Session(isolated_db) as session:
         ticket = session.get(Ticket, tree)
         ws = session.get(Workspace, ticket.workspace_id)
@@ -202,8 +202,8 @@ def test_status_lists_at_most_status_history_finished_entries(client, tree, isol
                 Candidate(pr, f"u/{pr}", "publish/x", "integration/x", f"{pr:040d}", "main"),
             ).entry
             transition(session, entry, entry.state, state=MergeQueueState.WITHDRAWN)
-    status = json.loads(
-        _text(_call(client, McpTool.MERGE_QUEUE_STATUS, {"workspace_slug": "mqt", "limit": 500}))
-    )
+    status = json.loads(_text(_call(client, McpTool.MERGE_QUEUE_STATUS, {"workspace_slug": "mqt"})))
+    paged = _call(client, McpTool.MERGE_QUEUE_STATUS, {"workspace_slug": "mqt", "limit": 500})
 
     assert len(status["entries"]) == STATUS_HISTORY
+    assert "result" not in paged or paged["result"].get("isError"), paged

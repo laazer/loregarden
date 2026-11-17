@@ -85,15 +85,22 @@ class WorkspaceIssueSync(BaseModel):
 class GithubIssueRequest(BaseModel):
     """The tool's arguments; unknown keys are refused, as its schema says."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     action: GithubIssueAction
+    """What to do."""
     ticket_id: str = ""
+    """Ticket id — for status, publish and sync."""
     workspace_slug: str = ""
+    """Workspace slug — for sync_workspace."""
     policy: ConflictPolicy = ConflictPolicy.REPORT
+    """Conflicting fields: report (default), local wins, remote wins."""
     import_parent_ticket_id: str = ""
+    """sync_workspace: import unlinked open issues under this ticket."""
     import_work_item_type: WorkItemType = WorkItemType.BUG
+    """sync_workspace: type for imported tickets (default bug)."""
     import_label: str = ""
+    """sync_workspace: only import issues with this label."""
 
 
 @dataclass(frozen=True)

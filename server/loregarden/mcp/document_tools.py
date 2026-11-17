@@ -20,11 +20,10 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import boolean_prop, integer_prop, string_prop, tool_schema
+from loregarden.mcp.tool_schemas import string_prop, tool_schema
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_documents import (
     DEFAULT_DOCUMENT_KIND,
-    MAX_ARTIFACT_LIST_LIMIT,
     MAX_DOCUMENT_CHARS,
     read_artifact,
     write_document,
@@ -70,21 +69,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Returns titles, kinds, summaries and ids, not bodies; read one with "
             "loregarden_read_artifact. Read this before inferring a design decision "
             "from code."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "ticket_id": _TICKET_ID,
-                "workspace_slug": _WORKSPACE,
-                "kind": string_prop("Only artifacts of this kind, e.g. document, plan, log."),
-                "include_ancestors": boolean_prop(
-                    "Also list the parent chain's artifacts (default true)."
-                ),
-                "latest_only": boolean_prop(
-                    "Collapse each ticket + kind + title to its newest version (default true)."
-                ),
-                "limit": integer_prop(f"Max items (default 50, max {MAX_ARTIFACT_LIST_LIMIT})."),
-            },
-            required=["ticket_id"],
         ),
     },
     {

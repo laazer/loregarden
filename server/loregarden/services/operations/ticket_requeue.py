@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class RequeueCall(BaseModel):
@@ -41,12 +41,18 @@ class RequeueCall(BaseModel):
 
     #: A UUID or an external id.
     ticket_id: str
+    """Loregarden ticket UUID or external id."""
     #: Required by `requeue_stage`, which says so: it is the record of why.
     reason: str = ""
+    """Why this block is being cleared — what changed since it was raised."""
     #: Defaults to the ticket's current workflow stage.
     stage_key: str | None = None
+    """Stage to requeue. Defaults to the ticket's current workflow stage."""
     #: Where the ticket waits; BACKLOG when absent. Not pinned (`auto_state`).
     state: TicketState | None = None
+    """Ticket state to leave it in while it waits to run again. Defaults to 'backlog'. Not pinned —
+    the workflow still settles where the ticket ends up.
+    """
 
     @field_validator("state", mode="before")
     @classmethod

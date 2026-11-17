@@ -41,7 +41,11 @@ from loregarden.mcp.local_instance_tools import TOOL_DEFINITIONS as LOCAL_INSTAN
 from loregarden.mcp.memory_tool_args import normalize_memory_tool_args
 from loregarden.mcp.memory_tools import execute_memory_tool
 from loregarden.mcp.merge_queue_tools import TOOL_DEFINITIONS as MERGE_QUEUE_TOOL_DEFINITIONS
-from loregarden.mcp.operation_tools import execute_operation_tool
+from loregarden.mcp.operation_tools import (
+    OPERATION_TOOLS,
+    execute_operation_tool,
+    operation_tool_schema,
+)
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
@@ -53,8 +57,8 @@ from loregarden.mcp.ticket_ops_tools import (
     execute_ticket_ops_tool,
     normalize_ticket_ops_args,
 )
-from loregarden.mcp.tool_args import FINDING_SCHEMA, coerce_findings
 from loregarden.mcp.tool_args import TABLE_NORMALIZERS as _TABLE_NORMALIZERS
+from loregarden.mcp.tool_args import coerce_findings
 from loregarden.mcp.tool_args import coerce_mapping as _coerce_mapping
 from loregarden.mcp.tool_args import coerce_optional_bool as _coerce_optional_bool
 from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
@@ -71,19 +75,10 @@ from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.mcp.ui_action_tools import TOOL_DEFINITIONS as UI_ACTION_TOOL_DEFINITIONS
 from loregarden.mcp.ux_answers_tools import UX_ANSWERS_TOOL_DEFINITIONS
-from loregarden.models.domain import (
-    ExternalHarness,
-    HumanActionTier,
-    MemoryRelationType,
-)
-from loregarden.services.acceptance_criteria import (
-    CRITERIA_MODES,
-)
 from loregarden.services.evidence import EVIDENCE_KINDS
 from loregarden.services.operations import Caller, Transport
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.run_resolution import (
-    ORCHESTRATION_RUN_ID_DESCRIPTION,
     TICKET_RUN_ID_DESCRIPTION,
     attributed_agent_run_id,
     resolve_run_ref,
@@ -373,48 +368,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "along with its workflow state, stage map, hierarchy neighbors, and active "
             "orchestration run. Read this before inferring a requirement from the code."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop(
-                    "Loregarden ticket UUID or external id (e.g. lor-mcp-gateway-142)."
-                ),
-                "external_id": _string_prop("Explicit external_id when not using ticket_id."),
-                "workspace_slug": _string_prop(
-                    "Workspace slug — required when resolving by external id via ticket_id."
-                ),
-            },
-            required=[],
-        ),
     },
     {
         "name": McpTool.LIST_TICKETS,
         "description": (
             "Search and list tickets in a workspace (flat results for discovery). "
             "With work_item_type=initiative, lists initiatives across all workspaces."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "workspace_slug": _string_prop(
-                    "Workspace slug, e.g. loregarden. Required unless listing initiatives."
-                ),
-                "search": _string_prop("Optional title or external_id substring search."),
-                "state": _enum_string_prop(
-                    "Optional ticket state filter.",
-                    ["backlog", "in_progress", "blocked", "done"],
-                ),
-                "work_item_type": _enum_string_prop(
-                    "Optional work item type filter.",
-                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
-                ),
-                "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
-                "parent_external_id": _string_prop("Optional parent external id."),
-                "roots_only": {
-                    "type": "boolean",
-                    "description": "Only top-level tickets (no parent).",
-                },
-                "limit": _integer_prop("Max results (default 50, max 100)."),
-            },
-            required=[],
         ),
     },
     {
@@ -423,90 +382,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Read a ticket's requirement and workflow state by workspace slug and "
             "external_id. Same payload as loregarden_get_ticket."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
-                "external_id": _string_prop("Ticket external id, e.g. lor-mcp-gateway-142."),
-            },
-            required=["workspace_slug", "external_id"],
-        ),
     },
     {
         "name": McpTool.START_ORCHESTRATION,
         "description": "Start a top-level orchestration run for a ticket.",
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("Loregarden ticket UUID."),
-                "driver": _enum_string_prop(
-                    "Orchestration driver.",
-                    ["builtin_autopilot", "external_mcp"],
-                ),
-                "external_harness": _enum_string_prop(
-                    "Set when a coding harness outside this control plane is driving the "
-                    "ticket. Stamps the run and every stage under it with that harness so "
-                    "its results are comparable, and takes the run out of the queue — it "
-                    "spawns nothing here, so it waits for no lane.",
-                    [h.value for h in ExternalHarness],
-                ),
-                "max_stages": _integer_prop("Optional cap on stages for builtin autopilot."),
-                "idempotency_key": _string_prop(
-                    "Optional caller-chosen key. If a start with this key already "
-                    "created a run for this ticket, that run is returned instead of a "
-                    "second one — so a call that failed ambiguously (socket closed, "
-                    "timed out) can be retried without re-reading the ticket first. "
-                    "Choose a new key for a genuinely new start; reusing one replays."
-                ),
-            },
-            required=["ticket_id"],
-        ),
     },
     {
         "name": McpTool.START_STAGE,
         "description": "Mark a workflow stage as running before invoking a sub-agent.",
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
-                "stage_key": _string_prop("Workflow stage key."),
-                "agent_id": _string_prop("Optional agent id override."),
-                "force": _boolean_prop(
-                    "Dispatch the stage even though it has reached its retry budget. "
-                    "The override is recorded."
-                ),
-                "ignore_prerequisites": _boolean_prop(
-                    "Start the stage although the ticket waits on prerequisites that are "
-                    "not done and landed. The override is recorded."
-                ),
-            },
-            required=["run_id", "stage_key"],
-        ),
     },
     {
         "name": McpTool.COMPLETE_STAGE,
         "description": (
             "Mark a stage complete and advance the workflow cursor. "
             "Use outcome=reject with next_stage_key to route back to an upstream agent."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
-                "stage_key": _string_prop("Workflow stage key."),
-                "next_agent": _string_prop("Optional next agent hint."),
-                "next_stage_key": _string_prop(
-                    "Optional explicit target stage (for upstream rework)."
-                ),
-                "outcome": _enum_string_prop("Stage outcome.", ["pass", "reject"]),
-                "blocking_issues": _string_prop("Optional rework notes when routing upstream."),
-                "findings": {
-                    "type": "array",
-                    "description": (
-                        "What a review, verify or gate stage found. A reject from one of those "
-                        "stands only on a finding with blocking=true and a non-empty trigger, "
-                        "path and impact; any other finding names its disposition."
-                    ),
-                    "items": FINDING_SCHEMA,
-                },
-            },
-            required=["run_id", "stage_key"],
         ),
     },
     {
@@ -515,17 +404,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Mark a stage this ticket does not need as won't do, so the workflow never runs "
             "it. Only stages the workflow template marks optional can be skipped, and only "
             "before they run — the error names the ones this workflow offers."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
-                "stage_key": _string_prop("Workflow stage key to skip."),
-                "reason": _string_prop(
-                    "Why this ticket does not need the stage. Recorded on the stage and shown "
-                    "in the workflow pane; a skip with no reason reads as an unexplained gap."
-                ),
-            },
-            required=["run_id", "stage_key"],
         ),
     },
     {
@@ -537,43 +415,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "commit a script that can and name it (one_click); only claim `manual` for the "
             "part that genuinely needs a person present. A block that hands over a "
             "multi-step procedure with nothing prepared is reported back to you as such."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
-                "message": _string_prop("Blocking message for operators."),
-                "stage_key": _string_prop("Optional stage key context."),
-                "tier": _enum_string_prop(
-                    "How much of the human step you removed. 'agent_attempted': you ran "
-                    "it and the result does not answer the question. 'one_click': you "
-                    "committed a script the control plane can run on a person's say-so. "
-                    "'manual': a person must be present (device, editor, judgement).",
-                    [t.value for t in HumanActionTier],
-                ),
-                "attempted": _string_prop(
-                    "What you already ran, and why its result does not answer the "
-                    "question. 'I could not do this' is only complete paired with this."
-                ),
-                "prepared": _string_prop(
-                    "What you built to reduce the remaining work — harness, fixture, "
-                    "scene, scripted capture."
-                ),
-                "command": _string_prop(
-                    "The invocation to show the person. Shown for every tier; what "
-                    "actually runs is script_path."
-                ),
-                "script_path": _string_prop(
-                    "Repository-relative path of the committed script `command` invokes. "
-                    "Required for tier 'one_click' — the control plane runs this file, "
-                    "never the command string."
-                ),
-                "captures": {
-                    "type": "array",
-                    "description": "What running it produces, one per entry.",
-                    "items": {"type": "string"},
-                },
-            },
-            required=["run_id", "message"],
         ),
     },
     {
@@ -601,15 +442,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.ATTACH_ARTIFACT,
         "description": "Attach an artifact (log, diff, test output) to a ticket.",
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(TICKET_RUN_ID_DESCRIPTION),
-                "kind": _string_prop("Artifact kind, e.g. log, diff, test."),
-                "title": _string_prop("Short artifact title."),
-                "content_json": _string_prop("Optional JSON string payload."),
-            },
-            required=["run_id", "kind", "title"],
-        ),
     },
     {
         "name": McpTool.REQUEST_APPROVAL,
@@ -622,30 +454,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "for a person's go-ahead on a force-push, a publish or a pull request, block "
             "with blocked_kind 'decision' and the exact command as an option."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(TICKET_RUN_ID_DESCRIPTION),
-                "stage_key": _string_prop("Workflow stage key."),
-                "title": _string_prop("Approval title."),
-                "impact": _string_prop("Impact / description for the operator."),
-            },
-            required=["run_id", "stage_key"],
-        ),
     },
     {
         "name": McpTool.COMPLETE_ORCHESTRATION,
         "description": "Finish the top-level orchestration run.",
-        "inputSchema": _tool_schema(
-            properties={
-                "run_id": _string_prop(ORCHESTRATION_RUN_ID_DESCRIPTION),
-                "status": _enum_string_prop(
-                    "Final orchestration status.",
-                    ["succeeded", "failed", "blocked", "cancelled"],
-                ),
-                "message": _string_prop("Optional completion message."),
-            },
-            required=["run_id"],
-        ),
     },
     {
         "name": McpTool.UPDATE_TICKET,
@@ -654,82 +466,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "acceptance criteria, tags, parent). Supply at least one field besides ticket_id. "
             "Acceptance criteria belong here — never append them to the description. "
             "Naming a state pins it; pass auto_state to hand it back to the workflow."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("Loregarden ticket UUID or external id."),
-                "state": _enum_string_prop(
-                    "New ticket state. 'parked' means a person owes this work and the "
-                    "rest of the subtree should carry on without it; 'blocked' means the "
-                    "run stopped and someone should look, and holds the parent up.",
-                    ["backlog", "in_progress", "blocked", "parked", "done", "wont_do"],
-                ),
-                "auto_state": {
-                    "type": "boolean",
-                    "description": (
-                        "Whether the workflow may recompute this ticket's state. Naming a "
-                        "'state' pins it, and nothing unpins it on its own — a pinned ticket "
-                        "is skipped by the workflow's own derivation, by the parent rollup, "
-                        "and by queue repair, so it can resolve every stage and never "
-                        "settle. Send true to release the pin (on its own, or beside a "
-                        "state that is where the ticket waits rather than where it ends up); "
-                        "false pins it without naming a new state."
-                    ),
-                },
-                "title": _string_prop("New ticket title."),
-                "parent": _string_prop(
-                    "Move this work item under a different parent, by UUID or external id. "
-                    "Use it to lift a human-gated ticket off a critical path."
-                ),
-                "description": _string_prop("New ticket description (replaces the existing one)."),
-                "priority": {
-                    "type": "integer",
-                    "description": "New priority, 1-3 (1 is highest).",
-                },
-                "expected_revision": {
-                    "type": "integer",
-                    "description": (
-                        "The ticket's 'revision' as you last read it, to have this edit "
-                        "refused if somebody else wrote the ticket in the meantime. The "
-                        "refusal is a revision_conflict carrying the current revision, and "
-                        "nothing is written. Omit it for today's behaviour, which is "
-                        "last-write-wins: a successful update returns the new revision, so "
-                        "a run of consecutive edits can carry the previous reply forward."
-                    ),
-                },
-                "acceptance_criteria": {
-                    "type": "array",
-                    "description": (
-                        "Acceptance criteria, one per entry. Combined with the stored list "
-                        "per 'mode'. Send [] with mode 'replace' to clear them."
-                    ),
-                    "items": {"type": "string"},
-                },
-                "mode": _enum_string_prop(
-                    "How acceptance_criteria combines with the stored list. 'replace' "
-                    "(default) overwrites it; 'append' adds entries not already present. "
-                    "Read the ticket first if you mean to replace.",
-                    list(CRITERIA_MODES),
-                ),
-                "out_of_scope": {
-                    "type": "array",
-                    "description": (
-                        "What the spec rules out of this ticket's scope, one entry each, "
-                        "written as '<what> — <why>'. Replaces the stored list; read the "
-                        "ticket first. Reviewers check findings against it."
-                    ),
-                    "items": {"type": "string"},
-                },
-                "tags": {
-                    "type": "array",
-                    "description": (
-                        "Free-form labels. Replaces the stored tags outright — read the "
-                        "ticket first and resend the ones to keep. Send [] to clear them."
-                    ),
-                    "items": {"type": "string"},
-                },
-            },
-            required=["ticket_id"],
         ),
     },
     {
@@ -741,28 +477,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "links (a parent is done only when its children are), and cycles. "
             "Both ids accept a UUID or external id."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("The dependent ticket (UUID or external_id)."),
-                "depends_on": _string_prop(
-                    "The prerequisite ticket it should wait for (UUID or external_id)."
-                ),
-            },
-            required=["ticket_id", "depends_on"],
-        ),
     },
     {
         "name": McpTool.UNLINK_DEPENDENCY,
         "description": (
             "Remove a dependency edge: ticket_id no longer waits for depends_on. "
             "No-op if the edge does not exist. Both ids accept a UUID or external_id."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("The dependent ticket (UUID or external_id)."),
-                "depends_on": _string_prop("The prerequisite ticket to unlink."),
-            },
-            required=["ticket_id", "depends_on"],
         ),
     },
     {
@@ -773,26 +493,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "instead when one must run after the other. Idempotent in both directions; "
             "rejects self-links. Both ids accept a UUID or external id."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("One ticket (UUID or external_id)."),
-                "related_to": _string_prop("The ticket to relate it to (UUID or external_id)."),
-            },
-            required=["ticket_id", "related_to"],
-        ),
     },
     {
         "name": McpTool.UNLINK_RELATION,
         "description": (
             "Remove a relation between two tickets. No-op if they are not related. "
             "Both ids accept a UUID or external id."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "ticket_id": _string_prop("One ticket (UUID or external_id)."),
-                "related_to": _string_prop("The ticket to unrelate (UUID or external_id)."),
-            },
-            required=["ticket_id", "related_to"],
         ),
     },
     {
@@ -804,57 +510,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "created ticket's id, external_id, and title. A pipeline agent may file "
             "up to three per run; each is related to the ticket the run is working on."
         ),
-        "inputSchema": _tool_schema(
-            properties={
-                "workspace_slug": _string_prop(
-                    "Workspace slug, e.g. loregarden. Omit for an initiative, which "
-                    "spans workspaces; required for every other type."
-                ),
-                "title": _string_prop("Ticket title."),
-                "work_item_type": _enum_string_prop(
-                    "Work item type (default task).",
-                    ["initiative", "milestone", "feature", "capability", "task", "bug"],
-                ),
-                "description": _string_prop("Ticket description (default empty)."),
-                "acceptance_criteria": {
-                    "type": "array",
-                    "description": "Acceptance criteria, one per entry (default empty).",
-                    "items": {"type": "string"},
-                },
-                "priority": _integer_prop("Priority 1-3 (default 3)."),
-                "external_id": _string_prop(
-                    "Explicit external id; spelled from workspace, milestone and number when empty."
-                ),
-                "parent": _string_prop(
-                    "Parent ticket, as a UUID or external id — resolved the same "
-                    "way loregarden_get_ticket resolves ticket_id."
-                ),
-                "depends_on": {
-                    "type": "array",
-                    "description": (
-                        "Tickets this one waits for, as UUIDs or external ids. Name them "
-                        "here, not only in the description: nothing dispatches a ticket "
-                        "until these are done and landed. Cannot be this ticket's parent "
-                        "or any ancestor — a parent is done only when its children are."
-                    ),
-                    "items": {"type": "string"},
-                },
-            },
-            required=["title"],
-        ),
     },
     {
         "name": McpTool.MEMORY_STATUS,
         "description": (
             "Report configured Obsidian/iCloud memory backends and workspace-scoped resolved paths."
-        ),
-        "inputSchema": _tool_schema(
-            properties={
-                "workspace_slug": _string_prop(
-                    "Workspace slug — returns per-workspace memory, learnings, blog post dirs, and SQLite path."
-                ),
-            },
-            required=[],
         ),
     },
     {
@@ -1054,19 +714,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.CREATE_MEMORY_RELATION,
         "description": "Link two memory graph nodes in the workspace-scoped SQLite memory store.",
-        "inputSchema": _tool_schema(
-            properties={
-                "source_id": _string_prop("Source memory node id."),
-                "target_id": _string_prop("Target memory node id."),
-                "relation_type": _enum_string_prop(
-                    "What the edge asserts (default related, a plain mention). Type it only "
-                    "when the relationship is stated, never inferred.",
-                    [kind.value for kind in MemoryRelationType],
-                ),
-                "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
-            },
-            required=["source_id", "target_id", "workspace_slug"],
-        ),
     },
 ]
 
@@ -1095,6 +742,15 @@ TOOL_DEFINITIONS.extend(INITIATIVE_MEMBERSHIP_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FEATURE_LOOP_TOOL_DEFINITIONS + CHAT_WAIT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DOCUMENT_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(SURVEY_TOOL_DEFINITIONS)
+
+# An operation's tool declares no schema of its own: it is generated from the
+# operation's args model, which validates the call (`mcp/operation_schemas.py`).
+for _tool in TOOL_DEFINITIONS:
+    if _tool["name"] in OPERATION_TOOLS:
+        if "inputSchema" in _tool:
+            # Written beside the model, it would be overwritten unread and drift unseen.
+            raise RuntimeError(f"{_tool['name']} is an operation's tool; drop its inputSchema")
+        _tool["inputSchema"] = operation_tool_schema(_tool["name"])
 
 
 def _decide_finding(

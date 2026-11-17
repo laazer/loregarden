@@ -40,11 +40,16 @@ from sqlmodel import Session
 class OrganizationCheck(BaseModel):
     """The tool's arguments; unknown keys are refused, as its schema says."""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="forbid", use_attribute_docstrings=True, str_strip_whitespace=True
+    )
 
     workspace_slug: str = Field(min_length=1)
+    """Workspace slug, e.g. loregarden."""
     action: OrganizationAction = OrganizationAction.CHECK
+    """What to do (default check)."""
     scope: OrganizationScope = OrganizationScope.WORKTREE
+    """Which diff to check (default worktree: an agent's edits are uncommitted)."""
 
 
 class WorkspaceKey(BaseModel):

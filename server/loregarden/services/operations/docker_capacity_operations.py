@@ -37,7 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class CapacityQuery(BaseModel):
@@ -45,16 +45,22 @@ class CapacityQuery(BaseModel):
 
     #: Marks the call as a queued caller's poll, and adds `lease` to the board.
     lease_id: str = ""
+    """Optionally report on just this lease, as `lease`, alongside the board."""
     include_waiting: bool = True
+    """Include the queue. Defaults to true."""
 
 
 class ForceRelease(BaseModel):
     # Stripped first, so a reason of only whitespace is refused like an empty one.
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="ignore", use_attribute_docstrings=True, str_strip_whitespace=True
+    )
 
     lease_id: str = Field(min_length=1)
+    """The lease to take back."""
     #: Kept on the lease, so whoever finds it ended knows why.
     reason: str = Field(min_length=1)
+    """Why this lease is being taken from its holder."""
 
 
 def _board(session: Session, query: CapacityQuery, _caller: Caller) -> dict[str, Any]:

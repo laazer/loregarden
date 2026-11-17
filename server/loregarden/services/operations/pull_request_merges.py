@@ -35,13 +35,18 @@ from sqlmodel import Session
 
 
 class PullRequestMergeArgs(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
     ticket_id: str
+    """Loregarden ticket UUID or external id."""
     number: int
+    """The pull request number to merge."""
     #: The head the caller checked. Required on REST (its request model says
     #: so); an agent's empty one means the head as it stands now.
     head_sha: str = ""
+    """The head commit you checked. The merge is refused if the PR has moved past it. Omit to merge
+    the head as it stands.
+    """
 
 
 def _merge(session: Session, args: PullRequestMergeArgs, caller: Caller) -> MergeAndCleanUp:

@@ -21,7 +21,7 @@ from loregarden.models.domain.plan_enums import (
     ScheduleStatus,
 )
 from loregarden.models.domain.work_item_types import WorkItemType
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InitiativeMilestoneView(BaseModel):
@@ -233,8 +233,12 @@ class AutopilotUpdate(BaseModel):
     """Omitted fields are left as they are. `stops=[]` clears the stops, and an
     empty `schedule` clears the schedule."""
 
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
     enabled: bool | None = None
+    """On queues ready tickets now and every minute; off finishes what is running, then stops."""
     max_parallel: int | None = Field(default=None, ge=1, le=12)
+    """How many of its tickets may run at once (1-12)."""
     stops: list[AutopilotStop] | None = None
     schedule: AutopilotSchedule | None = None
 

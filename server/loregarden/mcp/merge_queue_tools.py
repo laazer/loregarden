@@ -16,14 +16,6 @@ from __future__ import annotations
 from typing import Any
 
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import (
-    boolean_prop,
-    enum_string_prop,
-    integer_prop,
-    string_prop,
-    tool_schema,
-)
-from loregarden.models.domain import MergeQueueAction
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -34,17 +26,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "before it); `position` is a lifetime sequence number, not a place in line. Lists "
             "the live entries, then the latest finished ones. Pass `entry_id` for one entry with the required "
             "checks it waits on, read live from GitHub for a testing entry. Read-only."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "workspace_slug": string_prop("Workspace whose queue to read."),
-                "entry_id": string_prop("One entry, with its checks, instead of the queue."),
-                "live": boolean_prop(
-                    "Read a testing entry's checks from GitHub now (default true); false "
-                    "returns what the loop recorded on its last cycle."
-                ),
-            },
-            required=[],
         ),
     },
     {
@@ -59,32 +40,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "author's: the queue pushes its staged commit there, and adopts a push the "
             "author makes while it waits. A write: gated."
         ),
-        "inputSchema": tool_schema(
-            properties={
-                "ticket_id": string_prop("Ticket UUID or external id, for a tree's PR."),
-                "pr_number": integer_prop("Pull request number, for a PR with no ticket."),
-                "workspace_slug": string_prop(
-                    "Workspace; required with pr_number, or when ticket_id is an external id."
-                ),
-            },
-            required=[],
-        ),
     },
     {
         "name": McpTool.DEQUEUE_MERGE,
         "description": (
             "Withdraw a merge queue entry, or retry a failed, timed-out or withdrawn one (it "
             "goes to the back). Withdraw is refused once the entry is merging. A write: gated."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "entry_id": string_prop("The entry, from loregarden_read_merge_queue."),
-                "action": enum_string_prop(
-                    "withdraw or retry.", [action.value for action in MergeQueueAction]
-                ),
-                "reason": string_prop("Why it is withdrawn; kept on the entry."),
-            },
-            required=["entry_id", "action"],
         ),
     },
 ]
