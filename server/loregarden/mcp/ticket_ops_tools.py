@@ -23,9 +23,8 @@ from sqlmodel import Session, select
 
 from loregarden.mcp.tool_args import coerce_optional_int
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_schemas import enum_string_prop, integer_prop, string_prop, tool_schema
+from loregarden.mcp.tool_schemas import string_prop, tool_schema
 from loregarden.models.domain import (
-    StageStatus,
     Ticket,
     TicketState,
     UpdateTicketRequest,
@@ -285,26 +284,6 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Send an empty workflow_template_slug to take it off its workflow entirely. "
             "Resetting a stage to 'pending' also restores that stage's dispatch budget."
         ),
-        "inputSchema": tool_schema(
-            properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
-                "workflow_template_slug": string_prop(
-                    "Workflow template slug to assign. Empty string removes the workflow."
-                ),
-                "stage_key": string_prop(
-                    "Stage to move the ticket to. Alone, it just becomes the current "
-                    "stage and keeps whatever status it already had — moving the cursor "
-                    "does not mark the target complete. Pass stage_status to set one."
-                ),
-                "stage_status": enum_string_prop(
-                    "Status to set on stage_key. Requires stage_key. Naming 'done' here "
-                    "asserts that stage finished, so use it to restore a real outcome, "
-                    "not to move the cursor.",
-                    [status.value for status in StageStatus],
-                ),
-            },
-            required=["ticket_id"],
-        ),
     },
     {
         "name": McpTool.REQUEUE_TICKET,
@@ -313,24 +292,6 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "can run again. The retry budget persists across orchestration runs on "
             "purpose — only a deliberate decision clears it — so a reason is required "
             "and is recorded on the ticket."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
-                "reason": string_prop(
-                    "Why this block is being cleared — what changed since it was raised."
-                ),
-                "stage_key": string_prop(
-                    "Stage to requeue. Defaults to the ticket's current workflow stage."
-                ),
-                "state": enum_string_prop(
-                    "Ticket state to leave it in while it waits to run again. "
-                    "Defaults to 'backlog'. Not pinned — the workflow still "
-                    "settles where the ticket ends up.",
-                    ["backlog", "in_progress"],
-                ),
-            },
-            required=["ticket_id", "reason"],
         ),
     },
     {
@@ -381,17 +342,6 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "each step. Refused unless GitHub says the PR can merge now (required checks "
             "green, signed commits, no conflicts, reviews satisfied); refused too if the "
             "PR's head is no longer head_sha. Irreversible."
-        ),
-        "inputSchema": tool_schema(
-            properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
-                "number": integer_prop("The pull request number to merge."),
-                "head_sha": string_prop(
-                    "The head commit you checked. The merge is refused if the PR has moved "
-                    "past it. Omit to merge the head as it stands."
-                ),
-            },
-            required=["ticket_id", "number"],
         ),
     },
     {

@@ -32,11 +32,14 @@ class TicketRef(BaseModel):
 
     # MCP callers have always been able to send keys a tool does not read, and
     # the tool ignored them; refusing them now would break agents mid-run.
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
     ticket_id: str | None = None
+    """Loregarden ticket UUID or external id (e.g. lor-mcp-gateway-142)."""
     external_id: str | None = None
+    """Ticket external id, e.g. lor-mcp-gateway-142, when not using ticket_id."""
     workspace_slug: str | None = None
+    """Workspace slug, e.g. loregarden; required when resolving by external id."""
 
     @model_validator(mode="after")
     def _names_a_ticket(self) -> TicketRef:

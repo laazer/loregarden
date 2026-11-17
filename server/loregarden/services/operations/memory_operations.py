@@ -18,29 +18,40 @@ from typing import Any
 from loregarden.models.domain import MemoryRelationType
 from loregarden.services.memory_links import parse_relation_type
 from loregarden.services.memory_store import AgentMemoryService
+from loregarden.services.operations.advertised import one_of
 from loregarden.services.operations.spec import Caller, Effect, Operation, OperationId
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class MemoryStatusQuery(BaseModel):
     model_config = _LENIENT
 
     workspace_slug: str = ""
+    """Workspace slug — returns per-workspace memory, learnings, blog post dirs, and SQLite path.
+    """
 
 
 class MemoryRelationEdge(BaseModel):
     model_config = _LENIENT
 
     source_id: str = Field(min_length=1)
+    """Source memory node id."""
     target_id: str = Field(min_length=1)
+    """Target memory node id."""
     #: Text, parsed by `parse_relation_type`, so an unknown label is refused
     #: naming the vocabulary rather than with a bare enum error.
-    relation_type: str = MemoryRelationType.RELATED.value
+    relation_type: str = Field(
+        default=MemoryRelationType.RELATED.value, json_schema_extra=one_of(MemoryRelationType)
+    )
+    """What the edge asserts (default related, a plain mention). Type it only when the relationship
+    is stated, never inferred.
+    """
     workspace_slug: str = ""
+    """Workspace slug for the memory graph DB."""
 
 
 def _status(_session: Session, query: MemoryStatusQuery, _caller: Caller) -> dict[str, Any]:

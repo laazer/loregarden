@@ -39,7 +39,7 @@ from loregarden.services.reference_survey.upstream import (
     gh_api_json,
     parse_github,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -73,20 +73,39 @@ class QuestionIn(BaseModel):
 
 
 class ClaimIn(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
     capability: str
+    """One of the question's capabilities, exactly as opened."""
     status: ClaimStatus
+    """verified: lines in a file at the commit you read do it (needs evidence_path,
+    evidence_commit, evidence_start and evidence_end). docs_only: only the docs say so. not_found:
+    you looked in the source and it is not there. refuted: the source shows it does not; cite those
+    lines the same way and they are checked like a verified claim's.
+    """
     evidence_path: str = ""
+    """Path inside the repository, for verified."""
     evidence_commit: str = ""
+    """The commit loregarden_research_repo reported."""
     evidence_start: int = 0
+    """verified: first cited line, as read numbered it."""
     evidence_end: int = 0
+    """verified: last cited line; at most 60 lines in all."""
     evidence_url: str = ""
+    """docs_only: the doc page. For verified the server links the cited lines itself."""
     note: str = Field(default="", max_length=600)
+    """What the evidence shows, in a sentence."""
 
 
 class CandidateIn(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
     url: str
+    """Project URL."""
     name: str = Field(min_length=1, max_length=120)
+    """Its name."""
     summary: str = Field(default="", max_length=400)
+    """Why it is a candidate, in a sentence."""
     claims: list[ClaimIn] = Field(default_factory=list)
 
 

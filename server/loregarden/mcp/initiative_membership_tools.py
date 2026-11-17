@@ -10,20 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loregarden.mcp.initiative_plan_tools import INITIATIVE_PROP
 from loregarden.mcp.tool_ids import McpTool
-
-_TICKET_PROP = {
-    "type": "string",
-    "description": "Ticket id, or its external id (e.g. lg-milestone-that-780).",
-}
-
-_SCHEMA = {
-    "type": "object",
-    "properties": {"initiative_id": INITIATIVE_PROP, "ticket_id": _TICKET_PROP},
-    "required": ["initiative_id", "ticket_id"],
-    "additionalProperties": False,
-}
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -36,7 +23,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "contains one of the initiative's members, or when it is an initiative. A ticket "
             "may belong to several initiatives. Returns the initiative's top-level tickets."
         ),
-        "inputSchema": _SCHEMA,
     },
     {
         "name": McpTool.REMOVE_INITIATIVE_MEMBER,
@@ -44,6 +30,5 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Stop an initiative tracking a member ticket. The ticket itself is not changed; "
             "a child the initiative parents is detached through update_ticket instead."
         ),
-        "inputSchema": _SCHEMA,
     },
 ]

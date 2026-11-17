@@ -15,15 +15,19 @@ from typing import Any
 
 from loregarden.models.domain import (
     BlockOrigin,
+    FindingDisposition,
+    HumanActionTier,
     OrchestrationRun,
     OrchestrationRunStatus,
     OrchestrationRunView,
+    StageCompletionOutcome,
     Ticket,
 )
 from loregarden.services.artifact_content import parse_content_object
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.dependency_hold import admit_named_start
 from loregarden.services.external_harness import start_external_orchestration
+from loregarden.services.operations.advertised import items_like, one_of
 from loregarden.services.operations.spec import Caller, Effect, Operation, OperationId
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prepared_action import assess_handover, prepared_action_from
@@ -36,11 +40,11 @@ from loregarden.services.work_admission import (
     run_admitted,
     start_orchestration_admitted,
 )
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 def orchestration_run_view(run: OrchestrationRun) -> OrchestrationRunView:
@@ -65,6 +69,9 @@ class RunCall(BaseModel):
     model_config = _LENIENT
 
     run_id: str
+    """This run: the `agent_run` code from the prompt (run_…), the agent run's UUID, or
+    `orchestration_run_id`. A standalone stage run is accepted.
+    """
 
     def target(self, session: Session) -> tuple[RunRef, Ticket]:
         ref = resolve_run_ref(session, self.run_id)
@@ -73,59 +80,127 @@ class RunCall(BaseModel):
 
 class StageStart(RunCall):
     stage_key: str
+    """Workflow stage key."""
     agent_id: str = ""
+    """Optional agent id override."""
     force: bool = False
+    """Dispatch the stage even though it has reached its retry budget. The override is recorded."""
     ignore_prerequisites: bool = False
+    """Start the stage although the ticket waits on prerequisites that are not done and landed. The
+    override is recorded.
+    """
+
+
+class StageFinding(BaseModel):
+    """One finding as `complete_stage` asks for it. `findings_from` parses what
+    an agent actually sent, a missing part and all; this is what it is told."""
+
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    summary: str
+    """The defect in one sentence."""
+    blocking: bool = False
+    """Whether it sends the work back."""
+    trigger: str = ""
+    """How a person or caller reaches it."""
+    path: str = ""
+    """What runs from the trigger to the defect."""
+    impact: str = ""
+    """What a person using it meets."""
+    disposition: FindingDisposition | None = None
+    """Where a finding that does not block went."""
+    ticket: str = ""
+    """The ticket, for assigned_ticket."""
 
 
 class StageComplete(RunCall):
     stage_key: str
+    """Workflow stage key."""
     next_agent: str = ""
+    """Optional next agent hint."""
     next_stage_key: str = ""
-    outcome: str = "pass"  # py-org: allow-string - pass | reject, read by complete_stage
+    """Optional explicit target stage (for upstream rework)."""
+    # Text, read by complete_stage, which words its own refusal.
+    outcome: str = Field(
+        default=StageCompletionOutcome.PASS.value, json_schema_extra=one_of(StageCompletionOutcome)
+    )
+    """Stage outcome."""
     blocking_issues: str = ""
+    """Optional rework notes when routing upstream."""
     advance: bool = True
     #: The agent's findings. None (a REST caller that sent none) leaves the
     #: outcome unexamined, as for a person; a list, even empty, is an agent's
     #: claim and a reject must carry a blocking finding (`settle_stage_claim`).
     #: MCP always sends a list.
-    findings: list[Any] | None = None
+    findings: list[Any] | None = Field(default=None, json_schema_extra=items_like(StageFinding))
+    """What a review, verify or gate stage found. A reject from one of those stands only on a
+    finding with blocking=true and a non-empty trigger, path and impact; any other finding names
+    its disposition.
+    """
 
 
 class StageSkip(RunCall):
     stage_key: str
+    """Workflow stage key to skip."""
     reason: str = ""
+    """Why this ticket does not need the stage. Recorded on the stage and shown in the workflow
+    pane; a skip with no reason reads as an unexplained gap.
+    """
 
 
 class TicketBlock(RunCall):
     message: str
+    """Blocking message for operators."""
     stage_key: str = ""
+    """Optional stage key context."""
     #: The prepared action, all optional; see `prepared_action_from`.
-    tier: str | None = None
+    tier: str | None = Field(default=None, json_schema_extra=one_of(HumanActionTier))
+    """How much of the human step you removed. 'agent_attempted': you ran it and the result does
+    not answer the question. 'one_click': you committed a script the control plane can run on a
+    person's say-so. 'manual': a person must be present (device, editor, judgement).
+    """
     attempted: str | None = None
+    """What you already ran, and why its result does not answer the question. 'I could not do this'
+    is only complete paired with this.
+    """
     prepared: str | None = None
+    """What you built to reduce the remaining work — harness, fixture, scene, scripted capture."""
     command: str | None = None
+    """The invocation to show the person. Shown for every tier; what actually runs is script_path.
+    """
     script_path: str | None = None
+    """Repository-relative path of the committed script `command` invokes. Required for tier
+    'one_click' — the control plane runs this file, never the command string.
+    """
     captures: list[str] | None = None
+    """What running it produces, one per entry."""
 
 
 class ArtifactAttach(RunCall):
     kind: str = "log"
+    """Artifact kind, e.g. log, diff, test."""
     title: str = ""
+    """Short artifact title."""
     #: The content as an object (REST) or as JSON text (MCP); an object wins.
     content: dict[str, Any] | None = None
     content_json: str | None = None
+    """Optional JSON string payload."""
 
 
 class ApprovalRequest(RunCall):
     stage_key: str
+    """Workflow stage key."""
     title: str = ""
+    """Approval title."""
     impact: str = ""
+    """Impact / description for the operator."""
 
 
 class OrchestrationComplete(RunCall):
     status: OrchestrationRunStatus = OrchestrationRunStatus.SUCCEEDED
+    """Final orchestration status."""
     message: str = ""
+    """Optional completion message."""
 
 
 def _start_orchestration(

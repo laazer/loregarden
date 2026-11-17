@@ -32,11 +32,6 @@ INITIATIVE_PROP = {
     "description": "Initiative id, or its external id (e.g. init-tinkercg-build-1).",
 }
 
-_TICKET_IDS_PROP = {
-    "type": "array",
-    "items": {"type": "string"},
-    "description": "Ticket ids (uuid) from the plan's nodes.",
-}
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -48,12 +43,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "workspace the pace it was measured from; the plan mode; and any pending "
             "proposal. Read-only."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {"initiative_id": INITIATIVE_PROP},
-            "required": ["initiative_id"],
-            "additionalProperties": False,
-        },
     },
     {
         "name": McpTool.PROPOSE_INITIATIVE_SCHEDULE,
@@ -112,21 +101,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Off means finish what is running, then stop: tickets it queued that have not "
             "started are held in their lanes, and turning it back on puts them back."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "initiative_id": {
-                    "type": "string",
-                    "description": (
-                        "The initiative, milestone or parent ticket: its uuid or external id."
-                    ),
-                },
-                "enabled": {"type": "boolean"},
-                "max_parallel": {"type": "integer", "minimum": 1, "maximum": 12},
-            },
-            "required": ["initiative_id"],
-            "additionalProperties": False,
-        },
     },
     {
         "name": McpTool.START_INITIATIVE_WORK,
@@ -135,12 +109,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "(prerequisites done and landed, nothing waiting on a person); anything else is "
             "refused with the reason. Returns ticket id -> outcome."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {"initiative_id": INITIATIVE_PROP, "ticket_ids": _TICKET_IDS_PROP},
-            "required": ["initiative_id", "ticket_ids"],
-            "additionalProperties": False,
-        },
     },
     {
         "name": McpTool.MARK_NEEDS_PERSON,
@@ -148,16 +116,6 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Mark plan tickets as needing a person (a decision, research, legal, a physical "
             "test) so the autopilot never hands them to an agent; needs_person=false clears it."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "initiative_id": INITIATIVE_PROP,
-                "ticket_ids": _TICKET_IDS_PROP,
-                "needs_person": {"type": "boolean"},
-            },
-            "required": ["initiative_id", "ticket_ids"],
-            "additionalProperties": False,
-        },
     },
 ]
 

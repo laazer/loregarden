@@ -38,6 +38,7 @@ from loregarden.services.agent_ticket_filing import (
     record_filing,
 )
 from loregarden.services.discovered_work import record_discovery
+from loregarden.services.operations.advertised import one_of, one_of_values
 from loregarden.services.operations.spec import (
     Caller,
     Effect,
@@ -53,11 +54,11 @@ from loregarden.services.ticket_revision_guard import guard_ticket_revision
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.ticket_state_payload import ticket_state_payload
 from loregarden.services.ticket_tags import normalize_tags
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 # --- filing a ticket -------------------------------------------------------------------
@@ -70,17 +71,35 @@ class TicketCreateArgs(BaseModel):
     model_config = _LENIENT
 
     workspace_slug: str = ""
+    """Workspace slug, e.g. loregarden. Omit for an initiative, which spans workspaces; required
+    for every other type.
+    """
     title: str = ""
-    work_item_type: str = WorkItemType.TASK.value
+    """Ticket title."""
+    work_item_type: str = Field(
+        default=WorkItemType.TASK.value, json_schema_extra=one_of(WorkItemType)
+    )
+    """Work item type (default task)."""
     parent: str = ""
+    """Parent ticket, as a UUID or external id — resolved the same way loregarden_get_ticket
+    resolves ticket_id.
+    """
     description: str = ""
+    """Ticket description (default empty)."""
     acceptance_criteria: list[str] = []
+    """Acceptance criteria, one per entry (default empty)."""
     priority: int = 3
+    """Priority 1-3 (default 3)."""
     #: The page's field; MCP's schema has never offered it.
     milestone: str = ""
     external_id: str = ""
+    """Explicit external id; spelled from workspace, milestone and number when empty."""
     #: Prerequisites it waits for, as UUIDs or external ids.
     depends_on: list[str] = []
+    """Tickets this one waits for, as UUIDs or external ids. Name them here, not only in the
+    description: nothing dispatches a ticket until these are done and landed. Cannot be this
+    ticket's parent or any ancestor — a parent is done only when its children are.
+    """
 
 
 @dataclass(frozen=True)
@@ -191,20 +210,55 @@ class TicketUpdateArgs(BaseModel):
     model_config = _LENIENT
 
     ticket_id: str
-    state: str | None = None
+    """Loregarden ticket UUID or external id."""
+    state: str | None = Field(default=None, json_schema_extra=one_of(TicketState))
+    """New ticket state. 'parked' means a person owes this work and the rest of the subtree should
+    carry on without it; 'blocked' means the run stopped and someone should look, and holds the
+    parent up.
+    """
     auto_state: bool | None = None
+    """Whether the workflow may recompute this ticket's state. Naming a 'state' pins it, and
+    nothing unpins it on its own — a pinned ticket is skipped by the workflow's own derivation, by
+    the parent rollup, and by queue repair, so it can resolve every stage and never settle. Send
+    true to release the pin (on its own, or beside a state that is where the ticket waits rather
+    than where it ends up); false pins it without naming a new state.
+    """
     title: str | None = None
+    """New ticket title."""
     description: str | None = None
+    """New ticket description (replaces the existing one)."""
     acceptance_criteria: list[str] | None = None
+    """Acceptance criteria, one per entry. Combined with the stored list per 'mode'. Send [] with
+    mode 'replace' to clear them.
+    """
     #: How ``acceptance_criteria`` combines with the stored list.
-    mode: str | None = None
+    mode: str | None = Field(default=None, json_schema_extra=one_of_values(CRITERIA_MODES))
+    """How acceptance_criteria combines with the stored list. 'replace' (default) overwrites it;
+    'append' adds entries not already present. Read the ticket first if you mean to replace.
+    """
     out_of_scope: list[str] | None = None
+    """What the spec rules out of this ticket's scope, one entry each, written as '<what> — <why>'.
+    Replaces the stored list; read the ticket first. Reviewers check findings against it.
+    """
     tags: list[str] | None = None
+    """Free-form labels. Replaces the stored tags outright — read the ticket first and resend the
+    ones to keep. Send [] to clear them.
+    """
     priority: int | None = None
+    """New priority, 1-3 (1 is highest)."""
     #: UUID or external id; "" detaches (legal only for a milestone).
     parent: str | None = None
+    """Move this work item under a different parent, by UUID or external id. Use it to lift a
+    human-gated ticket off a critical path.
+    """
     #: The revision the caller's draft was seeded from; refused if the row moved.
     expected_revision: int | None = None
+    """The ticket's 'revision' as you last read it, to have this edit refused if somebody else
+    wrote the ticket in the meantime. The refusal is a revision_conflict carrying the current
+    revision, and nothing is written. Omit it for today's behaviour, which is last-write-wins: a
+    successful update returns the new revision, so a run of consecutive edits can carry the
+    previous reply forward.
+    """
     # The page's panel.
     checked_acceptance_criteria: list[str] | None = None
     branch: str | None = None
@@ -324,10 +378,19 @@ class TicketWorkflowArgs(BaseModel):
     model_config = _LENIENT
 
     ticket_id: str
+    """Loregarden ticket UUID or external id."""
     #: "" takes the ticket off its workflow.
     workflow_template_slug: str | None = None
+    """Workflow template slug to assign. Empty string removes the workflow."""
     stage_key: str | None = None
-    stage_status: str | None = None
+    """Stage to move the ticket to. Alone, it just becomes the current stage and keeps whatever
+    status it already had — moving the cursor does not mark the target complete. Pass stage_status
+    to set one.
+    """
+    stage_status: str | None = Field(default=None, json_schema_extra=one_of(StageStatus))
+    """Status to set on stage_key. Requires stage_key. Naming 'done' here asserts that stage
+    finished, so use it to restore a real outcome, not to move the cursor.
+    """
 
 
 def _set_workflow(session: Session, args: TicketWorkflowArgs, _caller: Caller) -> Ticket:

@@ -10,11 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.models.domain import (
-    ConflictPolicy,
-    WorkItemType,
-)
-from loregarden.services.operations.github_issue_operations import GithubIssueAction
 
 TOOL_DEFINITION: dict[str, Any] = {
     "name": McpTool.SYNC_GITHUB_ISSUES,
@@ -28,42 +23,4 @@ TOOL_DEFINITION: dict[str, Any] = {
         "linked ticket; with import_parent_ticket_id, also import unlinked open issues "
         "as children of that ticket). Uses the gh CLI's credentials."
     ),
-    "inputSchema": {
-        "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "enum": [a.value for a in GithubIssueAction],
-                "description": "What to do.",
-            },
-            "ticket_id": {
-                "type": "string",
-                "description": "Ticket id — for status, publish and sync.",
-            },
-            "workspace_slug": {
-                "type": "string",
-                "description": "Workspace slug — for sync_workspace.",
-            },
-            "policy": {
-                "type": "string",
-                "enum": [p.value for p in ConflictPolicy],
-                "description": "Conflicting fields: report (default), local wins, remote wins.",
-            },
-            "import_parent_ticket_id": {
-                "type": "string",
-                "description": "sync_workspace: import unlinked open issues under this ticket.",
-            },
-            "import_work_item_type": {
-                "type": "string",
-                "enum": [t.value for t in WorkItemType if t is not WorkItemType.INITIATIVE],
-                "description": "sync_workspace: type for imported tickets (default bug).",
-            },
-            "import_label": {
-                "type": "string",
-                "description": "sync_workspace: only import issues with this label.",
-            },
-        },
-        "required": ["action"],
-        "additionalProperties": False,
-    },
 }

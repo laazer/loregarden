@@ -14,6 +14,7 @@ from typing import Any
 
 from loregarden.models.domain.survey_enums import ClaimRecorder, ResearchRecordAction
 from loregarden.models.domain.survey_research_tables import SurveyCapabilityClaim
+from loregarden.services.operations.advertised import items_like
 from loregarden.services.operations.spec import (
     Caller,
     Effect,
@@ -23,11 +24,11 @@ from loregarden.services.operations.spec import (
     Transport,
 )
 from loregarden.services.reference_survey import research
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 _CANDIDATES = TypeAdapter(list[research.CandidateIn])
 
@@ -39,14 +40,25 @@ class ResearchRecordCall(BaseModel):
     model_config = _LENIENT
 
     action: ResearchRecordAction
+    """What to record."""
     thread_id: str = ""
+    """question: this thread's chat_session_id."""
     question: str = ""
+    """question: the capability question, in a sentence."""
     capabilities: list[str] = []
+    """question: what a candidate must do, one per item (at most 8)."""
     question_id: str | None = None
-    candidates: list[dict[str, Any]] = []
+    """candidates/refute: the question it answers."""
+    candidates: list[dict[str, Any]] = Field(
+        default_factory=list, json_schema_extra=items_like(research.CandidateIn)
+    )
+    """candidates: the projects put forward."""
     url: str = ""
+    """refute: the project URL."""
     capability: str = ""
+    """refute: what it does not do."""
     note: str = ""
+    """refute: the operator's words, or why."""
 
 
 @dataclass(frozen=True)

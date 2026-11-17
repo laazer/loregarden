@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class TicketSearch(BaseModel):
@@ -39,14 +39,22 @@ class TicketSearch(BaseModel):
     #: Empty lists initiatives across workspaces; otherwise required, and
     #: `list_tickets_mcp` says so.
     workspace_slug: str = ""
+    """Workspace slug, e.g. loregarden. Required unless listing initiatives."""
     state: TicketState | None = None
+    """Optional ticket state filter."""
     work_item_type: WorkItemType | None = None
+    """Optional work item type filter."""
     search: str | None = None
+    """Optional title or external_id substring search."""
     parent_ticket_id: str | None = None
+    """Optional parent ticket UUID."""
     parent_external_id: str | None = None
+    """Optional parent external id."""
     roots_only: bool = False
+    """Only top-level tickets (no parent)."""
     #: Clamped to 1..100 by `list_tickets_mcp`: an agent narrows, it does not page.
     limit: int = 50
+    """Max results (default 50, max 100)."""
 
 
 class TicketSummaryQuery(BaseModel):
@@ -67,12 +75,18 @@ class ArtifactIndexQuery(BaseModel):
     model_config = _LENIENT
 
     ticket_id: str
+    """Ticket UUID or external id (initiatives and milestones included)."""
     workspace_slug: str | None = None
+    """Workspace slug — only needed to disambiguate a legacy external id."""
     #: Artifact kinds are agent-supplied and open-ended (see ArtifactKind).
     kind: str = ""
+    """Only artifacts of this kind, e.g. document, plan, log."""
     include_ancestors: bool = True
+    """Also list the parent chain's artifacts (default true)."""
     latest_only: bool = True
+    """Collapse each ticket + kind + title to its newest version (default true)."""
     limit: int = Field(default=50, ge=1, le=MAX_ARTIFACT_LIST_LIMIT)
+    """Max items (default 50, max 200)."""
 
 
 class ArtifactFeedQuery(TicketKey):

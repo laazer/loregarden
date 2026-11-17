@@ -53,16 +53,28 @@ class WorkQueued(Exception):  # noqa: N818 — reads as the condition, like Stop
 class OrchestrationStart(BaseModel):
     """What a caller may ask of an orchestration start, on any transport."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
     ticket_id: str
+    """Loregarden ticket UUID."""
     #: None takes the workspace profile's driver.
     driver: OrchestrationDriver | None = None
+    """Orchestration driver."""
     #: An outside harness drives the run; no slot is taken (see `start_external`).
     external_harness: ExternalHarness | None = None
+    """Set when a coding harness outside this control plane is driving the ticket. Stamps the run
+    and every stage under it with that harness so its results are comparable, and takes the run out
+    of the queue — it spawns nothing here, so it waits for no lane.
+    """
     #: A retry carrying the same key gets the run its first attempt created.
     idempotency_key: str = ""
+    """Optional caller-chosen key. If a start with this key already created a run for this ticket,
+    that run is returned instead of a second one — so a call that failed ambiguously (socket
+    closed, timed out) can be retried without re-reading the ticket first. Choose a new key for a
+    genuinely new start; reusing one replays.
+    """
     max_stages: int | None = None
+    """Optional cap on stages for builtin autopilot."""
     stop_at_stage_key: str | None = None
     auto_approve: bool = False
     approve_design_plans: bool = True

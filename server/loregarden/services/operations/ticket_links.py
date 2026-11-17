@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 
 class DependencyEdge(BaseModel):
@@ -42,7 +42,9 @@ class DependencyEdge(BaseModel):
     model_config = _LENIENT
 
     ticket_id: str
+    """The dependent ticket (UUID or external_id)."""
     depends_on: str
+    """The prerequisite ticket (UUID or external_id)."""
 
 
 class RelationEdge(BaseModel):
@@ -51,7 +53,9 @@ class RelationEdge(BaseModel):
     model_config = _LENIENT
 
     ticket_id: str
+    """One ticket (UUID or external_id)."""
     related_to: str
+    """The other ticket (UUID or external_id)."""
 
 
 def _both(session: Session, ticket_id: str, other_id: str) -> tuple[Ticket, Ticket]:

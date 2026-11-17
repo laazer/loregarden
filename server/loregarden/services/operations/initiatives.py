@@ -50,7 +50,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
 #: The planner's tools have always refused a key they do not read.
-_STRICT = ConfigDict(extra="forbid")
+_STRICT = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
 #: Who an edit made on the Initiatives page is attributed to.
 _OPERATOR = "human"
@@ -66,13 +66,16 @@ class MemberChange(BaseModel):
     model_config = _STRICT
 
     initiative_id: str
+    """Initiative id, or its external id (e.g. init-tinkercg-build-1)."""
     ticket_id: str
+    """Ticket id, or its external id (e.g. lg-milestone-that-780)."""
 
 
 class InitiativeRef(BaseModel):
     model_config = _STRICT
 
     initiative_id: str
+    """Initiative id, or its external id (e.g. init-tinkercg-build-1)."""
 
 
 class AutopilotSwitch(AutopilotUpdate):
@@ -81,6 +84,7 @@ class AutopilotSwitch(AutopilotUpdate):
     model_config = _STRICT
 
     initiative_id: str
+    """The initiative, milestone or parent ticket: its uuid or external id."""
 
 
 class TicketSelection(BaseModel):
@@ -89,11 +93,14 @@ class TicketSelection(BaseModel):
     model_config = _STRICT
 
     initiative_id: str
+    """Initiative id, or its external id (e.g. init-tinkercg-build-1)."""
     ticket_ids: list[str]
+    """Ticket ids (uuid) from the plan's nodes."""
 
 
 class NeedsPersonMark(TicketSelection):
     needs_person: bool = True
+    """True marks them as needing a person; false clears the mark."""
 
 
 @dataclass(frozen=True)

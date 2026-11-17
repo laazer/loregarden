@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session, select
 
 #: MCP callers have always been able to send keys a tool does not read.
-_LENIENT = ConfigDict(extra="ignore")
+_LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
 #: Finished entries an agent's status read lists after the live ones. The queue
 #: keeps every entry it ever held; an agent asking what is landing needs the
@@ -59,9 +59,14 @@ class QueueRead(BaseModel):
     model_config = _LENIENT
 
     workspace_slug: str = ""
+    """Workspace whose queue to read."""
     entry_id: str = ""
+    """One entry, with its checks, instead of the queue."""
     #: Read a testing entry's checks from GitHub now, rather than the last cycle's.
     live: bool = True
+    """Read a testing entry's checks from GitHub now (default true); false returns what the loop
+    recorded on its last cycle.
+    """
     #: Finished entries the board asks for; an agent always gets STATUS_HISTORY.
     limit: int = Field(default=50, ge=1, le=500)
 
@@ -73,18 +78,24 @@ class EnqueueArgs(BaseModel):
 
     #: A UUID or an external id; any ticket in the tree.
     ticket_id: str = ""
+    """Ticket UUID or external id, for a tree's PR."""
     pr_number: int = Field(default=0, ge=0)
+    """Pull request number, for a PR with no ticket."""
     #: Required with ``pr_number``; with ``ticket_id``, the ticket must belong to it.
     workspace_slug: str = ""
+    """Workspace; required with pr_number, or when ticket_id is an external id."""
 
 
 class EntryActionArgs(BaseModel):
     model_config = _LENIENT
 
     entry_id: str
+    """The entry, from loregarden_read_merge_queue."""
     action: MergeQueueAction
+    """withdraw or retry."""
     #: Why it is withdrawn; kept on the entry.
     reason: str = ""
+    """Why it is withdrawn; kept on the entry."""
 
 
 @dataclass(frozen=True)
