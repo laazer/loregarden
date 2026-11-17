@@ -247,6 +247,20 @@ def _temp_root() -> Path:
     return Path(tempfile.gettempdir()).resolve()
 
 
+def _this_checkout_is_under_a_temp_root() -> bool:
+    """Whether the suite is running from a checkout inside a temp directory.
+
+    Land verification adds the candidate merge as a detached worktree under
+    `tempfile.mkdtemp()` and runs the whole suite from there
+    (`services/land_verification._verify_candidate`), so in that run
+    `settings.repo_root` genuinely is a temp-directory path and `is_temp_repo`
+    is right to say so. The "a real checkout" case below then has no subject,
+    and asserting it anyway failed every land of every ticket.
+    """
+    roots = {_temp_root(), Path("/tmp").resolve()}
+    return any(settings.repo_root.resolve().is_relative_to(root) for root in roots)
+
+
 @pytest.mark.parametrize(
     ("repo_path", "is_temp"),
     [
@@ -259,7 +273,18 @@ def _temp_root() -> Path:
         ),
         pytest.param(lambda: "tmp/repo", False, id="relative"),
         pytest.param(lambda: f"../{_temp_root().name}/repo", False, id="relative via .."),
-        pytest.param(lambda: str(settings.repo_root), False, id="a real checkout"),
+        pytest.param(
+            lambda: str(settings.repo_root),
+            False,
+            id="a real checkout",
+            marks=pytest.mark.skipif(
+                _this_checkout_is_under_a_temp_root(),
+                reason=(
+                    "this checkout is itself under a temp root (a land-verification "
+                    "worktree), where it is a temp repo and the case asserts nothing"
+                ),
+            ),
+        ),
     ],
 )
 def test_what_counts_as_a_temp_directory_repo(repo_path, is_temp):
