@@ -6,6 +6,7 @@ import {
   priorityStyle,
   stageStatusColor,
   stageStatusChip,
+  stageStatusTextColor,
   ticketStateColor,
 } from "../../../lib/ticketStates";
 import { willRerunStageKeys } from "../../../lib/stageDisplay";
@@ -267,7 +268,7 @@ export function TicketCardBody({
             style={{ background: stageColor }}
             aria-hidden
           />
-          <span className="lg-primitive-ticket-stage-name" style={{ color: stageColor }}>
+          <span className="lg-primitive-ticket-stage-name" style={{ color: stageStatusTextColor(stageStatus) }}>
             {stageName}
           </span>
           <StatusChip {...stageStatusChip(stageStatus)} />
