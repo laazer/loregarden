@@ -31,6 +31,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import (
+    ADVISORY_APPROVAL_KINDS,
     AgentRun,
     Approval,
     ApprovalStatus,
@@ -145,6 +146,8 @@ def awaiting_a_person(session: Session, ticket: Ticket) -> bool:
             select(Approval.id)
             .where(Approval.ticket_id == ticket.id)
             .where(Approval.status == ApprovalStatus.PENDING)
+            # A question the run carried on past is not the next move being a person's.
+            .where(col(Approval.kind).not_in(ADVISORY_APPROVAL_KINDS))
             .limit(1)
         ).first()
         is not None

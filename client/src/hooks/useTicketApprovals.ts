@@ -36,6 +36,7 @@ export function useResolveApproval() {
       qc.invalidateQueries({ queryKey: ["approvals"] });
       qc.invalidateQueries({ queryKey: ["approval-history"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
+      qc.invalidateQueries({ queryKey: ["operator-questions"] });
     },
   });
 }

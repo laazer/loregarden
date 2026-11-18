@@ -300,6 +300,19 @@ def _args_for(
             "body": "# Smoke\n\nwritten by the MCP smoke test",
         },
         "loregarden_list_artifacts": {"ticket_id": ticket_id},
+        # High confidence and the asking stage itself: an advisory question that
+        # neither blocks the stage nor holds the gate.
+        "loregarden_ask_operator": {
+            "ticket_id": ticket_id,
+            "question": "Smoke: keep the default?",
+            "options": ["Yes", "No"],
+            "default": "Yes",
+            "confidence": "high",
+            "reversibility": "easy",
+            "affects": stage_key,
+            "stage_key": stage_key,
+        },
+        "loregarden_list_operator_questions": {"ticket_id": ticket_id, "include_settled": True},
         "loregarden_search_prior_work": {
             "query": "smoke prior work",
             "workspace_slug": "loregarden",
@@ -530,6 +543,8 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_record_fix_coverage",
         "loregarden_write_document",
         "loregarden_list_artifacts",
+        "loregarden_ask_operator",
+        "loregarden_list_operator_questions",
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_check_organization",

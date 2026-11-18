@@ -402,6 +402,11 @@ def _block_fields_of(payload: str) -> _BlockFields:
         except ValueError:
             unknown = parsed.blocked_kind.strip()
             logger.warning("stage report named an unknown blocked_kind %r", unknown)
+        if kind is BlockKind.ANSWERS:
+            # The gate's own word for a hold on inbox questions; an agent naming
+            # it would block with no question in the inbox to answer.
+            kind, unknown = None, parsed.blocked_kind.strip()
+            logger.warning("stage report named blocked_kind %r, which only the gate sets", unknown)
         if kind is BlockKind.TICKETS and not waiting_on:
             # Waiting on tickets it does not name: nothing to link or wait for.
             kind, unknown = None, parsed.blocked_kind.strip()

@@ -111,7 +111,9 @@ export interface Approval {
     | "rework_pause"
     | "stage_park"
     /** A stage blocked on a choice only a person should make; asked with options (749). */
-    | "block_decision";
+    | "block_decision"
+    /** A workflow agent's question it carried on past with a default (2710). */
+    | "operator_question";
   /** Present on `human_action`: what the agent prepared before handing over. */
   prepared_action?: PreparedAction | null;
   /** Set on a card the reference survey filed. */

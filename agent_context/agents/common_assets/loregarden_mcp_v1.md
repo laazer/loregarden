@@ -29,7 +29,8 @@ names no destination, the destination is **a control-plane tool** — never a ne
 | Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
 | Architecture, decision record, plan for a milestone or initiative (no run needed) | `loregarden_write_document` | a `docs/*.md` file |
 | Stage outcome on a **stage run** (pass / reject / blocked) | `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel in your response | `loregarden_complete_stage` or a `*_COMPLETION.md` file |
-| Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
+| A question you would have asked the operator (with the default you proceed on) | `loregarden_ask_operator` | a checkpoint entry nobody reads |
+| An assumption that needs nobody's answer | `loregarden_append_checkpoint` | a checkpoint `.md` |
 | Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
 | Spec, description, acceptance criteria | `loregarden_update_ticket` | a spec `.md` |
 | Handoff to the next stage | `loregarden_write_handoff` | a hand-written YAML |
@@ -146,7 +147,8 @@ refused). Pages are cached once for every later run. It never raises: read `erro
 | Run a survey pass: brief, reads, evidence, findings, unknowns, landing on tickets | `loregarden_survey_pass`, `loregarden_survey_record`, `loregarden_survey_write` |
 | Run the change you are checking (a branch server or client) | `loregarden_launch_instance`, then `loregarden_instance_status`, then `loregarden_stop_instance` |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
-| Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
+| Ask the operator, and carry on with your default (see `checkpoint_protocol_v1.md`) | `loregarden_ask_operator`; `loregarden_list_operator_questions` to read them back |
+| Log an assumption that needs nobody's answer | `loregarden_append_checkpoint` |
 | Inspect memory backend config | `loregarden_memory_status` |
 
 `loregarden_get_ticket` accepts a UUID, or an `external_id` slug when `workspace_slug` is also

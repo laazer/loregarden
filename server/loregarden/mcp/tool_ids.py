@@ -28,6 +28,8 @@ class McpTool(StrEnum):
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
     RECORD_UX_ANSWERS = "loregarden_record_ux_answers"
     RECORD_FIX_COVERAGE = "loregarden_record_fix_coverage"
+    ASK_OPERATOR = "loregarden_ask_operator"
+    LIST_OPERATOR_QUESTIONS = "loregarden_list_operator_questions"
     WRITE_DOCUMENT = "loregarden_write_document"
     LIST_ARTIFACTS = "loregarden_list_artifacts"
     READ_ARTIFACT = "loregarden_read_artifact"
@@ -191,6 +193,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.RECORD_UX_ANSWERS,
     # A bug ticket's spec stage cannot pass without its fix coverage record.
     McpTool.RECORD_FIX_COVERAGE,
+    # A question the stage would otherwise have buried in a checkpoint: filed
+    # in the inbox with the default it carries on with (`operator_questions`).
+    McpTool.ASK_OPERATOR,
+    McpTool.LIST_OPERATOR_QUESTIONS,
     # The spec stage's scope round decides the findings filed against its
     # ticket. Offered to every stage like the fix coverage record; the handler
     # refuses any run but the source ticket's own spec (`mcp.discovery_tools`).
@@ -281,6 +287,7 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.GET_INITIATIVE_PLAN,
         McpTool.LIST_INSTANCES,
         McpTool.LIST_UI_ACTIONS,
+        McpTool.LIST_OPERATOR_QUESTIONS,
         # Also stamps `ready_at` the first time an instance answers — the
         # registry's own bookkeeping, not a change to anything it describes.
         McpTool.INSTANCE_STATUS,
@@ -312,6 +319,9 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
         McpTool.RECORD_FIX_COVERAGE,
+        # Files an inbox card, or the decision block a stage would raise anyway;
+        # gating the question behind a click would ask whether it may ask.
+        McpTool.ASK_OPERATOR,
         # A scope round runs unattended, so an inbox card per finding would
         # stall it. The handler admits only the finding's own spec run, and
         # every decision carries a reason on the record.
@@ -526,6 +536,8 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
         McpTool.RECORD_FIX_COVERAGE,
+        McpTool.ASK_OPERATOR,
+        McpTool.LIST_OPERATOR_QUESTIONS,
         McpTool.ATTACH_EVIDENCE,
         McpTool.APPEND_CHECKPOINT,
         McpTool.APPEND_LEARNING,

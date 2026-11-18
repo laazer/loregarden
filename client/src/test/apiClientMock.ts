@@ -34,6 +34,9 @@ export const api = {
   stopBaxterChatTurn: jest.fn(),
   workspaceWorkflow: jest.fn().mockResolvedValue(null),
   approvals: jest.fn().mockResolvedValue([]),
+  ticketOperatorQuestions: jest
+    .fn()
+    .mockResolvedValue({ ticket: "", open: 0, holding_gate: 0, total: 0, questions: [] }),
   runs: jest.fn().mockResolvedValue([]),
   runLog: jest.fn(),
   runMessages: jest.fn(),

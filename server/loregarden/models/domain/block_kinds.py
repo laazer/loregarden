@@ -43,6 +43,10 @@ class BlockKind(StrEnum):
     #: stage hits the same checkout); the merge turn (`branch_takes_target`) is
     #: how it clears, and a person resolves it once that turn's attempts are spent.
     CONFLICT = "conflict"
+    #: The gate is holding for questions agents asked on this ticket, each
+    #: already in the inbox (`services.operator_questions`). No card of its
+    #: own and no repair turn: answering the last one requeues the gate.
+    ANSWERS = "answers"
 
 
 class BlockedOn(StrEnum):

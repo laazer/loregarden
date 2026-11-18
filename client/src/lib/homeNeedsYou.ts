@@ -83,6 +83,7 @@ const APPROVAL_WORDS: Record<Approval["kind"], string> = {
   rework_pause: "Rework",
   stage_park: "Parked",
   block_decision: "Decision",
+  operator_question: "Assumption",
 };
 
 export function pendingApprovals(approvals: readonly Approval[] | undefined): Approval[] {

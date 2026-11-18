@@ -17,6 +17,8 @@ export function blockKindLabel(kind: BlockKind): string {
       return "other tickets";
     case "conflict":
       return "merge conflict";
+    case "answers":
+      return "your answers";
   }
 }
 
@@ -35,6 +37,8 @@ export function blockKindMeaning(kind: BlockKind): string {
       return "Nothing is owed on this ticket itself: a ticket under it is blocked. Open the ones it is waiting on; this one follows when they clear.";
     case "conflict":
       return "Its branch conflicts with work that landed before it. A merge turn tries to resolve it while it has attempts left; after that, merge the target into the branch by hand and requeue.";
+    case "answers":
+      return "The gate is waiting on questions agents asked while they worked. Confirm or override each one in the inbox; the gate runs again on the last answer.";
   }
 }
 

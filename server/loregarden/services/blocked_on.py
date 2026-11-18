@@ -41,7 +41,7 @@ from sqlalchemy.orm import aliased
 from sqlmodel import Session, col, select
 
 _AGENT_KINDS = (BlockKind.HARNESS, BlockKind.WORK)
-_PERSON_KINDS = (BlockKind.DECISION, BlockKind.HUMAN_ACTION)
+_PERSON_KINDS = (BlockKind.DECISION, BlockKind.HUMAN_ACTION, BlockKind.ANSWERS)
 
 #: SQLite's default parameter limit is 999.
 _ID_CHUNK = 400

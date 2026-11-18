@@ -46,6 +46,7 @@ from loregarden.mcp.operation_tools import (
     execute_operation_tool,
     operation_tool_schema,
 )
+from loregarden.mcp.operator_question_tools import OPERATOR_QUESTION_TOOL_DEFINITIONS
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
@@ -579,9 +580,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.APPEND_CHECKPOINT,
         "description": (
-            "Append a checkpoint entry (assumption/ambiguity log) for a ticket+run to the "
-            "workspace-scoped Checkpoints Obsidian dir — same vault as memory/learnings, "
-            "not the workspace repo. Multiple entries accumulate in one ticket+run file."
+            "Append a checkpoint entry for a ticket+run to the workspace-scoped Checkpoints "
+            "Obsidian dir — same vault as memory/learnings, not the workspace repo. Only for "
+            "an assumption that needs nobody's answer: a question you would have asked the "
+            "operator goes to loregarden_ask_operator, which the inbox and the gate read. "
+            "Multiple entries accumulate in one ticket+run file."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -592,7 +595,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "run_id": _string_prop("Run id for this ticket+run's checkpoint log."),
                 "entry": _string_prop(
                     "Checkpoint entry markdown block "
-                    "(### [TICKET_ID] Stage — label / Would have asked / Assumption made / Confidence)."
+                    "(### [TICKET_ID] Stage — label / Assumption made / Confidence)."
                 ),
                 "blocker": {
                     "type": "boolean",
@@ -730,6 +733,7 @@ TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(RESEARCH_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(OPERATOR_QUESTION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(CRITERION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)

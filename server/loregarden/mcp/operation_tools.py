@@ -64,6 +64,9 @@ OPERATION_TOOLS: Mapping[str, OperationId] = {
     McpTool.UPDATE_TICKET.value: OperationId.TICKET_UPDATE,
     McpTool.SET_TICKET_WORKFLOW.value: OperationId.TICKET_WORKFLOW_SET,
     McpTool.MERGE_PULL_REQUEST.value: OperationId.TICKET_PULL_REQUEST_MERGE,
+    # A stage's question for the operator, and the ticket's list of them.
+    McpTool.ASK_OPERATOR.value: OperationId.OPERATOR_QUESTION_ASK,
+    McpTool.LIST_OPERATOR_QUESTIONS.value: OperationId.OPERATOR_QUESTION_LIST,
 }
 
 

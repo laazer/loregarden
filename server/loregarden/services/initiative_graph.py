@@ -73,7 +73,7 @@ NEEDS_PERSON_TAG = "needs-person"
 _LANE_TAG = re.compile(r"^(?:[a-z0-9]+-)?lane-(?P<lane>[a-z0-9][a-z0-9-]*)$")
 
 _CONTAINERS = frozenset({WorkItemType.INITIATIVE, WorkItemType.MILESTONE})
-_PERSON_BLOCKS = frozenset({BlockKind.DECISION, BlockKind.HUMAN_ACTION})
+_PERSON_BLOCKS = frozenset({BlockKind.DECISION, BlockKind.HUMAN_ACTION, BlockKind.ANSWERS})
 _DAY = 86_400.0
 _TOLERANCE = timedelta(seconds=1)
 

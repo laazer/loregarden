@@ -347,6 +347,9 @@ BLOCK_WRITERS: dict[str, str] = {
     ),
     "services/criterion_gate.py:_block": "delegates: orchestration_callbacks.block_ticket",
     "services/readiness_gate.py:block_if_unready": "delegates: orchestration_callbacks.block_ticket",
+    "services/readiness_gate.py:_hold_for_answers": (
+        "delegates: orchestration_callbacks.block_ticket"
+    ),
     "services/stage_retry_budget.py:enforce_stage_retry_budget": (
         "delegates: orchestration_callbacks.block_ticket"
     ),

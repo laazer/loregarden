@@ -54,7 +54,9 @@ _UNTITLED_PLAN = {"agent": "Agent todo list", "user": "Your checklist"}
 #: Tool-permission prompts are the CLI asking to run a command, hundreds per
 #: ticket and settled in seconds: noise on a map of what a person decided.
 _MAPPED_APPROVALS = frozenset(ApprovalKind) - {ApprovalKind.CLI_PERMISSION}
-_QUESTION_APPROVALS = frozenset({ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION})
+_QUESTION_APPROVALS = frozenset(
+    {ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION, ApprovalKind.OPERATOR_QUESTION}
+)
 
 _APPROVAL_STATE = {
     ApprovalStatus.PENDING: MapItemState.WAITING,

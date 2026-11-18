@@ -28,6 +28,7 @@ from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.fix_coverage import missing_fix_coverage
 from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.operation_criteria import pending_operation_criteria
+from loregarden.services.operator_questions import gate_hold_detail, is_gate_stage
 from loregarden.services.read_evidence import latest_stage_run, stage_read_evidence
 from loregarden.services.spec_snapshot import run_spec_drift, unsettled_criteria_detail
 from loregarden.services.stage_report import StageReport
@@ -56,6 +57,7 @@ _UNJUDGEABLE_EVIDENCE_NAME = "evidence:unjudgeable"
 _UX_ANSWERS_NAME = "ux_answers missing"
 _FIX_COVERAGE_NAME = "fix_coverage missing"
 _OPERATION_CRITERIA_NAME = "operation_criteria pending"
+_OPERATOR_QUESTIONS_NAME = "operator_questions unanswered"
 #: A waiver in the run's report does not clear these: the signal is live, read
 #: from the transcript on every derive, and a live signal sets the status.
 _READ_NOTHING_NAME = "read:nothing"
@@ -274,7 +276,33 @@ def collect_signals(
         signals.extend(
             _folded_pass_held_signals(session, ticket, agent_id, stage_key=stage_def.key)
         )
+        if is_gate_stage(stage_def):
+            signals.extend(_operator_question_signals(session, ticket, agent_id, stage_def.key))
     return signals
+
+
+def _operator_question_signals(
+    session: Session, ticket: Ticket, agent_id: str, stage_key: str
+) -> list[VerdictSignal]:
+    """The gate holds while a question below high confidence is unanswered.
+
+    Blocked as `ANSWERS`, not sent back: no agent turn can answer it, and the
+    questions are already in the inbox, so the block files no card of its own.
+    """
+    detail = gate_hold_detail(session, ticket)
+    if not detail:
+        return []
+    return [
+        VerdictSignal(
+            source="operator_questions",
+            item_key=_OPERATOR_QUESTIONS_NAME,
+            outcome=StageReportStatus.BLOCKED,
+            producer_agent_id=agent_id,
+            producer_stage_key=stage_key,
+            detail=detail,
+            block_kind=BlockKind.ANSWERS,
+        )
+    ]
 
 
 def report_with_verdict(

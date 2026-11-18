@@ -164,7 +164,14 @@ export interface AgentRunStats {
 }
 
 /** Who could have unblocked a failed run; null when it was never classified. */
-export type RunFailureKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
+export type RunFailureKind =
+  | "harness"
+  | "work"
+  | "decision"
+  | "human_action"
+  | "tickets"
+  | "conflict"
+  | "answers";
 
 /** One stage of an agent's record, from `GET /api/studio/agent-runs/{agentId}`. */
 export interface AgentStageRecord {
