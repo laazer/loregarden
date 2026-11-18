@@ -175,13 +175,20 @@ def _decision_rounds(session: Session, ticket: Ticket, stage_key: str) -> int:
 
 
 def raise_decision(
-    session: Session, ticket: Ticket, *, stage_key: str, message: str, options: list[str]
+    session: Session,
+    ticket: Ticket,
+    *,
+    stage_key: str,
+    message: str,
+    options: list[str],
+    annotations: dict[str, object] | None = None,
 ) -> Approval:
     """The pending decision on `stage_key`, filed now unless one is already open.
 
     Public for `operator_questions`, whose blocking questions are this same
     decision raised before the stage reports `blocked`; the report that follows
-    finds it open and files nothing twice.
+    finds it open and files nothing twice. `annotations` are stored beside the
+    question in `tool_input_json` (an operator question's default and target).
     """
     existing = session.exec(
         select(Approval).where(
@@ -208,7 +215,9 @@ def raise_decision(
         level="high",
         stage_key=stage_key,
         impact=message,
-        tool_input_json=json.dumps(_decision_question(stage_key, message, options)),
+        tool_input_json=json.dumps(
+            {**_decision_question(stage_key, message, options), **(annotations or {})}
+        ),
         status=ApprovalStatus.PENDING,
     )
     session.add(approval)

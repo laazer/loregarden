@@ -51,7 +51,7 @@ export function TicketAssumptions({ ticketId }: { ticketId: string }) {
               <th scope="col">Question</th>
               <th scope="col">Agent assumed</th>
               <th scope="col">Your answer</th>
-              <th scope="col">Asked at</th>
+              <th scope="col">Asked by stage</th>
             </tr>
           </thead>
           <tbody>

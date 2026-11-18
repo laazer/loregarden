@@ -274,6 +274,65 @@ def test_an_answer_that_changes_the_spec_blocks_whatever_the_agent_said(db_sessi
     assert result.reasons == (QuestionBlockReason.CHANGES_REQUIREMENTS,)
 
 
+def test_a_second_blocking_question_on_the_stage_says_it_was_not_filed(db_session, ticket):
+    first = ask_operator(db_session, ticket, _request(confidence=QuestionConfidence.LOW))
+    second = ask_operator(
+        db_session,
+        ticket,
+        _request(question="Rename the module too?", confidence=QuestionConfidence.LOW),
+    )
+
+    assert second.displaced and not second.existing
+    assert second.approval.id == first.approval.id
+    assert "NOT filed" in second.next_step
+    assert len(_approvals(db_session, ticket, ApprovalKind.BLOCK_DECISION)) == 1
+
+
+def test_retrying_a_blocking_question_returns_it_as_already_asked(db_session, ticket):
+    first = ask_operator(db_session, ticket, _request(confidence=QuestionConfidence.LOW))
+    again = ask_operator(db_session, ticket, _request(confidence=QuestionConfidence.LOW))
+
+    assert again.existing and not again.displaced
+    assert again.approval.id == first.approval.id
+
+
+def _list(session: Session, ticket: Ticket) -> dict:
+    return json.loads(
+        execute_tool(
+            session,
+            McpTool.LIST_OPERATOR_QUESTIONS.value,
+            {"ticket_id": ticket.external_id, "include_settled": True},
+        )
+    )
+
+
+def test_a_blocking_question_is_listed_holding_the_gate_and_its_answer_read_back(
+    db_session, ticket
+):
+    from loregarden.services.block_classification import raise_decision
+
+    raise_decision(
+        db_session, ticket, stage_key=SPEC, message="A stage's own block", options=OPTIONS
+    )
+    asked = ask_operator(db_session, ticket, _request(confidence=QuestionConfidence.LOW)).approval
+
+    listed = _list(db_session, ticket)
+    assert listed["total"] == 1, "a decision a stage report raised is not an asked question"
+    assert listed["open"] == 1 and listed["holding_gate"] == 1
+    row = listed["questions"][0]
+    assert row["id"] == asked.id and row["question"] == QUESTION
+    assert row["default"] == OPTIONS[0] and row["options"] == OPTIONS
+
+    decision_text = json.loads(asked.tool_input_json)["questions"][0]["question"]
+    with patch("loregarden.services.run_service.schedule_orchestration"):
+        ApprovalService(db_session).resolve(
+            asked.id, approved=True, answers={decision_text: OPTIONS[1]}
+        )
+
+    row = _list(db_session, ticket)["questions"][0]
+    assert (row["outcome"], row["answer"]) == ("overridden", OPTIONS[1])
+
+
 @pytest.mark.parametrize(
     ("overrides", "named"),
     [

@@ -29,6 +29,7 @@ from loregarden.services.operator_questions import (
     holds_gate,
     question_meta,
     question_text,
+    settled_answer,
     ticket_questions,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -100,6 +101,7 @@ def _ask(session: Session, call: AskOperatorCall, caller: Caller) -> dict[str, A
         "blocking": result.blocking,
         "reasons": [reason.value for reason in result.reasons],
         "already_asked": result.existing,
+        "filed": not result.displaced,
         "next_step": result.next_step,
     }
 
@@ -107,14 +109,14 @@ def _ask(session: Session, call: AskOperatorCall, caller: Caller) -> dict[str, A
 def question_row(approval: Approval) -> dict[str, Any]:
     """One operator question as every surface reads it."""
     meta = question_meta(approval)
-    answered = json.loads(approval.response_json or "{}")
+    outcome, answer = settled_answer(approval)
     options = (
         json.loads(approval.tool_input_json or "{}").get("questions", [{}])[0].get("options", [])
     )
     return {
         "id": approval.id,
         "stage_key": approval.stage_key,
-        "question": question_text(approval),
+        "question": meta.question or question_text(approval),
         "options": [str(option.get("label", "")) for option in options],
         "default": meta.default,
         "confidence": meta.confidence.value,
@@ -122,8 +124,8 @@ def question_row(approval: Approval) -> dict[str, Any]:
         "affects": meta.affects,
         "context": meta.context,
         "status": approval.status.value,
-        "outcome": answered.get("outcome", ""),
-        "answer": answered.get("answer", ""),
+        "outcome": outcome,
+        "answer": answer,
         "holds_gate": holds_gate(approval),
         "created_at": approval.created_at,
         "resolved_at": approval.resolved_at,
