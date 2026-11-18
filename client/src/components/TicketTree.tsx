@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { TicketTreeNode } from "../api/client";
-import { stageStatusColor } from "../lib/ticketStates";
+import { stageStatusColor, stageStatusTextColor } from "../lib/ticketStates";
 import { blockedOnStateLabel, stuckTicketTone } from "../utils/blockKinds";
 import { STATUS_TONE_COLORS } from "../lib/statusTone";
 import { hasParts, partsTag } from "../lib/ticketParts";
@@ -291,7 +291,7 @@ function TreeRow({
             {node.workflow_stage_name ? (
               <div className="tree-card-workflow">
                 <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
-                <span style={{ color: wfColor, fontWeight: 500 }}>{node.workflow_stage_name}</span>
+                <span style={{ color: stageStatusTextColor(node.workflow_stage_status), fontWeight: 500 }}>{node.workflow_stage_name}</span>
                 <span style={{ color: "var(--txl)" }}>
                   {node.workflow_stage_status.replace("_", " ")}
                 </span>

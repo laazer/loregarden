@@ -145,6 +145,13 @@ const STAGE_STATUS_COLORS: Record<StageStatus, string> = {
   wont_do: "var(--bd2)",
 };
 
+/**
+ * The stage *name* beside those dots. The quiet border grey above is a fill,
+ * not a text colour (2:1 on the base surface), so text takes the tone colours,
+ * whose quiet tones are the text greys that clear AA.
+ */
+const STAGE_STATUS_TEXT_COLORS = toneColors(STAGE_STATUS_TONES);
+
 const STAGE_STATUS_LABELS: Record<StageStatus, string> = {
   pending: "Idle",
   running: "Running",
@@ -207,6 +214,11 @@ export function ticketStateChip(state: string | undefined): ChipStatus {
 
 export function stageStatusColor(status: string | undefined): string {
   return fromMap(STAGE_STATUS_COLORS, status, "var(--bd)");
+}
+
+/** Text colour for a stage status; use `stageStatusColor` only for dots and segments. */
+export function stageStatusTextColor(status: string | undefined): string {
+  return fromMap(STAGE_STATUS_TEXT_COLORS, status, STATUS_TONE_COLORS.idle);
 }
 
 export function stageStatusLabel(status: string | undefined): string {

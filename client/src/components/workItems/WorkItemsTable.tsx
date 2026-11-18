@@ -5,7 +5,7 @@ import { duration } from "../../lib/duration";
 import type { ActiveRun } from "../../lib/queueSocket";
 import { LIVE_RUN_STATUSES } from "../../lib/runningTickets";
 import { STATUS_TONE_COLORS } from "../../lib/statusTone";
-import { runStatusLabel, stageStatusColor } from "../../lib/ticketStates";
+import { runStatusLabel, stageStatusTextColor } from "../../lib/ticketStates";
 import { stuckTicketTone } from "../../utils/blockKinds";
 import {
   needsMeReason,
@@ -152,7 +152,7 @@ export function WorkItemsTable({
               <span className="wi-dot" style={{ background: STATUS_TONE_COLORS[stuckTicketTone(node)] }} aria-hidden />
               {stateText(node)}
             </td>
-            <td className="wi-col-stage" style={{ color: stageStatusColor(node.workflow_stage_status) }}>
+            <td className="wi-col-stage" style={{ color: stageStatusTextColor(node.workflow_stage_status) }}>
               {stageText(node)}
               {run ? (
                 <span className="wi-run" title={`Slot ${run.slot_number}`}>

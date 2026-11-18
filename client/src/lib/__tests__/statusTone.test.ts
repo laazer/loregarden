@@ -17,6 +17,7 @@ import {
   runStatusChip,
   stageStatusChip,
   stageStatusColor,
+  stageStatusTextColor,
   ticketActivityChip,
   ticketStateChip,
 } from "../ticketStates";
@@ -141,5 +142,16 @@ describe.each(["bg0", "bg1", "bg2", "bg3"])("a chip on --%s", (surface) => {
 
   it("idle text (--txl, untinted) clears 4.5:1", () => {
     expect(contrast(channels(token("txl")), channels(token(surface)))).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// Stage names are text, and the dot palette's quiet grey is a border token
+// (2:1 on --bg0). Every stage status, and an unknown one, must name a text
+// colour that clears AA on every resting surface.
+describe.each(["bg0", "bg1", "bg2", "bg3"])("a stage name on --%s", (surface) => {
+  it.each([...STAGE_STATUSES, "unmapped"])("%s clears 4.5:1", (status) => {
+    const name = /^var\(--([a-z0-9]+)\)$/.exec(stageStatusTextColor(status))?.[1];
+    if (!name) throw new Error(`stage text colour for ${status} is not a single token`);
+    expect(contrast(channels(token(name)), channels(token(surface)))).toBeGreaterThanOrEqual(4.5);
   });
 });
