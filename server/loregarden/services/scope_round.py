@@ -42,6 +42,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.stage_types import StageType
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.criterion_names import resolve_criterion
 from loregarden.services.discovered_work import undecided, undecided_findings_of
 from loregarden.services.hierarchy_service import reparent_ticket
 from loregarden.services.orchestration import OrchestrationService
@@ -98,7 +99,8 @@ def _brief(session: Session, ticket: Ticket, target: WorkflowStageDef) -> str:
         f"{ticket.external_id}, and its spec decides whether each is this ticket's work.\n\n"
         f"{listed}\n\n"
         "Read each one (loregarden_get_ticket) and decide it with loregarden_decide_finding: "
-        "amend (it is this ticket's work; give the criterion), follow_up (its parent's work), "
+        "amend (it is this ticket's work; give the criterion), follow_up (its parent's work; "
+        "give the parent's criterion it is needed for), "
         "defer (not this tree's work) or drop. Findings about the tests, guards or "
         "fixtures this ticket built are its own work: amend. Add anything you rule out of "
         "scope to the ticket's out_of_scope list with the reason. Report pass when every "
@@ -175,7 +177,8 @@ def decide_finding(
     """Record the scope decision on one finding and apply it. Commits.
 
     ``criterion`` is required for AMEND: it is what the source ticket will be
-    held to. ``decided_by`` is ``run:<id>`` for a spec run, which is what
+    held to. FOLLOW_UP requires it too, naming the parent's criterion the
+    finding is needed for (`_parent_criterion_served`). ``decided_by`` is ``run:<id>`` for a spec run, which is what
     `MAX_AMEND_ROUNDS` counts.
 
     ``revise`` changes a decision already made: a wrong `follow_up` had no way
@@ -194,7 +197,9 @@ def decide_finding(
         )
     orch = OrchestrationService(session)
     source = session.get(Ticket, discovery.source_ticket_id)
+    needed_for = ""
     if decision is FindingDecision.FOLLOW_UP:
+        needed_for = _parent_criterion_served(session, finding, source, criterion)
         _beside_its_source(session, finding, source)
     if previous and finding.state is TicketState.WONT_DO and decision in _OPEN_DECISIONS:
         # It was dropped; real work again, so it is open and its state is derived.
@@ -232,7 +237,7 @@ def decide_finding(
     discovery.decision = decision
     discovery.decided_at = utcnow()
     discovery.decided_by = decided_by
-    discovery.decision_reason = reason.strip() + previous
+    discovery.decision_reason = reason.strip() + needed_for + previous
     session.add(discovery)
     session.commit()
     if previous:
@@ -279,6 +284,53 @@ def _revisable(
     if finding.state is TicketState.DONE:
         raise ValueError(f"{finding.external_id} is done; its scope is no longer a decision.")
     return decided
+
+
+def _parent_criterion_served(
+    session: Session, finding: Ticket, source: Ticket | None, criterion: str
+) -> str:
+    """The parent's criterion a follow-up is needed for, as recorded with the decision.
+
+    A follow-up holds the source's parent open until it is done, and nothing
+    else stood behind that: on 2026-11-18, 17 open follow-ups held four parents
+    of init-pre-tinkercg-3, seven of them under lg-code-knowledge-273, a
+    milestone that states no criteria at all. A finding the parent needs is
+    needed for something the parent is held to, so the decision names it,
+    resolved like a reviewer's `unmet_criteria` (`resolve_criterion`). One
+    that names nothing the parent is held to is real work the parent does not
+    wait for: `defer`.
+    """
+    parent = (
+        session.get(Ticket, source.parent_ticket_id) if source and source.parent_ticket_id else None
+    )
+    if parent is None:
+        held = source.external_id if source else "its source"
+        raise ValueError(
+            f"{held} has no parent to own a follow-up of it. Decide "
+            f"{finding.external_id} amend, defer or drop."
+        )
+    criteria = load_criteria(parent.acceptance_criteria_json)
+    if not criteria:
+        raise ValueError(
+            f"follow_up holds {parent.external_id} open until {finding.external_id} is done, and "
+            f"{parent.external_id} states no acceptance criteria, so nothing it is held to can "
+            "need this. Decide it defer (it stays filed, and nothing waits on it), or give "
+            f"{parent.external_id} the criterion first (loregarden_update_ticket) if it truly "
+            "waits on this."
+        )
+    served = resolve_criterion(criteria, criterion) if criterion.strip() else None
+    if served is None:
+        named = (
+            f"{criterion.strip()!r} is not one of them" if criterion.strip() else "none was given"
+        )
+        raise ValueError(
+            f"follow_up holds {parent.external_id} open until {finding.external_id} is done, so "
+            f"it must name the criterion of {parent.external_id} it is needed for, as "
+            f"`criterion`, and {named}. Its criteria: "
+            + "; ".join(c[:80] for c in criteria)
+            + ". If it serves none of them, decide it defer: it stays filed, and nothing waits on it."
+        )
+    return f" Needed for {parent.external_id}'s criterion: {served[:200]}"
 
 
 def _beside_its_source(session: Session, finding: Ticket, source: Ticket | None) -> None:

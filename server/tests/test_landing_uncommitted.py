@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from loregarden.models.domain import (
@@ -123,6 +124,21 @@ def test_a_ticket_with_uncommitted_work_does_not_land(session, workspace, ticket
     )
 
 
+def test_a_tracked_edit_no_run_recorded_still_does_not_land(session, workspace, ticket, tree):
+    """lg-code-knowledge-1055: earlier rounds recorded their paths; the rework round's edits
+    were to files none of them named, and dirty ∩ recorded read as nothing uncommitted."""
+    run = session.exec(select(AgentRun).where(AgentRun.ticket_id == ticket.id)).one()
+    run.changed_paths_json = json.dumps(["tests_for_it.py"])
+    session.add(run)
+    session.commit()
+    _edit_without_committing(tree)
+
+    assert uncommitted_at_landing(session, ticket, workspace) == ("service.py",)
+    result = land_ticket(session, ticket, workspace)
+    assert not result.ok
+    assert "service.py" in result.detail
+
+
 def test_committed_work_lands_as_before(session, workspace, ticket, tree):
     result = land_ticket(session, ticket, workspace)
 
@@ -134,6 +150,68 @@ def test_an_untracked_file_nobody_recorded_does_not_block(session, workspace, ti
 
     assert uncommitted_at_landing(session, ticket, workspace) == ()
     assert land_ticket(session, ticket, workspace).ok
+
+
+@pytest.mark.parametrize("importer_committed", [True, False], ids=["committed", "uncommitted"])
+def test_a_new_module_the_ticket_imports_does_not_land_without_it(
+    session, workspace, ticket, tree, importer_committed
+):
+    """lg-code-knowledge-1055 added `asserted_claims.py`, recorded by no run, and imported it
+    from three edits; landing the edits alone lands an import of a module that is not there."""
+    (tree / "pkg").mkdir()
+    (tree / "pkg" / "claims.py").write_text("VALUE = 2\n")
+    (tree / "service.py").write_text("from pkg.claims import VALUE\n")
+    if importer_committed:  # as the stage-end commit leaves it
+        git(tree, "commit", "-q", "-am", "the edit, without the module it imports")
+
+    assert "pkg/claims.py" in uncommitted_at_landing(session, ticket, workspace)
+    result = land_ticket(session, ticket, workspace)
+    assert not result.ok
+    assert "pkg/claims.py" in result.detail
+
+
+@pytest.mark.parametrize(
+    ("project", "reference", "counted"),
+    [
+        ("", 'const Claims = preload("res://scripts/claims.gd")', True),
+        ("game", 'const Claims = preload("res://scripts/claims.gd")', True),
+        ("", '[ext_resource type="Script" path="res://scripts/claims.gd" id="1"]', True),
+        ("game", 'const Claims = preload("res://game/scripts/claims.gd")', False),
+        ("", 'const Other = preload("res://other/claims.gd")', False),
+        ("", 'var imported := "res://scripts/claims.gd.import"', False),
+    ],
+    ids=["root", "nested", "scene", "path-from-repo", "elsewhere", "import-sidecar"],
+)
+def test_a_godot_resource_the_ticket_loads_does_not_land_without_it(
+    session, workspace, ticket, tree, project, reference, counted
+):
+    """A `res://` path spells its extension and is still an import: an untracked script a
+    changed script preloads, or a changed scene names, is work the landing would leave out."""
+    home = tree / project
+    home.mkdir(exist_ok=True)
+    (home / "project.godot").write_text("[application]\n")
+    (home / "player.gd").write_text(reference + "\n")
+    git(tree, "add", "-A")
+    git(tree, "commit", "-q", "-m", "a script that loads another")
+    (home / "scripts").mkdir()
+    (home / "scripts" / "claims.gd").write_text("extends Node\n")
+    untracked = (Path(project) / "scripts" / "claims.gd").as_posix()
+
+    assert (untracked in uncommitted_at_landing(session, ticket, workspace)) is counted
+
+
+def test_an_untracked_file_the_ticket_names_with_its_extension_does_not_block(
+    session, workspace, ticket, tree
+):
+    """A path spelled out is code writing or listing a file (a build script's output, a handoff's
+    dirty paths), not an import of it: the file stays exempt, as unrecorded output was before."""
+    (tree / "build.py").write_text('OUT = "out/report.json"\n')
+    git(tree, "add", "build.py")
+    git(tree, "commit", "-q", "-m", "a build script the ticket wrote")
+    (tree / "out").mkdir()
+    (tree / "out" / "report.json").write_text("{}\n")
+
+    assert uncommitted_at_landing(session, ticket, workspace) == ()
 
 
 def test_a_ticket_without_its_own_tree_is_not_judged(session, workspace, ticket, repo):

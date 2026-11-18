@@ -114,9 +114,13 @@ Read each finding (`loregarden_get_ticket`), then decide it with
 | Decision | When | Effect |
 |---|---|---|
 | `amend` | It is this ticket's work: an instance of the class it fixes, or a gap in the tests, guards or fixtures it built. **The latter is always amend.** | Becomes a criterion (pass it as `criterion`); every stage after spec reruns |
-| `follow_up` | Real work beyond these criteria, which the parent should own and wait for | The parent's work |
+| `follow_up` | Real work beyond these criteria that one of the **parent's** criteria needs. Pass that criterion as `criterion` (its label or heading is enough). A parent that states no criteria waits on no finding | The parent's work: it stays open until this is done |
 | `defer` | Real, but not this tree's work | Stays in the backlog; nothing waits on it |
 | `drop` | Not worth doing, or already covered | Closed `wont_do` |
+
+Real work that no criterion of the parent needs is `defer`, not `follow_up`: it is still
+filed, and nothing waits on it. A follow-up is how a tree stops finishing, so it has to name
+what it is for.
 
 A ticket may amend in at most two rounds. After that, `amend` is refused: decide the rest
 as `follow_up`, `defer` or `drop`. Add anything you defer or drop *because it is out of

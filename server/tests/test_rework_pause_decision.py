@@ -505,3 +505,38 @@ def test_requeue_says_when_another_stage_still_holds_the_ticket(db_session: Sess
 
     assert payload["requeued"]["blocked_stages"] == ["script_review"]
     assert "stage 'script_review' still blocked" in payload["requeued"]["note"]
+
+
+def test_requeue_of_an_earlier_stage_clears_the_blocks_after_it(db_session: Session, review_ticket):
+    """A stage after the requeued one runs again anyway, so its block is cleared
+    with the requeue. Left BLOCKED, it held the ticket: requeuing `implement` on
+    a ticket blocked at `done` (lg-milestone-that-1423) reported the stage
+    pending and the ticket still not clear to run."""
+    import json
+
+    from loregarden.mcp.tools import execute_tool
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+    from loregarden.services.workflow_state import set_stage_status
+
+    ticket, _, _ = review_ticket
+    svc = OrchestrationCallbackService(db_session)
+    instance, stages = svc.orch._resolve_stages(ticket)
+    set_stage_status(ticket, instance, stages, "script_review", StageStatus.BLOCKED)
+    db_session.add_all([ticket, instance])
+    db_session.commit()
+
+    payload = json.loads(
+        execute_tool(
+            db_session,
+            "loregarden_requeue_ticket",
+            {"ticket_id": ticket.id, "stage_key": "implement", "reason": "merge conflicts to fix"},
+        )
+    )
+
+    db_session.refresh(ticket)
+    instance, stages = svc.orch._resolve_stages(ticket)
+    statuses = parse_stage_map(instance, stages)
+    assert statuses["script_review"] is StageStatus.PENDING
+    assert statuses["implement"] is StageStatus.PENDING
+    assert ticket.workflow_stage_key == "implement"
+    assert "blocked_stages" not in payload["requeued"]

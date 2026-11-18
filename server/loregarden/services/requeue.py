@@ -26,7 +26,31 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.ticket_stage_control import StageControl
+from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session
+
+
+def _blocked_after(session: Session, ticket: Ticket, stage_key: str) -> list[str]:
+    """The BLOCKED stages that come after ``stage_key`` in the ticket's workflow.
+
+    Each runs again once ``stage_key`` has, so its block no longer describes
+    anything. Left BLOCKED, it held the ticket: requeuing `implement` on a
+    ticket blocked at `done` made `implement` pending and the ticket still not
+    clear to run (lg-milestone-that-1423). A BLOCKED stage *before* it is a
+    separate block and is left for `requeue_outcome` to report.
+    """
+    instance = workflow_instance_for(session, ticket.id)
+    _, stages = resolve_ticket_stages(session, ticket)
+    if instance is None or not stages:
+        return []
+    order = list(parse_stage_map(instance, stages).items())
+    keys = [key for key, _ in order]
+    if stage_key not in keys:
+        return []
+    return [
+        key for key, status in order[keys.index(stage_key) + 1 :] if status is StageStatus.BLOCKED
+    ]
 
 
 def requeue_stage(
@@ -45,6 +69,10 @@ def requeue_stage(
     if not stage_key:
         raise ValueError("This ticket is not on a workflow stage — nothing to requeue.")
 
+    for later in _blocked_after(session, ticket, stage_key):
+        orch.update_ticket_manual(
+            ticket, UpdateTicketRequest(stage_key=later, stage_status=StageStatus.PENDING)
+        )
     orch.update_ticket_manual(
         ticket,
         UpdateTicketRequest(

@@ -32,7 +32,8 @@ DISCOVERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "ticket's spec stage during a scope round, or by an operator. amend: it is the "
             "ticket's own work; give the criterion it will be held to, and every stage after "
             "spec reruns. follow_up: real work beyond the criteria that the ticket's parent "
-            "owns and waits for. defer: real, but not this tree's work; it stays in the "
+            "owns and waits for; give the parent's criterion it is needed for (a parent with "
+            "no criteria waits on no finding). defer: real, but not this tree's work; it stays in the "
             "backlog and nothing waits for it. drop: not worth doing; closed wont_do. A reason "
             "is always required. Findings about the tests, guards or fixtures the ticket "
             "itself built are its own work: amend. A follow_up moves the finding beside its "
@@ -47,7 +48,9 @@ DISCOVERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "reason": string_prop("Why, in a sentence a person can check."),
                 "criterion": string_prop(
-                    "amend only: the acceptance criterion the source ticket is held to."
+                    "amend: the acceptance criterion the source ticket will be held to. follow_up: the "
+                    "criterion of the source's parent this finding is needed for (its label or "
+                    "heading is enough)."
                 ),
                 "revise": boolean_prop(
                     "Change a decision already made. Operators only; a spec run decides once."

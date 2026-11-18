@@ -20,8 +20,26 @@ undecided finding (`services.discovered_work`): its parent neither runs it nor
 waits for it until its source ticket's spec decides its scope (`scope_round`). The budget counts those rows, not the
 relation: a relation is stored once per *pair*, so a filing against a ticket
 the run's own ticket was already related to wrote no row and went uncounted.
-Two more caps stop a fan-out a per-run limit cannot: one per drive, and one on
-the undecided findings a single ticket may hold.
+One more cap stops a fan-out a per-run limit cannot: one per drive.
+
+Per-run caps did not bound a ticket. Replayed over all 153 findings on
+2026-11-18: 89 were filed by a second or later run on the same ticket, and 78
+were filed against a ticket that was itself a finding, in chains up to six
+deep (lg-verdict-outcome-1646 → … → lg-gate-studio-1673), so an initiative
+whose work was finishing kept growing. Three caps bound it, and the replay of
+all three together kept 45 of the 153:
+
+- **A lifetime budget.** A ticket's runs may file `MAX_TICKETS_PER_SOURCE`
+  in all, decided or not. It replaces the undecided cap (5), which a lifetime
+  budget of 3 makes unreachable.
+- **The first round files.** A run whose agent already finished this stage on
+  this ticket is a re-review; what it finds goes in its stage report, as a
+  recheck round's new findings already do.
+- **A finding of a finding is the end of the line.** A ticket two filings
+  from planned work may not file a third.
+
+A refused filing is not lost: the refusal tells the agent to record it in the
+stage report's `findings`, which keeps every non-blocking finding.
 """
 
 from __future__ import annotations
@@ -31,6 +49,7 @@ from dataclasses import dataclass
 from loregarden.models.domain import (
     VALID_HIERARCHY,
     AgentRun,
+    RunStatus,
     Ticket,
     TicketDiscovery,
     WorkItemType,
@@ -46,13 +65,20 @@ MAX_TICKETS_PER_RUN = 3
 #: most any drive had filed was 8 (live database, 2026-11-07), all of them
 #: review findings on one milestone child.
 MAX_TICKETS_PER_DRIVE = 6
-#: Undecided findings one ticket may hold at once. The most any ticket had
-#: accumulated was 9. Past this, the findings are a family.
-MAX_UNTRIAGED_PER_SOURCE = 5
+#: Tickets one ticket's runs may file over its life. 35 of the 53 tickets that
+#: had filed any were within it (live database, 2026-11-18).
+MAX_TICKETS_PER_SOURCE = 3
+#: How many filings from planned work a ticket may be and still file: planned
+#: work files findings (1), and a finding may file (2); a finding of a finding may not.
+MAX_FINDING_DEPTH = 1
 
 _FAMILY = (
     "If the findings are instances of one defect, add them to a ticket already filed with "
     "loregarden_update_ticket; otherwise name them in your stage report."
+)
+_REPORT_IT = (
+    'Record it in your stage report\'s `findings` instead, with `"blocking": false` and a '
+    "disposition: it is kept there, and it does not become a ticket."
 )
 
 
@@ -85,7 +111,7 @@ def _filed(session: Session, *where) -> int:
 
 
 def check_filing_budget(session: Session, run: AgentRun) -> None:
-    """Refuse a run's filing past any of the three caps, naming which one."""
+    """Refuse a run's filing past any of the caps, naming which one."""
     by_run = _filed(session, TicketDiscovery.agent_run_id == run.id)
     if by_run >= MAX_TICKETS_PER_RUN:
         raise FilingRefused(
@@ -99,16 +125,67 @@ def check_filing_budget(session: Session, run: AgentRun) -> None:
                 f"file. {_FAMILY}"
             )
     if run.ticket_id:
-        waiting = _filed(
-            session,
-            TicketDiscovery.source_ticket_id == run.ticket_id,
-            col(TicketDiscovery.decision).is_(None),
+        _check_source(session, run, run.ticket_id)
+
+
+def _check_source(session: Session, run: AgentRun, ticket_id: str) -> None:
+    """The caps on the ticket the run works on: its lifetime budget, its round, its depth."""
+    by_ticket = _filed(session, TicketDiscovery.source_ticket_id == ticket_id)
+    if by_ticket >= MAX_TICKETS_PER_SOURCE:
+        raise FilingRefused(
+            f"This ticket's runs have already filed {by_ticket} tickets, the most one ticket "
+            f"may file over its life. {_REPORT_IT}"
         )
-        if waiting >= MAX_UNTRIAGED_PER_SOURCE:
-            raise FilingRefused(
-                f"This ticket already has {waiting} findings waiting for a scope decision, the most one "
-                f"ticket may hold. {_FAMILY}"
+    if _is_a_rerun(session, run, ticket_id):
+        raise FilingRefused(
+            f"{run.agent_id} already finished '{run.stage_key}' on this ticket, so this run is "
+            f"a re-review, and a re-review files no tickets. {_REPORT_IT}"
+        )
+    depth = _finding_depth(session, ticket_id)
+    if depth > MAX_FINDING_DEPTH:
+        raise FilingRefused(
+            f"This ticket is a finding of a finding ({depth} filings from planned work), and "
+            f"such a ticket files no tickets of its own. {_REPORT_IT}"
+        )
+
+
+def _is_a_rerun(session: Session, run: AgentRun, ticket_id: str) -> bool:
+    """Whether the same agent already finished the same stage on this ticket before ``run``.
+
+    Finished means succeeded: a run that crashed reported nothing, so the retry
+    is still the first look.
+    """
+    earlier = session.exec(
+        select(AgentRun.id)
+        .where(
+            AgentRun.ticket_id == ticket_id,
+            AgentRun.stage_key == run.stage_key,
+            AgentRun.agent_id == run.agent_id,
+            AgentRun.status == RunStatus.SUCCEEDED,
+            AgentRun.id != run.id,
+            col(AgentRun.created_at) < run.created_at,
+        )
+        .limit(1)
+    ).first()
+    return earlier is not None
+
+
+def _finding_depth(session: Session, ticket_id: str) -> int:
+    """How many filings separate ``ticket_id`` from planned work: 0 when it was not filed.
+
+    Stops one past the cap: the answer only has to say whether it is over.
+    """
+    depth = 0
+    current: str | None = ticket_id
+    while current is not None and depth <= MAX_FINDING_DEPTH:
+        current = session.exec(
+            select(TicketDiscovery.source_ticket_id).where(
+                TicketDiscovery.filed_ticket_id == current
             )
+        ).first()
+        if current is not None:
+            depth += 1
+    return depth
 
 
 def record_filing(session: Session, run: AgentRun, filed: Ticket) -> None:
