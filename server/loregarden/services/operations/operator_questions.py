@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     ApprovalStatus,
     QuestionConfidence,
     QuestionReversibility,
+    Ticket,
 )
 from loregarden.services.operations.spec import (
     Caller,
@@ -27,14 +28,16 @@ from loregarden.services.operator_questions import (
     AskResult,
     ask_operator,
     holds_gate,
+    open_workspace_questions,
     question_meta,
     question_text,
     settled_answer,
     ticket_questions,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.organization_gate_service import workspace_for_slug
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 _LENIENT = ConfigDict(extra="ignore", use_attribute_docstrings=True)
 
@@ -71,10 +74,13 @@ class AskOperatorCall(BaseModel):
 class ListOperatorQuestionsCall(BaseModel):
     model_config = _LENIENT
 
-    ticket_id: str
-    """Ticket UUID or external id."""
+    ticket_id: str = ""
+    """Ticket UUID or external id. Omit it, and name `workspace_slug`, for every open
+    question across that workspace's tickets."""
+    workspace_slug: str = ""
+    """The workspace to list open questions across, when no ticket is named."""
     include_settled: bool = False
-    """Include answered and ignored questions, not only open ones."""
+    """Include answered and ignored questions, not only open ones. One ticket only."""
 
 
 def _ask(session: Session, call: AskOperatorCall, caller: Caller) -> dict[str, Any]:
@@ -132,7 +138,36 @@ def question_row(approval: Approval) -> dict[str, Any]:
     }
 
 
+def _list_workspace(session: Session, slug: str) -> dict[str, Any]:
+    workspace = workspace_for_slug(session, slug)
+    rows = open_workspace_questions(session, workspace.id)
+    tickets = {
+        ticket.id: ticket
+        for ticket in session.exec(
+            select(Ticket).where(col(Ticket.id).in_({row.ticket_id for row in rows}))
+        ).all()
+    }
+    return {
+        "workspace": workspace.slug,
+        "open": len(rows),
+        "holding_gate": sum(1 for row in rows if holds_gate(row)),
+        "questions": [
+            {
+                **question_row(row),
+                "ticket": tickets[row.ticket_id].external_id,
+                "ticket_title": tickets[row.ticket_id].title,
+            }
+            for row in rows
+            if row.ticket_id in tickets
+        ],
+    }
+
+
 def _list(session: Session, call: ListOperatorQuestionsCall, _caller: Caller) -> dict[str, Any]:
+    if not call.ticket_id.strip():
+        if not call.workspace_slug.strip():
+            raise ValueError("name a ticket_id, or a workspace_slug to list across its tickets")
+        return _list_workspace(session, call.workspace_slug.strip())
     ticket = OrchestrationCallbackService(session).resolve_ticket(ticket_id=call.ticket_id)
     rows = ticket_questions(session, ticket)
     open_rows = [row for row in rows if row.status is ApprovalStatus.PENDING]

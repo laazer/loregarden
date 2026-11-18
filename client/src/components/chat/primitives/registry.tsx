@@ -8,6 +8,7 @@ import { GatePrimitive } from "./GatePrimitive";
 import { GiphyPrimitive } from "./GiphyPrimitive";
 import { BranchHistoryPrimitive, CommitPrimitive } from "./GitPrimitive";
 import { KanbanPrimitive, StatusColumnPrimitive } from "./KanbanPrimitive";
+import { OperatorQuestionPrimitive } from "./OperatorQuestionPrimitive";
 import { ParentTicketPrimitive } from "./ParentTicketPrimitive";
 import { PrCyclePrimitive } from "./PrCyclePrimitive";
 import { PrimitiveCard } from "./PrimitiveCard";
@@ -62,6 +63,7 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   agent: AgentPrimitive as Renderer,
   workflow: WorkflowPrimitive as Renderer,
   gate: GatePrimitive as Renderer,
+  operator_question: OperatorQuestionPrimitive as Renderer,
   terminal: TerminalPrimitive as Renderer,
   edit: EditPrimitive as Renderer,
   calendar: CalendarPrimitive as Renderer,

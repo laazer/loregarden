@@ -613,6 +613,34 @@ def test_asking_over_mcp_and_listing_it_back(db_session, ticket):
     assert row["stage_key"] == IMPLEMENT and row["affects"] == IMPLEMENT
 
 
+def test_with_no_ticket_the_list_covers_every_open_question_in_the_workspace(db_session, ticket):
+    from loregarden.models.domain import Workspace
+
+    asked = ask_operator(db_session, ticket, _request()).approval
+    blocking = ask_operator(
+        db_session, ticket, _request(question="Drop the column?", confidence=QuestionConfidence.LOW)
+    ).approval
+    settled = ask_operator(db_session, ticket, _request(question="Rename it?")).approval
+    with patch("loregarden.services.run_service.schedule_orchestration"):
+        ApprovalService(db_session).resolve(
+            settled.id, approved=True, answers={"Rename it?": OPTIONS[0]}
+        )
+    slug = db_session.get(Workspace, ticket.workspace_id).slug
+
+    listed = json.loads(
+        execute_tool(db_session, McpTool.LIST_OPERATOR_QUESTIONS.value, {"workspace_slug": slug})
+    )
+
+    assert {row["id"] for row in listed["questions"]} == {asked.id, blocking.id}
+    assert listed["open"] == 2 and listed["holding_gate"] == 2
+    assert {row["ticket"] for row in listed["questions"]} == {ticket.external_id}
+
+
+def test_the_list_names_what_it_needs_when_given_neither_ticket_nor_workspace(db_session):
+    with pytest.raises(ValueError, match="workspace_slug"):
+        execute_tool(db_session, McpTool.LIST_OPERATOR_QUESTIONS.value, {})
+
+
 def test_an_operator_does_not_ask_over_rest(db_session, ticket):
     with pytest.raises(OperationUnavailable):
         run_operation(

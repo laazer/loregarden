@@ -74,7 +74,7 @@ function renderHost(containerId: string, settings: Record<string, unknown>) {
   );
 }
 
-describe("AC1 — every one of the 28 chat primitives has a recorded verdict", () => {
+describe("AC1 — every one of the 29 chat primitives has a recorded verdict", () => {
   it("covers the chat registry exactly, with no primitive left undecided", () => {
     // `CHAT_PRIMITIVE_VERDICTS` is a `Record<PrimitiveKind, …>`, so a 29th
     // chat primitive fails the *build*. That is the real guard; this asserts
@@ -84,7 +84,7 @@ describe("AC1 — every one of the 28 chat primitives has a recorded verdict", (
     expect(Object.keys(CHAT_PRIMITIVE_VERDICTS).sort()).toEqual(
       Object.keys(PRIMITIVE_RENDERERS).sort(),
     );
-    expect(Object.keys(CHAT_PRIMITIVE_VERDICTS)).toHaveLength(28);
+    expect(Object.keys(CHAT_PRIMITIVE_VERDICTS)).toHaveLength(29);
   });
 
   it("records evidence and a reason for each, not a bare verdict", () => {
@@ -100,9 +100,9 @@ describe("AC1 — every one of the 28 chat primitives has a recorded verdict", (
     }
   });
 
-  it("splits the 28 into the thirteen it registers and the fifteen it does not", () => {
+  it("splits the 29 into the thirteen it registers and the sixteen it does not", () => {
     expect(adaptablePrimitiveKinds()).toHaveLength(13);
-    expect(chatBoundPrimitiveKinds()).toHaveLength(15);
+    expect(chatBoundPrimitiveKinds()).toHaveLength(16);
   });
 });
 

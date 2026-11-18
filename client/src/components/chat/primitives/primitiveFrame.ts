@@ -19,6 +19,7 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, PrimitiveSize> = {
   agent: "regular",
   workflow: "full",
   gate: "regular",
+  operator_question: "regular",
   terminal: "wide",
   edit: "wide",
   calendar: "full",

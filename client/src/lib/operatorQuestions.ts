@@ -56,3 +56,20 @@ export function isOverride(
   const chosen = typed?.trim() ?? Object.values(answers)[0];
   return typeof chosen === "string" && chosen !== "" && chosen !== meta.default;
 }
+
+/**
+ * An answer the operator stated elsewhere (in chat, to Baxter), placed on the
+ * card for them to confirm with a click. It matches an option's label, or it
+ * becomes the typed answer; either way nothing is sent until they press.
+ */
+export function stagedAnswers(
+  question: { question: string; options?: { label: string }[] } | undefined,
+  staged: string | undefined,
+): { answers: Record<string, string>; custom: Record<string, string> } {
+  const text = staged?.trim();
+  if (!question || !text) return { answers: {}, custom: {} };
+  const option = question.options?.find((o) => o.label.trim().toLowerCase() === text.toLowerCase());
+  return option
+    ? { answers: { [question.question]: option.label }, custom: {} }
+    : { answers: {}, custom: { [question.question]: text } };
+}

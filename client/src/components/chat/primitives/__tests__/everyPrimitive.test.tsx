@@ -23,6 +23,7 @@ const MINIMAL_PARTS: { [K in PrimitiveKind]: Extract<ChatPart, { primitive: K }>
   agent: { primitive: "agent", slug: "planner" },
   workflow: { primitive: "workflow", workflow_slug: "default" },
   gate: { primitive: "gate", ticket_id: "t1", stage_key: "verify" },
+  operator_question: { primitive: "operator_question", approval_id: "a1", ticket_id: "t1" },
   terminal: { primitive: "terminal", lines: [{ kind: "command", text: "ls" }] },
   edit: { primitive: "edit", content: "x" },
   calendar: {

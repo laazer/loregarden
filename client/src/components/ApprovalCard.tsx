@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { AgentQuestion, Approval } from "../api/client";
-import { defaultAnswers, isOverride, operatorQuestionMeta } from "../lib/operatorQuestions";
+import { defaultAnswers, isOverride, operatorQuestionMeta, stagedAnswers } from "../lib/operatorQuestions";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { CloseOnlyActions } from "./CloseOnlyActions";
 import { PreparedActionPanel } from "./PreparedActionPanel";
@@ -158,6 +158,7 @@ export function ApprovalCard({
   inspectLabel = "Inspect",
   onExpand,
   impactText,
+  stagedAnswer,
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
@@ -179,6 +180,8 @@ export function ApprovalCard({
   onExpand?: () => void;
   /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
   impactText?: string;
+  /** An answer the operator already stated (to Baxter), preselected for them to confirm. */
+  stagedAnswer?: string;
 }) {
   // A decision block is asked the way an agent's question is — same payload
   // shape, same options, same answer — so it shares the whole question path.
@@ -202,12 +205,15 @@ export function ApprovalCard({
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const assumption = useMemo(() => operatorQuestionMeta(approval), [approval]);
   const [picked, setAnswers] = useState<Record<string, string | string[]>>({});
-  // An operator question starts on the agent's default; a pick replaces it.
+  const staged = useMemo(() => stagedAnswers(questions[0], stagedAnswer), [questions, stagedAnswer]);
+  // An operator question starts on the agent's default, or on the answer the
+  // operator already gave in chat; a pick replaces either.
   const answers = useMemo(
-    () => ({ ...defaultAnswers(approval, questions[0]?.question), ...picked }),
-    [approval, questions, picked],
+    () => ({ ...defaultAnswers(approval, questions[0]?.question), ...staged.answers, ...picked }),
+    [approval, questions, staged, picked],
   );
-  const [customText, setCustomText] = useState<Record<string, string>>({});
+  const [typedText, setCustomText] = useState<Record<string, string>>({});
+  const customText = useMemo(() => ({ ...staged.custom, ...typedText }), [staged, typedText]);
   const [freeformResponse, setFreeformResponse] = useState("");
   const [alwaysAllowWorkspace, setAlwaysAllowWorkspace] = useState(false);
   const [allowForTicket, setAllowForTicket] = useState(false);

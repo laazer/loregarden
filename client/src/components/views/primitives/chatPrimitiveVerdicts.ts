@@ -90,6 +90,13 @@ export const CHAT_PRIMITIVE_VERDICTS: Record<PrimitiveKind, ChatPrimitiveAudit> 
       "Two string settings. The approve/advance mutations act on the fetched ticket rather " +
       "than navigating, so they stay useful inside a pane.",
   },
+  operator_question: {
+    verdict: "chat-bound",
+    needs: "`approval_id` and `ticket_id`, plus the `answer` the operator gave in the thread.",
+    reason:
+      "It stages an answer someone said in a conversation; without the thread there is no " +
+      "answer to stage, and the inbox and the ticket's Needs you already show the bare question.",
+  },
   workspace: {
     verdict: "adaptable",
     needs: "`workspace_slug`; fetches `api.workspaces()` and picks its row out.",
