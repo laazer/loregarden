@@ -649,3 +649,143 @@ def test_an_operator_does_not_ask_over_rest(db_session, ticket):
             {"ticket_id": ticket.id},
             Caller(Transport.REST),
         )
+
+
+# --- A closed ticket ---------------------------------------------------------
+
+
+def _close(session: Session, ticket: Ticket, state: TicketState = TicketState.DONE) -> None:
+    ticket.state = state
+    session.add(ticket)
+    session.commit()
+
+
+def _pending_of_kind(session: Session, ticket: Ticket, kind: ApprovalKind) -> Approval:
+    """A pending approval of `kind`, shaped as its own writer files it."""
+    if kind is ApprovalKind.OPERATOR_QUESTION:
+        return ask_operator(session, ticket, _request()).approval
+    if kind is ApprovalKind.BLOCK_DECISION:
+        from loregarden.services.block_classification import raise_decision
+
+        return raise_decision(
+            session, ticket, stage_key=IMPLEMENT, message="Which way?", options=OPTIONS
+        )
+    approval = Approval(
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        kind=kind,
+        title=f"A {kind.value}",
+        stage_key=IMPLEMENT,
+    )
+    session.add(approval)
+    session.commit()
+    return approval
+
+
+def _answer_for(approval: Approval) -> dict[str, str]:
+    questions = json.loads(approval.tool_input_json or "{}").get("questions") or []
+    return {questions[0]["question"]: OPTIONS[1]} if questions else {}
+
+
+@pytest.mark.parametrize("approved", [True, False], ids=["approve", "reject"])
+@pytest.mark.parametrize("kind", list(ApprovalKind), ids=lambda kind: kind.value)
+def test_no_resolve_branch_records_the_row_and_then_fails_the_request(
+    db_session, ticket, kind, approved
+):
+    """lg-conversation-that-2733: a decision answered on a done ticket was
+    committed as approved, then the requeue raised `done -> in_progress` and the
+    request returned 400. Whatever a branch does, a raise must leave the row
+    pending, and a resolved row must come back with no error."""
+    approval = _pending_of_kind(db_session, ticket, kind)
+    _close(db_session, ticket)
+
+    try:
+        with patch("loregarden.services.run_service.schedule_orchestration"):
+            ApprovalService(db_session).resolve(
+                approval.id, approved=approved, answers=_answer_for(approval) or None
+            )
+    except ValueError:
+        db_session.rollback()
+        db_session.refresh(approval)
+        assert approval.status is ApprovalStatus.PENDING, "refused, yet the row was recorded"
+    else:
+        db_session.refresh(approval)
+        assert approval.status is not ApprovalStatus.PENDING
+
+
+@pytest.mark.parametrize("state", [TicketState.DONE, TicketState.WONT_DO])
+@pytest.mark.parametrize(
+    "kind",
+    [ApprovalKind.BLOCK_DECISION, ApprovalKind.OPERATOR_QUESTION, ApprovalKind.STAGE_PARK],
+    ids=lambda k: k.value,
+)
+def test_an_answer_on_a_closed_ticket_is_refused_and_stays_pending(db_session, ticket, kind, state):
+    approval = _pending_of_kind(db_session, ticket, kind)
+    _close(db_session, ticket, state)
+
+    with pytest.raises(ValueError, match=f"{state.value}.*[Rr]eopen"):
+        ApprovalService(db_session).resolve(
+            approval.id, approved=True, answers=_answer_for(approval)
+        )
+
+    db_session.refresh(approval)
+    db_session.refresh(ticket)
+    assert approval.status is ApprovalStatus.PENDING
+    assert ticket.state is state, "a refused answer must not reopen the ticket"
+
+
+def test_the_same_answer_on_an_open_ticket_requeues_the_stage(db_session, ticket):
+    approval = _pending_of_kind(db_session, ticket, ApprovalKind.BLOCK_DECISION)
+
+    with patch("loregarden.services.run_service.schedule_orchestration"):
+        ApprovalService(db_session).resolve(
+            approval.id, approved=True, answers=_answer_for(approval)
+        )
+
+    db_session.refresh(approval)
+    db_session.refresh(ticket)
+    assert approval.status is ApprovalStatus.APPROVED
+    assert ticket.state is TicketState.IN_PROGRESS
+    assert ticket.workflow_stage_key == IMPLEMENT
+
+
+@pytest.mark.parametrize(
+    "kind", [ApprovalKind.BLOCK_DECISION, ApprovalKind.OPERATOR_QUESTION], ids=lambda k: k.value
+)
+def test_ignoring_a_question_on_a_closed_ticket_closes_it_and_leaves_the_ticket_closed(
+    db_session, ticket, kind
+):
+    """Ignore is how a stale card on a closed ticket is cleared, so it must not
+    be refused, and it must not try to move the ticket either."""
+    approval = _pending_of_kind(db_session, ticket, kind)
+    _close(db_session, ticket)
+
+    ApprovalService(db_session).ignore(approval.id, reason="The ticket shipped without it.")
+
+    db_session.refresh(approval)
+    db_session.refresh(ticket)
+    assert approval.status is ApprovalStatus.IGNORED
+    assert ticket.state is TicketState.DONE
+
+
+def test_the_invariant_finds_an_answer_recorded_after_its_ticket_closed(db_session, ticket):
+    from datetime import timedelta
+
+    from loregarden.models.domain.enums import utcnow
+    from loregarden.services.closed_ticket_answers import answers_recorded_on_closed_tickets
+
+    answered = _pending_of_kind(db_session, ticket, ApprovalKind.BLOCK_DECISION)
+    ignored = _pending_of_kind(db_session, ticket, ApprovalKind.OPERATOR_QUESTION)
+    closed_at = utcnow()
+    ticket.state, ticket.resolved_at = TicketState.DONE, closed_at
+    answered.status, answered.resolved_at = (
+        ApprovalStatus.APPROVED,
+        closed_at + timedelta(minutes=1),
+    )
+    ignored.status, ignored.resolved_at = ApprovalStatus.IGNORED, closed_at + timedelta(minutes=1)
+    db_session.add_all([ticket, answered, ignored])
+    db_session.commit()
+
+    found = answers_recorded_on_closed_tickets(db_session)
+
+    assert [violation.subject_id for violation in found] == [answered.id]

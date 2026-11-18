@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from loregarden.models.domain import Approval, ApprovalKind, StageStatus, Ticket
+from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.unresolved_ledger import (
     HUMAN_AGENT_ID,
     LedgerActor,
@@ -35,6 +36,40 @@ if TYPE_CHECKING:
     from loregarden.services.orchestration import OrchestrationService
 
 logger = logging.getLogger(__name__)
+
+#: The kinds whose answer re-runs a stage (`ApprovalService._apply_ticket_resolution`
+#: dispatches each): a park re-dispatches it, a decision or an operator's
+#: override requeues it. A gate or rework pause is not here: answering a stale one
+#: on a closed ticket marks or routes a stage and moves nothing, and operators do
+#: clear them that way.
+STAGE_RERUNNING_APPROVAL_KINDS = frozenset(
+    {
+        ApprovalKind.STAGE_PARK,
+        ApprovalKind.BLOCK_DECISION,
+        ApprovalKind.OPERATOR_QUESTION,
+    }
+)
+
+
+def refuse_rerunning_a_closed_ticket(session: Session, approval: Approval) -> None:
+    """Refuse, before anything is recorded, an answer that would re-run a closed ticket's stage.
+
+    The answer's own effect runs after the approval row commits, so a ticket
+    that cannot take it (`done -> in_progress` is not a chosen move) used to fail
+    the request with the answer already stored: the card read "Overridden" beside
+    a "Resolve approval failed" toast (lg-conversation-that-2733). A `wont_do`
+    ticket did take it, and was silently revived. Ignore stays open: it closes
+    the card without moving the ticket.
+    """
+    if approval.kind not in STAGE_RERUNNING_APPROVAL_KINDS or not approval.ticket_id:
+        return
+    ticket = session.get(Ticket, approval.ticket_id)
+    if ticket is None or ticket.state not in RESOLVED_STATES:
+        return
+    raise ValueError(
+        f"{ticket.external_id} is {ticket.state.value}, so this answer has no stage to act on. "
+        "Reopen the ticket (move it to backlog) to act on it, or ignore the question to close it."
+    )
 
 
 def apply_park_resolution(
