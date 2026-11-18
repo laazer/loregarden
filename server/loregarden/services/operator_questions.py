@@ -91,6 +91,9 @@ class OperatorQuestionMeta(BaseModel):
     asked_at_stage: str
     asked_by_run_id: str = ""
     context: str = ""
+    #: The question as the agent worded it. A blocking question's stored
+    #: question text also carries the default and context; this does not.
+    question: str = ""
 
 
 class _StoredQuestion(BaseModel):
@@ -104,6 +107,14 @@ class _StoredPayload(BaseModel):
 
     questions: list[_StoredQuestion] = []
     operator_question: OperatorQuestionMeta
+
+
+class _MaybeAnnotated(BaseModel):
+    """Any approval payload, read only for whether it carries an operator question."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    operator_question: OperatorQuestionMeta | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +141,9 @@ class AskResult:
     reasons: tuple[QuestionBlockReason, ...]
     #: An open question already asked in the same words on this stage was returned.
     existing: bool
+    #: A different decision was already open on this stage, so this blocking
+    #: question was not filed; `approval` is that open decision.
+    displaced: bool = False
 
     @property
     def next_step(self) -> str:
@@ -142,6 +156,14 @@ class AskResult:
                 "waits for an answer if your confidence was below high."
             )
         named = ", ".join(reason.value for reason in self.reasons)
+        if self.displaced:
+            return (
+                f"This question blocks ({named}), but it was NOT filed: another decision is "
+                f"already open on stage '{self.approval.stage_key}' (approval "
+                f"{self.approval.id}), and a stage holds one decision at a time. Stop work on "
+                "this stage now and report it `blocked` with blocked_kind `decision`; ask this "
+                "question again when the stage re-runs with that answer."
+            )
         return (
             f"This question blocks ({named}). Stop work on this stage now and report it "
             "`blocked` with blocked_kind `decision`: the question is already in the "
@@ -236,6 +258,22 @@ def _open_duplicate(
     return None
 
 
+def _open_decision(session: Session, ticket: Ticket, stage_key: str) -> Approval | None:
+    return session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.stage_key == stage_key,
+            Approval.kind == ApprovalKind.BLOCK_DECISION,
+            Approval.status == ApprovalStatus.PENDING,
+        )
+    ).first()
+
+
+def _annotation(approval: Approval) -> OperatorQuestionMeta | None:
+    """The operator question an approval carries, or None for any other approval."""
+    return _MaybeAnnotated.model_validate_json(approval.tool_input_json or "{}").operator_question
+
+
 def _payload(request: AskRequest, options: list[str], meta: OperatorQuestionMeta) -> str:
     return json.dumps(
         {
@@ -284,8 +322,20 @@ def ask_operator(session: Session, ticket: Ticket, request: AskRequest) -> AskRe
         asked_at_stage=asking,
         asked_by_run_id=request.run_id,
         context=request.context.strip(),
+        question=question,
     )
     if reasons:
+        open_decision = _open_decision(session, ticket, asking)
+        if open_decision is not None:
+            same = _annotation(open_decision)
+            repeated = same is not None and same.question == question
+            return AskResult(
+                approval=open_decision,
+                blocking=True,
+                reasons=reasons,
+                existing=repeated,
+                displaced=not repeated,
+            )
         message = (
             f"{question}\n\nThe agent's default: '{meta.default}' "
             f"(confidence {meta.confidence.value}; its work affects '{meta.affects}')."
@@ -293,7 +343,12 @@ def ask_operator(session: Session, ticket: Ticket, request: AskRequest) -> AskRe
         if meta.context:
             message = f"{message}\n\n{meta.context}"
         decision = raise_decision(
-            session, ticket, stage_key=asking, message=message, options=options
+            session,
+            ticket,
+            stage_key=asking,
+            message=message,
+            options=options,
+            annotations={"operator_question": meta.model_dump(mode="json")},
         )
         return AskResult(approval=decision, blocking=True, reasons=reasons, existing=False)
 
@@ -335,16 +390,39 @@ def question_text(approval: Approval) -> str:
 
 
 def ticket_questions(session: Session, ticket: Ticket) -> list[Approval]:
-    """Every operator question on the ticket, open ones first, newest first within."""
+    """Every operator question on the ticket, open ones first, newest first within.
+
+    A blocking question is a decision row carrying the question's annotation;
+    decisions a stage report raised carry none and are not questions an agent
+    asked.
+    """
     rows = session.exec(
         select(Approval)
         .where(
             Approval.ticket_id == ticket.id,
-            Approval.kind == ApprovalKind.OPERATOR_QUESTION,
+            col(Approval.kind).in_([ApprovalKind.OPERATOR_QUESTION, ApprovalKind.BLOCK_DECISION]),
         )
         .order_by(col(Approval.created_at).desc())
     ).all()
-    return sorted(rows, key=lambda row: row.status is not ApprovalStatus.PENDING)
+    asked = [row for row in rows if _annotation(row) is not None]
+    return sorted(asked, key=lambda row: row.status is not ApprovalStatus.PENDING)
+
+
+def settled_answer(approval: Approval) -> tuple[str, str]:
+    """(outcome, answer) for an answered question; ("", "") while open or ignored.
+
+    An assumption's answer is recorded when it resolves. A blocking question
+    resolves through the decision path, which records the pick but not the
+    outcome, so it is derived here from the same rule.
+    """
+    if approval.status is not ApprovalStatus.APPROVED:
+        return "", ""
+    stored = json.loads(approval.response_json or "{}")
+    if stored.get("outcome"):
+        return str(stored["outcome"]), str(stored.get("answer", ""))
+    picked = stored.get("updated_input", {})
+    answer = _answer(approval, picked.get("answers"), str(picked.get("response") or ""))
+    return answer.outcome.value, answer.text
 
 
 def holds_gate(approval: Approval) -> bool:
