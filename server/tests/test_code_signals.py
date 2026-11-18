@@ -21,7 +21,6 @@ checkout it fired for.
 
 from __future__ import annotations
 
-import ast
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -57,6 +56,7 @@ from loregarden.services.git_subprocess import run_git
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
+from tests.import_scan import imported_names
 
 PACKAGE_ROOT = Path(git_history.__file__).parent
 
@@ -391,17 +391,6 @@ def _columns(engine, table: str) -> dict[str, str]:
 
 def _package_modules() -> list[Path]:
     return sorted(PACKAGE_ROOT.glob("*.py"))
-
-
-def _imported_names(source: str) -> set[str]:
-    names: set[str] = set()
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Import):  # py-org: allow-isinstance - ast node dispatch
-            names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):  # py-org: allow-isinstance - ast node dispatch
-            if node.module:
-                names.add(node.module)
-    return names
 
 
 # ==========================================================================
@@ -1190,7 +1179,7 @@ FORBIDDEN_IMPORTS = (
 def test_no_module_in_the_package_can_reach_the_orchestrator(module):
     """A derived index must not be able to move a ticket. The consumers import
     this package; it imports none of them."""
-    imported = _imported_names(module.read_text(encoding="utf-8"))
+    imported = imported_names(module.read_text(encoding="utf-8"))
 
     for name in imported:
         for forbidden in FORBIDDEN_IMPORTS:
@@ -1200,7 +1189,7 @@ def test_no_module_in_the_package_can_reach_the_orchestrator(module):
 
 
 def test_the_reducers_know_nothing_about_a_database():
-    imported = _imported_names(Path(compute_module.__file__).read_text(encoding="utf-8"))
+    imported = imported_names(Path(compute_module.__file__).read_text(encoding="utf-8"))
 
     assert not any(
         name.split(".")[0] in {"sqlmodel", "sqlalchemy"} or name.startswith("loregarden.db")
@@ -1209,7 +1198,7 @@ def test_the_reducers_know_nothing_about_a_database():
 
 
 def test_the_classifier_knows_nothing_about_git_or_a_database():
-    imported = _imported_names(Path(classify_module.__file__).read_text(encoding="utf-8"))
+    imported = imported_names(Path(classify_module.__file__).read_text(encoding="utf-8"))
 
     assert "loregarden.services.git_subprocess" not in imported
     assert "subprocess" not in imported

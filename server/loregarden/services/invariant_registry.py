@@ -83,6 +83,10 @@ from loregarden.services.settled_hold_checks import (
     settled_hold_violations,
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
+from loregarden.services.symbol_map.partitions import (
+    orphaned_partitions,
+    retire_orphaned_partitions,
+)
 from loregarden.services.temp_workspaces import archive_workspaces, temp_workspaces
 from loregarden.services.terminal_stage_sweep import (
     finish_cleared_landings,
@@ -1404,6 +1408,22 @@ TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS = Invariant(
 )
 
 
+ORPHANED_SYMBOL_MAP_PARTITION = Invariant(
+    name="orphaned_symbol_map_partition",
+    ticket="lg-code-knowledge-281",
+    statement="no symbol map partition records a checkout that is not on disk",
+    detect=orphaned_partitions,
+    repair=retire_orphaned_partitions,
+    reentry=InvariantReentry.EXPECTED,
+    since=date(2026, 11, 17),
+    expected_because=(
+        "a partition is keyed to one checkout and this machine retires checkouts "
+        "constantly — a ticket worktree is removed when its work lands, outside the "
+        "control plane, and no writer can guard against the directory going away"
+    ),
+)
+
+
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
@@ -1449,4 +1469,5 @@ INVARIANTS: tuple[Invariant, ...] = (
     RUNS_COMPLETE_ONCE,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
+    ORPHANED_SYMBOL_MAP_PARTITION,
 )
