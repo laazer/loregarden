@@ -35,6 +35,7 @@ from loregarden.services.approval_ignore import ignore_approval
 from loregarden.services.approval_resolution import (
     apply_gate_resolution,
     apply_park_resolution,
+    refuse_rerunning_a_closed_ticket,
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import resolve_block_decision
@@ -1156,6 +1157,7 @@ class ApprovalService(ExitActionApprovalMixin):
             raise ValueError("Approval not found")
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
+        refuse_rerunning_a_closed_ticket(self.session, approval)
         # Approve and reject both close it; neither may lose unpublished work.
         refuse_closing_unpublished(self.session, approval)
 

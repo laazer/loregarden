@@ -60,6 +60,7 @@ from loregarden.services.invariant_registry import (
     CHECKOUTS_KEEP_THEIR_BRANCH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
+    CLOSED_TICKETS_TAKE_NO_ANSWERS,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     EVERY_BLOCK_IS_SETTLED,
@@ -328,6 +329,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("mark_parked_waits", mark_parked_waits),
     _invariant(HELD_TICKETS_RESUME),
     _invariant(UNDECIDED_FINDINGS_DO_NOT_RUN),
+    _invariant(CLOSED_TICKETS_TAKE_NO_ANSWERS),
     # A finding whose source finished without a scope round: the decision it
     # waits for can never be asked for, so it is deferred here or never.
     _invariant(FINDINGS_OUTLIVE_THEIR_SOURCE),

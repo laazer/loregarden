@@ -33,6 +33,7 @@ from loregarden.services.capacity_blocks import (
     refile_capacity_violations,
 )
 from loregarden.services.closed_sources import parents_closed_without_their_work
+from loregarden.services.closed_ticket_answers import CLOSED_TICKETS_TAKE_NO_ANSWERS
 from loregarden.services.closed_workflow_sweep import close_workflows, open_workflows
 from loregarden.services.dependency_release import releasable_tickets, release_tickets
 from loregarden.services.done_ticket_ship import (
@@ -1429,6 +1430,7 @@ ORPHANED_SYMBOL_MAP_PARTITION = Invariant(
 
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
+    CLOSED_TICKETS_TAKE_NO_ANSWERS,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     HELD_REPAIRS_READ_IN_PROGRESS,
     SETTLED_HOLDS_READ_BLOCKED,
