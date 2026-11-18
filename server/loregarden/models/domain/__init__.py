@@ -51,6 +51,8 @@ from loregarden.models.domain.survey_area_tables import *  # noqa: F401,F403
 from loregarden.models.domain.survey_enums import *  # noqa: F401,F403
 from loregarden.models.domain.survey_research_tables import *  # noqa: F401,F403
 from loregarden.models.domain.survey_tables import *  # noqa: F401,F403
+from loregarden.models.domain.symbol_map_enums import *  # noqa: F401,F403
+from loregarden.models.domain.symbol_map_tables import *  # noqa: F401,F403
 from loregarden.models.domain.tables import *  # noqa: F401,F403
 from loregarden.models.domain.ticket_import_schemas import *  # noqa: F401,F403
 from loregarden.models.domain.work_item_types import *  # noqa: F401,F403

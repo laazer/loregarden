@@ -80,6 +80,7 @@ from loregarden.services.invariant_registry import (
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN,
     NO_WAIT_LOOP_THROUGH_A_PARENT,
+    ORPHANED_SYMBOL_MAP_PARTITION,
     PARENTS_CLOSE_WITH_THEIR_OWN_WORK,
     PUBLISH_CARDS_CLOSE,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
@@ -396,6 +397,12 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # queue after its entry stopped leaves nothing for anyone to do
     # (lg-milestone-that-2641).
     _invariant(STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR, at_startup=False),
+    # A map partition whose checkout is gone. Inert when it ships: nothing
+    # builds the map in production yet (lg-code-knowledge-281), so the table
+    # is empty and the detector reports nothing to judge rather than nothing
+    # found. Not at startup: it is a filesystem walk that repairs nothing a
+    # minute later would not.
+    _invariant(ORPHANED_SYMBOL_MAP_PARTITION, at_startup=False),
 )
 
 
