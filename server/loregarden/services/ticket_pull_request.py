@@ -26,7 +26,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.branch_names import resolve_ticket_branch
-from loregarden.services.git_merge_noco import rev
+from loregarden.services.git_merge_noco import is_ancestor, rev
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.publish_ref import branch_for_pr_head, publish_ref_for
 from loregarden.services.target_branch import (
@@ -163,6 +163,14 @@ class RecordedPullRequest(BaseModel):
     title: str = ""
 
 
+class EarlierPullRequest(BaseModel):
+    """A tree PR that finished before this ticket's work reached the tree."""
+
+    number: int
+    url: str
+    state: PullRequestState
+
+
 class TicketPullRequest(BaseModel):
     lookup: PullRequestLookup
     branch: str
@@ -182,6 +190,10 @@ class TicketPullRequest(BaseModel):
     #: The PR found is the tree's, not this ticket's own: its head is not this
     #: ticket's branch.
     is_tree_pull_request: bool = False
+    #: The tree's last PR, when it merged or closed without this ticket's work:
+    #: its head does not contain the ticket's commits, so it is not this
+    #: ticket's PR, and the work goes in the tree's next one.
+    earlier_tree_pull_request: EarlierPullRequest | None = None
 
 
 def check_outcome(check: GhCheck) -> PullRequestCheckOutcome:
@@ -338,14 +350,58 @@ def _lookup(
     branches = _candidate_branches(ticket, repo_root, ships_with)
     if not (repo_root / ".git").exists():
         return _failed(session, ticket, branches[0], f"{repo_root} is not a git repository")
+    earlier: EarlierPullRequest | None = None
     for branch in branches:
         result = _view(session, ticket, repo_root, branch)
-        if result.lookup is not PullRequestLookup.NONE:
-            return result
+        if result.lookup is PullRequestLookup.NONE:
+            continue
+        pr = result.pull_request
+        if pr is not None and _finished_without(repo_root, ticket, pr):
+            # GitHub answers a branch with its latest PR, finished or not, so a
+            # member that completes after its tree's PR merged was shown that
+            # PR as its own (lg-code-knowledge-1055 → #894, merged four hours
+            # before 1055's gate). Its head holds none of this work; the next
+            # candidate, or "ships in the tree's next PR", is the true answer.
+            earlier = earlier or EarlierPullRequest(number=pr.number, url=pr.url, state=pr.state)
+            continue
+        return result
     # Built only once every candidate has answered NONE: `branch` is the tree's
     # for a member, so the panel's "ships in its tree's PR" copy names a real
     # branch rather than the last name asked.
-    return TicketPullRequest(lookup=PullRequestLookup.NONE, branch=ships_with or branches[-1])
+    return TicketPullRequest(
+        lookup=PullRequestLookup.NONE,
+        branch=ships_with or branches[-1],
+        earlier_tree_pull_request=earlier,
+    )
+
+
+def _finished_without(repo_root: Path, ticket: Ticket, pr: PullRequestStatus) -> bool:
+    """Whether ``pr`` is a finished tree PR whose head lacks ``ticket``'s work.
+
+    An OPEN tree PR is where the work ships next, contained yet or not. A
+    finished one is the ticket's only if its head holds the ticket's commits:
+    the landing commit when it has landed, else its branch tip. When either
+    side is not in the local repository the question cannot be answered here,
+    and the PR is kept, as before this check, with the reason logged.
+    """
+    if pr.state is PullRequestState.OPEN:
+        return False
+    own = resolve_ticket_branch(ticket)
+    if branch_for_pr_head(pr.head) == own:
+        return False
+    work = ticket.landed_sha or rev(repo_root, f"refs/heads/{own}")
+    head = rev(repo_root, pr.head_sha) if pr.head_sha else ""
+    if not work or not head:
+        logger.warning(
+            "cannot tell whether %s's work is in tree PR #%s (work %r, head %r not local); "
+            "showing the PR",
+            ticket.external_id,
+            pr.number,
+            work,
+            pr.head_sha,
+        )
+        return False
+    return not is_ancestor(repo_root, work, head)
 
 
 class PullRequestRead(BaseModel):

@@ -228,6 +228,19 @@ export interface ChatWait {
   log_path: string;
   registered_at: string;
   deadline: string;
+  /** Last line the waited child wrote; "" before it writes one. */
+  log_line: string;
+  /** The thread's ticket's landing in flight; null when none, or not a ticket chat. */
+  landing: ChatWaitLanding | null;
+}
+
+/** A landing in flight on a wait's ticket. */
+export interface ChatWaitLanding {
+  /** Where it is, in one line. */
+  summary: string;
+  /** Tests through the running check, and its total, when the check reports them. */
+  done: number | null;
+  total: number | null;
 }
 
 /** What the resolved adapter can do. One matrix, shared by every chat surface. */

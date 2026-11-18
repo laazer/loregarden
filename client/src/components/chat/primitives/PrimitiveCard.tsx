@@ -11,7 +11,7 @@ import { primitiveIconPath, primitiveTint, type PrimitiveTint } from "./primitiv
 import "./PrimitiveCard.css";
 
 /** The kind's glyph, drawn in the 16px circle at the head of its card. */
-function PrimitiveKindIcon({ kind }: { kind: string }) {
+export function PrimitiveKindIcon({ kind }: { kind: string }) {
   return (
     <svg
       viewBox="0 0 24 24"

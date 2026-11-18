@@ -62,6 +62,8 @@ export interface TicketPullRequest {
   ships_with_root: string;
   /** The PR found is the tree's, not this ticket's own: its head is not this ticket's branch. */
   is_tree_pull_request: boolean;
+  /** The tree's last PR, when it merged or closed without this ticket's work; it ships in the next one. */
+  earlier_tree_pull_request: { number: number; url: string; state: PullRequestState } | null;
 }
 
 /** Its own key, not under ["ticket", id]: that prefix is invalidated on every

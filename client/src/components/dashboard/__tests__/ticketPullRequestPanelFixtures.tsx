@@ -59,6 +59,7 @@ export function lookup(overrides: Partial<TicketPullRequest>): TicketPullRequest
     ships_with: "",
     ships_with_root: "",
     is_tree_pull_request: false,
+    earlier_tree_pull_request: null,
     ...overrides,
   };
 }

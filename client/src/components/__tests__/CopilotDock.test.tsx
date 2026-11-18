@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -860,6 +860,8 @@ describe("a chat wait", () => {
     log_path: "/tmp/lg-wait/push.log",
     registered_at: "2026-10-27T21:00:00Z",
     deadline: "2026-10-27T23:00:00Z",
+    log_line: "",
+    landing: null,
   };
 
   beforeEach(() => {
@@ -932,6 +934,58 @@ describe("a chat wait", () => {
     expect(findUsabilityProblems(status).map((problem) => problem.kind)).not.toContain(
       "tabular-list",
     );
+  });
+
+  it("shows the ticket's landing with a bar and the log's last line", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "ticket-triage",
+          isBusy: true,
+          activeTurnId: null,
+          runStatus: "waiting",
+          wait: {
+            ...wait,
+            log_line: "capacity: waiting for host capacity — 1 ahead",
+            landing: {
+              summary: "Landing on integration/lg-x-1: verifying · pytest (5/5)",
+              done: 2220,
+              total: 13321,
+            },
+          },
+        }),
+        label: "Ticket triage",
+      }),
+    );
+
+    renderDock();
+
+    const status = screen.getByRole("status");
+    expect(within(status).getByRole("article")).toBeInTheDocument();
+    expect(status).toHaveTextContent("Landing on integration/lg-x-1: verifying · pytest (5/5)");
+    const bar = within(status).getByRole("progressbar", { name: "2220 of 13321 tests run" });
+    expect(bar).toHaveAttribute("value", "2220");
+    expect(bar).toHaveAttribute("max", "13321");
+    expect(status).toHaveTextContent("capacity: waiting for host capacity — 1 ahead");
+  });
+
+  it("says a child that has written nothing has written nothing", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({
+          kind: "ticket-triage",
+          isBusy: true,
+          activeTurnId: null,
+          runStatus: "waiting",
+          wait,
+        }),
+        label: "Ticket triage",
+      }),
+    );
+
+    renderDock();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing written yet");
   });
 
   it("keeps a multiline command to one line and puts the full command in title", () => {

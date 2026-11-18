@@ -10,10 +10,13 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
+from loregarden.core.terminal_text import strip_ansi
+from loregarden.core.timestamps import as_utc
 from loregarden.models.domain import (
     AgentRun,
     BaxterChatMessage,
@@ -29,6 +32,7 @@ from loregarden.models.domain.chat_wait_tables import ChatWait
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.process_identity import identify, session_of
 from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY
+from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -37,6 +41,10 @@ WAIT_CEILING_SECONDS = 7200
 MAX_CHAT_WAIT_CONTINUATIONS = 3
 
 _UNIT_SEP = "\x1f"
+#: How much of a wait's log is read to find its last line, and how much of that
+#: line the card shows.
+_LOG_TAIL_BYTES = 4096
+_LOG_LINE_CHARS = 240
 _THREAD_SURFACES = frozenset(
     {ChatSurface.HOME, ChatSurface.TICKET_TRIAGE, ChatSurface.BRANCH_TRIAGE}
 )
@@ -115,13 +123,61 @@ def continued_count(session: Session, surface: ChatSurface, key: str) -> int:
     return len(rows)
 
 
-def wait_payload(wait: ChatWait) -> dict[str, str]:
+class WaitLanding(BaseModel):
+    """A landing in flight on a wait's ticket, as its card shows it."""
+
+    #: Where it is, in one line ("Landing on main: verifying · pytest (5/5) · …").
+    summary: str
+    #: Tests through the running check, and its total, when the check reports them.
+    done: int | None = None
+    total: int | None = None
+
+
+def wait_payload(wait: ChatWait, *, landing: WaitLanding | None = None) -> dict[str, object]:
+    """A wait as a chat snapshot publishes it.
+
+    ``log_line`` is the last line the waited child wrote, so the card says what
+    it is doing rather than only how long it may take. ``landing`` is the
+    caller's account of a landing in flight on the thread's ticket, when it has
+    one: a waiter that watches a pid writes nothing until it exits, and the
+    landing it waits on keeps its progress on the ledger instead.
+    """
+    # SQLite hands the stamps back naive; without the offset a browser reads
+    # them as its own wall clock, and the card's countdown ran a whole UTC
+    # offset long ("6h 59m left" on a 2h ceiling, lg-code-knowledge-1055).
     return {
         "command": wait.command,
         "log_path": wait.log_path,
-        "registered_at": wait.registered_at.isoformat(),
-        "deadline": wait.deadline.isoformat(),
+        "registered_at": as_utc(wait.registered_at).isoformat(),
+        "deadline": as_utc(wait.deadline).isoformat(),
+        "log_line": last_log_line(wait.log_path),
+        "landing": landing.model_dump() if landing is not None else None,
     }
+
+
+def last_log_line(log_path: str) -> str:
+    """The last non-blank line of ``log_path``, without terminal escapes.
+
+    Reads only the file's tail: a long-running child's log grows without bound
+    and the card is polled. A carriage return starts a line too, because a
+    progress bar redraws itself with one.
+    """
+    try:
+        with Path(log_path).open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - _LOG_TAIL_BYTES))
+            tail = handle.read().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        # silent-ok: the shell creates the log when the child starts; before
+        # that there is truthfully no line, and the card still shows the command.
+        return ""
+    except OSError as exc:
+        logger.warning("chat wait log %s could not be read: %s", log_path, exc)
+        return f"(log unreadable: {exc.strerror or exc})"
+    lines = [line.strip() for line in strip_ansi(tail).replace("\r", "\n").split("\n")]
+    last = next((line for line in reversed(lines) if line), "")
+    return last[:_LOG_LINE_CHARS]
 
 
 def continuation_blocks(
@@ -425,4 +481,4 @@ def register(
     session.add(wait)
     session.commit()
     session.refresh(wait)
-    return {"ok": True, "wait_id": wait.id, "deadline": wait.deadline.isoformat()}
+    return {"ok": True, "wait_id": wait.id, "deadline": as_utc(wait.deadline).isoformat()}

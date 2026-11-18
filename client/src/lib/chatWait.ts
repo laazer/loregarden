@@ -1,6 +1,6 @@
-import type { ChatWait } from "../api/chatTypes";
+import type { ChatWait, ChatWaitLanding } from "../api/chatTypes";
 
-export type { ChatWait };
+export type { ChatWait, ChatWaitLanding };
 
 /**
  * Time left until the 2h wait ceiling: `Nh Nm left`, then `less than a minute left`.

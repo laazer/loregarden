@@ -53,12 +53,15 @@ from loregarden.models.domain import (
     ArtifactKind,
     DockerFootprint,
     GateOutcome,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     Ticket,
     Workspace,
 )
 from loregarden.services.artifact_service import BLOCKING_ISSUE_INLINE_LIMIT
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.capacity_environment import grant_environment
+from loregarden.services.capacity_line import OrchestrationLeaseKeepAlive
 from loregarden.services.capacity_progress import PROGRESS_ENV, LeaseProgress, ProgressSync
 from loregarden.services.docker_capacity import CLASS_WEIGHTS, resolve_weights
 from loregarden.services.gate_capacity import (
@@ -72,7 +75,7 @@ from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import link_ignored_toolchains
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -459,8 +462,17 @@ def _verify_candidate(
         base = _land_base(repo_root, candidate)
         if base:
             extra_env[LAND_BASE_ENV] = base
+        orchestration_run_id = _driving_orchestration_id(session, ticket)
         with (
-            _holding(session, ticket, workspace, footprint, candidate=candidate) as lease,
+            _keeping_alive(session, orchestration_run_id),
+            _holding(
+                session,
+                ticket,
+                workspace,
+                footprint,
+                candidate=candidate,
+                orchestration_run_id=orchestration_run_id,
+            ) as lease,
             _syncing_progress(session, lease, progress),
         ):
             for index, command in enumerate(commands, start=1):
@@ -519,6 +531,7 @@ def _holding(
     footprint: DockerFootprint,
     *,
     candidate: str,
+    orchestration_run_id: str | None,
 ) -> Iterator[GateLease]:
     """Hold host capacity for the whole verification, and give it back.
 
@@ -534,11 +547,45 @@ def _holding(
         workspace=workspace,
         transition=f"{LAND_VERIFY_TRANSITION} {candidate[:12]}",
         ttl_seconds=_LEASE_TTL_SECONDS,
+        orchestration_run_id=orchestration_run_id,
     )
     try:
         yield lease
     finally:
         lease.release(session)
+
+
+def _driving_orchestration_id(session: Session, ticket: Ticket) -> str | None:
+    """The running orchestration landing ``ticket``, or None for a land nobody drives.
+
+    A land from `loregarden_land_ticket` or the CLI has no orchestration, so it
+    has no lease to keep; the newest running one is the driver's own.
+    """
+    return session.exec(
+        select(OrchestrationRun.id)
+        .where(
+            OrchestrationRun.ticket_id == ticket.id,
+            OrchestrationRun.status == OrchestrationRunStatus.RUNNING,
+        )
+        .order_by(col(OrchestrationRun.created_at).desc())
+    ).first()
+
+
+@contextmanager
+def _keeping_alive(session: Session, orchestration_run_id: str | None) -> Iterator[None]:
+    """Renew the driving orchestration's lease for as long as verification runs.
+
+    The verification is the whole of the terminal stage's wait — the line, then
+    the suite — and neither is a stage boundary, where the lease is otherwise
+    renewed. Past `ORCHESTRATION_LEASE` the sweep failed lg-code-knowledge-1055's
+    run as abandoned while its tests were still running.
+    """
+    if orchestration_run_id is None:
+        yield
+        return
+    bind = session.get_bind()
+    with OrchestrationLeaseKeepAlive(lambda: Session(bind), orchestration_run_id):
+        yield
 
 
 @contextmanager
