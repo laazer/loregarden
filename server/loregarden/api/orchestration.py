@@ -323,6 +323,11 @@ def callback_block(
 def callback_attach_artifact(
     run_id: str, body: AttachArtifactRequest, session: Session = Depends(get_session)
 ) -> dict:
+    # The writer-owned-kind refusal lives in the `artifact_attach` operation
+    # itself (lg-milestone-that-1423): this router has no auth dependency and
+    # `body.kind` reaches the row verbatim, and the operation is the one door
+    # every transport now shares. Its `ValueError` is a 400 here, as
+    # `run_rest_operation` maps every service refusal.
     return run_rest_operation(session, OperationId.ARTIFACT_ATTACH, _naming_run(run_id, body))
 
 

@@ -46,6 +46,9 @@ from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.land_verification_coverage import covered_landings
+from loregarden.services.land_verification_receipt_writer import (
+    LAND_VERIFICATION_RECEIPT_IS_SERVICE_WRITTEN,
+)
 from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
@@ -1458,6 +1461,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     LANDED_WORK_IS_COMMITTED,
     LANDINGS_CARRY_THE_WORK,
     LAND_VERIFICATION_RAN,
+    LAND_VERIFICATION_RECEIPT_IS_SERVICE_WRITTEN,
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,

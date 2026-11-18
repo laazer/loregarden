@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.artifact_content import parse_content_object
+from loregarden.services.artifact_kind_owners import refuse_if_writer_owned
 from loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON
 from loregarden.services.dependency_hold import admit_named_start
 from loregarden.services.external_harness import start_external_orchestration
@@ -313,6 +314,11 @@ def _block_ticket(session: Session, call: TicketBlock, _caller: Caller) -> dict[
 
 
 def _attach_artifact(session: Session, call: ArtifactAttach, caller: Caller) -> dict[str, Any]:
+    # First, before the run is resolved or the payload is read: a writer-owned
+    # kind is refused by NAME, so an agent cannot mint a record a detector reads
+    # as proof of its own work (lg-milestone-that-1423). This operation is the
+    # one door `loregarden_attach_artifact` and the REST callback share.
+    refuse_if_writer_owned(call.kind)
     # Ticket-scoped: a standalone stage run, with no orchestration, may attach.
     ref, ticket = call.target(session)
     content = call.content if call.content is not None else parse_content_object(call.content_json)

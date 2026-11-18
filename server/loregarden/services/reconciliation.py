@@ -71,6 +71,7 @@ from loregarden.services.invariant_registry import (
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
     LAND_VERIFICATION_RAN,
+    LAND_VERIFICATION_RECEIPT_IS_SERVICE_WRITTEN,
     LANDED_WORK_IS_COMMITTED,
     LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
@@ -348,6 +349,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # Report-only and bounded by its own `since`: it reads R3's land-verification
     # receipt, never a suite — the tick is 30s and the suite is 901s.
     _invariant(LAND_VERIFICATION_RAN),
+    # The other half of that answer: a receipt the subject of the detector wrote
+    # itself (lg-milestone-that-1423). Report-only, and a BACKSTOP only — the
+    # guard at the artifact doors is the prevention, and a forgery that copies
+    # every key and stamps no run is invisible here by construction.
+    _invariant(LAND_VERIFICATION_RECEIPT_IS_SERVICE_WRITTEN),
     # An active row whose recorded checkout is gone: the control plane goes on
     # believing a checkout is there, and `resolve_execution_root` reuses the
     # row (lg-external-harness-1452). The self-repair that destroyed the
