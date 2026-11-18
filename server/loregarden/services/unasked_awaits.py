@@ -26,6 +26,7 @@ from dataclasses import dataclass
 
 from loregarden.db.closed_workflow_guard import CLOSED_STATES
 from loregarden.models.domain import (
+    ADVISORY_APPROVAL_KINDS,
     Approval,
     ApprovalStatus,
     StageStatus,
@@ -61,7 +62,10 @@ def _asked(session: Session, ticket_ids: Iterable[str]) -> set[tuple[str, str]]:
         return set()
     rows = session.exec(
         select(Approval.ticket_id, Approval.stage_key).where(
-            col(Approval.ticket_id).in_(ids), Approval.status == ApprovalStatus.PENDING
+            col(Approval.ticket_id).in_(ids),
+            Approval.status == ApprovalStatus.PENDING,
+            # A carried-on-past question parks no stage, so it is not what `awaiting` asks for.
+            col(Approval.kind).not_in(ADVISORY_APPROVAL_KINDS),
         )
     ).all()
     return {(ticket_id, stage_key) for ticket_id, stage_key in rows if ticket_id}

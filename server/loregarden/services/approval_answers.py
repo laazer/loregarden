@@ -23,7 +23,9 @@ from sqlmodel import Session
 
 #: Approval kinds answered with `answers` against a `tool_input_json` question —
 #: an agent's AskUserQuestion, and a decision block asked the same way (749).
-_QUESTION_APPROVAL_KINDS = frozenset({ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION})
+_QUESTION_APPROVAL_KINDS = frozenset(
+    {ApprovalKind.CLI_QUESTION, ApprovalKind.BLOCK_DECISION, ApprovalKind.OPERATOR_QUESTION}
+)
 
 
 def record_approval_answer(

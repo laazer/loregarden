@@ -6,6 +6,7 @@ import { memoryApi } from "./memoryApi";
 import { referenceAreasApi } from "./referenceAreasApi";
 import { referenceResearchApi } from "./referenceResearchApi";
 import { referenceLibraryApi } from "./referenceLibraryApi";
+import { operatorQuestionApi } from "./operatorQuestionApi";
 import { ticketEdgeApi } from "./ticketEdgeApi";
 import { ticketLandingApi } from "./ticketLandingApi";
 import { autoDecisionApi } from "./autoDecisionApi";
@@ -510,6 +511,7 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   ...ticketEdgeApi,
+  ...operatorQuestionApi,
   ...ticketPullRequestApi,
   ...ticketLandingApi,
   ...autoDecisionApi,

@@ -32,6 +32,7 @@ const KIND_LABEL: Record<RunFailureKind, string> = {
   human_action: "needed a person",
   tickets: "waited on tickets",
   conflict: "conflict",
+  answers: "waited on answers",
 };
 
 export function failureKindLabel(kind: RunFailureKind | null): string {

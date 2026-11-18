@@ -10,6 +10,7 @@ from __future__ import annotations
 from loregarden.models.domain import BlockOrigin, OrchestrationRun, Ticket, WorkflowStageDef
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.block_settlement import RepairPolicy
+from loregarden.services.operator_questions import gate_hold_detail, is_gate_stage
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.stage_readiness import (
     block_line,
@@ -33,7 +34,11 @@ def _next_stage(session: Session, ticket: Ticket) -> WorkflowStageDef | None:
 def block_if_unready(session: Session, orch_run: OrchestrationRun, ticket: Ticket) -> bool:
     """What both drivers do before choosing a stage. True when the ticket blocked."""
     target = _next_stage(session, ticket)
-    if target is None or not target.required_inputs:
+    if target is None:
+        return False
+    if is_gate_stage(target) and _hold_for_answers(session, orch_run, ticket, target):
+        return True
+    if not target.required_inputs:
         return False
     missing = missing_inputs(session, ticket, target)
     if not missing:
@@ -47,5 +52,28 @@ def block_if_unready(session: Session, orch_run: OrchestrationRun, ticket: Ticke
         stage_key=target.key,
         message=block_line(target.key, missing),
         declared=BlockKind.DECISION,
+    )
+    return True
+
+
+def _hold_for_answers(
+    session: Session, orch_run: OrchestrationRun, ticket: Ticket, gate: WorkflowStageDef
+) -> bool:
+    """Hold the gate, unspawned, while agents' questions wait for the operator.
+
+    The gate's own completion holds too (`stage_verdict`); this spares the gate
+    agent's turn when the answer is already known to be "not yet".
+    """
+    detail = gate_hold_detail(session, ticket)
+    if not detail:
+        return False
+    OrchestrationCallbackService(session).block_ticket(
+        orch_run,
+        ticket,
+        origin=BlockOrigin.CONTROL_PLANE,
+        repair=RepairPolicy.withheld("No agent turn can answer the operator's questions."),
+        stage_key=gate.key,
+        message=detail,
+        declared=BlockKind.ANSWERS,
     )
     return True

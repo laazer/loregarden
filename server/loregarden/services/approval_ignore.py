@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
+    ADVISORY_APPROVAL_KINDS,
     AgentRun,
     Approval,
     ApprovalKind,
@@ -104,8 +105,10 @@ def ignore_approval(
     session.add(approval)
     session.commit()
 
-    if effect is IgnoreEffect.DECLINES_STAGE:
-        ticket = session.get(Ticket, approval.ticket_id)
+    # An advisory question parks no stage, but the gate may be holding for it,
+    # and its ticket resolution is what releases that hold.
+    if effect is IgnoreEffect.DECLINES_STAGE or approval.kind in ADVISORY_APPROVAL_KINDS:
+        ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
         if ticket:
             decline_stage(ticket, approval, f"Ignored in the inbox: {cleaned}")
     logger.info("Approval %s ignored (%s): %s", approval.id, effect.value, cleaned)

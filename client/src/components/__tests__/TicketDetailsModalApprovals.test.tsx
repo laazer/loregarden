@@ -54,6 +54,13 @@ function renderModal(onClose = jest.fn()) {
 describe("TicketDetailsModal approvals", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApi.ticketOperatorQuestions.mockResolvedValue({
+      ticket: "lg-dash-1",
+      open: 0,
+      holding_gate: 0,
+      total: 0,
+      questions: [],
+    });
   });
 
   it("resolves a pending approval from inside the modal", async () => {

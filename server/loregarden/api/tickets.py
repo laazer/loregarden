@@ -458,6 +458,20 @@ def get_ticket_artifacts(
     )
 
 
+@router.get("/{ticket_id}/operator-questions", response_model=dict)
+def get_ticket_operator_questions(
+    ticket_id: str,
+    include_settled: bool = True,
+    session: Session = Depends(get_session),
+) -> dict:
+    """The questions agents asked the operator on this ticket, open ones first."""
+    return run_rest_operation(
+        session,
+        OperationId.OPERATOR_QUESTION_LIST,
+        {"ticket_id": ticket_id, "include_settled": include_settled},
+    )
+
+
 @router.patch("/{ticket_id}", response_model=TicketDetail)
 def update_ticket(
     ticket_id: str,

@@ -12,6 +12,7 @@ import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useDialogDismiss } from '../hooks/useDialogDismiss';
 import { TicketModalApprovals } from './TicketModalApprovals';
+import { TicketAssumptions } from './TicketAssumptions';
 import { AddToTabMenu } from './AddToTabMenu';
 import { MarkdownContent } from './chat/MarkdownContent';
 import { CopyValueButton } from './CopyValueButton';
@@ -442,6 +443,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
               </div>
 
               <TicketModalApprovals ticket={ticket} criteria={criteria} />
+              <TicketAssumptions ticketId={ticket.id} />
 
               <div className="state-card">
                 <div className="state-label">Description</div>

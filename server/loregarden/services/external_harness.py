@@ -947,8 +947,8 @@ def build_external_harness_prompt(
         "- Do not start a second orchestration for this ticket while one is open.",
         "- Timing is measured server-side, from these calls. Do not report your own elapsed",
         "  time; make the calls at the moments they describe and the numbers follow.",
-        "- Record assumptions with `loregarden_append_checkpoint` rather than stopping to ask,",
-        "  and call `loregarden_block_ticket` if the work is genuinely blocked.",
+        "- Ask the operator with `loregarden_ask_operator` and carry on with your default rather",
+        "  than stopping to ask, and call `loregarden_block_ticket` if the work is genuinely blocked.",
         "- Never write a report, summary or findings `.md` file. Long output goes to",
         "  `loregarden_attach_artifact`.",
     ]

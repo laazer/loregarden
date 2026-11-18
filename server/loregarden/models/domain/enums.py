@@ -793,6 +793,9 @@ class ApprovalKind(str, Enum):
     #: way a CLI_QUESTION does, so the inbox renders it the same; resolving it
     #: records the choice as a checkpoint and requeues the ticket itself.
     BLOCK_DECISION = "block_decision"
+    #: A workflow agent's question it carried on past with a stated default
+    #: (`services.operator_questions`). Holds nothing until the gate does.
+    OPERATOR_QUESTION = "operator_question"
 
 
 class BlockOrigin(str, Enum):

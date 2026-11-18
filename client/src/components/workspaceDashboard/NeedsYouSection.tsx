@@ -48,6 +48,7 @@ const APPROVAL_KIND_LABELS: Record<Approval["kind"], string> = {
   rework_pause: "rework pause",
   stage_park: "parked stage",
   block_decision: "decision",
+  operator_question: "agent assumption",
 };
 
 /** Who has to act, most urgent first: a person, then a stopped agent, then other tickets. */

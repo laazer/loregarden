@@ -4,7 +4,15 @@
 import type { TicketState } from "./types";
 
 /** Who can unblock a blocked ticket — mirrors `models.domain.block_kinds`. */
-export type BlockKind = "harness" | "work" | "decision" | "human_action" | "tickets" | "conflict";
+export type BlockKind =
+  | "harness"
+  | "work"
+  | "decision"
+  | "human_action"
+  | "tickets"
+  | "conflict"
+  /** The gate holds for agents' questions already in the inbox. */
+  | "answers";
 
 /** What a stuck ticket waits for — mirrors `BlockedOn` in `models.domain.block_kinds`. */
 export type BlockedOn = "person" | "tickets" | "agent";

@@ -36,6 +36,7 @@ from loregarden.models.domain.memory_enums import *  # noqa: F401,F403
 from loregarden.models.domain.memory_tables import *  # noqa: F401,F403
 from loregarden.models.domain.merge_queue_enums import *  # noqa: F401,F403
 from loregarden.models.domain.merge_queue_tables import *  # noqa: F401,F403
+from loregarden.models.domain.operator_question_enums import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403
 from loregarden.models.domain.plan_enums import *  # noqa: F401,F403
 from loregarden.models.domain.process_enums import *  # noqa: F401,F403

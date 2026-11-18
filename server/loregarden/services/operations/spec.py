@@ -112,6 +112,10 @@ class OperationId(StrEnum):
     TICKET_UPDATE = "ticket_update"
     TICKET_WORKFLOW_SET = "ticket_workflow_set"
     TICKET_PULL_REQUEST_MERGE = "ticket_pull_request_merge"
+    #: A workflow agent's question, carried on past with a default
+    #: (`operator_questions.py`), and the list a ticket shows of them.
+    OPERATOR_QUESTION_ASK = "operator_question_ask"
+    OPERATOR_QUESTION_LIST = "operator_question_list"
 
 
 @dataclass(frozen=True)

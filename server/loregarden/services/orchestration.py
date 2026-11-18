@@ -46,6 +46,10 @@ from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.gate_approvals import create_workflow_gate_approval, gate_would_skip_work
 from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.landing import land_before_done
+from loregarden.services.operator_questions import (
+    refuse_unappliable_answer,
+    resolve_operator_question,
+)
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
 from loregarden.services.run_completion import (
@@ -1160,6 +1164,9 @@ class ApprovalService(ExitActionApprovalMixin):
             # actions permit (an empty or unreadable gate permits nothing).
             self._refuse_gate_that_skips_work(approval, approved=approved)
             self._reject_unsupported_approve(approval)
+        refuse_unappliable_answer(
+            self.session, approval, approved=approved, answers=answers, response_text=response_text
+        )
 
         rework_route_key = route_to_stage_key.strip()
         if rework_route_key:
@@ -1323,6 +1330,10 @@ class ApprovalService(ExitActionApprovalMixin):
             self._apply_block_decision(
                 ticket, approval, approved=approved, response_text=response_text
             )
+        elif approval.kind == ApprovalKind.OPERATOR_QUESTION and resolve_operator_question(
+            self.session, self.orchestration, ticket, approval, approved=approved
+        ):
+            self._resume_orchestration(ticket)
 
     def _apply_block_decision(
         self, ticket: Ticket, approval: Approval, *, approved: bool, response_text: str

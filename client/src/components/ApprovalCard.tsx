@@ -2,12 +2,14 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { AgentQuestion, Approval } from "../api/client";
+import { defaultAnswers, isOverride, operatorQuestionMeta } from "../lib/operatorQuestions";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { CloseOnlyActions } from "./CloseOnlyActions";
 import { PreparedActionPanel } from "./PreparedActionPanel";
 import { MarkdownContent } from "./chat/MarkdownContent";
 import { exitActionCategoryLabel } from "./exitActionCategories";
 import { IgnoreApprovalModal } from "./IgnoreApprovalModal";
+import { OperatorQuestionDetails } from "./OperatorQuestionDetails";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
 import { WaiveUnresolvedModal } from "./WaiveUnresolvedModal";
@@ -180,7 +182,11 @@ export function ApprovalCard({
 }) {
   // A decision block is asked the way an agent's question is — same payload
   // shape, same options, same answer — so it shares the whole question path.
-  const isQuestion = approval.kind === "cli_question" || approval.kind === "block_decision";
+  // An operator question is asked the same way, with the agent's default
+  // preselected: the answer is a confirm or an override, never a decline.
+  const isOperatorQuestion = approval.kind === "operator_question";
+  const isQuestion =
+    approval.kind === "cli_question" || approval.kind === "block_decision" || isOperatorQuestion;
   const isPermission = approval.kind === "cli_permission";
   // A rework pause resolves through the same routing a gate does — approve to
   // accept the stage, reject to send the work back to a stage you pick — so it
@@ -194,7 +200,13 @@ export function ApprovalCard({
   // (route back, bring in changes, acceptance checklist) mean anything here.
   const isPark = approval.kind === "stage_park";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const assumption = useMemo(() => operatorQuestionMeta(approval), [approval]);
+  const [picked, setAnswers] = useState<Record<string, string | string[]>>({});
+  // An operator question starts on the agent's default; a pick replaces it.
+  const answers = useMemo(
+    () => ({ ...defaultAnswers(approval, questions[0]?.question), ...picked }),
+    [approval, questions, picked],
+  );
   const [customText, setCustomText] = useState<Record<string, string>>({});
   const [freeformResponse, setFreeformResponse] = useState("");
   const [alwaysAllowWorkspace, setAlwaysAllowWorkspace] = useState(false);
@@ -239,6 +251,7 @@ export function ApprovalCard({
     setRejectModalOpen(false);
     setWaiveModalOpen(false);
     retryLock.current = false;
+    // The approval object is re-fetched every poll; reset only when it is a different card.
   }, [approval.id]);
 
   const reworkActive = reworkEnabled && !!reworkStageKey;
@@ -522,6 +535,7 @@ export function ApprovalCard({
 
         {isQuestion && questions.length > 0 && (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+            {assumption && <OperatorQuestionDetails meta={assumption} />}
             {questions.map((q) => (
               <div
                 key={q.question}
@@ -610,6 +624,7 @@ export function ApprovalCard({
                 />
               </div>
             ))}
+            {!isOperatorQuestion && (
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: "var(--fs-micro)", color: "var(--txm)" }}>
               Optional freeform reply (instead of structured answers)
               <Textarea
@@ -628,6 +643,7 @@ export function ApprovalCard({
                 }}
               />
             </label>
+            )}
           </div>
         )}
 
@@ -719,15 +735,18 @@ export function ApprovalCard({
               Answer in full view
             </button>
           ) : (
-            <button
-              type="button"
-              className="btn-secondary"
+            <Button
+              variant="secondary"
               style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
               disabled={!canSubmit || isSubmitting}
               onClick={submitAnswers}
             >
-              Submit answers
-            </button>
+              {assumption
+                ? isOverride(assumption, answers, customText)
+                  ? "Override & send back"
+                  : "Confirm"
+                : "Submit answers"}
+            </Button>
           )
         ) : showRecheckPrimary ? (
           <button
@@ -766,15 +785,17 @@ export function ApprovalCard({
             Retry without waiving
           </Button>
         ) : null}
-        <button
-          type="button"
-          className="btn-secondary"
-          style={{ flex: 1, borderRadius: 0, color: "var(--rdl)" }}
-          disabled={isSubmitting}
-          onClick={isGate ? () => setRejectModalOpen(true) : () => onReject()}
-        >
-          {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? "Leave parked" : "Reject"}
-        </button>
+        {/* The server refuses a reject on an operator question; Ignore closes one unanswered. */}
+        {!isOperatorQuestion && (
+          <Button
+            variant="secondary"
+            style={{ flex: 1, borderRadius: 0, color: "var(--rdl)" }}
+            disabled={isSubmitting}
+            onClick={isGate ? () => setRejectModalOpen(true) : () => onReject()}
+          >
+            {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? "Leave parked" : "Reject"}
+          </Button>
+        )}
         {onIgnore && (
           <Button
             variant="secondary"

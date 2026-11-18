@@ -174,9 +174,15 @@ def _decision_rounds(session: Session, ticket: Ticket, stage_key: str) -> int:
     )
 
 
-def _raise_decision(
+def raise_decision(
     session: Session, ticket: Ticket, *, stage_key: str, message: str, options: list[str]
 ) -> Approval:
+    """The pending decision on `stage_key`, filed now unless one is already open.
+
+    Public for `operator_questions`, whose blocking questions are this same
+    decision raised before the stage reports `blocked`; the report that follows
+    finds it open and files nothing twice.
+    """
     existing = session.exec(
         select(Approval).where(
             Approval.ticket_id == ticket.id,
@@ -267,7 +273,7 @@ def record_block(
     )
     session.commit()
     if kind is BlockKind.DECISION:
-        _raise_decision(
+        raise_decision(
             session, ticket, stage_key=stage_key, message=message, options=list(options or [])
         )
     return kind

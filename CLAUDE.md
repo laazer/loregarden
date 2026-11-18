@@ -5,7 +5,7 @@ Repository-level operating manual for Claude Code and other coding agents workin
 
 ## General Guidelines
 
-1. **Ask, don't assume.** If something is unclear, ask before writing a line. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption with `loregarden_append_checkpoint` rather than blocking.
+1. **Ask, don't assume.** If something is unclear, ask before writing a line. When running unattended, pick the most reasonable interpretation, proceed, and put the question to the operator with `loregarden_ask_operator` (naming that interpretation as the default) rather than blocking.
 2. **Simplest solution for simple problems**, better solutions for hard ones. Do not add flexibility nothing needs yet.
 3. **Don't touch unrelated code**, but do surface smells you find as a separate issue.
 4. **Flag uncertainty explicitly.** Confidence without certainty causes more damage than admitting a gap. A small, low-risk experiment beats a confident guess.
@@ -371,8 +371,9 @@ one hides a defect that will resurface on someone else's branch.
 ## Agent Checkpoints (Autopilot / Autonomous Agents)
 
 When you are running unattended and hit a decision a human would normally make (an ambiguous
-requirement, a missing asset, an assumption you had to pick), record it with
-`loregarden_append_checkpoint` and continue. Never write a checkpoint file. If the work is
+requirement, a missing asset, an assumption you had to pick), ask it with
+`loregarden_ask_operator`, naming the default you proceed on, and continue; the gate waits for
+the operator's answer. `loregarden_append_checkpoint` is for an assumption nobody needs to answer. Never write a checkpoint file. If the work is
 genuinely blocked (broken dependency, unresolvable conflict), call `loregarden_block_ticket`
 and stop rather than inventing a way around it.
 
