@@ -117,6 +117,21 @@ class GatePart(BaseModel):
     title: str | None = None
 
 
+class OperatorQuestionPart(BaseModel):
+    """An agent's question to the operator, with the answer they gave in chat staged.
+
+    The card is the inbox card itself: the operator presses Confirm or Override,
+    and only that press records the answer. Resolving an approval stays a
+    person's act, so a model emitting this card answers nothing.
+    """
+
+    primitive: Literal["operator_question"] = "operator_question"
+    approval_id: str
+    ticket_id: str
+    answer: str | None = None
+    title: str | None = None
+
+
 class TerminalLine(BaseModel):
     kind: Literal["command", "stdout", "stderr", "status"] = "stdout"
     text: str
@@ -348,6 +363,7 @@ ChatPart = Annotated[
     | AgentPart
     | WorkflowPart
     | GatePart
+    | OperatorQuestionPart
     | TerminalPart
     | EditPart
     | CalendarPart
@@ -381,6 +397,7 @@ KNOWN_PRIMITIVES = frozenset(
         "agent",
         "workflow",
         "gate",
+        "operator_question",
         "terminal",
         "edit",
         "calendar",

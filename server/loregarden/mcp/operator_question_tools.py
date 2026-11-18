@@ -27,7 +27,9 @@ OPERATOR_QUESTION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "The questions agents have asked the operator on a ticket: each one's default, "
             "confidence, the stage it affects, and whether it holds the gate; with "
-            "include_settled, the answers too. Answering is the operator's, in the inbox."
+            "include_settled, the answers too. With no ticket_id and a workspace_slug, every "
+            "open question across that workspace. Answering is the operator's: in chat, stage "
+            "their answer on an `operator_question` card for them to confirm."
         ),
     },
 ]

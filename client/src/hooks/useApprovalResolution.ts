@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api, type Approval } from "../api/client";
+import type { ApprovalResolutionAction } from "../api/chatTypes";
 import type { ApprovalResolvePayload } from "../components/ApprovalCard";
 
 export interface ResolveApprovalVariables extends ApprovalResolvePayload {
   id: string;
-  action: "approve" | "recheck" | "reject";
+  action: ApprovalResolutionAction;
 }
 
 /**
@@ -37,6 +38,7 @@ export function useApprovalResolution(
       qc.invalidateQueries({ queryKey: ["baxter-chat-session"] });
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       qc.invalidateQueries({ queryKey: ["runs", ticketId] });
+      qc.invalidateQueries({ queryKey: ["operator-questions"] });
       onResolved?.();
     },
   });

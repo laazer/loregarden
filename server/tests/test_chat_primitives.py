@@ -363,6 +363,7 @@ _MINIMAL_FENCES: dict[str, dict[str, object]] = {
     "agent": {"slug": "planner"},
     "workflow": {"workflow_slug": "default"},
     "gate": {"ticket_id": "t1", "stage_key": "verify"},
+    "operator_question": {"approval_id": "a1", "ticket_id": "t1"},
     "terminal": {"lines": [{"kind": "command", "text": "ls"}]},
     "edit": {"content": "x"},
     "calendar": {"events": [{"title": "Run", "starts_at": "2026-10-21T09:00:00Z"}]},

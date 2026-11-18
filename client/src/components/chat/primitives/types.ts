@@ -15,6 +15,7 @@ export type PrimitiveKind =
   | "agent"
   | "workflow"
   | "gate"
+  | "operator_question"
   | "terminal"
   | "edit"
   | "calendar"
@@ -131,6 +132,15 @@ export interface GatePart {
   ticket_id?: string | null;
   stage_key?: string | null;
   draft?: Record<string, unknown> | null;
+  title?: string | null;
+}
+
+/** An agent's question, with the answer the operator gave in chat staged for their press. */
+export interface OperatorQuestionPart {
+  primitive: "operator_question";
+  approval_id: string;
+  ticket_id: string;
+  answer?: string | null;
   title?: string | null;
 }
 
@@ -325,6 +335,7 @@ export type ChatPart =
   | AgentPart
   | WorkflowPart
   | GatePart
+  | OperatorQuestionPart
   | TerminalPart
   | EditPart
   | CalendarPart

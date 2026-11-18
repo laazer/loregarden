@@ -45,6 +45,7 @@ const KINDS: Record<string, { icon: keyof typeof ICON_PATHS; tint: PrimitiveTint
   agent: { icon: "agent", tint: "work" },
   workflow: { icon: "workflow", tint: "work" },
   gate: { icon: "gate", tint: "work" },
+  operator_question: { icon: "question", tint: "you" },
   terminal: { icon: "terminal", tint: "work" },
   edit: { icon: "edit", tint: "work" },
   calendar: { icon: "calendar", tint: "mute" },

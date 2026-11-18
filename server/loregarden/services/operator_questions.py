@@ -408,6 +408,20 @@ def ticket_questions(session: Session, ticket: Ticket) -> list[Approval]:
     return sorted(asked, key=lambda row: row.status is not ApprovalStatus.PENDING)
 
 
+def open_workspace_questions(session: Session, workspace_id: str) -> list[Approval]:
+    """Every open operator question across a workspace's tickets, newest first."""
+    rows = session.exec(
+        select(Approval)
+        .where(
+            Approval.workspace_id == workspace_id,
+            Approval.status == ApprovalStatus.PENDING,
+            col(Approval.kind).in_([ApprovalKind.OPERATOR_QUESTION, ApprovalKind.BLOCK_DECISION]),
+        )
+        .order_by(col(Approval.created_at).desc())
+    ).all()
+    return [row for row in rows if _annotation(row) is not None]
+
+
 def settled_answer(approval: Approval) -> tuple[str, str]:
     """(outcome, answer) for an answered question; ("", "") while open or ignored.
 
