@@ -202,6 +202,16 @@ export function TicketPullRequestPanel({
             base as one PR when the tree&rsquo;s root completes. A PR for its own branch would carry the same commits
             twice.
           </div>
+          {data.earlier_tree_pull_request ? (
+            <div className="ap-state-body">
+              The tree&rsquo;s last PR,{" "}
+              <a href={data.earlier_tree_pull_request.url} target="_blank" rel="noreferrer">
+                #{data.earlier_tree_pull_request.number}
+              </a>
+              , {data.earlier_tree_pull_request.state === "closed" ? "closed" : "merged"} before this ticket&rsquo;s work
+              reached the tree, so it does not carry it. The work goes in the tree&rsquo;s next PR.
+            </div>
+          ) : null}
           <div className="prp-actions">{refresh}</div>
         </div>
         {recorded}

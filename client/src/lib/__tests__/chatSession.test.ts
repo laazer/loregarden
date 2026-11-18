@@ -29,6 +29,8 @@ function waitingSession(): ChatSession {
       log_path: "/tmp/lg-wait/push.log",
       registered_at: "2026-10-27T21:00:00Z",
       deadline: "2026-10-27T23:00:00Z",
+      log_line: "",
+      landing: null,
     },
   };
 }

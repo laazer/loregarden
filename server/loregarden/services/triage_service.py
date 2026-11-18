@@ -35,7 +35,7 @@ from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_mode import ChatModeView, resolve_chat_mode, stage_run_in_flight
 from loregarden.services.chat_primitives import cli_card_corrector, load_parts_json, settle_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
-from loregarden.services.chat_wait import outstanding_for, wait_payload
+from loregarden.services.chat_wait import WaitLanding, outstanding_for, wait_payload
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -50,6 +50,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+from loregarden.services.landing_status import landing_summary, ticket_landing_status
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -214,8 +215,22 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
         "runtime": get_triage_runtime(ticket).model_dump(),
         "run_status": run_status,
         "active_run_id": active_run_id,
-        "wait": wait_payload(wait) if wait is not None else None,
+        "wait": wait_payload(wait, landing=_landing_line(session, ticket))
+        if wait is not None
+        else None,
     }
+
+
+def _landing_line(session: Session, ticket: Ticket) -> WaitLanding | None:
+    """The ticket's landing in flight, for a wait card on its chat; None when none."""
+    workspace = workspace_for_ticket(session, ticket)
+    if workspace is None:
+        return None
+    status = ticket_landing_status(session, ticket, workspace)
+    summary = landing_summary(status)
+    if not summary:
+        return None
+    return WaitLanding(summary=summary, done=status.progress_done, total=status.progress_total)
 
 
 def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:

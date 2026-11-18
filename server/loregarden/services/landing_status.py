@@ -148,6 +148,20 @@ def ticket_landing_status(
     return base
 
 
+def landing_summary(status: TicketLandingStatus) -> str:
+    """One line saying where a landing in flight is, or "" when there is none."""
+    head = f"Landing on {status.target}"
+    if status.phase is LandingPhase.NOT_LANDING:
+        return ""
+    if status.phase is LandingPhase.MERGING:
+        return f"{head}: merging"
+    if status.phase is LandingPhase.WAITING_FOR_CAPACITY:
+        return f"{head}: waiting for capacity, {status.ahead_count} ahead"
+    if status.progress:
+        return f"{head}: verifying · {status.progress}"
+    return f"{head}: verifying"
+
+
 def _land_lease(session: Session, ticket: Ticket) -> DockerLease | None:
     """The ticket's live land verification lease, if it has one.
 

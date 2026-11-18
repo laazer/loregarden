@@ -470,29 +470,54 @@
 
 /* Outstanding background wait: a trailing status, not a thinking card. No motion. */
 .lg-chat-wait {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   max-width: min(620px, 100%);
-  font-size: var(--fs-small);
-  color: var(--txm);
-  line-height: 1.4;
 }
 
-.lg-chat-wait-command {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* The card body's spacing, under its own name: the wait card never expands,
+   and `.lg-primitive-card-body` is a scroller when a card does. */
+.lg-chat-wait-body {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.lg-chat-wait-landing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.lg-chat-wait-landing-summary {
+  margin: 0;
+  font-size: var(--fs-body);
   color: var(--tx);
 }
 
-/* The face stays inline (CopilotDock pins it); this lets a long path wrap. */
-.lg-chat-wait-log {
-  overflow-wrap: anywhere;
+.lg-chat-wait-bar {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--ac);
 }
 
-.lg-chat-wait-remaining {
-  font-size: var(--fs-micro);
+.lg-chat-wait-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.lg-chat-wait-facts dt {
+  color: var(--txm);
+}
+
+.lg-chat-wait-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--tx);
 }
 
 .lg-chat-role {

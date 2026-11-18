@@ -24,6 +24,7 @@ cycle.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 
@@ -41,6 +42,7 @@ from loregarden.services.docker_leases import (
 )
 from loregarden.services.docker_ledger import OCCUPYING, as_utc
 from loregarden.services.docker_poll_guard import note_poll
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, or_, select, update
 
 logger = logging.getLogger(__name__)
@@ -212,3 +214,68 @@ def renew_orchestration_lease(session: Session, orchestration_run_id: str) -> No
         .values(last_seen_at=utcnow())
         .execution_options(synchronize_session=False)
     )
+
+
+#: How often a held orchestration lease is renewed while long work runs inside a
+#: stage boundary. A small fraction of `ORCHESTRATION_LEASE`, so a missed tick or
+#: two still leaves the lease well inside its window.
+KEEP_ALIVE_INTERVAL_SECONDS = 60.0
+
+
+class OrchestrationLeaseKeepAlive:
+    """Renew an orchestration's lease from a thread while its driver is busy.
+
+    `renew_orchestration_lease` covers a driver *waiting in line*. A driver that
+    holds capacity and runs a suite on its own thread — a land verification,
+    whose commands took over 30 minutes for lg-code-knowledge-1055 — renewed
+    nothing until the suite returned, so the sweep settled a live run as
+    abandoned mid-landing ("driver is gone") while its tests were still running.
+
+    Own sessions, one per tick: the renewal happens on another thread, and a
+    session is not shared across threads. A failed tick is logged, not raised:
+    the next tick retries, and the work it vouches for is unaffected.
+    """
+
+    def __init__(
+        self,
+        session_factory: Callable[[], Session],
+        orchestration_run_id: str,
+        *,
+        interval: float | None = None,
+    ) -> None:
+        self._session_factory = session_factory
+        self._orchestration_run_id = orchestration_run_id
+        # Read per instance, not bound at definition, so one setting moves every
+        # keep-alive (and a test can shorten it without a parameter here).
+        self._interval = KEEP_ALIVE_INTERVAL_SECONDS if interval is None else interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="orchestration-keep-alive", daemon=True
+        )
+
+    def __enter__(self) -> OrchestrationLeaseKeepAlive:
+        self.renew()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=self._interval + 5)
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            self.renew()
+
+    def renew(self) -> None:
+        """Stamp the run as alive now, committing so the sweep's session sees it."""
+        try:
+            with self._session_factory() as session:
+                renew_orchestration_lease(session, self._orchestration_run_id)
+                session.commit()
+        except SQLAlchemyError:
+            # Retryable: the next tick renews again, well inside the lease.
+            logger.exception(
+                "could not renew orchestration %s's lease; retrying in %ss",
+                self._orchestration_run_id,
+                self._interval,
+            )
