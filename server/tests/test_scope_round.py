@@ -19,10 +19,12 @@ from loregarden.models.domain import (
     RunStatus,
     StageStatus,
     Ticket,
+    TicketDiscovery,
     TicketState,
     WorkItemType,
+    utcnow,
 )
-from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.discovered_work import undecided
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.scope_round import (
@@ -80,6 +82,23 @@ def _file(session: Session, run: AgentRun, title: str, *, parent: Ticket) -> Tic
     return session.get(Ticket, created["id"])
 
 
+def _recorded_finding(session: Session, run: AgentRun, title: str, *, parent: str | None) -> Ticket:
+    """A finding with its discovery row written directly, as one filed before a budget was."""
+    finding = make_workspace_ticket(session, title)
+    finding.parent_ticket_id = parent
+    session.add(finding)
+    session.add(
+        TicketDiscovery(
+            filed_ticket_id=finding.id,
+            source_ticket_id=run.ticket_id,
+            agent_run_id=run.id,
+            filed_at=utcnow(),
+        )
+    )
+    session.commit()
+    return finding
+
+
 def _decide(session: Session, run: AgentRun | None, finding: Ticket, decision: str, **extra):
     """Decide through the tool, as ``run`` (orchestrated) or as an operator (None)."""
     return json.loads(
@@ -96,12 +115,17 @@ def _decide(session: Session, run: AgentRun | None, finding: Ticket, decision: s
     )
 
 
+#: What the milestone is held to: a follow-up names it, since the milestone waits on it.
+MILESTONE_CRITERION = "The milestone's code map is built for every workspace"
+
+
 @pytest.fixture(name="source")
 def source_fixture(db_session: Session) -> Ticket:
     """A feature whose every stage but the terminal one is done: it is about to finish."""
     seed_database(db_session)
     milestone = make_workspace_ticket(db_session, "sr-milestone")
     milestone.work_item_type = WorkItemType.MILESTONE
+    milestone.acceptance_criteria_json = serialize_criteria([MILESTONE_CRITERION])
     source = make_workspace_ticket(db_session, "sr-source")
     source.work_item_type = WorkItemType.FEATURE
     source.parent_ticket_id = milestone.id
@@ -158,7 +182,13 @@ def test_a_round_that_amends_nothing_goes_straight_back_to_finishing(db_session,
     open_round(db_session, source, instance, stages, stages[-1])
     db_session.commit()
 
-    _decide(db_session, _run(db_session, source, "spec", "s1"), finding, "follow_up")
+    _decide(
+        db_session,
+        _run(db_session, source, "spec", "s1"),
+        finding,
+        "follow_up",
+        criterion=MILESTONE_CRITERION,
+    )
     set_stage_status(source, instance, stages, "spec", StageStatus.DONE)
     db_session.commit()
 
@@ -208,8 +238,8 @@ def test_only_the_source_tickets_spec_may_decide(db_session, source):
 def test_a_ticket_amends_its_scope_in_at_most_its_rounds(db_session, source):
     reviewer = _run(db_session, source, "architecture_reviewer", "r1")
     findings = [_file(db_session, reviewer, f"F{i}", parent=source) for i in range(3)]
-    second_reviewer = _run(db_session, source, "security_reviewer", "r2")
-    findings += [_file(db_session, second_reviewer, f"G{i}", parent=source) for i in range(2)]
+    # A fourth, past the filing budget: recorded as one filed before that budget was.
+    findings.append(_recorded_finding(db_session, reviewer, "F3", parent=source.parent_ticket_id))
     spec_runs = [_run(db_session, source, "spec", f"s{i}") for i in range(MAX_AMEND_ROUNDS + 1)]
 
     for index, run in enumerate(spec_runs[:MAX_AMEND_ROUNDS]):
@@ -219,7 +249,10 @@ def test_a_ticket_amends_its_scope_in_at_most_its_rounds(db_session, source):
 
     with pytest.raises(ValueError, match="amended its scope"):
         _decide(db_session, spec_runs[-1], findings[3], "amend", criterion="one round too many")
-    assert _decide(db_session, spec_runs[-1], findings[3], "follow_up")["decision"] == "follow_up"
+    decided = _decide(
+        db_session, spec_runs[-1], findings[3], "follow_up", criterion=MILESTONE_CRITERION
+    )
+    assert decided["decision"] == "follow_up"
 
 
 def test_a_round_that_decided_nothing_is_not_asked_again(db_session, source):

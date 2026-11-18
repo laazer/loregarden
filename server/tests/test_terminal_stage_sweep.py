@@ -26,9 +26,11 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.models.domain.enums import GateOutcome
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
 from loregarden.services.invariant_registry import REFUSED_LANDINGS_WAIT_FOR_A_CHANGE
 from loregarden.services.land_ticket import land_ticket
+from loregarden.services.land_verification import VerifyOutcome, record_land_verification
 from loregarden.services.landing_refused import UNAVAILABLE_RETRY_AFTER
 from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.target_branch import resolve_target_branch
@@ -298,13 +300,60 @@ def test_tests_that_never_ran_are_retried_only_once_the_wait_is_over(session, pa
     assert [t.id for t in tickets_whose_landing_cleared(session)] == [parked.id]
 
 
-def test_a_landing_verified_again_on_refused_tips_is_reported(session, workspace, parked):
-    """The re-entry detector: whatever writer retries a refused landing on
-    unchanged tips (here `land_ticket` called directly), it is reported."""
+def test_land_ticket_itself_does_not_run_the_suite_again_on_refused_tips(
+    session, workspace, parked
+):
+    """Every caller lands through `land_ticket`, not only the sweep: the
+    orchestrator's finish and a returning repair turn re-ran a refused suite
+    four times in an hour on lg-code-knowledge-1055."""
+    _refused(session, parked, FAILING_SUITE)
+
+    result = land_ticket(session, parked, workspace)
+
+    assert not result.ok
+    assert len(_receipts(session, parked)) == 1, "the suite was run again on the same tips"
+
+
+def test_tests_that_never_ran_twice_on_the_same_tips_wait_for_a_change(session, workspace, parked):
+    """The wait an UNAVAILABLE refusal earns is spent on one retry. Refused
+    again on the same tips, it is the tree, not the machine (1055: an import
+    error reported as "could not run" every two hours)."""
+    _refused(session, parked, NEVER_RAN)
+    _age_receipts(session, parked)
+    assert not land_ticket(session, parked, workspace).ok
+    assert len(_receipts(session, parked)) == 2, "the one retry after the wait ran"
+
+    _age_receipts(session, parked)
+
+    assert tickets_whose_landing_cleared(session) == []
+    assert not land_ticket(session, parked, workspace).ok
+    assert len(_receipts(session, parked)) == 2, "a second retry ran on unchanged tips"
+
+
+def _age_receipts(session, ticket) -> None:
+    for receipt in _receipts(session, ticket):
+        receipt.created_at = receipt.created_at - UNAVAILABLE_RETRY_AFTER - timedelta(minutes=1)
+        session.add(receipt)
+    session.commit()
+
+
+def test_a_landing_verified_again_on_refused_tips_is_reported(session, parked):
+    """The re-entry detector: a writer that records a second refusal on
+    unchanged tips, bypassing `land_ticket`'s own guard, is still reported."""
     _refused(session, parked, FAILING_SUITE)
     assert REFUSED_LANDINGS_WAIT_FOR_A_CHANGE.detect(session) == []
+    (first,) = _receipts(session, parked)
+    receipt = json.loads(first.content_json)
 
-    land_ticket(session, parked, workspace)
+    record_land_verification(
+        session,
+        parked,
+        branch=receipt["branch"],
+        target=receipt["target"],
+        candidate_sha=receipt["candidate_sha"],
+        outcome=VerifyOutcome(ok=False, outcome=GateOutcome.FAILED),
+    )
+    session.commit()
 
     (violation,) = REFUSED_LANDINGS_WAIT_FOR_A_CHANGE.detect(session)
     assert violation.ticket_id == parked.id

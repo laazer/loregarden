@@ -49,7 +49,9 @@ from loregarden.services.landing_carried_work import empty_landing
 from loregarden.services.landing_refused import refused_at_tips
 from loregarden.services.landing_uncommitted import describe_uncommitted, uncommitted_at_landing
 from loregarden.services.target_branch import (
+    IntegrationConflictError,
     ensure_integration_branch,
+    resolve_target_branch,
     target_branch_name,
 )
 from loregarden.services.ticket_worktree import resolve_ticket_root
@@ -211,9 +213,9 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
         if held is not None:
             return held
 
-        failed = _refresh_branch(repo_root, branch, target)
-        if failed is not None:
-            return failed
+        not_ready = _ready_to_merge(session, ticket, workspace, repo_root, branch, target)
+        if not_ready is not None:
+            return not_ready
 
         subject = f"Land {ticket.external_id or ticket.id[:8]}: {ticket.title}".strip()
         # The whole of the guard's wiring. Every line of its logic is in
@@ -276,6 +278,89 @@ def land_ticket(session: Session, ticket: Ticket, workspace: Workspace) -> LandR
             # the result says nobody checked it rather than letting that read as a
             # pass (AC20).
             detail=verification.note if verification else "",
+        )
+
+
+def _ready_to_merge(
+    session: Session,
+    ticket: Ticket,
+    workspace: Workspace,
+    repo_root: Path,
+    branch: str,
+    target: str,
+) -> LandResult | None:
+    """Bring both refs current, then refuse a merge already refused at those tips.
+
+    Run after every exit that refuses or merges nothing, so those move no ref.
+    None means the merge may be verified and made.
+    """
+    _bring_target_up_to_base(session, ticket, workspace, repo_root)
+    failed = _refresh_branch(repo_root, branch, target)
+    if failed is not None:
+        return failed
+    return _refusal_standing(session, ticket, repo_root, branch, target)
+
+
+def _refusal_standing(
+    session: Session, ticket: Ticket, repo_root: Path, branch: str, target: str
+) -> LandResult | None:
+    """A failure, without running the suite, when it already refused these tips.
+
+    The guard used to live only in `landing_would_succeed`, which the terminal
+    sweep asks; every other caller (the orchestrator finishing the workflow, a
+    repair turn coming back to the terminal stage, the MCP tool) ran the whole
+    suite again on a merge it had just refused: lg-code-knowledge-1055 did so
+    four times in an hour. Checked here, after both refreshes, on the exact tips
+    the candidate merge would be made from. No receipt is owed: nothing ran.
+    """
+    target_sha = rev(repo_root, f"refs/heads/{target}")
+    source_sha = rev(repo_root, f"refs/heads/{branch}")
+    if not target_sha or not source_sha:
+        return None
+    if not refused_at_tips(
+        session, ticket, repo_root, target_sha=target_sha, source_sha=source_sha
+    ):
+        return None
+    return LandResult(
+        ok=False,
+        branch=branch,
+        target=target,
+        detail=(
+            f"Land verification already refused {branch} at {source_sha[:12]} onto {target} at "
+            f"{target_sha[:12]}, and neither has moved since. Its output is the latest Land "
+            "verification receipt on the Outputs tab. Commit a fix to the branch (or let the "
+            "target move) and land again; re-running the suite on the same tree cannot "
+            "answer differently."
+        ),
+    )
+
+
+def _bring_target_up_to_base(
+    session: Session, ticket: Ticket, workspace: Workspace, repo_root: Path
+) -> None:
+    """Refresh the integration branch from the base before merging onto it.
+
+    Dispatch used to be the only refresher, so a tree with no new dispatch
+    landed and verified every ticket against the base as it stood when its last
+    ticket was cut: a fix that reached the base afterwards never reached the
+    landing, and every retry re-ran the same failure (lg-milestone-that-1423).
+
+    A branch that cannot take its base is not resolved here: that is an agent
+    turn, and a landing does not wait on one. `resolve_target_branch` files the
+    conflict card for a person, and the landing goes on against the branch as
+    it is, which is what it did before this refresh existed.
+    """
+    try:
+        resolve_target_branch(
+            session, ticket, workspace, repo_root=repo_root, merge_conflicts=False
+        )
+    except IntegrationConflictError as exc:
+        logger.warning(
+            "Landing %s on %s without %s's newer commits: %s (conflict card filed)",
+            ticket.external_id,
+            exc.branch,
+            exc.base,
+            exc,
         )
 
 

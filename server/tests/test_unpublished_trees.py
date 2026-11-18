@@ -95,27 +95,47 @@ def _conflict_with_base(repo) -> None:
     git(repo, "push", "-q", "origin", "main")
 
 
+def _base_moves_before_publish(repo):
+    """The base takes a conflicting commit after the landing, before its publish.
+
+    A landing refreshes its target from the base first, so a conflict already on
+    the base is met by the landing itself; the publish cut conflicts only when the
+    base moved in between.
+    """
+    publish = tree_publish_scheduler.run_tree_publish
+
+    def run(root_id: str, workspace_id: str) -> None:
+        _conflict_with_base(repo)
+        publish(root_id, workspace_id)
+
+    return (tree_publish_scheduler, "run_tree_publish", {"side_effect": run})
+
+
 def _crash(*_args, **_kwargs):
     raise RuntimeError("publish blew up")
 
 
 _QUEUE_REFUSES = merge_queue.Admission(MergeQueueAdmission.NO_PULL_REQUEST, "no pull request")
 
-#: ending -> (arrange the repo, the fake `gh`, (object, attribute, patch kwargs) or None)
+#: ending -> (arrange the repo, the fake `gh`, repo -> (object, attribute, patch kwargs) or None)
 ENDINGS = {
-    "published": (lambda tmp_path, repo: None, fake_gh(), None),
+    "published": (lambda tmp_path, repo: None, fake_gh(), lambda repo: None),
     "auto_merge refused": (
         lambda tmp_path, repo: None,
         fake_gh(),
-        (merge_queue, "enqueue", {"return_value": _QUEUE_REFUSES}),
+        lambda repo: (merge_queue, "enqueue", {"return_value": _QUEUE_REFUSES}),
     ),
-    "open_pr refused": (lambda tmp_path, repo: None, fake_gh(failing="create"), None),
-    "push refused": (lambda tmp_path, repo: _refuse_publish_pushes(tmp_path), fake_gh(), None),
-    "cut conflicts": (lambda tmp_path, repo: _conflict_with_base(repo), fake_gh(), None),
+    "open_pr refused": (lambda tmp_path, repo: None, fake_gh(failing="create"), lambda repo: None),
+    "push refused": (
+        lambda tmp_path, repo: _refuse_publish_pushes(tmp_path),
+        fake_gh(),
+        lambda repo: None,
+    ),
+    "cut conflicts": (lambda tmp_path, repo: None, fake_gh(), _base_moves_before_publish),
     "publish crashed": (
         lambda tmp_path, repo: None,
         fake_gh(),
-        (tree_publish_scheduler, "publish_tree", {"side_effect": _crash}),
+        lambda repo: (tree_publish_scheduler, "publish_tree", {"side_effect": _crash}),
     ),
 }
 
@@ -129,9 +149,10 @@ def test_every_way_a_landing_ends_leaves_its_tree_delivered_or_carded(
     A landing schedules its tree's publish; the publish pushes the tip or files a
     card. None of the endings may leave the tree in the invariant's state.
     """
-    arrange, gh, patch = ENDINGS[ending]
+    arrange, gh, patch_for = ENDINGS[ending]
     ms, child, _ = tree_with_child_branch(session, workspace, repo)
     arrange(tmp_path, repo)
+    patch = patch_for(repo)
 
     with ExitStack() as stack:
         stack.enter_context(mock.patch.object(git_automation, "_gh", side_effect=gh))

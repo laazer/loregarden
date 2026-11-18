@@ -35,7 +35,10 @@ from loregarden.services.finding_placement_checks import (
 from loregarden.services.operations import ticket_writes
 from loregarden.services.scope_round import decide_finding
 from sqlmodel import Session, func, select
-from tests.test_discovered_work import family_fixture  # noqa: F401 - fixture used by name
+from tests.test_discovered_work import (  # noqa: F401 - fixture used by name
+    FAMILY_CRITERION,
+    family_fixture,
+)
 
 
 def _create(session: Session, run: AgentRun, *, parent: Ticket, kind: str, **extra) -> dict:
@@ -83,8 +86,15 @@ def _under_its_source(session: Session, source: Ticket, run: AgentRun) -> Ticket
 
 
 def _decide(session, finding, decision, *, revise=False):
+    criterion = FAMILY_CRITERION if decision is FindingDecision.FOLLOW_UP else ""
     return decide_finding(
-        session, finding, decision, reason="test", decided_by="operator", revise=revise
+        session,
+        finding,
+        decision,
+        reason="test",
+        decided_by="operator",
+        revise=revise,
+        criterion=criterion,
     )
 
 

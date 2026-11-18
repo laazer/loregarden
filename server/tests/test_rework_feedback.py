@@ -540,6 +540,44 @@ def test_at_the_cap_unmet_criteria_split_off_and_the_stage_passes(
     assert parse_stage_map(instance, stages)["test-break"] is StageStatus.DONE
 
 
+def test_at_the_cap_a_criterion_named_with_its_reason_still_splits(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """lg-code-knowledge-1113: the reviewer named each criterion by its heading and the reason
+    it failed; matched word for word, none moved and the ticket paused for a person."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.services.orchestration_profile import OrchestrationProfile
+
+    ticket, _ = _setup_single_stage(
+        db_session, tmp_path, stage_key="test-break", next_agent="test_breaker"
+    )
+    parent = _under_a_capability(db_session, ticket)
+    for i in range(MAX_REWORK_REROUTES):
+        record_rework_feedback(
+            db_session,
+            ticket,
+            target_stage="test-design",
+            from_stage="test-break",
+            context=f"prior {i}",
+        )
+    decorated = f"{UNMET} (the parse error still drops the arm's name)"
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=_report_unmet("needs_rework", "test-design", [decorated]),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+    BuiltinOrchestrator(db_session).execute(
+        ticket, OrchestrationProfile(slug="rework-int"), max_stages=1
+    )
+
+    _assert_split(db_session, ticket, parent)
+
+
 def test_at_the_cap_a_parallel_stage_splits_what_its_lenses_named(db_session: Session, monkeypatch):
     from loregarden.agents.executors.cli import CliAgentExecutor
 

@@ -82,7 +82,11 @@ Field rules:
   it sits next to. If the new ticket cannot start until
   other work lands, pass those tickets in `depends_on` when you create it: a dependency written
   only in the description holds nothing, and the ticket is dispatched straight into the wall.
-  A run may file three tickets; findings that are instances of one defect are one ticket.
+  A run may file three tickets, and a ticket's runs three over its whole life; findings that
+  are instances of one defect are one ticket. Only the first round files: a re-review (your
+  agent already finished this stage on this ticket) and a ticket that is itself a finding of a
+  finding file nothing. In those cases, and past the budget, the finding goes in your report's
+  `findings` with `"blocking": false` and a disposition, where it is kept.
 
   This is the difference between a review that converges and one that does not. A defect
   *family* — "the gate can be made to examine nothing", "the parser mishandles some inputs" —

@@ -34,6 +34,7 @@ from loregarden.services.criterion_ledger import (
     settlements_of,
     was_split_into,
 )
+from loregarden.services.criterion_names import resolve_criterion
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.workflow_state import reconcile_workflow_state, set_stage_status
 from sqlmodel import Session
@@ -78,14 +79,19 @@ def _placement(session: Session, ticket: Ticket) -> tuple[str, WorkItemType]:
 def splittable(session: Session, ticket: Ticket, criteria: list[str]) -> list[str]:
     """The criteria that can move: current, not already delegated, in the ticket's order.
 
+    ``criteria`` are names as a reviewer wrote them; each is resolved to the
+    stored criterion it refers to (`resolve_criterion`), and one that refers to
+    none, or to several, moves nothing.
+
     Raises `SplitRefused` when one of them already reached this ticket by a
     split: that is the second ticket to fail it.
     """
-    named = {c.strip() for c in criteria}
+    current = load_criteria(ticket.acceptance_criteria_json)
+    named = {resolve_criterion(current, name) for name in criteria}
     settled = settlements_of(session, ticket)
     moving = [
         c
-        for c in load_criteria(ticket.acceptance_criteria_json)
+        for c in current
         if c in named
         and (c not in settled or settled[c].disposition is not CriterionDisposition.DELEGATED)
     ]
@@ -106,6 +112,8 @@ def split_criteria(
     Raises `SplitRefused` when nothing can move or the move is not allowed.
     """
     moving = splittable(session, ticket, criteria)
+    current = load_criteria(ticket.acceptance_criteria_json)
+    unresolved = [name for name in criteria if resolve_criterion(current, name) is None]
     if not moving:
         raise SplitRefused(
             f"None of the criteria named unmet is a current, undelegated criterion of "
@@ -147,12 +155,18 @@ def split_criteria(
         stage_key=stage_key,
         reason=(
             f"{len(moving)} criteria were not met within the rework budget and moved to "
-            f"{split.external_id}; this ticket goes on with the rest."
+            f"{split.external_id}; this ticket goes on with the rest.{_unresolved_note(unresolved)}"
         ),
-        evidence={"split_ticket": split.external_id, "criteria": moving},
+        evidence={"split_ticket": split.external_id, "criteria": moving, "unresolved": unresolved},
     )
     session.commit()
     return split
+
+
+def _unresolved_note(unresolved: list[str]) -> str:
+    if not unresolved:
+        return ""
+    return f" {len(unresolved)} name(s) matched no single criterion and moved nothing: {unresolved}"
 
 
 @dataclass(frozen=True)

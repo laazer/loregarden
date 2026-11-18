@@ -13,7 +13,11 @@ target's tip as its first parent and the branch's as its second. A new commit
 on either side is a different landing and earns another attempt. A failing
 suite does not change on its own, so `FAILED` stands until a tip moves.
 `UNAVAILABLE` (a timeout, a command that could not start) is a fact about the
-machine at the time, so it stands only for `UNAVAILABLE_RETRY_AFTER`.
+machine at the time, so it stands only for `UNAVAILABLE_RETRY_AFTER` — once.
+The same tips refused twice running is not the machine: lg-code-knowledge-1055
+reported "could not run" every two hours for ten hours because a test module
+failed to import, which no wait changes. A refusal that repeats the one before
+it at the same tips stands until a tip moves, whatever its outcome.
 """
 
 from __future__ import annotations
@@ -149,15 +153,29 @@ def refused_at_tips(
 ) -> bool:
     """Whether the latest land verification refused exactly these tips, and
     that refusal still stands (see the module docstring)."""
-    latest = recent_refusals(session, ticket, repo_root, limit=1)
-    if not latest:
+    refusals = recent_refusals(session, ticket, repo_root, limit=2)
+    if not refusals:
         return False
-    refusal = latest[0]
-    return (
-        refusal.target_sha == target_sha
-        and refusal.source_sha == source_sha
-        and refusal.stands_at(now or utcnow())
+    latest = refusals[0]
+    return (latest.target_sha, latest.source_sha) == (target_sha, source_sha) and _stands(
+        refusals, 0, now or utcnow()
     )
+
+
+def _stands(refusals: Sequence[Refusal], index: int, now: datetime) -> bool:
+    """Whether ``refusals[index]`` still answers for its tips at ``now``.
+
+    ``refusals`` is newest first. A refusal stands on its own terms
+    (`Refusal.stands_at`), or because the one before it refused the same tips:
+    the wait an `UNAVAILABLE` earns is spent on the first retry, not renewed.
+    """
+    refusal = refusals[index]
+    if refusal.stands_at(now):
+        return True
+    if index + 1 >= len(refusals):
+        return False
+    earlier = refusals[index + 1]
+    return (earlier.target_sha, earlier.source_sha) == (refusal.target_sha, refusal.source_sha)
 
 
 @dataclass(frozen=True)
@@ -190,11 +208,11 @@ def landings_retried_on_refused_tips(session: Session) -> Sequence[RetriedRefusa
         workspace = workspace_for_ticket(session, ticket)
         if workspace is None:
             continue
-        pair = recent_refusals(session, ticket, resolve_workspace_root(workspace), limit=2)
-        if len(pair) < 2:
+        refusals = recent_refusals(session, ticket, resolve_workspace_root(workspace), limit=3)
+        if len(refusals) < 2:
             continue
-        retry, first = pair
+        retry, first = refusals[0], refusals[1]
         same_tips = (retry.target_sha, retry.source_sha) == (first.target_sha, first.source_sha)
-        if same_tips and first.stands_at(retry.at):
+        if same_tips and _stands(refusals, 1, retry.at):
             retried.append(RetriedRefusal(ticket=ticket, retry=retry, first=first))
     return retried
