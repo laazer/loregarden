@@ -27,6 +27,7 @@ from typing import Any
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import Artifact, EventType, Ticket
+from loregarden.services.artifact_kind_owners import refuse_if_writer_owned
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, col, select
@@ -67,6 +68,11 @@ def write_document(
     """Store a new version of the (ticket, kind, title) document."""
     title = title.strip()
     kind = kind.strip() or DEFAULT_DOCUMENT_KIND
+    # Asked AFTER the normalization above, not before it: the guard decides on
+    # the value the ROW will carry, and this writer strips its kind. Guarded as
+    # the literal first statement, `" land_verification"` is refused by nobody
+    # and filed as `"land_verification"` (lg-milestone-that-1423).
+    refuse_if_writer_owned(kind)
     if not title:
         raise ValueError("A document needs a title; it is the key later versions are filed under.")
     if not body.strip():
