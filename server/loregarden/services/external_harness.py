@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from loregarden.agents.mcp_context import resolve_mcp_url
 from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_terminal import find_terminal_stage
+from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     AgentRun,
     ExternalHarness,
@@ -38,6 +39,7 @@ from loregarden.models.domain import (
     RunStatus,
     RunUsage,
     RunUsageStatus,
+    StageReportStatus,
     StageStatus,
     Ticket,
     TicketState,
@@ -46,6 +48,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.criterion_gate import before_next_stage
+from loregarden.services.criterion_settle_check import refuse_pass_with_unsettled
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import owned_children
 from loregarden.services.handoff_settle import (
@@ -80,6 +83,7 @@ from loregarden.services.review_relens import (
 from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_lease import agent_run_lease_expired
 from loregarden.services.run_service import RunService, fail_interrupted_runs
+from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.stage_retry_budget import (
     refund_stage_dispatch_charged_since,
     stage_dispatch_marker_ids,
@@ -718,6 +722,24 @@ def _record_external_usage(
         session.commit()
 
 
+def _refuse_unsettled_pass(
+    session: Session, run: AgentRun, *, transcript: str, failed: bool
+) -> None:
+    """Refuse, before anything is written, a settling stage's pass with criteria unsettled.
+
+    The harness is still live: it settles them and hands the stage back again,
+    rather than the gate reopening the stage as a new run (`criterion_settle_check`).
+    """
+    report = None if failed else parse_stage_report(transcript)
+    if report is None or report.status != StageReportStatus.PASS:
+        return
+    ticket = session.get(Ticket, run.ticket_id)
+    if ticket is not None:
+        refuse_pass_with_unsettled(
+            session, ticket, run.stage_key, retry_tool=McpTool.FINISH_EXTERNAL_STAGE
+        )
+
+
 def finish_external_stage(
     session: Session,
     run: AgentRun,
@@ -746,6 +768,7 @@ def finish_external_stage(
     """
     if run.external_harness is None:
         raise ValueError(f"Run {run.run_code} was not checked out to an external harness")
+    _refuse_unsettled_pass(session, run, transcript=transcript, failed=failed)
 
     _record_external_usage(session, run, usage=usage, changed_paths=changed_paths)
 

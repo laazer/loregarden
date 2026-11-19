@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from loregarden.core.event_bus import event_bus
 from loregarden.core.stage_groups import group_members, group_would_be_emptied
 from loregarden.core.state_machine import StateMachine
+from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -38,6 +39,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
 from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
+from loregarden.services.criterion_settle_check import refuse_pass_with_unsettled
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.discovered_work import refuse_undecided
 from loregarden.services.finding_bar import settle_stage_claim
@@ -104,6 +106,13 @@ def _verdict_after_settle(
 ) -> StageVerdict:
     """Keep settle's remaining names; a live PASS with names becomes NEEDS_REWORK."""
     return verdict.after_settle(remaining)
+
+
+def _refuse_unsettled_pass(session: Session, ticket: Ticket, stage_key: str, outcome: str) -> None:
+    """A pass from the stage that settles criteria, with one unsettled, is refused
+    for the live agent to settle them in this turn (`criterion_settle_check`)."""
+    if claim_from_tool_outcome(outcome) is StageReportStatus.PASS:
+        refuse_pass_with_unsettled(session, ticket, stage_key, retry_tool=McpTool.COMPLETE_STAGE)
 
 
 class OrchestrationCallbackService:
@@ -530,6 +539,8 @@ class OrchestrationCallbackService:
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
+        # Before anything is written: the agent is still live.
+        _refuse_unsettled_pass(self.session, ticket, stage_key, outcome)
 
         ticket.revision += 1
         ticket.last_updated_by = "orchestrator"
