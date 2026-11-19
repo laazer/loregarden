@@ -38,29 +38,44 @@ class UnsettledCriteriaAtPass(ValueError):
     """
 
 
+def unsettled_pass_message(
+    session: Session, ticket: Ticket, stage_key: str, *, then: str
+) -> str | None:
+    """Why a pass from ``stage_key`` cannot stand, or None when it can.
+
+    None unless ``stage_key`` is the stage that settles ``ticket``'s criteria
+    and one is unsettled. ``then`` is what the agent does once it has settled
+    them ("call loregarden_complete_stage again"). The caller has already
+    established that the stage is reporting pass.
+    """
+    _, stages = resolve_ticket_stages(session, ticket)
+    settler = settler_of(stages)
+    if settler is None or settler.key != stage_key:
+        return None
+    missing = unsettled(session, ticket)
+    if not missing:
+        return None
+    gaps = [CriterionGap(text, GapKind.UNSETTLED) for text in missing]
+    return (
+        f"'{stage_key}' cannot pass yet: {unanswered_list(ticket, gaps)}\n\n"
+        f"For each, call {McpTool.SETTLE_CRITERION.value} with ticket_id "
+        f"{ticket.external_id}, the criterion word for word, disposition met, "
+        "tests naming the tests that prove it as 'path::test_name' (they are rerun "
+        "at HEAD before the gate) or evidence_artifact_id for one a test cannot "
+        f"show, and a reason. Then {then}. A criterion that is not met is not "
+        "settled: report reject (needs_rework) instead, naming it in unmet_criteria."
+    )
+
+
 def refuse_pass_with_unsettled(
     session: Session, ticket: Ticket, stage_key: str, *, retry_tool: McpTool
 ) -> None:
     """Raise if ``stage_key`` settles ``ticket``'s criteria and any is unsettled.
 
     ``retry_tool`` is the call the agent makes again once it has settled them.
-    The caller has already established that the stage is reporting pass.
     """
-    _, stages = resolve_ticket_stages(session, ticket)
-    settler = settler_of(stages)
-    if settler is None or settler.key != stage_key:
-        return
-    missing = unsettled(session, ticket)
-    if not missing:
-        return
-    gaps = [CriterionGap(text, GapKind.UNSETTLED) for text in missing]
-    raise UnsettledCriteriaAtPass(
-        f"'{stage_key}' cannot pass yet: {unanswered_list(ticket, gaps)}\n\n"
-        f"For each, call {McpTool.SETTLE_CRITERION.value} with ticket_id "
-        f"{ticket.external_id}, the criterion word for word, disposition met, "
-        "tests naming the tests that prove it as 'path::test_name' (they are rerun "
-        "at HEAD before the gate) or evidence_artifact_id for one a test cannot "
-        f"show, and a reason. Then call {retry_tool.value} again. A criterion that "
-        "is not met is not settled: report reject (needs_rework) instead, naming it "
-        "in unmet_criteria."
+    message = unsettled_pass_message(
+        session, ticket, stage_key, then=f"call {retry_tool.value} again"
     )
+    if message is not None:
+        raise UnsettledCriteriaAtPass(message)

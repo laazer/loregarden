@@ -37,6 +37,7 @@ from loregarden.services.git_subprocess import (
     GhAccountUnavailable,
     configured_gh_token,
 )
+from loregarden.services.path_resolve import resolve_sqlite_path
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,17 @@ def stage_report_hook_settings() -> str:
 
 
 def _stage_report_stop_hook() -> dict[str, object]:
-    command = f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook"
+    """The ``Stop`` hook, naming this server's own database for its criteria check.
+
+    Named here rather than inherited: the agent's environment carries no database
+    binding (``STATE_BINDING_ENV_VARS``), and a sandbox server must name its own
+    copy. The hook opens it read-only (``agents/stage_report_criteria``).
+    """
+    db_path = resolve_sqlite_path(settings.database_url, settings.repo_root)
+    command = (
+        f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook "
+        f"--db {shlex.quote(str(db_path))}"
+    )
     return {"hooks": [{"type": "command", "command": command}]}
 
 
