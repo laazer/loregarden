@@ -33,6 +33,7 @@ from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.criterion_check import CriteriaCheck, check_criteria
 from loregarden.services.criterion_gate_stages import check_due, settler_of
+from loregarden.services.criterion_ledger import unanswered_list
 from loregarden.services.criterion_split import SplitRefused, split_criteria
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.gate_dispatch_check import GateCriteriaUnanswered, set_gate_check
@@ -52,10 +53,8 @@ from sqlmodel import Session
 
 
 def _brief(ticket: Ticket, target: WorkflowStageDef, check: CriteriaCheck) -> str:
-    listed = "\n".join(gap.line() for gap in check.gaps)
     return (
-        f"Before '{target.key}', {len(check.gaps)} acceptance criteria of {ticket.external_id} "
-        f"are not answered for:\n\n{listed}\n\n"
+        f"Before '{target.key}', {unanswered_list(ticket, check.gaps)}\n\n"
         "Settle each with loregarden_settle_criterion: met, naming the tests that prove it "
         "(they are rerun at HEAD) or an evidence artifact, once it is actually met. If a test "
         "fails, report needs_rework to implement with the criterion named unmet. A criterion "

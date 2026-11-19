@@ -55,6 +55,18 @@ class CriterionGap:
         return f"- [{self.kind.value}] {self.criterion}{detail}"
 
 
+def unanswered_list(ticket: Ticket, gaps: list[CriterionGap]) -> str:
+    """ "N acceptance criteria of <ticket> are not answered for:" and one line per gap.
+
+    The words the gate's brief and the settling stage's refused pass share, so an
+    agent told either way reads the same list.
+    """
+    listed = "\n".join(gap.line() for gap in gaps)
+    return (
+        f"{len(gaps)} acceptance criteria of {ticket.external_id} are not answered for:\n\n{listed}"
+    )
+
+
 def test_ids(settlement: CriterionSettlement) -> list[str]:
     return _TEST_IDS.validate_json(settlement.tests_json or "[]")
 
