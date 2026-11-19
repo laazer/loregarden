@@ -42,6 +42,7 @@ from loregarden.db.migrations import MIGRATIONS, VERSION_CHAIN
 from loregarden.models.domain import (
     AgentRun,
     Approval,
+    ContractAudience,
     DoctorCheck,
     DoctorFinding,
     DoctorStatus,
@@ -338,7 +339,11 @@ def check_stage_report_contract(
     output several minutes and one agent turn later, naming the report rather
     than the missing instructions.
     """
-    contract = load_stage_report_contract_doc(resolve_agent_context_dir(workspace))
+    # Either audience proves the section is there and readable; OTHER is the one
+    # most stages are dispatched with.
+    contract = load_stage_report_contract_doc(
+        resolve_agent_context_dir(workspace), audience=ContractAudience.OTHER
+    )
     if contract.strip():
         return _ok(
             DoctorCheck.STAGE_REPORT_CONTRACT,

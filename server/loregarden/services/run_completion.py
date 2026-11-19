@@ -87,6 +87,7 @@ from loregarden.services.rework_feedback import (
     rework_reroute_count,
 )
 from loregarden.services.rework_pause import file_rework_pause
+from loregarden.services.rework_routing import handoff_target, owner_of_finding
 from loregarden.services.run_log_stream import finalize_run_log_artifact
 from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
 from loregarden.services.spec_snapshot import record_spec_drift
@@ -197,6 +198,20 @@ def _reroute_or_block_for_rework(
     target_stage = _rework_target(
         stages, run.stage_key, report.reroute_to_stage or "", report.reroute_to_agent or ""
     )
+    by_key = {stage.key: stage for stage in stages}
+    handoff_to = handoff_target(
+        by_key.get(run.stage_key),
+        agent_id=run.agent_id,
+        target_stage=target_stage,
+        reroute_to_agent=report.reroute_to_agent or "",
+    )
+    # A reject that names no agent goes to the implementer owning the files it
+    # cites, rather than back through keyword routing (`rework_routing`).
+    next_agent = report.reroute_to_agent or (
+        owner_of_finding(by_key.get(target_stage), full_context)
+        if target_stage != run.stage_key
+        else ""
+    )
     exhausted = record_reroute_exhausts_budget(
         orch.session,
         ticket,
@@ -204,6 +219,7 @@ def _reroute_or_block_for_rework(
         from_stage=run.stage_key,
         context=full_context,
         run_id=run.id,
+        handoff_to=handoff_to,
     )
     if exhausted is not ReworkStopReason.NONE:
         split = split_instead_of_pausing(
@@ -267,7 +283,7 @@ def _reroute_or_block_for_rework(
             next_stage_key=report.reroute_to_stage or "",
             # The same channel `loregarden_complete_stage(next_agent=...)` uses,
             # so a reject reported either way dispatches the same agent next.
-            next_agent=report.reroute_to_agent or "",
+            next_agent=next_agent,
             blocking_issues=_blocking_issue(orch.session, ticket, run, full_context),
         )
     except ValueError:

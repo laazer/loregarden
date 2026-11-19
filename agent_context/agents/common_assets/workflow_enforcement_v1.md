@@ -62,12 +62,18 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
+<!-- loregarden:audience=judging -->
 {"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "findings": [{"summary": "<the defect, one sentence>", "blocking": true, "trigger": "<how it is reached>", "path": "<what runs from there to the defect>", "impact": "<what a person using it meets>"}, {"summary": "<a finding that does not block>", "blocking": false, "disposition": "documented_exception|assigned_ticket|out_of_scope", "ticket": "<external id, for assigned_ticket>"}], "rechecks": [{"id": "P1", "resolved": true, "note": "<what you checked>"}]}
+<!-- /loregarden:audience -->
+<!-- loregarden:audience=other -->
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
+<!-- /loregarden:audience -->
 <<<END_STAGE_REPORT>>>
 ```
 
 Field rules:
 - `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass); `blocked` if you cannot proceed at all (e.g. missing credentials, an ambiguous requirement only a human can resolve) — unlike `fail`/`needs_rework`, this halts the ticket for human review rather than rerouting for automatic rework. Work that a **different agent** must do is **not** `blocked` — it is `needs_rework` with a reroute. In particular, if you are a scope-limited implementer (e.g. the frontend implementer, restricted to `client/**`) and the ticket needs changes in another agent's area (e.g. `server/**`), do the part inside your own scope, then report `needs_rework` and hand the rest off — do not report `blocked`. Loregarden already routes a cross-scope write denial to the agent that owns that path; reserve `blocked` for something no agent can advance without a human.
+<!-- loregarden:audience=judging -->
 - **Reject only for an unmet acceptance criterion.** `fail` and `needs_rework` mean *this
   ticket's stated criteria are not satisfied yet*. They do not mean "I found something real".
   Before rejecting, name the acceptance criterion your finding makes false, and put it in
@@ -115,6 +121,7 @@ Field rules:
   `needs_rework` only when at least one is `"resolved": false`; that is the only reject this
   round has. Anything new you find goes in `findings` with `"blocking": false` and a
   disposition: it is recorded, and it does not send the work back in this round.
+<!-- /loregarden:audience -->
 - `unmet_criteria`: when `status` is `fail` or `needs_rework`, the acceptance criteria your
   finding makes false — the grounds for the rejection, not a restatement of it. Delivered to the
   target stage alongside `reroute_context`, so the agent redoing the work knows what "done" would

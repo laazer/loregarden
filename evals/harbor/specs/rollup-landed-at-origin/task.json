@@ -1,0 +1,12 @@
+{
+  "source_pr": 866,
+  "merge_commit": "ad59a7f90106215842e8b3a895ebbed2b109f411",
+  "fail_to_pass": [
+    "server/tests/test_parent_own_work_landed_elsewhere.py::test_a_squash_landing_on_a_target_only_origin_has_closes_the_parent"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_parent_own_work_landed_elsewhere.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

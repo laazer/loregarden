@@ -33,6 +33,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import UnresolvedArtifactKind
 from loregarden.services import unresolved_ledger as ledger
+from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.invariant_registry import INVARIANTS
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
@@ -41,6 +42,10 @@ from loregarden.services.parallel_stage import (
     member_passed,
     member_result_from_run,
     reconcile_parallel_stage,
+)
+from loregarden.services.proven_evidence_ledger import (
+    PROVEN_EVIDENCE_IS_NOT_HELD_OPEN,
+    proven_evidence_held_open,
 )
 from loregarden.services.rework_feedback import MAX_REWORK_REROUTES, record_rework_feedback
 from loregarden.services.rework_pause import ReworkPausePayload, file_rework_pause
@@ -1425,3 +1430,81 @@ def test_settle_waiver_for_a_name_not_in_open_writes_no_row(db_session, tmp_path
     )
     assert DURABLE in [item.name for item in remaining]
     assert _kind_rows(db_session, ticket, UnresolvedArtifactKind.WAIVER) == []
+
+
+# --------------------------------------------------------------------------- #
+# Missing evidence belongs to its stage, not to the agent that raised it
+# --------------------------------------------------------------------------- #
+
+EVIDENCE = "evidence:real_surface missing"
+
+
+def _evidence_ticket(session: Session, tmp_path, git_repo):
+    """A spec stage requiring real_surface, whose missing name a repair turn raised."""
+    ticket, stage, _ = _ticket(
+        session,
+        tmp_path,
+        required_evidence=["real_surface"],
+        repo_path=str(git_repo),
+    )
+    ledger.persist_unresolved(
+        session, ticket, [_named(EVIDENCE, agent_id="repair", stage_key="spec")], _spec()
+    )
+    return ticket, stage
+
+
+def _attach_real_surface(session: Session, ticket) -> None:
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="the surface, exercised",
+        content={"ok": True},
+        evidence_kind="real_surface",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+
+
+def test_missing_evidence_is_cleared_by_whoever_runs_its_stage(db_session, tmp_path, git_repo):
+    ticket, stage = _evidence_ticket(db_session, tmp_path, git_repo)
+    _attach_real_surface(db_session, ticket)
+
+    live = _live(db_session, ticket, stage, agent_id="spec")
+    remaining = ledger.settle_unresolved(
+        db_session, ticket, live, _spec(), current_stage_key="spec"
+    )
+
+    assert EVIDENCE not in {item.name for item in live}
+    assert EVIDENCE not in {item.name for item in remaining}
+    assert EVIDENCE not in _open_names(db_session, ticket)
+
+
+def test_missing_evidence_stays_open_until_the_evidence_is_attached(db_session, tmp_path, git_repo):
+    ticket, stage = _evidence_ticket(db_session, tmp_path, git_repo)
+
+    live = _live(db_session, ticket, stage, agent_id="spec")
+    remaining = ledger.settle_unresolved(
+        db_session, ticket, live, _spec(), current_stage_key="spec"
+    )
+
+    assert EVIDENCE in {item.name for item in remaining}
+
+
+def test_another_stage_cannot_clear_a_missing_evidence_name(db_session, tmp_path, git_repo):
+    ticket, _ = _evidence_ticket(db_session, tmp_path, git_repo)
+
+    assert ledger.clear(db_session, ticket, EVIDENCE, _designer(), live=()) is False
+    assert EVIDENCE in _open_names(db_session, ticket)
+
+
+def test_proven_evidence_held_open_is_detected_and_repaired(db_session, tmp_path, git_repo):
+    ticket, _ = _evidence_ticket(db_session, tmp_path, git_repo)
+    assert proven_evidence_held_open(db_session) == []
+
+    _attach_real_surface(db_session, ticket)
+    found = proven_evidence_held_open(db_session)
+
+    assert [v.ticket_id for v in found] == [ticket.id]
+    assert PROVEN_EVIDENCE_IS_NOT_HELD_OPEN in INVARIANTS
+    assert PROVEN_EVIDENCE_IS_NOT_HELD_OPEN.repair(db_session, found) == 1
+    assert EVIDENCE not in _open_names(db_session, ticket)
+    assert proven_evidence_held_open(db_session) == []

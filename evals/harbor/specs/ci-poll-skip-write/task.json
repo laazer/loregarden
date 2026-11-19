@@ -1,0 +1,12 @@
+{
+  "source_pr": 848,
+  "merge_commit": "e7a953a9fc0653eef958f5854927aba6801f6a83",
+  "fail_to_pass": [
+    "server/tests/test_ci_autofix_loop.py::test_re_observing_an_unchanged_commit_writes_nothing"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_ci_autofix_loop.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

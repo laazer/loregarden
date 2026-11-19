@@ -1,0 +1,12 @@
+{
+  "source_pr": 887,
+  "merge_commit": "2b0325f7c8a91b637ab43ca09b7d0f35269a5d4e",
+  "fail_to_pass": [
+    "server/tests/test_print_mode_detached.py::test_a_run_whose_output_files_never_appear_names_them"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_print_mode_detached.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

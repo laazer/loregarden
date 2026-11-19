@@ -114,8 +114,13 @@ def record_rework_feedback(
     from_stage: str,
     context: str,
     run_id: str | None = None,
+    handoff_to: str = "",
 ) -> None:
     """Append one round of rework feedback for ``target_stage``.
+
+    ``handoff_to`` marks the round as a hand-off to a sibling agent of the same
+    stage rather than a rejection; `rework_reroute_count` does not charge it to
+    the budget while it moves the tree (`_is_free_handoff`).
 
     ``context`` is stored verbatim (no truncation) — this is what the re-run
     agent reads. One artifact per reroute, so the row count doubles as the
@@ -137,10 +142,45 @@ def record_rework_feedback(
             commit_sha=_tree_sha(session, ticket, run_id),
             content_json=json.dumps(
                 {"from_stage": from_stage, "target_stage": target_stage, "context": context}
+                | ({"handoff_to": handoff_to} if handoff_to else {})
             ),
         )
     )
     session.commit()
+
+
+def _handoff_to(artifact: Artifact) -> str:
+    try:
+        payload = json.loads(artifact.content_json or "{}")
+    except json.JSONDecodeError:
+        logger.warning("rework artifact %s has unparseable content", artifact.id, exc_info=True)
+        return ""
+    return (payload.get("handoff_to") or "").strip()
+
+
+def _charged(entries: list[Artifact]) -> list[Artifact]:
+    """The rounds that count against the budget: all but the free hand-offs.
+
+    A hand-off is free when it is the first since the budget began, or the tree
+    moved since the hand-off before it. A full-stack ticket goes frontend →
+    backend once per half, and charging that relay as a rejection spent the
+    cap on routing: one real review reject after it, and the ticket blocked
+    (23 relays across 18 tickets, Oct 20 - Nov 18). A hand-off that moved
+    nothing still counts, so two agents passing work back and forth without
+    doing any of it are stopped by the cap as before.
+    """
+    charged: list[Artifact] = []
+    last_handoff_sha: str | None = None
+    for entry in entries:
+        if _handoff_to(entry):
+            free = last_handoff_sha is None or (
+                bool(entry.commit_sha) and entry.commit_sha != last_handoff_sha
+            )
+            last_handoff_sha = entry.commit_sha or ""
+            if free:
+                continue
+        charged.append(entry)
+    return charged
 
 
 def _entries(session: Session, ticket: Ticket, target_stage: str) -> list[Artifact]:
@@ -219,9 +259,9 @@ def rework_reroute_count(session: Session, ticket: Ticket, target_stage: str) ->
     """
     entries = _entries(session, ticket, target_stage)
     reset_at = _newest_reset_at(session, ticket, target_stage)
-    if reset_at is None:
-        return len(entries)
-    return len([entry for entry in entries if entry.created_at > reset_at])
+    if reset_at is not None:
+        entries = [entry for entry in entries if entry.created_at > reset_at]
+    return len(_charged(entries))
 
 
 def rework_is_stuck(session: Session, ticket: Ticket, target_stage: str) -> bool:
@@ -277,6 +317,7 @@ def record_reroute_exhausts_budget(
     context: str,
     run_id: str | None = None,
     check_convergence: bool = True,
+    handoff_to: str = "",
 ) -> ReworkStopReason:
     """Record this reroute and report whether the loop should stop, and why.
 
@@ -313,8 +354,12 @@ def record_reroute_exhausts_budget(
         from_stage=from_stage,
         context=context,
         run_id=run_id,
+        handoff_to=handoff_to,
     )
-    if prior >= MAX_REWORK_REROUTES:
+    # A free hand-off is not charged, so it is not refused at the cap either:
+    # the work it passes on has not been rejected yet.
+    charged_this = rework_reroute_count(session, ticket, target_stage) > prior
+    if charged_this and prior >= MAX_REWORK_REROUTES:
         return ReworkStopReason.BUDGET
     if check_convergence and rework_is_stuck(session, ticket, target_stage):
         return ReworkStopReason.STUCK

@@ -1,0 +1,12 @@
+{
+  "source_pr": 886,
+  "merge_commit": "5b5887858654db52931ebe07039587b79fe501f7",
+  "fail_to_pass": [
+    "server/tests/test_config.py::test_a_relative_repo_root_from_the_environment_is_made_absolute"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_config.py"
+  ],
+  "difficulty": "easy",
+  "category": "bugfix"
+}
