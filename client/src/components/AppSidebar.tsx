@@ -63,7 +63,7 @@ import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import { SIDEBAR_GROUPS, SIDEBAR_PAGES, type SidebarPageDef } from "./appSidebarPages";
-import { quickActionsFor, type SidebarQuickAction, type SidebarQuickDialog } from "./appSidebarQuickActions";
+import { quickActionsFor, quickDialogNeedsWorkspace, type SidebarQuickAction, type SidebarQuickDialog } from "./appSidebarQuickActions";
 import { SidebarQuickActionMenu, type QuickActionMenuState } from "./SidebarQuickActionMenu";
 import { SidebarQuickDialogHost } from "./SidebarQuickDialogHost";
 import { SidebarRunningSection } from "./AppSidebarRunning";
@@ -277,7 +277,7 @@ export function AppSidebar({
   const [quickDialog, setQuickDialog] = useState<SidebarQuickDialog | null>(null);
   const runQuickAction = (action: SidebarQuickAction) => {
     if (!action.dialog) navigate(action.to);
-    else if (workspaceSlug === "") {
+    else if (workspaceSlug === "" && quickDialogNeedsWorkspace(action.dialog)) {
       pushToast({ tone: "warning", title: `${action.label.replace("…", "")} needs a workspace`, message: "Choose a workspace first." });
     } else setQuickDialog(action.dialog);
   };
@@ -726,6 +726,7 @@ export function AppSidebar({
         dialog={quickDialog}
         workspaceSlug={workspaceSlug}
         onClose={() => setQuickDialog(null)}
+        onNavigate={navigate}
       />
     </>
   );
