@@ -116,6 +116,12 @@ export interface CanvasActions {
   move: (itemId: string, x: number, y: number, onSettled: () => void) => void;
   resize: (itemId: string, geometry: ItemGeometry, onSettled: () => void) => void;
   restack: (itemId: string, toFront: boolean) => void;
+  /**
+   * Draw the item at the front for a gesture, without writing anything. The
+   * gesture's own move or resize write carries the raise; the returned release
+   * hands the stacking back to the record when that write settles.
+   */
+  grab: (itemId: string) => () => void;
   remove: (itemId: string) => void;
   pickPrimitive: (containerId: string, primitiveId: string) => void;
   /** Raised while a gesture is open, so the surface can shield its embeds. */
@@ -154,6 +160,18 @@ interface Gesture {
   /** `undefined` for a move; the edges being dragged for a resize. */
   direction: ResizeDirection | undefined;
   base: CanvasItemModel;
+  /** Ends the raise `grab` drew at the press; called once the gesture's write settles. */
+  release: () => void;
+}
+
+/**
+ * Whether a press on `target` opens a move or resize gesture — the same rule the
+ * handlers below apply: a resize handle, or the header outside its buttons.
+ */
+function startsGesture(target: EventTarget): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[data-canvas-resize]") !== null) return true;
+  return target.closest("[data-canvas-drag]") !== null && target.closest("button") === null;
 }
 
 export function CanvasItemView({
@@ -199,9 +217,12 @@ export function CanvasItemView({
    * changed. On success the draft and the record agree, so dropping it changes
    * nothing on screen.
    */
-  function commit(adjustment: Adjustment) {
+  function commit(adjustment: Adjustment, release: () => void = () => undefined) {
     pending.current = undefined;
-    const settled = () => setDraft(undefined);
+    const settled = () => {
+      setDraft(undefined);
+      release();
+    };
     if (adjustment.resizing) actions.resize(item.id, adjustment.geometry, settled);
     else actions.move(item.id, adjustment.geometry.x, adjustment.geometry.y, settled);
   }
@@ -240,6 +261,8 @@ export function CanvasItemView({
       // The item as drawn, so a second drag started before the first's PATCH
       // landed continues from where the user sees the item.
       base: { ...item, ...drawn },
+      // Drawn at the front now; written with the gesture's own commit.
+      release: actions.grab(item.id),
     };
     actions.setGesturing(true);
   }
@@ -252,12 +275,20 @@ export function CanvasItemView({
     }
   }
 
-  function endGesture(event: ReactPointerEvent<HTMLElement>, adjustment: Adjustment | undefined) {
+  function endGesture(
+    event: ReactPointerEvent<HTMLElement>,
+    open: Gesture,
+    adjustment: Adjustment | undefined,
+  ) {
     gesture.current = undefined;
     actions.setGesturing(false);
     if (adjustment !== undefined) {
       apply(adjustment);
-      commit(adjustment);
+      commit(adjustment, open.release);
+    } else {
+      // A cancel before any move: nothing to store but the raise the press drew.
+      open.release();
+      actions.restack(item.id, true);
     }
     // Last, because releasing capture is cleanup and storing the gesture is the
     // point: a throw ahead of the commit drops the user's drag in silence. Guarded
@@ -273,7 +304,7 @@ export function CanvasItemView({
   function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
     const open = gestureFor(event);
     if (open === undefined) return;
-    endGesture(event, {
+    endGesture(event, open, {
       geometry: geometryAt(open, event),
       resizing: open.direction !== undefined,
     });
@@ -284,7 +315,7 @@ export function CanvasItemView({
     // The gesture was interrupted, but what is on screen is still where the user
     // dragged to; storing it is kinder than reverting it without a word.
     if (open === undefined) return;
-    endGesture(event, pending.current);
+    endGesture(event, open, pending.current);
   }
 
   /**
@@ -349,7 +380,11 @@ export function CanvasItemView({
       // AC2's second half. `PointerDownCapture` rather than `onFocus` alone: a
       // click inside a terminal or an iframe never focuses this element, and the
       // container the user just clicked into is exactly the one to raise.
-      onPointerDownCapture={() => actions.restack(item.id, true)}
+      // A press that opens a gesture raises through the gesture instead (`grab`),
+      // so a drag is one write rather than a raise and then a move.
+      onPointerDownCapture={(event) => {
+        if (!startsGesture(event.target)) actions.restack(item.id, true);
+      }}
       onFocus={() => actions.restack(item.id, true)}
       onKeyDown={onKeyDown}
       onKeyUp={onSettle}

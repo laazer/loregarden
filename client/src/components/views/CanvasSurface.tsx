@@ -66,6 +66,8 @@ import {
   removeItem,
   resizeItem,
   restackItem,
+  withPendingRestacks,
+  type PendingRestack,
 } from "../../lib/canvasLayout";
 import {
   HOME_VIEWPORT,
@@ -143,16 +145,34 @@ export function CanvasSurface({
 
   const items = useMemo(() => readCanvasItems(layout), [layout]);
   /**
+   * Raises and lowers asked for but not yet settled. Drawn at once, so the
+   * container a press lands on comes to the front on the press, not after every
+   * write queued ahead of its own (`withPendingRestacks` says why that matters).
+   * Each entry leaves when its own write settles, however it settled: on success
+   * the record agrees, and on failure the record is what the screen should show.
+   */
+  const [pendingRestacks, setPendingRestacks] = useState<readonly PendingRestack[]>([]);
+  const restackToken = useRef(0);
+  const stacked = useMemo(
+    () => withPendingRestacks(items, pendingRestacks),
+    [items, pendingRestacks],
+  );
+  /** What is drawn, for the restack action to read without re-binding on every edit. */
+  const stackedRef = useRef(stacked);
+  useLayoutEffect(() => {
+    stackedRef.current = stacked;
+  }, [stacked]);
+  /**
    * The ids in the order they are in the DOM. Read and written only inside the
    * memo below; rewriting it with that memo's own output is a no-op, so a
    * `StrictMode` double invoke cannot change the order.
    */
   const drawnIds = useRef<string[]>([]);
   const drawn = useMemo(() => {
-    const ordered = inDrawnOrder(drawnIds.current, items);
+    const ordered = inDrawnOrder(drawnIds.current, stacked);
     drawnIds.current = ordered.map((item) => item.id);
     return ordered;
-  }, [items]);
+  }, [stacked]);
   const containers = useMemo(() => asJson(layout.containers) ?? {}, [layout]);
 
   /**
@@ -378,22 +398,49 @@ export function CanvasSurface({
   // no primitive *component* is imported here.
   const pickPrimitive = useViewLayoutWrite(slug, viewId);
 
+  /**
+   * Draw `itemId` at the front (or back) now, until the returned release is
+   * called — which its caller does when the write carrying that restack settles.
+   * Nothing is drawn, and the release does nothing, when the item is already
+   * drawn there: the front-most container is the one clicked most.
+   */
+  const drawRestacked = useCallback((itemId: string, toFront: boolean): (() => void) => {
+    const drawnStack = stackedRef.current;
+    const end = toFront ? drawnStack[drawnStack.length - 1] : drawnStack[0];
+    if (end?.id === itemId) return () => undefined;
+    restackToken.current += 1;
+    const token = restackToken.current;
+    setPendingRestacks((pending) => [...pending, { token, itemId, toFront }]);
+    return () => setPendingRestacks((pending) => pending.filter((entry) => entry.token !== token));
+  }, []);
+
   const actions = useMemo<CanvasActions>(
     () => ({
       // Each edit is composed at the front of the view's write queue, from the
       // newest layout this client holds — never from the items that were on
       // screen when the gesture started, which a still-open PATCH would revert.
+      // A gesture's write raises the item too: the press that started it drew
+      // the item at the front (`grab`), and folding that raise into the one
+      // write the gesture ends with makes a drag one PATCH instead of two.
       move: (itemId, x, y, onSettled) =>
-        edit((current) => moveItem(current, itemId, x, y), onSettled),
+        edit((current) => moveItem(restackItem(current, itemId, true), itemId, x, y), onSettled),
       resize: (itemId, geometry, onSettled) =>
-        edit((current) => resizeItem(current, itemId, geometry), onSettled),
-      restack: (itemId, toFront) =>
-        edit((current) => restackItem(current, itemId, toFront)),
+        edit(
+          (current) => resizeItem(restackItem(current, itemId, true), itemId, geometry),
+          onSettled,
+        ),
+      grab: (itemId) => drawRestacked(itemId, true),
+      restack: (itemId, toFront) => {
+        const release = drawRestacked(itemId, toFront);
+        // No write was dispatched, so nothing will settle it: drop it now rather
+        // than draw a stacking the record will never hold.
+        if (!edit((current) => restackItem(current, itemId, toFront), release)) release();
+      },
       remove: (itemId) => edit((current) => removeItem(current, itemId)),
       pickPrimitive,
       setGesturing,
     }),
-    [edit, pickPrimitive],
+    [drawRestacked, edit, pickPrimitive],
   );
 
   const place = useCallback(

@@ -9,9 +9,10 @@ open it.
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
-from loregarden.models.domain import SidebarEntry, View, Workspace
+from loregarden.models.domain import SidebarEntry, View, ViewSavePhase, Workspace
 from loregarden.models.domain.view_layout import ViewLayout
 from loregarden.models.domain.view_viewport import ViewViewport
+from loregarden.services.view_save_timing import ViewSaveTimer, save_received_at
 from loregarden.services.view_service import (
     MAX_PAGE_KEY_LENGTH,
     SidebarContentionError,
@@ -146,28 +147,47 @@ def get_one_view(slug: str, view_id: str, session: Session = Depends(get_session
 
 @router.patch("/{slug}/views/{view_id}")
 def patch_view(
-    slug: str, view_id: str, body: ViewUpdate, session: Session = Depends(get_session)
+    slug: str,
+    view_id: str,
+    body: ViewUpdate,
+    session: Session = Depends(get_session),
+    received_at: float = Depends(save_received_at),
 ) -> dict:
-    workspace = _workspace(session, slug)
-    view = _view(session, workspace.id, view_id)
+    # Every save is timed and a slow one says where its time went; see
+    # `view_save_timing` for why the log is the only place that can answer it.
+    timer = ViewSaveTimer(received_at)
+    timer.mark(ViewSavePhase.THREAD_WAIT)
+    status = 500
     try:
-        updated = update_view(
-            session,
-            view,
-            title=body.title,
-            icon=body.icon,
-            layout=body.layout,
-            viewport=body.viewport,
-        )
-    except ValueError as exc:
-        # The same limits POST answers with a 400. A body refused on create and
-        # accepted — or 500ing — on update teaches the client the wrong lesson.
-        raise HTTPException(400, str(exc)) from exc
-    if updated is None:
-        # A peer deleted the view between the read above and the write. Nothing
-        # to retry: it is the same 404 the next request gets on its own.
-        raise HTTPException(404, "View not found")
-    return view_payload(updated)
+        workspace = _workspace(session, slug)
+        view = _view(session, workspace.id, view_id)
+        timer.mark(ViewSavePhase.READ)
+        try:
+            updated = update_view(
+                session,
+                view,
+                title=body.title,
+                icon=body.icon,
+                layout=body.layout,
+                viewport=body.viewport,
+            )
+        except ValueError as exc:
+            # The same limits POST answers with a 400. A body refused on create and
+            # accepted — or 500ing — on update teaches the client the wrong lesson.
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            timer.mark(ViewSavePhase.WRITE)
+        if updated is None:
+            # A peer deleted the view between the read above and the write. Nothing
+            # to retry: it is the same 404 the next request gets on its own.
+            raise HTTPException(404, "View not found")
+        status = 200
+        return view_payload(updated)
+    except HTTPException as exc:
+        status = exc.status_code
+        raise
+    finally:
+        timer.report(view_id, status)
 
 
 @router.delete("/{slug}/views/{view_id}")
