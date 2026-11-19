@@ -24,8 +24,14 @@ counts: what follows the newest prompt. The refusal count is keyed by the run
 (its ``LOREGARDEN_MCP_RUN_ID``) as well as the session, so the resumed turn gets
 its own ``MAX_BLOCKS`` rather than the remainder of the first one's.
 
+A report is not always enough. A pass from the stage that settles criteria,
+while one is unsettled, is refused too (`stage_report_criteria`), so the agent
+settles it in this turn rather than the gate reopening the stage as a new run.
+That check reads the database the server names with ``--db``, read-only, and
+lets the stop through, saying why on stderr, whenever it cannot run.
+
 Wired in by ``cli_adapters.stage_report_hook_settings``; run as
-``python -m loregarden.agents.stage_report_stop_hook``.
+``python -m loregarden.agents.stage_report_stop_hook --db <path>``.
 """
 
 from __future__ import annotations
@@ -38,9 +44,16 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
+from loregarden.agents.stage_report_criteria import unsettled_refusal
 from loregarden.mcp.caller import RUN_ID_ENV
-from loregarden.services.stage_report import REPORT_BLOCK_REMINDER, parse_stage_report
+from loregarden.models.domain import StageReportStatus
+from loregarden.services.stage_report import (
+    REPORT_BLOCK_REMINDER,
+    StageReport,
+    parse_stage_report,
+)
 from pydantic import BaseModel, ConfigDict, ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 #: Refusals per session before the stop is let through. Each one lets the agent
 #: wait up to the Bash ceiling (10 minutes) in a single foreground call, and the
@@ -50,6 +63,10 @@ MAX_BLOCKS = 5
 #: The tool a run may report through instead of the sentinel; matched as the
 #: MCP tool's suffix and inside a Bash command (the CLI transport).
 COMPLETE_STAGE_TOOL = "loregarden_complete_stage"
+
+#: The flag the server names its database with (`cli_adapters`): read-only, for
+#: the criteria check on a pass (`stage_report_criteria`).
+DB_FLAG = "--db"
 
 _RUNNING = "running"  # py-org: allow-string - Claude Code's background-task status
 _ASSISTANT = "assistant"  # py-org: allow-string - Claude Code transcript entry type
@@ -162,14 +179,13 @@ def _calls_complete_stage(block: _Block) -> bool:
     return block.name == _BASH and COMPLETE_STAGE_TOOL in json.dumps(block.input)
 
 
-def has_reported(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> bool:
-    """Whether this session has already delivered its stage outcome.
+def turn_report(hook_input: StopHookInput, transcript_lines: list[str]) -> StageReport | None:
+    """The stage report this turn wrote in the agent's own text, if any.
 
-    The same two channels ``run_completion`` accepts: the sentinel block, read by
-    the same parser, from the agent's own text only (a tool result that printed
-    the contract's example is not a report), or a ``complete_stage`` call that
-    did not error. Read from the current turn only: a resumed session's earlier
-    report answered an earlier run.
+    Read by the same parser completion uses, from the agent's own text only: a
+    tool result that printed the contract's example is not a report. Read from
+    the current turn only: a resumed session's earlier report answered an
+    earlier run.
     """
     entries = _current_turn(_entries(transcript_lines))
     texts = [
@@ -180,8 +196,12 @@ def has_reported(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> 
         if block.type == _TEXT
     ]
     texts.append(hook_input.last_assistant_message or "")
-    if parse_stage_report("\n".join(texts)) is not None:
-        return True
+    return parse_stage_report("\n".join(texts))
+
+
+def _completed_by_tool(transcript_lines: list[str]) -> bool:
+    """Whether this turn made a ``complete_stage`` call that did not error."""
+    entries = _current_turn(_entries(transcript_lines))
     calls = {
         block.id
         for entry in entries
@@ -194,6 +214,16 @@ def has_reported(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> 
         for entry in entries
         for block in _blocks(entry)
     )
+
+
+def has_reported(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> bool:
+    """Whether this session has already delivered its stage outcome.
+
+    The same two channels ``run_completion`` accepts: the sentinel block
+    (`turn_report`), or a ``complete_stage`` call that did not error.
+    """
+    lines = list(transcript_lines)
+    return turn_report(hook_input, lines) is not None or _completed_by_tool(lines)
 
 
 def refusal_reason(hook_input: StopHookInput) -> str:
@@ -245,16 +275,56 @@ def _read_transcript(path: Path | None) -> list[str]:
         return []
 
 
-def decide(hook_input: StopHookInput, transcript_lines: Iterable[str]) -> str | None:
-    """The refusal reason, or None to let the turn end."""
-    if has_reported(hook_input, transcript_lines):
+def _criteria_refusal(report: StageReport, db_path: Path | None) -> str | None:
+    """Why this pass cannot end the turn while criteria are unsettled, or None.
+
+    Fails open, saying why on stderr: a check that cannot run must never trap
+    the run, and the gate's own check still catches what this one missed.
+    """
+    if report.status != StageReportStatus.PASS or db_path is None:
         return None
-    if _record_block(hook_input.session_id) > MAX_BLOCKS:
+    run_id = os.environ.get(RUN_ID_ENV, "")
+    if not run_id:
+        print(f"stage-report stop hook: no {RUN_ID_ENV}; criteria not checked", file=sys.stderr)
         return None
-    return refusal_reason(hook_input)
+    try:
+        return unsettled_refusal(db_path, run_id)
+    except (SQLAlchemyError, OSError, LookupError, ValueError) as exc:
+        print(f"stage-report stop hook: criteria not checked: {exc}", file=sys.stderr)
+        return None
 
 
-def main(stdin_text: str) -> str:
+def decide(
+    hook_input: StopHookInput, transcript_lines: Iterable[str], *, db_path: Path | None = None
+) -> str | None:
+    """The refusal reason, or None to let the turn end.
+
+    A turn with no report is refused (`refusal_reason`). So is a pass from the
+    stage that settles criteria while one is unsettled (`stage_report_criteria`),
+    when the server named its database (``db_path``). Both count toward
+    ``MAX_BLOCKS``.
+    """
+    lines = list(transcript_lines)
+    report = turn_report(hook_input, lines)
+    if report is not None:
+        reason = _criteria_refusal(report, db_path)
+    elif _completed_by_tool(lines):
+        reason = None
+    else:
+        reason = refusal_reason(hook_input)
+    if reason is None or _record_block(hook_input.session_id) > MAX_BLOCKS:
+        return None
+    return reason
+
+
+def _db_path(argv: list[str]) -> Path | None:
+    """The ``--db <path>`` the server passed, or None when it passed none."""
+    if DB_FLAG in argv[:-1]:
+        return Path(argv[argv.index(DB_FLAG) + 1])
+    return None
+
+
+def main(stdin_text: str, argv: list[str] | None = None) -> str:
     """The hook's stdout for ``stdin_text``: a block decision, or "" to allow."""
     try:
         hook_input = StopHookInput.model_validate_json(stdin_text)
@@ -263,11 +333,15 @@ def main(stdin_text: str) -> str:
         # its timeout. The missing report still blocks the stage visibly.
         print(f"stage-report stop hook: unreadable hook input: {exc}", file=sys.stderr)
         return ""
-    reason = decide(hook_input, _read_transcript(hook_input.transcript_path))
+    reason = decide(
+        hook_input,
+        _read_transcript(hook_input.transcript_path),
+        db_path=_db_path(argv or []),
+    )
     if reason is None:
         return ""
     return json.dumps({"decision": "block", "reason": reason})
 
 
 if __name__ == "__main__":
-    sys.stdout.write(main(sys.stdin.read()))
+    sys.stdout.write(main(sys.stdin.read(), sys.argv[1:]))
