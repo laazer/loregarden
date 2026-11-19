@@ -66,6 +66,7 @@ from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
+    FAILED_RUNS_HAVE_A_FAILURE_KIND,
     FINDINGS_OUTLIVE_THEIR_SOURCE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
     FOLLOW_UPS_LEAVE_THEIR_SOURCE,
@@ -388,6 +389,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # rewrote the verdict and wiped its stderr (lg-run-durability-2093). The repair
     # writes the lost history back onto the row; the status is left as acted on.
     _invariant(RUNS_COMPLETE_ONCE),
+    # After RUNS_COMPLETE_ONCE, which may settle a run; at boot too, since the
+    # repair is also the backfill of runs failed before the guard.
+    _invariant(FAILED_RUNS_HAVE_A_FAILURE_KIND),
     # A ticket created over a write-time size cap: the write guards make that
     # unreachable, so a violation dated after they landed is a writer that
     # walked around one (lg-milestone-that-2250). Report-only — only a person

@@ -76,6 +76,7 @@ from loregarden.services.reference_survey.invariant_checks import (
     remap_unsplit_violations,
     unsplit_map_violations,
 )
+from loregarden.services.run_failure_invariant import FAILED_RUNS_HAVE_A_FAILURE_KIND
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.scope_invariants import (
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
@@ -1473,6 +1474,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     RUN_PARENTS_END_WITH_THEIR_RUN,
     LANDED_WORK_REACHES_THE_BASE,
     RUNS_COMPLETE_ONCE,
+    FAILED_RUNS_HAVE_A_FAILURE_KIND,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     ORPHANED_SYMBOL_MAP_PARTITION,

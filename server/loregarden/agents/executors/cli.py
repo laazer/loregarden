@@ -99,6 +99,7 @@ from loregarden.services.run_errors import (
     RunTimeout,
     agent_timeout_message,
 )
+from loregarden.services.run_failure import CHECKOUT_FAILED_PREFIX
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.spec_snapshot import stamp_run_spec
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
@@ -757,7 +758,7 @@ class CliAgentExecutor:
             return self.orchestration.complete_run(
                 run,
                 status=RunStatus.FAILED,
-                stderr=f"Failed to checkout branch: {exc}",
+                stderr=f"{CHECKOUT_FAILED_PREFIX}{exc}",
                 advance_workflow=advance_workflow,
             )
         return None
@@ -818,7 +819,7 @@ class CliAgentExecutor:
             return workspace_root, self.orchestration.complete_run(
                 run,
                 status=RunStatus.FAILED,
-                stderr=f"Failed to checkout branch: {exc}",
+                stderr=f"{CHECKOUT_FAILED_PREFIX}{exc}",
                 advance_workflow=advance_workflow,
             )
         return repo_root, failed

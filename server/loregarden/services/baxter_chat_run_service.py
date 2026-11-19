@@ -63,6 +63,7 @@ from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import apply_runtime_overrides
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_concurrency import new_run_code
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.triage_service import TRIAGE_AGENT_ID, TRIAGE_AGENT_NAME
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, col, select
@@ -198,7 +199,11 @@ def _settle(
         run = session.get(AgentRun, assistant.run_id)
         if run:
             failed = status != "complete"
-            run.status = RunStatus.FAILED if failed else RunStatus.SUCCEEDED
+            set_run_status(
+                run,
+                RunStatus.FAILED if failed else RunStatus.SUCCEEDED,
+                failure_text=content,
+            )
             if failed:
                 run.stderr = content[:4000]
             run.finished_at = datetime.now(timezone.utc)
@@ -359,7 +364,7 @@ def fail_interrupted_baxter_chat_turns(
         if assistant.run_id:
             run = session.get(AgentRun, assistant.run_id)
             if run:
-                run.status = RunStatus.FAILED
+                set_run_status(run, RunStatus.FAILED, failure_text=message)
                 run.stderr = message[:4000]
                 run.finished_at = datetime.now(timezone.utc)
                 session.add(run)

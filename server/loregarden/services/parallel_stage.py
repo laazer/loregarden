@@ -52,6 +52,7 @@ from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
 )
+from loregarden.services.run_failure import CHECKOUT_FAILED_PREFIX
 from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
 from loregarden.services.stage_report import (
     StageReport,
@@ -419,7 +420,7 @@ def _fail_stamped_members(
     through.
     """
     orch = OrchestrationService(session)
-    message = f"Failed to checkout branch: {exc}"
+    message = f"{CHECKOUT_FAILED_PREFIX}{exc}"
     for member in stamped:
         session.refresh(member)
         if member.status == RunStatus.RUNNING:
@@ -431,7 +432,7 @@ def _fail_stamped_members(
 def _block_on_checkout_failure(
     session: Session, ticket: Ticket, stage_key: str, exc: Exception
 ) -> str:
-    message = f"Failed to checkout branch: {exc}"
+    message = f"{CHECKOUT_FAILED_PREFIX}{exc}"
     orch = OrchestrationService(session)
     orch.finalize_stage(
         ticket,
