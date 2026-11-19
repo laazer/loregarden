@@ -497,9 +497,11 @@ class AgentRun(SQLModel, table=True):
     )
     #: Why a failed run failed, in the block vocabulary: `HARNESS` when it never
     #: got to do the work (a CLI usage limit, auth, a spawn failure, loregarden's
-    #: own crash), `WORK` when it did and the result was refused. Written by the
-    #: integration merge turn, whose attempt budget counts only `WORK`
-    #: (lg-milestone-that-959). Null on success and on runs that do not record it.
+    #: own crash), `WORK` when it did and the result was refused, `CONFLICT` when
+    #: its checkout could not take its target. Written with the status by
+    #: `services.run_failure.set_run_status`, the only writer of FAILED; the
+    #: integration merge turn's attempt budget counts only `WORK`
+    #: (lg-milestone-that-959). Null on any other status.
     failure_kind: BlockKind | None = Field(
         default=None,
         sa_column=str_enum_column(BlockKind, nullable=True),

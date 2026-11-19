@@ -59,6 +59,7 @@ from loregarden.models.domain import (
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_stage import member_runs_and_results, reconcile_parallel_stage
 from loregarden.services.process_identity import liveness
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_lease import (
     RENEWAL_INTERVAL_SECONDS,
     SUPERVISED,
@@ -334,7 +335,7 @@ def _complete(
         # A workspace-scoped run has no stage to route. Its terminal status is
         # still the record that it ended, so it is written rather than left at
         # RUNNING for the lease reaper to guess at.
-        run.status = status
+        set_run_status(run, status, failure_text=stderr)
         run.stderr = stderr
         session.add(run)
         session.commit()

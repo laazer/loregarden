@@ -56,6 +56,7 @@ from loregarden.services.run_concurrency import (
     find_active_run,
     new_run_code,
 )
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_lease import supervised
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
@@ -307,7 +308,7 @@ class TriageTurnExecutor:
         turn_id = run.id
         run = self.session.get(AgentRun, run.id)
         if run:
-            run.status = status
+            set_run_status(run, status, failure_text=stderr)
             run.stderr = stderr[:4000]
             run.finished_at = datetime.now(timezone.utc)
             self.session.add(run)
@@ -368,7 +369,7 @@ def execute_triage_turn_background(run_id: str) -> None:
             with Session(engine) as session:
                 run = session.get(AgentRun, run_id)
                 if run and run.status in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
-                    run.status = RunStatus.FAILED
+                    set_run_status(run, RunStatus.FAILED, failure_text=str(exc))
                     run.stderr = str(exc)[:4000]
                     run.finished_at = datetime.now(timezone.utc)
                     session.add(run)
@@ -413,7 +414,7 @@ def fail_interrupted_triage_turns(
     ).all()
     settled: list[AgentRun] = []
     for run in orphaned:
-        run.status = RunStatus.FAILED
+        set_run_status(run, RunStatus.FAILED, failure_text=message)
         run.stderr = message[:4000]
         run.finished_at = datetime.now(timezone.utc)
         session.add(run)
@@ -480,7 +481,7 @@ def cancel_triage_turn(
         # is waiting on, so this is not a failure of the stop.
         logger.warning("Triage run %s would not take a cancel request", run.id)
 
-    run.status = RunStatus.FAILED
+    set_run_status(run, RunStatus.FAILED, failure_text=message)
     run.stderr = message[:4000]
     run.finished_at = datetime.now(timezone.utc)
     session.add(run)

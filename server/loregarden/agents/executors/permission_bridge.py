@@ -75,6 +75,7 @@ from loregarden.services.rate_limit import rate_limit_denial
 from loregarden.services.rework_feedback import record_reroute_exhausts_budget
 from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_steering import (
     POLL_INTERVAL_SECONDS,
     mark_delivered,
@@ -392,7 +393,7 @@ def _fail_after_rejection(
     runner._mark_stage_blocked(scope, "Permission denied via Loregarden inbox")
     run = runner.session.get(AgentRun, run_id)
     if run:
-        run.status = RunStatus.FAILED
+        set_run_status(run, RunStatus.FAILED, failure_text="Permission denied via Loregarden inbox")
         runner.session.add(run)
         runner.session.commit()
     return _LoopStep(
@@ -815,7 +816,7 @@ class PermissionBridgeRunner:
             self._mark_stage_blocked(scope, scope_denial)
         run = self.session.get(AgentRun, run_id)
         if run:
-            run.status = RunStatus.FAILED
+            set_run_status(run, RunStatus.FAILED, failure_text=scope_denial)
             self.session.add(run)
             self.session.commit()
         proc.kill()

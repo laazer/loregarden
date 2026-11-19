@@ -96,6 +96,7 @@ _HARNESS_SIGNATURES = (
     "died of an infrastructure failure",
     "Workspace Trust Required",
     "usage limit",
+    "hit your session limit",
     "could not examine",
     CAPACITY_UNAVAILABLE_PREFIX,
 )

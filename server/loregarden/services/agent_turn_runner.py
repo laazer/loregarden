@@ -57,6 +57,7 @@ from loregarden.services.run_concurrency import (
     find_blocking_chat_run,
     new_run_code,
 )
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -383,7 +384,7 @@ def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str
     run = session.get(AgentRun, run_id)
     if not run:
         return
-    run.status = status
+    set_run_status(run, status, failure_text=stderr)
     run.stderr = stderr[:4000]
     run.finished_at = datetime.now(timezone.utc)
     session.add(run)

@@ -60,6 +60,7 @@ from loregarden.services.run_completion import (
 )
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_errors import failure_reason
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_finality import claim_completion, refuse_late_completion
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
@@ -1042,7 +1043,6 @@ class OrchestrationService:
         run = stored
         if not claim_completion(self.session, run.id, status):
             return refuse_late_completion(self.session, run, status=status)
-        run.status = status
         run.stdout = stdout
         # A failure with nothing written against it is indistinguishable from a
         # failure nobody looked at. `failure_reason` never returns "", so the
@@ -1058,6 +1058,7 @@ class OrchestrationService:
             run.stderr = recovered
         else:
             run.stderr = stderr
+        set_run_status(run, status, failure_text=run.stderr)
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()

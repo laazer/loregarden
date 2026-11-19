@@ -78,6 +78,7 @@ from loregarden.services.organization_gate_service import (
     check_repo,
 )
 from loregarden.services.run_concurrency import new_run_code
+from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_lease import lease_renewal
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
 from sqlmodel import Session
@@ -260,13 +261,15 @@ def _start_run(
 
 
 def _finish_run(session: Session, run: AgentRun, resolution: MergeResolution, reply: str) -> None:
-    run.status = RunStatus.SUCCEEDED if resolution.ok else RunStatus.FAILED
-    if not resolution.ok:
-        if resolution.kind is None:
-            # Every failure path below names its kind; one that does not is
-            # counted, so a missed path costs a retry rather than buying endless ones.
-            logger.warning("Merge turn %s failed without a kind; counting it", run.run_code)
-        run.failure_kind = resolution.kind or BlockKind.WORK
+    if not resolution.ok and resolution.kind is None:
+        # Every failure path below names its kind; one that does not is
+        # counted, so a missed path costs a retry rather than buying endless ones.
+        logger.warning("Merge turn %s failed without a kind; counting it", run.run_code)
+    set_run_status(
+        run,
+        RunStatus.SUCCEEDED if resolution.ok else RunStatus.FAILED,
+        failure_kind=resolution.kind or BlockKind.WORK,
+    )
     run.stdout = reply
     run.stderr = "" if resolution.ok else resolution.detail[:4000]
     run.finished_at = utcnow()
