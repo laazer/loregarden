@@ -21,6 +21,7 @@ from loregarden.config import settings
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
+    ContractAudience,
     ControlPlaneTransport,
     MemoryBriefingAssembly,
     Ticket,
@@ -330,7 +331,9 @@ def test_stage_report_contract_doc_excludes_v1_sections():
         ).first()
         assert ticket
         workspace = session.get(Workspace, ticket.workspace_id)
-        doc = load_stage_report_contract_doc(resolve_agent_context_dir(workspace))
+        doc = load_stage_report_contract_doc(
+            resolve_agent_context_dir(workspace), audience=ContractAudience.JUDGING
+        )
 
         assert "<<<LOREGARDEN_STAGE_REPORT>>>" in doc
         assert "reroute_to_stage" in doc

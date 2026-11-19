@@ -66,6 +66,7 @@ from loregarden.services.parallel_queue import (
     record_ghost_reclaim,
     release_slot,
 )
+from loregarden.services.proven_evidence_ledger import PROVEN_EVIDENCE_IS_NOT_HELD_OPEN
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.reference_survey.invariant_checks import (
@@ -76,6 +77,7 @@ from loregarden.services.reference_survey.invariant_checks import (
     remap_unsplit_violations,
     unsplit_map_violations,
 )
+from loregarden.services.rework_cap_checks import REWORK_PAUSES_STAND_ON_CHARGED_ROUNDS
 from loregarden.services.run_failure_invariant import FAILED_RUNS_HAVE_A_FAILURE_KIND
 from loregarden.services.run_finality import completions, note_overwritten_runs, overwritten_runs
 from loregarden.services.scope_invariants import (
@@ -1470,6 +1472,8 @@ INVARIANTS: tuple[Invariant, ...] = (
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CHECKOUTS_KEEP_THEIR_BRANCH,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
+    PROVEN_EVIDENCE_IS_NOT_HELD_OPEN,
+    REWORK_PAUSES_STAND_ON_CHARGED_ROUNDS,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     RUN_PARENTS_END_WITH_THEIR_RUN,
     LANDED_WORK_REACHES_THE_BASE,

@@ -1,0 +1,12 @@
+{
+  "source_pr": 842,
+  "merge_commit": "16571de2b64002182d81ce224c5f33202e4454ef",
+  "fail_to_pass": [
+    "server/tests/test_merge_queue.py::test_a_stopped_attempt_replaced_by_a_later_entry_leaves_the_board"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_merge_queue.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

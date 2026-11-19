@@ -1,0 +1,14 @@
+{
+  "source_pr": 852,
+  "merge_commit": "b4f0722f84c56aaa9eaae44caaed5b621121e6ec",
+  "fail_to_pass": [
+    "server/tests/test_living_map.py::test_a_chat_map_files_its_topics_tasks_and_questions_in_order",
+    "server/tests/test_living_map.py::test_a_plans_steps_are_filed_in_card_order_not_by_step_id",
+    "server/tests/test_living_map.py::test_the_api_serves_a_map_and_names_what_is_missing"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_living_map.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

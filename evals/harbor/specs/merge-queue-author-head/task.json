@@ -1,0 +1,13 @@
+{
+  "source_pr": 883,
+  "merge_commit": "15a9b99c06dde1a3a269b8f0657bbe678bc33aef",
+  "fail_to_pass": [
+    "server/tests/test_merge_queue_pull_requests.py::test_a_resolving_push_while_queued_is_adopted_before_the_stale_head_conflicts",
+    "server/tests/test_merge_queue_pull_requests.py::test_a_retry_after_a_conflict_stages_the_push_that_resolved_it"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_merge_queue_pull_requests.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

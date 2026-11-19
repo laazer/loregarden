@@ -54,6 +54,7 @@ from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
+    ContractAudience,
     DoctorStatus,
     MemoryBriefingAssembly,
     RunStatus,
@@ -74,6 +75,7 @@ from loregarden.services.dispatch_key import executed_once
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.exit_action_dispatch import assign_dispatch_exit_actions
+from loregarden.services.finding_bar import is_judging
 from loregarden.services.git_boundary import boundary_of_tree, read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.handoff_boundary import (
@@ -1043,7 +1045,12 @@ class CliAgentExecutor:
         mcp_doc = load_loregarden_mcp_doc(transport=transport)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         ui_primitives_doc = load_ui_primitives_doc(agent_context_dir)
-        stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
+        stage_report_doc = load_stage_report_contract_doc(
+            agent_context_dir,
+            audience=ContractAudience.JUDGING
+            if is_judging(run.agent_id, stage_def)
+            else ContractAudience.OTHER,
+        )
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
         is_synthesis = skill_name == SYNTHESIS_SKILL
         full_suite_note = self._full_suite_producer_note(skill_name)
@@ -1116,7 +1123,7 @@ class CliAgentExecutor:
             titled_block("## Repository map", code_map_reference(repo_root)),
             skill_prompt_block(skill_name, skill_body),
             titled_block(AGENT_ROLE_HEADING, role_body),
-            raw_block(build_studio_prompt_sections(agent, transport=transport)),
+            raw_block(build_studio_prompt_sections(agent, transport=transport, stage_run=True)),
             titled_block(
                 "## Loregarden control-plane module",
                 mcp_doc,

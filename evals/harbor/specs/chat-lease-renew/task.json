@@ -1,0 +1,13 @@
+{
+  "source_pr": 850,
+  "merge_commit": "204049c9db6a8baa55b583dd41126d5ade7b03c0",
+  "fail_to_pass": [
+    "server/tests/test_chat_turn_lease_renewal.py::test_a_home_chat_turn_is_renewed_while_the_bridge_runs",
+    "server/tests/test_chat_turn_lease_renewal.py::test_a_one_shot_turn_renews_the_run_it_was_handed"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_chat_turn_lease_renewal.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

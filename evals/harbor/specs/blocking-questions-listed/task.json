@@ -1,0 +1,14 @@
+{
+  "source_pr": 900,
+  "merge_commit": "59842e8a2d7b65ccbd090c01f0c64c9f78c92380",
+  "fail_to_pass": [
+    "server/tests/test_operator_questions.py::test_a_blocking_question_is_listed_holding_the_gate_and_its_answer_read_back",
+    "server/tests/test_operator_questions.py::test_a_second_blocking_question_on_the_stage_says_it_was_not_filed",
+    "server/tests/test_operator_questions.py::test_retrying_a_blocking_question_returns_it_as_already_asked"
+  ],
+  "pass_to_pass": [
+    "server/tests/test_operator_questions.py"
+  ],
+  "difficulty": "unknown",
+  "category": "bugfix"
+}

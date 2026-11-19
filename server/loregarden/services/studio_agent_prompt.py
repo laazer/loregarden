@@ -106,7 +106,10 @@ def _checks(
 
 
 def build_studio_prompt_sections(
-    agent_cfg: dict, *, transport: ControlPlaneTransport = ControlPlaneTransport.MCP
+    agent_cfg: dict,
+    *,
+    transport: ControlPlaneTransport = ControlPlaneTransport.MCP,
+    stage_run: bool = False,
 ) -> str:
     """This agent's own tool guide, handoff checks and gates.
 
@@ -114,34 +117,19 @@ def build_studio_prompt_sections(
     tools" is false for a run that has none. The pointers to the MCP and memory
     modules that used to live here are gone: every consumer of this block
     already appends both modules a few lines further down.
+
+    A ``stage_run`` gets the tool names and nothing else. Its stage-report
+    contract already forbids the orchestrator-only tools, so they are left out
+    rather than listed with a note saying not to call them; and each tool's
+    arguments and description reach it anyway, as its MCP schema or through
+    ``mcp describe``. The per-tool guides were about a sixth of every implement
+    prompt (eval: `evals/harbor`).
     """
     sections: list[str] = []
     if agent_cfg.get("mcp_enabled", True):
         tools = agent_cfg.get("mcp_tools") or tool_names()
-        lead = (
-            "Use these MCP tools for ticket workflow state:"
-            if transport is ControlPlaneTransport.MCP
-            else "Use these tools for ticket workflow state, each invoked as "
-            "`./scripts/loregarden-cli.sh mcp call <tool> key=value…`:"
-        )
-        sections.extend(["## Loregarden control-plane tools", lead, ", ".join(tools)])
-        guide_map = {item.name: item for item in MCP_TOOL_GUIDES}
-        for tool in tools:
-            guide = guide_map.get(tool)
-            if not guide:
-                continue
-            sections.extend(
-                [
-                    f"### {tool}",
-                    guide.description,
-                    f"**When to use:** {guide.when_to_use}",
-                    f"**Example:** `{guide.example}`",
-                ]
-            )
-            if guide.orchestrator_only:
-                sections.append(
-                    "_Orchestrator-only — stage agents usually should not call this directly._"
-                )
+        render = _stage_run_tool_list if stage_run else _full_tool_guide
+        sections.extend(render(tools, transport))
     handoffs = _checks(_HandoffItem, agent_cfg.get("handoff_checks"), label="handoff_checks")
     if handoffs:
         sections.append("## Handoff checks (required before stage completion)")
@@ -151,6 +139,50 @@ def build_studio_prompt_sections(
         sections.append("## Gate checks (human approval may be required)")
         sections.extend(f"- [{item.kind}] {item.title}: {item.impact}" for item in gates)
     return "\n".join(sections)
+
+
+def _full_tool_guide(tools: list[str], transport: ControlPlaneTransport) -> list[str]:
+    """Every tool with its description, when to use it and an example."""
+    lead = (
+        "Use these MCP tools for ticket workflow state:"
+        if transport is ControlPlaneTransport.MCP
+        else "Use these tools for ticket workflow state, each invoked as "
+        "`./scripts/loregarden-cli.sh mcp call <tool> key=value…`:"
+    )
+    sections = ["## Loregarden control-plane tools", lead, ", ".join(tools)]
+    guide_map = {item.name: item for item in MCP_TOOL_GUIDES}
+    for tool in tools:
+        guide = guide_map.get(tool)
+        if not guide:
+            continue
+        sections.extend(
+            [
+                f"### {tool}",
+                guide.description,
+                f"**When to use:** {guide.when_to_use}",
+                f"**Example:** `{guide.example}`",
+            ]
+        )
+        if guide.orchestrator_only:
+            sections.append(
+                "_Orchestrator-only — stage agents usually should not call this directly._"
+            )
+    return sections
+
+
+def _stage_run_tool_list(tools: list[str], transport: ControlPlaneTransport) -> list[str]:
+    """The control-plane tools a stage run may call, by name, and where their details are."""
+    orchestrator_only = {guide.name for guide in MCP_TOOL_GUIDES if guide.orchestrator_only}
+    allowed = [tool for tool in tools if tool not in orchestrator_only]
+    if not allowed:
+        return []
+    details = (
+        "Each tool's arguments come with its MCP schema."
+        if transport is ControlPlaneTransport.MCP
+        else "Invoke each as `./scripts/loregarden-cli.sh mcp call <tool> key=value…`; "
+        "`./scripts/loregarden-cli.sh mcp describe <tool>` gives its arguments."
+    )
+    return ["## Loregarden control-plane tools", details, ", ".join(allowed)]
 
 
 def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:

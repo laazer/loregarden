@@ -1,8 +1,8 @@
 """Monotonic named unresolved set. Live derive stays honest in stage_verdict.
 
 The only module that may persist, drop, or waive a named unresolved item.
-persist never shrinks. clear (producer + live gone) and waive (non-empty
-reason) are the only drops. Do not import gate_producer.
+persist never shrinks. clear (producer + live gone; for a missing-evidence
+name, its stage + live gone) and waive (non-empty reason) are the only drops. Do not import gate_producer.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 logger = logging.getLogger(__name__)
 
 HUMAN_AGENT_ID = "human"
+EVIDENCE_PREFIX = "evidence:"
 
 
 @dataclass(frozen=True)
@@ -169,13 +170,13 @@ def clear(
     actor: LedgerActor,
     live: Sequence[UnresolvedItem] = (),
 ) -> bool:
-    """Drop ``name`` iff the actor produced it and live no longer emits it."""
+    """Drop ``name`` iff the actor may clear it and live no longer emits it."""
     if actor.agent_id == HUMAN_AGENT_ID:
         return False
     item = _open_item(session, ticket, name)
     if item is None:
         return False
-    if not _producer_matches(item, actor):
+    if not _may_clear(item, actor):
         return False
     if name in {entry.name for entry in live}:
         return False
@@ -254,6 +255,22 @@ def settle_unresolved(
     )
 
 
+def open_items(session: Session, ticket: Ticket) -> tuple[UnresolvedOpenItem, ...]:
+    """Items on the newest OPEN snapshot, or empty when none / unreadable."""
+    return _current_open_items(session, ticket)
+
+
+def tickets_with_open_names(session: Session) -> list[str]:
+    """Ids of tickets that have ever written an OPEN snapshot."""
+    return list(
+        session.exec(
+            select(Artifact.ticket_id)
+            .where(Artifact.kind == UnresolvedArtifactKind.OPEN)
+            .distinct()
+        ).all()
+    )
+
+
 def persisted_open_names(session: Session, ticket: Ticket) -> tuple[str, ...]:
     """Names on the newest OPEN snapshot, or empty when none / unreadable."""
     return tuple(item.name for item in _current_open_items(session, ticket))
@@ -317,7 +334,7 @@ def repair_unaudited_open_shrink(session: Session, ticket_ids: Sequence[str]) ->
 
 
 def _is_durable(name: str) -> bool:
-    return name.startswith("handoff:") or name.startswith("evidence:")
+    return name.startswith("handoff:") or is_evidence_name(name)
 
 
 def _open_item_from_live(
@@ -349,6 +366,25 @@ def _item_visible(
     if actor is not None and producer_agent_id != actor.agent_id:
         return False
     return True
+
+
+def is_evidence_name(name: str) -> bool:
+    return name.startswith(EVIDENCE_PREFIX)
+
+
+def _may_clear(item: UnresolvedOpenItem, actor: LedgerActor) -> bool:
+    """Whether ``actor`` may clear ``item`` once live no longer emits it.
+
+    A missing-evidence name belongs to the stage whose ``required_evidence``
+    raised it, not to the agent that happened to run it: the live check is
+    the same query whoever runs the stage. Binding it to the agent left it
+    open forever once a different agent took the stage over (a repair turn
+    raised it, the implementer attached the proof), so every pass was turned
+    into needs_rework until the loop cap blocked the ticket.
+    """
+    if is_evidence_name(item.name) and item.producer_stage_key:
+        return actor.stage_key == item.producer_stage_key
+    return _producer_matches(item, actor)
 
 
 def _producer_matches(item: UnresolvedOpenItem, actor: LedgerActor) -> bool:

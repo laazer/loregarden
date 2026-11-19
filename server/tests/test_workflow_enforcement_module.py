@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 from loregarden.agents.mcp_context import load_stage_report_contract_doc
+from loregarden.models.domain import ContractAudience
 
 MODULE = Path(__file__).resolve().parents[2] / (
     "agent_context/agents/common_assets/workflow_enforcement_v1.md"
@@ -37,11 +38,12 @@ def test_the_stage_report_contract_is_still_extractable(text):
     `mcp_context.load_stage_report_contract_doc` injects only this section, by
     splitting on the dividers and matching the title. Removing the fossil must
     not disturb either."""
-    doc = load_stage_report_contract_doc(MODULE.parents[2])
+    for audience in ContractAudience:
+        doc = load_stage_report_contract_doc(MODULE.parents[2], audience=audience)
 
-    assert "LOREGARDEN_STAGE_REPORT" in doc
-    assert "reroute_to_stage" in doc
-    assert "needs_rework" in doc
+        assert "LOREGARDEN_STAGE_REPORT" in doc
+        assert "reroute_to_stage" in doc
+        assert "needs_rework" in doc
     # The extractor keys on this exact title; renaming the section silently
     # empties every agent's stage report contract.
     assert "STAGE REPORT CONTRACT" in text

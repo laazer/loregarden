@@ -21,6 +21,7 @@ from loregarden.mcp.caller import (
 from loregarden.models.domain import (
     AgentRun,
     CliAdapter,
+    ContractAudience,
     ControlPlaneTransport,
     Ticket,
     WorkflowStageDef,
@@ -70,6 +71,16 @@ _TRANSPORT_BLOCK_RE = re.compile(
     r"[ \t]*<!--\s*loregarden:transport=(?P<transport>\w+)\s*-->\n"
     r"(?P<body>.*?)"
     r"[ \t]*<!--\s*/loregarden:transport\s*-->\n?",
+    re.DOTALL,
+)
+
+
+#: Marks a passage of the stage-report contract as one `ContractAudience`'s rules.
+#: Same shape as the transport marker, for the same reason.
+_AUDIENCE_BLOCK_RE = re.compile(
+    r"[ \t]*<!--\s*loregarden:audience=(?P<audience>\w+)\s*-->\n"
+    r"(?P<body>.*?)"
+    r"[ \t]*<!--\s*/loregarden:audience\s*-->\n?",
     re.DOTALL,
 )
 
@@ -531,13 +542,34 @@ def load_ui_primitives_doc(agent_context_dir: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def load_stage_report_contract_doc(agent_context_dir: Path) -> str:
-    """Body of the workflow-enforcement module's STAGE REPORT CONTRACT section.
+def select_audience_blocks(text: str, audience: ContractAudience) -> str:
+    """Keep the unmarked passages and the ones marked for ``audience``.
+
+    A marker naming an audience that does not exist would drop its passage for
+    every run, which is a prompt quietly missing rules rather than a short one,
+    so it raises.
+    """
+    known = {member.value for member in ContractAudience}
+
+    def _keep(match: re.Match[str]) -> str:
+        if match.group("audience") not in known:
+            raise ValueError(
+                f"stage-report contract names unknown audience {match.group('audience')!r}"
+            )
+        return match.group("body") if match.group("audience") == audience.value else ""
+
+    return _AUDIENCE_BLOCK_RE.sub(_keep, text)
+
+
+def load_stage_report_contract_doc(agent_context_dir: Path, *, audience: ContractAudience) -> str:
+    """Body of the workflow-enforcement module's STAGE REPORT CONTRACT section, for ``audience``.
 
     Only that section is injected. The rest of the module is v1-era and
     contradicts the run context agents are already given — it points them at
     ticket markdown files that do not exist, and pins a stage enum that predates
-    `workflow_templates`, whose values would poison `reroute_to_stage`.
+    `workflow_templates`, whose values would poison `reroute_to_stage`. Within it,
+    the rules only a judging stage uses (findings, rechecks, when a reject
+    stands) reach only a judging stage.
     """
     path = agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL
     if not path.is_file():
@@ -547,7 +579,7 @@ def load_stage_report_contract_doc(agent_context_dir: Path) -> str:
     chunks = _SECTION_DIVIDER_RE.split(path.read_text(encoding="utf-8"))
     for index, chunk in enumerate(chunks[:-1]):
         if chunk.strip().startswith(STAGE_REPORT_SECTION_TITLE):
-            return chunks[index + 1].strip()
+            return select_audience_blocks(chunks[index + 1], audience).strip()
     return ""
 
 
