@@ -19,6 +19,7 @@ import userEvent from "@testing-library/user-event";
 
 import { newContainerFor } from "../../components/views/primitives/registry";
 import { updateView, viewsKeys, type ViewSummary } from "../../lib/viewsApi";
+import { useToastStore } from "../../state/toastStore";
 import { useViewLayoutEdit, useViewLayoutWrite } from "../useViewLayoutEdit";
 
 jest.mock("../../lib/viewsApi", () => ({
@@ -74,6 +75,7 @@ function testClient(): QueryClient {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  useToastStore.getState().clear();
 });
 
 describe("useViewLayoutWrite", () => {
@@ -264,5 +266,102 @@ describe("useViewLayoutEdit — an edit that asks for nothing", () => {
     await user.click(screen.getByRole("button", { name: "rebuild" }));
 
     expect(mockUpdateView).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useViewLayoutEdit — edits behind an open write go out as one", () => {
+  type Edit = Parameters<ReturnType<typeof useViewLayoutEdit>>[0];
+
+  /** Answers each PATCH only when the test says so, in order. */
+  function holdPatches(): { answer: () => void; layouts: Json[] }[] {
+    const held: { answer: () => void; layouts: Json[] }[] = [];
+    mockUpdateView.mockImplementation(
+      (_slug, viewId, patch) =>
+        new Promise<ViewSummary>((resolve) => {
+          const layout = (patch as { layout: Json }).layout;
+          held.push({ answer: () => resolve(view(viewId, layout)), layouts: [layout] });
+        }),
+    );
+    return held;
+  }
+
+  /** Tags the layout so the composed PATCH shows which edits reached it, in what order. */
+  const tag =
+    (name: string): Edit =>
+    (layout) => ({ ...layout, tags: [...((layout.tags as string[] | undefined) ?? []), name] });
+
+  function EditsHarness({ first, rest }: { first: [Edit, () => void]; rest: [Edit, () => void][] }) {
+    const edit = useViewLayoutEdit(SLUG, "v-a");
+    return (
+      <>
+        <button type="button" onClick={() => edit(first[0], first[1])}>
+          first
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            for (const [each, settled] of rest) edit(each, settled);
+          }}
+        >
+          rest
+        </button>
+      </>
+    );
+  }
+
+  async function issue(first: [Edit, () => void], rest: [Edit, () => void][]) {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={testClient()}>
+        <EditsHarness first={first} rest={rest} />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "first" }));
+    await user.click(screen.getByRole("button", { name: "rest" }));
+  }
+
+  it("sends the edits made while a write was open as one PATCH, composed in order", async () => {
+    const held = holdPatches();
+    await issue([tag("a"), jest.fn()], [[tag("b"), jest.fn()], [tag("c"), jest.fn()]]);
+
+    expect(held).toHaveLength(1);
+    await act(async () => held[0].answer());
+
+    expect(mockUpdateView).toHaveBeenCalledTimes(2);
+    expect(held[1].layouts[0].tags).toEqual(["a", "b", "c"]);
+  });
+
+  it("runs every edit's onSettled once its own write settles, superseded or not", async () => {
+    // react-query keeps one set of per-call `mutate` callbacks per observer and
+    // replaces it on every call. Passed there, the first edit's callback was
+    // dropped the moment the second was issued, and the canvas item waiting on it
+    // kept a draft the record no longer agreed with.
+    const held = holdPatches();
+    const settledA = jest.fn();
+    const settledB = jest.fn();
+    const settledC = jest.fn();
+    await issue([tag("a"), settledA], [[tag("b"), settledB], [tag("c"), settledC]]);
+
+    await act(async () => held[0].answer());
+    expect(settledA).toHaveBeenCalledTimes(1);
+    expect(settledB).not.toHaveBeenCalled();
+
+    await act(async () => held[1].answer());
+    expect(settledB).toHaveBeenCalledTimes(1);
+    expect(settledC).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes the rest of a batch when one edit in it cannot be made, and reports the one", async () => {
+    // One stale edit must not cost the others theirs, and must not vanish either.
+    const held = holdPatches();
+    const refuse: Edit = () => {
+      throw new Error("The container that was moved is no longer on this canvas.");
+    };
+    await issue([tag("a"), jest.fn()], [[refuse, jest.fn()], [tag("c"), jest.fn()]]);
+
+    await act(async () => held[0].answer());
+
+    expect(held[1].layouts[0].tags).toEqual(["a", "c"]);
+    expect(useToastStore.getState().toasts).toHaveLength(1);
   });
 });

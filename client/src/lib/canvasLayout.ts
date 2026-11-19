@@ -295,6 +295,44 @@ export function inDrawnOrder(
   return [...kept, ...items.filter((item) => !known.has(item.id))];
 }
 
+/** A raise or a lower the user asked for whose write has not settled yet. */
+export interface PendingRestack {
+  readonly token: number;
+  readonly itemId: string;
+  readonly toFront: boolean;
+}
+
+/**
+ * `items` (back to front, as `readCanvasItems` returns them) with every pending
+ * restack applied in the order it was asked for, and `z_index` renumbered to
+ * match.
+ *
+ * What the user sees has to change on the press itself, not after the write
+ * lands. Writes to one view run one at a time, and a PATCH behind a busy database
+ * can take seconds, so a raise drawn only from the record left a container the
+ * user had just grabbed underneath the ones covering it for the whole drag. In a
+ * stack, that looks like the drag did nothing. The stored order is still the
+ * record's: this only changes what is drawn until each write settles.
+ *
+ * Returns `items` itself when nothing is pending, so a memo keyed on it keeps
+ * its identity.
+ */
+export function withPendingRestacks(
+  items: readonly CanvasItemModel[],
+  pending: readonly PendingRestack[],
+): readonly CanvasItemModel[] {
+  if (pending.length === 0) return items;
+  let ordered = [...items];
+  for (const restack of pending) {
+    const moved = ordered.find((item) => item.id === restack.itemId);
+    // Removed while the restack was waiting: nothing to draw it over.
+    if (moved === undefined) continue;
+    const rest = ordered.filter((item) => item.id !== restack.itemId);
+    ordered = restack.toFront ? [...rest, moved] : [moved, ...rest];
+  }
+  return ordered.map((item, index) => (item.z_index === index ? item : { ...item, z_index: index }));
+}
+
 function itemToJson(item: CanvasItemModel): Json {
   return {
     id: item.id,

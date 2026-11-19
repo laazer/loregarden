@@ -48,6 +48,7 @@ import {
 import type { ViewContainer } from "../components/views/primitives/types";
 import { asJson } from "../lib/viewLayouts";
 import { updateView, viewsKeys, type ViewLayout, type ViewSummary } from "../lib/viewsApi";
+import { toastActionFailed } from "../state/toastStore";
 
 /**
  * How a caller says what it wants stored: given the newest layout this client
@@ -61,11 +62,75 @@ import { updateView, viewsKeys, type ViewLayout, type ViewSummary } from "../lib
  */
 export type LayoutEdit = (layout: ViewLayout) => ViewLayout;
 
+/**
+ * Edits waiting to go out as one PATCH.
+ *
+ * While a write is open, every edit asked for after it joins one waiting batch,
+ * and that batch is composed and sent as a single PATCH when the open write
+ * settles. However slow a save is, a view therefore has at most one write open
+ * and one waiting: a burst of edits behind a stuck PATCH costs one more request,
+ * not one each. Composing them in order from the cache's layout is what one PATCH
+ * per edit did anyway, minus the round trips in between.
+ */
+interface EditBatch {
+  readonly edits: LayoutEdit[];
+  /**
+   * The callers' settle callbacks, carried with the write they belong to.
+   *
+   * Never `mutate(vars, { onSettled })`: react-query keeps one set of per-call
+   * callbacks per observer and replaces it on every `mutate`, so a second edit
+   * issued before the first settled silently dropped the first's callback. The
+   * canvas issues one on every press, so a move still in flight when the next
+   * container was pressed never handed its item back to the record.
+   */
+  readonly settles: (() => void)[];
+}
+
 /** What a single write has to know, none of it read from a render closure. */
 interface LayoutWrite {
   slug: string;
   viewId: string;
-  edit: LayoutEdit;
+  batch: EditBatch;
+}
+
+/**
+ * The batch each view's queue has not started yet, per query client.
+ *
+ * Module-level, not per hook: every pane of a view writes through its own
+ * instance of this hook, and they share one queue (`viewWriteScope`), so they
+ * have to share its waiting batch too. Keyed by client so two clients — tests
+ * build one each — never join each other's batches.
+ */
+const waitingBatches = new WeakMap<QueryClient, Map<string, EditBatch>>();
+
+function waitingFor(qc: QueryClient): Map<string, EditBatch> {
+  let byScope = waitingBatches.get(qc);
+  if (byScope === undefined) {
+    byScope = new Map();
+    waitingBatches.set(qc, byScope);
+  }
+  return byScope;
+}
+
+/**
+ * `layout` with each edit applied in order. An edit that cannot be made is
+ * skipped and handed back, so one stale edit does not cost the others theirs.
+ */
+function composeBatch(
+  layout: ViewLayout,
+  edits: readonly LayoutEdit[],
+): { next: ViewLayout; refused: unknown[] } {
+  let next = layout;
+  const refused: unknown[] = [];
+  for (const edit of edits) {
+    try {
+      next = edit(next);
+    } catch (error) {
+      // silent-ok: collected, not dropped. The mutationFn rethrows the first when every edit was refused and toasts each one otherwise.
+      refused.push(error);
+    }
+  }
+  return { next, refused };
 }
 
 /**
@@ -89,6 +154,8 @@ interface WriteResult {
  * options, so a scope that changed under an in-flight write would leave it
  * queued behind nothing.
  */
+const UPDATE_VIEW_TITLE = "Update view";
+
 export function viewWriteScope(slug: string, viewId: string): string {
   return `view-layout:${slug}:${viewId}`;
 }
@@ -143,9 +210,13 @@ export function useViewLayoutEdit(
   const qc = useQueryClient();
 
   const write = useMutation({
-    meta: { errorTitle: "Update view" },
+    meta: { errorTitle: UPDATE_VIEW_TITLE },
     scope: { id: viewWriteScope(slug, viewId) },
     mutationFn: async (vars: LayoutWrite): Promise<WriteResult> => {
+      // The queue released this batch: from here on, edits start the next one.
+      const byScope = waitingFor(qc);
+      const scope = viewWriteScope(vars.slug, vars.viewId);
+      if (byScope.get(scope) === vars.batch) byScope.delete(scope);
       const key = viewsKeys.view(vars.slug, vars.viewId);
       const current = qc.getQueryData<ViewSummary>(key);
       // The view left the cache while this write waited its turn — deleted in
@@ -156,7 +227,13 @@ export function useViewLayoutEdit(
       }
       // The edit reads the cache's layout and returns a new one; nothing here
       // mutates the record react-query is holding and the panes are drawn from.
-      const next = vars.edit(current.layout);
+      const { next, refused } = composeBatch(current.layout, vars.batch.edits);
+      // Every edit refused: the write fails, and the mutation's own error toast
+      // says so, as it did for a single edit.
+      if (refused.length === vars.batch.edits.length) throw refused[0];
+      // Some refused: the rest are still written, and each refusal is reported
+      // in the same words a failed write uses rather than lost in the batch.
+      for (const error of refused) toastActionFailed(UPDATE_VIEW_TITLE, error);
       // An edit that hands its input straight back asked for nothing. The canvas
       // reaches this constantly — raising a container to the front on every click,
       // and the front-most container is the one clicked most — and without this
@@ -178,6 +255,11 @@ export function useViewLayoutEdit(
       if (!written) return;
       storeWrittenView(qc, vars.slug, vars.viewId, record);
     },
+    // Mutation-level, so it runs for every write in the queue, superseded or
+    // not, and after `onSuccess` has put the record in the cache.
+    onSettled: (_data, _error, vars) => {
+      for (const settle of vars.batch.settles) settle();
+    },
   });
 
   const mutate = write.mutate;
@@ -192,10 +274,21 @@ export function useViewLayoutEdit(
       // `onSettled` fires however the write finished, and it fires for the
       // refused ones too — which is what a caller drawing an optimistic draft
       // needs, since a draft dropped only on success outlives every failure.
-      mutate({ slug, viewId, edit }, onSettled === undefined ? undefined : { onSettled });
+      const byScope = waitingFor(qc);
+      const scope = viewWriteScope(slug, viewId);
+      const waiting = byScope.get(scope);
+      if (waiting !== undefined) {
+        // A batch is already queued behind the open write: join it.
+        waiting.edits.push(edit);
+        if (onSettled !== undefined) waiting.settles.push(onSettled);
+        return true;
+      }
+      const batch: EditBatch = { edits: [edit], settles: onSettled === undefined ? [] : [onSettled] };
+      byScope.set(scope, batch);
+      mutate({ slug, viewId, batch });
       return true;
     },
-    [mutate, slug, viewId],
+    [mutate, qc, slug, viewId],
   );
 }
 

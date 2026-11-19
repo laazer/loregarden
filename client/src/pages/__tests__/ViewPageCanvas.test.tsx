@@ -403,7 +403,10 @@ describe("AC2 — z-order is user-controllable, and focus raises", () => {
     });
     observer.observe(surfaceEl(container), { childList: true });
 
+    // A press and release on the header: the raise rides on the gesture's own
+    // write, which goes out on the release.
     fireEvent.pointerDown(dragHandle(container, "i-1"), { pointerId: 3, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(dragHandle(container, "i-1"), { pointerId: 3, clientX: 10, clientY: 10 });
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
     await settle();
     await waitFor(() => expect(drawnBox(container, "i-1").zIndex).toBe(2));
