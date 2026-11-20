@@ -44,7 +44,12 @@ export function ApprovalInboxPanel() {
 
   // Every workspace: an approval is blocking a run, and hiding one because the
   // sidebar is pointed elsewhere is how a run sits parked for an afternoon.
-  const approvalCount = usePendingApprovalCount("", inboxOpen);
+  // `coldFailure` comes back beside the count because the two zeros are not the
+  // same zero, and only the hook holding the query can tell them apart.
+  const { count: approvalCount, coldFailure: approvalsColdFailure } = usePendingApprovalCount(
+    "",
+    inboxOpen,
+  );
 
   /**
    * Inspect opens the ticket's Approvals tab, which lists this card with the
@@ -67,7 +72,13 @@ export function ApprovalInboxPanel() {
 
   const notificationCount = notifications.length;
   const totalCount = approvalCount + notificationCount;
-  const empty = approvalCount === 0 && notificationCount === 0;
+  // A cold approvals failure counts as zero, so without the third conjunct a
+  // server that is down renders "Inbox zero — nothing needs your attention":
+  // a confident false statement that outlives the toast. Taking the other
+  // branch mounts `ApprovalsList`, which reports the failure where the cards
+  // would be. A failed refetch over data the drawer already has is not a cold
+  // failure, so the cards and the counts stay exactly as they were.
+  const empty = approvalCount === 0 && notificationCount === 0 && !approvalsColdFailure;
 
   return (
     <>

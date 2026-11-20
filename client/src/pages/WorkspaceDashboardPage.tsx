@@ -106,6 +106,9 @@ export function WorkspaceDashboardPage({ workspaceSlug }: WorkspaceDashboardPage
   });
   // The inbox's own query and cadence; filtered here rather than asked per workspace.
   const approvals = useQuery({
+    // One `meta` per query key, last observer to set options winning: every
+    // observer of ["approvals"] has to name the same thing as having failed.
+    meta: { errorTitle: "Load approvals" },
     queryKey: ["approvals"],
     queryFn: () => api.approvals(),
     refetchInterval: 5000,

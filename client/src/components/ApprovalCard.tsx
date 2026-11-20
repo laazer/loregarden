@@ -153,6 +153,7 @@ export function ApprovalCard({
   hasDuplicate = false,
   isSubmitting,
   compact = false,
+  showWorkspace = true,
   collapsible = false,
   clampBrief = false,
   inspectLabel = "Inspect",
@@ -172,6 +173,13 @@ export function ApprovalCard({
   hasDuplicate?: boolean;
   isSubmitting?: boolean;
   compact?: boolean;
+  /**
+   * Whether the subtitle names the approval's workspace. `false` where a
+   * heading above the card already does — the grouped inbox drawer — so the
+   * slug is not repeated once per card. The reader overlay's subtitle is
+   * unaffected: no heading is on screen there.
+   */
+  showWorkspace?: boolean;
   /** Clamp an over-tall body and offer `onExpand` instead of scrolling the rail. */
   collapsible?: boolean;
   /** Clamp a long brief in place, with its own toggle — for full-width surfaces. */
@@ -379,7 +387,9 @@ export function ApprovalCard({
             <span> · {approval.cli_adapter} permission</span>
           )}
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
-          {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
+          {showWorkspace && !compact && approval.workspace_slug && (
+            <span> · {approval.workspace_slug}</span>
+          )}
         </div>
         {isExitActionGate ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
