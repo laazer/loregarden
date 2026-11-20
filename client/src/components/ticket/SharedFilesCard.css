@@ -1,0 +1,101 @@
+/* Shared files: open siblings claiming the files this ticket claims. Built on
+   the Linked tickets card (.tlk), so the two read as one family. */
+.sfc-item {
+  display: grid;
+  gap: 4px;
+  padding: 7px 8px;
+  border-radius: 7px;
+}
+
+.sfc-item + .sfc-item {
+  border-top: 1px solid var(--bd);
+}
+
+.sfc-top,
+.sfc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sfc-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  color: var(--tx);
+  text-decoration: none;
+}
+
+.sfc-name:hover {
+  text-decoration: underline;
+}
+
+.sfc-name:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.sfc-meta .tlk-id {
+  flex: 1;
+}
+
+.sfc-ordered {
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.sfc-paths {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sfc-path {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sfc-path-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Paths are long at the front and tell apart at the end. */
+  direction: rtl;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--tx);
+}
+
+.sfc-source {
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.sfc-source--observed {
+  color: var(--amb);
+}
+
+.sfc-error {
+  color: var(--tx);
+}
+
+.sfc-retry {
+  margin: 0;
+}
+
+.sfc .tlk-more {
+  margin: 2px 0 0;
+}
