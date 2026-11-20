@@ -15,7 +15,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { AppSidebar } from "../AppSidebar";
 import { api } from "../../api/client";
 import type { LibraryRow } from "../../api/referenceLibraryApi";
-import { memoryAutoRereviewPath } from "../../lib/appNavigation";
+import { machinePath, memoryAutoRereviewPath, studioTicketSessionNewPath } from "../../lib/appNavigation";
 import { fetchSidebarEntries, fetchViews } from "../../lib/viewsApi";
 
 jest.mock("../../api/client");
@@ -35,12 +35,12 @@ function Location() {
   return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
 }
 
-function renderSidebar() {
+function renderSidebar(workspaceSlug = "loregarden") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/"]}>
-        <AppSidebar workspaceSlug="loregarden" onOpenSettings={jest.fn()} />
+        <AppSidebar workspaceSlug={workspaceSlug} onOpenSettings={jest.fn()} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -56,6 +56,9 @@ beforeEach(() => {
   ] as Awaited<ReturnType<typeof api.workspaces>>);
   mockApi.initiatives.mockResolvedValue([]);
   mockApi.referenceTopics.mockResolvedValue([]);
+  mockApi.usage.mockResolvedValue({ near_limit: false, warnings: [], providers: [] } as unknown as Awaited<
+    ReturnType<typeof api.usage>
+  >);
 });
 
 test("right-clicking Memory offers Add Reference, which opens the add form over the current page", async () => {
@@ -151,4 +154,55 @@ test("a press outside the menu closes it without navigating", async () => {
   fireEvent.mouseDown(document.body);
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+});
+
+test("right-clicking Machine offers Usage, which opens the usage dialog over the current page", async () => {
+  // Usage is machine-wide, so it opens with no workspace chosen too.
+  renderSidebar("");
+  fireEvent.contextMenu(await screen.findByRole("link", { name: "Machine" }), { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Usage…" }));
+
+  const dialog = await screen.findByRole("dialog", { name: /usage/i });
+  expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+  await waitFor(() => expect(mockApi.usage).toHaveBeenCalled());
+
+  fireEvent.click(within(dialog).getAllByRole("button", { name: "Close" })[0]);
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: /usage/i })).not.toBeInTheDocument());
+});
+
+test("Machine's tab actions go straight to that tab", async () => {
+  renderSidebar();
+  fireEvent.contextMenu(await screen.findByRole("link", { name: "Machine" }), { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Disk" }));
+  expect(screen.getByTestId("location")).toHaveTextContent(machinePath("disk"));
+});
+
+test("Work items offers its views, opening the list already filtered", async () => {
+  renderSidebar();
+  fireEvent.contextMenu(await screen.findByRole("link", { name: "Work items" }), { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Blocked" }));
+  expect(screen.getByTestId("location")).toHaveTextContent("/work-items?view=blocked");
+});
+
+test("Studios offers New Agent in place and a new Ticket Studio session by link", async () => {
+  renderSidebar();
+  const studios = await screen.findByRole("link", { name: "Studios" });
+
+  fireEvent.contextMenu(studios, { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "New Agent…" }));
+  expect(await screen.findByRole("dialog", { name: /agent/i })).toBeInTheDocument();
+  expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+  fireEvent.keyDown(screen.getByRole("dialog", { name: /agent/i }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: /agent/i })).not.toBeInTheDocument());
+
+  fireEvent.contextMenu(studios, { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "New Ticket Session" }));
+  expect(screen.getByTestId("location")).toHaveTextContent(studioTicketSessionNewPath());
+});
+
+test("a workspace-scoped action still asks for a workspace when none is chosen", async () => {
+  renderSidebar("");
+  fireEvent.contextMenu(await screen.findByRole("link", { name: "Memory" }), { clientX: 40, clientY: 200 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Add Reference…" }));
+  expect(screen.queryByRole("form", { name: "Add a reference" })).not.toBeInTheDocument();
 });
