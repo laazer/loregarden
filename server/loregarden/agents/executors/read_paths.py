@@ -16,6 +16,13 @@ Measured before this was written, because a signal nobody has read from a real
 run is a guess: of 60 Claude-schema runs, 58 used Read and all 58 yielded paths
 (462 distinct, 526 Read calls); 6 cursor runs yielded 190 readToolCall events.
 
+Shell commands count too. Agents read mostly through the shell (`sed -n`,
+`grep`, `git diff -- path`): over runs since 2026-11-12 the transcripts held
+13,165 shell calls against 247 Read calls, and 95 of 119 review runs recorded no
+read at all. A file a command names (`shell_reads`) is kept when it exists in
+the repo, which drops the flags, patterns and globs a command line also holds.
+Pathspecs and searched directories are left out for the same reason as Grep.
+
 Its own module rather than a method on `CliAgentExecutor`, which is at the
 1000-line class cap that already forced `prompt_size` out.
 """
@@ -28,6 +35,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from loregarden.agents.executors.shell_reads import shell_reads
 from loregarden.models.domain import AgentRun
 from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session
@@ -45,6 +53,10 @@ CLAUDE_READ_TOOLS = frozenset({"Read", "NotebookRead"})
 
 #: The cursor-agent equivalents, keyed by the wrapper name the schema uses.
 CURSOR_READ_CALLS = frozenset({"readToolCall"})
+
+#: Claude's shell tool, and the wrapper Cursor nests its shell call under.
+CLAUDE_SHELL_TOOL = "Bash"
+CURSOR_SHELL_CALL = "shellToolCall"
 
 #: Argument keys that carry a path in either schema.
 PATH_KEYS = ("file_path", "notebook_path", "path")
@@ -108,6 +120,19 @@ class TranscriptEvent(BaseModel):
     tool_call: dict[str, object] = Field(default_factory=dict)
 
 
+class ShellArgs(BaseModel):
+    command: str = ""
+
+
+def shell_command(raw: object) -> str:
+    """The command a shell tool call ran, or "" when its payload is unreadable."""
+    try:
+        return ShellArgs.model_validate(raw).command
+    except ValidationError:
+        logger.warning("ignoring an unparseable shell tool call in a transcript", exc_info=True)
+        return ""
+
+
 def _args_paths(raw: object) -> list[str]:
     try:
         return ReadArgs.model_validate(raw).paths()
@@ -126,6 +151,33 @@ def _paths_from_claude_event(event: TranscriptEvent) -> list[str]:
         if block.type == "tool_use" and block.name in CLAUDE_READ_TOOLS:
             found.extend(_args_paths(block.input))
     return found
+
+
+def _commands_from_event(event: TranscriptEvent) -> list[str]:
+    """Shell commands this event ran, in either schema."""
+    commands: list[str] = []
+    if event.message is not None:
+        commands += [
+            shell_command(block.input)
+            for block in event.message.content
+            if block.type == "tool_use" and block.name == CLAUDE_SHELL_TOOL
+        ]
+    if event.type == "tool_call" and event.subtype == "started":
+        body = event.tool_call.get(CURSOR_SHELL_CALL)
+        if body is not None:
+            try:
+                commands.append(shell_command(CursorCallBody.model_validate(body).args))
+            except ValidationError:
+                logger.warning("ignoring an unparseable cursor shell call", exc_info=True)
+    return [command for command in commands if command]
+
+
+def _existing_in_repo(raw: str, repo_root: Path) -> str | None:
+    """`raw`'s repo-relative form when it names a file in the repo, else None."""
+    relative = _relative_to_repo(raw, repo_root)
+    if relative is None or not (repo_root / relative).is_file():
+        return None
+    return relative
 
 
 def _paths_from_cursor_event(event: TranscriptEvent) -> list[str]:
@@ -214,6 +266,11 @@ def extract_read_paths(stdout: str, repo_root: Path) -> list[str]:
             relative = _relative_to_repo(raw, repo_root)
             if relative:
                 seen.add(relative)
+        for command in _commands_from_event(event):
+            for raw in shell_reads(command).named:
+                relative = _existing_in_repo(raw, repo_root)
+                if relative:
+                    seen.add(relative)
     paths = sorted(seen)
     if len(paths) > MAX_READ_PATHS:
         logger.warning(

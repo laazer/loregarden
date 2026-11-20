@@ -33,10 +33,13 @@ from dataclasses import dataclass, field
 
 from loregarden.agents.executors.read_paths import (
     CLAUDE_READ_TOOLS,
+    CLAUDE_SHELL_TOOL,
     CURSOR_READ_CALLS,
+    CURSOR_SHELL_CALL,
     CursorCallBody,
     ReadArgs,
     TranscriptEvent,
+    shell_command,
 )
 from loregarden.agents.executors.shell_reads import ShellReads, shell_reads
 from loregarden.models.domain import (
@@ -66,15 +69,7 @@ CHECKED_AGENTS = frozenset(
     }
 )
 
-#: Claude's shell tool, and the wrapper Cursor nests its shell call under.
-CLAUDE_SHELL_TOOL = "Bash"
-CURSOR_SHELL_CALL = "shellToolCall"
-
 _WORKTREE_PREFIX = re.compile(r"/(?:\.claude/)?\.?worktrees/[^/]+/(.*)")
-
-
-class _ShellArgs(BaseModel):
-    command: str = ""
 
 
 class _DiffSection(BaseModel):
@@ -149,14 +144,6 @@ def _args_paths(raw: object) -> set[str]:
         return set()
 
 
-def _shell_command(raw: object) -> str:
-    try:
-        return _ShellArgs.model_validate(raw).command
-    except ValidationError:
-        logger.warning("ignoring an unparseable shell tool call in a transcript", exc_info=True)
-        return ""
-
-
 def _add_claude_event(reads: TranscriptReads, event: TranscriptEvent) -> None:
     if event.type != "assistant" or event.message is None:
         return
@@ -167,7 +154,7 @@ def _add_claude_event(reads: TranscriptReads, event: TranscriptEvent) -> None:
         if block.name in CLAUDE_READ_TOOLS:
             reads.paths |= _args_paths(block.input)
         elif block.name == CLAUDE_SHELL_TOOL:
-            reads.add_shell(shell_reads(_shell_command(block.input)))
+            reads.add_shell(shell_reads(shell_command(block.input)))
 
 
 def _cursor_args(body: object) -> dict[str, object]:
@@ -186,7 +173,7 @@ def _add_cursor_event(reads: TranscriptReads, event: TranscriptEvent) -> None:
         if name in CURSOR_READ_CALLS:
             reads.paths |= _args_paths(_cursor_args(body))
         elif name == CURSOR_SHELL_CALL:
-            reads.add_shell(shell_reads(_shell_command(_cursor_args(body))))
+            reads.add_shell(shell_reads(shell_command(_cursor_args(body))))
 
 
 def transcript_reads(stdout: str) -> TranscriptReads:

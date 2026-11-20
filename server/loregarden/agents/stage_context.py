@@ -160,12 +160,30 @@ def build_orchestration_context(
             posture.contract,
         ]
 
-    lines += _why_youre_here_lines(session, ticket, run, stage_key)
-    lines += _unresolved_context_lines(session, ticket, run, stage_def)
-    lines += recheck_context_lines(session, ticket, run)
-    lines += deferral_context_lines(session, ticket)
+    lines += turn_context_lines(session, ticket, run, stage_def)
 
     return "\n".join(lines)
+
+
+def turn_context_lines(
+    session: Session | None,
+    ticket: Ticket,
+    run: AgentRun,
+    stage_def: WorkflowStageDef | None,
+) -> list[str]:
+    """The sections that change from one run of a stage to the next.
+
+    A resumed rework round keeps the system prompt its session started under
+    (changing it re-caches the session's whole history), so these travel in the
+    resumed turn's message instead (`rework_resume.follow_up_prompt`).
+    """
+    stage_key = run.stage_key or ticket.workflow_stage_key
+    return [
+        *_why_youre_here_lines(session, ticket, run, stage_key),
+        *_unresolved_context_lines(session, ticket, run, stage_def),
+        *recheck_context_lines(session, ticket, run),
+        *deferral_context_lines(session, ticket),
+    ]
 
 
 def _why_youre_here_lines(

@@ -21,6 +21,12 @@ finding as the session's next turn (`follow_up`). It runs fresh, recording why
   delivered twice resumes once: a second round on it starts from a clean slate,
   since the resumed one did not settle it.
 
+A resumed claude round runs under the system prompt the earlier run's session
+started under (`session_prompt`), not a freshly rendered one: a changed system
+prompt invalidates the cached history, which made every resume re-write it. What
+changed since (the feedback, the unresolved ledger, rechecks, deferrals) rides
+in the follow-up turn instead (`turn_context`).
+
 `rework_round_tokens` puts resumed and fresh rounds side by side from the same
 rows, so whether resuming pays is a query, not a claim.
 """
@@ -28,17 +34,19 @@ rows, so whether resuming pays is a query, not a claim.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from loregarden.agents.cli_adapters import session_resume_unsupported
-from loregarden.models.domain import AgentRun, Artifact, Ticket
+from loregarden.models.domain import AgentRun, Artifact, CliAdapter, Ticket
 from loregarden.models.domain.enums import ReworkArtifactKind
 from loregarden.services.rework_feedback import (
     render_rework_feedback,
     rework_feedback_artifact_title,
 )
+from loregarden.services.session_prompt import read_session_prompt
 from loregarden.services.stage_report import REPORT_BLOCK_REMINDER, result_envelope
 from sqlmodel import Session, col, select
 
@@ -55,6 +63,9 @@ class ResumePlan:
     session_id: str = ""
     skip_reason: str = ""
     follow_up: str = ""
+    #: The system prompt `session_id` started under, for a claude resume to pass
+    #: back unchanged; "" when none was kept (the resume re-caches its history).
+    session_prompt: str = ""
 
     @property
     def resumes(self) -> bool:
@@ -120,11 +131,25 @@ def _already_resumed_for(session: Session, ticket: Ticket, feedback: Artifact) -
     ).first()
 
 
-def follow_up_prompt(session: Session, ticket: Ticket, stage_key: str) -> str:
-    """The resumed session's next turn: the finding, and the report it owes."""
+#: The sections of the stage prompt that change between runs, rendered for the
+#: run being planned (`stage_context.turn_context_lines`); "" when there are none.
+TurnContext = Callable[[], str]
+
+
+def follow_up_prompt(
+    session: Session, ticket: Ticket, stage_key: str, turn_context: TurnContext | None = None
+) -> str:
+    """The resumed session's next turn: the finding, and the report it owes.
+
+    With `turn_context`, the finding arrives inside it (its "why you're here"
+    section renders the same feedback ledger) beside the unresolved ledger,
+    rechecks and deferrals the session's kept system prompt predates.
+    """
+    context = turn_context().strip() if turn_context is not None else ""
+    finding = context or render_rework_feedback(session, ticket, stage_key)
     return (
         "Your earlier turn on this stage was sent back for rework. The finding:\n\n"
-        f"{render_rework_feedback(session, ticket, stage_key)}\n\n"
+        f"{finding}\n\n"
         "Other stages may have changed the tree since your turn: re-read any file "
         "before you rely on what you remember of it. Address the finding, then "
         + REPORT_BLOCK_REMINDER
@@ -168,13 +193,20 @@ def _skip_reason(
 
 
 def plan_rework_resume(
-    session: Session, ticket: Ticket, run: AgentRun, *, adapter: str, repo_root: Path
+    session: Session,
+    ticket: Ticket,
+    run: AgentRun,
+    *,
+    adapter: str,
+    repo_root: Path,
+    turn_context: TurnContext | None = None,
 ) -> ResumePlan | None:
     """How `run` answers its rework finding, or None when it is not a rework round.
 
     A run is a rework round when a finding for its stage arrived after the
     stage's previous run (or, with no previous run, when one exists at all).
-    The plan is recorded on the run before it is returned.
+    The plan is recorded on the run before it is returned. `turn_context` is
+    called only when the round resumes.
     """
     prior = _prior_run(session, run)
     feedback = _newest_feedback(
@@ -192,7 +224,8 @@ def plan_rework_resume(
             feedback_id=feedback.id,
             prior_run_id=prior.id,
             session_id=session_id_of(prior),
-            follow_up=follow_up_prompt(session, ticket, run.stage_key),
+            follow_up=follow_up_prompt(session, ticket, run.stage_key, turn_context),
+            session_prompt=read_session_prompt(prior) if adapter == CliAdapter.CLAUDE else "",
         )
     run.rework_feedback_id = plan.feedback_id
     run.resumed_from_run_id = plan.prior_run_id

@@ -695,17 +695,26 @@ def cursor_resume_invocation(
 
 
 def claude_resume_invocation(
-    invocation: CliInvocation, *, session_id: str, prompt: str
+    invocation: CliInvocation,
+    *,
+    session_id: str,
+    prompt: str,
+    system_prompt_file: Path | None = None,
 ) -> CliInvocation:
     """`invocation` again, continuing claude session `session_id` with `prompt`.
 
     Every flag is kept, the stage prompt in ``--append-system-prompt-file``
     included: a system prompt is not part of a session's history, so a resumed
-    turn without it would lose the stage contract. Print mode replaces the fixed
-    user prompt with ``prompt``; interactive mode leaves argv's prompt alone,
-    since the permission bridge sends ``prompt`` as the session's next message.
+    turn without it would lose the stage contract. ``system_prompt_file``, when
+    given, replaces that file: it is the prompt the session started under
+    (`session_prompt`), and passing it back unchanged keeps the session's cached
+    history valid. Print mode replaces the fixed user prompt with ``prompt``;
+    interactive mode leaves argv's prompt alone, since the permission bridge
+    sends ``prompt`` as the session's next message.
     """
     argv = list(invocation.argv)
+    if system_prompt_file is not None:
+        argv[argv.index("--append-system-prompt-file") + 1] = str(system_prompt_file)
     if not invocation.interactive:
         user_prompt = argv.index("--append-system-prompt-file") + 2
         argv[user_prompt] = prompt
@@ -737,11 +746,24 @@ def session_resume_unsupported(adapter: str) -> str:
 
 
 def session_resume_invocation(
-    invocation: CliInvocation, *, session_id: str, prompt: str
+    invocation: CliInvocation,
+    *,
+    session_id: str,
+    prompt: str,
+    system_prompt_file: Path | None = None,
 ) -> CliInvocation:
-    """`invocation` continuing session `session_id` with `prompt` as the next turn."""
+    """`invocation` continuing session `session_id` with `prompt` as the next turn.
+
+    ``system_prompt_file`` applies to claude only: cursor takes the stage prompt
+    as the session's first message, which is already part of its history.
+    """
     if invocation.adapter == CliAdapter.CLAUDE:
-        return claude_resume_invocation(invocation, session_id=session_id, prompt=prompt)
+        return claude_resume_invocation(
+            invocation,
+            session_id=session_id,
+            prompt=prompt,
+            system_prompt_file=system_prompt_file,
+        )
     if invocation.adapter == CliAdapter.CURSOR:
         return cursor_resume_invocation(invocation, session_id=session_id, prompt=prompt)
     raise ValueError(session_resume_unsupported(invocation.adapter))

@@ -515,6 +515,9 @@ class AgentRun(SQLModel, table=True):
     rework_feedback_id: str = ""
     resumed_from_run_id: str = ""
     resume_skip_reason: str = ""
+    #: What this run told the stages after it (its report's `notes_for_next_stage`):
+    #: files, symbols and gotchas they would otherwise rediscover (`stage_digest`).
+    next_stage_notes: str = ""
     #: Lane and attempt this dispatch was keyed by, and when it was first executed (`dispatch_key`).
     dispatch_key: str = ""
     execution_claimed_at: datetime | None = None

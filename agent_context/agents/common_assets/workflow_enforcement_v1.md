@@ -66,7 +66,7 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 {"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "findings": [{"summary": "<the defect, one sentence>", "blocking": true, "trigger": "<how it is reached>", "path": "<what runs from there to the defect>", "impact": "<what a person using it meets>", "test": "<path::test_name of the test you wrote, failing now>", "judgment": "<only when no test can show it: why>"}, {"summary": "<a finding that does not block>", "blocking": false, "disposition": "documented_exception|assigned_ticket|out_of_scope", "ticket": "<external id, for assigned_ticket>"}], "rechecks": [{"id": "P1", "resolved": true, "note": "<what you checked>"}]}
 <!-- /loregarden:audience -->
 <!-- loregarden:audience=other -->
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "notes_for_next_stage": "<where the code is and the traps, for the stages after you>"}
 <!-- /loregarden:audience -->
 <<<END_STAGE_REPORT>>>
 ```
@@ -184,6 +184,11 @@ Field rules:
 - `waiting_on`: only with `blocked_kind: tickets`. External ids (`lg-milestone-that-1314`), one
   per ticket this one waits for. An id that does not resolve, or a ticket already done and
   landed, turns the report into an ordinary block that says so.
+- `notes_for_next_stage`: optional, for planning, spec, test and implement stages. What the
+  next stage would otherwise spend its first turns rediscovering: the files and symbols that
+  matter (`path:line` where you can), and the traps you hit. Pointers, not a report; at most a
+  few lines. It is shown to the later stages on this ticket beside the files you changed and
+  read. Leave it out when there is nothing they would not find at once.
 - **Nulls are fine.** `reroute_to_stage`, `reroute_context` and `unmet_criteria` may each be `null`, empty, or omitted entirely when they do not apply — all three spellings mean the same thing to the parser. `status` and `confidence` are the two fields that must carry a real value, since they are the verdict itself.
 
 If you emit no report, or a malformed one, the orchestrator **blocks the stage** (fail-closed).

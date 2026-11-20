@@ -52,6 +52,7 @@ def test_list_skills_returns_seeded_database_slugs(client):
         "autopilot",
         "human-verification-brief",
         "plan",
+        "plan-lenses",
         "plan-risk",
         "plan-seams",
         "plan-simplest",
@@ -60,5 +61,6 @@ def test_list_skills_returns_seeded_database_slugs(client):
         "reference-survey",
         "spike-decision",
         "spike-research",
+        "test-break-pass",
         "vulcan",
     ]

@@ -443,6 +443,9 @@ def complete_run_tail(
         parse_stage_report(stdout),
         priors=prior_findings(orch.session, ticket, run),
     )
+    if report is not None and report.notes_for_next_stage:
+        run.next_stage_notes = report.notes_for_next_stage
+        orch.session.add(run)
     if report is not None and run.verdict_channel is StageVerdictChannel.UNKNOWN:
         # Only when the tool did not already claim it: an agent that called
         # `complete_stage` and also printed the sentinel used the typed channel,

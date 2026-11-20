@@ -23,8 +23,10 @@ from loregarden.agents.executors.rework_round import (
     prepare_round,
     run_round,
 )
+from loregarden.config import settings
 from loregarden.models.domain import AgentRun, CliAdapter, RunStatus, Ticket
 from loregarden.models.domain.enums import ReworkArtifactKind, utcnow
+from loregarden.services import session_prompt
 from loregarden.services.rework_feedback import (
     record_rework_feedback,
     rework_feedback_artifact_title,
@@ -36,6 +38,11 @@ from loregarden.services.rework_resume import (
     session_id_of,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.session_prompt import (
+    keep_session_prompt,
+    read_session_prompt,
+    session_prompt_path,
+)
 from loregarden.testing.factories import make_artifact
 from sqlmodel import Session
 from tests.factories import make_workspace_ticket
@@ -63,6 +70,14 @@ def _stream(final_text: str = REPORT, *, session_id: str = SESSION) -> str:
             ),
         ]
     )
+
+
+@pytest.fixture(autouse=True)
+def run_log_dir(tmp_path: Path):
+    """Kept session prompts land under the test's own directory, never data/."""
+    target = tmp_path / "run-logs"
+    with mock.patch.object(settings, "run_log_dir", target):
+        yield target
 
 
 @pytest.fixture
@@ -482,3 +497,274 @@ def test_rework_round_tokens_compares_resumed_and_fresh_from_the_rows(
     assert (fresh.rounds, fresh.measured, fresh.unmeasured) == (2, 1, 1)
     assert fresh.mean_input_tokens == 6000
     assert len(rows) == 2
+
+
+# ---- a claude resume keeps the system prompt its session started under -----------
+
+OLD_PROMPT = "the stage prompt the session started under"
+NEW_PROMPT = "a freshly rendered stage prompt"
+
+
+def _claude(tmp_path: Path) -> CliInvocation:
+    prompt_file = tmp_path / "fresh-prompt.md"
+    prompt_file.write_text(NEW_PROMPT, encoding="utf-8")
+    return cli_adapters._claude_print_invocation(prompt_file=prompt_file, workspace_root=tmp_path)
+
+
+def _system_prompt_file(invocation: CliInvocation) -> Path:
+    return Path(invocation.argv[invocation.argv.index("--append-system-prompt-file") + 1])
+
+
+def test_a_claude_resume_given_the_kept_prompt_swaps_only_that_file(tmp_path):
+    fresh = _claude(tmp_path)
+    kept = tmp_path / "kept.md"
+
+    resumed = claude_resume_invocation(
+        fresh, session_id=SESSION, prompt="the finding", system_prompt_file=kept
+    )
+
+    assert _system_prompt_file(resumed) == kept
+    assert str(_system_prompt_file(fresh)) not in resumed.argv
+    assert sorted(set(resumed.argv) - set(fresh.argv)) == sorted(
+        {"--resume", SESSION, "the finding", str(kept)}
+    )
+
+
+def test_a_claude_plan_carries_the_earlier_runs_kept_prompt(db_session, ticket, repo_root):
+    prior = _run(
+        db_session, ticket, repo_root=repo_root, code="run_1", stdout=_stream(), minutes_ago=10
+    )
+    keep_session_prompt(db_session, prior, OLD_PROMPT)
+    _reject(db_session, ticket, by=_reviewer(db_session, ticket, repo_root))
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2")
+
+    claude_plan = _plan(db_session, ticket, run, repo_root, adapter=CliAdapter.CLAUDE)
+
+    assert claude_plan.resumes and claude_plan.session_prompt == OLD_PROMPT
+
+
+def test_a_cursor_plan_carries_no_system_prompt(db_session, ticket, repo_root):
+    """Cursor takes the stage prompt as the session's first message; it is history."""
+    prior = _run(
+        db_session, ticket, repo_root=repo_root, code="run_1", stdout=_stream(), minutes_ago=10
+    )
+    keep_session_prompt(db_session, prior, OLD_PROMPT)
+    _reject(db_session, ticket, by=_reviewer(db_session, ticket, repo_root))
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2")
+
+    assert _plan(db_session, ticket, run, repo_root).session_prompt == ""
+
+
+def test_the_follow_up_carries_the_turn_context_the_kept_prompt_predates(
+    db_session, ticket, repo_root
+):
+    _run(db_session, ticket, repo_root=repo_root, code="run_1", stdout=_stream(), minutes_ago=10)
+    _reject(db_session, ticket, by=_reviewer(db_session, ticket, repo_root))
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2")
+    context = "## Why you're here\nthe finding\n## Unresolved\n- evidence:test missing"
+
+    plan = plan_rework_resume(
+        db_session,
+        ticket,
+        run,
+        adapter=CliAdapter.CLAUDE,
+        repo_root=repo_root,
+        turn_context=lambda: context,
+    )
+
+    assert context in plan.follow_up and "STAGE_REPORT" in plan.follow_up
+
+
+def test_the_turn_context_is_not_rendered_for_a_fresh_round(db_session, ticket, repo_root):
+    _reject(db_session, ticket)
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_1")
+    turn_context = mock.MagicMock(return_value="unused")
+
+    plan = plan_rework_resume(
+        db_session,
+        ticket,
+        run,
+        adapter=CliAdapter.CLAUDE,
+        repo_root=repo_root,
+        turn_context=turn_context,
+    )
+
+    assert not plan.resumes
+    turn_context.assert_not_called()
+
+
+def test_a_claude_resume_runs_under_the_kept_prompt_and_keeps_it_again(
+    db_session, ticket, repo_root
+):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2", resumed_from_run_id="p")
+    plan = ResumePlan(
+        feedback_id="f",
+        prior_run_id="p",
+        session_id=SESSION,
+        follow_up="go",
+        session_prompt=OLD_PROMPT,
+    )
+
+    _, first = prepare_round(db_session, run, plan, _claude(repo_root))
+
+    assert _system_prompt_file(first) == session_prompt_path(run)
+    assert read_session_prompt(run) == OLD_PROMPT
+
+
+def test_a_claude_resume_with_no_kept_prompt_still_resumes(db_session, ticket, repo_root):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2", resumed_from_run_id="p")
+    plan = ResumePlan(feedback_id="f", prior_run_id="p", session_id=SESSION, follow_up="go")
+    fresh = _claude(repo_root)
+
+    final, first = prepare_round(db_session, run, plan, fresh)
+
+    assert final.resumes and "--resume" in first.argv
+    assert _system_prompt_file(first) == _system_prompt_file(fresh)
+
+
+def test_a_prompt_that_cannot_be_kept_resumes_under_the_fresh_one(db_session, ticket, repo_root):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2", resumed_from_run_id="p")
+    plan = ResumePlan(
+        feedback_id="f",
+        prior_run_id="p",
+        session_id=SESSION,
+        follow_up="go",
+        session_prompt=OLD_PROMPT,
+    )
+    fresh = _claude(repo_root)
+
+    with mock.patch.object(Path, "write_text", side_effect=OSError("disk full")):
+        final, first = prepare_round(db_session, run, plan, fresh)
+
+    assert final.resumes and "--resume" in first.argv
+    assert _system_prompt_file(first) == _system_prompt_file(fresh)
+
+
+def test_a_fresh_claude_round_keeps_its_stage_prompt(db_session, ticket, repo_root):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_1")
+    fresh = _claude(repo_root)
+
+    run_round(
+        db_session,
+        run,
+        plan=None,
+        invocation=fresh,
+        first=fresh,
+        prompt=NEW_PROMPT,
+        spawn=mock.MagicMock(return_value=(_stream(), "", RunStatus.SUCCEEDED)),
+        streamer=mock.MagicMock(spec=RunLogStreamer),
+    )
+
+    assert read_session_prompt(run) == NEW_PROMPT
+
+
+def test_a_fresh_cursor_round_keeps_nothing(db_session, ticket, repo_root):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_1")
+    fresh = _cursor(repo_root)
+
+    run_round(
+        db_session,
+        run,
+        plan=None,
+        invocation=fresh,
+        first=fresh,
+        prompt="the stage prompt",
+        spawn=mock.MagicMock(return_value=(_stream(), "", RunStatus.SUCCEEDED)),
+        streamer=mock.MagicMock(spec=RunLogStreamer),
+    )
+
+    assert not session_prompt_path(run).exists()
+
+
+def test_a_resume_that_falls_back_keeps_the_fresh_prompt_it_ran_under(
+    db_session, ticket, repo_root
+):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2", resumed_from_run_id="p")
+    plan = ResumePlan(
+        feedback_id="f",
+        prior_run_id="p",
+        session_id=SESSION,
+        follow_up="go",
+        session_prompt=OLD_PROMPT,
+    )
+    fresh = _claude(repo_root)
+    _, first = prepare_round(db_session, run, plan, fresh)
+    outcomes = iter(
+        [("", "No conversation found", RunStatus.FAILED), (_stream(), "", RunStatus.SUCCEEDED)]
+    )
+
+    run_round(
+        db_session,
+        run,
+        plan=plan,
+        invocation=fresh,
+        first=first,
+        prompt=NEW_PROMPT,
+        spawn=lambda *_: next(outcomes),
+        streamer=mock.MagicMock(spec=RunLogStreamer),
+    )
+
+    assert read_session_prompt(run) == NEW_PROMPT
+
+
+def test_keeping_a_prompt_drops_only_older_prompts_at_the_same_stage(db_session, ticket, repo_root):
+    older = _run(db_session, ticket, repo_root=repo_root, code="run_1", minutes_ago=20)
+    other_stage = _run(
+        db_session, ticket, repo_root=repo_root, code="run_v", stage_key="verify", minutes_ago=20
+    )
+    other_ticket = make_workspace_ticket(db_session, "rework-resume-other")
+    elsewhere = _run(db_session, other_ticket, repo_root=repo_root, code="run_x", minutes_ago=20)
+    for run in (older, other_stage, elsewhere):
+        keep_session_prompt(db_session, run, OLD_PROMPT)
+    newest = _run(db_session, ticket, repo_root=repo_root, code="run_2")
+
+    assert keep_session_prompt(db_session, newest, NEW_PROMPT) == session_prompt_path(newest)
+
+    assert not session_prompt_path(older).exists()
+    assert read_session_prompt(other_stage) == OLD_PROMPT
+    assert read_session_prompt(elsewhere) == OLD_PROMPT
+
+
+def test_an_unreadable_kept_prompt_reads_as_none_and_warns(db_session, ticket, repo_root):
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_1")
+    keep_session_prompt(db_session, run, OLD_PROMPT)
+
+    with (
+        mock.patch.object(Path, "read_text", side_effect=PermissionError("denied")),
+        mock.patch.object(session_prompt.logger, "warning") as warning,
+    ):
+        assert read_session_prompt(run) == ""
+    warning.assert_called_once()
+
+
+def test_the_executor_resumes_a_claude_round_under_the_kept_prompt(db_session, ticket, repo_root):
+    """End to end: the resumed claude turn's system prompt is the earlier session's,
+    byte for byte, and the finding rides in the turn's message."""
+    prior = _run(
+        db_session, ticket, repo_root=repo_root, code="run_1", stdout=_stream(), minutes_ago=10
+    )
+    keep_session_prompt(db_session, prior, OLD_PROMPT)
+    _reject(db_session, ticket, by=_reviewer(db_session, ticket, repo_root))
+    run = _run(db_session, ticket, repo_root=repo_root, code="run_2", status=RunStatus.RUNNING)
+
+    executor = CliAgentExecutor(db_session)
+    real_prepare = executor._prepare_tree
+
+    def prepare_tree(*args, **kwargs):
+        _, stopped = real_prepare(*args, **kwargs)
+        return repo_root, stopped
+
+    with (
+        mock.patch.object(executor, "_prepare_tree", side_effect=prepare_tree),
+        mock.patch.object(cli_module, "resolve_cli_invocation", return_value=_claude(repo_root)),
+        mock.patch.object(
+            stage_turn, "run_print_mode", return_value=(_stream(), "", RunStatus.SUCCEEDED)
+        ) as spawned,
+    ):
+        completed = executor.execute(run, ticket)
+
+    invocation = spawned.call_args.kwargs["invocation"]
+    assert invocation.argv[invocation.argv.index("--resume") + 1] == SESSION
+    assert _system_prompt_file(invocation).read_text(encoding="utf-8") == OLD_PROMPT
+    assert any(FINDING in arg for arg in invocation.argv)
+    assert completed.resumed_from_run_id == prior.id
