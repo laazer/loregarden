@@ -511,13 +511,17 @@ class AgentRun(SQLModel, table=True):
     cli_session_id: str = ""
     #: Set on a rework round (`services/rework_resume`): the rework finding it
     #: answers, and either the run whose session it resumed or why it ran fresh.
-    #: All three "" means the run was not a rework round.
+    #: All three "" means the run was not a rework round. An ask (`asked_by_run_id`)
+    #: also sets `resumed_from_run_id`, to the earlier run it asked.
     rework_feedback_id: str = ""
     resumed_from_run_id: str = ""
     resume_skip_reason: str = ""
     #: What this run told the stages after it (its report's `notes_for_next_stage`):
     #: files, symbols and gotchas they would otherwise rediscover (`stage_digest`).
     next_stage_notes: str = ""
+    #: Set on an ask (`services/stage_ask`): the stage run that asked the earlier
+    #: stage whose session this run resumed (`resumed_from_run_id`). "" otherwise.
+    asked_by_run_id: str = ""
     #: Lane and attempt this dispatch was keyed by, and when it was first executed (`dispatch_key`).
     dispatch_key: str = ""
     execution_claimed_at: datetime | None = None

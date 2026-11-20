@@ -21,6 +21,11 @@ READ_ONLY_CLI_TOOLS: frozenset[CliTool] = frozenset(
     }
 )
 
+#: What an asked earlier stage may use (`services.stage_ask`): it answers from its
+#: session and may open a file to check a detail. No web: nothing it must answer
+#: needs it, and its answer should come from what it already found.
+STAGE_ASK_CLI_TOOLS: frozenset[CliTool] = frozenset({CliTool.READ, CliTool.GLOB, CliTool.GREP})
+
 #: What a chat rail with real tool access starts from. An operator narrowing an
 #: agent subtracts from this; they never add to it, so the derived allowlist
 #: stays a superset of anything the permission bridge could approve.

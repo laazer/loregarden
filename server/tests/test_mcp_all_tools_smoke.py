@@ -93,6 +93,11 @@ NEEDS_A_DISPATCHED_SURVEY_PASS = frozenset(
 #   blocked, and its honest answer here is a refusal. test_ticket_deferral.py drives
 #   it over MCP against a blocked ticket.
 NEEDS_A_BLOCKED_TICKET = "loregarden_defer_ticket"
+#   loregarden_ask_earlier_stage -> resumes an earlier stage's claude session in a
+#   subprocess, so a well-formed call needs a stage run, an earlier one with a session
+#   and a checkout, and a claude CLI. test_stage_ask.py drives it through execute_tool
+#   with the subprocess mocked.
+NEEDS_A_CLAUDE_SESSION = "loregarden_ask_earlier_stage"
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -610,6 +615,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         *NEEDS_A_DISPATCHED_SURVEY_PASS,
         *NEEDS_A_QUEUED_PULL_REQUEST,
         NEEDS_A_BLOCKED_TICKET,
+        NEEDS_A_CLAUDE_SESSION,
     }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"

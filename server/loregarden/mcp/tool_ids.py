@@ -97,6 +97,7 @@ class McpTool(StrEnum):
     REMOVE_INITIATIVE_MEMBER = "loregarden_remove_initiative_member"
     PROPOSE_FEATURE_CRITERIA = "loregarden_propose_feature_criteria"
     REGISTER_CHAT_WAIT = "loregarden_register_chat_wait"
+    ASK_EARLIER_STAGE = "loregarden_ask_earlier_stage"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -223,6 +224,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # below for why this reverses the first cut.
     *DOCKER_CAPACITY_MCP_TOOLS,
     *LOCAL_INSTANCE_MCP_TOOLS,
+    # A fact or a reason an earlier stage on the ticket already has, asked of
+    # its session instead of re-derived. Offered to every stage; the handler
+    # refuses a judging one (`services.stage_ask`).
+    McpTool.ASK_EARLIER_STAGE,
 )
 
 MEMORY_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
@@ -409,6 +414,15 @@ NETWORK_EGRESS_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: pipeline agents the same way triage ops are.
 CHAT_WAIT_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.REGISTER_CHAT_WAIT})
 
+#: Asking an earlier stage one question. Auto-approved, in a set of its own
+#: because it spends money: it runs a model turn, which no set above does. What
+#: that turn can do is fixed by the handler, not the caller: Read/Glob/Grep in
+#: the earlier run's directory, no MCP, a forked session, a dollar budget and a
+#: timeout, and at most `stage_ask.MAX_ASKS_PER_RUN` per asking run. Gating it
+#: would put a click between a stage and an answer it asked for in order to
+#: save time, paid out of that stage's own timeout.
+STAGE_ASK_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.ASK_EARLIER_STAGE})
+
 AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
     READ_ONLY_MCP_TOOLS
     | CONTROL_PLANE_WRITE_MCP_TOOLS
@@ -416,6 +430,7 @@ AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = (
     | CAPACITY_LEASE_MCP_TOOLS
     | LOCAL_INSTANCE_WRITE_MCP_TOOLS
     | CHAT_WAIT_MCP_TOOLS
+    | STAGE_ASK_MCP_TOOLS
 )
 
 #: Tools whose safety depends on *which* action was asked for, not just the tool

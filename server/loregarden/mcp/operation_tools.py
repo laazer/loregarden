@@ -68,6 +68,8 @@ OPERATION_TOOLS: Mapping[str, OperationId] = {
     # A stage's question for the operator, and the ticket's list of them.
     McpTool.ASK_OPERATOR.value: OperationId.OPERATOR_QUESTION_ASK,
     McpTool.LIST_OPERATOR_QUESTIONS.value: OperationId.OPERATOR_QUESTION_LIST,
+    # A stage's question to an earlier stage on its ticket.
+    McpTool.ASK_EARLIER_STAGE.value: OperationId.STAGE_ASK,
 }
 
 

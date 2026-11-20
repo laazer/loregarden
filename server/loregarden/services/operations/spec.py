@@ -118,6 +118,8 @@ class OperationId(StrEnum):
     #: (`operator_questions.py`), and the list a ticket shows of them.
     OPERATOR_QUESTION_ASK = "operator_question_ask"
     OPERATOR_QUESTION_LIST = "operator_question_list"
+    #: A stage run's question to an earlier stage on its ticket (`stage_asks.py`).
+    STAGE_ASK = "stage_ask"
 
 
 @dataclass(frozen=True)

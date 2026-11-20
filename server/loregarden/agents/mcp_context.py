@@ -663,7 +663,13 @@ def build_mcp_run_context(
     workspace: Workspace,
     stage_def: WorkflowStageDef | None = None,
     transport: ControlPlaneTransport,
+    offer_stage_ask: bool = False,
 ) -> str:
+    """The control-plane block of a stage prompt.
+
+    ``offer_stage_ask`` is False for a judging stage, which the ask tool refuses
+    (`services.stage_ask`): telling it about the tool would invite a refusal.
+    """
     lines = [
         *_transport_header_lines(transport),
         "",
@@ -685,6 +691,7 @@ def build_mcp_run_context(
         + " and optional `search`, `parent_external_id`, or `state` filters",
         "- `loregarden_get_ticket` responses include a `hierarchy` block "
         "(parent, siblings, children)",
+        *_stage_ask_lines(ticket, transport, offer=offer_stage_ask),
         "",
         f"- ticket_id: `{ticket.id}`",
         f"- external_id: `{ticket.external_id}`",
@@ -719,6 +726,26 @@ def build_mcp_run_context(
         ]
     )
     return "\n".join(lines)
+
+
+def _stage_ask_lines(ticket: Ticket, transport: ControlPlaneTransport, *, offer: bool) -> list[str]:
+    if not offer:
+        return []
+    call = tool_invocation(
+        "loregarden_ask_earlier_stage",
+        transport,
+        {
+            "ticket_id": ticket.external_id,
+            "stage_key": "<earlier stage>",
+            "question": "<one question>",
+        },
+    )
+    return [
+        "",
+        "**Ask an earlier stage instead of re-deriving it:** when you need a fact an earlier "
+        "stage on this ticket found, or why it decided something, ask its session: " + call + ".",
+        "It answers read-only from what it did, within a few minutes; the call waits for it.",
+    ]
 
 
 def _handoff_section_lines(

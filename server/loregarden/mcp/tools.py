@@ -51,6 +51,7 @@ from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOO
 from loregarden.mcp.own_spec_edits import keeps_own_spec_edits
 from loregarden.mcp.reference_tool import TOOL_DEFINITION as REFERENCE_TOOL_DEFINITION
 from loregarden.mcp.research_tools import RESEARCH_TOOL_DEFINITIONS
+from loregarden.mcp.stage_ask_tool import STAGE_ASK_TOOL_DEFINITIONS
 from loregarden.mcp.survey_tools import TOOL_DEFINITIONS as SURVEY_TOOL_DEFINITIONS
 from loregarden.mcp.ticket_edit_tools import normalize_update_ticket_args
 from loregarden.mcp.ticket_ops_tools import (
@@ -745,6 +746,7 @@ TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(RESEARCH_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(OPERATOR_QUESTION_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(STAGE_ASK_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(CRITERION_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(MERGE_QUEUE_TOOL_DEFINITIONS)

@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from loregarden.agents.cli_tool_ids import STAGE_ASK_CLI_TOOLS
 from loregarden.agents.mcp_context import (
     append_mcp_cli_args,
     mcp_cli_env,
@@ -20,6 +21,7 @@ from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
 from loregarden.mcp.caller import ORCHESTRATED_ENV, RUN_ID_ENV
 from loregarden.models.domain import ChatSurface, CliAdapter
+from loregarden.models.domain.enums import CliTool
 from loregarden.models.domain.schemas import StudioAgentToolGrants
 from loregarden.services.cli_settings import (
     adapter_model_pins_apply,
@@ -767,6 +769,76 @@ def session_resume_invocation(
     if invocation.adapter == CliAdapter.CURSOR:
         return cursor_resume_invocation(invocation, session_id=session_id, prompt=prompt)
     raise ValueError(session_resume_unsupported(invocation.adapter))
+
+
+def claude_stage_ask_invocation(
+    *,
+    session_id: str,
+    prompt: str,
+    cwd: Path,
+    system_prompt_file: Path | None,
+    model: str,
+    max_budget_usd: str,
+) -> CliInvocation:
+    """A one-turn question to claude session `session_id`, in a fork, read-only.
+
+    For `services.stage_ask`. ``--fork-session`` gives the turn a new session id,
+    so the asked run's own transcript is never appended to. ``system_prompt_file``
+    is the prompt that session started under (`session_prompt`) and ``model`` the
+    one it ran on: both are part of the cache prefix. The turn keeps
+    ``STAGE_ASK_CLI_TOOLS`` and nothing else: every other CLI tool is removed
+    (``--disallowedTools``), no MCP server is loaded (``--strict-mcp-config``
+    with no config), and ``dontAsk`` refuses anything not on the allowlist. The
+    prompt goes before the variadic tool flags, which would swallow it after.
+    """
+    argv = [
+        _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+        "-p",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--resume",
+        session_id,
+        "--fork-session",
+    ]
+    if system_prompt_file is not None:
+        argv.extend(["--append-system-prompt-file", str(system_prompt_file)])
+    argv.extend(
+        [
+            prompt,
+            "--permission-mode",
+            "dontAsk",
+            "--strict-mcp-config",
+            "--max-budget-usd",
+            max_budget_usd,
+        ]
+    )
+    _append_model_flag(argv, model)
+    argv.extend(
+        [
+            "--allowedTools",
+            ",".join(sorted(tool.value for tool in STAGE_ASK_CLI_TOOLS)),
+            "--disallowedTools",
+            ",".join(sorted(tool.value for tool in CliTool if tool not in STAGE_ASK_CLI_TOOLS)),
+        ]
+    )
+    return CliInvocation(
+        argv=argv,
+        adapter=CliAdapter.CLAUDE.value,
+        cwd=str(cwd),
+        resume_session_id=session_id,
+        model=model,
+    )
+
+
+def ran_on_claude(command: str) -> bool:
+    """Whether a run's recorded command (`AgentRun.command`) invoked the claude CLI.
+
+    The command is the run's argv joined by spaces, so its first word is the
+    binary. A terminal handoff's ``[terminal-handoff]`` prefix is not one.
+    """
+    binary = command.split(" ", 1)[0]
+    return bool(binary) and Path(binary).name == Path(_bin("claude", "LOREGARDEN_CLAUDE_BIN")).name
 
 
 DEFAULT_OPENCODE_USER_PROMPT = (

@@ -585,6 +585,9 @@ class CliResultEnvelope(BaseModel):
     result: str = ""
     #: The session the run's turn belonged to; what a resume continues.
     session_id: str = ""
+    #: The CLI's own verdict on the turn: an auth failure or an exhausted budget
+    #: still closes with a `result`, carrying the error as its text.
+    is_error: bool = False
 
 
 def result_envelope(stdout: str) -> CliResultEnvelope | None:

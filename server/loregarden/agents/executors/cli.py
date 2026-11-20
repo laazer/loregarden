@@ -1008,6 +1008,7 @@ class CliAgentExecutor:
             workspace=workspace,
             stage_def=stage_def,
             transport=transport,
+            offer_stage_ask=not is_judging(run.agent_id, stage_def),
         )
         mcp_doc = load_loregarden_mcp_doc(transport=transport)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
