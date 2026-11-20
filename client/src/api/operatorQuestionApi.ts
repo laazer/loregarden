@@ -16,6 +16,8 @@ export type OperatorQuestionRow = {
   outcome: "" | "confirmed" | "overridden";
   answer: string;
   holds_gate: boolean;
+  /** The running stage an override waits on before it sends work back; "" once applied. */
+  queued_behind: string;
   created_at: string;
   resolved_at: string | null;
 };

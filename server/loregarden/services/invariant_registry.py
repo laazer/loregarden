@@ -69,6 +69,7 @@ from loregarden.services.parallel_queue import (
 from loregarden.services.proven_evidence_ledger import PROVEN_EVIDENCE_IS_NOT_HELD_OPEN
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
+from loregarden.services.queued_override_invariant import QUEUED_OVERRIDES_APPLY
 from loregarden.services.reference_survey.invariant_checks import (
     cleared_card_violations,
     close_cleared_card_violations,
@@ -1435,6 +1436,7 @@ ORPHANED_SYMBOL_MAP_PARTITION = Invariant(
 #: Ordered as `reconciliation.PERIODIC_STEPS` schedules them.
 INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_TAKE_NO_ANSWERS,
+    QUEUED_OVERRIDES_APPLY,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     HELD_REPAIRS_READ_IN_PROGRESS,
     SETTLED_HOLDS_READ_BLOCKED,

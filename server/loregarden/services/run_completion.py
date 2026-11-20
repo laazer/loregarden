@@ -79,7 +79,9 @@ from loregarden.services.operation_criteria import (
     operation_criteria_message,
     pending_operation_criteria,
 )
+from loregarden.services.operator_questions import apply_queued_overrides
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.orchestration_resume import resume_orchestration
 from loregarden.services.read_evidence import record_read_evidence
 from loregarden.services.recheck_round import prior_findings
 from loregarden.services.rework_brief import rework_context
@@ -478,6 +480,7 @@ def complete_run_tail(
         payload={"status": status.value},
     )
     if advance_workflow:
+        _apply_overrides_queued_behind(orch, ticket)
         workspace = workspace_for_ticket(orch.session, ticket)
         if workspace:
             refresh_execution_artifacts(
@@ -488,6 +491,12 @@ def complete_run_tail(
             )
     finalize_run_log_artifact(run, status=status, stderr=stderr)
     return run
+
+
+def _apply_overrides_queued_behind(orch: OrchestrationService, ticket: Ticket) -> None:
+    """The operator answered while this run held the ticket; their override waited for now."""
+    if apply_queued_overrides(orch.session, orch, ticket):
+        resume_orchestration(orch.session, ticket)
 
 
 def release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:

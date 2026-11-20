@@ -31,6 +31,7 @@ from loregarden.services.operator_questions import (
     open_workspace_questions,
     question_meta,
     question_text,
+    queued_behind,
     settled_answer,
     ticket_questions,
 )
@@ -133,6 +134,7 @@ def question_row(approval: Approval) -> dict[str, Any]:
         "outcome": outcome,
         "answer": answer,
         "holds_gate": holds_gate(approval),
+        "queued_behind": queued_behind(approval),
         "created_at": approval.created_at,
         "resolved_at": approval.resolved_at,
     }

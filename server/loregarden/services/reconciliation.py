@@ -87,6 +87,7 @@ from loregarden.services.invariant_registry import (
     PARENTS_CLOSE_WITH_THEIR_OWN_WORK,
     PROVEN_EVIDENCE_IS_NOT_HELD_OPEN,
     PUBLISH_CARDS_CLOSE,
+    QUEUED_OVERRIDES_APPLY,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     REWORK_PAUSES_STAND_ON_CHARGED_ROUNDS,
     RUN_FILINGS_ARE_FINDINGS,
@@ -334,6 +335,8 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     _invariant(HELD_TICKETS_RESUME),
     _invariant(UNDECIDED_FINDINGS_DO_NOT_RUN),
     _invariant(CLOSED_TICKETS_TAKE_NO_ANSWERS),
+    # An override queued behind a run that ended outside completion.
+    _invariant(QUEUED_OVERRIDES_APPLY),
     # A finding whose source finished without a scope round: the decision it
     # waits for can never be asked for, so it is deferred here or never.
     _invariant(FINDINGS_OUTLIVE_THEIR_SOURCE),

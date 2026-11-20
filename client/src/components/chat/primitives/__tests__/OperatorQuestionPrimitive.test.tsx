@@ -73,6 +73,7 @@ function row(overrides: Partial<OperatorQuestionRow> = {}): OperatorQuestionRow 
     outcome: "",
     answer: "",
     holds_gate: true,
+    queued_behind: "",
     created_at: "2026-11-18T10:00:00Z",
     resolved_at: null,
     ...overrides,
@@ -146,6 +147,20 @@ describe("OperatorQuestionPrimitive", () => {
 
     expect(await screen.findByText("Overridden: No, global. implement re-runs with it.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Confirm|Override/ })).not.toBeInTheDocument();
+  });
+
+  it("says an override waits for the running stage before it re-runs anything", async () => {
+    ticketOperatorQuestions.mockResolvedValue(
+      feed([
+        row({ status: "approved", outcome: "overridden", answer: "No, global", queued_behind: "review" }),
+      ]),
+    );
+    approvals.mockResolvedValue([]);
+    renderPart({ answer: "No, global" });
+
+    expect(
+      await screen.findByText("Overridden: No, global. implement re-runs with it once review finishes."),
+    ).toBeInTheDocument();
   });
 
   it("names a question it cannot find instead of drawing an empty card", async () => {
