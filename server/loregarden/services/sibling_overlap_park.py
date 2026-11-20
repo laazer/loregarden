@@ -54,7 +54,7 @@ def overlaps_to_park_on(session: Session, ticket: Ticket) -> list[SiblingOverlap
         for overlap in sibling_overlaps(session, ticket)
         if overlap.sibling.state is not TicketState.BACKLOG
         and overlap.sibling.id not in answered
-        and not _ordered(session, ticket.id, overlap.sibling.id)
+        and not already_ordered(session, ticket.id, overlap.sibling.id)
     ]
 
 
@@ -112,6 +112,6 @@ def _run_anyway_siblings(session: Session, ticket: Ticket) -> set[str]:
     }
 
 
-def _ordered(session: Session, a: str, b: str) -> bool:
+def already_ordered(session: Session, a: str, b: str) -> bool:
     """Whether either ticket already waits for the other, by edges or children."""
     return bool(wait_path(session, a, {b}) or wait_path(session, b, {a}))

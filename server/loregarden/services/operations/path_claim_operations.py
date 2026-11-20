@@ -16,8 +16,10 @@ from typing import Any
 from loregarden.models.domain import AgentRun
 from loregarden.services.operations.run_callbacks import RunCall
 from loregarden.services.operations.spec import Caller, Effect, Operation, OperationId, Transport
+from loregarden.services.operations.ticket_reads import TicketKey
 from loregarden.services.path_claims import declare_paths, paths_overlap, sibling_overlaps
 from loregarden.services.run_resolution import attributed_agent_run_id
+from loregarden.services.sibling_claims_view import SiblingClaimsView, sibling_claims_view
 from pydantic import Field
 from sqlmodel import Session
 
@@ -62,6 +64,10 @@ def _claim_paths(session: Session, call: PathsClaim, caller: Caller) -> dict[str
     return {"ok": True, "ticket": ticket.external_id, "claimed": claimed, "siblings": collisions}
 
 
+def _sibling_claims(session: Session, key: TicketKey, _caller: Caller) -> SiblingClaimsView:
+    return sibling_claims_view(session, key.resolve(session))
+
+
 PATH_CLAIM_OPERATIONS = (
     Operation(
         id=OperationId.PATHS_CLAIM,
@@ -70,6 +76,17 @@ PATH_CLAIM_OPERATIONS = (
         handler=_claim_paths,
         unavailable_on={
             Transport.REST: "a declaration an agent makes mid-run; no page makes one",
+        },
+    ),
+    Operation(
+        id=OperationId.TICKET_SIBLING_CLAIMS,
+        effect=Effect.READ,
+        args=TicketKey,
+        handler=_sibling_claims,
+        unavailable_on={
+            Transport.MCP: "a stage's prompt already carries its sibling claims "
+            "(agents.sibling_claims_context), and loregarden_claim_paths replies with them",
+            Transport.CLI: "the CLI runs MCP's tools, which do not offer it",
         },
     ),
 )

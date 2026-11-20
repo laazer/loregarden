@@ -54,6 +54,7 @@ from loregarden.api import (
     system,
     terminal,
     ticket_autopilot,
+    ticket_claims,
     ticket_conversation,
     ticket_handoff,
     ticket_landing,
@@ -318,6 +319,7 @@ app.include_router(tickets.router, prefix="/api")
 app.include_router(ticket_conversation.router, prefix="/api")
 app.include_router(ticket_pull_request.router, prefix="/api")
 app.include_router(ticket_landing.router, prefix="/api")
+app.include_router(ticket_claims.router, prefix="/api")
 app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(ticket_handoff.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")

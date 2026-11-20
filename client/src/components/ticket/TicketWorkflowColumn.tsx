@@ -4,6 +4,7 @@ import { hasParts } from "../../lib/ticketParts";
 import { canHaveChildren } from "../../lib/workItemHierarchy";
 import { ChildTicketsList } from "../dashboard/ChildTicketsList";
 import { SubtreeAutopilotCard } from "../SubtreeAutopilotCard";
+import { SharedFilesCard } from "./SharedFilesCard";
 import { TicketLinksCard } from "./TicketLinksCard";
 import { TicketPartsList } from "./TicketPartsList";
 import { TicketWorkflowCard } from "./TicketWorkflowCard";
@@ -22,7 +23,7 @@ interface TicketWorkflowColumnProps {
 /**
  * The ticket page's left column: a split ticket's parts, a parent's children
  * and their autopilot, or a leaf ticket's Workflow card; then, for all of them,
- * the tickets it is linked to.
+ * the tickets it is linked to, and for a leaf, the siblings sharing its files.
  */
 export function TicketWorkflowColumn({
   ticket,
@@ -78,6 +79,8 @@ export function TicketWorkflowColumn({
     <div className="ticket-workflow-cards">
       <TicketWorkflowCard ticket={ticket} work={work} />
       <TicketLinksCard ticket={ticket} />
+      {/* A leaf's plan names its files; a parent's work is its children's. */}
+      <SharedFilesCard ticket={ticket} />
     </div>
   );
 }
