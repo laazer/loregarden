@@ -29,6 +29,7 @@ from loregarden.services.operations.spec import (
     OperationUnavailable,
     ReadOperationWrote,
 )
+from loregarden.services.operations.stage_asks import STAGE_ASKS
 from loregarden.services.operations.survey_queue import SURVEY_QUEUE
 from loregarden.services.operations.ticket_links import TICKET_LINKS
 from loregarden.services.operations.ticket_lists import TICKET_LISTS
@@ -63,6 +64,7 @@ OPERATIONS: Mapping[OperationId, Operation] = {
         *PULL_REQUEST_MERGES,
         *OPERATOR_QUESTIONS,
         *PATH_CLAIM_OPERATIONS,
+        *STAGE_ASKS,
     )
 }
 
