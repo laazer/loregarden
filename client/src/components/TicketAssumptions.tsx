@@ -4,6 +4,8 @@ import { describeError } from "../state/toastStore";
 
 function answerLabel(row: OperatorQuestionRow): string {
   if (row.status === "ignored") return "Ignored — default stood";
+  if (row.outcome === "overridden" && row.queued_behind)
+    return `Overridden: ${row.answer} (waiting for ${row.queued_behind} to finish)`;
   if (row.outcome === "overridden") return `Overridden: ${row.answer}`;
   return "Confirmed";
 }

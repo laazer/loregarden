@@ -11,6 +11,8 @@ import type { OperatorQuestionPart } from "./types";
 
 /** What became of a question that is no longer open, in the operator's words. */
 function settledLine(row: OperatorQuestionRow): string {
+  if (row.outcome === "overridden" && row.queued_behind)
+    return `Overridden: ${row.answer}. ${row.affects} re-runs with it once ${row.queued_behind} finishes.`;
   if (row.outcome === "overridden") return `Overridden: ${row.answer}. ${row.affects} re-runs with it.`;
   if (row.outcome === "confirmed") return `Confirmed: ${row.answer || row.default}.`;
   return `Ignored: the agent's default '${row.default}' stood.`;

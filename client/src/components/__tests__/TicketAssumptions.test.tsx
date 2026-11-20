@@ -25,6 +25,7 @@ function row(overrides: Partial<OperatorQuestionRow> = {}): OperatorQuestionRow 
     outcome: "confirmed",
     answer: "Yes",
     holds_gate: false,
+    queued_behind: "",
     created_at: "2026-11-17T10:00:00Z",
     resolved_at: "2026-11-17T10:05:00Z",
     ...overrides,
@@ -44,6 +45,13 @@ describe("TicketAssumptions", () => {
       feed([
         row(),
         row({ id: "q2", question: "Retry on 429?", default: "No", outcome: "overridden", answer: "Yes, 3 times" }),
+        row({
+          id: "q5",
+          question: "Batch size?",
+          outcome: "overridden",
+          answer: "500",
+          queued_behind: "implement",
+        }),
         row({ id: "q3", question: "Drop old rows?", status: "ignored", outcome: "", answer: "" }),
         row({ id: "q4", question: "Still open?", status: "pending", outcome: "", answer: "" }),
       ]),
@@ -56,6 +64,7 @@ describe("TicketAssumptions", () => {
     expect(rows.map((r) => within(r).getAllByRole("cell")[2].textContent)).toEqual([
       "Confirmed",
       "Overridden: Yes, 3 times",
+      "Overridden: 500 (waiting for implement to finish)",
       "Ignored — default stood",
     ]);
     expect(within(table).queryByText("Still open?")).not.toBeInTheDocument();

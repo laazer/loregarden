@@ -15,7 +15,6 @@ from loregarden.models.domain import (
     DispatchSurface,
     EventType,
     OrchestrationDriver,
-    OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
     StageStatus,
@@ -51,6 +50,7 @@ from loregarden.services.operator_questions import (
     refuse_unappliable_answer,
     resolve_operator_question,
 )
+from loregarden.services.orchestration_resume import resume_orchestration
 from loregarden.services.rework_feedback import reset_rework_budget
 from loregarden.services.rework_pause import rework_pause_target
 from loregarden.services.run_completion import (
@@ -58,12 +58,10 @@ from loregarden.services.run_completion import (
     release_execution_slot,
     settle_stage_after_failed_completion,
 )
-from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_errors import failure_reason
 from loregarden.services.run_failure import set_run_status
 from loregarden.services.run_finality import claim_completion, refuse_late_completion
 from loregarden.services.run_log_stream import bootstrap_run_log
-from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_dispatch_prep import (
     consume_dispatch_waiver,
     consume_next_agent_pin,
@@ -1334,7 +1332,12 @@ class ApprovalService(ExitActionApprovalMixin):
                 ticket, approval, approved=approved, response_text=response_text
             )
         elif approval.kind == ApprovalKind.OPERATOR_QUESTION and resolve_operator_question(
-            self.session, self.orchestration, ticket, approval, approved=approved
+            self.session,
+            self.orchestration,
+            ticket,
+            approval,
+            approved=approved,
+            response_text=response_text,
         ):
             self._resume_orchestration(ticket)
 
@@ -1404,39 +1407,10 @@ class ApprovalService(ExitActionApprovalMixin):
 
         A rejection deliberately does not. It means more work is needed, and the
         operator may want to add guidance — or steer the stage once it starts —
-        before anything spends tokens on the rework.
-
-        `auto_approve` is carried over from the run that reached the gate.
-        Resuming without it would silently downgrade an unattended run into one
-        that stops at the next tool prompt.
-
-        ``carry_driver`` keeps the harness too, for an exit-action continuation:
-        it continues the stage the previous run was driving, and handing it to
-        the workspace's default driver instead could give it to a harness that
-        is not there. A manual run has no orchestration to carry.
+        before anything spends tokens on the rework. See `resume_orchestration`
+        for what is carried over.
         """
-        if find_active_orchestration_run(self.session, ticket.id):
-            return
-
-        previous = self.session.exec(
-            select(OrchestrationRun)
-            .where(OrchestrationRun.ticket_id == ticket.id)
-            .order_by(OrchestrationRun.created_at.desc())
-        ).first()
-        driver = (
-            previous.driver
-            if carry_driver
-            and previous is not None
-            and previous.driver != OrchestrationDriver.MANUAL_STAGE
-            else None
-        )
-        schedule_orchestration(
-            ticket.id,
-            driver=driver,
-            auto_approve=bool(previous and previous.auto_approve),
-            approve_design_plans=previous.approve_design_plans if previous else True,
-            auto_repair=previous.auto_repair if previous else True,
-        )
+        resume_orchestration(self.session, ticket, carry_driver=carry_driver)
 
     def list_pending(self) -> list[Approval]:
         return list(

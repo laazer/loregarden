@@ -8,7 +8,16 @@ proceeding with, and its answer has an effect:
 - **Confirmed**: the row closes and nothing moves.
 - **Overridden**: the answer goes on the rework ledger for the stage whose work
   depends on it (`affects`), and that stage runs again with the answer bound in
-  its prompt. The reroute counts toward `MAX_REWORK_REROUTES` like any other.
+  its prompt. The reroute counts toward `MAX_REWORK_REROUTES` like any other;
+  at the cap the operator's override is the deliberate decision that resets it.
+- **Rejected** (API only; the inbox offers no reject): an override whose answer
+  is "not the agent's default".
+
+An answer is never refused for timing: we asked, so we take it. An override
+given while a stage runs on the ticket is recorded and queued behind that run
+(`queued_behind`), and `apply_queued_overrides` sends the work back when the
+run completes; the `queued_overrides_apply` invariant catches a run that ended
+without passing through completion.
 
 Whether a question stops the stage is the agent's call with a floor under it
 (`block_reasons`): low confidence, an irreversible default, or an answer that
@@ -56,12 +65,15 @@ from loregarden.services.requeue import requeue_stage
 from loregarden.services.rework_feedback import (
     MAX_REWORK_REROUTES,
     record_rework_feedback,
+    reset_rework_budget,
     rework_reroute_count,
 )
 from loregarden.services.run_concurrency import find_active_stage_run
 from loregarden.services.ticket_stage_control import StageControl
+from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.workflow_service import resolve_ticket_stages
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -75,6 +87,11 @@ REQUIREMENT_AGENT_IDS = frozenset({"spec", "test_designer", "test_breaker"})
 QUESTION_HEADER = "Assumption"
 #: The rework ledger's `from_stage` for an operator's override.
 OVERRIDE_FROM = "operator"
+#: `response_json` keys for an override recorded while a stage was running.
+_QUEUED_BEHIND = "queued_behind"
+_APPLIED_AT = "applied_at"
+#: The statuses an answer is recorded on: approve answers, reject overrides.
+_ANSWERED = frozenset({ApprovalStatus.APPROVED, ApprovalStatus.REJECTED})
 _MIN_OPTIONS = 2
 _MAX_OPTIONS = 6
 
@@ -429,14 +446,26 @@ def settled_answer(approval: Approval) -> tuple[str, str]:
     resolves through the decision path, which records the pick but not the
     outcome, so it is derived here from the same rule.
     """
-    if approval.status is not ApprovalStatus.APPROVED:
+    if approval.status not in _ANSWERED:
         return "", ""
     stored = json.loads(approval.response_json or "{}")
     if stored.get("outcome"):
         return str(stored["outcome"]), str(stored.get("answer", ""))
+    if approval.status is not ApprovalStatus.APPROVED:
+        return "", ""
     picked = stored.get("updated_input", {})
     answer = _answer(approval, picked.get("answers"), str(picked.get("response") or ""))
     return answer.outcome.value, answer.text
+
+
+def queued_behind(approval: Approval) -> str:
+    """The stage an override is waiting on; "" once applied, or when it never waited."""
+    if approval.status not in _ANSWERED:
+        return ""
+    stored = json.loads(approval.response_json or "{}")
+    if stored.get(_APPLIED_AT):
+        return ""
+    return str(stored.get(_QUEUED_BEHIND) or "")
 
 
 def holds_gate(approval: Approval) -> bool:
@@ -500,6 +529,18 @@ def _answer(
     return _Answer(QuestionOutcome.OVERRIDDEN, chosen)
 
 
+def _rejection(approval: Approval, response_text: str) -> _Answer:
+    """A reject says "not the default"; any words given with it say what instead."""
+    said = response_text.strip()
+    if said:
+        return _Answer(QuestionOutcome.OVERRIDDEN, said)
+    return _Answer(
+        QuestionOutcome.OVERRIDDEN,
+        f"Not '{question_meta(approval).default}'. The operator rejected this default; "
+        "do not proceed on it.",
+    )
+
+
 def refuse_unappliable_answer(
     session: Session,
     approval: Approval,
@@ -508,39 +549,22 @@ def refuse_unappliable_answer(
     answers: dict[str, str | list[str]] | None,
     response_text: str,
 ) -> None:
-    """Raise before the row closes when its answer could not take effect.
+    """Raise before the row closes when its answer has nowhere to take effect.
 
-    A reject has no meaning (confirm or override it; ignore closes it without
-    an answer). An override cannot reroute while a stage is running on the
-    ticket, nor past the rework cap; either way the question stays open and
-    the refusal says what to do instead.
+    Only a missing ticket qualifies. Everything else the operator says to a
+    question we asked is taken: a reject is an override of the default, an
+    override while a stage runs is queued behind it, and an override at the
+    rework cap resets the cap (a person deciding the work goes back is what the
+    reset is for).
     """
     if approval.kind is not ApprovalKind.OPERATOR_QUESTION:
         return
-    if not approved:
-        raise ValueError(
-            "An assumption is confirmed or overridden, not rejected. Pick the answer you "
-            "want; to close it without one, ignore it with a reason."
-        )
-    if _answer(approval, answers, response_text).outcome is QuestionOutcome.CONFIRMED:
+    if approved and _answer(approval, answers, response_text).outcome is (
+        QuestionOutcome.CONFIRMED
+    ):
         return
-    ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
-    if ticket is None:
+    if approval.ticket_id is None or session.get(Ticket, approval.ticket_id) is None:
         raise ValueError("This question's ticket no longer exists; nothing to send back.")
-    running = find_active_stage_run(session, ticket.id)
-    if running is not None:
-        raise ValueError(
-            f"Stage '{running.stage_key}' is running on {ticket.external_id}, so the override "
-            "cannot send work back yet. Answer again once it finishes; the gate waits for "
-            "this question."
-        )
-    affects = question_meta(approval).affects
-    if rework_reroute_count(session, ticket, affects) >= MAX_REWORK_REROUTES:
-        raise ValueError(
-            f"'{affects}' has already been sent back {MAX_REWORK_REROUTES} times on "
-            f"{ticket.external_id}, the rework cap. Confirm the default, or requeue the "
-            "ticket naming the unmet criterion that justifies another round."
-        )
 
 
 def _record_answer(session: Session, ticket: Ticket, approval: Approval, answer: _Answer) -> None:
@@ -600,29 +624,25 @@ def _release_answers_hold(session: Session, orch: StageControl, ticket: Ticket) 
     return True
 
 
-def resolve_operator_question(
-    session: Session,
-    orch: StageControl,
-    ticket: Ticket,
-    approval: Approval,
-    *,
-    approved: bool,
-) -> bool:
-    """Act on a closed operator question. True when the orchestration should resume.
-
-    `approved=False` arrives only from ignore (a reject is refused up front),
-    and closes the question without an answer. Answers were already validated
-    by `refuse_unappliable_answer`, so an override here always applies.
-    """
-    if not approved:
-        return _release_answers_hold(session, orch, ticket)
-    stored = json.loads(approval.response_json or "{}").get("updated_input", {})
-    answer = _answer(approval, stored.get("answers"), str(stored.get("response") or ""))
-    _record_answer(session, ticket, approval, answer)
-    session.commit()
-    if answer.outcome is QuestionOutcome.CONFIRMED:
-        return _release_answers_hold(session, orch, ticket)
+def _apply_override(
+    session: Session, orch: StageControl, ticket: Ticket, approval: Approval, answer: _Answer
+) -> None:
+    """Send `affects` back with the answer bound, and mark the override applied."""
     affects = question_meta(approval).affects
+    if rework_reroute_count(session, ticket, affects) >= MAX_REWORK_REROUTES:
+        forgiven = reset_rework_budget(
+            session,
+            ticket,
+            target_stage=affects,
+            reason=f"The operator overrode an assumption at the rework cap: {answer.text}",
+        )
+        logger.warning(
+            "operator override on %s reset '%s' rework budget (%d rounds forgiven, approval %s)",
+            ticket.external_id,
+            affects,
+            forgiven,
+            approval.id,
+        )
     record_rework_feedback(
         session,
         ticket,
@@ -630,6 +650,12 @@ def resolve_operator_question(
         from_stage=OVERRIDE_FROM,
         context=_override_context(approval, answer),
     )
+    stored = json.loads(approval.response_json or "{}")
+    if stored.get(_QUEUED_BEHIND):
+        stored[_APPLIED_AT] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        approval.response_json = json.dumps(stored)
+        session.add(approval)
+        session.commit()
     if ticket.block_kind is BlockKind.ANSWERS and ticket.workflow_stage_key != affects:
         # The gate is BLOCKED in the stage map; left so, the reroute would run
         # back up to a gate that can never start again.
@@ -657,4 +683,99 @@ def resolve_operator_question(
         affects,
         approval.id,
     )
+
+
+def _queue_override(
+    session: Session, ticket: Ticket, approval: Approval, running: AgentRun
+) -> None:
+    stored = json.loads(approval.response_json or "{}")
+    stored[_QUEUED_BEHIND] = running.stage_key
+    approval.response_json = json.dumps(stored)
+    session.add(approval)
+    session.commit()
+    logger.info(
+        "operator override on %s queued behind running stage '%s' (approval %s)",
+        ticket.external_id,
+        running.stage_key,
+        approval.id,
+    )
+
+
+def resolve_operator_question(
+    session: Session,
+    orch: StageControl,
+    ticket: Ticket,
+    approval: Approval,
+    *,
+    approved: bool,
+    response_text: str = "",
+) -> bool:
+    """Act on a closed operator question. True when the orchestration should resume.
+
+    Ignore closes it without an answer. A reject overrides the default. An
+    override while a stage runs on the ticket is queued behind that run and
+    returns False: the running orchestration carries on, and the override is
+    applied when the run completes (`apply_queued_overrides`).
+    """
+    if approval.status is ApprovalStatus.IGNORED:
+        return _release_answers_hold(session, orch, ticket)
+    if approved:
+        stored = json.loads(approval.response_json or "{}").get("updated_input", {})
+        answer = _answer(approval, stored.get("answers"), str(stored.get("response") or ""))
+    else:
+        answer = _rejection(approval, response_text)
+    _record_answer(session, ticket, approval, answer)
+    session.commit()
+    if answer.outcome is QuestionOutcome.CONFIRMED:
+        return _release_answers_hold(session, orch, ticket)
+    running = find_active_stage_run(session, ticket.id)
+    if running is not None:
+        _queue_override(session, ticket, approval, running)
+        return False
+    _apply_override(session, orch, ticket, approval, answer)
+    return True
+
+
+def queued_overrides(session: Session, ticket_id: str | None = None) -> list[Approval]:
+    """Overrides recorded while a stage ran and not yet applied, oldest first."""
+    query = (
+        select(Approval)
+        .where(Approval.kind == ApprovalKind.OPERATOR_QUESTION)
+        .where(col(Approval.status).in_(_ANSWERED))
+        .where(func.json_extract(Approval.response_json, f"$.{_QUEUED_BEHIND}").is_not(None))
+        .where(func.json_extract(Approval.response_json, f"$.{_APPLIED_AT}").is_(None))
+        .order_by(col(Approval.resolved_at))
+    )
+    if ticket_id is not None:
+        query = query.where(Approval.ticket_id == ticket_id)
+    return list(session.exec(query).all())
+
+
+def apply_queued_overrides(session: Session, orch: StageControl, ticket: Ticket) -> bool:
+    """Apply this ticket's queued overrides once no stage runs on it. True if any applied.
+
+    Several queued overrides each go on their stage's rework ledger; the
+    earliest affected stage is requeued last, so it is where the cursor lands
+    and the later ones run again after it. A ticket closed in the meantime is
+    left alone (reopening it would revive what the operator shipped) and said
+    out loud.
+    """
+    pending = queued_overrides(session, ticket.id)
+    if not pending or find_active_stage_run(session, ticket.id) is not None:
+        return False
+    if ticket.state in RESOLVED_STATES:
+        logger.warning(
+            "%s closed as %s with %d queued operator override(s) unapplied: %s",
+            ticket.external_id,
+            ticket.state.value,
+            len(pending),
+            ", ".join(row.id for row in pending),
+        )
+        return False
+    _, stages = resolve_ticket_stages(session, ticket)
+    order = {stage.key: stage.order for stage in stages}
+    pending.sort(key=lambda row: order.get(question_meta(row).affects, 0), reverse=True)
+    for approval in pending:
+        outcome, text = settled_answer(approval)
+        _apply_override(session, orch, ticket, approval, _Answer(QuestionOutcome(outcome), text))
     return True

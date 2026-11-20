@@ -802,7 +802,7 @@ export function ApprovalCard({
             Retry without waiving
           </Button>
         ) : null}
-        {/* The server refuses a reject on an operator question; Ignore closes one unanswered. */}
+        {/* An operator question is confirmed or overridden; Ignore closes one unanswered. */}
         {!isOperatorQuestion && (
           <Button
             variant="secondary"

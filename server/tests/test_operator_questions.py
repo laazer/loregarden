@@ -51,19 +51,29 @@ from loregarden.services.operations import (
     Transport,
     run_operation,
 )
+from loregarden.services.operations.operator_questions import question_row
 from loregarden.services.operator_questions import (
     AskRequest,
+    apply_queued_overrides,
     ask_operator,
     block_reasons,
     gate_holding_questions,
+    queued_behind,
+    queued_overrides,
+    settled_answer,
 )
-from loregarden.services.orchestration import ApprovalService
+from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.queue_repair import awaiting_a_person
+from loregarden.services.queued_override_invariant import (
+    apply_stranded_overrides,
+    queued_overrides_with_nothing_running,
+)
 from loregarden.services.readiness_gate import block_if_unready
 from loregarden.services.rework_feedback import (
     MAX_REWORK_REROUTES,
     record_rework_feedback,
     render_rework_feedback,
+    rework_reroute_count,
 )
 from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.stage_verdict import collect_signals, derive_verdict
@@ -397,38 +407,144 @@ def test_an_override_sends_the_affected_stage_back_with_the_answer_bound(db_sess
     assert scheduled.called, "the run resumes on its own after the override"
 
 
-def test_an_override_while_a_stage_runs_is_refused_and_the_question_stays_open(db_session, ticket):
-    _running_run(db_session, ticket)
-    asked = ask_operator(db_session, ticket, _request()).approval
+def _override(session: Session, asked: Approval) -> None:
+    ApprovalService(session).resolve(asked.id, approved=True, answers={QUESTION: OPTIONS[1]})
 
-    with pytest.raises(ValueError, match="is running"):
-        ApprovalService(db_session).resolve(asked.id, approved=True, answers={QUESTION: OPTIONS[1]})
+
+def test_an_override_while_a_stage_runs_is_taken_and_queued_behind_the_run(db_session, ticket):
+    run = _running_run(db_session, ticket)
+    asked = ask_operator(db_session, ticket, _request(run_id=run.id)).approval
+
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
+        _override(db_session, asked)
 
     db_session.refresh(asked)
-    assert asked.status is ApprovalStatus.PENDING
+    db_session.refresh(ticket)
+    assert asked.status is ApprovalStatus.APPROVED
+    assert settled_answer(asked) == ("overridden", OPTIONS[1])
+    assert queued_behind(asked) == IMPLEMENT
+    assert question_row(asked)["queued_behind"] == IMPLEMENT
+    assert ticket.workflow_stage_status is StageStatus.RUNNING, "the live run is left alone"
     assert render_rework_feedback(db_session, ticket, IMPLEMENT) == ""
+    assert not scheduled.called
 
 
-def test_an_override_past_the_rework_cap_is_refused(db_session, ticket):
+def test_a_queued_override_is_applied_when_the_run_completes(db_session, ticket):
+    run = _running_run(db_session, ticket)
+    asked = ask_operator(db_session, ticket, _request(run_id=run.id)).approval
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration"):
+        _override(db_session, asked)
+
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
+        OrchestrationService(db_session).complete_run(run, status=RunStatus.FAILED, stderr="boom")
+
+    db_session.refresh(asked)
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == IMPLEMENT
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    feedback = render_rework_feedback(db_session, ticket, IMPLEMENT)
+    assert OPTIONS[1] in feedback and "BINDING DECISION" in feedback
+    assert queued_behind(asked) == "", "applied once"
+    assert queued_overrides(db_session, ticket.id) == []
+    assert scheduled.called, "the ticket resumes on the operator's answer"
+
+
+def test_an_override_past_the_rework_cap_resets_the_budget_and_reroutes(db_session, ticket):
     asked = ask_operator(db_session, ticket, _request()).approval
     for round_ in range(MAX_REWORK_REROUTES):
         record_rework_feedback(
             db_session, ticket, target_stage=IMPLEMENT, from_stage=GATE, context=f"r{round_}"
         )
 
-    with pytest.raises(ValueError, match="rework cap"):
-        ApprovalService(db_session).resolve(asked.id, approved=True, answers={QUESTION: OPTIONS[1]})
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
+        _override(db_session, asked)
+
     db_session.refresh(asked)
-    assert asked.status is ApprovalStatus.PENDING
+    db_session.refresh(ticket)
+    assert asked.status is ApprovalStatus.APPROVED
+    assert rework_reroute_count(db_session, ticket, IMPLEMENT) == 1, "reset, then this round"
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    assert scheduled.called
 
 
-def test_a_reject_is_refused_because_an_assumption_is_confirmed_or_overridden(db_session, ticket):
+@pytest.mark.parametrize(
+    ("said", "expected"),
+    [("", f"Not '{OPTIONS[0]}'"), ("Ask the spec author first", "Ask the spec author first")],
+    ids=["bare", "with-words"],
+)
+def test_a_reject_overrides_the_default(db_session, ticket, said, expected):
     asked = ask_operator(db_session, ticket, _request()).approval
 
-    with pytest.raises(ValueError, match="not rejected"):
-        ApprovalService(db_session).resolve(asked.id, approved=False)
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration"):
+        ApprovalService(db_session).resolve(asked.id, approved=False, response_text=said)
+
     db_session.refresh(asked)
-    assert asked.status is ApprovalStatus.PENDING
+    db_session.refresh(ticket)
+    outcome, answer = settled_answer(asked)
+    assert asked.status is ApprovalStatus.REJECTED
+    assert outcome == "overridden" and answer.startswith(expected)
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    assert expected in render_rework_feedback(db_session, ticket, IMPLEMENT)
+
+
+def test_queued_overrides_on_two_stages_land_the_cursor_on_the_earlier(db_session, ticket):
+    """A spec-affecting question blocks (the floor), so the earlier stage here is implement."""
+    run = _running_run(db_session, ticket, GATE)
+    later = ask_operator(db_session, ticket, _request(stage_key=GATE, affects=GATE)).approval
+    earlier = ask_operator(
+        db_session, ticket, _request(question="Which schema?", stage_key=GATE)
+    ).approval
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration"):
+        _override(db_session, later)
+        ApprovalService(db_session).resolve(earlier.id, approved=True, answers=_answer_for(earlier))
+    assert {queued_behind(later), queued_behind(earlier)} == {GATE}
+    _finish(db_session, run)
+
+    assert apply_queued_overrides(db_session, OrchestrationService(db_session), ticket)
+
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == IMPLEMENT
+    assert OPTIONS[1] in render_rework_feedback(db_session, ticket, IMPLEMENT)
+    assert OPTIONS[1] in render_rework_feedback(db_session, ticket, GATE)
+
+
+def test_the_invariant_applies_an_override_whose_run_ended_outside_completion(db_session, ticket):
+    run = _running_run(db_session, ticket)
+    asked = ask_operator(db_session, ticket, _request()).approval
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration"):
+        _override(db_session, asked)
+    assert queued_overrides_with_nothing_running(db_session) == [], "still waiting on the run"
+    _finish(db_session, run)  # reaped: no completion hook
+
+    found = queued_overrides_with_nothing_running(db_session)
+    assert [violation.subject_id for violation in found] == [asked.id]
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
+        assert apply_stranded_overrides(db_session, found) == 1
+
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == IMPLEMENT
+    assert ticket.workflow_stage_status is StageStatus.PENDING
+    assert scheduled.called
+    assert queued_overrides_with_nothing_running(db_session) == []
+
+
+def test_the_invariant_reports_a_queued_override_on_a_closed_ticket_without_reopening_it(
+    db_session, ticket
+):
+    run = _running_run(db_session, ticket)
+    asked = ask_operator(db_session, ticket, _request()).approval
+    with patch("loregarden.services.orchestration_resume.schedule_orchestration"):
+        _override(db_session, asked)
+    _finish(db_session, run)
+    ticket.state = TicketState.DONE
+    db_session.add(ticket)
+    db_session.commit()
+
+    found = queued_overrides_with_nothing_running(db_session)
+    assert [violation.subject_id for violation in found] == [asked.id]
+    assert apply_stranded_overrides(db_session, found) == 0
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.DONE
 
 
 def test_a_second_answer_is_refused(db_session, ticket):

@@ -77,7 +77,7 @@ def test_approving_a_park_reruns_the_stage_rather_than_completing_it(db_session,
     ticket, _, approval, stage_key = parked
     assert ticket.workflow_stage_status == StageStatus.AWAITING
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration") as scheduled:
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
         ApprovalService(db_session).resolve(approval.id, approved=True)
 
     db_session.refresh(ticket)
@@ -91,7 +91,7 @@ def test_approving_arms_the_waiver_the_next_dispatch_spends(db_session, parked):
     parks again — an approve button that cannot ever get past itself."""
     ticket, _, approval, stage_key = parked
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration"):
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration"):
         ApprovalService(db_session).resolve(approval.id, approved=True)
 
     db_session.refresh(ticket)
@@ -105,7 +105,7 @@ def test_rejecting_a_park_blocks_in_place_and_does_not_reroute(db_session, parke
     whose plan was never the problem."""
     ticket, _, approval, stage_key = parked
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration") as scheduled:
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
         ApprovalService(db_session).resolve(approval.id, approved=False)
 
     db_session.refresh(ticket)

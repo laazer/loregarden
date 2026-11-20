@@ -186,7 +186,7 @@ def test_tickets_already_ordered_either_way_are_not_asked(db_session, pair, dire
 
 def test_a_sibling_answered_run_anyway_is_not_asked_about_again(db_session, parked):
     ticket, _, approval = parked
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration"):
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration"):
         ApprovalService(db_session).resolve(approval.id, approved=True)
 
     assert overlaps_to_park_on(db_session, ticket) == []
@@ -213,7 +213,7 @@ def test_the_park_says_why_and_whom_rejecting_would_wait_for(parked):
 def test_wait_links_the_ticket_to_the_sibling_and_requeues_the_stage(db_session, parked):
     ticket, sibling, approval = parked
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration") as scheduled:
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
         ApprovalService(db_session).resolve(approval.id, approved=False)
 
     db_session.refresh(ticket)
@@ -227,7 +227,7 @@ def test_wait_links_the_ticket_to_the_sibling_and_requeues_the_stage(db_session,
 def test_run_anyway_arms_the_waiver_and_links_nothing(db_session, parked):
     ticket, _, approval = parked
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration"):
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration"):
         ApprovalService(db_session).resolve(approval.id, approved=True)
 
     db_session.refresh(ticket)
@@ -257,7 +257,7 @@ def test_wait_that_would_close_a_loop_blocks_with_the_reason(db_session, parked)
     ticket, sibling, approval = parked
     TicketDependencyService(db_session).add_dependency(sibling.id, ticket.id)
 
-    with mock.patch("loregarden.services.orchestration.schedule_orchestration") as scheduled:
+    with mock.patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
         ApprovalService(db_session).resolve(approval.id, approved=False)
 
     db_session.refresh(ticket)
