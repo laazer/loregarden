@@ -41,16 +41,20 @@ gates:
   # `-c` points pytest at the suite's pyproject while ids stay repo-relative.
   # A name pytest cannot find exits 4, a failure, never a pass.
   #
-  # Not ts/: vitest takes no `path::"name"` id, and a `-t` filter matching
-  # nothing can exit 0, which would refute a real reject. Its tests are only
-  # checked to exist until lore-eden has a wrapper like loregarden's
-  # client/scripts/criterion-jest.cjs.
+  # ts/ goes through ts/scripts/criterion-vitest.cjs (lore-eden #73), the
+  # counterpart of client/scripts/criterion-jest.cjs: vitest's `-t` exits 0 on
+  # a name that matched nothing, so the wrapper reads the JSON report and exits
+  # 0 only if every named test ran and passed, 69 when vitest cannot run. In a
+  # worktree with no ts/node_modules it links the primary checkout's.
   criterion_test_commands:
     - prefix: python/
       command: bash gates/scripts/gate-python.sh -m pytest -q -p no:cacheprovider --rootdir python -c python/pyproject.toml {tests}
       strip_prefix: false
     - prefix: gates/
       command: bash gates/scripts/gate-python.sh -m pytest -q -p no:cacheprovider --rootdir gates -c gates/pyproject.toml {tests}
+      strip_prefix: false
+    - prefix: ts/
+      command: node ts/scripts/criterion-vitest.cjs {tests}
       strip_prefix: false
 subagents:
   spawn_via: external
