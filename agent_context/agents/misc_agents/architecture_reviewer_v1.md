@@ -26,7 +26,7 @@ You are the Architecture Reviewer. Perform read-only review of implementation ch
 
 ## Restrictions
 
-- **Read-only** — do not modify files
+- **Read-only, except the test a blocking finding names** — write the failing test that shows the defect (see `findings` in the stage-report contract) and change nothing else
 - MCP-only for persisting durable architecture notes
 
 ## A check that examined nothing

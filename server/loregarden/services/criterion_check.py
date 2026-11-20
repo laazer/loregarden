@@ -15,7 +15,6 @@ to do with the answer. Each criterion is checked by how it was settled:
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,7 +26,6 @@ from loregarden.models.domain import (
     OrchestrationRun,
     Ticket,
 )
-from loregarden.models.domain.enums_capacity import DockerFootprint
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.criterion_ledger import (
     CriterionGap,
@@ -36,20 +34,12 @@ from loregarden.services.criterion_ledger import (
     settlements_of,
     test_ids,
 )
-from loregarden.services.gate_capacity import GateCapacityUnavailable, acquire_gate_capacity
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.land_verification import run_verify_command
-from loregarden.services.orchestration_capacity import parent_lease_for
-from loregarden.services.orchestration_profile import (
-    CriterionTestCommand,
-    resolve_orchestration_profile,
-)
+from loregarden.services.named_tests import named_test_exists, run_named_tests
+from loregarden.services.reject_tests import reject_tests_by_criterion
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from sqlmodel import Session
-
-#: A rerun of a handful of named tests; long enough for a cold `uv run`.
-_LEASE_TTL_SECONDS = 900
 
 
 @dataclass
@@ -68,32 +58,6 @@ class CriteriaCheck:
         return not self.gaps and not self.unavailable
 
 
-def _test_file_and_name(test_id: str) -> tuple[str, str]:
-    path, _, rest = test_id.partition("::")
-    name = rest.rsplit("::", 1)[-1].split("[", 1)[0].strip().strip("\"'")
-    return path.strip(), name
-
-
-def _exists(root: Path, test_id: str) -> bool:
-    path, name = _test_file_and_name(test_id)
-    target = root / path
-    if not name or not target.is_file():
-        return False
-    return name in target.read_text(encoding="utf-8", errors="replace")
-
-
-def _runner_for(test_id: str, commands: list[CriterionTestCommand]) -> CriterionTestCommand | None:
-    return next((c for c in commands if test_id.startswith(c.prefix)), None)
-
-
-def _render(command: CriterionTestCommand, ids: list[str]) -> str:
-    stripped = [i[len(command.prefix) :] if command.strip_prefix else i for i in ids]
-    files = sorted({_test_file_and_name(i)[0] for i in stripped})
-    return command.command.replace("{tests}", " ".join(shlex.quote(i) for i in stripped)).replace(
-        "{files}", " ".join(shlex.quote(f) for f in files)
-    )
-
-
 def _evidence_current(root: Path, artifact: Artifact | None) -> bool:
     if artifact is None or not artifact.commit_sha:
         return False
@@ -102,16 +66,22 @@ def _evidence_current(root: Path, artifact: Artifact | None) -> bool:
 
 
 def _met_gaps(
-    session: Session, root: Path, rows: dict[str, CriterionSettlement]
+    session: Session, ticket: Ticket, root: Path, rows: dict[str, CriterionSettlement]
 ) -> tuple[list[CriterionGap], dict[str, list[str]]]:
-    """Gaps from missing tests and stale evidence, and each criterion's existing tests."""
+    """Gaps from missing tests and stale evidence, and each criterion's existing tests.
+
+    A criterion's tests are the ones it was settled on and every test a
+    reviewer's admitted reject named against it (`reject_tests`): a settlement
+    that leaves out the test proving it was unmet does not answer for it.
+    """
     gaps: list[CriterionGap] = []
     tests_of: dict[str, list[str]] = {}
+    rejected = reject_tests_by_criterion(session, ticket)
     for text, row in rows.items():
         if row.disposition is not CriterionDisposition.MET:
             continue
-        ids = test_ids(row)
-        if not ids:
+        settled_on = test_ids(row)
+        if not settled_on:
             artifact = (
                 session.get(Artifact, row.evidence_artifact_id)
                 if row.evidence_artifact_id
@@ -119,8 +89,11 @@ def _met_gaps(
             )
             if not _evidence_current(root, artifact):
                 gaps.append(CriterionGap(text, GapKind.EVIDENCE_STALE, "the code changed after it"))
+                continue
+        ids = settled_on + [t for t in rejected.get(text, []) if t not in settled_on]
+        if not ids:
             continue
-        missing = [i for i in ids if not _exists(root, i)]
+        missing = [i for i in ids if not named_test_exists(root, i)]
         if missing:
             gaps.append(
                 CriterionGap(text, GapKind.TESTS_FAILED, f"not found: {', '.join(missing)}")
@@ -128,28 +101,6 @@ def _met_gaps(
         else:
             tests_of[text] = ids
     return gaps, tests_of
-
-
-def _batches(
-    tests_of: dict[str, list[str]], commands: list[CriterionTestCommand], check: CriteriaCheck
-) -> list[tuple[str, CriterionTestCommand, list[str]]]:
-    """One run per criterion and command, so a failure lands on the criterion it belongs to.
-
-    Batching every criterion's tests into one run would let one failing test
-    mark every criterion in the batch failed. A ticket has about five criteria,
-    so the price is a few short runs.
-    """
-    batches: list[tuple[str, CriterionTestCommand, list[str]]] = []
-    for criterion, ids in tests_of.items():
-        by_command: dict[int, list[str]] = {}
-        for test_id in ids:
-            runner = _runner_for(test_id, commands)
-            if runner is None:
-                check.not_rerun.append(test_id)
-            else:
-                by_command.setdefault(commands.index(runner), []).append(test_id)
-        batches.extend((criterion, commands[index], group) for index, group in by_command.items())
-    return batches
 
 
 def _rerun(
@@ -160,55 +111,23 @@ def _rerun(
     check: CriteriaCheck,
     orch_run: OrchestrationRun | None,
 ) -> None:
-    """Rerun each criterion's tests, recording failures against that criterion.
-
-    Inside an orchestration the lease is a child of the run's parent, the claim
-    `run_transition_gates` makes, so it never takes a place in line behind the
-    capacity its own run already holds. A top-level claim did: the check queued
-    behind two pre-push suites and its own orchestration, and gave up after the
-    stall window (lg-milestone-that-1425). A lease that cannot be had is
-    `unavailable`, which blocks as HARNESS, never an exception that escapes the
-    run boundary as the orchestrator stopping.
-    """
-    workspace = workspace_for_ticket(session, ticket)
-    commands = (
-        resolve_orchestration_profile(workspace).gates.criterion_test_commands if workspace else []
+    """Rerun each criterion's tests, recording failures against that criterion."""
+    ran = run_named_tests(
+        session, ticket, root, tests_of, orch_run=orch_run, transition="criteria check"
     )
-    batches = _batches(tests_of, commands, check)
-    if not batches or workspace is None:
+    check.not_rerun.extend(ran.not_run)
+    if ran.unavailable:
+        check.unavailable = ran.unavailable
         return
-    parent = parent_lease_for(session, orch_run) if orch_run is not None else None
-    try:
-        lease = acquire_gate_capacity(
-            session,
-            DockerFootprint.SERVICE,
-            ticket=ticket,
-            workspace=workspace,
-            transition="criteria check",
-            ttl_seconds=_LEASE_TTL_SECONDS,
-            parent_lease_id=parent.id if parent is not None else None,
-            orchestration_run_id=orch_run.id if orch_run is not None else None,
-        )
-    except GateCapacityUnavailable as exc:
-        check.unavailable = str(exc)
-        return
-    try:
-        for criterion, command, ids in batches:
-            outcome = run_verify_command(
-                _render(command, ids), root, footprint=DockerFootprint.SERVICE
-            )
-            if outcome.outcome is GateOutcome.UNAVAILABLE:
-                check.unavailable = outcome.detail or f"could not run {outcome.command}"
-                return
-            if outcome.outcome is GateOutcome.PASSED:
-                check.rerun.extend(i for i in ids if i not in check.rerun)
-            else:
-                tail = (outcome.output or outcome.detail)[-600:]
-                check.gaps.append(
-                    CriterionGap(criterion, GapKind.TESTS_FAILED, f"rerun at HEAD failed: {tail}")
+    for group in ran.runs:
+        if group.outcome is GateOutcome.PASSED:
+            check.rerun.extend(i for i in group.ids if i not in check.rerun)
+        else:
+            check.gaps.append(
+                CriterionGap(
+                    group.key, GapKind.TESTS_FAILED, f"rerun at HEAD failed: {group.detail}"
                 )
-    finally:
-        lease.release(session)
+            )
 
 
 def check_criteria(
@@ -233,7 +152,7 @@ def check_criteria(
         check.unavailable = f"{ticket.external_id} has no workspace to check its tests in"
         return check
     root = resolve_ticket_root(session, ticket, workspace)
-    met_gaps, tests_of = _met_gaps(session, root, rows)
+    met_gaps, tests_of = _met_gaps(session, ticket, root, rows)
     check.gaps.extend(met_gaps)
     _rerun(session, ticket, root, tests_of, check, orch_run)
     return check

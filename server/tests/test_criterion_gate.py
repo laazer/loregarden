@@ -37,7 +37,6 @@ from loregarden.services import criterion_split_creator  # noqa: F401 — instal
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.auto_decisions import auto_decisions_under
 from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
-from loregarden.services.criterion_check import _render, _runner_for
 from loregarden.services.criterion_gate import check_criteria_if_due
 from loregarden.services.criterion_gate_stages import check_due, gate_of
 from loregarden.services.criterion_ledger import (
@@ -46,6 +45,7 @@ from loregarden.services.criterion_ledger import (
     settlements_of,
 )
 from loregarden.services.gate_capacity import GateCapacityUnavailable, GateLease
+from loregarden.services.named_tests import _render, _runner_for
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import (
     CriterionTestCommand,
@@ -126,7 +126,7 @@ def env_fixture(checkout: Path):
     with (
         patch("loregarden.services.criterion_check.resolve_ticket_root", return_value=checkout),
         patch(
-            "loregarden.services.criterion_check.resolve_orchestration_profile",
+            "loregarden.services.named_tests.resolve_orchestration_profile",
             return_value=_profile([PYTEST]),
         ) as profile,
     ):
@@ -529,7 +529,7 @@ def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():
     assert (orchestration_dir().parents[1] / argv[1]).is_file()
 
 
-ACQUIRE = "loregarden.services.criterion_check.acquire_gate_capacity"
+ACQUIRE = "loregarden.services.named_tests.acquire_gate_capacity"
 
 
 def test_a_criteria_check_that_cannot_get_capacity_blocks_as_harness(db_session, ticket, env):
@@ -555,7 +555,7 @@ def test_the_criteria_check_claims_under_its_runs_parent_lease(db_session, ticke
     run = _orch_run(db_session, ticket)
     parent = DockerLease(holder_label="parent", orchestration_run_id=run.id)
     with (
-        patch("loregarden.services.criterion_check.parent_lease_for", return_value=parent),
+        patch("loregarden.services.named_tests.parent_lease_for", return_value=parent),
         patch(ACQUIRE, return_value=GateLease()) as acquire,
     ):
         check_criteria_if_due(db_session, run, ticket)

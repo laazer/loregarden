@@ -145,6 +145,11 @@ class OrchestratorDecision(StrEnum):
     #: treated as a reject: the stage proceeded as passed (`finding_bar`). The
     #: evidence carries every finding it reported.
     REJECT_NOT_ADMITTED = "reject_not_admitted"
+    #: A review, verify or gate reject stood on the tests its blocking findings
+    #: named, run at the rejected commit (`reject_tests`). The evidence names the
+    #: criteria they answer, the tests, and which failed, were not run, or were
+    #: refuted; the criteria check reruns them at HEAD before the gate.
+    REJECT_TESTS_RECORDED = "reject_tests_recorded"
     #: A review, verify or gate stage reported findings that do not block, each
     #: with its disposition, and they are on record rather than dropped.
     FINDINGS_RECORDED = "findings_recorded"

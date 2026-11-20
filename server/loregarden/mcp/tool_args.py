@@ -408,6 +408,14 @@ FINDING_SCHEMA: dict[str, Any] = {
             "description": "Where a finding that does not block went.",
         },
         "ticket": {"type": "string", "description": "The ticket, for assigned_ticket."},
+        "test": {
+            "type": "string",
+            "description": "A test you wrote that fails now because of it, as path::test_name.",
+        },
+        "judgment": {
+            "type": "string",
+            "description": "Only when no test can show it: why not.",
+        },
     },
     "required": ["summary"],
 }

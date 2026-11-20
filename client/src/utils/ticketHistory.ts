@@ -173,6 +173,8 @@ function tone(event: TicketHistoryEvent): HistoryLine["tone"] {
     // do not block put on record, are the pipeline carrying on as designed.
     decision === "reject_not_admitted" ||
     decision === "findings_recorded" ||
+    // A reject standing on tests that fail where it rejected: the rework's job.
+    decision === "reject_tests_recorded" ||
     // A review lane's recheck answering its prior findings; a finding left
     // unresolved sends the work back through its own reroute event.
     decision === "recheck_recorded" ||

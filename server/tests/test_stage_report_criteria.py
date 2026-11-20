@@ -141,7 +141,7 @@ def test_an_unreachable_database_lets_the_stop_through_and_says_why(
 
     assert _decide(PASS, missing, run.id) is None
 
-    assert "criteria not checked" in capsys.readouterr().err
+    assert "report not checked" in capsys.readouterr().err
     # Opened read-only: the hook never creates a database it was pointed at.
     assert not missing.exists()
 
@@ -152,7 +152,7 @@ def test_a_run_the_database_does_not_hold_lets_the_stop_through_and_says_why(
     assert _decide(PASS, db_path, "no-such-run") is None
 
     err = capsys.readouterr().err
-    assert "criteria not checked" in err
+    assert "report not checked" in err
     assert "no-such-run" in err
 
 
@@ -163,7 +163,10 @@ def test_without_a_database_named_a_pass_ends_the_turn(db_session, ticket):
 
 
 def test_the_server_names_its_own_database_on_the_hook_command():
-    command = json.loads(stage_report_hook_settings())["hooks"]["Stop"][0]["hooks"][0]["command"]
+    hook_entry = json.loads(stage_report_hook_settings())["hooks"]["Stop"][0]["hooks"][0]
+    command = hook_entry["command"]
+    # Room to run a reviewer's tests (`stage_report_reject`); Claude Code's default is 60s.
+    assert hook_entry["timeout"] >= 300
 
     expected = resolve_sqlite_path(settings.database_url, settings.repo_root)
     assert command.endswith(f"{hook.DB_FLAG} {expected}")

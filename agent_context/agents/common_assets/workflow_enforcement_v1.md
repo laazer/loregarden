@@ -63,7 +63,7 @@ foreground and only the ones your change reaches (`common_assets/test_selection_
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
 <!-- loregarden:audience=judging -->
-{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "findings": [{"summary": "<the defect, one sentence>", "blocking": true, "trigger": "<how it is reached>", "path": "<what runs from there to the defect>", "impact": "<what a person using it meets>"}, {"summary": "<a finding that does not block>", "blocking": false, "disposition": "documented_exception|assigned_ticket|out_of_scope", "ticket": "<external id, for assigned_ticket>"}], "rechecks": [{"id": "P1", "resolved": true, "note": "<what you checked>"}]}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"], "findings": [{"summary": "<the defect, one sentence>", "blocking": true, "trigger": "<how it is reached>", "path": "<what runs from there to the defect>", "impact": "<what a person using it meets>", "test": "<path::test_name of the test you wrote, failing now>", "judgment": "<only when no test can show it: why>"}, {"summary": "<a finding that does not block>", "blocking": false, "disposition": "documented_exception|assigned_ticket|out_of_scope", "ticket": "<external id, for assigned_ticket>"}], "rechecks": [{"id": "P1", "resolved": true, "note": "<what you checked>"}]}
 <!-- /loregarden:audience -->
 <!-- loregarden:audience=other -->
 {"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_to_agent": "<agent_id>|null", "reroute_context": "<what the target stage needs to know it missed>", "unmet_criteria": ["<acceptance criterion this finding makes false>"], "waivers": [{"name": "<unresolved name>", "reason": "<written reason>"}], "blocked_kind": "harness|work|decision|human_action|tickets|null", "options": ["<choice a person can pick, when blocked_kind is decision>"], "waiting_on": ["<external id of a ticket this one waits for, when blocked_kind is tickets>"]}
@@ -105,12 +105,21 @@ Field rules:
 
 - `findings` (**review, verify and gate stages**): everything you found, one object each.
   A `fail` or `needs_rework` from one of these stages is a reject **only if at least one
-  finding has `"blocking": true` and a non-empty `trigger`, `path` and `impact`**:
+  finding has `"blocking": true`, a non-empty `trigger`, `path` and `impact`, and a failing
+  `test` or a `judgment`**:
   - `trigger`: a reachable way in — the request, input or sequence that reaches the defect.
   - `path`: the code that runs from that trigger to the defect, by file and function.
   - `impact`: what a person using the system meets because of it.
+  - `test`: **a test you wrote that fails now because of this defect**, as `path::test_name`
+    (pytest) or `path::"exact name"` (jest). Write it in the test module for that surface,
+    run it, and watch it fail. Test the pattern, not the one site: if the defect is "errors
+    drop the arm name", the test covers every arm, so the fix cannot land on one and leave
+    the rest. Loregarden runs it before your reject stands: a test that is not in the
+    checkout, or that passes, is no reject. The implementer's job is to make it pass, and
+    the gate reruns it. Change no other file. Only when no test can show the defect (copy,
+    layout, a design call), leave `test` out and say why in `judgment`.
   A reject with no such finding is not treated as a reject: the stage proceeds as passed and
-  the ticket's history says why. A finding you cannot give all three for does not block. Every
+  the ticket's history says why. A finding you cannot give all of these for does not block. Every
   finding that does not block names its `disposition`: `documented_exception` (known and
   accepted, with the reason in `summary`), `assigned_ticket` (already covered by planned work;
   put its external id in `ticket`), or `out_of_scope`. It is recorded, not dropped. Through the

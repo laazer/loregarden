@@ -14,6 +14,11 @@ is not a reject: the stage proceeds as passed, and the history records why
 (`reject_not_admitted`). A finding that does not block says where it went
 (`FindingDisposition`) and is recorded (`findings_recorded`), never dropped.
 
+A blocking finding also names a test that fails at the commit it rejects, or
+says why no test can show the defect (`reject_tests`). The shape is checked
+here, purely; running the test happens once per run, at completion, and the
+outcome is on record, so a re-judged lane reads it back (`settled_as_recorded`).
+
 Judging is decided by who ran (`JUDGING_AGENTS`) or the stage's type (verify,
 gate). `admitted` is pure, so the parallel-stage reconciler can re-judge a lane
 as often as it likes; `admit_run_report` records, once per run, at completion.
@@ -24,10 +29,12 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, replace
 
+from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     AgentRun,
     DomainEvent,
     EventType,
+    OrchestrationRun,
     RecheckStatus,
     StageReportStatus,
     StageType,
@@ -36,6 +43,13 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.orchestrator_decisions import OrchestratorDecision
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.reject_tests import (
+    RejectTestCheck,
+    check_reject_tests,
+    record_reject_tests,
+    refuted_reason,
+    standing,
+)
 from loregarden.services.stage_report import Finding, StageReport, parse_stage_report
 from loregarden.services.workflow_service import resolve_ticket_stages
 from sqlmodel import Session, select
@@ -181,23 +195,80 @@ def _stage(session: Session, ticket: Ticket, stage_key: str) -> WorkflowStageDef
     return next((stage for stage in stages if stage.key == stage_key), None)
 
 
+#: The decisions this module records about one run.
+_RUN_DECISIONS = frozenset(
+    {
+        OrchestratorDecision.REJECT_NOT_ADMITTED,
+        OrchestratorDecision.FINDINGS_RECORDED,
+        OrchestratorDecision.RECHECK_RECORDED,
+        OrchestratorDecision.REJECT_TESTS_RECORDED,
+    }
+)
+
+
+def _run_decisions(session: Session, run_id: str) -> list[dict]:
+    events = session.exec(
+        select(DomainEvent.payload_json)
+        .where(DomainEvent.run_id == run_id)
+        .where(DomainEvent.type == EventType.ORCHESTRATOR_DECISION)
+    ).all()
+    payloads = [json.loads(payload or "{}") for payload in events]
+    return [payload for payload in payloads if payload.get("decision") in _RUN_DECISIONS]
+
+
 def _already_recorded(session: Session, run: AgentRun) -> bool:
     """Whether a decision of this module is already on record for `run`.
 
     A run completes once, but a reattaching server can settle a run again;
     the record is kept to one.
     """
-    events = session.exec(
-        select(DomainEvent.payload_json)
-        .where(DomainEvent.run_id == run.id)
-        .where(DomainEvent.type == EventType.ORCHESTRATOR_DECISION)
-    ).all()
-    kinds = {
-        OrchestratorDecision.REJECT_NOT_ADMITTED,
-        OrchestratorDecision.FINDINGS_RECORDED,
-        OrchestratorDecision.RECHECK_RECORDED,
-    }
-    return any(json.loads(payload or "{}").get("decision") in kinds for payload in events)
+    return bool(_run_decisions(session, run.id))
+
+
+def settled_as_recorded(
+    session: Session, run_id: str, report: StageReport | None
+) -> StageReport | None:
+    """``report`` as its run's recorded decision settled it.
+
+    The pure bar cannot run a test, so a lane re-judged after completion reads
+    back what running them found: a reject not admitted is a pass, and a
+    finding whose test was refuted does not block.
+    """
+    if report is None or report.status not in _REJECTS:
+        return report
+    for payload in _run_decisions(session, run_id):
+        decision = payload.get("decision")
+        if decision == OrchestratorDecision.REJECT_NOT_ADMITTED:
+            return _as_pass(report)
+        if decision == OrchestratorDecision.REJECT_TESTS_RECORDED:
+            refuted = {note.get("test") for note in payload.get("refuted") or []}
+            return replace(
+                report,
+                findings=[
+                    replace(f, blocking=False) if f.blocking and f.test in refuted else f
+                    for f in report.findings
+                ],
+            )
+    return report
+
+
+def _orch_run_of(session: Session, run: AgentRun) -> OrchestrationRun | None:
+    if not run.orchestration_run_id:
+        return None
+    return session.get(OrchestrationRun, run.orchestration_run_id)
+
+
+def _test_bar(
+    session: Session, ticket: Ticket, run: AgentRun, report: StageReport
+) -> tuple[StageReport, RejectTestCheck, str]:
+    """Run the tests ``report``'s blocking findings name: the report as it stands, and why not."""
+    check = check_reject_tests(
+        session, ticket, report.findings, orch_run=_orch_run_of(session, run)
+    )
+    findings = standing(report.findings, check)
+    if unadmitted_reason(findings):
+        return _as_pass(replace(report, findings=findings)), check, refuted_reason(check)
+    return replace(report, findings=findings), check, ""
 
 
 def record_unadmitted_reject(
@@ -219,7 +290,8 @@ def record_unadmitted_reject(
         run_id=run_id,
         reason=(
             f"{agent_id} reported {claimed} on '{stage_key}', which is not a reject: {reason}. "
-            "A blocking finding states its trigger, the path to the defect and the impact; "
+            "A blocking finding states its trigger, the path to the defect and the impact, "
+            "and names a test failing at the rejected commit or why no test can show it; "
             "the stage proceeds as passed and its findings are on record."
         ),
         evidence={"claimed": claimed, "findings": [finding_record(f) for f in findings]},
@@ -249,7 +321,19 @@ def admit_run_report(
         return report
     settled, reason = admitted(report, agent_id=run.agent_id, stage=stage)
     if _already_recorded(session, run):
-        return settled
+        return settled_as_recorded(session, run.id, settled)
+    if not reason and settled is not None and settled.status in _REJECTS:
+        settled, check, reason = _test_bar(session, ticket, run, settled)
+        if not reason:
+            record_reject_tests(
+                session,
+                ticket,
+                agent_id=run.agent_id,
+                stage_key=run.stage_key,
+                run_id=run.id,
+                criteria=settled.unmet_criteria,
+                check=check,
+            )
     if reason:
         record_unadmitted_reject(
             session,
@@ -332,6 +416,67 @@ def _admit_recheck(
             run_id=run.id,
         )
     return settled
+
+
+def reject_not_shown_message(check: RejectTestCheck, *, then: str) -> str:
+    """What an agent whose reject's tests all pass is told, ending in what to do ``then``."""
+    return (
+        f"This reject does not stand: {refuted_reason(check)}. A blocking finding names "
+        "a test that fails at this commit: write it so it reproduces the defect, run it "
+        f"to watch it fail, and {then}. If no test can show the defect, say why in the "
+        "finding's judgment instead. If the defect is not there, pass."
+    )
+
+
+class RejectNotShown(ValueError):
+    """A judging agent's reject named tests, and none of them fails.
+
+    A ValueError so both tool boundaries turn it into an ``isError`` result
+    carrying this message, with nothing written, while the agent is still live
+    to fix the test or pass.
+    """
+
+
+def refuse_unshown_reject(
+    session: Session,
+    ticket: Ticket,
+    stage: WorkflowStageDef,
+    run: AgentRun | None,
+    *,
+    outcome: str,
+    findings: list[Finding] | None,
+) -> None:
+    """Raise when a reject's blocking findings stand only on tests that do not fail.
+
+    The agent is the stage run's, else the stage's own, as `complete_stage` reads it.
+
+    Only the tests are judged here. A reject whose findings are incomplete is
+    `tool_outcome`'s, which settles it as a pass. A reject that stands has its
+    tests recorded here, against the criteria its report block names if it
+    printed one by now; completion then finds the record and runs nothing again.
+    """
+    agent_id = (run.agent_id if run else "") or stage.agent_id or ""
+    if findings is None or outcome == StageReportStatus.PASS or not is_judging(agent_id, stage):
+        return
+    if unadmitted_reason(findings):
+        return
+    check = check_reject_tests(
+        session, ticket, findings, orch_run=_orch_run_of(session, run) if run else None
+    )
+    if unadmitted_reason(standing(findings, check)):
+        raise RejectNotShown(
+            reject_not_shown_message(check, then=f"call {McpTool.COMPLETE_STAGE.value} again")
+        )
+    report = parse_stage_report(run.stdout or "") if run else None
+    record_reject_tests(
+        session,
+        ticket,
+        agent_id=agent_id,
+        stage_key=stage.key,
+        run_id=run.id if run else None,
+        criteria=report.unmet_criteria if report else [],
+        check=check,
+    )
 
 
 def tool_outcome(

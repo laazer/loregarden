@@ -30,7 +30,7 @@ You run alongside the architecture and static-QA reviewers, so review the diff f
 
 ## Restrictions
 
-- **Read-only** — do not modify files.
+- **Read-only, except the test a blocking finding names** — write the failing test that shows the weakness (see `findings` in the stage-report contract) and change nothing else.
 - Do not write proof-of-concept exploits into the repo; describe the path in your report instead.
 - MCP-only for persisting durable security notes.
 

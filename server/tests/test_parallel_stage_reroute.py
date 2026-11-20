@@ -149,3 +149,39 @@ def test_falls_back_to_template_reject_when_no_agent_reroute(db_session: Session
     assert ok is True
     db_session.refresh(ticket)
     assert ticket.workflow_stage_key == "implement"
+
+
+def test_every_rejecting_lens_reaches_the_rework_with_its_criteria(
+    db_session: Session, monkeypatch
+):
+    """The parallel path used to pass on one lens's prose, from a lens that also
+    named a stage, and no lens's unmet criteria (`rework_brief`)."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.services.rework_feedback import latest_rework_context
+
+    ticket, orch_run, script_review_def = _setup_script_review_ticket(db_session)
+
+    def report(context: str, criterion: str, reroute: str) -> str:
+        body = _stage_report("needs_rework", 0.9, reroute_to_stage=reroute, reroute_context=context)
+        return body.replace('"status"', f'"unmet_criteria": ["{criterion}"], "status"', 1)
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        run.status = RunStatus.SUCCEEDED
+        if run.agent_id == "static_qa":
+            run.stdout = report("Width is read twice", "Width is read once", "implement")
+        else:
+            run.stdout = report("Errors drop the arm name", "Errors name the arm", "")
+        run.stderr = ""
+        self.session.add(run)
+        self.session.commit()
+        return run
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    BuiltinOrchestrator(db_session)._execute_parallel_stage(
+        ticket, orch_run, script_review_def, "script_review"
+    )
+
+    brief = latest_rework_context(db_session, ticket, "implement")
+    assert "Width is read twice" in brief and "Errors drop the arm name" in brief
+    assert "Width is read once" in brief and "Errors name the arm" in brief

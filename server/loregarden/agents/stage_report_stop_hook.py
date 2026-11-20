@@ -27,8 +27,11 @@ its own ``MAX_BLOCKS`` rather than the remainder of the first one's.
 A report is not always enough. A pass from the stage that settles criteria,
 while one is unsettled, is refused too (`stage_report_criteria`), so the agent
 settles it in this turn rather than the gate reopening the stage as a new run.
-That check reads the database the server names with ``--db``, read-only, and
-lets the stop through, saying why on stderr, whenever it cannot run.
+So is a judging stage's reject whose named tests all pass
+(`stage_report_reject`), so the agent fixes its test rather than the reject
+settling as a pass after the run. Both read the database the server names
+with ``--db``, read-only, and let the stop through, saying why on stderr,
+whenever they cannot run.
 
 Wired in by ``cli_adapters.stage_report_hook_settings``; run as
 ``python -m loregarden.agents.stage_report_stop_hook --db <path>``.
@@ -45,6 +48,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from loregarden.agents.stage_report_criteria import unsettled_refusal
+from loregarden.agents.stage_report_reject import unshown_reject_refusal
 from loregarden.mcp.caller import RUN_ID_ENV
 from loregarden.models.domain import StageReportStatus
 from loregarden.services.stage_report import (
@@ -275,22 +279,27 @@ def _read_transcript(path: Path | None) -> list[str]:
         return []
 
 
-def _criteria_refusal(report: StageReport, db_path: Path | None) -> str | None:
-    """Why this pass cannot end the turn while criteria are unsettled, or None.
+def _ledger_refusal(report: StageReport, db_path: Path | None) -> str | None:
+    """Why this report cannot end the turn, by what the database says, or None.
 
-    Fails open, saying why on stderr: a check that cannot run must never trap
-    the run, and the gate's own check still catches what this one missed.
+    A pass from the settling stage waits for its criteria
+    (`stage_report_criteria`); a reject waits for a test that fails
+    (`stage_report_reject`). Fails open, saying why on stderr: a check that
+    cannot run must never trap the run, and completion's own checks still
+    catch what this one missed.
     """
-    if report.status != StageReportStatus.PASS or db_path is None:
+    if db_path is None:
         return None
     run_id = os.environ.get(RUN_ID_ENV, "")
     if not run_id:
-        print(f"stage-report stop hook: no {RUN_ID_ENV}; criteria not checked", file=sys.stderr)
+        print(f"stage-report stop hook: no {RUN_ID_ENV}; report not checked", file=sys.stderr)
         return None
     try:
-        return unsettled_refusal(db_path, run_id)
+        if report.status == StageReportStatus.PASS:
+            return unsettled_refusal(db_path, run_id)
+        return unshown_reject_refusal(db_path, run_id, report)
     except (SQLAlchemyError, OSError, LookupError, ValueError) as exc:
-        print(f"stage-report stop hook: criteria not checked: {exc}", file=sys.stderr)
+        print(f"stage-report stop hook: report not checked: {exc}", file=sys.stderr)
         return None
 
 
@@ -299,15 +308,15 @@ def decide(
 ) -> str | None:
     """The refusal reason, or None to let the turn end.
 
-    A turn with no report is refused (`refusal_reason`). So is a pass from the
-    stage that settles criteria while one is unsettled (`stage_report_criteria`),
-    when the server named its database (``db_path``). Both count toward
-    ``MAX_BLOCKS``.
+    A turn with no report is refused (`refusal_reason`). When the server named
+    its database (``db_path``), so is a pass from the stage that settles
+    criteria while one is unsettled, and a reject whose tests all pass
+    (`_ledger_refusal`). All count toward ``MAX_BLOCKS``.
     """
     lines = list(transcript_lines)
     report = turn_report(hook_input, lines)
     if report is not None:
-        reason = _criteria_refusal(report, db_path)
+        reason = _ledger_refusal(report, db_path)
     elif _completed_by_tool(lines):
         reason = None
     else:

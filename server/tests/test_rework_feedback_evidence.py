@@ -9,8 +9,12 @@ were dropped between the report and the stage that had to act on them.
 
 from __future__ import annotations
 
-from loregarden.services.run_completion import _rework_context
+from loregarden.services.rework_brief import rework_context
 from loregarden.services.stage_report import StageReport
+
+
+def _rework_context(report: StageReport, fallback: str) -> str:
+    return rework_context([("", report)], fallback)
 
 
 def _report(context: str, criteria: list[str]) -> StageReport:
