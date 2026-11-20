@@ -7,6 +7,11 @@ file stem (`<run_code>-fresh`): a second process may not write the first one's
 `.out`/`.rc`. The fallback's reason is recorded on the run. A resumed turn that
 did start and then failed is a failed run like any other; running it again
 fresh would bill the work twice.
+
+Every claude round keeps the system prompt its session runs under
+(`session_prompt`): the fresh stage prompt for a fresh round, the earlier
+session's kept prompt for a resumed one, so a resume of a resumed session still
+passes back the prompt that session started under.
 """
 
 from __future__ import annotations
@@ -16,13 +21,14 @@ from dataclasses import dataclass, replace
 
 from loregarden.agents.cli_adapters import CliInvocation, session_resume_invocation
 from loregarden.dot_line import SYS
-from loregarden.models.domain import AgentRun, RunStatus
+from loregarden.models.domain import AgentRun, CliAdapter, RunStatus
 from loregarden.services.rework_resume import (
     ResumePlan,
     record_cli_session,
     record_resume_fallback,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.session_prompt import keep_session_prompt
 from loregarden.services.stage_report import result_envelope
 from sqlmodel import Session
 
@@ -48,12 +54,20 @@ def prepare_round(
 
     An invocation that cannot carry a resume (a command override with no
     ``-p``, say) turns the plan into a fresh run, with the reason recorded.
+    A claude resume runs under the earlier session's kept system prompt, kept
+    again as this run's, when there is one.
     """
     if plan is None or not plan.resumes:
         return plan, invocation
+    system_prompt_file = None
+    if plan.session_prompt and invocation.adapter == CliAdapter.CLAUDE:
+        system_prompt_file = keep_session_prompt(session, run, plan.session_prompt)
     try:
         resumed = session_resume_invocation(
-            invocation, session_id=plan.session_id, prompt=plan.follow_up
+            invocation,
+            session_id=plan.session_id,
+            prompt=plan.follow_up,
+            system_prompt_file=system_prompt_file,
         )
     except ValueError as exc:
         reason = f"this run's command cannot carry a resume ({exc})"
@@ -80,6 +94,7 @@ def run_round(
     if plan is not None and not plan.resumes:
         streamer.append(SYS.name, f"Rework round runs fresh: {plan.skip_reason}.", force=True)
     if plan is None or not plan.resumes:
+        _keep_fresh_prompt(session, run, invocation, prompt)
         stdout, stderr, status = spawn(invocation, prompt, run.run_code)
         record_cli_session(session, run, stdout)
         return RoundResult(stdout, stderr, status, invocation)
@@ -89,6 +104,13 @@ def run_round(
         f"Rework round resumes session {plan.session_id} with the finding.",
         force=True,
     )
+    if first.adapter == CliAdapter.CLAUDE and not plan.session_prompt:
+        streamer.append(
+            SYS.name,
+            "The earlier run's system prompt was not kept, so this resume runs under a "
+            "new one and re-caches the session's history.",
+            force=True,
+        )
     stdout, stderr, status = spawn(first, plan.follow_up, run.run_code)
     if status is RunStatus.FAILED and result_envelope(stdout) is None:
         tail = (stderr or "").strip()[-400:]
@@ -97,8 +119,17 @@ def run_round(
         )
         record_resume_fallback(session, run, reason)
         streamer.append(SYS.name, f"{reason}. Running fresh.", force=True)
+        _keep_fresh_prompt(session, run, invocation, prompt)
         stdout, stderr, status = spawn(invocation, prompt, f"{run.run_code}{FRESH_STEM_SUFFIX}")
         record_cli_session(session, run, stdout)
         return RoundResult(stdout, stderr, status, invocation)
     record_cli_session(session, run, stdout)
     return RoundResult(stdout, stderr, status, first)
+
+
+def _keep_fresh_prompt(
+    session: Session, run: AgentRun, invocation: CliInvocation, prompt: str
+) -> None:
+    """Keep a fresh claude turn's stage prompt for a later resume of its session."""
+    if invocation.adapter == CliAdapter.CLAUDE:
+        keep_session_prompt(session, run, prompt)

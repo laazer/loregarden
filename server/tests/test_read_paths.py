@@ -200,3 +200,36 @@ def test_a_path_climbing_out_of_the_repo_is_still_refused(repo):
     path that leaves the tree fails both comparisons."""
     stdout = _claude("Read", file_path=str(repo / "server/../../outside/secrets.env"))
     assert extract_read_paths(stdout, repo) == []
+
+
+# ---- shell commands that read --------------------------------------------------------
+
+
+def test_files_a_claude_shell_command_names_are_recovered(repo):
+    (repo / "server/loregarden/a.py").write_text("x")
+    (repo / "server/loregarden/b.py").write_text("x")
+    stdout = "\n".join(
+        [
+            _claude("Bash", command="sed -n 1,40p server/loregarden/a.py"),
+            _claude("Bash", command="cd server && grep -n parse loregarden/b.py"),
+        ]
+    )
+
+    assert extract_read_paths(stdout, repo) == ["server/loregarden/a.py", "server/loregarden/b.py"]
+
+
+def test_files_a_cursor_shell_command_names_are_recovered(repo):
+    (repo / "server/loregarden/a.py").write_text("x")
+    stdout = _cursor("shellToolCall", command="cat server/loregarden/a.py")
+
+    assert extract_read_paths(stdout, repo) == ["server/loregarden/a.py"]
+
+
+def test_shell_tokens_that_are_not_files_in_the_repo_are_dropped(repo):
+    (repo / "server/loregarden/a.py").write_text("x")
+    stdout = _claude(
+        "Bash",
+        command="grep -rn 'def x' server/loregarden/ missing.py /etc/hosts server/loregarden/a.py",
+    )
+
+    assert extract_read_paths(stdout, repo) == ["server/loregarden/a.py"]

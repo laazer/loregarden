@@ -2,6 +2,7 @@ import json
 
 import pytest
 from loregarden.services.stage_report import (
+    MAX_NEXT_STAGE_NOTES_CHARS,
     final_agent_message,
     parse_stage_report,
     stage_report_artifact_content,
@@ -455,3 +456,23 @@ def test_the_symmetric_closer_agents_write_is_accepted():
     report = parse_stage_report(stdout)
     assert report is not None
     assert report.status == "needs_rework"
+
+
+def test_notes_for_the_next_stage_are_parsed_and_capped():
+    note = "  see server/a.py:10  "
+    report = parse_stage_report(
+        _wrap(json.dumps({"status": "pass", "confidence": 0.8, "notes_for_next_stage": note}))
+    )
+    assert report is not None and report.notes_for_next_stage == "see server/a.py:10"
+
+    long = parse_stage_report(
+        _wrap(json.dumps({"status": "pass", "confidence": 0.8, "notes_for_next_stage": "n" * 5000}))
+    )
+    assert long is not None and len(long.notes_for_next_stage) == MAX_NEXT_STAGE_NOTES_CHARS
+
+
+def test_unusable_notes_cost_the_report_nothing_but_the_notes():
+    report = parse_stage_report(
+        _wrap(json.dumps({"status": "pass", "confidence": 0.8, "notes_for_next_stage": ["a"]}))
+    )
+    assert report is not None and report.status == "pass" and report.notes_for_next_stage == ""

@@ -139,6 +139,11 @@ class StageReport:
     findings: list[Finding] = field(default_factory=list)
     #: In a recheck round, the answer about each prior blocking finding.
     rechecks: list[Recheck] = field(default_factory=list)
+    #: What the later stages should know that they would otherwise rediscover:
+    #: where the relevant code is, and the traps. Shown to them by
+    #: `agents.stage_digest`; parsed apart so a malformed note cannot cost the
+    #: report its status.
+    notes_for_next_stage: str = ""
 
 
 def _embedded_strings(node: object):
@@ -233,6 +238,26 @@ class _CriteriaPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     unmet_criteria: list[str] | None = Field(default=None)
+
+
+class _NotesPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    notes_for_next_stage: str | None = Field(default=None)
+
+
+#: A note is a pointer list, not a report; long ones belong in an artifact.
+MAX_NEXT_STAGE_NOTES_CHARS = 2000
+
+
+def _notes_of(payload: str) -> str:
+    """The run's notes for later stages, or "" when it left none or they are unusable."""
+    try:
+        parsed = _NotesPayload.model_validate_json(payload)
+    except ValidationError:
+        logger.warning("stage report notes_for_next_stage could not be parsed", exc_info=True)
+        return ""
+    return (parsed.notes_for_next_stage or "").strip()[:MAX_NEXT_STAGE_NOTES_CHARS]
 
 
 def _criteria_of(payload: str) -> list[str]:
@@ -459,6 +484,7 @@ def _build_report(payload: str) -> StageReport | None:
         waivers=_waivers_of(payload),
         findings=_findings_of(payload),
         rechecks=_rechecks_of(payload),
+        notes_for_next_stage=_notes_of(payload),
     )
 
 

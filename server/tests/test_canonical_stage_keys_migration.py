@@ -35,6 +35,7 @@ NOT_A_STAGE_KEY: frozenset[tuple[str, str]] = frozenset(
         ("merge_queue_entries", "staged_sha"),
         ("merge_queue_entries", "staged_tree"),
         ("merge_queue_entries", "staged_base_sha"),
+        ("agent_runs", "next_stage_notes"),  # free text for the next stage to read
     }
 )
 

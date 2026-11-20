@@ -52,7 +52,8 @@ from loregarden.agents.prompt_blocks import (
 from loregarden.agents.registry import get_agent
 from loregarden.agents.sibling_claims_context import HEADING as SIBLING_CLAIMS_HEADING
 from loregarden.agents.sibling_claims_context import build_sibling_claims_context
-from loregarden.agents.stage_context import build_orchestration_context
+from loregarden.agents.stage_context import build_orchestration_context, turn_context_lines
+from loregarden.agents.stage_digest import stage_digest_for
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
@@ -348,7 +349,14 @@ class CliAgentExecutor:
                 self.session,
                 run,
                 plan_rework_resume(
-                    self.session, ticket, run, adapter=invocation.adapter, repo_root=repo_root
+                    self.session,
+                    ticket,
+                    run,
+                    adapter=invocation.adapter,
+                    repo_root=repo_root,
+                    turn_context=lambda: "\n".join(
+                        turn_context_lines(self.session, ticket, run, stage_def)
+                    ),
                 ),
                 invocation,
             )
@@ -1071,6 +1079,13 @@ class CliAgentExecutor:
             titled_block(
                 "## Plans to reconcile",
                 build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
+            ),
+            # Where earlier stages found the code, so this one need not explore
+            # for it again. Withheld from a verifier like the plan; a judging
+            # stage gets the files but not the producers' notes (`stage_digest`).
+            titled_block(
+                "## What earlier stages on this ticket found",
+                stage_digest_for(self.session, ticket, run, stage_def, is_verify=is_verify),
             ),
             # Siblings landing on the same integration branch that claim this
             # ticket's files: the conflict each would otherwise meet at landing.
