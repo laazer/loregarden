@@ -94,6 +94,7 @@ from loregarden.services.invariant_registry import (
     RUNS_COMPLETE_ONCE,
     SETTLED_HOLDS_READ_BLOCKED,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
+    STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT,
     SURVEY_CARDS_CLOSE,
     SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
     TICKET_BRANCHES_HOLD_HISTORY,
@@ -398,6 +399,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # After RUNS_COMPLETE_ONCE, which may settle a run; at boot too, since the
     # repair is also the backfill of runs failed before the guard.
     _invariant(FAILED_RUNS_HAVE_A_FAILURE_KIND),
+    # A run still in flight ten minutes after its stop: nothing honoured it
+    # (lg-workflow-integrity-2751). Settled CANCELLED, which leaves the stage
+    # PENDING with no block, as the stop would have.
+    _invariant(STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT),
     # A ticket created over a write-time size cap: the write guards make that
     # unreachable, so a violation dated after they landed is a writer that
     # walked around one (lg-milestone-that-2250). Report-only — only a person

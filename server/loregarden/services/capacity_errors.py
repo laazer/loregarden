@@ -25,3 +25,13 @@ class CapacityUnavailable(RuntimeError):
 
     def __init__(self, detail: str) -> None:
         super().__init__(f"{CAPACITY_UNAVAILABLE_PREFIX} {detail}")
+
+
+class CapacityWaitStopped(RuntimeError):
+    """A wait for capacity ended because its holder was asked to stop.
+
+    Not a `CapacityUnavailable`: the machine being full is not why this run did
+    no work, an operator's stop is. Filed as a capacity block it would block the
+    ticket the operator only meant to pause. The waiter has already given its
+    place in line back when this is raised.
+    """

@@ -31,14 +31,17 @@ from collections.abc import Callable
 from loregarden.models.domain import (
     DockerGrantState,
     DockerLease,
+    DockerLeaseEndReason,
     DockerLeaseStatus,
     OrchestrationRun,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.capacity_errors import CapacityWaitStopped
 from loregarden.services.docker_leases import (
     DockerReservation,
     drain_waiters,
     reclaim_dead_holders,
+    release_lease,
 )
 from loregarden.services.docker_ledger import OCCUPYING, as_utc
 from loregarden.services.docker_poll_guard import note_poll
@@ -84,6 +87,7 @@ def wait_while_line_moves(
     *,
     stall_seconds: float,
     on_poll: Callable[[], None] | None = None,
+    stop_requested: Callable[[], bool] | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> DockerReservation:
@@ -93,6 +97,12 @@ def wait_while_line_moves(
     runs every `HEARTBEAT_SECONDS`, for a waiter whose own liveness is judged by a lease of
     its own (an orchestration run's): the thread waiting here is alive, and a
     wait longer than that lease must not read as the run having walked away.
+
+    `stop_requested` is asked on every poll; when it answers True the place in
+    line is given back and `CapacityWaitStopped` raised. Without it a run
+    stopped in line kept waiting for the whole stall window (up to an hour)
+    with no process to signal, so the operator's stop did nothing
+    (lg-code-knowledge-1765, 2026-11-19).
     """
     moved_at = clock()
     beat_at: float | None = None
@@ -110,6 +120,13 @@ def wait_while_line_moves(
             reservation.expires_at = as_utc(lease.expires_at)
             reservation.message = f"Granted {lease.cpus} cpus / {lease.memory_mb} MB."
             return reservation
+        if stop_requested is not None and stop_requested():
+            # Given back before raising: a waiter nobody polls holds the head
+            # of a strict line, and its holder pid (this server) never dies.
+            release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED)
+            raise CapacityWaitStopped(
+                f"{lease.holder_label} was stopped while it waited in line for capacity"
+            )
         front = leases_ahead(session, lease)
         if ahead - front.keys():
             moved_at = clock()
