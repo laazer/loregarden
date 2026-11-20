@@ -43,14 +43,20 @@ class WaiverItem:
     reason: str
 
 
+#: The fewest words a finding's `judgment` takes to say why no test shows it.
+MIN_JUDGMENT_WORDS = 6
+
+
 @dataclass(frozen=True)
 class Finding:
     """One finding a review, verify or gate stage reported (`finding_bar`).
 
     A blocking finding is a reject only when it says how the defect is reached
     (`trigger`), what runs between there and the defect (`path`), and what a
-    person using the system would meet (`impact`). Any other finding says where
-    it went (`disposition`, and `ticket` for `assigned_ticket`).
+    person using the system would meet (`impact`), and either names a `test`
+    that fails at the rejected commit (`reject_tests`) or says in `judgment`
+    why no test can show the defect. Any other finding says where it went
+    (`disposition`, and `ticket` for `assigned_ticket`).
     """
 
     summary: str
@@ -62,11 +68,20 @@ class Finding:
     ticket: str = ""
     #: The disposition as the agent wrote it, when it was not one we know.
     disposition_as_written: str = ""
+    #: The test that reproduces the defect, as `path::name` (pytest) or
+    #: `path::"exact name"` (jest), failing at the commit the finding rejects.
+    test: str = ""
+    #: Why no test can show this defect (copy, layout, a design call), when
+    #: the finding names none. Shorter than `MIN_JUDGMENT_WORDS` is no reason.
+    judgment: str = ""
 
     def missing_parts(self) -> list[str]:
-        """Which of trigger, path and impact a blocking finding leaves empty."""
+        """Which of trigger, path, impact and test-or-judgment a blocking finding leaves out."""
         parts = {"trigger": self.trigger, "path": self.path, "impact": self.impact}
-        return [name for name, value in parts.items() if not value]
+        missing = [name for name, value in parts.items() if not value]
+        if not self.test and len(self.judgment.split()) < MIN_JUDGMENT_WORDS:
+            missing.append("failing test or judgment")
+        return missing
 
 
 @dataclass(frozen=True)
@@ -295,6 +310,8 @@ class _FindingPayload(BaseModel):
     impact: str | None = ""
     disposition: str | None = ""
     ticket: str | None = ""
+    test: str | None = ""
+    judgment: str | None = ""
 
 
 def _finding_of(item: _FindingPayload) -> Finding:
@@ -312,6 +329,8 @@ def _finding_of(item: _FindingPayload) -> Finding:
         disposition=disposition,
         ticket=(item.ticket or "").strip(),
         disposition_as_written=written if disposition is None else "",
+        test=(item.test or "").strip(),
+        judgment=(item.judgment or "").strip(),
     )
 
 

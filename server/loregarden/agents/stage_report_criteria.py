@@ -18,6 +18,8 @@ write a row.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from loregarden.models.domain import AgentRun, Ticket
@@ -26,7 +28,7 @@ from sqlalchemy import create_engine
 from sqlmodel import Session
 
 #: What the agent does once it has settled them: the report is what it re-sends.
-_THEN = "write your stage report again"
+THEN = "write your stage report again"
 
 
 def read_only_url(db_path: Path) -> str:
@@ -34,11 +36,13 @@ def read_only_url(db_path: Path) -> str:
     return f"sqlite:///file:{db_path}?mode=ro&uri=true"
 
 
-def unsettled_refusal(db_path: Path, run_id: str) -> str | None:
-    """Why run ``run_id``'s pass cannot end the turn, or None when it can.
+@contextmanager
+def ledger(db_path: Path, run_id: str) -> Iterator[tuple[Session, AgentRun, Ticket]]:
+    """A read-only session on ``db_path``, with run ``run_id`` and its ticket.
 
-    Raises what opening or reading the database raises; the hook fails open on
-    it and says why on stderr.
+    Raises what opening or reading the database raises, and LookupError when
+    it does not hold the run: that is the wrong database, not a stop to allow.
+    The hook fails open on all of them and says why on stderr.
     """
     engine = create_engine(read_only_url(db_path))
     try:
@@ -46,8 +50,13 @@ def unsettled_refusal(db_path: Path, run_id: str) -> str | None:
             run = session.get(AgentRun, run_id)
             ticket = session.get(Ticket, run.ticket_id) if run is not None else None
             if run is None or ticket is None:
-                # Not a pass to wave through: the hook was handed the wrong database.
                 raise LookupError(f"run {run_id} or its ticket is not in {db_path}")
-            return unsettled_pass_message(session, ticket, run.stage_key, then=_THEN)
+            yield session, run, ticket
     finally:
         engine.dispose()
+
+
+def unsettled_refusal(db_path: Path, run_id: str) -> str | None:
+    """Why run ``run_id``'s pass cannot end the turn, or None when it can."""
+    with ledger(db_path, run_id) as (session, run, ticket):
+        return unsettled_pass_message(session, ticket, run.stage_key, then=THEN)

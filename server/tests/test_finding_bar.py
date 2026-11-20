@@ -32,6 +32,7 @@ COMPLETE = {
     "trigger": "GET / with no Host header",
     "path": "server/http.py:parse_header -> headers['host']",
     "impact": "the request returns 500 instead of 400",
+    "judgment": "a hand-written report with no checkout, so no test can show it",
 }
 ASIDE = {
     "summary": "the helper could be shorter",

@@ -328,6 +328,9 @@ COMPLETE_BLOCKING_FINDING = {
     "trigger": "the input the reviewer names",
     "path": "the function the reviewer names",
     "impact": "the person sees the wrong result",
+    # A judgment rather than a test: a hand-written report in a test has no
+    # checkout whose test could fail (`reject_tests`).
+    "judgment": "a fixture report with no checkout, so no test can show it",
 }
 
 

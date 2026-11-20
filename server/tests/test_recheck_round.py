@@ -35,6 +35,7 @@ ORIGINAL = {
     "trigger": "a file whose last line has no newline",
     "path": "load_rows -> lines[:-1]",
     "impact": "the operator's last record never appears",
+    "judgment": "a hand-written report with no checkout, so no test can show it",
 }
 NEW = {
     "summary": "the error message names the wrong file",
@@ -42,6 +43,7 @@ NEW = {
     "trigger": "a missing include",
     "path": "resolve_include -> raise",
     "impact": "the operator looks in the wrong place",
+    "judgment": "a hand-written report with no checkout, so no test can show it",
 }
 
 

@@ -112,6 +112,10 @@ class StageFinding(BaseModel):
     """Where a finding that does not block went."""
     ticket: str = ""
     """The ticket, for assigned_ticket."""
+    test: str = ""
+    """A test you wrote that fails now because of it, as path::test_name."""
+    judgment: str = ""
+    """Only when no test can show it: why not."""
 
 
 class StageComplete(RunCall):

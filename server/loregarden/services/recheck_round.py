@@ -37,6 +37,7 @@ from loregarden.services.finding_bar import (
     is_judging,
     recheck_answers,
     settle_review,
+    settled_as_recorded,
 )
 from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.workflow_service import resolve_ticket_stages
@@ -80,6 +81,8 @@ def _findings_its_reject_stood_on(
     priors = _rechecked_by(session, ticket, stage, run)
     report = parse_stage_report(run.stdout or "")
     settled, _ = settle_review(report, agent_id=run.agent_id, stage=stage, priors=priors)
+    # A finding whose test was refuted at completion did not carry the reject.
+    settled = settled_as_recorded(session, run.id, settled)
     if settled is None or settled.status not in _REJECTS:
         return []
     if priors:

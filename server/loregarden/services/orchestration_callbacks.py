@@ -34,6 +34,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     UnresolvedArtifactKind,
+    WorkflowStageDef,
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
@@ -43,7 +44,7 @@ from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.criterion_settle_check import refuse_pass_with_unsettled
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.discovered_work import refuse_undecided
-from loregarden.services.finding_bar import settle_stage_claim
+from loregarden.services.finding_bar import refuse_unshown_reject, settle_stage_claim
 from loregarden.services.gate_approvals import (
     gate_on_orchestrator_pass,
     request_exit_action_gate,
@@ -110,11 +111,23 @@ def _verdict_after_settle(
     return verdict.after_settle(remaining)
 
 
-def _refuse_unsettled_pass(session: Session, ticket: Ticket, stage_key: str, outcome: str) -> None:
-    """A pass from the stage that settles criteria, with one unsettled, is refused
-    for the live agent to settle them in this turn (`criterion_settle_check`)."""
+def _refuse_before_writes(
+    session: Session,
+    ticket: Ticket,
+    stage: WorkflowStageDef,
+    run: AgentRun | None,
+    outcome: str,
+    findings: list[Finding] | None,
+) -> None:
+    """Refuse a claim the live agent can still fix in this turn.
+
+    A pass from the stage that settles criteria, with one unsettled
+    (`criterion_settle_check`), and a reject whose tests do not fail
+    (`finding_bar.refuse_unshown_reject`).
+    """
     if claim_from_tool_outcome(outcome) is StageReportStatus.PASS:
-        refuse_pass_with_unsettled(session, ticket, stage_key, retry_tool=McpTool.COMPLETE_STAGE)
+        refuse_pass_with_unsettled(session, ticket, stage.key, retry_tool=McpTool.COMPLETE_STAGE)
+    refuse_unshown_reject(session, ticket, stage, run, outcome=outcome, findings=findings)
 
 
 class OrchestrationCallbackService:
@@ -541,8 +554,11 @@ class OrchestrationCallbackService:
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
+        stage_def = next(s for s in stages if s.key == stage_key)
+        run = self._latest_stage_run(ticket.id, stage_key)
+        agent_id = (run.agent_id if run else "") or stage_def.agent_id
         # Before anything is written: the agent is still live.
-        _refuse_unsettled_pass(self.session, ticket, stage_key, outcome)
+        _refuse_before_writes(self.session, ticket, stage_def, run, outcome, findings)
 
         ticket.revision += 1
         ticket.last_updated_by = "orchestrator"
@@ -555,9 +571,6 @@ class OrchestrationCallbackService:
             message=blocking_issues,
         )
 
-        stage_def = next(s for s in stages if s.key == stage_key)
-        run = self._latest_stage_run(ticket.id, stage_key)
-        agent_id = (run.agent_id if run else "") or stage_def.agent_id
         report, outcome = settle_stage_claim(
             self.session,
             ticket,

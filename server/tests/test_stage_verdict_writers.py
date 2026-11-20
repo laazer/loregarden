@@ -1160,6 +1160,7 @@ _COMPLETE_FINDING = {
     "trigger": "a ticket whose implement run changed nothing",
     "path": "services/verify.py:check -> no files -> pass",
     "impact": "an unimplemented ticket reaches the gate",
+    "judgment": "a hand-written report with no checkout, so no test can show it",
 }
 
 

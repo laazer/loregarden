@@ -27,7 +27,7 @@ Also enforce project `AGENTS.md` → Code review agents → GDScript rules when 
 
 ## Restrictions
 
-- **Read-only** — do not modify files
+- **Read-only, except the test a blocking finding names** — write the failing test that shows the defect and change nothing else
 - Durable review patterns may be noted via `loregarden_upsert_memory` (MCP only), not vault writes
 
 ## Stage outcome (required)

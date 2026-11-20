@@ -40,7 +40,7 @@ from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.criterion_split import split_instead_of_pausing
 from loregarden.services.dependency_hold import link_reported_prerequisites
-from loregarden.services.finding_bar import PriorFinding, settle_review
+from loregarden.services.finding_bar import PriorFinding, settle_review, settled_as_recorded
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -48,6 +48,7 @@ from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from loregarden.services.recheck_round import prior_findings
 from loregarden.services.recorded_paths import ticket_recorded_paths
+from loregarden.services.rework_brief import rework_context
 from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
@@ -120,6 +121,7 @@ def member_result(
     ticket: Ticket | None = None,
     stage_def: WorkflowStageDef | None = None,
     priors: list[PriorFinding] | None = None,
+    run_id: str = "",
 ) -> ParallelMemberResult:
     """Judge one member from what its run produced.
 
@@ -135,6 +137,9 @@ def member_result(
         stage=stage_def,
         priors=priors or [],
     )
+    if session is not None and run_id:
+        # What running the findings' tests found, at completion (`reject_tests`).
+        report = settled_as_recorded(session, run_id, report)
     if status != RunStatus.SUCCEEDED:
         return ParallelMemberResult(
             agent_id=agent_id,
@@ -216,6 +221,7 @@ def member_result_from_run(run: AgentRun) -> ParallelMemberResult:
         ticket=ticket,
         stage_def=stage_def,
         priors=prior_findings(session, ticket, run) if session and ticket else [],
+        run_id=run.id,
     )
 
 
@@ -609,7 +615,16 @@ def _route_parallel_stage_failures(
     ]
     rejecting.sort(key=lambda report: report.confidence, reverse=True)
     agent_to_key = rejecting[0].reroute_to_stage if rejecting else ""
-    agent_context = rejecting[0].reroute_context if rejecting else ""
+    # Every lens that rejected, with its criteria and tests, not only the
+    # most confident one that also named a stage (`rework_brief`).
+    agent_context = rework_context(
+        [
+            (result.agent_id, result.report)
+            for result in results
+            if result.failure and not result.transient and result.report is not None
+        ],
+        "",
+    )
 
     instance, stages = orch._resolve_stages(ticket)
 

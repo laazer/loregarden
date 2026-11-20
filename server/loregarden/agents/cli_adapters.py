@@ -162,6 +162,13 @@ def _claude_permission_mode() -> str:
     return os.environ.get("LOREGARDEN_CLAUDE_PERMISSION_MODE", settings.claude_permission_mode)
 
 
+#: Long enough for the reject check to run the reviewer's tests from a cold
+#: `uv run` (`stage_report_reject`). Claude Code's default is 60s, and a hook
+#: past its timeout lets the stop through, so a slow test is checked at
+#: completion instead, never trapping the turn.
+STAGE_REPORT_HOOK_TIMEOUT_SECONDS = 600
+
+
 def stage_report_hook_settings() -> str:
     """``--settings`` JSON installing the stage-report ``Stop`` hook.
 
@@ -184,7 +191,11 @@ def _stage_report_stop_hook() -> dict[str, object]:
         f"{shlex.quote(sys.executable)} -m loregarden.agents.stage_report_stop_hook "
         f"--db {shlex.quote(str(db_path))}"
     )
-    return {"hooks": [{"type": "command", "command": command}]}
+    return {
+        "hooks": [
+            {"type": "command", "command": command, "timeout": STAGE_REPORT_HOOK_TIMEOUT_SECONDS}
+        ]
+    }
 
 
 def _control_plane_http_hook() -> dict[str, object]:

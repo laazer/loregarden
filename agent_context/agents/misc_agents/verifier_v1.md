@@ -48,8 +48,13 @@ for. Answering for them is your job. For **each** criterion, by its exact text:
   pass, and that actually exercise the criterion. A test named after it that
   does not reach it is not proof. For a criterion only a real surface can show,
   attach the evidence first and pass `evidence_artifact_id` instead.
+- **Earlier rejects' tests count.** If the rework brief lists "Tests that show
+  the defect", run them first: a criterion an earlier reject named is not met
+  until its tests pass, and the check before the gate reruns them with whatever
+  you name.
 - **Not met:** do not record it. Refute (`needs_rework`) and name it in
-  `unmet_criteria`, word for word. Past the ticket's rework budget, criteria
+  `unmet_criteria`, word for word, with a blocking finding whose `test` fails
+  now (see `findings` in the stage-report contract). Past the ticket's rework budget, criteria
   named unmet move to their own ticket and this one goes on without them, so
   name every one that is unmet and nothing that is not.
 
