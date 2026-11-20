@@ -57,7 +57,7 @@ from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map import sources as sources_module
 from loregarden.services.symbol_map import store as store_module
 from loregarden.services.symbol_map.checkout_identity import identify
-from loregarden.services.symbol_map.freshness import MapStatus
+from loregarden.services.symbol_map.freshness import MapStatus, partition_for
 from loregarden.services.symbol_map.refresh import RefreshFailure, RefreshReport
 from loregarden.services.symbol_map.sources import ChangedPaths, ChangedPathsOutcome, changed_paths
 from loregarden.services.worktree_snapshot import TreeSnapshot, read_tree
@@ -885,6 +885,66 @@ def test_a_refresh_failure_is_logged_once_at_warning_and_never_below_it(
     records = [r for r in caplog.records if r.name == refresh_module.__name__]
     assert report.ok is False
     assert [r.levelno for r in records] == [logging.WARNING]
+
+
+def _reads_before_a_concurrent_refresh_committed(times: int | None):
+    """Make the cold-start reads miss a partition that is already committed.
+
+    Two members of a parallel stage dispatch into one checkout at once: both
+    read "no partition", both build one, and the second insert meets the
+    first's row on UNIQUE(workspace_id, checkout_identity). Missing the
+    committed row on purpose is that interleaving, without the threads.
+    ``times=None`` misses on every read, so every attempt collides.
+    """
+    remaining = {"misses": times}
+
+    def read(session, workspace_id, repo_root):
+        if remaining["misses"] is None:
+            return None
+        if remaining["misses"] > 0:
+            remaining["misses"] -= 1
+            return None
+        return partition_for(session, workspace_id, repo_root)
+
+    return (
+        mock.patch.object(refresh_module, "partition_for", side_effect=read),
+        mock.patch.object(store_module, "partition_for", side_effect=read),
+    )
+
+
+def test_a_cold_refresh_that_loses_the_race_to_a_concurrent_one_still_maps_the_checkout(
+    session, workspace, refresh_repo
+):
+    """The loser of a cold-start race wanted exactly the partition the winner
+    made, so it is a transient failure: refresh again and find it."""
+    build_symbol_map(session, workspace.id, refresh_repo)  # the winner, committed
+    refresh_read, store_read = _reads_before_a_concurrent_refresh_committed(times=2)
+
+    with refresh_read, store_read:
+        report = refresh_at_run_entry(session, workspace.id, refresh_repo)
+
+    assert report.ok is True
+    assert len(session.exec(select(SymbolMapPartition)).all()) == 1
+
+
+def test_a_failed_cold_refresh_leaves_the_callers_session_writable(
+    session, workspace, refresh_repo
+):
+    """The session is the dispatch's: it goes on to write the run's own rows.
+    Left in pending-rollback by a failed insert, every one of those writes
+    raises, the run never records its outcome, and a parallel stage's member
+    is reaped as an orphan of its finished orchestration."""
+    build_symbol_map(session, workspace.id, refresh_repo)
+    refresh_read, store_read = _reads_before_a_concurrent_refresh_committed(times=None)
+
+    with refresh_read, store_read:
+        report = refresh_at_run_entry(session, workspace.id, refresh_repo)
+
+    assert report.ok is False
+    assert report.reason is RefreshFailure.UNEXPECTED
+    workspace.name = "written after the failed refresh"
+    session.add(workspace)
+    session.commit()
 
 
 def test_refresh_symbol_map_raises_so_the_testable_core_stays_testable(
