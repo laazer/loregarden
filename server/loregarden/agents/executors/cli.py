@@ -49,6 +49,8 @@ from loregarden.agents.prompt_blocks import (
     titled_block,
 )
 from loregarden.agents.registry import get_agent
+from loregarden.agents.sibling_claims_context import HEADING as SIBLING_CLAIMS_HEADING
+from loregarden.agents.sibling_claims_context import build_sibling_claims_context
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
@@ -1112,6 +1114,11 @@ class CliAgentExecutor:
             titled_block(
                 "## Plans to reconcile",
                 build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
+            ),
+            # Siblings landing on the same integration branch that claim this
+            # ticket's files: the conflict each would otherwise meet at landing.
+            titled_block(
+                SIBLING_CLAIMS_HEADING, build_sibling_claims_context(self.session, ticket)
             ),
             # Before the role, so an agent knows where the shape of the repo is
             # written down before it is told its job. A pointer rather than the
