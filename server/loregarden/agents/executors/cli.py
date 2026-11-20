@@ -16,6 +16,7 @@ from loregarden.agents.executors.dirty_checkout import park_on_dirty_checkout
 from loregarden.agents.executors.dispatch_warnings import (
     warn_before_run,
 )
+from loregarden.agents.executors.pre_dispatch_checks import park_unless_fit_to_run
 from loregarden.agents.executors.prompt_size import record_prompt_size
 from loregarden.agents.executors.rework_round import prepare_round, run_round
 from loregarden.agents.executors.run_evidence import (
@@ -57,7 +58,6 @@ from loregarden.models.domain import (
     AgentRun,
     ArtifactKind,
     ContractAudience,
-    DoctorStatus,
     MemoryBriefingAssembly,
     RunStatus,
     Ticket,
@@ -74,18 +74,11 @@ from loregarden.services.cli_settings import (
 from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.dispatch_key import executed_once
-from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.exit_action_dispatch import assign_dispatch_exit_actions
 from loregarden.services.finding_bar import is_judging
-from loregarden.services.git_boundary import boundary_of_tree, read_boundary, stamp_run_boundary
+from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
-from loregarden.services.handoff_boundary import (
-    boundary_enforced,
-    park_for_boundary,
-    verdict_proceeds,
-    verify_run_boundary,
-)
 from loregarden.services.handoff_tree_status import (
     HandoffTreePreparationError,
     PreparedTree,
@@ -837,52 +830,16 @@ class CliAgentExecutor:
         repo_root: Path,
         before: TreeSnapshot,
     ) -> AgentRun | None:
-        """Record the tree this run inherited, then ask whether it is still the
-        one the last handoff described. Returns the parked run when the stage
-        must not proceed, or None to carry on.
-
-        Called once the execution root and branch are settled — stamping any
-        earlier would name the shared checkout for a run that goes on to execute
-        in a worktree. Every dispatch path in the app converges on `execute`,
-        which is why this lives in the executor rather than beside any one caller.
-
-        A run carrying `dispatch_waiver_approval_id` was dispatched by a person
-        who saw these checks fail and said run it anyway (see
-        `services.stage_parking`). It skips the *parking*, never the checking:
-        the checks still run and their failures are still recorded on the run,
-        because "a human waived it" and "the environment was fine" must not read
-        the same afterwards. `maybe_warn_dispatch_waiver` puts it in the log.
-        """
-        stamp_run_boundary(self.session, run, boundary_of_tree(before))
-        waived = bool(run.dispatch_waiver_approval_id)
-
-        # The environment first: a stage started in a checkout with core.bare set,
-        # or under a leaked GIT_DIR, fails in ways that point at anything but the
-        # cause. Recorded on the run whatever happens next.
-        preflight = preflight_run(
-            self.session, run, workspace, repo_root, ledger=self.preflight_ledger
-        )
-        if any(finding.status is DoctorStatus.FAIL for finding in preflight) and not waived:
-            park_for_environment(
-                self.session, run=run, ticket=ticket, summary=preflight_summary(preflight)
-            )
-            return self.orchestration.complete_run(
-                run,
-                status=RunStatus.CANCELLED,
-                stderr="Environment preflight failed: awaiting human confirmation.",
-                advance_workflow=False,
-            )
-
-        verdict = verify_run_boundary(self.session, run, ticket)
-        if verdict_proceeds(verdict) or not boundary_enforced(workspace) or waived:
-            return None
-
-        park_for_boundary(self.session, run=run, ticket=ticket, verdict=verdict)
-        return self.orchestration.complete_run(
+        """The pre-dispatch checks (`pre_dispatch_checks`): the parked run, or None to carry on."""
+        return park_unless_fit_to_run(
+            self.session,
+            self.orchestration,
             run,
-            status=RunStatus.CANCELLED,
-            stderr=f"Boundary check {verdict.value}: awaiting human confirmation.",
-            advance_workflow=False,
+            ticket,
+            workspace,
+            repo_root=repo_root,
+            before=before,
+            ledger=self.preflight_ledger,
         )
 
     def _resolve_stage_def(self, ticket: Ticket, run: AgentRun) -> WorkflowStageDef | None:

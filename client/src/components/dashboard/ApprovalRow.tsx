@@ -1,12 +1,13 @@
 import type { ApprovalResolutionAction } from "../../api/chatTypes";
 import type { Approval } from "../../api/client";
-import { impactWithoutCriteria } from "../../utils/approvalCriteria";
+import { impactWithoutCriteria, siblingOverlapWaitsOn } from "../../utils/approvalCriteria";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
 
 function approvalKindLabel(approval: Approval): string {
   if (approval.kind === "workflow_gate") return "Stage sign-off";
   if (approval.kind === "rework_pause") return "Rework paused";
   if (approval.kind === "cli_permission") return "Agent permission";
+  if (siblingOverlapWaitsOn(approval) !== null) return "Sibling overlap";
   if (approval.kind === "stage_park") return "Environment override";
   return "Agent question";
 }

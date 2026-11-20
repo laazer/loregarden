@@ -55,3 +55,12 @@ what is out of scope, and the disagreements you resolved. This artifact is what
 spec, test-design and implement will read — it must stand alone.
 
 Do not write code, tests, or fixes.
+
+## Files touched (required)
+
+The plan's content must carry `modules_touched`: a list of the repo-relative
+paths the work will change, with a trailing `/` for a directory, e.g.
+`["server/loregarden/services/x.py", "client/src/lib/"]`. A note may follow a
+path (`"x.py — the parser"`). The attach is refused without it. Open tickets in
+the same landing tree are warned about the files you name, and a person can
+order them before either starts writing.

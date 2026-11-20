@@ -18,7 +18,12 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from loregarden.models.domain import Approval, ApprovalKind, StageStatus, Ticket
+from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, StageStatus, Ticket
+from loregarden.services.sibling_overlap_resolution import (
+    is_sibling_overlap_park,
+    wait_for_siblings,
+)
+from loregarden.services.ticket_dependencies import DependencyCycleError
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.unresolved_ledger import (
     HUMAN_AGENT_ID,
@@ -95,24 +100,53 @@ def apply_park_resolution(
     send unsatisfactory *work* back to an earlier stage; a `core.bare` checkout
     is not a defect in the plan, and re-running the planner would fix nothing
     while consuming a rework round.
+
+    Rejecting a sibling-overlap park is "wait" instead: the ticket is linked to
+    wait for the siblings and the stage goes back to PENDING, where the
+    dependency hold keeps it until they land (`services.sibling_overlap_park`).
     """
     instance, stages = orchestration._resolve_stages(ticket)
     if not instance or not stages or not approval.stage_key:
         return False
 
+    resume = approved
     if approved:
         set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.PENDING)
         ticket.dispatch_waiver_stage_key = approval.stage_key
         ticket.dispatch_waiver_approval_id = approval.id
         ticket.blocking_issues = ""
     else:
-        set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
-        ticket.blocking_issues = response_text.strip() or approval.impact
+        waits, refusal = _wait_for_siblings_instead(session, ticket, approval)
+        if waits:
+            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.PENDING)
+            ticket.blocking_issues = ""
+            resume = True
+        else:
+            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
+            ticket.blocking_issues = refusal or response_text.strip() or approval.impact
 
     session.add(ticket)
     session.add(instance)
     session.commit()
-    return approved
+    return resume
+
+
+def _wait_for_siblings_instead(
+    session: Session, ticket: Ticket, approval: Approval
+) -> tuple[bool, str]:
+    """Whether a rejected park made ``ticket`` wait for its siblings, and why not if it could not.
+
+    Only a *rejected* overlap park waits. An ignored one is a person dismissing
+    a stale card, and linking edges on their behalf would order work nobody chose.
+    """
+    if not is_sibling_overlap_park(approval) or approval.status is not ApprovalStatus.REJECTED:
+        return False, ""
+    try:
+        wait_for_siblings(session, ticket, approval)
+    except DependencyCycleError as exc:
+        logger.warning("could not make %s wait for its siblings: %s", ticket.external_id, exc)
+        return False, f"Could not wait for the overlapping siblings: {exc}"
+    return True, ""
 
 
 def apply_gate_resolution(

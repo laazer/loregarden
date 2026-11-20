@@ -58,6 +58,8 @@ class OperationId(StrEnum):
     ARTIFACT_ATTACH = "artifact_attach"
     APPROVAL_REQUEST = "approval_request"
     ORCHESTRATION_COMPLETE = "orchestration_complete"
+    #: A run declares the files it is about to change (`path_claim_operations.py`).
+    PATHS_CLAIM = "paths_claim"
     #: The edges between tickets (`ticket_links.py`).
     TICKET_DEPENDENCY_ADD = "ticket_dependency_add"
     TICKET_DEPENDENCY_REMOVE = "ticket_dependency_remove"

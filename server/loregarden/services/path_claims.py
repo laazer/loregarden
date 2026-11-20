@@ -6,15 +6,17 @@ same file the second to land conflicts. Over 60 days of live runs (2026-11-19)
 file that sibling tickets 782 and 801 were both editing while running at the
 same time. Neither of their agents could know the other existed.
 
-A claim is derived from data that is already stored, never written as a row of
-its own:
+A ticket's claims come from three places, and only the last is a row of its own:
 
 - **observed**: a path in any of the ticket's runs' `changed_paths_json`;
-- **planned**: a path named in the newest plan artifact's `modules_touched`.
+- **planned**: a path named in the newest plan artifact's `modules_touched`;
+- **declared**: a path an agent named mid-run with `loregarden_claim_paths`
+  (`DeclaredPathClaim`), the one source nothing else records.
 
-There is nothing to release on landing, and nothing to drift out of step with
-the runs: a ticket stops claiming anything the moment it lands or closes,
-because only open, unlanded tickets are read.
+For one path, observed outranks declared, which outranks planned: a fact over an
+intent over a prediction. There is nothing to release on landing, and nothing to
+drift out of step with the runs: a ticket stops claiming anything the moment it
+lands or closes, because only open, unlanded tickets are read.
 """
 
 from __future__ import annotations
@@ -25,7 +27,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from loregarden.agents.plan_context import latest_plan
-from loregarden.models.domain import AgentRun, Ticket, TicketState, WorkItemType
+from loregarden.models.domain import (
+    AgentRun,
+    DeclaredPathClaim,
+    Ticket,
+    TicketState,
+    WorkItemType,
+)
 from loregarden.models.domain.path_claim_enums import PathClaimSource
 from loregarden.services.hierarchy_service import descendants_by_root
 from loregarden.services.tree_root import subtree_root
@@ -48,6 +56,13 @@ _PLANNED_FILES = TypeAdapter(list[str])
 #: The other shape planners write: a count summary (`{"new": 3, "edited": 10}`),
 #: which names no file and so predicts nothing.
 _PLANNED_COUNTS = TypeAdapter(dict[str, int])
+#: The most paths one `loregarden_claim_paths` call may declare. A claim is a
+#: warning to siblings; a list longer than this warns about everything.
+MAX_DECLARED_PATHS = 25
+
+
+class PlanFilesMissingError(ValueError):
+    """A plan names no file it will touch, so no sibling can be warned about it."""
 
 
 @dataclass(frozen=True)
@@ -77,14 +92,20 @@ def sibling_overlaps(session: Session, ticket: Ticket) -> list[SiblingOverlap]:
     if not ours:
         return []
     siblings = _open_siblings(session, ticket)
-    observed = _observed_paths(session, [s.id for s in siblings])
+    ids = [s.id for s in siblings]
+    observed = _observed_paths(session, ids)
+    declared = _declared_paths(session, ids)
     found: list[SiblingOverlap] = []
     for sibling in siblings:
-        claims = _merge_claims(_planned_paths(session, sibling), observed.get(sibling.id, set()))
+        claims = _merge_claims(
+            _planned_paths(session, sibling),
+            declared.get(sibling.id, set()),
+            observed.get(sibling.id, set()),
+        )
         shared = tuple(
             PathClaim(path, source)
             for path, source in sorted(claims.items())
-            if any(_overlap(path, mine) for mine in ours)
+            if any(paths_overlap(path, mine) for mine in ours)
         )
         if shared:
             found.append(SiblingOverlap(sibling=sibling, shared=shared))
@@ -92,18 +113,81 @@ def sibling_overlaps(session: Session, ticket: Ticket) -> list[SiblingOverlap]:
 
 
 def ticket_claims(session: Session, ticket: Ticket) -> dict[str, PathClaimSource]:
-    """Every path ``ticket`` claims, observed winning over planned for one path."""
+    """Every path ``ticket`` claims, the strongest source winning for one path."""
     observed = _observed_paths(session, [ticket.id]).get(ticket.id, set())
-    return _merge_claims(_planned_paths(session, ticket), observed)
+    declared = _declared_paths(session, [ticket.id]).get(ticket.id, set())
+    return _merge_claims(_planned_paths(session, ticket), declared, observed)
 
 
-def _merge_claims(planned: Iterable[str], observed: Iterable[str]) -> dict[str, PathClaimSource]:
+def declare_paths(
+    session: Session,
+    ticket: Ticket,
+    paths: Sequence[str],
+    *,
+    reason: str,
+    run_id: str | None,
+) -> list[str]:
+    """Record ``paths`` as declared by ``ticket``'s run. Returns the paths stored.
+
+    Refuses rather than trims: an agent told "claimed 3 of 5" has no way to know
+    which two its siblings will not be warned about. A path the ticket already
+    declared is not stored twice.
+    """
+    cleaned = [_repo_relative(p) for p in paths]
+    if not cleaned:
+        raise ValueError("claim_paths needs at least one path")
+    if len(cleaned) > MAX_DECLARED_PATHS:
+        raise ValueError(
+            f"claim_paths takes at most {MAX_DECLARED_PATHS} paths, got {len(cleaned)}; "
+            "claim the directory (a trailing /) instead of every file in it"
+        )
+    held = _declared_paths(session, [ticket.id]).get(ticket.id, set())
+    new = [p for p in dict.fromkeys(cleaned) if p not in held]
+    for path in new:
+        session.add(DeclaredPathClaim(ticket_id=ticket.id, run_id=run_id, path=path, reason=reason))
+    session.commit()
+    return new
+
+
+def validate_plan_files(content: dict) -> list[str]:
+    """The files a plan's `modules_touched` names, or raise `PlanFilesMissingError`.
+
+    Every plan names its files, so a sibling planned beside it can be warned and
+    the scheduler can order them before either writes. An entry may carry a note
+    after its path (``x.py — the parser``); a count summary names no file.
+    """
+    raw = content.get("modules_touched")
+    hint = (
+        "a plan must list the files it will touch as modules_touched: a list of "
+        'repo-relative paths, e.g. ["server/loregarden/services/x.py", "client/src/lib/"]'
+    )
+    try:
+        entries = _PLANNED_FILES.validate_python(raw)
+    except ValidationError as exc:
+        raise PlanFilesMissingError(f"{hint}; got {type(raw).__name__}") from exc
+    files = [path for entry in entries if (path := _leading_path(entry))]
+    if not files:
+        raise PlanFilesMissingError(f"{hint}; none of the {len(entries)} entries names a path")
+    return files
+
+
+def _repo_relative(path: str) -> str:
+    cleaned = path.strip().removeprefix("./")
+    if not cleaned or cleaned.startswith(("/", "~")) or ".." in cleaned.split("/"):
+        raise ValueError(f"claim_paths takes repo-relative paths, got {path!r}")
+    return cleaned
+
+
+def _merge_claims(
+    planned: Iterable[str], declared: Iterable[str], observed: Iterable[str]
+) -> dict[str, PathClaimSource]:
     claims = dict.fromkeys(planned, PathClaimSource.PLANNED)
+    claims.update(dict.fromkeys(declared, PathClaimSource.DECLARED))
     claims.update(dict.fromkeys(observed, PathClaimSource.OBSERVED))
     return claims
 
 
-def _overlap(a: str, b: str) -> bool:
+def paths_overlap(a: str, b: str) -> bool:
     """Same file, or one claim is a directory (trailing ``/``) holding the other."""
     return a == b or (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b))
 
@@ -159,6 +243,20 @@ def _observed_paths(session: Session, ticket_ids: Sequence[str]) -> dict[str, se
             logger.warning("run %s holds unreadable changed_paths_json; skipping", run_id)
             continue
         found.setdefault(ticket_id or "", set()).update(paths)
+    return found
+
+
+def _declared_paths(session: Session, ticket_ids: Sequence[str]) -> dict[str, set[str]]:
+    if not ticket_ids:
+        return {}
+    rows = session.exec(
+        select(DeclaredPathClaim.ticket_id, DeclaredPathClaim.path).where(
+            col(DeclaredPathClaim.ticket_id).in_(ticket_ids)
+        )
+    ).all()
+    found: dict[str, set[str]] = {}
+    for ticket_id, path in rows:
+        found.setdefault(ticket_id, set()).add(path)
     return found
 
 

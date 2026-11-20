@@ -90,3 +90,51 @@ describe("ApprovalCard for a parked stage", () => {
     expect(screen.getByRole("button", { name: "Leave parked" })).toBeDisabled();
   });
 });
+
+/**
+ * A sibling-overlap park asks a different question: start now beside a sibling
+ * editing the same files, or wait for it to land. Rejecting it does not leave
+ * the stage parked, so the button must not say so.
+ */
+const OVERLAP_PARK: Approval = {
+  ...PARK_APPROVAL,
+  id: "appr_overlap",
+  title: "lg-x-12 overlaps lg-x-11 on the same files",
+  impact: "- lg-x-11 (implement): server/loregarden/services/land_ticket.py",
+  tool_name: "sibling_overlap",
+  tool_input_json: JSON.stringify({ sibling_ids: ["t11"], sibling_external_ids: ["lg-x-11"] }),
+};
+
+describe("ApprovalCard for a sibling-overlap park", () => {
+  it("names waiting for the sibling as the other choice", () => {
+    renderPark({ approval: OVERLAP_PARK });
+
+    expect(screen.getByRole("button", { name: "Run anyway" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Wait for lg-x-11" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Leave parked" })).not.toBeInTheDocument();
+  });
+
+  it("counts the siblings when it would wait for several", () => {
+    const several = {
+      ...OVERLAP_PARK,
+      tool_input_json: JSON.stringify({ sibling_ids: ["a", "b"], sibling_external_ids: ["lg-a", "lg-b"] }),
+    };
+    renderPark({ approval: several });
+
+    expect(screen.getByRole("button", { name: "Wait for 2 siblings" })).toBeInTheDocument();
+  });
+
+  it("still offers to wait when the payload cannot be read", () => {
+    renderPark({ approval: { ...OVERLAP_PARK, tool_input_json: "not json" } });
+
+    expect(screen.getByRole("button", { name: "Wait for siblings" })).toBeInTheDocument();
+  });
+
+  it("rejects without the gate's reject modal", () => {
+    const { onReject } = renderPark({ approval: OVERLAP_PARK });
+
+    fireEvent.click(screen.getByRole("button", { name: "Wait for lg-x-11" }));
+
+    expect(onReject).toHaveBeenCalled();
+  });
+});

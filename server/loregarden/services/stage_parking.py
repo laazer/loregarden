@@ -16,6 +16,7 @@ human touched the tree.
 from __future__ import annotations
 
 from loregarden.models.domain import AgentRun, Approval, ApprovalKind, Ticket
+from loregarden.models.domain.path_claim_enums import StageParkReason
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.stage_retry_budget import refund_stage_dispatch_budget
 from sqlmodel import Session
@@ -28,6 +29,8 @@ def park_stage(
     ticket: Ticket,
     title: str,
     impact: str,
+    reason: StageParkReason | None = None,
+    payload_json: str = "{}",
 ) -> Approval:
     """Raise an inbox approval for `run`'s stage and refund its dispatch budget.
 
@@ -41,6 +44,9 @@ def park_stage(
     was until this was fixed — a click meant to unstick a broken checkout instead
     marked `implement` complete without it ever running, and an auto_approve run
     did the same to itself with no human in the loop at all.
+
+    ``reason`` marks a park whose resolution differs from the default (see
+    `StageParkReason`), with ``payload_json`` holding what that resolution needs.
     """
     approval = OrchestrationCallbackService(session).request_approval(
         ticket,
@@ -50,5 +56,10 @@ def park_stage(
         level="high",
         kind=ApprovalKind.STAGE_PARK,
     )
+    if reason is not None:
+        approval.tool_name = reason.value
+        approval.tool_input_json = payload_json
+        session.add(approval)
+        session.commit()
     refund_stage_dispatch_budget(session, ticket.id, run.stage_key)
     return approval

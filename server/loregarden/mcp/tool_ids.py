@@ -27,6 +27,7 @@ class McpTool(StrEnum):
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
     ATTACH_ARTIFACT = "loregarden_attach_artifact"
     RECORD_UX_ANSWERS = "loregarden_record_ux_answers"
+    CLAIM_PATHS = "loregarden_claim_paths"
     RECORD_FIX_COVERAGE = "loregarden_record_fix_coverage"
     ASK_OPERATOR = "loregarden_ask_operator"
     LIST_OPERATOR_QUESTIONS = "loregarden_list_operator_questions"
@@ -191,6 +192,8 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # whichever stage settles them (ui-design, or the implementer that built the
     # surface) needs to be able to record them.
     McpTool.RECORD_UX_ANSWERS,
+    # Declares the files a run is about to change, for its siblings' prompts.
+    McpTool.CLAIM_PATHS,
     # A bug ticket's spec stage cannot pass without its fix coverage record.
     McpTool.RECORD_FIX_COVERAGE,
     # A question the stage would otherwise have buried in a checkpoint: filed
@@ -319,6 +322,8 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.ATTACH_ARTIFACT,
         McpTool.RECORD_UX_ANSWERS,
         McpTool.RECORD_FIX_COVERAGE,
+        # A warning to siblings about the run's own ticket; it moves nothing.
+        McpTool.CLAIM_PATHS,
         # Files an inbox card, or the decision block a stage would raise anyway;
         # gating the question behind a click would ask whether it may ask.
         McpTool.ASK_OPERATOR,

@@ -29,7 +29,9 @@ _INTRO = (
 _GUIDANCE = (
     "In these files, keep your diff to what this ticket needs: no reformatting, "
     "reordering or renames nobody asked for, and do not edit the sibling's work. "
-    "Where new code could reasonably live in a new function or module, put it there."
+    "Where new code could reasonably live in a new function or module, put it there. "
+    "Before changing a file here that your plan did not name, declare it with "
+    "`loregarden_claim_paths` so the siblings are warned too."
 )
 
 
@@ -61,6 +63,7 @@ def _describe(overlap: SiblingOverlap) -> str:
         f"{verb} {_paths([c.path for c in overlap.shared if c.source is source])}"
         for source, verb in (
             (PathClaimSource.OBSERVED, "has changed"),
+            (PathClaimSource.DECLARED, "is about to change"),
             (PathClaimSource.PLANNED, "plans to change"),
         )
         if any(c.source is source for c in overlap.shared)
