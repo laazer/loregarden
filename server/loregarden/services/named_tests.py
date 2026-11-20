@@ -14,6 +14,7 @@ so, so a test that was not run is never reported as one that was.
 from __future__ import annotations
 
 import shlex
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -106,8 +107,26 @@ def _plan(
 
 
 def _run_batches(batches: list[_Batch], root: Path, result: NamedTestRun) -> NamedTestRun:
+    """Run each batch with Python's bytecode cache in a directory of its own.
+
+    A cached `.pyc` is trusted when the source's whole-second mtime and size
+    match. An agent that ran its tests (filling `__pycache__`) and then changed
+    a file at the same size within that second would have the old body rerun
+    here, and pytest's rewritten test modules are read that way even under
+    `-B`. `PYTHONPYCACHEPREFIX` moves every read and write, CPython's and
+    pytest's, to an empty directory, so nothing cached in the checkout is read.
+    """
+    with tempfile.TemporaryDirectory(prefix="lg-named-tests-pyc-") as pycache:
+        return _run_batches_in(batches, root, result, {"PYTHONPYCACHEPREFIX": pycache})
+
+
+def _run_batches_in(
+    batches: list[_Batch], root: Path, result: NamedTestRun, env: dict[str, str]
+) -> NamedTestRun:
     for key, command, ids in batches:
-        outcome = run_verify_command(_render(command, ids), root, footprint=DockerFootprint.SERVICE)
+        outcome = run_verify_command(
+            _render(command, ids), root, footprint=DockerFootprint.SERVICE, extra_env=env
+        )
         if outcome.outcome is GateOutcome.UNAVAILABLE:
             result.unavailable = outcome.detail or f"could not run {outcome.command}"
             return result

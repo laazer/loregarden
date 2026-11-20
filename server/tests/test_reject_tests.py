@@ -78,12 +78,9 @@ FINDING = {
     "impact": "the request returns 500 instead of 400",
 }
 
-# `-B`: tests here rewrite a test file in place, often at the same size within
-# the same second. Bytecode caches are keyed on whole-second mtime plus size,
-# so a cached .pyc (pytest's rewritten one included) would rerun the old body.
 PYTEST = CriterionTestCommand(
     prefix="server/",
-    command=f"{sys.executable} -B -m pytest -q -p no:cacheprovider {{tests}}",
+    command=f"{sys.executable} -m pytest -q -p no:cacheprovider {{tests}}",
     strip_prefix=False,
 )
 
@@ -398,6 +395,38 @@ def test_the_criteria_check_reruns_a_recorded_reject_test(db_session, checkout, 
     )
     check = check_criteria(db_session, ticket)
     assert check.passed and set(check.rerun) == {PASSES, FAILS}
+
+
+def test_the_rerun_ignores_a_pyc_the_agents_own_run_left(db_session, checkout, ticket):
+    _complete(db_session, ticket, _stdout(FAILS))
+    settle_met(
+        db_session,
+        ticket,
+        CRITERION,
+        tests=[PASSES],
+        evidence_artifact_id=None,
+        commit_sha="",
+        settled_by="run:verify",
+        reason="the header is read",
+    )
+    test_file = checkout / "server" / "tests" / "test_host.py"
+    # The agent runs the test itself, with the bytecode cache on.
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+    subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", FAILS],
+        cwd=checkout,
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    assert list((test_file.parent / "__pycache__").glob("test_host*.pyc"))
+    # Then fixes it at the same size, within the second the cache was keyed on.
+    stamp = test_file.stat()
+    test_file.write_text(TESTS_PY.replace("assert 500 == 400", "assert 400 == 400"))
+    os.utime(test_file, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+
+    check = check_criteria(db_session, ticket)
+    assert check.passed and FAILS in check.rerun
 
 
 def test_a_deleted_reject_test_is_a_gap_at_the_gate(db_session, checkout, ticket):
