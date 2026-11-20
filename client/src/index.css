@@ -5123,11 +5123,26 @@ button.send-leaf:hover:not(:disabled) {
 }
 
 .inbox-section-title {
+  /* Applied to an <h3> in the grouped approvals drawer; everywhere else it is
+     a <span>, which has no UA margin to cancel. */
+  margin: 0;
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--txm);
+}
+
+/* A read or a write that failed, said where the content would have been. Both
+   approval-list failures use it, so the tint is defined once and in tokens. */
+.inbox-error-line {
+  font-size: var(--fs-micro);
+  color: var(--rdl);
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--rdl) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rdl) 25%, transparent);
 }
 
 .inbox-empty-hint {

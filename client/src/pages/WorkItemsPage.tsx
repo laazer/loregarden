@@ -90,6 +90,9 @@ export function WorkItemsPage() {
   // column. The inbox's own query, polled app-wide by the topbar, so this
   // view never disagrees with the inbox.
   const approvalsQ = useQuery({
+    // One `meta` per query key, last observer to set options winning: every
+    // observer of ["approvals"] has to name the same thing as having failed.
+    meta: { errorTitle: "Load approvals" },
     queryKey: ["approvals"],
     queryFn: () => api.approvals(),
     enabled: view === "needs_me",

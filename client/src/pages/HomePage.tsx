@@ -106,6 +106,9 @@ export function HomePage() {
   // action invalidates it, so this page reads the same list without a second
   // poll. Under its own key it was a second request and could lag a resolve.
   const approvalsQ = useQuery({
+    // One `meta` per query key, last observer to set options winning: every
+    // observer of ["approvals"] has to name the same thing as having failed.
+    meta: { errorTitle: "Load approvals" },
     queryKey: ["approvals"],
     queryFn: () => api.approvals(),
   });
