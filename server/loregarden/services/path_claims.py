@@ -85,6 +85,9 @@ def sibling_overlaps(session: Session, ticket: Ticket) -> list[SiblingOverlap]:
     Siblings are the other open, unlanded tickets under the same landing-tree
     root, excluding ``ticket``'s own ancestors and descendants: their work
     contains this ticket's or is contained by it, so it cannot conflict with it.
+    A ticket that has been split into children is not a sibling either: its
+    work is its children's, each listed on its own, and its own plan's files
+    would otherwise count every one of them twice.
     Empty when ``ticket`` claims nothing yet: a ticket that has neither planned
     nor changed anything has no files for a sibling to collide with.
     """
@@ -200,12 +203,14 @@ def _open_siblings(session: Session, ticket: Ticket) -> list[Ticket]:
     root = subtree_root(session, ticket)
     tree = [root, *descendants_by_root(session, [root.id])[root.id]]
     parent_of = {t.id: t.parent_ticket_id for t in tree}
+    split = set(parent_of.values())
     related = _ancestor_ids(ticket.id, parent_of) | {ticket.id}
     return sorted(
         (
             t
             for t in tree
             if t.id not in related
+            and t.id not in split
             and ticket.id not in _ancestor_ids(t.id, parent_of)
             and t.state not in _CLOSED_STATES
             and not t.landed_sha

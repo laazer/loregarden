@@ -197,6 +197,24 @@ def test_a_cousin_in_the_same_landing_tree_is_a_sibling(session, tree):
     assert [o.sibling.id for o in sibling_overlaps(session, tree["task"])] == [cousin.id]
 
 
+def test_a_split_parent_is_not_a_sibling_but_its_children_are(session, tree):
+    ws = tree["ws"]
+    split = make_ticket(
+        session,
+        workspace_id=ws.id,
+        external_id="f-7",
+        work_item_type=WorkItemType.FEATURE,
+        parent_ticket_id=tree["root"].id,
+        state=TicketState.IN_PROGRESS,
+    )
+    child = _task(session, ws, "t-8", split)
+    _changed(session, tree["task"], LAND)
+    _plan(session, split, [LAND])
+    _changed(session, child, LAND)
+
+    assert [o.sibling.id for o in sibling_overlaps(session, tree["task"])] == [child.id]
+
+
 def test_a_directory_claim_overlaps_a_file_beneath_it(session, tree):
     _changed(session, tree["task"], LAND)
     _plan(session, tree["sibling"], ["server/loregarden/services/"])
