@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { defaultAnswers, isOverride, operatorQuestionMeta, stagedAnswers } from "../lib/operatorQuestions";
+import { parkRejectLabel } from "../utils/approvalCriteria";
 import { BringInChangesButton } from "./BringInChangesButton";
 import { CloseOnlyActions } from "./CloseOnlyActions";
 import { PreparedActionPanel } from "./PreparedActionPanel";
@@ -809,7 +810,7 @@ export function ApprovalCard({
             disabled={isSubmitting}
             onClick={isGate ? () => setRejectModalOpen(true) : () => onReject()}
           >
-            {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? "Leave parked" : "Reject"}
+            {isQuestion ? "Decline" : isPermission ? "Deny" : isPark ? parkRejectLabel(approval) : "Reject"}
           </Button>
         )}
         {onIgnore && (

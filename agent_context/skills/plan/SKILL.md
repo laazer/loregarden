@@ -54,3 +54,12 @@ real ones by the time they reach test design, and they steer everything after.
 No code, no tests, no fixes — not even a small one you notice in passing. Note
 it in the plan and leave it. The pipeline's later stages exist to do that work
 under gates this stage does not run.
+
+## Files touched (required)
+
+The plan's content must carry `modules_touched`: a list of the repo-relative
+paths the work will change, with a trailing `/` for a directory, e.g.
+`["server/loregarden/services/x.py", "client/src/lib/"]`. A note may follow a
+path (`"x.py — the parser"`). The attach is refused without it. Open tickets in
+the same landing tree are warned about the files you name, and a person can
+order them before either starts writing.

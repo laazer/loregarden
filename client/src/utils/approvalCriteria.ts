@@ -53,3 +53,31 @@ export function checklistCoversCriteria(checklist: string[], criteria: string[])
   if (wanted.length === 0 || items.length === 0) return false;
   return wanted.every((criterion) => items.some((item) => item.endsWith(criterion)));
 }
+
+/**
+ * The siblings a sibling-overlap park would make this ticket wait for, or null
+ * for any other approval.
+ *
+ * The server marks the park in `tool_name` and lists the siblings in
+ * `tool_input_json` (`services/sibling_overlap_resolution.py`). Rejecting one
+ * does not leave the stage parked: it makes the ticket wait for them to land.
+ */
+export function siblingOverlapWaitsOn(approval: Approval): string[] | null {
+  if (approval.kind !== "stage_park" || approval.tool_name !== "sibling_overlap") return null;
+  try {
+    const payload = JSON.parse(approval.tool_input_json || "{}") as { sibling_external_ids?: unknown };
+    const ids = payload.sibling_external_ids;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    // silent-ok: the card still offers Wait, and the impact text names the siblings
+    return [];
+  }
+}
+
+/** What rejecting a park does, in the words its button uses. */
+export function parkRejectLabel(approval: Approval): string {
+  const waitsOn = siblingOverlapWaitsOn(approval);
+  if (waitsOn === null) return "Leave parked";
+  if (waitsOn.length === 1) return `Wait for ${waitsOn[0]}`;
+  return waitsOn.length > 1 ? `Wait for ${waitsOn.length} siblings` : "Wait for siblings";
+}

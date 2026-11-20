@@ -404,6 +404,11 @@ def _args_for(
             "title": "smoke evidence",
             "content_json": json.dumps({"status": 200}),
         },
+        "loregarden_claim_paths": {
+            "run_id": run_id,
+            "paths": ["server/smoke_claim.py"],
+            "reason": "smoke: declaring a file the plan did not name",
+        },
         "loregarden_update_ticket": {"ticket_id": ticket_id, "state": "in_progress"},
         "loregarden_create_ticket": {
             "workspace_slug": ws,
@@ -546,6 +551,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_ask_operator",
         "loregarden_list_operator_questions",
         "loregarden_attach_evidence",
+        "loregarden_claim_paths",
         "loregarden_search_prior_work",
         "loregarden_check_organization",
         "loregarden_doctor",

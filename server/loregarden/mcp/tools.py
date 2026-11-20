@@ -445,6 +445,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "Attach an artifact (log, diff, test output) to a ticket.",
     },
     {
+        "name": McpTool.CLAIM_PATHS,
+        "description": (
+            "Declare files you are about to change, before you change them, when the plan "
+            "did not name them: a signature change, a moved module, a new shared helper. "
+            "Open tickets in the same landing tree see the claim in their next stage prompt, "
+            "so they can keep clear. The reply names any sibling already claiming those "
+            "files. Your own ticket only; at most 25 paths (claim a directory with a "
+            "trailing /)."
+        ),
+    },
+    {
         "name": McpTool.REQUEST_APPROVAL,
         "description": (
             "Open a human approval inbox item for a stage. Only for an agentless human gate "

@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     Artifact,
+    ArtifactKind,
     BlockKind,
     BlockOrigin,
     DispatchSurface,
@@ -50,6 +51,7 @@ from loregarden.services.gate_approvals import (
 from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.hold_line import truncate_for_storage
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.path_claims import validate_plan_files
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
@@ -996,6 +998,10 @@ class OrchestrationCallbackService:
                 "attach_artifact cannot mint unresolved_open / unresolved_waiver / "
                 "unresolved_clear"
             )
+        if kind == ArtifactKind.PLAN:
+            # A plan names its files, so a sibling planned beside it can be
+            # warned and ordered before either writes (`services.path_claims`).
+            validate_plan_files(content)
         artifact = Artifact(
             ticket_id=ticket.id,
             run_id=run_id,

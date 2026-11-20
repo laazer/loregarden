@@ -31,6 +31,7 @@ OPERATION_TOOLS: Mapping[str, OperationId] = {
     McpTool.SKIP_STAGE.value: OperationId.STAGE_SKIP,
     McpTool.BLOCK_TICKET.value: OperationId.TICKET_BLOCK,
     McpTool.ATTACH_ARTIFACT.value: OperationId.ARTIFACT_ATTACH,
+    McpTool.CLAIM_PATHS.value: OperationId.PATHS_CLAIM,
     McpTool.REQUEST_APPROVAL.value: OperationId.APPROVAL_REQUEST,
     McpTool.COMPLETE_ORCHESTRATION.value: OperationId.ORCHESTRATION_COMPLETE,
     McpTool.LINK_DEPENDENCY.value: OperationId.TICKET_DEPENDENCY_ADD,

@@ -179,7 +179,7 @@ def test_the_supervised_run_is_preferred_to_the_orchestration_id(db_session, run
         execute_tool(
             db_session,
             "loregarden_attach_artifact",
-            {"run_id": runs["orch_id"], "kind": "plan", "title": "plan"},
+            {"run_id": runs["orch_id"], "kind": "log", "title": "log"},
             orchestrated=True,
             run_id=runs["agent_id"],
         )
@@ -207,7 +207,7 @@ def test_a_supervised_run_of_another_ticket_is_not_this_attachments_source(db_se
         execute_tool(
             db_session,
             "loregarden_attach_artifact",
-            {"run_id": runs["agent_code"], "kind": "plan", "title": "plan"},
+            {"run_id": runs["agent_code"], "kind": "log", "title": "log"},
             orchestrated=True,
             run_id=foreign.id,
         )

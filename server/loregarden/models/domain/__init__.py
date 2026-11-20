@@ -38,6 +38,7 @@ from loregarden.models.domain.merge_queue_enums import *  # noqa: F401,F403
 from loregarden.models.domain.merge_queue_tables import *  # noqa: F401,F403
 from loregarden.models.domain.operator_question_enums import *  # noqa: F401,F403
 from loregarden.models.domain.orchestrator_decisions import *  # noqa: F401,F403
+from loregarden.models.domain.path_claim_tables import *  # noqa: F401,F403
 from loregarden.models.domain.plan_enums import *  # noqa: F401,F403
 from loregarden.models.domain.process_enums import *  # noqa: F401,F403
 from loregarden.models.domain.pull_request_enums import *  # noqa: F401,F403

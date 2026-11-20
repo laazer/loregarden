@@ -17,6 +17,7 @@ from loregarden.services.operations.memory_operations import MEMORY_OPERATIONS
 from loregarden.services.operations.merge_queue_ops import MERGE_QUEUE_OPS
 from loregarden.services.operations.operator_questions import OPERATOR_QUESTIONS
 from loregarden.services.operations.organization_operations import ORGANIZATION_OPERATIONS
+from loregarden.services.operations.path_claim_operations import PATH_CLAIM_OPERATIONS
 from loregarden.services.operations.pull_request_merges import PULL_REQUEST_MERGES
 from loregarden.services.operations.research_record import RESEARCH_RECORD
 from loregarden.services.operations.run_callbacks import RUN_CALLBACKS
@@ -61,6 +62,7 @@ OPERATIONS: Mapping[OperationId, Operation] = {
         *TICKET_WRITES,
         *PULL_REQUEST_MERGES,
         *OPERATOR_QUESTIONS,
+        *PATH_CLAIM_OPERATIONS,
     )
 }
 
