@@ -28,9 +28,22 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from loregarden.models.domain import ParseStatus, SymbolMapFile, SymbolMapPartition, Workspace
+from loregarden.models.domain import (
+    Freshness,
+    ParseStatus,
+    SymbolMapFile,
+    SymbolMapPartition,
+    Workspace,
+)
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.symbol_map import build_symbol_map, definitions_for, outline_for
+from loregarden.services.symbol_map import (
+    build_symbol_map,
+    definitions_for,
+    map_status,
+    outline_for,
+    refresh_symbol_map,
+)
+from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map.checkout_identity import identify
 from sqlmodel import Session, select
 
@@ -74,6 +87,21 @@ def session_fixture(isolated_db):
 @pytest.fixture(name="workspace")
 def workspace_fixture(session: Session) -> Workspace:
     ws = Workspace(slug="this-checkout", name="this-checkout", repo_path="")
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
+    return ws
+
+
+@pytest.fixture(name="other_workspace")
+def other_workspace_fixture(session: Session) -> Workspace:
+    """A second workspace, so the AC10 measurement can hold an ancestor
+    partition for the seeded case without the unseeded case finding it.
+
+    Seeding looks for a partition of the SAME workspace, so "no ancestor" and
+    "an ancestor at this commit" are two workspaces and not two moments.
+    """
+    ws = Workspace(slug="this-checkout-ancestor", name="this-checkout-ancestor", repo_path="")
     session.add(ws)
     session.commit()
     session.refresh(ws)
@@ -216,3 +244,179 @@ def test_a_symbol_this_suite_can_name_is_findable_at_its_real_line(session, work
     source_lines = (repo_root / target).read_text(encoding="utf-8").splitlines()
     assert source_lines[line - 1].startswith("def identify(")
     assert [row.line for row in outline.rows] == sorted(row.line for row in outline.rows)
+
+
+# ==========================================================================
+# lg-code-knowledge-284, AC10 — what the refresh adds to a dispatch
+#
+# Three numbers, measured here rather than estimated, because the ticket's
+# whole trade turns on which of them is on the critical path:
+#
+#   cold without seed   a checkout nothing has mapped, full parse
+#   cold with seed      a fresh worktree copying an ancestor's rows, then
+#                       re-analyzing only what moved since that ancestor
+#   warm incremental    the ordinary case, a handful of edited files
+#
+# **The decision this records.** The cold case STAYS on the critical path.
+# It is paid once per worktree, seeding is what keeps it off the dominant
+# path (`symbol_map_partitions` held 0 rows in production against ~94 live
+# worktrees, and worktrees are cut per ticket), and moving it to a thread or
+# a queue is out of scope for this ticket by name. If the measured
+# cold-with-seed number is one anyone would feel after seeding, the follow-up
+# ticket is filed WITH the number on it — not a budget raised here.
+#
+# The budgets below are ceilings, not measurements: wide enough that ordinary
+# repository growth does not fail the suite, tight enough that each one fails
+# on a different regression. The implementer re-measures all three on this
+# checkout and attaches them with `loregarden_attach_evidence`, together with
+# one read-only count of `symbol_map_partitions` against live worktrees.
+# ==========================================================================
+
+#: 7.9 s measured for a full build at HEAD ca54966801; the same 7x headroom
+#: EXPECTED_MAX_SECONDS carries, because this suite runs under xdist on a
+#: shared machine. A cold unseeded refresh IS a full build, so a number above
+#: this is a refresh doing more work than the build it replaces.
+COLD_WITHOUT_SEED_BUDGET_SECONDS = 60.0
+#: Seeding copies rows inside SQLite and parses only the delta from the
+#: ancestor. Against an ancestor at the SAME commit the delta is empty, so
+#: this is the row copy and two git reads and nothing else.
+COLD_WITH_SEED_BUDGET_SECONDS = 25.0
+#: The dominant case once a worktree has been dispatched into once. This is
+#: the number that would be felt, because it is paid on every stage.
+WARM_INCREMENTAL_BUDGET_SECONDS = 10.0
+#: A realistic changed-file set for the warm case: a stage that edited a
+#: dozen modules is an ordinary implement round in this repository.
+WARM_CHANGED_FILES = 12
+
+
+@pytest.fixture(name="measurement_worktree")
+def measurement_worktree_fixture(tmp_path: Path, repo_root: Path):
+    """A second checkout of THIS repository, detached at the same commit.
+
+    Two checkouts is the only way to measure the seeded cold path honestly:
+    seeding is keyed on `checkout_identity`, so one root cannot play both
+    parts. Built in a fixture and removed in its teardown — a `git worktree
+    add` that leaks leaves an entry in this checkout's admin data that every
+    later `git worktree list` carries.
+    """
+    target = tmp_path / "measured-checkout"
+    added = run_git(
+        ["worktree", "add", "-q", "--detach", str(target), "HEAD"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if added.returncode != 0:
+        pytest.skip(f"could not cut a worktree of this checkout: {added.stderr.strip()}")
+    try:
+        yield target
+    finally:
+        run_git(
+            ["worktree", "remove", "--force", str(target)],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+
+def _touch_sources(root: Path, count: int) -> list[str]:
+    """Append a comment to *count* tracked Python modules, and leave them UNCOMMITTED.
+
+    Uncommitted is the realistic shape, not a shortcut: the delta oracle
+    diffs the stored sha against the WORKING TREE precisely because every
+    mid-stage edit this control plane makes is uncommitted, so a warm pass
+    measured over committed edits would measure the easier half of its own
+    contract.
+
+    It also keeps git's hooks out of a latency measurement. A freshly cut
+    worktree has no `server/.venv`, so a `git commit` here runs lefthook's
+    pre-commit, which fails on the missing environment and — on the gates
+    that do find one — builds a throwaway virtualenv inside the tree being
+    timed.
+    """
+    paths = sorted(
+        str(path.relative_to(root))
+        for path in (root / "server" / "loregarden" / "services").glob("*.py")
+    )[:count]
+    assert len(paths) == count, f"only {len(paths)} modules to edit"
+    for relative in paths:
+        with (root / relative).open("a", encoding="utf-8") as handle:
+            handle.write("\n# measured edit (lg-code-knowledge-284)\n")
+    return paths
+
+
+def test_the_three_refresh_latencies_on_this_checkout_stay_inside_their_budgets(
+    session, workspace, other_workspace, repo_root, measurement_worktree
+):
+    """AC10. The measurement, asserted where it cannot go stale.
+
+    Each budget fails on a different regression: a cold refresh that does more
+    work than the full build it replaces; a seed that re-parses instead of
+    copying; and a warm pass whose cost scales with the repository rather than
+    with the diff. The last is the one that would be felt, because it is paid
+    on every stage of every ticket.
+    """
+    cold = refresh_symbol_map(session, workspace.id, measurement_worktree)
+    assert cold.ok is True
+    assert cold.cold is True and cold.seeded is False
+
+    build_symbol_map(session, other_workspace.id, repo_root)
+    seeded = refresh_symbol_map(session, other_workspace.id, measurement_worktree)
+    assert seeded.ok is True
+    assert seeded.cold is True and seeded.seeded is True
+    assert seeded.files_reanalyzed == 0, (
+        "the ancestor is at the same commit, so nothing moved — a non-zero count "
+        "here is the mtime trap AC12 names, arriving by another route"
+    )
+
+    edited = _touch_sources(measurement_worktree, WARM_CHANGED_FILES)
+    warm = refresh_symbol_map(session, other_workspace.id, measurement_worktree)
+
+    assert warm.ok is True
+    assert warm.files_reanalyzed == len(edited)
+    assert cold.elapsed_ms / 1000 < COLD_WITHOUT_SEED_BUDGET_SECONDS
+    assert seeded.elapsed_ms / 1000 < COLD_WITH_SEED_BUDGET_SECONDS
+    assert warm.elapsed_ms / 1000 < WARM_INCREMENTAL_BUDGET_SECONDS
+    assert seeded.elapsed_ms < cold.elapsed_ms, (
+        "seeding is in scope precisely because it is cheaper than a cold build; "
+        "if it is not, the ~98-worktree cold path is still the dominant one"
+    )
+    assert refresh_module.COLD_BUILD_BUDGET_MS > 0
+
+
+def test_a_refresh_of_this_checkout_leaves_git_status_exactly_as_it_found_it(
+    session, workspace, measurement_worktree
+):
+    """AC8, on a real checkout and as a DELTA rather than an empty status.
+
+    The `tmp_path` half of this claim lives in `test_symbol_map_refresh.py`;
+    this half catches a cache, a temp file or a log the refresh decides to
+    write beside the source it is reading, at this repository's scale.
+    """
+    before = _porcelain(measurement_worktree)
+
+    refresh_symbol_map(session, workspace.id, measurement_worktree)
+
+    assert _porcelain(measurement_worktree) == before
+
+
+def test_a_refreshed_checkout_reads_back_as_fresh_at_its_real_lines(
+    session, workspace, measurement_worktree
+):
+    """The end-to-end claim for the writer, stated against a definition the
+    test verifies independently: after a refresh the map must say MATCHES and
+    the line it names must be the line the file holds."""
+    refresh_symbol_map(session, workspace.id, measurement_worktree)
+    target = "server/loregarden/services/symbol_map/checkout_identity.py"
+
+    assert map_status(session, workspace.id, measurement_worktree).freshness is (Freshness.MATCHES)
+    sites = [
+        row
+        for row in definitions_for(session, workspace.id, measurement_worktree, "identify").rows
+        if row.path == target
+    ]
+    assert len(sites) == 1
+    source_lines = (measurement_worktree / target).read_text(encoding="utf-8").splitlines()
+    assert source_lines[sites[0].line - 1].startswith("def identify(")

@@ -5,6 +5,12 @@ whole point: every row is computed BEFORE a single old row is deleted, in one
 transaction. The other order turns a transient read failure into a map that
 is gone, which is worse than a map that is one commit stale.
 
+`apply_extractions` is the package's ONLY place that mints a `SymbolMapFile`
+or a `SymbolMapSymbol`, and a full build is the special case of it where the
+changed set is every tracked path and the deleted set is empty. Two loops is
+the shape where a later extractor change reaches the build and misses the
+incremental refresh — and nothing fails, because both still produce rows.
+
 Nothing here shells git. `sources` is the package's single process seam and
 hands this module the paths and the sha.
 
@@ -23,7 +29,9 @@ import difflib
 import math
 import os
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Generic, TypeVar
@@ -32,7 +40,6 @@ from uuid import uuid4
 from loregarden.models.domain.enums import utcnow
 from loregarden.models.domain.symbol_map_enums import (
     ExtractorTier,
-    Freshness,
     ParseStatus,
     SourceLanguage,
     SymbolKind,
@@ -44,7 +51,7 @@ from loregarden.models.domain.symbol_map_tables import (
 )
 from loregarden.services.symbol_map.checkout_identity import identify
 from loregarden.services.symbol_map.extract import extract
-from loregarden.services.symbol_map.freshness import map_freshness, partition_for
+from loregarden.services.symbol_map.freshness import MapStatus, partition_for, status_for
 from loregarden.services.symbol_map.sources import head_sha, tracked_files
 from loregarden.services.symbol_map.values import FileExtraction, detect, tier_for
 from pydantic import BaseModel, ConfigDict
@@ -52,6 +59,11 @@ from sqlalchemy import delete
 from sqlmodel import Session, col, select
 
 T = TypeVar("T")
+
+#: How many paths one `IN (...)` carries. SQLite caps bound parameters per
+#: statement, and a refresh seeded three commits behind can name more paths
+#: than the warm case ever does.
+_PATH_CHUNK = 400
 
 #: `server/pyproject.toml` says `requires-python = ">=3.11"`.
 _REQUIRED_PYTHON = (3, 11)
@@ -116,15 +128,23 @@ class SymbolLocation:
 class MapRead(Generic[T]):
     """Rows and the verdict on whether to trust them, together.
 
-    No public reader returns bare rows. A `map_freshness()` the caller is
-    trusted to call first is a convention; this is a contract.
+    No public reader returns bare rows. A `map_status()` the caller is
+    trusted to call first is a convention; this is a contract. The verdict
+    arrives with its own lag attached (lg-code-knowledge-284), so a consumer
+    can say how far behind the answer is rather than only that it is stale.
     """
 
     rows: T
-    freshness: Freshness
+    status: MapStatus
 
 
-def _require_a_new_enough_interpreter() -> None:
+def require_a_new_enough_interpreter() -> None:
+    """Refuse before anything is read or written on too old an interpreter.
+
+    Public because the incremental refresh fires it too: a warm pass never
+    reaches `build_symbol_map`, and parsing modern syntax under 3.9 records
+    whole modules as unparseable without raising anything.
+    """
     running = ".".join(str(part) for part in sys.version_info[:3])
     if sys.version_info[:2] < _REQUIRED_PYTHON:
         raise InterpreterTooOldError(
@@ -134,7 +154,7 @@ def _require_a_new_enough_interpreter() -> None:
         )
 
 
-def _extraction_for(repo_root: Path, path: str) -> FileExtraction:
+def extraction_for(repo_root: Path, path: str) -> FileExtraction:
     """One tracked path's contribution, without ever letting a read escape.
 
     A file of an unsupported language is NEVER read — which is also why a
@@ -173,7 +193,7 @@ def build_symbol_map(session: Session, workspace_id: str, repo_root: Path) -> Bu
     invoked from a linked checkout cannot store that checkout's identity over
     the primary's line numbers.
     """
-    _require_a_new_enough_interpreter()
+    require_a_new_enough_interpreter()
     started = perf_counter()
 
     sha = head_sha(repo_root)
@@ -181,7 +201,7 @@ def build_symbol_map(session: Session, workspace_id: str, repo_root: Path) -> Bu
     resolved_root = os.path.realpath(repo_root)
 
     # Everything is extracted before anything is deleted (AC2/AC5.8).
-    extractions = [(path, _extraction_for(repo_root, path)) for path in tracked_files(repo_root)]
+    extractions = [(path, extraction_for(repo_root, path)) for path in tracked_files(repo_root)]
 
     stamped_at = utcnow()
     partition = partition_for(session, workspace_id, repo_root)
@@ -194,11 +214,97 @@ def build_symbol_map(session: Session, workspace_id: str, repo_root: Path) -> Bu
             built_at=stamped_at,
         )
     else:
+        partition.checkout_root = resolved_root
+    apply_extractions(
+        session,
+        partition,
+        extractions,
+        deleted=(),
+        sha=sha,
+        stamped_at=stamped_at,
+        replace_everything=True,
+    )
+
+    symbol_rows = [symbol for _, extraction in extractions for symbol in extraction.symbols]
+    statuses = [extraction.parse_status for _, extraction in extractions]
+    return BuildReport(
+        files_seen=len(extractions),
+        symbol_rows=len(symbol_rows),
+        unsupported_files=statuses.count(ParseStatus.UNSUPPORTED_LANGUAGE),
+        parse_failures=statuses.count(ParseStatus.PARSE_FAILED),
+        elapsed_seconds=perf_counter() - started,
+        head_sha=sha,
+        checkout_identity=identity,
+    )
+
+
+def _drop_paths(session: Session, partition_id: str, paths: set[str]) -> None:
+    """Remove the file row and every symbol row for each of *paths*.
+
+    Symbols first, so no symbol row can outlive the file row it belongs to —
+    the one way a per-file delete-and-reinsert leaves rubbish that answers
+    `definitions_for` from a file that no longer exists, at line numbers
+    nothing will ever correct.
+    """
+    if not paths:
+        return
+    ordered = sorted(paths)
+    for start in range(0, len(ordered), _PATH_CHUNK):
+        chunk = ordered[start : start + _PATH_CHUNK]
+        # The file ids are resolved by a SUBQUERY rather than read into Python
+        # first. Both of these are DML, so SQLite opens the write transaction
+        # on the first one and resolves the ids inside it; a SELECT run before
+        # the transaction reads whatever a peer refresh had committed a moment
+        # earlier, deletes ids that peer has already replaced, and then
+        # collides on `uq_symbol_map_file_path` when it inserts its own.
+        doomed = select(SymbolMapFile.id).where(
+            SymbolMapFile.partition_id == partition_id,
+            col(SymbolMapFile.path).in_(chunk),
+        )
+        session.execute(delete(SymbolMapSymbol).where(col(SymbolMapSymbol.file_id).in_(doomed)))
+        session.execute(
+            delete(SymbolMapFile).where(
+                SymbolMapFile.partition_id == partition_id,
+                col(SymbolMapFile.path).in_(chunk),
+            )
+        )
+
+
+def apply_extractions(
+    session: Session,
+    partition: SymbolMapPartition,
+    extractions: Sequence[tuple[str, FileExtraction]],
+    *,
+    deleted: Iterable[str],
+    sha: str,
+    stamped_at: datetime,
+    replace_everything: bool = False,
+) -> None:
+    """Write one generation of rows for *extractions*, in ONE transaction.
+
+    The package's single row-minting site (the full build and the incremental
+    refresh are both this function), and the single place the partition's sha
+    advances. Deletes come first and the commit comes last, so a failure
+    anywhere in between leaves the OLD rows intact — never a file row with
+    zero symbols.
+
+    `replace_everything` is the full build: every row of the partition goes,
+    including paths the tree no longer has. The incremental caller names its
+    own paths instead, so a file nobody touched keeps its row AND its id,
+    which is the only thing that distinguishes a refresh from a rebuild
+    wearing the right return value.
+    """
+    if replace_everything:
         session.execute(delete(SymbolMapSymbol).where(SymbolMapSymbol.partition_id == partition.id))
         session.execute(delete(SymbolMapFile).where(SymbolMapFile.partition_id == partition.id))
-        partition.checkout_root = resolved_root
-        partition.head_sha = sha
-        partition.built_at = stamped_at
+    else:
+        _drop_paths(session, partition.id, {path for path, _ in extractions} | set(deleted))
+
+    partition.head_sha = sha
+    partition.built_at = stamped_at
+    # Cleared in the same transaction that writes the rows, so BUILDING ends
+    # exactly when the index it describes becomes readable.
+    partition.refresh_started_at = None
     session.add(partition)
     # The file rows carry `partition_id` as a plain string rather than through
     # a relationship, so the unit of work does not know the partition must be
@@ -241,17 +347,6 @@ def build_symbol_map(session: Session, workspace_id: str, repo_root: Path) -> Bu
     session.add_all(symbol_rows)
     session.commit()
 
-    statuses = [extraction.parse_status for _, extraction in extractions]
-    return BuildReport(
-        files_seen=len(extractions),
-        symbol_rows=len(symbol_rows),
-        unsupported_files=statuses.count(ParseStatus.UNSUPPORTED_LANGUAGE),
-        parse_failures=statuses.count(ParseStatus.PARSE_FAILED),
-        elapsed_seconds=perf_counter() - started,
-        head_sha=sha,
-        checkout_identity=identity,
-    )
-
 
 def _location(row: SymbolMapSymbol, path: str, tier: ExtractorTier) -> SymbolLocation:
     return SymbolLocation(
@@ -275,7 +370,7 @@ def definitions_for(
     """
     partition = partition_for(session, workspace_id, repo_root)
     if partition is None:
-        return MapRead(rows=[], freshness=Freshness.NO_PARTITION)
+        return MapRead(rows=[], status=status_for(session, repo_root, None))
     rows = session.exec(
         select(SymbolMapSymbol).where(
             SymbolMapSymbol.partition_id == partition.id,
@@ -290,7 +385,7 @@ def definitions_for(
         ),
         key=lambda location: (location.path, location.line),
     )
-    return MapRead(rows=locations, freshness=map_freshness(session, workspace_id, repo_root))
+    return MapRead(rows=locations, status=status_for(session, repo_root, partition))
 
 
 def _file_rows_by_id(session: Session, file_ids: set[str]) -> dict[str, SymbolMapFile]:
@@ -306,8 +401,8 @@ def outline_for(
     """Every symbol recorded for one repo-relative path, ordered by line."""
     partition = partition_for(session, workspace_id, repo_root)
     if partition is None:
-        return MapRead(rows=[], freshness=Freshness.NO_PARTITION)
-    freshness = map_freshness(session, workspace_id, repo_root)
+        return MapRead(rows=[], status=status_for(session, repo_root, None))
+    status = status_for(session, repo_root, partition)
     file_row = session.exec(
         select(SymbolMapFile).where(
             SymbolMapFile.partition_id == partition.id,
@@ -315,13 +410,13 @@ def outline_for(
         )
     ).one_or_none()
     if file_row is None:
-        return MapRead(rows=[], freshness=freshness)
+        return MapRead(rows=[], status=status)
     rows = session.exec(select(SymbolMapSymbol).where(SymbolMapSymbol.file_id == file_row.id)).all()
     locations = sorted(
         (_location(row, file_row.path, file_row.extractor_tier) for row in rows),
         key=lambda location: location.line,
     )
-    return MapRead(rows=locations, freshness=freshness)
+    return MapRead(rows=locations, status=status)
 
 
 def _length_window(length: int) -> tuple[int, int]:
@@ -343,7 +438,7 @@ def suggest_names(
     """
     partition = partition_for(session, workspace_id, repo_root)
     if partition is None:
-        return MapRead(rows=[], freshness=Freshness.NO_PARTITION)
+        return MapRead(rows=[], status=status_for(session, repo_root, None))
     shortest, longest = _length_window(len(name))
     candidates = sorted(
         row[0]
@@ -352,4 +447,4 @@ def suggest_names(
         .fetchall()
     )
     matches = difflib.get_close_matches(name, candidates, limit, _CUTOFF)
-    return MapRead(rows=matches, freshness=map_freshness(session, workspace_id, repo_root))
+    return MapRead(rows=matches, status=status_for(session, repo_root, partition))

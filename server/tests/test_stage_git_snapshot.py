@@ -85,9 +85,22 @@ from tests.worktree_helpers import git, make_repo
 #: once against that SHA instead of trying `main` and falling back, so it trades
 #: one `diff --stat` for those two questions: one call more per stage, by design.
 #:
+#: lg-code-knowledge-284 adds the symbol map's incremental refresh at the
+#: dispatch, and with it 2.0 git processes per stage (66 over 5 stage runs,
+#: 56 before it) — all of them on this path's COLD case, which is what the
+#: measured counts show: `merge-base --is-ancestor` x5 (one ancestor probe per
+#: cold checkout), `diff --name-status` x4 (the delta oracle) and `ls-files -z`
+#: x1 (the one full build). A warm dispatch pays the diff alone.
+#:
+#: It is one call per stage rather than three because the refresh takes HEAD
+#: and the untracked paths from the `TreeSnapshot` the executor has already
+#: read, instead of asking `rev-parse HEAD` and `ls-files --others` again —
+#: the same duplication 847 removed, kept out on the way in. Without that
+#: reuse the figure was 71 over the same 5 runs.
+#:
 #: Kept one call above the measured figure so it is still a ceiling, never a
 #: waiver.
-GIT_CALLS_PER_STAGE = 13
+GIT_CALLS_PER_STAGE = 14
 
 _CORE_BARE = ["git", "config", "--local", "--get", "core.bare"]
 _GIT_DIR = ["git", "rev-parse", "--git-dir"]

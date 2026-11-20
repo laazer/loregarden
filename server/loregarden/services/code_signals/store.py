@@ -21,6 +21,7 @@ from loregarden.models.domain.code_signal_tables import FileCoChangePair, FileGi
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.code_signals.compute import FileSignals, compute_git_signals
 from loregarden.services.code_signals.config import SignalConfig
+from loregarden.services.code_signals.provenance import resolved_provenance
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete
 from sqlmodel import Session, select
@@ -63,8 +64,14 @@ def _aware_utc(moment: datetime | None) -> datetime | None:
 
 
 def _to_value(row: FileGitSignal) -> FileSignals:
-    """The stored row back as the value object the computation produced."""
+    """The stored row back as the value object the computation produced.
+
+    The provenance triple is resolved here, at the read, because nothing stores
+    it: the row carries measurements, and what inferred the derived ones is a
+    fact about this build's wiring rather than about the row.
+    """
     return FileSignals(
+        provenance=resolved_provenance(),
         file_path=row.file_path,
         churn_commits=row.churn_commits,
         churn_added=row.churn_added,

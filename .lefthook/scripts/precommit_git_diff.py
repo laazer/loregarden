@@ -90,6 +90,9 @@ class UnexaminableFileError(UnexaminableError):
     ``examined 1 file(s)`` + ``checks passed.`` + exit 0, over a violation
     sitting in the commit. A file that cannot be examined is not clean — it is
     unexaminable, and the run has to say so and fail.
+
+    Its CONSTRUCT-level sibling is `gate_unclassified.Unclassified`: a file this
+    run parsed, holding something a classifier recognized and has no arm for.
     """
 
 
@@ -963,6 +966,14 @@ class GateRun:
         the whole file is fair game; callers treat that as an unbounded set.
         """
         if self.repo is None:
+            return None
+        if not located_path(path).is_relative_to(self.repo.resolve()):
+            # A path the caller named from outside the repository has no entry
+            # in this run's diff at all, and "no diff to scope against" is not
+            # "no lines changed": the empty set reports every violation in such
+            # a file as clean, with `examined 1 file(s)` above it. The read side
+            # already decided to grade an explicitly-named outside path
+            # (`read_source_text`); this is the same decision at the filter.
             return None
         rel = repo_relative_posix(path, self.repo)
         if rel in self.untracked or rel in self.numstat.undiffable:

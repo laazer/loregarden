@@ -54,6 +54,13 @@ class SymbolMapPartition(SQLModel, table=True):
     #: numbers only while this equals the working copy's HEAD.
     head_sha: str = ""
     built_at: datetime = Field(default_factory=utcnow)
+    #: Stamped before a refresh writes its first row and cleared when it
+    #: commits (lg-code-knowledge-284). Two jobs in one column: a reader
+    #: entering mid-refresh is told `Freshness.BUILDING` rather than handed a
+    #: half-written index as complete, and a refresh that dies leaves no stamp
+    #: behind — a stamp nothing clears pins every later read at BUILDING
+    #: forever while every test about a successful refresh still passes.
+    refresh_started_at: datetime | None = Field(default=None)
 
 
 class SymbolMapFile(SQLModel, table=True):

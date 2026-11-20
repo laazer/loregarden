@@ -86,7 +86,10 @@ class InferredGroupKind(str, Enum):
 
     Derived on read from facts the records already carry, never written back as
     `memory_relations`: an inferred group is a *reading aid*, and storing it as
-    an edge would make a guess look like something an agent asserted.
+    an edge would make a guess look like something an agent asserted. The
+    fact-vs-inference rule itself lives in `models.domain.provenance`, which is
+    where an inference says what produced it; a third restatement of it here
+    would be a third thing that can drift.
     """
 
     SAME_TICKET = "same_ticket"  # written while working the same ticket

@@ -16,7 +16,14 @@ this rather than the reverse.
 
 from __future__ import annotations
 
-from loregarden.services.code_signals import classify, compute, config, git_history, store
+from loregarden.services.code_signals import (
+    classify,
+    compute,
+    config,
+    git_history,
+    provenance,
+    store,
+)
 from loregarden.services.code_signals.classify import classify_path, is_fix_subject
 from loregarden.services.code_signals.compute import (
     CoChangePair,
@@ -59,6 +66,7 @@ __all__ = [
     "is_fix_subject",
     "log_args",
     "parse_log_stream",
+    "provenance",
     "refresh_workspace_signals",
     "signals_for_path",
     "store",

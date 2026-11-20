@@ -50,6 +50,7 @@ from loregarden.services.code_signals import (
 from loregarden.services.code_signals import classify as classify_module
 from loregarden.services.code_signals import compute as compute_module
 from loregarden.services.code_signals import config as config_module
+from loregarden.services.code_signals import provenance as signals_provenance
 from loregarden.services.code_signals.classify import classify_path, is_fix_subject
 from loregarden.services.code_signals.git_history import parse_log_stream
 from loregarden.services.git_subprocess import run_git
@@ -1120,7 +1121,11 @@ def test_the_stored_row_round_trips_the_computed_value(session, workspace, autho
     computed = compute_git_signals(authored_repo, config).files["src/helper.py"]
     refresh_workspace_signals(session, workspace.id, authored_repo, config)
 
-    assert signals_for_path(session, workspace.id, "src/helper.py") == computed
+    stored = signals_for_path(session, workspace.id, "src/helper.py")
+    # Provenance is resolved at READ time and no column carries it, so the
+    # measurements round-trip while the triple is added by the reader
+    # (lg-code-knowledge-1084, AC11).
+    assert stored.model_copy(update={"provenance": computed.provenance}) == computed
 
 
 def test_top_files_by_churn_returns_the_highest_first(session, workspace, authored_repo, config):
@@ -2067,3 +2072,149 @@ def test_nothing_schedules_or_triggers_the_signals(surface):
     ]
 
     assert offenders == []
+
+
+# --------------------------------------------------------------------------- #
+# The code knowledge base says what inferred its signals (lg-code-knowledge-1084, AC11)
+#
+# Two heuristics produce the derived fields: `is_fix_subject` (a regex over
+# commit subjects, behind `bugfix_commits` and `last_bugfix_at`) and
+# `classify_path` (behind the `PathKind` filtering). Each gets a frozen registry
+# record with a stable id and its wiring site, and the resolved triple is
+# attached to the READ model in `signals_for_path` and `top_files_by`.
+#
+# No column and no migration: `db/shared_database_guard.py` refuses a worktree
+# migration `origin/main` does not ship, and the triple does not need one.
+#
+# ACCEPTED COST, recorded rather than solved: read-time resolution labels a row
+# computed by an older synthesizer with today's wiring site. Synthesizer
+# versioning belongs to lg-code-knowledge-2723.
+# --------------------------------------------------------------------------- #
+
+
+def _ids_of(signals) -> set[str]:
+    return {item.inferred_by for item in signals.provenance}
+
+
+def test_the_registry_holds_one_record_per_heuristic_with_a_stable_id():
+    ids = {record.synthesizer_id for record in signals_provenance.RECORDS}
+    assert ids == {
+        signals_provenance.CLASSIFY_PATH_ID,
+        signals_provenance.IS_FIX_SUBJECT_ID,
+    }
+
+
+def test_every_registry_record_names_a_real_wiring_site():
+    for record in signals_provenance.RECORDS:
+        assert record.registered_at, record.synthesizer_id
+        assert "." in record.registered_at, "a wiring site is a module path, not a bare word"
+
+
+def test_the_registry_records_are_frozen():
+    record = next(iter(signals_provenance.RECORDS))
+    with pytest.raises(Exception):
+        record.registered_at = "somewhere else"
+
+
+def test_the_registry_resolves_each_id_to_its_site():
+    for record in signals_provenance.RECORDS:
+        resolved = signals_provenance.REGISTRY.registered_at(record.synthesizer_id)
+        assert resolved == record.registered_at
+
+
+def test_the_registry_refuses_an_id_it_does_not_know():
+    """A site invented for an unknown synthesizer is worse than no site."""
+    with pytest.raises(KeyError):
+        signals_provenance.REGISTRY.registered_at("not.a.synthesizer")
+
+
+def test_signals_for_path_carries_the_triple(session, workspace, authored_repo, config):
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+
+    found = signals_for_path(session, workspace.id, "src/core.py")
+    assert found.provenance, "the read model must say what inferred its derived fields"
+    for item in found.provenance:
+        assert item.inferred_by
+        assert item.registered_at
+    assert _ids_of(found) == {
+        signals_provenance.CLASSIFY_PATH_ID,
+        signals_provenance.IS_FIX_SUBJECT_ID,
+    }
+
+
+def test_top_files_by_carries_the_triple_on_every_row(session, workspace, authored_repo, config):
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+
+    rows = top_files_by(session, workspace.id, SignalKind.BUGFIX_COMMITS, 3)
+    assert rows
+    for row in rows:
+        assert row.provenance
+        for item in row.provenance:
+            assert item.inferred_by
+            assert item.registered_at
+
+
+def test_the_site_on_a_read_row_is_the_registry_s_answer(session, workspace, authored_repo, config):
+    """Resolved from the registry, not typed next to the read."""
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+
+    found = signals_for_path(session, workspace.id, "src/core.py")
+    for item in found.provenance:
+        assert item.registered_at == signals_provenance.REGISTRY.registered_at(item.inferred_by)
+
+
+def test_confidence_is_left_unset_because_nothing_derived_one(
+    session, workspace, authored_repo, config
+):
+    """A number nobody computed is not honest. lg-code-knowledge-1140 owns it."""
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+
+    found = signals_for_path(session, workspace.id, "src/core.py")
+    assert all(item.confidence is None for item in found.provenance)
+
+
+def test_the_computation_itself_attaches_nothing(authored_repo, config):
+    """Read-time resolution, by design: the triple describes the wiring the
+    READER resolved, and the computation has no registry of its own."""
+    computed = compute_git_signals(authored_repo, config).files["src/core.py"]
+    assert computed.provenance == ()
+
+
+def test_an_unknown_path_still_returns_none_rather_than_an_empty_triple(
+    session, workspace, authored_repo, config
+):
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+    assert signals_for_path(session, workspace.id, "src/nowhere.py") is None
+
+
+def test_the_triple_rides_on_the_read_model_and_not_on_a_column():
+    """AC11, and the one way this change could take the whole repository down.
+
+    `db/shared_database_guard.py` refuses a migration `origin/main` does not
+    ship, and `0138` reached the live database from a worktree two weeks before
+    it merged and locked every main build out of writing. A column added for
+    provenance would be that story again, for a field resolved at read time and
+    needed by nothing stored.
+    """
+    columns = set(FileGitSignal.model_fields)
+    assert "provenance" not in columns
+    assert "inferred_by" not in columns
+    assert "registered_at" not in columns
+    assert "confidence" not in columns
+
+
+def test_the_read_model_resolves_the_triple_without_the_store_persisting_it(
+    session, workspace, authored_repo, config
+):
+    """The complement: the field is absent from the row AND present on the read,
+    so "no column" cannot be satisfied by not resolving it at all."""
+    refresh_workspace_signals(session, workspace.id, authored_repo, config)
+    row = session.exec(
+        select(FileGitSignal).where(
+            FileGitSignal.workspace_id == workspace.id,
+            FileGitSignal.file_path == "src/core.py",
+        )
+    ).one()
+
+    assert not hasattr(row, "provenance")
+    assert signals_for_path(session, workspace.id, "src/core.py").provenance
