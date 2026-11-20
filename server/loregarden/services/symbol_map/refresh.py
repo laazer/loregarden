@@ -52,6 +52,7 @@ from loregarden.services.symbol_map.freshness import partition_for
 from loregarden.services.worktree_snapshot import TreeSnapshot
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -426,15 +427,19 @@ def refresh_at_run_entry(
     """
     started = perf_counter()
     try:
-        report = refresh_symbol_map(session, workspace_id, repo_root, tree=tree)
+        report = _refresh_conceding_a_lost_cold_start(session, workspace_id, repo_root, tree)
     except sources.UnbornHeadError as exc:
-        return _warned(RefreshFailure.UNBORN_HEAD, exc, started=started, repo_root=repo_root)
+        return _warned(
+            session, RefreshFailure.UNBORN_HEAD, exc, started=started, repo_root=repo_root
+        )
     except store.InterpreterTooOldError as exc:
         return _warned(
-            RefreshFailure.INTERPRETER_TOO_OLD, exc, started=started, repo_root=repo_root
+            session, RefreshFailure.INTERPRETER_TOO_OLD, exc, started=started, repo_root=repo_root
         )
     except Exception as exc:  # noqa: BLE001 - the degrade path; reported, never swallowed
-        return _warned(RefreshFailure.UNEXPECTED, exc, started=started, repo_root=repo_root)
+        return _warned(
+            session, RefreshFailure.UNEXPECTED, exc, started=started, repo_root=repo_root
+        )
     if not report.ok:
         logger.warning(
             "symbol map refresh declined in %s (%s); reads degrade to live grep",
@@ -444,13 +449,47 @@ def refresh_at_run_entry(
     return report
 
 
+def _refresh_conceding_a_lost_cold_start(
+    session: Session,
+    workspace_id: str,
+    repo_root: Path,
+    tree: TreeSnapshot | None,
+) -> RefreshReport:
+    """Refresh, and once more if a concurrent refresh created the partition first.
+
+    Two members of a parallel stage dispatch into one checkout at the same
+    moment: both find no partition, both build one, and the second insert
+    meets the first's row on UNIQUE(workspace_id, checkout_identity). The
+    loser wanted exactly the partition the winner made, so the collision is
+    transient: roll back and refresh again, which finds it. A second collision
+    is not that race, and is raised to the degrade path like any failure.
+    """
+    try:
+        return refresh_symbol_map(session, workspace_id, repo_root, tree=tree)
+    except IntegrityError:
+        session.rollback()
+    return refresh_symbol_map(session, workspace_id, repo_root, tree=tree)
+
+
 def _warned(
+    session: Session,
     reason: RefreshFailure,
     exc: BaseException,
     *,
     started: float,
     repo_root: Path,
 ) -> RefreshReport:
+    """Report a failed refresh, and hand the caller back a session it can write.
+
+    The session is the dispatch's, and it goes on to write the run's own rows.
+    A failed flush leaves it in pending-rollback, where every one of those
+    writes raises: the run never records its outcome, and a parallel stage's
+    member is then failed as an orphan of its finished orchestration. The warm
+    path's `_clear_refresh_stamp` already rolls back for this reason; a cold
+    start has no stamp to clear, so the rollback is here, where every failure
+    passes. Nothing is lost: the refresh commits its own work as it goes.
+    """
+    session.rollback()
     logger.warning(
         "symbol map refresh failed in %s (%s): %s; reads degrade to live grep",
         repo_root,
