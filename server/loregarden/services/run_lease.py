@@ -38,11 +38,12 @@ import logging
 import os
 import threading
 from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, ProcessState, RunStatus
+from loregarden.services.capacity_errors import CapacityWaitStopped
 from loregarden.services.process_identity import liveness
 from sqlmodel import Session
 
@@ -233,16 +234,33 @@ class RunSettledBeforeStart(RuntimeError):
     """A run was settled while it waited to start, so nothing may execute it."""
 
 
+class RunStoppedBeforeStart(RuntimeError):
+    """An operator stopped a run while it waited to start, so nothing may execute it.
+
+    Unlike `RunSettledBeforeStart` the row is still in flight: no agent ran, so
+    no executor will settle it. The caller settles it CANCELLED, which this
+    module cannot do itself (`OrchestrationService` already imports it).
+    """
+
+
 def ensure_still_in_flight(run_id: str) -> None:
-    """Raise unless `run_id` is still in flight.
+    """Raise unless `run_id` is still in flight and nobody has asked it to stop.
 
     Its own short-lived session, like `renew_agent_run_lease`: whatever settled
     the run (a cancel, its orchestration ending) wrote on another connection,
     and the session driving the run may not see it yet.
+
+    A stop that lands as capacity is granted is caught here rather than by the
+    agent's own cancel poll, which would spawn the agent only to kill it.
     """
     with Session(engine) as session:
         run = session.get(AgentRun, run_id)
         status = run.status if run is not None else None
+        stop_asked = run is not None and run.cancel_requested_at is not None
+    if status in IN_FLIGHT and stop_asked:
+        raise RunStoppedBeforeStart(
+            f"Run {run_id} was stopped while it waited for capacity; no agent was started."
+        )
     if status in IN_FLIGHT:
         return
     raise RunSettledBeforeStart(
@@ -259,7 +277,14 @@ def supervised(run_id: str, capacity: AbstractContextManager[object]) -> Iterato
     thread waiting is the run's supervisor and is alive; the in-flight check
     follows the wait because the run can be settled during it, and an agent
     spawned on a settled row works for nobody.
+
+    Raises `RunStoppedBeforeStart` when the run was stopped in line or as its
+    grant landed; the caller settles it.
     """
-    with lease_renewal(run_id), capacity:
+    with lease_renewal(run_id), ExitStack() as held:
+        try:
+            held.enter_context(capacity)
+        except CapacityWaitStopped as exc:
+            raise RunStoppedBeforeStart(str(exc)) from exc
         ensure_still_in_flight(run_id)
         yield

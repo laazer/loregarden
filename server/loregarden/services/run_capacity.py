@@ -66,6 +66,7 @@ from loregarden.services.docker_leases import (
     reserve,
 )
 from loregarden.services.orchestration_capacity import parent_lease_for
+from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from sqlmodel import Session
 
@@ -193,6 +194,7 @@ def _wait_in_line(
         reservation.message,
     )
     orchestration_run_id = run.orchestration_run_id
+    run_id = run.id
     return wait_while_line_moves(
         session,
         reservation,
@@ -202,6 +204,7 @@ def _wait_in_line(
             if orchestration_run_id
             else None
         ),
+        stop_requested=lambda: cancel_requested(run_id),
     )
 
 

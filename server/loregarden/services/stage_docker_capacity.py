@@ -35,6 +35,7 @@ from loregarden.models.domain import (
 from loregarden.services.capacity_errors import CapacityUnavailable
 from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
 from loregarden.services.docker_leases import DockerReservation, release_lease, reserve
+from loregarden.services.run_cancellation import cancel_requested
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ def docker_capacity_for_stage(
 
     if reservation.state is DockerGrantState.QUEUED:
         orchestration_run_id = run.orchestration_run_id
+        run_id = run.id
         reservation = wait_while_line_moves(
             session,
             reservation,
@@ -110,6 +112,7 @@ def docker_capacity_for_stage(
                 if orchestration_run_id
                 else None
             ),
+            stop_requested=lambda: cancel_requested(run_id),
         )
 
     if not reservation.granted:

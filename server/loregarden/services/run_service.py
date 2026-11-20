@@ -39,6 +39,7 @@ from loregarden.services.orchestration_callbacks import OrchestrationCallbackSer
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.process_identity import liveness
+from loregarden.services.run_cancellation import settle_stopped_before_start
 from loregarden.services.run_capacity import run_capacity
 from loregarden.services.run_concurrency import (
     ACTIVE_ORCHESTRATION_STATUSES,
@@ -53,6 +54,7 @@ from loregarden.services.run_interruption import (
 from loregarden.services.run_lease import (
     AGENT_RUN_LEASE,
     SUPERVISED,
+    RunStoppedBeforeStart,
     agent_run_lease_expired,
     pid_alive,
     supervised,
@@ -631,8 +633,12 @@ def execute_agent_run_background(run_id: str) -> None:
             if not ticket:
                 logger.error("Background run ticket not found: %s", run_id)
                 return
-            with supervised(run.id, run_capacity(session, run)):
-                run_svc.executor.execute(run, ticket)
+            try:
+                with supervised(run.id, run_capacity(session, run)):
+                    run_svc.executor.execute(run, ticket)
+            except RunStoppedBeforeStart as exc:
+                logger.warning("Background run %s stopped before start: %s", run_id, exc)
+                settle_stopped_before_start(session, run)
     except Exception as exc:
         logger.exception("Background agent run failed: %s", run_id)
         try:
@@ -801,8 +807,11 @@ class RunService:
     ) -> tuple[AgentRun, Ticket]:
         run = self.orchestration.start_run(ticket, stage_key=stage_key)
         self.session.refresh(ticket)
-        with supervised(run.id, run_capacity(self.session, run)):
-            completed_run = self.executor.execute(run, ticket)
+        try:
+            with supervised(run.id, run_capacity(self.session, run)):
+                completed_run = self.executor.execute(run, ticket)
+        except RunStoppedBeforeStart:
+            completed_run = settle_stopped_before_start(self.session, run)
         self.session.refresh(ticket)
         return completed_run, ticket
 

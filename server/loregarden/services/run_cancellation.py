@@ -140,6 +140,23 @@ def request_orchestration_cancel(session: Session, orch_run: OrchestrationRun) -
     return orch_run
 
 
+def settle_stopped_before_start(session: Session, run: AgentRun) -> AgentRun:
+    """Settle CANCELLED a run stopped before its agent started (`RunStoppedBeforeStart`).
+
+    No executor ran, so nothing else will: left alone the row reads RUNNING
+    until the lease sweep fails it. Settled through the CANCELLED completion
+    branch, so the stage returns to PENDING with no block, as a stop mid-run does.
+    """
+    session.refresh(run)
+    if run.status not in _CANCELLABLE_RUN_STATUSES:
+        return run
+    return OrchestrationService(session).complete_run(
+        run,
+        status=RunStatus.CANCELLED,
+        stderr="Cancelled by operator while it waited for capacity; no agent was started",
+    )
+
+
 def _drop_queued_run(session: Session, run_id: str) -> None:
     """Remove a parallel-queue row if this agent run is waiting for a slot."""
     queued = session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()

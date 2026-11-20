@@ -52,11 +52,14 @@ from loregarden.services.parallel_stage import (
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.review_relens import decide_lenses, record_relens_decisions
 from loregarden.services.run_boundary import boundary_block
-from loregarden.services.run_cancellation import orchestration_cancel_requested
+from loregarden.services.run_cancellation import (
+    orchestration_cancel_requested,
+    settle_stopped_before_start,
+)
 from loregarden.services.run_capacity import host_capacity_for_run, run_capacity
 from loregarden.services.run_concurrency import OrchestrationAlreadyRunning
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
-from loregarden.services.run_lease import supervised
+from loregarden.services.run_lease import RunStoppedBeforeStart, supervised
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
@@ -875,9 +878,25 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
         )
-        with supervised(agent_run.id, run_capacity(self.session, agent_run)):
-            completed = self.executor.execute(agent_run, ticket)
+        try:
+            with supervised(agent_run.id, run_capacity(self.session, agent_run)):
+                completed = self.executor.execute(agent_run, ticket)
+        except RunStoppedBeforeStart:
+            completed = settle_stopped_before_start(self.session, agent_run)
         self.session.refresh(ticket)
+
+        if completed.status == RunStatus.CANCELLED:
+            # A stop is not a failure: completion left the stage PENDING with no
+            # block. Falling through to the failure branch below blocked the
+            # ticket "Cancelled by operator" on every Pause (orch_c45108,
+            # orch_3cccb4, orch_1633cb all ended BLOCKED).
+            if orchestration_cancel_requested(orch_run.id):
+                self._complete_run(orch_run, ticket)
+            else:
+                self._pause_orchestration(
+                    orch_run, ticket, message=f"Paused: the run on '{target_key}' was stopped"
+                )
+            return True
 
         if stop_at_stage_key and target_key == stop_at_stage_key:
             self.callbacks.complete_orchestration(
