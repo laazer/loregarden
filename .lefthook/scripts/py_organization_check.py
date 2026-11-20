@@ -44,6 +44,11 @@ from gate_python_guard import require_supported_python  # noqa: E402 - path set 
 
 require_supported_python(Path(__file__).name)
 
+from gate_unclassified import (  # noqa: E402 - path set above
+    Outcome,
+    Unclassified,
+    unclassified_message,
+)
 from precommit_git_diff import (  # noqa: E402 - path set above
     GateInvocation,
     UnexaminableError,
@@ -90,6 +95,12 @@ _PAYLOAD_SHAPE_TYPES: frozenset[str] = frozenset(
 )
 
 _ALLOW_ISINSTANCE = "# py-org: allow-isinstance"
+
+#: Where this gate's isinstance classifier reads its target, and where that
+#: classifier is wired. `registered_at` is the one field the producer cannot
+#: answer about itself, so it is written once rather than at each finding.
+_ISINSTANCE_INFERRED_BY = "py_organization_check._isinstance_targets"
+_ISINSTANCE_REGISTERED_AT = "py_organization_check.isinstance_errors"
 
 
 def _span_touched(start: int, end: int, touched_lines: Optional[set[int]]) -> bool:
@@ -142,12 +153,43 @@ def dynamic_access_errors(
     return errors
 
 
-def _isinstance_targets(node: ast.Call) -> list[str]:
-    if len(node.args) < 2:
-        return []
+def _isinstance_targets(node: ast.Call) -> Optional[list[str]]:
+    """The type names this call tests against, or None when they cannot be read.
+
+    None is not an empty list. A call with fewer than two arguments, a splatted
+    argument, a keyword argument, or a target built at runtime (`type(y)`,
+    `table["k"]`, `dict | str`) tests against something this gate cannot name,
+    and a readable-looking label for it would be a claim nothing established.
+    Readable is an `ast.Name` or an `ast.Attribute`, alone or in a tuple of
+    them — everything the detector's two arms are defined over.
+    """
+    if len(node.args) < 2 or node.keywords:
+        return None
+    if any(isinstance(arg, ast.Starred) for arg in node.args):  # py-org: allow-isinstance
+        return None
     target = node.args[1]
     elts = target.elts if isinstance(target, ast.Tuple) else [target]
+    if not elts or not all(
+        isinstance(elt, (ast.Name, ast.Attribute))  # py-org: allow-isinstance
+        for elt in elts
+    ):
+        return None
     return [ast.unparse(elt) for elt in elts]
+
+
+def _isinstance_arm(node: ast.Call) -> tuple[Outcome, list[str]]:
+    """Which of the three answers this gate has for a call it has admitted.
+
+    NOT_APPLICABLE never arrives here: the caller established the call is this
+    classifier's subject (an `isinstance()` on a staged, unwaived, non-test
+    line) before asking. So the answer is CLASSIFIED with the targets an arm is
+    chosen from, or UNCLASSIFIED — the construct is the subject and neither arm
+    has established anything about it.
+    """
+    targets = _isinstance_targets(node)
+    if targets is None:
+        return Outcome.UNCLASSIFIED, []
+    return Outcome.CLASSIFIED, targets
 
 
 def isinstance_errors(
@@ -176,8 +218,25 @@ def isinstance_errors(
             continue
         if _line_waives(content_lines, lineno, _ALLOW_ISINSTANCE):
             continue
-        targets = _isinstance_targets(node)
-        shown = ", ".join(targets) or "?"
+        outcome, targets = _isinstance_arm(node)
+        if outcome is Outcome.UNCLASSIFIED:
+            # Was `isinstance(..., ?)` with the type-switch arm's advice — a
+            # label borrowed from an arm that had established nothing about this
+            # call. Named instead, with no advice either arm earned.
+            errors.append(
+                f"{py_file}:{lineno}: "
+                + unclassified_message(
+                    Unclassified(
+                        construct=ast.unparse(node),
+                        path=str(py_file),
+                        line=lineno,
+                        inferred_by=_ISINSTANCE_INFERRED_BY,
+                        registered_at=_ISINSTANCE_REGISTERED_AT,
+                    )
+                )
+            )
+            continue
+        shown = ", ".join(targets)
         if any(t in _PAYLOAD_SHAPE_TYPES for t in targets):
             fix = (
                 "this is a hand-rolled schema check; parse the payload into a Pydantic "

@@ -55,7 +55,7 @@ from loregarden.services.symbol_map import (
     InterpreterTooOldError,
     build_symbol_map,
     definitions_for,
-    map_freshness,
+    map_status,
     outline_for,
     suggest_names,
 )
@@ -238,11 +238,20 @@ def test_a_partial_build_is_completed_rather_than_failed(migrated_engine):
 
 
 def test_the_migration_is_registered_once_after_the_code_signals_migration():
-    ids = [mid for mid, _ in MIGRATIONS]
-    registered = [mid for mid in ids if "symbol_map" in mid]
+    """281's schema migration is registered exactly once, after the one it
+    follows. The id is permanent: the database records it, and renaming it
+    runs the body again under the new name.
 
-    assert len(registered) == 1, "exactly one symbol-map migration id"
-    assert ids.index(registered[0]) > ids.index("20261116_code_signals")
+    lg-code-knowledge-284 appends `20261118_symbol_map_refresh` beside it.
+    That one is its own ticket's test (`test_symbol_map_refresh.py` asserts it
+    is registered AFTER this one, which is the ordering that matters); what
+    this test owns is that 281's id is still there, still once, and still in
+    the right place.
+    """
+    ids = [mid for mid, _ in MIGRATIONS]
+
+    assert ids.count("20261117_symbol_map") == 1, "exactly one id for 281's schema"
+    assert ids.index("20261117_symbol_map") > ids.index("20261116_code_signals")
 
 
 def test_the_symbol_set_is_relational_and_carries_no_source_text(migrated_engine):
@@ -312,6 +321,7 @@ def test_every_enum_has_exactly_the_members_the_spec_names():
         "matches",
         "sha_mismatch",
         "no_partition",
+        "building",
     }
 
 
@@ -810,7 +820,7 @@ def test_definitions_for_returns_every_site_ordered_by_path_then_line(
 
     read = definitions_for(session, workspace.id, mapped_repo, "render")
 
-    assert read.freshness == Freshness.MATCHES
+    assert read.status.freshness == Freshness.MATCHES
     assert [(row.path, row.line, row.kind, row.parent) for row in read.rows] == [
         ("pkg/other.py", 1, SymbolKind.FUNCTION, ""),
         ("pkg/widget.py", 11, SymbolKind.METHOD, "Widget"),
@@ -825,7 +835,7 @@ def test_a_definition_read_does_not_cross_into_another_workspaces_partition(
 
     read = definitions_for(session, other_workspace.id, mapped_repo, "render")
 
-    assert read.freshness == Freshness.NO_PARTITION
+    assert read.status.freshness == Freshness.NO_PARTITION
     assert read.rows == []
 
 
@@ -834,7 +844,7 @@ def test_outline_for_returns_one_files_symbols_ordered_by_line(session, workspac
 
     read = outline_for(session, workspace.id, mapped_repo, "pkg/widget.py")
 
-    assert read.freshness == Freshness.MATCHES
+    assert read.status.freshness == Freshness.MATCHES
     assert [row.line for row in read.rows] == sorted(line for _, _, line, _ in PYTHON_EXPECTED)
     assert {(row.name, row.kind, row.line, row.parent) for row in read.rows} == PYTHON_EXPECTED
 
@@ -858,7 +868,7 @@ def test_suggest_names_returns_the_real_name_for_a_misspelling(session, workspac
 
     read = suggest_names(session, workspace.id, suggest_repo, "calculate_total_pric")
 
-    assert read.freshness == Freshness.MATCHES
+    assert read.status.freshness == Freshness.MATCHES
     assert "calculate_total_price" in read.rows
     assert len(read.rows) <= 5
 
@@ -910,29 +920,29 @@ def test_suggest_names_fetches_fewer_names_than_the_partition_holds(
     assert 0 < fetched < distinct_names
 
 
-def test_freshness_is_three_valued_and_every_reader_carries_its_verdict(
+def test_freshness_is_four_valued_and_every_reader_carries_its_status(
     session, workspace, mapped_repo
 ):
     """AC9 / AC2.3-AC2.5. No partition, a sha mismatch and a genuine zero hit
     all render as `[]` otherwise — the collapse 'No silent failures' forbids,
     and the one 282's explicit NOT-FOUND cannot be built on."""
-    assert map_freshness(session, workspace.id, mapped_repo) == Freshness.NO_PARTITION
+    assert map_status(session, workspace.id, mapped_repo).freshness == Freshness.NO_PARTITION
 
     build_symbol_map(session, workspace.id, mapped_repo)
-    assert map_freshness(session, workspace.id, mapped_repo) == Freshness.MATCHES
+    assert map_status(session, workspace.id, mapped_repo).freshness == Freshness.MATCHES
 
     genuinely_absent = definitions_for(session, workspace.id, mapped_repo, "no_such_symbol")
     assert genuinely_absent.rows == []
-    assert genuinely_absent.freshness == Freshness.MATCHES
+    assert genuinely_absent.status.freshness == Freshness.MATCHES
 
     _write(mapped_repo, "pkg/later.py", "def later():\n    return 1\n")
     _commit(mapped_repo, "feat: move HEAD past the build")
 
-    assert map_freshness(session, workspace.id, mapped_repo) == Freshness.SHA_MISMATCH
+    assert map_status(session, workspace.id, mapped_repo).freshness == Freshness.SHA_MISMATCH
     stale = definitions_for(session, workspace.id, mapped_repo, "render")
     assert stale.rows
-    assert stale.freshness == Freshness.SHA_MISMATCH
-    assert stale.freshness != genuinely_absent.freshness
+    assert stale.status.freshness == Freshness.SHA_MISMATCH
+    assert stale.status.freshness != genuinely_absent.status.freshness
 
 
 @pytest.mark.parametrize(
@@ -946,13 +956,13 @@ def test_freshness_is_three_valued_and_every_reader_carries_its_verdict(
 )
 def test_no_reader_returns_bare_rows(session, workspace, mapped_repo, reader):
     """AC9 / AC2.4. A caller must not be able to obtain rows without the
-    verdict; a `map_freshness()` the caller is trusted to call first is a
+    verdict; a `map_status()` the caller is trusted to call first is a
     convention, not a contract."""
     build_symbol_map(session, workspace.id, mapped_repo)
 
     read = reader(session, workspace.id, mapped_repo)
 
-    assert read.freshness in set(Freshness)
+    assert read.status.freshness in set(Freshness)
     assert isinstance(read.rows, list)  # py-org: allow-isinstance - shape of a return value
 
 
@@ -987,7 +997,7 @@ def test_a_build_against_a_linked_worktree_stores_the_worktrees_line_numbers(
 
     assert linked_rows["Widget"] == primary_rows["Widget"] + 2
     assert linked_rows == {name: line + 2 for name, line in primary_rows.items()}
-    assert outline_for(session, workspace.id, linked, "pkg/widget.py").freshness == (
+    assert outline_for(session, workspace.id, linked, "pkg/widget.py").status.freshness == (
         Freshness.MATCHES
     )
 
@@ -999,9 +1009,11 @@ def test_the_package_never_reads_the_workspaces_recorded_repo_path():
         assert "repo_path" not in module.read_text(encoding="utf-8"), module.name
 
 
-def test_the_public_surface_is_exactly_five_functions():
-    """R5: consumers (282, 283, 284, 300, 304, 385) import from here and
-    nothing deeper, so the seam is worth pinning."""
+def test_the_public_surface_is_exactly_seven_functions():
+    """R5, widened by lg-code-knowledge-284: consumers (282, 283, 300, 304,
+    385) import from here and nothing deeper, so the seam is worth pinning.
+    284 adds the writer that keeps the map current and renames the verdict
+    reader; the old spelling is gone rather than aliased (internal posture)."""
     exported = {
         name
         for name in getattr(symbol_map_package, "__all__", [])
@@ -1013,7 +1025,9 @@ def test_the_public_surface_is_exactly_five_functions():
         "definitions_for",
         "outline_for",
         "suggest_names",
-        "map_freshness",
+        "map_status",
+        "refresh_at_run_entry",
+        "refresh_symbol_map",
     }
 
 
@@ -1800,13 +1814,13 @@ def test_an_inherited_database_reads_as_absent_from_another_checkout(
     primary, linked = worktree_pair
     build_symbol_map(session, workspace.id, primary)
 
-    assert map_freshness(session, workspace.id, linked) == Freshness.NO_PARTITION
+    assert map_status(session, workspace.id, linked).freshness == Freshness.NO_PARTITION
     for read in (
         definitions_for(session, workspace.id, linked, "render"),
         outline_for(session, workspace.id, linked, "pkg/widget.py"),
         suggest_names(session, workspace.id, linked, "rendr"),
     ):
-        assert read.freshness == Freshness.NO_PARTITION
+        assert read.status.freshness == Freshness.NO_PARTITION
         assert list(read.rows) == []
 
 
@@ -1825,7 +1839,7 @@ def test_a_read_does_not_cross_into_another_checkouts_partition(session, workspa
 
     assert [(r.path, r.line) for r in from_primary.rows] == [("pkg/widget.py", 8)]
     assert [(r.path, r.line) for r in from_linked.rows] == [("pkg/widget.py", 10)]
-    assert from_primary.freshness == from_linked.freshness == Freshness.MATCHES
+    assert from_primary.status.freshness == from_linked.status.freshness == Freshness.MATCHES
 
 
 def test_the_identity_ignores_how_the_path_is_spelled(tmp_path, monkeypatch):
@@ -1880,7 +1894,7 @@ def test_one_checkout_under_two_workspaces_keeps_two_partitions(
     assert first.symbol_rows == second.symbol_rows
     for ws in (workspace, other_workspace):
         read = definitions_for(session, ws.id, mapped_repo, "render")
-        assert read.freshness == Freshness.MATCHES
+        assert read.status.freshness == Freshness.MATCHES
         assert len(read.rows) == 3
 
 
@@ -1979,9 +1993,9 @@ def test_a_tree_with_no_supported_source_is_an_empty_map_not_a_missing_one(
     assert report.files_seen == 2
     assert report.symbol_rows == 0
     assert report.unsupported_files == 2
-    assert map_freshness(session, workspace.id, root) == Freshness.MATCHES
+    assert map_status(session, workspace.id, root).freshness == Freshness.MATCHES
     read = definitions_for(session, workspace.id, root, "anything")
-    assert read.freshness == Freshness.MATCHES
+    assert read.status.freshness == Freshness.MATCHES
     assert list(read.rows) == []
 
 
@@ -2093,7 +2107,7 @@ def test_the_interpreter_guard_fires_before_anything_is_written(session, workspa
     assert session.exec(select(SymbolMapPartition)).all() == []
     assert session.exec(select(SymbolMapFile)).all() == []
     assert session.exec(select(SymbolMapSymbol)).all() == []
-    assert map_freshness(session, workspace.id, mapped_repo) == Freshness.NO_PARTITION
+    assert map_status(session, workspace.id, mapped_repo).freshness == Freshness.NO_PARTITION
 
 
 # --------------------------------------------------------------------------
@@ -2160,7 +2174,7 @@ def test_every_typescript_row_points_at_a_line_that_declares_it(session, workspa
 
 
 def test_every_reader_says_no_partition_before_any_build(session, workspace, mapped_repo):
-    """`map_freshness` is checked for NO_PARTITION above; the three readers
+    """`map_status` is checked for NO_PARTITION above; the three readers
     are not. A reader that assumes a partition exists raises `NoResultFound`
     out of a code-hits channel on the first query against a fresh workspace,
     which is every workspace once.
@@ -2170,7 +2184,7 @@ def test_every_reader_says_no_partition_before_any_build(session, workspace, map
         outline_for(session, workspace.id, mapped_repo, "pkg/widget.py"),
         suggest_names(session, workspace.id, mapped_repo, "rendr"),
     ):
-        assert read.freshness == Freshness.NO_PARTITION
+        assert read.status.freshness == Freshness.NO_PARTITION
         assert list(read.rows) == []
 
 
@@ -2188,9 +2202,9 @@ def test_every_reader_carries_the_mismatch_verdict_after_head_moves(
     outline = outline_for(session, workspace.id, mapped_repo, "pkg/widget.py")
     suggested = suggest_names(session, workspace.id, mapped_repo, "rendr")
 
-    assert outline.freshness == Freshness.SHA_MISMATCH
+    assert outline.status.freshness == Freshness.SHA_MISMATCH
     assert outline.rows, "stale rows are still returned, labelled stale"
-    assert suggested.freshness == Freshness.SHA_MISMATCH
+    assert suggested.status.freshness == Freshness.SHA_MISMATCH
     assert "render" in suggested.rows
 
 
@@ -2256,7 +2270,7 @@ def test_no_reader_treats_its_argument_as_a_pattern(session, workspace, duplicat
     for pattern in ("%", "_", "calculate%", "'"):
         read = definitions_for(session, workspace.id, duplicate_names_repo, pattern)
         assert list(read.rows) == [], pattern
-        assert read.freshness == Freshness.MATCHES
+        assert read.status.freshness == Freshness.MATCHES
 
 
 def test_the_readers_use_the_indexes_the_criteria_pay_for(

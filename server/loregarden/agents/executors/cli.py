@@ -102,6 +102,7 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.spec_snapshot import stamp_run_spec
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
+from loregarden.services.symbol_map import refresh_at_run_entry
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
@@ -287,6 +288,13 @@ class CliAgentExecutor:
         if parked is not None:
             return parked
 
+        # Where the run's tree is actually known. `start_orchestration_run`
+        # runs BEFORE the worktree is cut, so a refresh there would map the
+        # primary checkout while every stage of this run reads a worktree with
+        # no row at all. No try/except: `refresh_at_run_entry` never raises,
+        # and a guard here would read as a promise that relaxes its contract.
+        refresh_report = refresh_at_run_entry(self.session, workspace.id, repo_root, tree=before)
+
         try:
             prompt = self._build_prompt(
                 ticket,
@@ -381,6 +389,7 @@ class CliAgentExecutor:
                 ticket_runtime=ticket_runtime,
                 stage_def=stage_def,
                 invocation=invocation,
+                refresh_report=refresh_report,
             )
 
             timeout = (

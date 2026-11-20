@@ -14,6 +14,7 @@ from itertools import combinations
 from pathlib import Path
 
 from loregarden.models.domain.code_signal_enums import EmptyBasis, PathKind
+from loregarden.models.domain.provenance import Provenance
 from loregarden.services.code_signals.classify import classify_path, is_fix_subject
 from loregarden.services.code_signals.config import SignalConfig
 from loregarden.services.code_signals.git_history import CommitRecord, read_history
@@ -37,6 +38,10 @@ class FileSignals(BaseModel):
     distinct_authors: int = 0
     bugfix_commits: int = 0
     last_bugfix_at: datetime | None = None
+    #: What inferred the derived fields, resolved at READ time by `store` and
+    #: left empty by the computation — the triple describes the wiring the
+    #: reader resolved, and no column carries it (`code_signals.provenance`).
+    provenance: tuple[Provenance, ...] = ()
 
 
 class CoChangePair(BaseModel):

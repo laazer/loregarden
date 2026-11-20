@@ -116,6 +116,15 @@ class StageFinding(BaseModel):
     """A test you wrote that fails now because of it, as path::test_name."""
     judgment: str = ""
     """Only when no test can show it: why not."""
+    inferred_by: str = ""
+    """What inferred this finding."""
+    confidence: float | None = None
+    """How sure, 0.0-1.0, when you derived one."""
+    # `registered_at` is deliberately NOT offered: where a classifier is wired
+    # is the one field the producer cannot answer about itself, so the control
+    # plane stamps it at admission (`finding_bar.finding_record`). Offering it
+    # here would invite a model to fill in a module path it invented. Same
+    # asymmetry as `mcp.tool_args.FINDING_SCHEMA` and `_FindingPayload`.
 
 
 class StageComplete(RunCall):

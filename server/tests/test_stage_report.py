@@ -1,8 +1,17 @@
+import ast
+import inspect
 import json
+from pathlib import Path
 
 import pytest
+from loregarden.models.domain.provenance import Provenance
+from loregarden.models.domain.schemas import WorkflowStageDef
+from loregarden.models.domain.tables import AgentRun
+from loregarden.services import finding_bar
+from loregarden.services.finding_bar import finding_record
 from loregarden.services.stage_report import (
     MAX_NEXT_STAGE_NOTES_CHARS,
+    Finding,
     final_agent_message,
     parse_stage_report,
     stage_report_artifact_content,
@@ -456,6 +465,226 @@ def test_the_symmetric_closer_agents_write_is_accepted():
     report = parse_stage_report(stdout)
     assert report is not None
     assert report.status == "needs_rework"
+
+
+# --------------------------------------------------------------------------- #
+# Review findings carry provenance (lg-code-knowledge-1084, AC10)
+#
+# An agent can honestly answer what inferred a finding and how sure it is. It
+# cannot answer where that inferrer is WIRED — so `registered_at` is never
+# parsed from the payload; `finding_bar.finding_record` stamps it at admission
+# from facts the control plane already holds: the run's agent, and the stage's
+# registered agent/skill entry.
+# --------------------------------------------------------------------------- #
+
+
+def _finding_payload(**extra) -> str:
+    finding = {
+        "summary": "the resolver returns an empty list when git fails",
+        "blocking": True,
+        "trigger": "an unresolvable --base",
+        "path": "resolve_gate_scope -> run_git",
+        "impact": "a pass is reported over a scope nothing read",
+    }
+    finding.update(extra)
+    return json.dumps({"status": "needs_rework", "confidence": 0.7, "findings": [finding]})
+
+
+def _only_finding(payload: str) -> Finding:
+    report = parse_stage_report(_wrap(payload))
+    assert report is not None
+    (finding,) = report.findings
+    return finding
+
+
+def _run() -> AgentRun:
+    return AgentRun(
+        run_code="run_test",
+        workspace_id="ws",
+        agent_id="python_reviewer",
+        stage_key="review-static",
+    )
+
+
+def _stage() -> WorkflowStageDef:
+    return WorkflowStageDef(
+        key="review-static",
+        name="Static review",
+        agent_id="python_reviewer",
+        skill_name="review",
+    )
+
+
+def test_a_payload_carrying_the_two_honest_fields_round_trips_onto_the_finding():
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer", confidence=0.4))
+
+    assert finding.provenance is not None
+    assert finding.provenance.inferred_by == "python_reviewer"
+    assert finding.provenance.confidence == 0.4
+
+
+def test_a_payload_carrying_only_inferred_by_records_the_omission():
+    """It must not invent a site for a field the agent was never offered."""
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer"))
+
+    assert finding.provenance is not None
+    assert finding.provenance.registered_at == ""
+    assert finding.provenance.confidence is None
+
+
+def test_a_payload_claiming_a_registration_site_does_not_get_one_from_the_parser():
+    """`registered_at` is not a field of the payload; `extra='ignore'` drops it."""
+    finding = _only_finding(
+        _finding_payload(inferred_by="python_reviewer", registered_at="totally.made.up")
+    )
+
+    assert finding.provenance is not None
+    assert finding.provenance.registered_at == ""
+
+
+def test_a_payload_with_neither_field_carries_no_provenance_at_all():
+    """Absent is honest; an empty triple would read as a recorded inference."""
+    assert _only_finding(_finding_payload()).provenance is None
+
+
+def test_an_unparseable_confidence_does_not_lose_the_finding():
+    """Every payload field is optional text; a finding with a bad part is still
+    a finding, recorded as such."""
+    report = parse_stage_report(_wrap(_finding_payload(confidence="very")))
+    assert report is not None
+    assert len(report.findings) == 1
+
+
+def test_finding_record_stamps_the_registration_site_at_admission():
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer", confidence=0.4))
+    record = finding_record(finding, _run(), _stage())
+
+    site = record["provenance"]["registered_at"]
+    assert site, "the control plane holds this fact; it must reach the history"
+    assert "review-static" in site
+    assert "python_reviewer" in site
+
+
+def test_finding_record_keeps_the_two_fields_the_agent_answered():
+    finding = _only_finding(_finding_payload(inferred_by="a_reviewer", confidence=0.4))
+    record = finding_record(finding, _run(), _stage())
+
+    assert record["provenance"]["inferred_by"] == "a_reviewer"
+    assert record["provenance"]["confidence"] == 0.4
+
+
+def test_finding_record_falls_back_to_the_run_s_agent_when_the_payload_said_nothing():
+    finding = _only_finding(_finding_payload())
+    record = finding_record(finding, _run(), _stage())
+
+    assert record["provenance"]["inferred_by"] == "python_reviewer"
+    assert record["provenance"]["registered_at"]
+
+
+def test_the_registry_wins_over_a_site_the_finding_already_carries():
+    """The rule, at its sharpest: a value that reached the dataclass by any
+    route is replaced by the registry's answer, not merged with it."""
+    finding = Finding(
+        summary="a finding that named its own wiring",
+        provenance=Provenance(inferred_by="someone", registered_at="not.where.it.is.wired"),
+    )
+    record = finding_record(finding, _run(), _stage())
+
+    assert record["provenance"]["registered_at"] != "not.where.it.is.wired"
+    assert "review-static" in record["provenance"]["registered_at"]
+
+
+def test_an_unregistered_stage_records_the_omission_rather_than_inventing_a_site():
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer"))
+    record = finding_record(finding, _run(), None)
+
+    assert record["provenance"]["registered_at"] == ""
+
+
+def test_the_record_still_carries_everything_it_did_before():
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer"))
+    record = finding_record(finding, _run(), _stage())
+
+    assert record["summary"] == "the resolver returns an empty list when git fails"
+    assert record["blocking"] is True
+    assert record["trigger"] == "an unresolvable --base"
+    assert record["disposition"] is None
+
+
+# --------------------------------------------------------------------------- #
+# AC10 — "no overload and no shim", asserted rather than assumed
+#
+# Every test above passes against `finding_record(finding, run=None,
+# stage=None)`, which is exactly the compatibility shim the internal posture
+# forbids: the old three call sites keep working, nothing stamps a site, and the
+# criterion reads as met. The signature and the call sites are the only places
+# that distinguish a migration from a shim.
+# --------------------------------------------------------------------------- #
+
+
+def test_finding_record_takes_the_run_and_the_stage_as_required_arguments():
+    signature = inspect.signature(finding_record)
+    required = [
+        name
+        for name, parameter in signature.parameters.items()
+        if parameter.default is inspect.Parameter.empty
+    ]
+    assert required == ["finding", "run", "stage"], signature
+
+
+def test_calling_finding_record_the_old_way_is_a_failure_not_a_default():
+    """A shim would silently record a finding with no provenance at all."""
+    finding = _only_finding(_finding_payload(inferred_by="python_reviewer"))
+    with pytest.raises(TypeError):
+        finding_record(finding)
+
+
+def test_every_call_site_in_finding_bar_passes_all_three():
+    """AC10 names the four sites and requires them migrated in this change. A
+    site left on the old shape is a finding recorded with no site, reached
+    through the ordinary path nobody re-reads.
+    """
+    source = Path(finding_bar.__file__).read_text(encoding="utf-8")
+    calls = [
+        node
+        for node in ast.walk(ast.parse(source))
+        if type(node) is ast.Call
+        and (getattr(node.func, "id", "") or getattr(node.func, "attr", "")) == "finding_record"
+    ]
+
+    assert calls, "the call sites moved; this test is measuring the wrong module"
+    for call in calls:
+        passed = len(call.args) + len(call.keywords)
+        assert passed == 3, f"finding_bar.py:{call.lineno} passes {passed} arguments"
+
+
+def test_the_stamped_site_names_the_registered_agent_not_the_run_s_agent():
+    """`registered_at` is the STAGE's registered entry. A run dispatched to a
+    pinned agent that differs from the stage's own registration must still
+    resolve to the registration, or the field records who ran rather than where
+    the classifier is wired — which is the thing the producer cannot answer.
+    """
+    run = AgentRun(
+        run_code="run_test",
+        workspace_id="ws",
+        agent_id="a_pinned_reviewer",
+        stage_key="review-static",
+    )
+    record = finding_record(_only_finding(_finding_payload()), run, _stage())
+
+    assert "python_reviewer" in record["provenance"]["registered_at"]
+    assert "a_pinned_reviewer" not in record["provenance"]["registered_at"]
+
+
+def test_the_record_is_json_serialisable_with_the_triple_on_it():
+    """It is written to the stage history; a dataclass left nested in the dict
+    fails at the writer, after the stage has already reported success."""
+    record = finding_record(
+        _only_finding(_finding_payload(inferred_by="python_reviewer", confidence=0.4)),
+        _run(),
+        _stage(),
+    )
+    assert json.loads(json.dumps(record))["provenance"]["confidence"] == 0.4
 
 
 def test_notes_for_the_next_stage_are_parsed_and_capped():

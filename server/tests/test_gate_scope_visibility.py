@@ -24,6 +24,7 @@ helper or in each gate, and these should not care which.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 import re
 import subprocess
@@ -1853,263 +1854,6 @@ def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate, added: b
     assert examined is not None and examined >= 1, verdicts
 
 
-def test_a_symlinked_source_is_refused_rather_than_followed(tmp_path):
-    """A graded path that is not a regular file is unexaminable, not clean.
-
-    `located_path` resolves only the parent on purpose, so a symlinked module
-    keeps the relpath git used and stays gradeable. That leaves the file itself
-    a symlink, and opening it follows the link: `src/x.py -> /dev/zero` never
-    returns and allocates until the host gives out, which in orchestration is
-    bounded only by the 300s gate timeout — a gate that stops being a gate. The
-    check belongs at the read, where the target is known.
-    """
-    diff = _load_script("precommit_git_diff")
-    os.symlink("/dev/zero", tmp_path / "leak.py")
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(tmp_path / "leak.py", repo=tmp_path)
-
-    assert "not a regular file" in str(excinfo.value)
-
-
-def test_a_broken_symlink_names_the_file_instead_of_raising_oserror(tmp_path):
-    """A dangling link must arrive through the one channel, not as a traceback.
-
-    Before the check it raised a bare `FileNotFoundError` out of the middle of
-    the walk, which blocks every stage transition without naming what is wrong —
-    loud, but unactionable, and it bypasses the `UnexaminableError` channel that
-    is supposed to be the single place a gate decides about a file it could not
-    examine.
-    """
-    diff = _load_script("precommit_git_diff")
-    os.symlink(tmp_path / "gone.py", tmp_path / "broken.py")
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(tmp_path / "broken.py", repo=tmp_path)
-
-    assert "broken.py" in str(excinfo.value)
-
-
-def test_an_oversized_file_is_refused_rather_than_read_whole(tmp_path):
-    """No hand-written module approaches the cap; a path that does is not source."""
-    diff = _load_script("precommit_git_diff")
-    big = tmp_path / "huge.py"
-    big.write_bytes(b"# padding\n" * ((diff.MAX_SOURCE_BYTES // 10) + 1))
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(big, repo=tmp_path)
-
-    assert "grading limit" in str(excinfo.value)
-
-
-def test_an_ordinary_source_file_still_reads(tmp_path):
-    """The positive control: the guard must not refuse real source."""
-    diff = _load_script("precommit_git_diff")
-    ok = tmp_path / "ok.py"
-    ok.write_text("import os\n\n\ndef f():\n    return os.sep\n", encoding="utf-8")
-
-    assert diff.read_source_text(ok, repo=tmp_path).startswith("import os")
-
-
-def test_read_source_text_has_no_default_repository(tmp_path):
-    """AC1: `repo` is required and keyword-only, so nobody can opt out of the check.
-
-    A default would let a caller that never passed one read exactly as before,
-    and "nobody passed it" would be indistinguishable from "nothing to check" —
-    the defect shape this family is made of. Positional passing is refused too:
-    the second argument to a reader is not obviously a repository root, and a
-    caller that guesses wrong silently widens the boundary.
-    """
-    diff = _load_script("precommit_git_diff")
-    ok = tmp_path / "ok.py"
-    ok.write_text("x = 1\n", encoding="utf-8")
-
-    with pytest.raises(TypeError):
-        diff.read_source_text(ok)
-    with pytest.raises(TypeError):
-        diff.read_source_text(ok, tmp_path)
-
-
-def test_a_symlink_out_of_the_repo_names_the_path_and_its_target(tmp_path):
-    """AC1: the message carries both halves, because either alone is unactionable.
-
-    The path as git spells it is the only handle the reader has on the diff;
-    the resolved target is the only thing that explains why a file that looks
-    like source was refused. A refusal naming one of the two sends the reader
-    looking for a file that reads fine.
-    """
-    diff = _load_script("precommit_git_diff")
-    repo_root = tmp_path / "repo"
-    (repo_root / "src").mkdir(parents=True)
-    outside = tmp_path / "elsewhere" / "target.py"
-    outside.parent.mkdir()
-    outside.write_text("x = 1\n", encoding="utf-8")
-    link = repo_root / "src" / "linked.py"
-    link.symlink_to(outside)
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(link, repo=repo_root)
-
-    message = str(excinfo.value)
-    assert str(link) in message, message
-    assert str(outside.resolve()) in message, message
-    assert "cannot be reported clean" in message, message
-
-
-def test_a_symlink_inside_the_repo_still_reads(tmp_path):
-    """AC1's positive control at the unit: the guard refuses targets, not links.
-
-    Without this a guard that raises on every symlink satisfies every other
-    assertion here. That is not a stricter gate, it is an outage: a workspace
-    that links a module into its source root would be unable to transition a
-    stage at all.
-    """
-    diff = _load_script("precommit_git_diff")
-    repo_root = tmp_path / "repo"
-    (repo_root / "src").mkdir(parents=True)
-    real = repo_root / "vendored.py"
-    real.write_text("import os\n", encoding="utf-8")
-    link = repo_root / "src" / "linked.py"
-    link.symlink_to(real)
-
-    assert diff.read_source_text(link, repo=repo_root) == "import os\n"
-
-
-def test_a_repository_reached_through_a_symlink_still_grades_its_own_files(tmp_path):
-    """AC1: both sides are resolved, or a macOS checkout refuses everything it owns.
-
-    The target is compared resolved. If the repository root it is compared
-    against is not, a checkout reached through a symlinked prefix — `/var` ->
-    `/private/var` on macOS, which is where `tmp_path` itself lives, and every
-    agent worktree under a linked home — puts *every* file it owns outside its
-    own root. The gate then refuses the whole tree and blocks every stage
-    transition, and the same code passes wherever the prefix happens to be
-    real. A platform-dependent path bug in 546 passed on macOS and failed only
-    in CI; this is written so the mirror image of it cannot pass here either.
-    """
-    diff = _load_script("precommit_git_diff")
-    real_root = tmp_path / "real_repo"
-    (real_root / "src").mkdir(parents=True)
-    (real_root / "src" / "mod.py").write_text("import os\n", encoding="utf-8")
-    linked_root = tmp_path / "linked_repo"
-    linked_root.symlink_to(real_root, target_is_directory=True)
-
-    assert diff.read_source_text(linked_root / "src" / "mod.py", repo=linked_root) == "import os\n"
-
-
-def test_a_repository_reached_through_a_symlink_still_catches_an_escape(tmp_path):
-    """The other half of the macOS row: an unresolved root must not disable the check.
-
-    `test_a_repository_reached_through_a_symlink_still_grades_its_own_files`
-    only pins that a symlinked root does not refuse its own files, and an
-    implementation that compares against an *unresolved* root satisfies it — by
-    concluding the file is not in the repository at all and skipping the check.
-    Passing and not-checking are the same observation there, which is the shape
-    this whole file exists to keep apart.
-
-    Same fixture, escape added. The refusal has to survive the symlinked
-    prefix, or the guard is off for every macOS checkout and every agent
-    worktree under a linked home — which is to say off in exactly the
-    environments it was written for.
-    """
-    diff = _load_script("precommit_git_diff")
-    real_root = tmp_path / "real_repo"
-    (real_root / "src").mkdir(parents=True)
-    linked_root = tmp_path / "linked_repo"
-    linked_root.symlink_to(real_root, target_is_directory=True)
-    outside = tmp_path / "elsewhere" / "target.py"
-    outside.parent.mkdir()
-    outside.write_text("x = 1\n", encoding="utf-8")
-    (real_root / "src" / "linked.py").symlink_to(outside)
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(linked_root / "src" / "linked.py", repo=linked_root)
-
-    assert str(outside.resolve()) in str(excinfo.value)
-
-
-def test_a_sibling_directory_sharing_the_repositorys_prefix_is_outside_it(tmp_path):
-    """AC1: containment is a path-component question, not a string one.
-
-    `str(target).startswith(str(repo))` is the cheapest way to write this check
-    and it is wrong by one character: `/w/repo` is a prefix of
-    `/w/repo-vendor/x.py`, so a link into the sibling directory beside a
-    checkout — where a workspace's vendored or generated trees usually sit —
-    reads as inside the repository and is graded clean. `relative_to` and
-    `is_relative_to` both answer on components and get this right; nothing else
-    in this file would notice the difference.
-    """
-    diff = _load_script("precommit_git_diff")
-    repo_root = tmp_path / "repo"
-    (repo_root / "src").mkdir(parents=True)
-    sibling = tmp_path / "repo-vendor"
-    sibling.mkdir()
-    outside = sibling / "target.py"
-    outside.write_text("x = 1\n", encoding="utf-8")
-    link = repo_root / "src" / "linked.py"
-    link.symlink_to(outside)
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(link, repo=repo_root)
-
-    assert str(outside.resolve()) in str(excinfo.value)
-
-
-def test_a_path_the_caller_named_outside_the_repository_still_reads(tmp_path):
-    """The unit half of the explicitly-listed decision; see the gate test of the
-    same name for why it is this way round.
-
-    Nothing here presents itself as a repository file: the caller handed over
-    an absolute path that is plainly elsewhere. Refusing it would refuse every
-    fixture `test_silent_except_gate.py` grades, and a gate that cannot be
-    pointed at a file is not a stricter gate.
-    """
-    diff = _load_script("precommit_git_diff")
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    outside = tmp_path / "elsewhere.py"
-    outside.write_text("x = 1\n", encoding="utf-8")
-
-    assert diff.read_source_text(outside, repo=repo_root) == "x = 1\n"
-
-
-def test_a_run_outside_any_checkout_grades_what_it_is_handed(tmp_path):
-    """AC1: `repo=None` is "there is no boundary", not "refuse everything".
-
-    `Invocation.repo` is `Optional[Path]` because `git_repo_root()` returns
-    `None` outside a checkout, and `resolve_gate_scope` already has an answer
-    for that case. `None` has to reach `read_source_text` explicitly — the
-    keyword stays required, so no caller opts out by forgetting — and mean the
-    only thing it can mean: there is no repository to be outside of.
-    """
-    diff = _load_script("precommit_git_diff")
-    loose = tmp_path / "loose.py"
-    loose.write_text("x = 1\n", encoding="utf-8")
-
-    assert diff.read_source_text(loose, repo=None) == "x = 1\n"
-
-
-def test_a_symlink_cycle_is_refused_through_the_one_channel(tmp_path):
-    """ELOOP raises `RuntimeError`, which is not an `OSError`.
-
-    `Path.resolve` raises `RuntimeError` on a symlink cycle. Catching only
-    `OSError` let it escape the `UnexaminableError` channel entirely: the
-    organization gate's DRY catalog walks the whole source root, so one committed
-    cycle anywhere under it took the gate down with a traceback even when every
-    listed file was clean. Never a false pass — but a repository's own contents
-    blocking every stage transition, which is the other way a gate stops being
-    useful. The TypeScript gate already handled it; this pins the Python side.
-    """
-    diff = _load_script("precommit_git_diff")
-    os.symlink(tmp_path / "b.py", tmp_path / "a.py")
-    os.symlink(tmp_path / "a.py", tmp_path / "b.py")
-
-    with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(tmp_path / "a.py", repo=tmp_path)
-
-    assert "a.py" in str(excinfo.value)
-
-
 #: A committed two-link cycle, in each language the gates grade.
 SYMLINK_CYCLE_GATES = [
     pytest.param(PY_ORGANIZATION_GATE, "src/pkg", ".py", id="py-org"),
@@ -2417,3 +2161,142 @@ def test_a_workspace_whose_trunk_is_master_is_graded_not_refused(tmp_path):
     )
     assert "isinstance" in result.stdout + result.stderr, result.stdout + result.stderr
     _assert_no_vacuous_pass(result)
+
+
+# --------------------------------------------------------------------------- #
+# One vocabulary, two surfaces (lg-code-knowledge-1084, AC7b)
+#
+# Both Python gates import `.lefthook/scripts/gate_unclassified.py`, so the same
+# situation — "I recognized this construct's kind and have no arm for it" — is
+# worded identically wherever it is reported. Two wordings for one mechanism is
+# how the file-level case nearly ended up with three; this harness is the one
+# that already pins cross-gate conformance, so the construct-level case is
+# pinned here rather than in a second harness of its own.
+# --------------------------------------------------------------------------- #
+
+_VOCABULARY_PATH = _SCRIPTS / "gate_unclassified.py"
+
+#: A handler holding a `match`, which `_paths_through` has no arm for.
+PY_UNCLASSIFIABLE_HANDLER = """import logging
+logger = logging.getLogger(__name__)
+
+def f(path):
+    try:
+        return read(path)
+    except Exception as exc:
+        match path:
+            case _:
+                pass
+        logger.warning("read failed: %s", exc)
+"""
+
+#: An `isinstance` whose target cannot be read, which `isinstance_errors`
+#: currently reports as `isinstance(..., ?)` with the type-switch arm's advice.
+PY_UNCLASSIFIABLE_ISINSTANCE = """def f(value, types):
+    return isinstance(value, *types)
+"""
+
+
+@pytest.fixture(name="vocabulary")
+def vocabulary_fixture():
+    spec = importlib.util.spec_from_file_location("gate_unclassified", _VOCABULARY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _unclassified_line(stdout: str, label: str) -> str:
+    """The one reported line, from the label to the end of it."""
+    lines = [line for line in stdout.splitlines() if label in line]
+    assert len(lines) == 1, f"expected exactly one unclassified line, got {lines}"
+    line = lines[0]
+    return line[line.index(label) :].strip()
+
+
+def _parts(message: str, label: str) -> dict:
+    """The five parts back out of a message, using the shape the formatter pins.
+
+    `<label> <path>:<line>: <construct>; <wording> (inferred_by=…, registered_at=…)`
+    """
+    assert message.startswith(label)
+    rest = message[len(label) :].strip()
+    site, _, tail = rest.partition(": ")
+    path, _, line = site.rpartition(":")
+    construct, _, remainder = tail.partition("; ")
+    provenance = remainder[remainder.rindex("(inferred_by=") :].strip("()")
+    inferred_by, _, registered_at = provenance.partition(", registered_at=")
+    return {
+        "construct": construct,
+        "path": path,
+        "line": int(line),
+        "inferred_by": inferred_by[len("inferred_by=") :],
+        "registered_at": registered_at,
+    }
+
+
+def test_both_python_gates_word_an_unclassifiable_construct_identically(repo: Path, vocabulary):
+    label = vocabulary.UNCLASSIFIED_LABEL
+    (repo / "src" / "pkg" / "silent.py").write_text(PY_UNCLASSIFIABLE_HANDLER)
+    (repo / "src" / "pkg" / "org.py").write_text(PY_UNCLASSIFIABLE_ISINSTANCE)
+
+    outputs = {}
+    for name, gate in (("silent", PY_SILENT_EXCEPT_GATE), ("org", PY_ORGANIZATION_GATE)):
+        result = subprocess.run(
+            [*gate, "--repo", str(repo), "--scope", "worktree"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=_scrubbed_env(),
+        )
+        assert result.returncode == 1, f"{name}: {result.stdout}{result.stderr}"
+        outputs[name] = _unclassified_line(result.stdout, label)
+
+    # Each gate's own line must be exactly what the shared formatter produces
+    # for its own parts: that is what "both import the module" means in output
+    # terms, and a gate that hand-rolled the sentence fails here.
+    parsed = {}
+    for name, message in outputs.items():
+        parts = _parts(message, label)
+        parsed[name] = parts
+        assert vocabulary.unclassified_message(vocabulary.Unclassified(**parts)) == message, name
+
+    # And with one common set of parts substituted in, nothing is left to differ.
+    common = {
+        "construct": "C",
+        "path": "p.py",
+        "line": 1,
+        "inferred_by": "i",
+        "registered_at": "r",
+    }
+    rendered = {
+        name: vocabulary.unclassified_message(vocabulary.Unclassified(**common)) for name in parsed
+    }
+    assert rendered["silent"] == rendered["org"]
+
+
+def test_each_gate_reports_its_own_construct_and_site(repo: Path, vocabulary):
+    """Identical wording, not identical content: the parts that MUST differ do."""
+    label = vocabulary.UNCLASSIFIED_LABEL
+    (repo / "src" / "pkg" / "silent.py").write_text(PY_UNCLASSIFIABLE_HANDLER)
+    (repo / "src" / "pkg" / "org.py").write_text(PY_UNCLASSIFIABLE_ISINSTANCE)
+
+    def _run(gate):
+        return subprocess.run(
+            [*gate, "--repo", str(repo), "--scope", "worktree"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=_scrubbed_env(),
+        ).stdout
+
+    silent = _parts(_unclassified_line(_run(PY_SILENT_EXCEPT_GATE), label), label)
+    org = _parts(_unclassified_line(_run(PY_ORGANIZATION_GATE), label), label)
+
+    assert "Match" in silent["construct"]
+    assert "isinstance" in org["construct"]
+    assert silent["path"].endswith("silent.py")
+    assert org["path"].endswith("org.py")
+    assert silent["registered_at"] != org["registered_at"], "each names its own wiring site"
+    assert silent["registered_at"] and org["registered_at"]

@@ -62,7 +62,12 @@ from gate_python_guard import require_supported_python  # noqa: E402 - path set 
 
 require_supported_python(Path(__file__).name)
 
-from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
+from gate_unclassified import (  # noqa: E402 - sys.path is set up just above
+    Outcome,
+    Unclassified,
+    unclassified_message,
+)
+from precommit_git_diff import (  # noqa: E402 - same
     GateInvocation,
     UnexaminableError,
     UnexaminableFileError,
@@ -72,6 +77,12 @@ from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     resolve_gate_scope,
 )
 from py_organization_check import python_files_in_scope  # noqa: E402 - same
+
+#: Where the handler-body walk this gate's classifier rides on is wired. The one
+#: field a producer cannot answer about itself, so it is written once, here,
+#: rather than at each place a finding is built.
+_REGISTERED_AT = "py_silent_except_check.violations_in"
+_INFERRED_BY = "py_silent_except_check._paths_through"
 
 # Catching these catches programmer errors too, so a silent body hides anything.
 _BROAD_EXCEPTIONS: frozenset[str] = frozenset({"Exception", "BaseException"})
@@ -188,6 +199,16 @@ def _is_inert_body(body: list[ast.stmt]) -> bool:
             continue  # a docstring or bare `...`
         if isinstance(stmt, (ast.Assign, ast.AnnAssign)) and _is_inert_value(stmt.value):
             continue
+        if _statement_outcome(stmt) is Outcome.UNCLASSIFIED:
+            # A construct no arm names still has to be answered here, or
+            # `except Exception: match x: case _: pass` reads as a body that
+            # reports something because this list has never met a `match`.
+            # Vacuity is the trap: a statement-owner whose blocks could not be
+            # read is NOT inert, rather than inert for want of evidence.
+            blocks = _owned_blocks(stmt)
+            if blocks and all(_is_inert_body(block) for block in blocks):
+                continue
+            return False
         return False
     return True
 
@@ -311,6 +332,8 @@ def _handler_owners(tree: ast.AST) -> dict[int, ast.AST]:
 
 
 _CONTROL_FLOW_STMTS = (ast.If, ast.Try, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)
+#: The arms that end a path: it leaves loudly, or it terminates.
+_TERMINATING_STMTS = (ast.Raise, ast.Return, ast.Break, ast.Continue)
 _SCOPE_STMTS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 
@@ -349,6 +372,112 @@ def _nested_blocks(stmt: ast.stmt) -> list[list[ast.stmt]]:
     elif isinstance(stmt, (ast.With, ast.AsyncWith)):  # py-org: allow-isinstance
         blocks.append(stmt.body)
     return [block for block in blocks if block]
+
+
+def _owns_statements(stmt: ast.stmt) -> bool:
+    """Whether this statement runs statements of its own.
+
+    Read off the tree rather than from a list of node types, so a compound
+    statement a later Python adds is recognized as a subject instead of being
+    read as a plain statement — which is the defect this answers, one version on.
+
+    Deliberately not `"body" in type(stmt)._fields`: that finds `TryStar` and
+    MISSES `Match`, whose fields are `(subject, cases)` with the statements
+    hanging off `match_case.body`. Helper nodes (`match_case`, `ExceptHandler`)
+    are looked through, one level, which is as deep as the grammar puts a
+    statement list beneath a statement.
+    """
+    for child in ast.iter_child_nodes(stmt):
+        if isinstance(child, ast.stmt):  # py-org: allow-isinstance
+            return True
+        if isinstance(child, ast.expr):  # py-org: allow-isinstance
+            # A lambda body or a comprehension is an expression, not a path
+            # through the handler.
+            continue
+        if any(
+            isinstance(inner, ast.stmt)  # py-org: allow-isinstance
+            for inner in ast.iter_child_nodes(child)
+        ):
+            return True
+    return False
+
+
+def _statement_outcome(stmt: ast.stmt) -> Outcome:
+    """Which of the three answers the handler-body walk has for this statement.
+
+    The arm table of `_paths_through`, read as a classification rather than as
+    control flow, so the case it has no arm for has a name:
+
+    * CLASSIFIED — `Raise`, `Return`/`Break`/`Continue`, `If`, and the rest of
+      `_CONTROL_FLOW_STMTS`: a named arm fires and says which bodies the path
+      can enter.
+    * NOT_APPLICABLE — a nested `def`/`class` (declared on this path, run on
+      another, which is why `_statement_observes` already skips it), and a plain
+      statement, which owns no statements for the walk to miss.
+    * UNCLASSIFIED — it owns statements of its own and no arm names it. On
+      CPython 3.11 that is exactly `TryStar` and `Match`.
+    """
+    if isinstance(stmt, _SCOPE_STMTS):  # py-org: allow-isinstance
+        return Outcome.NOT_APPLICABLE
+    if isinstance(stmt, _TERMINATING_STMTS):  # py-org: allow-isinstance
+        return Outcome.CLASSIFIED
+    if isinstance(stmt, _CONTROL_FLOW_STMTS):  # py-org: allow-isinstance
+        return Outcome.CLASSIFIED
+    if _owns_statements(stmt):
+        return Outcome.UNCLASSIFIED
+    return Outcome.NOT_APPLICABLE
+
+
+def _owned_blocks(stmt: ast.stmt) -> list[list[ast.stmt]]:
+    """Every statement list an UNCLASSIFIED statement can run.
+
+    `_nested_blocks` names the blocks of the control-flow arms explicitly and
+    deliberately. This is the other half: the blocks of a statement no arm
+    names, read off the tree, so a construct the gate cannot grade is not also
+    read as reporting the failure. A statement-owner this returns nothing for is
+    treated as NOT inert by the caller rather than vacuously inert.
+    """
+    blocks: list[list[ast.stmt]] = []
+    for child in ast.iter_child_nodes(stmt):
+        if isinstance(child, ast.expr):  # py-org: allow-isinstance
+            continue
+        if isinstance(child, ast.stmt):  # py-org: allow-isinstance
+            blocks.append([child])
+            continue
+        nested = [
+            inner
+            for inner in ast.iter_child_nodes(child)
+            if isinstance(inner, ast.stmt)  # py-org: allow-isinstance
+        ]
+        if nested:
+            blocks.append(nested)
+    return blocks
+
+
+def _unclassified_subjects(body: list[ast.stmt]) -> list[ast.stmt]:
+    """The statements this walk reaches that `_statement_outcome` cannot grade.
+
+    Exactly as wide as the walk it rides on, and no wider: the same bodies, and
+    the same `_nested_blocks`. It does not descend into a nested `def` or
+    `class` (whose statements do not run on the handler's path) nor into the
+    `try` the handler guards, so a construct the path analysis never reads is
+    NOT_APPLICABLE and produces nothing.
+    """
+    found: list[ast.stmt] = []
+    for stmt in body:
+        outcome = _statement_outcome(stmt)
+        if outcome is Outcome.UNCLASSIFIED:
+            found.append(stmt)
+            continue
+        if outcome is Outcome.NOT_APPLICABLE:
+            continue
+        if isinstance(stmt, ast.If):  # py-org: allow-isinstance
+            blocks = [branch for branch in (stmt.body, stmt.orelse) if branch]
+        else:
+            blocks = _nested_blocks(stmt)
+        for block in blocks:
+            found.extend(_unclassified_subjects(block))
+    return found
 
 
 def _paths_through(body: list[ast.stmt], observed: bool) -> tuple[bool, set[bool]]:
@@ -473,6 +602,122 @@ def _returns_success_shape(handler: ast.ExceptHandler, owner: ast.AST | None) ->
     return True
 
 
+def _unclassified_violations(node: ast.ExceptHandler, path: Path) -> list[tuple[int, str]]:
+    """The unclassified-construct findings for one handler's body, if any."""
+    return [
+        (
+            # Anchored at the handler's own lineno — the anchor the
+            # touched-line filter in `_check` already accepts — while the
+            # message names the construct's own site. Anchoring at the
+            # construct would silently change what this gate examines.
+            node.lineno,
+            unclassified_message(
+                Unclassified(
+                    construct=f"ast.{type(subject).__name__}",
+                    path=str(path),
+                    line=subject.lineno,
+                    inferred_by=_INFERRED_BY,
+                    registered_at=_REGISTERED_AT,
+                )
+            ),
+        )
+        for subject in _unclassified_subjects(node.body)
+    ]
+
+
+def _swallow_violation(node: ast.ExceptHandler, owner: ast.AST | None) -> tuple[int, str] | None:
+    """The one swallow finding for a handler's own shape, if it has one."""
+    names = ", ".join(_exception_names(node.type)) or "bare except"
+    if _is_broad(node.type) and _is_inert_body(node.body):
+        return (node.lineno, f"`{names}` with nothing logged, raised, or recorded")
+    if _quiet_only(node):
+        return (
+            node.lineno,
+            f"`{names}` reported only at debug/info, which is below the default "
+            "handler level; log it at warning or above, or surface it",
+        )
+    if _returns_success_shape(node, owner):
+        return (
+            node.lineno,
+            f"`{names}` returns a value indistinguishable from success; return a "
+            "failure-carrying result (ok=False / error=…), raise, or log at warning+",
+        )
+    return None
+
+
+def _violations_for_handler(
+    node: ast.ExceptHandler,
+    lines: list[str],
+    owners: dict[int, ast.AST | None],
+    path: Path,
+) -> list[tuple[int, str]]:
+    """Every finding anchored on one `except` handler, in one place."""
+    end = node.end_lineno or node.lineno
+    thin = _thin_waiver_line(lines, node.lineno, end)
+    if thin is not None:
+        return [
+            (
+                thin,
+                "a waiver marker with no real reason; say why the failure is safe to "
+                "swallow — transient, retryable, or expected with a surfaced "
+                f"alternate path — in at least {_MIN_WAIVER_REASON_CHARS} characters",
+            )
+        ]
+    if _line_waives(lines, node.lineno, end):
+        return []
+
+    found = _unclassified_violations(node, path)
+    swallow = _swallow_violation(node, owners.get(id(node)))
+    if swallow is not None:
+        found.append(swallow)
+    return found
+
+
+def _violation_for_spawn_call(node: ast.Expr, lines: list[str]) -> tuple[int, str] | None:
+    """The discarded-exit-code finding for one bare call expression, if any."""
+    call = node.value
+    if not isinstance(call, ast.Call) or not _spawns_process(call):  # py-org: allow-isinstance
+        return None
+    checked = any(
+        kw.arg == "check"
+        and isinstance(kw.value, ast.Constant)  # py-org: allow-isinstance
+        and kw.value.value is True  # py-org: allow-isinstance
+        for kw in call.keywords
+    )
+    if checked:
+        return None
+    end = node.end_lineno or node.lineno
+    if _line_waives(lines, node.lineno, end):
+        return None
+    return (
+        node.lineno,
+        "a process result discarded with check=True not set, so a non-zero exit "
+        "passes unnoticed; keep the result and test returncode, or pass check=True",
+    )
+
+
+def _violation_for_suppress_with(
+    node: ast.With | ast.AsyncWith, lines: list[str]
+) -> tuple[int, str] | None:
+    """The broad-suppress finding for one `with` statement, if it has one."""
+    lineno, caught = 0, ""
+    for item in node.items:
+        call = _is_suppress_call(item.context_expr)
+        if call is None:
+            continue
+        broad = [
+            n for n in _exception_names(ast.Tuple(elts=list(call.args))) if n in _BROAD_EXCEPTIONS
+        ]
+        if broad:
+            lineno, caught = call.lineno, f"suppress({', '.join(broad)})"
+            break
+    if not lineno:
+        return None
+    if _line_waives(lines, lineno):
+        return None
+    return (lineno, f"`{caught}` with nothing logged, raised, or recorded")
+
+
 def violations_in(path: Path, *, repo: Path | None) -> list[tuple[int, str]]:
     """(line, what-was-caught) for every silent broad catch in the file.
 
@@ -498,87 +743,17 @@ def violations_in(path: Path, *, repo: Path | None) -> list[tuple[int, str]]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ExceptHandler):  # py-org: allow-isinstance
-            end = node.end_lineno or node.lineno
-            thin = _thin_waiver_line(lines, node.lineno, end)
-            if thin is not None:
-                found.append(
-                    (
-                        thin,
-                        "a waiver marker with no real reason; say why the failure is safe to "
-                        "swallow — transient, retryable, or expected with a surfaced "
-                        f"alternate path — in at least {_MIN_WAIVER_REASON_CHARS} characters",
-                    )
-                )
-                continue
-            if _line_waives(lines, node.lineno, end):
-                continue
-
-            names = ", ".join(_exception_names(node.type)) or "bare except"
-            if _is_broad(node.type) and _is_inert_body(node.body):
-                found.append((node.lineno, f"`{names}` with nothing logged, raised, or recorded"))
-            elif _quiet_only(node):
-                found.append(
-                    (
-                        node.lineno,
-                        f"`{names}` reported only at debug/info, which is below the default "
-                        "handler level; log it at warning or above, or surface it",
-                    )
-                )
-            elif _returns_success_shape(node, owners.get(id(node))):
-                found.append(
-                    (
-                        node.lineno,
-                        f"`{names}` returns a value indistinguishable from success; return a "
-                        "failure-carrying result (ok=False / error=…), raise, or log at warning+",
-                    )
-                )
-            continue
+            found.extend(_violations_for_handler(node, lines, owners, path))
         elif isinstance(node, ast.Expr) and isinstance(  # py-org: allow-isinstance
             node.value, ast.Call
         ):  # py-org: allow-isinstance
-            call = node.value
-            if not _spawns_process(call):
-                continue
-            if any(
-                kw.arg == "check"
-                and isinstance(kw.value, ast.Constant)  # py-org: allow-isinstance
-                and kw.value.value is True  # py-org: allow-isinstance
-                for kw in call.keywords
-            ):
-                continue
-            end = node.end_lineno or node.lineno
-            if _line_waives(lines, node.lineno, end):
-                continue
-            found.append(
-                (
-                    node.lineno,
-                    "a process result discarded with check=True not set, so a non-zero exit "
-                    "passes unnoticed; keep the result and test returncode, or pass check=True",
-                )
-            )
-            continue
+            violation = _violation_for_spawn_call(node, lines)
+            if violation is not None:
+                found.append(violation)
         elif isinstance(node, (ast.With, ast.AsyncWith)):
-            lineno, caught = 0, ""
-            for item in node.items:
-                call = _is_suppress_call(item.context_expr)
-                if call is None:
-                    continue
-                broad = [
-                    n
-                    for n in _exception_names(ast.Tuple(elts=list(call.args)))
-                    if n in _BROAD_EXCEPTIONS
-                ]
-                if broad:
-                    lineno, caught = call.lineno, f"suppress({', '.join(broad)})"
-                    break
-            if not lineno:
-                continue
-        else:
-            continue
-
-        if _line_waives(lines, lineno):
-            continue
-        found.append((lineno, f"`{caught}` with nothing logged, raised, or recorded"))
+            violation = _violation_for_suppress_with(node, lines)
+            if violation is not None:
+                found.append(violation)
 
     return sorted(found)
 

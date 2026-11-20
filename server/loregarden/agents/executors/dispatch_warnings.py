@@ -22,6 +22,7 @@ from loregarden.services.cli_settings import (
     weak_mcp_model_warning,
 )
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.symbol_map import RefreshReport
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,18 @@ def warn_before_run(
     ticket_runtime: WorkspaceRuntimeSettings,
     stage_def: WorkflowStageDef | None,
     invocation: CliInvocation,
+    refresh_report: RefreshReport,
 ) -> None:
-    """Every warning a run's log should open with, before the agent speaks."""
+    """Every warning a run's log should open with, before the agent speaks.
+
+    *refresh_report* is the symbol map's own account of the refresh this
+    dispatch just paid for (lg-code-knowledge-284). It arrives here rather
+    than at the refresh itself because there is no log stream yet at that
+    moment — `RunLogStreamer` is built further down `execute`. The line it
+    prints, its states and its budget are lg-code-knowledge-2731's; 284's job
+    is that the number exists and travels this far.
+    """
+    maybe_warn_symbol_map_refresh(streamer=streamer, run=run, refresh_report=refresh_report)
     maybe_warn_dispatch_waiver(streamer=streamer, run=run)
     maybe_warn_adapter_override(
         streamer=streamer,
@@ -55,6 +66,33 @@ def warn_before_run(
         ticket_runtime=ticket_runtime,
         stage_def=stage_def,
         selected_adapter=invocation.adapter,
+    )
+
+
+def maybe_warn_symbol_map_refresh(
+    *,
+    streamer: RunLogStreamer,
+    run: AgentRun,
+    refresh_report: RefreshReport,
+) -> None:
+    """Say so when the symbol map could not be brought up to this tree.
+
+    Only the failure is spoken here. The wording for the ordinary states, the
+    lag figure and the cold-build budget belong to lg-code-knowledge-2731,
+    which owns this line; what 284 may not do is let a refresh fail with
+    nothing on screen, since the stage's reads silently fall back to live grep
+    from that point on.
+    """
+    if refresh_report.ok or refresh_report.reason is None:
+        return
+    logger.warning(
+        "run %s: symbol map refresh declined (%s)", run.run_code, refresh_report.reason.value
+    )
+    streamer.append(
+        "WARN",
+        f"symbol map not refreshed ({refresh_report.reason.value}); "
+        f"code lookups fall back to live search",
+        force=True,
     )
 
 

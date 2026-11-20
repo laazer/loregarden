@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 
 from loregarden.models.domain.block_kinds import BlockKind
 from loregarden.models.domain.enums_exit_actions import FindingDisposition
+from loregarden.models.domain.provenance import Provenance
 from loregarden.services.interruption_messages import (
     INTERRUPTED_RUN_MESSAGE,
     ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
@@ -20,7 +21,7 @@ from loregarden.services.interruption_messages import (
     STRANDED_STAGE_MESSAGE,
 )
 from loregarden.services.usage_limits import detect_usage_limit
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 #: The closer is `<<<END_STAGE_REPORT>>>`. Agents also write the symmetric
 #: `<<<END_LOREGARDEN_STAGE_REPORT>>>`: 12 runs did, every one a complete report
@@ -74,6 +75,11 @@ class Finding:
     #: Why no test can show this defect (copy, layout, a design call), when
     #: the finding names none. Shorter than `MIN_JUDGMENT_WORDS` is no reason.
     judgment: str = ""
+    #: What inferred the finding and how sure it was, when the agent said.
+    #: `registered_at` is never parsed from the payload — `finding_bar
+    #: .finding_record` stamps it from the stage's own registration, because it
+    #: is the one field the producer cannot answer about itself.
+    provenance: Provenance | None = None
 
     def missing_parts(self) -> list[str]:
         """Which of trigger, path, impact and test-or-judgment a blocking finding leaves out."""
@@ -337,6 +343,38 @@ class _FindingPayload(BaseModel):
     ticket: str | None = ""
     test: str | None = ""
     judgment: str | None = ""
+    #: The two parts of the provenance triple an agent can honestly answer.
+    #: `registered_at` is deliberately absent here and from `FINDING_SCHEMA`:
+    #: an agent asked where a classifier is wired would fill in a module path
+    #: it has no way to know.
+    inferred_by: str | None = ""
+    confidence: float | None = None
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _confidence_or_absent(cls, value: object) -> float | None:
+        """A confidence that is not a number is absent, not a lost finding.
+
+        Every other field here is optional text for the same reason: a finding
+        with one part an agent got wrong is still a finding, recorded as such.
+        """
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
+def _provenance_of(item: _FindingPayload) -> Provenance | None:
+    """The triple as the payload carries it, or None when it carried neither part.
+
+    `registered_at` is the empty string: the omission, recorded rather than
+    invented. `finding_bar.finding_record` fills it from the registry at
+    admission; nothing in the parser may.
+    """
+    inferred_by = (item.inferred_by or "").strip()
+    if not inferred_by and item.confidence is None:
+        return None
+    return Provenance(inferred_by=inferred_by, registered_at="", confidence=item.confidence)
 
 
 def _finding_of(item: _FindingPayload) -> Finding:
@@ -356,6 +394,7 @@ def _finding_of(item: _FindingPayload) -> Finding:
         disposition_as_written=written if disposition is None else "",
         test=(item.test or "").strip(),
         judgment=(item.judgment or "").strip(),
+        provenance=_provenance_of(item),
     )
 
 

@@ -307,3 +307,190 @@ def recorded_sql_fixture(session: Session):
     event.listen(engine, "before_cursor_execute", record)
     yield statements
     event.remove(engine, "before_cursor_execute", record)
+
+
+# --------------------------------------------------------------------------
+# lg-code-knowledge-284: repositories the incremental refresh needs.
+#
+# Every one of these is a SHAPE the full build never had to care about,
+# because a full build re-reads everything: a tree that moved since the
+# stored sha, a stored sha this checkout cannot resolve, a cold checkout
+# with an ancestor already mapped, and two checkouts standing on the same
+# commit. Built here, in fixtures, for the same reason as everything above.
+# --------------------------------------------------------------------------
+
+#: Four modules, one of each thing a refresh has to decide about. The line
+#: numbers matter: `beta.py` is edited in place by the tests below so an
+#: unchanged neighbour's rows can be asserted byte-identical afterwards.
+ALPHA_MODULE = "def alpha():\n    return 1\n"
+BETA_MODULE = "def beta():\n    return 2\n"
+GAMMA_MODULE = "def gamma():\n    return 3\n"
+DELTA_MODULE = "export const DELTA = 4;\n"
+
+#: The edited body `beta.py` takes. `beta` moves from line 1 to line 4 and
+#: `beta_helper` appears: a refresh that re-stamps the sha without re-reading
+#: the file leaves the old line 1 in place and reads as MATCHES, which is the
+#: precise failure this ticket exists to prevent.
+BETA_REWRITTEN = '''\
+"""Rewritten."""
+
+
+def beta():
+    return 22
+
+
+def beta_helper():
+    return 222
+'''
+
+
+@pytest.fixture(name="refresh_repo")
+def refresh_repo_fixture(tmp_path: Path) -> Path:
+    """One committed tree with a file to edit, one to delete and one to leave.
+
+    `alpha.py` is the untouched control: its `symbol_map_files.id` is what AC1
+    asserts survives a refresh, and an id is only meaningful as a control if
+    nothing in the test ever writes that path.
+    """
+    root = _init(tmp_path / "refresh")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/alpha.py", ALPHA_MODULE)
+    _write(root, "pkg/beta.py", BETA_MODULE)
+    _write(root, "pkg/gamma.py", GAMMA_MODULE)
+    _write(root, "web/delta.ts", DELTA_MODULE)
+    _write(root, "README.md", "# refresh\n")
+    _commit(root, "feat: the tree a refresh starts from")
+    return root
+
+
+@pytest.fixture(name="unborn_repo")
+def unborn_repo_fixture(tmp_path: Path) -> Path:
+    """A git repository with no commit at all.
+
+    `sources.head_sha` raises `UnbornHeadError` here, and 281 lets that escape
+    through every reader. AC11 closes it, so this shape needs a fixture rather
+    than an inline `git init` in one test body.
+    """
+    root = _init(tmp_path / "unborn")
+    _write(root, "pkg/thing.py", ALPHA_MODULE)
+    return root
+
+
+@pytest.fixture(name="ancestor_checkouts")
+def ancestor_checkouts_fixture(tmp_path: Path) -> tuple[Path, Path, frozenset[str]]:
+    """A mapped primary at an OLD commit, and a cold worktree three ahead.
+
+    Returns `(primary, cold, paths_changed_since_primary_head)`. The primary
+    is left standing on the ancestor commit, so a partition built against it
+    carries the ancestor's sha — which is exactly the seed R6 looks for. The
+    cold checkout is a linked worktree, so it shares the object database and
+    `merge-base --is-ancestor` can answer about a commit it never checked out.
+    """
+    primary = _init(tmp_path / "ancestor-primary")
+    _write(primary, "pkg/alpha.py", ALPHA_MODULE)
+    _write(primary, "pkg/beta.py", BETA_MODULE)
+    _write(primary, "pkg/gamma.py", GAMMA_MODULE)
+    _write(primary, "pkg/unchanged.py", "def unchanged():\n    return 0\n")
+    _commit(primary, "feat: the ancestor")
+
+    _git(primary, "checkout", "-q", "-b", "ahead")
+    _write(primary, "pkg/alpha.py", "def alpha():\n    return 11\n")
+    _commit(primary, "feat: one")
+    _write(primary, "pkg/beta.py", BETA_REWRITTEN)
+    _commit(primary, "feat: two")
+    _write(primary, "pkg/gamma.py", "def gamma():\n    return 33\n")
+    _commit(primary, "feat: three")
+
+    cold = tmp_path / "ancestor-cold"
+    _git(primary, "worktree", "add", "-q", "--detach", str(cold), "ahead")
+    # Put the primary back on the ancestor so its partition is the seed.
+    _git(primary, "checkout", "-q", "main")
+
+    return primary, cold, frozenset({"pkg/alpha.py", "pkg/beta.py", "pkg/gamma.py"})
+
+
+@pytest.fixture(name="same_commit_checkouts")
+def same_commit_checkouts_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """Two checkouts of one repository standing on the SAME commit.
+
+    This is AC12's trap, as a fixture. `git worktree add` writes every file
+    fresh, so every mtime in `second` is newer than every mtime in `first`; an
+    oracle built on `stat().st_mtime` reports the whole tree as changed here,
+    which is the whole-repository rebuild per worktree this ticket must not
+    ship. Our oracle is the sha, so the honest answer is zero files.
+    """
+    first = _init(tmp_path / "same-first")
+    _write(first, "pkg/alpha.py", ALPHA_MODULE)
+    _write(first, "pkg/beta.py", BETA_MODULE)
+    _write(first, "web/delta.ts", DELTA_MODULE)
+    _commit(first, "feat: one commit, two checkouts")
+
+    second = tmp_path / "same-second"
+    _git(first, "worktree", "add", "-q", "--detach", str(second), "HEAD")
+    return first, second
+
+
+# --------------------------------------------------------------------------
+# lg-code-knowledge-284, test-break: the shapes a delta oracle meets in a
+# real tree and never in a fixture written to be convenient.
+#
+# A full build asked git for `ls-files` and indexed exactly what came back.
+# An incremental refresh asks a different question — "what moved" — and that
+# question has answers `ls-files` never produces: a path git has to quote, a
+# path git is supposed to ignore, a directory git refuses to descend into,
+# and a tree with nothing in it at all.
+# --------------------------------------------------------------------------
+
+#: Paths git cannot print without quoting under its default (non `-z`)
+#: output. A parser that splits newline-delimited output loses the first two
+#: and INVENTS a third path from the halves of the last one.
+SPACED_PATH = "pkg/with space.py"
+QUOTED_PATH = 'pkg/with"quote.py'
+NEWLINE_PATH = "pkg/with\nnewline.py"
+
+
+@pytest.fixture(name="hostile_paths_repo")
+def hostile_paths_repo_fixture(tmp_path: Path) -> Path:
+    """A committed tree holding every path shape that breaks a naive parser.
+
+    Three tracked paths git must quote, a `.gitignore` covering a directory
+    and a suffix, and a nested git repository. The ignored and nested paths
+    are created but never committed: they are what the untracked half of the
+    delta would sweep in if it asked git the wrong question.
+
+    `node_modules` and `.venv` are the production spelling of this: an
+    untracked scan without `--exclude-standard` indexes tens of thousands of
+    vendored files on every run entry, and a scan that descends into a nested
+    checkout indexes another repository's sources under this one's identity.
+    """
+    root = _init(tmp_path / "hostile")
+    _write(root, ".gitignore", "vendor/\n*.generated.py\n")
+    _write(root, "pkg/plain.py", "def plain():\n    return 1\n")
+    _write(root, SPACED_PATH, "def with_space():\n    return 1\n")
+    _write(root, QUOTED_PATH, "def with_quote():\n    return 1\n")
+    _write(root, NEWLINE_PATH, "def with_newline():\n    return 1\n")
+    _commit(root, "feat: paths git has to quote")
+
+    # Ignored, and therefore never part of any answer about this tree.
+    _write(root, "vendor/vendored.py", "def vendored():\n    return 1\n")
+    _write(root, "pkg/thing.generated.py", "def generated():\n    return 1\n")
+    # A nested checkout: git reports the DIRECTORY as untracked and refuses
+    # to descend. A scan that descends indexes another repository.
+    nested = _init(root / "nested")
+    _write(nested, "inner.py", "def inner():\n    return 1\n")
+    _commit(nested, "feat: another repository entirely")
+    return root
+
+
+@pytest.fixture(name="empty_tree_repo")
+def empty_tree_repo_fixture(tmp_path: Path) -> Path:
+    """A repository with a commit and no tracked files at all.
+
+    Zero indexed files and zero files behind is the division `build_progress`
+    has to answer without raising: `0 / (0 + 0)`. A fresh `git init` plus one
+    empty commit is not exotic — it is every repository on its first day, and
+    `map_status` is specified to never refuse.
+    """
+    root = _init(tmp_path / "empty-tree")
+    _git(root, "commit", "-q", "--allow-empty", "-m", "chore: nothing yet")
+    return root

@@ -27,6 +27,7 @@ as often as it likes; `admit_run_report` records, once per run, at completion.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 
 from loregarden.mcp.tool_ids import McpTool
@@ -42,6 +43,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.models.domain.orchestrator_decisions import OrchestratorDecision
+from loregarden.models.domain.provenance import Provenance
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.reject_tests import (
     RejectTestCheck,
@@ -183,10 +185,58 @@ def settle_review(
     return admitted(report, agent_id=agent_id, stage=stage)
 
 
-def finding_record(finding: Finding) -> dict:
-    """A finding as the history's evidence carries it."""
+@dataclass(frozen=True)
+class StageRegistry:
+    """Where a review finding's classifier is wired: the stage's own registration.
+
+    A `SynthesizerRegistry` keyed by stage key, which is the stable id a review
+    finding has. The stage's REGISTERED agent/skill entry, never the run's
+    dispatched one: a run sent to a pinned agent would otherwise record who ran
+    rather than where the classifier is wired, which is the thing the producer
+    cannot answer about itself. A stage this registry does not know resolves to
+    the empty string — the omission, recorded rather than invented.
+    """
+
+    stages: Mapping[str, WorkflowStageDef]
+
+    def registered_at(self, synthesizer_id: str) -> str:
+        stage = self.stages.get(synthesizer_id)
+        if stage is None:
+            return ""
+        entry = ".".join(part for part in (stage.agent_id, stage.skill_name) if part)
+        return f"workflow_stage.{stage.key}.{entry}" if entry else f"workflow_stage.{stage.key}"
+
+
+def _stamped(finding: Finding, run: AgentRun | None, stage: WorkflowStageDef | None) -> Provenance:
+    """The finding's provenance as the control plane can honestly state it.
+
+    `inferred_by` keeps the agent's answer when it gave one — that is the field
+    the agent-facing schema deliberately offers — and falls back to the run's
+    agent. `confidence` is the agent's or absent. `registered_at` comes from
+    the registry and OVERWRITES whatever the finding carried: a site that
+    reached the dataclass by any route is a producer naming its own wiring.
+    """
+    carried = finding.provenance
+    registry = StageRegistry({stage.key: stage} if stage is not None else {})
+    key = stage.key if stage is not None else (run.stage_key if run is not None else "")
+    return Provenance(
+        inferred_by=(carried.inferred_by if carried and carried.inferred_by else "")
+        or (run.agent_id if run is not None else ""),
+        registered_at=registry.registered_at(key),
+        confidence=carried.confidence if carried else None,
+    )
+
+
+def finding_record(finding: Finding, run: AgentRun | None, stage: WorkflowStageDef | None) -> dict:
+    """A finding as the history's evidence carries it, provenance stamped at admission.
+
+    `run` and `stage` are required, not defaulted: a default would let a caller
+    that passed neither record a finding with no site at all, through the
+    ordinary path nobody re-reads.
+    """
     record = asdict(finding)
     record["disposition"] = finding.disposition.value if finding.disposition else None
+    record["provenance"] = asdict(_stamped(finding, run, stage))
     return record
 
 
@@ -276,25 +326,31 @@ def record_unadmitted_reject(
     ticket: Ticket,
     *,
     agent_id: str,
-    stage_key: str,
+    stage: WorkflowStageDef | None,
+    run: AgentRun | None,
     claimed: str,
     reason: str,
     findings: list[Finding],
-    run_id: str | None,
 ) -> None:
+    """The stage and the run, not their ids: the findings recorded here carry
+    provenance, and `finding_record` resolves it from both."""
+    stage_key = stage.key if stage is not None else (run.stage_key if run is not None else "")
     record_orchestrator_decision(
         session,
         ticket,
         decision=OrchestratorDecision.REJECT_NOT_ADMITTED,
         stage_key=stage_key,
-        run_id=run_id,
+        run_id=run.id if run is not None else None,
         reason=(
             f"{agent_id} reported {claimed} on '{stage_key}', which is not a reject: {reason}. "
             "A blocking finding states its trigger, the path to the defect and the impact, "
             "and names a test failing at the rejected commit or why no test can show it; "
             "the stage proceeds as passed and its findings are on record."
         ),
-        evidence={"claimed": claimed, "findings": [finding_record(f) for f in findings]},
+        evidence={
+            "claimed": claimed,
+            "findings": [finding_record(f, run, stage) for f in findings],
+        },
     )
 
 
@@ -313,7 +369,9 @@ def admit_run_report(
     report carried findings that do not block.
     """
     if priors and report is not None:
-        return _admit_recheck(session, ticket, run, report, priors)
+        return _admit_recheck(
+            session, ticket, run, report, priors, _stage(session, ticket, run.stage_key)
+        )
     if report is None or not report.findings and report.status not in _REJECTS:
         return report
     stage = _stage(session, ticket, run.stage_key)
@@ -339,11 +397,11 @@ def admit_run_report(
             session,
             ticket,
             agent_id=run.agent_id,
-            stage_key=run.stage_key,
+            stage=stage,
+            run=run,
             claimed=report.status,
             reason=reason,
             findings=report.findings,
-            run_id=run.id,
         )
         return settled
     non_blocking = [finding for finding in report.findings if not finding.blocking]
@@ -358,7 +416,7 @@ def admit_run_report(
                 f"{run.agent_id} recorded {len(non_blocking)} finding(s) on '{run.stage_key}' "
                 "that do not block, each with where it went."
             ),
-            evidence={"findings": [finding_record(f) for f in non_blocking]},
+            evidence={"findings": [finding_record(f, run, stage) for f in non_blocking]},
         )
     return settled
 
@@ -369,6 +427,7 @@ def _admit_recheck(
     run: AgentRun,
     report: StageReport,
     priors: list[PriorFinding],
+    stage: WorkflowStageDef | None,
 ) -> StageReport | None:
     settled, reason = rechecked(report, priors)
     if _already_recorded(session, run):
@@ -401,7 +460,9 @@ def _admit_recheck(
                 }
                 for prior, status, note in rows
             ],
-            "new_findings": [finding_record(f) for f in settled.findings] if settled else [],
+            "new_findings": (
+                [finding_record(f, run, stage) for f in settled.findings] if settled else []
+            ),
         },
     )
     if reason:
@@ -409,11 +470,11 @@ def _admit_recheck(
             session,
             ticket,
             agent_id=run.agent_id,
-            stage_key=run.stage_key,
+            stage=stage,
+            run=run,
             claimed=report.status,
             reason=reason,
             findings=report.findings,
-            run_id=run.id,
         )
     return settled
 
@@ -504,11 +565,11 @@ def tool_outcome(
         session,
         ticket,
         agent_id=agent_id,
-        stage_key=stage.key,
+        stage=stage,
+        run=run,
         claimed="reject",
         reason=reason,
         findings=findings,
-        run_id=run.id if run else None,
     )
     return StageReportStatus.PASS.value
 

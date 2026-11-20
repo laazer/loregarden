@@ -1,9 +1,12 @@
 """Vocabulary for the per-workspace symbol map (lg-code-knowledge-281).
 
 Its own module rather than a corner of `enums`, following the
-`code_signal_enums` / `merge_queue_enums` precedent. Five closed sets, all
-stored as TEXT and all read by the consumer tickets (282, 283, 284, 300, 304),
-so each member value is a wire format and not an implementation detail.
+`code_signal_enums` / `merge_queue_enums` precedent. Seven closed sets. The
+five stored as TEXT are read by the consumer tickets (282, 283, 284, 300,
+304), so each member value is a wire format and not an implementation detail;
+the two lg-code-knowledge-284 adds (`ChangedPathsOutcome`, `RefreshFailure`)
+are never stored, but they are closed vocabularies all the same and a string
+in their place is what `py-organization` exists to stop.
 """
 
 from __future__ import annotations
@@ -68,15 +71,62 @@ class ParseStatus(StrEnum):
 class Freshness(StrEnum):
     """Whether the stored line numbers describe the tree the caller is on.
 
-    Three-valued and never a bool: no partition, a sha mismatch and a genuine
-    zero hit would otherwise all arrive as an empty list. 304 adds
-    `WORKING_TREE_DIRTY` here without changing a return type or a consumer
-    signature.
+    Four-valued and never a bool: no partition, a sha mismatch, a peer
+    writing this index right now and a genuine zero hit would otherwise all
+    arrive as an empty list. 304 adds `WORKING_TREE_DIRTY` here without
+    changing a return type or a consumer signature.
+
+    `BUILDING` is reachable rather than vocabulary: lg-code-knowledge-284
+    stamps `symbol_map_partitions.refresh_started_at` before any row is
+    written and clears it on commit, so a reader entering while a peer
+    refreshes the same partition sees it.
     """
 
     MATCHES = "matches"
     SHA_MISMATCH = "sha_mismatch"
     NO_PARTITION = "no_partition"
+    BUILDING = "building"
 
 
-__all__ = ["ExtractorTier", "Freshness", "ParseStatus", "SourceLanguage", "SymbolKind"]
+class ChangedPathsOutcome(StrEnum):
+    """Whether `sources.changed_paths` answered, and if not, why not.
+
+    Closed and three-valued because the one answer it may never give is a
+    failure wearing the shape of success. An empty changed-set under a failed
+    `git diff` re-stamps the sha onto a map describing another tree, and the
+    reader then answers MATCHES with every line number wrong — strictly worse
+    than no map, because the designed grep fallback never fires.
+    """
+
+    OK = "ok"
+    #: The stored base is not something this checkout can diff a tree against
+    #: (force-pushed away, garbage-collected, a copied database). Recoverable:
+    #: the refresh rebuilds and re-stamps a sha it has actually read.
+    BASE_UNUSABLE = "base_unusable"
+    #: git ran and failed for any other reason. The stored sha is left alone.
+    GIT_FAILED = "git_failed"
+
+
+class RefreshFailure(StrEnum):
+    """Why a refresh declined, as a value a consumer can branch on.
+
+    Never an exception class name and never a traceback string: the run-log
+    line (lg-code-knowledge-2731) and the degrade path both have to switch on
+    this, and a message is not a vocabulary.
+    """
+
+    GIT_FAILED = "git_failed"
+    UNBORN_HEAD = "unborn_head"
+    INTERPRETER_TOO_OLD = "interpreter_too_old"
+    UNEXPECTED = "unexpected"
+
+
+__all__ = [
+    "ChangedPathsOutcome",
+    "ExtractorTier",
+    "Freshness",
+    "ParseStatus",
+    "RefreshFailure",
+    "SourceLanguage",
+    "SymbolKind",
+]

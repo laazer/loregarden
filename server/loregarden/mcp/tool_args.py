@@ -408,6 +408,16 @@ FINDING_SCHEMA: dict[str, Any] = {
             "description": "Where a finding that does not block went.",
         },
         "ticket": {"type": "string", "description": "The ticket, for assigned_ticket."},
+        # The two parts of the provenance triple an agent can honestly answer.
+        # `registered_at` is deliberately NOT offered: where a classifier is
+        # wired is the one field the producer cannot know, so the control plane
+        # stamps it at admission (`finding_bar.finding_record`). Offering it
+        # would invite a model to fill in a module path it invented.
+        "inferred_by": {"type": "string", "description": "What inferred this finding."},
+        "confidence": {
+            "type": "number",
+            "description": "How sure, 0.0-1.0, when you derived one.",
+        },
         "test": {
             "type": "string",
             "description": "A test you wrote that fails now because of it, as path::test_name.",
