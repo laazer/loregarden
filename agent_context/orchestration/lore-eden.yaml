@@ -34,6 +34,24 @@ gates:
     - node {workspace_root}/gates/lore_eden_gates/ts_organization_check.cjs --repo {workspace_root} --scope worktree
     - node {workspace_root}/gates/lore_eden_gates/ts_no_silent_failures_check.cjs --repo {workspace_root} --scope worktree
     - node {workspace_root}/gates/lore_eden_gates/ts_ux_states_check.cjs --repo {workspace_root} --scope worktree
+  # The tests a criterion or a reviewer's reject names, rerun by id
+  # (`criterion_check`, `reject_tests`). No shell, cwd at the checkout root.
+  # Both suites run under gate-python.sh, which falls back to the primary
+  # checkout's python/.venv in a worktree with none. Ids keep their prefix:
+  # `-c` points pytest at the suite's pyproject while ids stay repo-relative.
+  # A name pytest cannot find exits 4, a failure, never a pass.
+  #
+  # Not ts/: vitest takes no `path::"name"` id, and a `-t` filter matching
+  # nothing can exit 0, which would refute a real reject. Its tests are only
+  # checked to exist until lore-eden has a wrapper like loregarden's
+  # client/scripts/criterion-jest.cjs.
+  criterion_test_commands:
+    - prefix: python/
+      command: bash gates/scripts/gate-python.sh -m pytest -q -p no:cacheprovider --rootdir python -c python/pyproject.toml {tests}
+      strip_prefix: false
+    - prefix: gates/
+      command: bash gates/scripts/gate-python.sh -m pytest -q -p no:cacheprovider --rootdir gates -c gates/pyproject.toml {tests}
+      strip_prefix: false
 subagents:
   spawn_via: external
 callbacks:
