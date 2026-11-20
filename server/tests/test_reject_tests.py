@@ -78,9 +78,12 @@ FINDING = {
     "impact": "the request returns 500 instead of 400",
 }
 
+# `-B`: tests here rewrite a test file in place, often at the same size within
+# the same second. Bytecode caches are keyed on whole-second mtime plus size,
+# so a cached .pyc (pytest's rewritten one included) would rerun the old body.
 PYTEST = CriterionTestCommand(
     prefix="server/",
-    command=f"{sys.executable} -m pytest -q -p no:cacheprovider {{tests}}",
+    command=f"{sys.executable} -B -m pytest -q -p no:cacheprovider {{tests}}",
     strip_prefix=False,
 )
 
