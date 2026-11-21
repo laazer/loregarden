@@ -86,6 +86,7 @@ class McpTool(StrEnum):
     INVOKE_UI_ACTION = "loregarden_invoke_ui_action"
     LAUNCH_INSTANCE = "loregarden_launch_instance"
     INSTANCE_STATUS = "loregarden_instance_status"
+    RESTART_INSTANCE = "loregarden_restart_instance"
     STOP_INSTANCE = "loregarden_stop_instance"
     SYNC_GITHUB_ISSUES = "loregarden_sync_github_issues"
     GET_INITIATIVE_PLAN = "loregarden_get_initiative_plan"
@@ -175,6 +176,7 @@ LOCAL_INSTANCE_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.LIST_INSTANCES,
     McpTool.LAUNCH_INSTANCE,
     McpTool.INSTANCE_STATUS,
+    McpTool.RESTART_INSTANCE,
     McpTool.STOP_INSTANCE,
 )
 
@@ -388,9 +390,11 @@ CAPACITY_LEASE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #: of this control plane on a spare port. Gating *stop* would leak: an agent
 #: that must wait on a human to clean up will not, and the instance holds its
 #: port and its snapshot until someone notices. Stop cannot reach main, which
-#: registered itself; the manager refuses with `not_managed`.
+#: registered itself; the manager refuses with `not_managed`. Restart is a stop
+#: and a launch of the same command, so both arguments cover it: it reaches
+#: only instances the launcher started, and runs only what a template built.
 LOCAL_INSTANCE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
-    {McpTool.LAUNCH_INSTANCE, McpTool.STOP_INSTANCE}
+    {McpTool.LAUNCH_INSTANCE, McpTool.RESTART_INSTANCE, McpTool.STOP_INSTANCE}
 )
 
 

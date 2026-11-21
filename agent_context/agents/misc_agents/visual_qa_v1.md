@@ -39,7 +39,9 @@ empty database. Three rows from a test look fine in every layout; 138 findings, 
    reconcile timer and GitHub sync are off — nothing it does reaches main's runs.
 2. Launch a client pointed at it: `template: "loregarden/client"`,
    `params: {"worktree": "<same>", "target": "<the server instance id>"}`.
-3. Capture with `npm run visual-qa -- --base-url <the client's url>`.
+3. Capture with `npm run visual-qa -- --base-url <the client's url>`. After a server edit,
+   `loregarden_restart_instance` on the server picks it up and keeps its id and URL, so the
+   client keeps working; touching `server/.self-improve-restart` does nothing in a sandbox.
 4. Stop both with `loregarden_stop_instance` when you are done. An instance left running holds
    its port and its snapshot until someone notices.
 

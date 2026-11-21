@@ -8,11 +8,8 @@ loregarden_defer_ticket
 loregarden_doctor
 loregarden_fetch_reference
 loregarden_finish_external_stage
-loregarden_instance_status
 loregarden_invoke_ui_action
 loregarden_land_ticket
-loregarden_launch_instance
-loregarden_list_instances
 loregarden_list_ui_actions
 loregarden_move_ticket_workspace
 loregarden_pin_stage_agent
@@ -30,7 +27,6 @@ loregarden_search_memory
 loregarden_search_prior_work
 loregarden_search_reference
 loregarden_settle_criterion
-loregarden_stop_instance
 loregarden_supersede_ticket
 loregarden_survey_pass
 loregarden_survey_record

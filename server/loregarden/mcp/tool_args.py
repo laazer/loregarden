@@ -292,7 +292,10 @@ def normalize_force_release_docker_lease(args: dict[str, Any]) -> dict[str, Any]
 
 
 def normalize_list_instances(args: dict[str, Any]) -> dict[str, Any]:
-    return {"project": coerce_optional_string(args.get("project"))}
+    return {
+        "project": coerce_optional_string(args.get("project")),
+        "template": coerce_optional_string(args.get("template")),
+    }
 
 
 def normalize_launch_instance(args: dict[str, Any]) -> dict[str, Any]:
@@ -309,6 +312,13 @@ def normalize_instance_status(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "instance_id": coerce_string(args.get("instance_id"), field="instance_id"),
         "log_lines": coerce_optional_int(args.get("log_lines"), field="log_lines"),
+    }
+
+
+def normalize_restart_instance(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "instance_id": coerce_string(args.get("instance_id"), field="instance_id"),
+        "wait_seconds": coerce_optional_int(args.get("wait_seconds"), field="wait_seconds"),
     }
 
 
@@ -384,6 +394,7 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.LIST_INSTANCES.value: normalize_list_instances,
     McpTool.LAUNCH_INSTANCE.value: normalize_launch_instance,
     McpTool.INSTANCE_STATUS.value: normalize_instance_status,
+    McpTool.RESTART_INSTANCE.value: normalize_restart_instance,
     McpTool.STOP_INSTANCE.value: normalize_stop_instance,
     McpTool.WRITE_DOCUMENT.value: normalize_write_document,
     McpTool.LIST_ARTIFACTS.value: normalize_list_artifacts,
