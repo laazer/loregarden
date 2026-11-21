@@ -293,7 +293,28 @@ def assess(session: Session, ticket: Ticket, rows: Sequence[FeatureCriterion]) -
             "This round's workflow stopped before the ticket was done. Open the ticket to "
             "see the last stage, then requeue it; the loop picks up from there.",
         )
-    return LoopAssessment(FeatureLoopStatus.IDLE)
+    return _assess_capacity(ticket, rows)
+
+
+def _assess_capacity(ticket: Ticket, rows: Sequence[FeatureCriterion]) -> LoopAssessment:
+    """Hold a queue the ticket can no longer take, and say so on the card.
+
+    ``_check_capacity`` refuses at accept time, but a round's own stages may
+    write criteria onto the ticket after that, so a batch that fit when the
+    operator accepted it can stop fitting before its round starts. Starting
+    the round then would only be refused by the write seam on every
+    reconcile pass, with nothing on the card to say why.
+    """
+    queued = sum(1 for r in rows if r.status == FeatureCriterionStatus.QUEUED)
+    on_ticket = len(load_criteria(ticket.acceptance_criteria_json))
+    if not queued or not would_grow_past(on_ticket, on_ticket + queued, MAX_ACCEPTANCE_CRITERIA):
+        return LoopAssessment(FeatureLoopStatus.IDLE)
+    return LoopAssessment(
+        FeatureLoopStatus.BLOCKED,
+        f"The ticket holds at most {MAX_ACCEPTANCE_CRITERIA} criteria: it has {on_ticket} "
+        f"and {queued} are queued, so the next round cannot start. Remove criteria from the "
+        "ticket, or finish this feature and start a new loop for the rest.",
+    )
 
 
 def _first_stage_key(session: Session, ticket: Ticket) -> str:
