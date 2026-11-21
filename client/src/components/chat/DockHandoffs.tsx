@@ -1,8 +1,9 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { useChatScopeKey } from "../../hooks/useChatScope";
+import { useDebounced } from "../../hooks/useDebounced";
 import { api, type HandoffEntry, type HandoffItemStatus } from "../../api/client";
 import { ticketPath } from "../../lib/appNavigation";
 import { chatScopeWorkspaceSlug } from "../../lib/chatScope";
@@ -16,8 +17,11 @@ import { StatusChip } from "../ui/StatusChip";
 
 import "./DockHandoffs.css";
 
-/** Past this many rows the list gets a filter; a ticket's chain rarely reaches it. */
+/** Past this many handoffs in scope the list gets a filter; a ticket's chain rarely reaches it. */
 const FILTER_FROM = 12;
+
+/** How long typing must pause before the search goes to the server. */
+const SEARCH_DELAY_MS = 250;
 
 const ITEM_TONE: Record<HandoffItemStatus, StatusTone> = {
   complete: "done",
@@ -43,68 +47,82 @@ const ITEM_LABEL: Record<HandoffItemStatus, string> = {
  */
 export function DockHandoffs({ ticketId }: { ticketId: string | null }) {
   const workspaceSlug = chatScopeWorkspaceSlug(useChatScopeKey());
-  const scope = ticketId ? { ticketId } : { workspace: workspaceSlug };
-  const feed = useQuery({
-    queryKey: ["handoffs", ticketId ?? "", ticketId ? "" : workspaceSlug],
-    queryFn: () => api.handoffs(scope),
-  });
   const [filter, setFilter] = useState("");
+  const search = useDebounced(filter.trim(), SEARCH_DELAY_MS);
+  const scopeKey = ["handoffs", ticketId ?? "", ticketId ? "" : workspaceSlug] as const;
+  const feed = useQuery({
+    queryKey: [...scopeKey, search],
+    queryFn: () => api.handoffs(ticketId ? { ticketId, q: search } : { workspace: workspaceSlug, q: search }),
+    // While a new search is on the wire, keep the last result of the same scope
+    // up rather than flashing the skeleton on every keystroke. Another scope's
+    // rows (the ticket before this one) are never shown in its place.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery && scopeKey.every((part, index) => previousQuery.queryKey[index] === part) ? previous : undefined,
+  });
   const filterId = useId();
-  const items = feed.data?.items;
-  const shown = useMemo(() => matching(items ?? [], filter), [items, filter]);
 
-  if (feed.isPending) {
+  if (feed.isPending && !filter) {
     return <PaneSkeleton variant="list" rows={6} label="Loading handoffs…" />;
   }
-  if (feed.isError) {
-    return (
-      <div className="dock-handoffs-error" role="alert">
-        <p>Couldn't load handoffs: {describeError(feed.error, "the request failed")}.</p>
-        <Button variant="plain" onClick={() => void feed.refetch()} disabled={feed.isFetching}>
-          {feed.isFetching ? "Retrying…" : "Try again"}
-        </Button>
-      </div>
-    );
-  }
-  const { total } = feed.data;
-  if (feed.data.items.length === 0) {
-    return (
-      <p className="dock-handoffs-empty">
-        {ticketId
-          ? "No handoffs on this ticket yet. When a stage's agent finishes and passes the work on, what it handed over appears here."
-          : "No handoffs here yet. When a stage's agent finishes and passes the work on, what it handed over appears here, newest first."}
-      </p>
-    );
-  }
+  const data = feed.data;
+  // Shown whenever there is something to narrow, and kept while a search is
+  // typed: a search that narrows below the threshold must not take its own box away.
+  const showFilter = filter !== "" || search !== "" || (data !== undefined && data.total > FILTER_FROM);
+  // Typed but not yet sent, or sent and not yet back.
+  const searching = feed.isPlaceholderData || search !== filter.trim();
   return (
     <div className="dock-handoffs">
-      <div className="dock-handoffs-bar">
-        <span className="dock-handoffs-count">
-          {total > feed.data.items.length
-            ? `Newest ${feed.data.items.length} of ${total.toLocaleString()}`
-            : `${total} ${total === 1 ? "handoff" : "handoffs"}`}
-        </span>
-        {feed.data.items.length > FILTER_FROM ? (
-          <>
-            <label htmlFor={filterId} className="visually-hidden">
-              Filter handoffs by agent or ticket
-            </label>
-            <Input
-              id={filterId}
-              type="search"
-              className="dock-handoffs-filter"
-              placeholder="Filter by agent or ticket"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
-          </>
-        ) : null}
-      </div>
-      {shown.length === 0 ? (
-        <p className="dock-handoffs-empty">No handoff matches “{filter}”.</p>
+      {showFilter || data ? (
+        <div className="dock-handoffs-bar">
+          {data ? (
+            <span className="dock-handoffs-count" aria-live="polite">
+              {searching ? "Searching…" : countLabel(data.items.length, data.total, search)}
+            </span>
+          ) : null}
+          {showFilter ? (
+            <>
+              <label htmlFor={filterId} className="visually-hidden">
+                Filter handoffs by agent or ticket
+              </label>
+              <Input
+                id={filterId}
+                type="search"
+                className="dock-handoffs-filter"
+                placeholder="Filter by agent or ticket"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+              />
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {feed.isError ? (
+        <div className="dock-handoffs-error" role="alert">
+          <p>
+            Couldn't {search ? `search handoffs for “${search}”` : "load handoffs"}:{" "}
+            {describeError(feed.error, "the request failed")}.
+          </p>
+          <Button variant="plain" onClick={() => void feed.refetch()} disabled={feed.isFetching}>
+            {feed.isFetching ? "Retrying…" : "Try again"}
+          </Button>
+        </div>
+      ) : !data ? (
+        <PaneSkeleton variant="list" rows={6} label="Searching handoffs…" />
+      ) : data.items.length === 0 ? (
+        <p className="dock-handoffs-empty">
+          {search
+            ? `No handoff ${ticketId ? "on this ticket" : workspaceSlug ? `in ${workspaceSlug}` : "anywhere"} matches “${search}”.`
+            : ticketId
+              ? "No handoffs on this ticket yet. When a stage's agent finishes and passes the work on, what it handed over appears here."
+              : "No handoffs here yet. When a stage's agent finishes and passes the work on, what it handed over appears here, newest first."}
+        </p>
       ) : (
-        <ol className="dock-handoffs-list" aria-label="Handoffs between agents, newest first">
-          {shown.map((entry) => (
+        <ol
+          className="dock-handoffs-list"
+          aria-label="Handoffs between agents, newest first"
+          aria-busy={searching}
+        >
+          {data.items.map((entry) => (
             <HandoffRow key={entry.id} entry={entry} showTicket={!ticketId} />
           ))}
         </ol>
@@ -113,14 +131,11 @@ export function DockHandoffs({ ticketId }: { ticketId: string | null }) {
   );
 }
 
-function matching(items: readonly HandoffEntry[], filter: string): readonly HandoffEntry[] {
-  const needle = filter.trim().toLowerCase();
-  if (!needle) return items;
-  return items.filter((entry) =>
-    [entry.from_agent, entry.to_agent, entry.ticket_external_id, entry.ticket_title].some((field) =>
-      field.toLowerCase().includes(needle),
-    ),
-  );
+/** "12 handoffs", "Newest 50 of 1,129", and the same with "matching" when searched. */
+function countLabel(shown: number, total: number, search: string): string {
+  const matching = search ? " matching" : "";
+  if (total > shown) return `Newest ${shown} of ${total.toLocaleString()}${matching}`;
+  return `${total.toLocaleString()} ${total === 1 ? "handoff" : "handoffs"}${matching}`;
 }
 
 function HandoffRow({ entry, showTicket }: { entry: HandoffEntry; showTicket: boolean }) {

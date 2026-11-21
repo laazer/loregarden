@@ -299,11 +299,13 @@ export const api = {
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
-  /** Newest first: one ticket's handoffs, one workspace's, or (neither given) every workspace's. */
-  handoffs: (scope: { ticketId?: string | null; workspace?: string }) => {
+  /** Newest first: one ticket's handoffs, one workspace's, or (neither given) every workspace's; `q` narrows by agent or ticket. */
+  handoffs: (scope: { ticketId?: string | null; workspace?: string; q?: string }) => {
     const q = new URLSearchParams();
     if (scope.ticketId) q.set("ticket_id", scope.ticketId);
     else if (scope.workspace) q.set("workspace", scope.workspace);
+    // Searched across the whole scope on the server, not over the page it returns.
+    if (scope.q) q.set("q", scope.q);
     const query = q.toString();
     return request<HandoffFeed>(`/api/handoffs${query ? `?${query}` : ""}`);
   },

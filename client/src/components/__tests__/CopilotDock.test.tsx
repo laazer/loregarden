@@ -1076,7 +1076,7 @@ describe("the Chat, Artifacts and Handoffs tabs", () => {
     const { unmount } = renderDock();
     fireEvent.click(screen.getByRole("tab", { name: "Handoffs" }));
     expect(await screen.findByText(/No handoffs on this ticket yet/)).toBeInTheDocument();
-    expect(mockedApi.handoffs).toHaveBeenCalledWith({ ticketId: "t1" });
+    expect(mockedApi.handoffs).toHaveBeenCalledWith({ ticketId: "t1", q: "" });
     unmount();
 
     // The thread's own workspace, even with the page filtered to every workspace.
@@ -1086,7 +1086,7 @@ describe("the Chat, Artifacts and Handoffs tabs", () => {
     renderDock();
     fireEvent.click(screen.getByRole("tab", { name: "Handoffs" }));
     expect(await screen.findByText(/No handoffs here yet/)).toBeInTheDocument();
-    expect(mockedApi.handoffs).toHaveBeenLastCalledWith({ workspace: "loregarden" });
+    expect(mockedApi.handoffs).toHaveBeenLastCalledWith({ workspace: "loregarden", q: "" });
   });
 
   it("moves back with the left arrow, wrapping to the last tab", () => {

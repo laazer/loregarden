@@ -81,7 +81,9 @@ jobs:
       # there is no live database on a runner.
       - name: Start the seeded sandbox
         run: |
-          nohup ./scripts/sandbox.sh --seeded > "$RUNNER_TEMP/sandbox.log" 2>&1 &
+          # Its own session, so the last step can stop every process it started.
+          setsid nohup ./scripts/sandbox.sh --seeded > "$RUNNER_TEMP/sandbox.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/sandbox.pgid"
           for _ in $(seq 1 180); do
             if curl -fsS http://127.0.0.1:8123/health > /dev/null 2>&1 &&
                curl -fsS http://127.0.0.1:5174/ > /dev/null 2>&1; then
@@ -122,3 +124,20 @@ jobs:
       - name: Show the sandbox log
         if: failure()
         run: cat "$RUNNER_TEMP/sandbox.log"
+
+      # The sandbox runs under `uv run`, which holds uv's cache lock while it lives.
+      # On a cache miss setup-uv's post step prunes the cache, waits on that lock for
+      # UV_LOCK_TIMEOUT (300s) and fails the job, so the cache is never saved and
+      # every later run misses again. Stop it before the post steps run.
+      - name: Stop the sandbox
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/sandbox.pgid" ] || exit 0
+          pgid=$(cat "$RUNNER_TEMP/sandbox.pgid")
+          kill -TERM -- "-$pgid" 2>/dev/null || exit 0
+          for _ in $(seq 1 20); do
+            kill -0 -- "-$pgid" 2>/dev/null || { echo "sandbox stopped"; exit 0; }
+            sleep 1
+          done
+          echo "::warning::the sandbox ignored SIGTERM for 20s; killing it"
+          kill -KILL -- "-$pgid" 2>/dev/null || true

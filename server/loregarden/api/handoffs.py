@@ -18,6 +18,7 @@ router = APIRouter(prefix="/handoffs", tags=["handoffs"])
 def get_handoffs(
     ticket_id: str | None = None,
     workspace: str | None = None,
+    q: str = "",
     limit: int = 50,
     session: Session = Depends(get_session),
 ) -> HandoffFeed:
@@ -25,5 +26,5 @@ def get_handoffs(
     return run_rest_operation(
         session,
         OperationId.HANDOFF_FEED,
-        {"ticket_id": ticket_id, "workspace": workspace, "limit": limit},
+        {"ticket_id": ticket_id, "workspace": workspace, "q": q, "limit": limit},
     )
