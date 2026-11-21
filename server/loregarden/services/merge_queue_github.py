@@ -53,6 +53,23 @@ query($owner: String!, $name: String!, $number: Int!) {
 }
 """
 
+_COMMIT_CHECKS_QUERY = """
+query($owner: String!, $name: String!, $oid: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) { ... on Commit {
+      statusCheckRollup { contexts(first: 100) { nodes {
+        ... on CheckRun { name status conclusion detailsUrl }
+        ... on StatusContext { context state targetUrl }
+      } } }
+    } }
+  }
+}
+"""
+
+#: How GitHub refuses a rules or branch-protection read on a plan that has
+#: neither (a private repository on the free plan). Its wording, not ours.
+_PLAN_REFUSAL = "Upgrade to GitHub Pro or make this repository public"  # py-org: allow-string
+
 #: GitHub caps a comment body at 65536 characters; leave room for its framing.
 _COMMENT_LIMIT = 60000
 
@@ -130,6 +147,28 @@ class CheckReading(BaseModel):
     url: str = ""
 
 
+class RequiredChecksUnavailable(GitHubReadError):
+    """GitHub answered, and its answer is that this repository cannot require checks.
+
+    Not a failure to ask: retrying gets the same refusal, so it must not be
+    held as `GITHUB_UNREACHABLE` until the timeout (blobert#108 waited 91
+    minutes on it, and the timeout then blamed its checks).
+    """
+
+
+class _CommitObject(BaseModel):
+    status_check_rollup: _Rollup | None = Field(default=None, alias="statusCheckRollup")
+
+
+class GatingChecks(BaseModel):
+    """The checks the staged commit must pass, and where that list came from."""
+
+    contexts: list[str]
+    #: Empty when the base branch's own rules named them. Otherwise why they
+    #: could not, and what stands in for them; the queue shows it, never hides it.
+    fallback: str = ""
+
+
 class StagedPullRequest(BaseModel):
     """GitHub's reading of the queue's pull request at one moment."""
 
@@ -156,6 +195,8 @@ class StagedPullRequest(BaseModel):
 class QueueGitHub(Protocol):
     def required_contexts(self, base_branch: str) -> list[str]: ...
 
+    def commit_checks(self, sha: str) -> list[GhCheck]: ...
+
     def read_pull_request(self, number: int) -> StagedPullRequest: ...
 
     def failure_log(self, checks: list[GhCheck]) -> str: ...
@@ -174,11 +215,19 @@ class GhQueueGitHub:
         self.repo_root = repo_root
 
     def required_contexts(self, base_branch: str) -> list[str]:
-        raw = read_gh(
-            self.repo_root,
-            ["api", f"repos/{{owner}}/{{repo}}/rules/branches/{base_branch}"],
-            GH_TIMEOUT_SECONDS,
-        )
+        try:
+            raw = read_gh(
+                self.repo_root,
+                ["api", f"repos/{{owner}}/{{repo}}/rules/branches/{base_branch}"],
+                GH_TIMEOUT_SECONDS,
+            )
+        except GitHubReadError as exc:
+            if _PLAN_REFUSAL in str(exc):
+                raise RequiredChecksUnavailable(
+                    f"GitHub will not show {base_branch}'s rules on this plan "
+                    "(a private repository on GitHub Free has no rulesets or branch protection)"
+                ) from exc
+            raise
         try:
             rules = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -190,6 +239,33 @@ class GhQueueGitHub:
             for check in rule.get("parameters", {}).get("required_status_checks", []):
                 contexts.append(check["context"])
         return sorted(set(contexts))
+
+    def commit_checks(self, sha: str) -> list[GhCheck]:
+        raw = read_gh(
+            self.repo_root,
+            [
+                "api",
+                "graphql",
+                "-F",
+                "owner={owner}",
+                "-F",
+                "name={repo}",
+                "-f",
+                f"oid={sha}",
+                "-f",
+                f"query={_COMMIT_CHECKS_QUERY}",
+            ],
+            GH_TIMEOUT_SECONDS,
+        )
+        try:
+            node = json.loads(raw)["data"]["repository"]["object"]
+            if node is None:
+                raise GitHubReadError(f"GitHub has no commit {sha[:12]}")
+            commit = _CommitObject.model_validate(node)
+        except (json.JSONDecodeError, KeyError, TypeError, ValidationError) as exc:
+            raise GitHubReadError(f"unreadable checks for {sha[:12]}: {exc}") from exc
+        rollup = commit.status_check_rollup
+        return rollup.contexts.nodes if rollup is not None else []
 
     def read_pull_request(self, number: int) -> StagedPullRequest:
         raw = read_gh(
@@ -283,6 +359,34 @@ def staged_pull_request(pr: _GhPullRequest) -> StagedPullRequest:
         title=pr.title,
         body=pr.body,
     )
+
+
+def gating_checks(github: QueueGitHub, base_branch: str, pr_head_sha: str) -> GatingChecks:
+    """What the staged commit must pass: the base's required checks, or a named stand-in.
+
+    Where GitHub cannot require checks at all, the stand-in is every check that
+    reported on the pull request's own head before it was staged. Those are
+    the repository's CI for this change, and naming them up front keeps the
+    reason the rules are read at all: a check that has not reported on the
+    staged commit yet is still waited for, not passed over. A head that
+    reported nothing leaves nothing to gate on, and `contexts` comes back empty
+    for the caller to refuse rather than land unverified.
+    """
+    try:
+        return GatingChecks(contexts=github.required_contexts(base_branch))
+    except RequiredChecksUnavailable as exc:
+        names = sorted({check_name(check) for check in github.commit_checks(pr_head_sha)})
+        stand_in = ", ".join(names) if names else "none"
+        return GatingChecks(
+            contexts=names,
+            fallback=f"{exc}; gating on the checks the PR's head {pr_head_sha[:12]} "
+            f"reported instead: {stand_in}",
+        )
+
+
+def gating_basis(gating: GatingChecks) -> str:
+    """The stand-in, appended to what the entry says, so the operator reads it."""
+    return f" ({gating.fallback})" if gating.fallback else ""
 
 
 def read_required(checks: list[GhCheck], required: list[str]) -> list[CheckReading]:

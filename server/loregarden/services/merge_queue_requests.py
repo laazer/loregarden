@@ -36,6 +36,7 @@ from loregarden.services.merge_queue_github import (
     GhQueueGitHub,
     QueueGitHub,
     StagedPullRequest,
+    gating_checks,
     read_required,
 )
 from loregarden.services.merge_queue_pull_heads import fetch_pull_head
@@ -277,8 +278,8 @@ def entry_detail(
 
 def _live_checks(github: QueueGitHub, entry: MergeQueueEntry) -> list[CheckReading]:
     """The entry's required checks on its PR head, as GitHub reports them now."""
-    required = github.required_contexts(entry.base_branch)
-    return read_required(github.read_pull_request(entry.pr_number).checks, required)
+    gating = gating_checks(github, entry.base_branch, entry.head_sha)
+    return read_required(github.read_pull_request(entry.pr_number).checks, gating.contexts)
 
 
 def enqueue_ticket(

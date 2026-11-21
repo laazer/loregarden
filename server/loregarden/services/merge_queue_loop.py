@@ -95,9 +95,12 @@ from loregarden.services.merge_queue import (
     transition,
 )
 from loregarden.services.merge_queue_github import (
+    GatingChecks,
     GhQueueGitHub,
     QueueGitHub,
     StagedPullRequest,
+    gating_basis,
+    gating_checks,
     read_required,
     unreported,
 )
@@ -483,11 +486,14 @@ class MergeQueueLoop:
                 MergeQueueState.TIMED_OUT,
                 detail=f"checks on {entry.staged_sha[:12]} did not finish within "
                 f"{int(limit.total_seconds() // 60)} minutes "
-                f"(waited {int(elapsed.total_seconds() // 60)}m{int(elapsed.total_seconds() % 60)}s)",
+                f"(waited {int(elapsed.total_seconds() // 60)}m{int(elapsed.total_seconds() % 60)}s)"
+                # What it was stuck on: "did not finish" alone blamed the checks
+                # for 91 minutes of GitHub refusing to answer (blobert#108).
+                + (f"; last: {entry.detail}" if entry.detail else ""),
             )
         try:
             pr = self.github.read_pull_request(entry.pr_number)
-            required = self.github.required_contexts(entry.base_branch)
+            gating = gating_checks(self.github, entry.base_branch, entry.head_sha)
         except GitHubReadError as exc:
             self.report.errors.append(f"PR #{entry.pr_number}: {exc}")
             return self._hold(
@@ -505,6 +511,14 @@ class MergeQueueLoop:
                 f"PR #{entry.pr_number}'s head is {pr.head_sha[:12]}, not the staged "
                 f"{entry.staged_sha[:12]}",
             )
+        if not gating.contexts:
+            return self._stop(
+                entry,
+                MergeQueueState.TESTING,
+                MergeQueueState.FAILED,
+                detail=f"nothing to verify {entry.staged_sha[:12]} with: {gating.fallback}",
+            )
+        required = gating.contexts
         readings = read_required(pr.checks, required)
         checks_json = json.dumps([reading.model_dump(mode="json") for reading in readings])
         failing = [r for r in readings if r.outcome is PullRequestCheckOutcome.FAILING]
@@ -527,7 +541,8 @@ class MergeQueueLoop:
                 when="while its checks were unreported",
                 wait=MergeQueueWait.CHECKS_UNREPORTED,
                 checks_json=checks_json,
-                detail=f"waiting for {', '.join(missing)} to report on {entry.staged_sha[:12]}",
+                detail=f"waiting for {', '.join(missing)} to report on {entry.staged_sha[:12]}"
+                + gating_basis(gating),
             )
         running = [r.name for r in readings if r.outcome is PullRequestCheckOutcome.PENDING]
         if running:
@@ -537,13 +552,20 @@ class MergeQueueLoop:
                 when="while its checks ran",
                 wait=MergeQueueWait.CHECKS_RUNNING,
                 checks_json=checks_json,
-                detail=f"{', '.join(running)} still running on {entry.staged_sha[:12]}",
+                detail=f"{', '.join(running)} still running on {entry.staged_sha[:12]}"
+                + gating_basis(gating),
             )
-        return self._land(entry, pr, checks_json)
+        return self._land(entry, pr, checks_json, gating)
 
     # -- step 4 and 5: land and clean up -------------------------------------
 
-    def _land(self, entry: MergeQueueEntry, pr: StagedPullRequest, checks_json: str) -> bool:
+    def _land(
+        self,
+        entry: MergeQueueEntry,
+        pr: StagedPullRequest,
+        checks_json: str,
+        gating: GatingChecks,
+    ) -> bool:
         base_sha, failure = fetch_base(self.repo_root, entry.base_branch)
         if failure:
             return self._hold(
@@ -560,6 +582,10 @@ class MergeQueueLoop:
                 f"{entry.base_branch} moved from {entry.staged_base_sha[:12]} to "
                 f"{base_sha[:12]} after staging; the tested tree is no longer what would land",
             )
+        if gating.fallback:
+            logger.warning(
+                "merge queue: PR #%s lands on stand-in checks: %s", entry.pr_number, gating.fallback
+            )
         if not transition(
             self.session,
             entry,
@@ -567,7 +593,8 @@ class MergeQueueLoop:
             state=MergeQueueState.MERGING,
             wait=MergeQueueWait.NONE,
             checks_json=checks_json,
-            detail=f"required checks passed on {entry.staged_sha[:12]}; merging",
+            detail=f"required checks passed on {entry.staged_sha[:12]}; merging"
+            + gating_basis(gating),
         ):
             return self._gone(entry, "as it was about to merge")
         self.session.refresh(entry)
