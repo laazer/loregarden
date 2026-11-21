@@ -61,6 +61,7 @@ class OperationId(StrEnum):
     #: A run declares the files it is about to change (`path_claim_operations.py`).
     PATHS_CLAIM = "paths_claim"
     TICKET_SIBLING_CLAIMS = "ticket_sibling_claims"
+    HANDOFF_FEED = "handoff_feed"
     #: The edges between tickets (`ticket_links.py`).
     TICKET_DEPENDENCY_ADD = "ticket_dependency_add"
     TICKET_DEPENDENCY_REMOVE = "ticket_dependency_remove"

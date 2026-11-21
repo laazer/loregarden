@@ -7,6 +7,7 @@ import { CopilotDockHeader } from "./CopilotDockHeader";
 import { DockResizeHandle } from "./DockResizeHandle";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { ChatArtifactsList } from "./chat/ChatArtifactsList";
+import { DockHandoffs } from "./chat/DockHandoffs";
 import { DockChatWelcome } from "./chat/DockChatWelcome";
 import { GardenSky } from "./GardenSky";
 import { ChatHistoryRail } from "./chat/ChatHistoryRail";
@@ -221,6 +222,15 @@ export function CopilotDock() {
               ) : null}
             </div>
             <div
+              className="copilot-dock-tab-panel copilot-dock-artifacts"
+              role="tabpanel"
+              id={`${titleId}-panel-handoffs`}
+              aria-labelledby={`${titleId}-tab-handoffs`}
+              hidden={tab !== "handoffs"}
+            >
+              {tab === "handoffs" ? <DockHandoffs ticketId={ticketId} /> : null}
+            </div>
+            <div
               ref={chatRef}
               className="copilot-dock-chat-row copilot-dock-tab-panel"
               role="tabpanel"
@@ -325,13 +335,15 @@ export function CopilotDock() {
   );
 }
 
-type DockTab = "chat" | "artifacts";
+type DockTab = "chat" | "artifacts" | "handoffs";
 
-const DOCK_TABS: readonly DockTab[] = ["chat", "artifacts"];
+const DOCK_TABS: readonly DockTab[] = ["chat", "artifacts", "handoffs"];
+
+const DOCK_TAB_LABEL: Record<DockTab, string> = { chat: "Chat", artifacts: "Artifacts", handoffs: "Handoffs" };
 
 /**
- * The conversation, or everything it has made. Arrow keys move between the
- * two as a tablist's do; the panels stay mounted so the thread keeps its
+ * The conversation, everything it has made, or what the agents behind it handed
+ * each other. Arrow keys move between them as a tablist's do; the panels stay mounted so the thread keeps its
  * scroll position across a switch.
  */
 function DockTabs({
@@ -348,7 +360,8 @@ function DockTabs({
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     event.preventDefault();
-    const next = DOCK_TABS[(DOCK_TABS.indexOf(tab) + 1) % DOCK_TABS.length];
+    const step = event.key === "ArrowRight" ? 1 : DOCK_TABS.length - 1;
+    const next = DOCK_TABS[(DOCK_TABS.indexOf(tab) + step) % DOCK_TABS.length];
     onSelect(next);
     document.getElementById(`${idPrefix}-tab-${next}`)?.focus();
   };
@@ -366,7 +379,7 @@ function DockTabs({
           className={`copilot-dock-tab${tab === id ? " is-on" : ""}`}
           onClick={() => onSelect(id)}
         >
-          {id === "chat" ? "Chat" : "Artifacts"}
+          {DOCK_TAB_LABEL[id]}
           {id === "artifacts" && artifactCount > 0 ? <span className="copilot-dock-tab-count">{artifactCount}</span> : null}
         </Button>
       ))}

@@ -1,0 +1,770 @@
+{
+ "items": [
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "gate finished: pass",
+     "item": "Split the approval inbox for parked stages",
+     "item_key": "split_the_approval_inbox_for_parked_stag",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "gate finished: pass",
+     "item": "Fix docker capacity leases",
+     "item_key": "fix_docker_capacity_leases",
+     "required": true,
+     "status": "deferred"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "gate finished: pass",
+     "item": "Route gate outcomes on stage transitions",
+     "item_key": "route_gate_outcomes_on_stage_transitions",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T05:46:30",
+   "from_agent": "gatekeeper",
+   "id": "f76d28b9-eea7-5795-b9cb-20ee851710ab",
+   "note": "",
+   "required_items_met": 2,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "gatekeeper",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show GitHub issue two-way sync \u2014 `review` stage, 12 runs\n- Fix initiative progress rollup \u2014 `spec` stage, 12 runs\n- Split the rework ledger's loop cap \u2014 `test-design` stage, 4 runs\n- Retry worktree isolation for chat turns \u2014 `spec` stage, 35 runs\n- Stop gate outcomes on stage transitions \u2014 `script_review` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 7 | 7 |\n| implement | 56 | 3 |\n| spec | 50 | 1 |\n| plan | 14 | 1 |\n",
+     "item": "Surface GitHub issue two-way sync",
+     "item_key": "surface_github_issue_two-way_sync",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T04:53:40",
+   "from_agent": "ticket_scoper",
+   "id": "b5644b92-b017-5b2b-9c6e-b7561418bf6a",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "planner",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "review finished: pass",
+     "item": "Make branch cleanup after a squash merge",
+     "item_key": "make_branch_cleanup_after_a_squash_merge",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "review finished: pass",
+     "item": "Cache GitHub issue two-way sync",
+     "item_key": "cache_github_issue_two-way_sync",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "review finished: pass",
+     "item": "Make gate outcomes on stage transitions",
+     "item_key": "make_gate_outcomes_on_stage_transitions",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T04:48:30",
+   "from_agent": "static_qa",
+   "id": "07ac849f-d870-5bea-b731-69e178348cc2",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "gatekeeper",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "implement finished: pass",
+     "item": "Split gate outcomes on stage transitions",
+     "item_key": "split_gate_outcomes_on_stage_transitions",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Retry GitHub issue two-way sync",
+     "item_key": "retry_github_issue_two-way_sync",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Split the run log's live tail",
+     "item_key": "split_the_run_log's_live_tail",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T04:29:30",
+   "from_agent": "backend_implementer",
+   "id": "de149b9d-494d-5876-9f09-aa9cf13edff0",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "static_qa",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "review finished: fail",
+     "item": "Split initiative progress rollup",
+     "item_key": "split_initiative_progress_rollup",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "review finished: fail",
+     "item": "Fix stage timeout budgets",
+     "item_key": "fix_stage_timeout_budgets",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "review finished: fail",
+     "item": "Retry the queue board's stalled lane",
+     "item_key": "retry_the_queue_board's_stalled_lane",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T04:14:30",
+   "from_agent": "static_qa",
+   "id": "57d03ba8-bab8-52a0-96de-76c948f26c93",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "backend_implementer",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "# Summary\n\n## Why this shape 1\n\nThe the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the rework ledger's loop cap \u2014 `spec` stage, 19 runs\n- Route GitHub issue two-way sync \u2014 `test-design` stage, 11 runs\n- Cache worktree isolation for chat turns \u2014 `review` stage, 6 runs\n- Surface docker capacity leases \u2014 `implement` stage, 40 runs\n- Show docker capacity leases \u2014 `test-design` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 2 |\n| implement | 52 | 0 |\n| spec | 21 | 8 |\n| plan | 19 | 2 |\n",
+     "item": "Make docker capacity leases",
+     "item_key": "make_docker_capacity_leases",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T03:56:20",
+   "from_agent": "verifier",
+   "id": "5a8a649b-b5c8-53e3-9a1f-4b3b9fca3d83",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "backend_implementer",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "verify finished: pass",
+     "item": "Retry the queue board's stalled lane",
+     "item_key": "retry_the_queue_board's_stalled_lane",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "verify finished: pass",
+     "item": "Route the rework ledger's loop cap",
+     "item_key": "route_the_rework_ledger's_loop_cap",
+     "required": true,
+     "status": "incomplete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "verify finished: pass",
+     "item": "Route the rework ledger's loop cap",
+     "item_key": "route_the_rework_ledger's_loop_cap",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T03:54:30",
+   "from_agent": "verifier",
+   "id": "3f65ee19-bf11-5efe-be1c-35e57aee55d0",
+   "note": "",
+   "required_items_met": 2,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "static_qa",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Add memory recall ranking",
+     "item_key": "add_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Add the run log's live tail",
+     "item_key": "add_the_run_log's_live_tail",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "implement finished: pass",
+     "item": "Make worktree isolation for chat turns",
+     "item_key": "make_worktree_isolation_for_chat_turns",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T03:24:30",
+   "from_agent": "backend_implementer",
+   "id": "e946ab13-3ad3-55c1-af72-3fe2cb6f20c6",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "verifier",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "verify finished: pass",
+     "item": "Fix the approval inbox for parked stages",
+     "item_key": "fix_the_approval_inbox_for_parked_stages",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "verify finished: pass",
+     "item": "Retry memory recall ranking",
+     "item_key": "retry_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "verify finished: pass",
+     "item": "Show memory recall ranking",
+     "item_key": "show_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T02:50:30",
+   "from_agent": "verifier",
+   "id": "c48cd372-6bee-5891-91dd-2017a0c5dd56",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "backend_implementer",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "# Summary\n\n## Why this shape 1\n\nThe initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make the run log's live tail \u2014 `spec` stage, 27 runs\n- Split the approval inbox for parked stages \u2014 `plan` stage, 4 runs\n- Add worktree isolation for chat turns \u2014 `spec` stage, 15 runs\n- Make GitHub issue two-way sync \u2014 `plan` stage, 18 runs\n- Fix worktree isolation for chat turns \u2014 `plan` stage, 22 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 58 | 9 |\n| implement | 19 | 2 |\n| spec | 55 | 3 |\n| plan | 22 | 6 |\n",
+     "item": "Retry the run log's live tail",
+     "item_key": "retry_the_run_log's_live_tail",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T02:39:20",
+   "from_agent": "planner",
+   "id": "c63cb424-ed8e-5e31-ba13-6e298cd6798f",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "ui_design_decision",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Fix docker capacity leases",
+     "item_key": "fix_docker_capacity_leases",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "implement finished: pass",
+     "item": "Surface branch cleanup after a squash merge",
+     "item_key": "surface_branch_cleanup_after_a_squash_me",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "implement finished: pass",
+     "item": "Show the approval inbox for parked stages",
+     "item_key": "show_the_approval_inbox_for_parked_stage",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T02:33:30",
+   "from_agent": "backend_implementer",
+   "id": "21c41b31-986b-5657-a589-a4ae21a6b1c1",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "verifier",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "test-break finished: pass",
+     "item": "Split worktree isolation for chat turns",
+     "item_key": "split_worktree_isolation_for_chat_turns",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "test-break finished: pass",
+     "item": "Surface worktree isolation for chat turns",
+     "item_key": "surface_worktree_isolation_for_chat_turn",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "test-break finished: pass",
+     "item": "Retry the queue board's stalled lane",
+     "item_key": "retry_the_queue_board's_stalled_lane",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T02:19:30",
+   "from_agent": "test_breaker",
+   "id": "acb72280-6c92-5236-ad86-75bf0c2c2650",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "backend_implementer",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "test-design finished: pass",
+     "item": "Surface the queue board's stalled lane",
+     "item_key": "surface_the_queue_board's_stalled_lane",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "test-design finished: pass",
+     "item": "Fix the rework ledger's loop cap",
+     "item_key": "fix_the_rework_ledger's_loop_cap",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "test-design finished: pass",
+     "item": "Split memory recall ranking",
+     "item_key": "split_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T02:00:30",
+   "from_agent": "test_designer",
+   "id": "fb45c95a-2a49-5d2a-a251-bf432d525682",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "test_breaker",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "spec finished: pass",
+     "item": "Route the approval inbox for parked stages",
+     "item_key": "route_the_approval_inbox_for_parked_stag",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "spec finished: pass",
+     "item": "Route branch cleanup after a squash merge",
+     "item_key": "route_branch_cleanup_after_a_squash_merg",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "spec finished: pass",
+     "item": "Stop the approval inbox for parked stages",
+     "item_key": "stop_the_approval_inbox_for_parked_stage",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T01:53:30",
+   "from_agent": "spec",
+   "id": "927389ea-2b82-5143-b82b-71e812ec6b3e",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "test_designer",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "# Summary\n\n## Evidence 1\n\nThe worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split stage timeout budgets \u2014 `review` stage, 28 runs\n- Surface memory recall ranking \u2014 `spec` stage, 37 runs\n- Surface memory recall ranking \u2014 `script_review` stage, 7 runs\n- Route branch cleanup after a squash merge \u2014 `script_review` stage, 33 runs\n- Stop the approval inbox for parked stages \u2014 `test-design` stage, 30 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 6 |\n| implement | 59 | 8 |\n| spec | 47 | 8 |\n| plan | 11 | 4 |\n",
+     "item": "Stop the run log's live tail",
+     "item_key": "stop_the_run_log's_live_tail",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T01:45:40",
+   "from_agent": "backend_implementer",
+   "id": "46513998-506a-5c98-99d6-1eab172bcef2",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "verifier",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "plan-synthesis finished: pass",
+     "item": "Surface the rework ledger's loop cap",
+     "item_key": "surface_the_rework_ledger's_loop_cap",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "plan-synthesis finished: pass",
+     "item": "Make initiative progress rollup",
+     "item_key": "make_initiative_progress_rollup",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "plan-synthesis finished: pass",
+     "item": "Show GitHub issue two-way sync",
+     "item_key": "show_github_issue_two-way_sync",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T01:23:30",
+   "from_agent": "planner",
+   "id": "e0df97de-7417-56bf-baca-00c60f798f2e",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "spec",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "ui-design finished: pass",
+     "item": "Cache GitHub issue two-way sync",
+     "item_key": "cache_github_issue_two-way_sync",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "ui-design finished: pass",
+     "item": "Show the run log's live tail",
+     "item_key": "show_the_run_log's_live_tail",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "ui-design finished: pass",
+     "item": "Surface memory recall ranking",
+     "item_key": "surface_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T01:01:30",
+   "from_agent": "ui_design_decision",
+   "id": "60b1caae-51cc-5f65-afbd-a74b4304d822",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "planner",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "plan finished: pass",
+     "item": "Split branch cleanup after a squash merge",
+     "item_key": "split_branch_cleanup_after_a_squash_merg",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "plan finished: pass",
+     "item": "Stop memory recall ranking",
+     "item_key": "stop_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "plan finished: pass",
+     "item": "Make the approval inbox for parked stages",
+     "item_key": "make_the_approval_inbox_for_parked_stage",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T00:38:30",
+   "from_agent": "planner",
+   "id": "99ec1a8b-fab6-5f72-8fc8-a4c5c5630840",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "ui_design_decision",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "inferred",
+     "evidence": "# Summary\n\n## Evidence 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface docker capacity leases \u2014 `implement` stage, 26 runs\n- Cache memory recall ranking \u2014 `test-design` stage, 24 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 33 runs\n- Cache gate outcomes on stage transitions \u2014 `implement` stage, 3 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 25 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 1 |\n| implement | 19 | 3 |\n| spec | 29 | 2 |\n| plan | 52 | 3 |\n",
+     "item": "Retry docker capacity leases",
+     "item_key": "retry_docker_capacity_leases",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T00:22:40",
+   "from_agent": "ui_design_decision",
+   "id": "7659f3a7-800c-5a2b-9662-eb52a723b618",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "planner",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "# Summary\n\n## Left out 1\n\nThe docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route the rework ledger's loop cap \u2014 `plan` stage, 35 runs\n- Split memory recall ranking \u2014 `spec` stage, 35 runs\n- Stop worktree isolation for chat turns \u2014 `test-design` stage, 18 runs\n- Split branch cleanup after a squash merge \u2014 `test-design` stage, 3 runs\n- Fix initiative progress rollup \u2014 `implement` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 3 |\n| implement | 53 | 6 |\n| spec | 46 | 9 |\n| plan | 42 | 8 |\n",
+     "item": "Make stage timeout budgets",
+     "item_key": "make_stage_timeout_budgets",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T00:16:00",
+   "from_agent": "backend_implementer",
+   "id": "709e1ddf-e605-55c2-9d54-43ab852ce2db",
+   "note": "",
+   "required_items_met": 1,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "verifier",
+   "total_required_items": 1,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  },
+  {
+   "checklist": [
+    {
+     "certainty": "verified",
+     "evidence": "triage finished: pass",
+     "item": "Show initiative progress rollup",
+     "item_key": "show_initiative_progress_rollup",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "inferred",
+     "evidence": "triage finished: pass",
+     "item": "Retry memory recall ranking",
+     "item_key": "retry_memory_recall_ranking",
+     "required": true,
+     "status": "complete"
+    },
+    {
+     "certainty": "verified",
+     "evidence": "triage finished: pass",
+     "item": "Route branch cleanup after a squash merge",
+     "item_key": "route_branch_cleanup_after_a_squash_merg",
+     "required": true,
+     "status": "complete"
+    }
+   ],
+   "created_at": "2026-09-11T00:14:30",
+   "from_agent": "ticket_scoper",
+   "id": "c4d6665d-7546-5b5d-9355-48f856be2bda",
+   "note": "",
+   "required_items_met": 3,
+   "run_id": null,
+   "ticket_external_id": "lg-m5-220",
+   "ticket_id": "a1df1dea-2d44-596d-86f7-22c0e4cf7d33",
+   "ticket_title": "Surface the approval inbox for parked stages",
+   "to_agent": "planner",
+   "total_required_items": 3,
+   "unreadable": "",
+   "workspace_slug": "loregarden"
+  }
+ ],
+ "total": 21
+}

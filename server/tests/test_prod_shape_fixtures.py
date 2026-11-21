@@ -75,6 +75,10 @@ ENDPOINTS = {
     # The scenario's worked ticket, at the live p90 of runs and artifact rows.
     "ticket-history-artifacts.json": ("/api/tickets/{worked_ticket}/artifacts", {}),
     "ticket-history-ledger.json": ("/api/tickets/{worked_ticket}/ledger", {}),
+    # The Baxter dock's Handoffs tab: the worked ticket's chain, and the
+    # workspace's newest handoffs.
+    "handoffs-worked-ticket.json": ("/api/handoffs", {"ticket_id": "{worked_ticket}"}),
+    "handoffs-loregarden.json": ("/api/handoffs", {"workspace": "loregarden"}),
     # The ticket whose CI auto-fix loop ran to its retry limit.
     "ticket-ci-status.json": ("/api/ci/status/{ci_ticket}", {}),
     # The dashboard's "since you were away", over the live two-week volume.
@@ -114,7 +118,13 @@ ENDPOINTS = {
 #: Fixtures whose timestamps the scenario stamps itself, so they are reproducible
 #: as recorded — and must stay unpinned, because where a row sits on the ticket's
 #: timeline is read from them.
-_STAMPED = {"ticket-history-artifacts.json", "ticket-history-ledger.json", "ticket-ci-status.json"}
+_STAMPED = {
+    "ticket-history-artifacts.json",
+    "ticket-history-ledger.json",
+    "ticket-ci-status.json",
+    "handoffs-worked-ticket.json",
+    "handoffs-loregarden.json",
+}
 
 #: Fixtures whose response is computed from "now" (the sprint's dates), recorded
 #: with the clock pinned. The scenario's own timestamps are stamped at build
@@ -186,7 +196,9 @@ def test_fixture_matches_the_api(api, isolated_db, name):
             # "Since" is relative to the build, as the scenario's events are.
             params={
                 key: value.format(
-                    since=(utcnow() - ACTIVITY_WINDOW).isoformat(), largest_parent=largest_parent
+                    since=(utcnow() - ACTIVITY_WINDOW).isoformat(),
+                    largest_parent=largest_parent,
+                    worked_ticket=worked_ticket,
                 )
                 for key, value in params.items()
             },

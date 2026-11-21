@@ -394,6 +394,46 @@ export interface TicketArtifactsFeed {
   total: number;
 }
 
+/** Where one item of a handoff checklist stands, as its author reported it. */
+export type HandoffItemStatus = "complete" | "incomplete" | "deferred" | "blocked";
+
+/** How much a checklist claim rests on: an artifact, a person, or the agent's word. */
+export type HandoffItemCertainty = "verified" | "user_confirmed" | "inferred";
+
+export interface HandoffItem {
+  item_key: string;
+  item: string;
+  required: boolean;
+  status: HandoffItemStatus;
+  evidence: string;
+  certainty: HandoffItemCertainty;
+}
+
+/** One handoff between two agents (`services/handoff_feed.py`). */
+export interface HandoffEntry {
+  id: string;
+  ticket_id: string;
+  ticket_external_id: string;
+  ticket_title: string;
+  workspace_slug: string;
+  run_id: string | null;
+  created_at: string;
+  from_agent: string;
+  to_agent: string;
+  required_items_met: number | null;
+  total_required_items: number | null;
+  checklist: HandoffItem[];
+  note: string;
+  /** Why the stored document could not be read, or "" when it was. */
+  unreadable: string;
+}
+
+export interface HandoffFeed {
+  items: HandoffEntry[];
+  /** Every handoff in scope; `items` is the newest of them. */
+  total: number;
+}
+
 /** A third-party MCP server the control plane knows about. */
 export interface McpServerView {
   id: string;

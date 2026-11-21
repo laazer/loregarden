@@ -28,6 +28,7 @@ from loregarden.api import (
     events,
     gate_presets,
     github_issues,
+    handoffs,
     inbox,
     initiatives,
     instance_templates,
@@ -323,6 +324,7 @@ app.include_router(ticket_landing.router, prefix="/api")
 app.include_router(ticket_claims.router, prefix="/api")
 app.include_router(ticket_autopilot.router, prefix="/api")
 app.include_router(ticket_handoff.router, prefix="/api")
+app.include_router(handoffs.router, prefix="/api")
 app.include_router(initiatives.router, prefix="/api")
 app.include_router(living_map.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
