@@ -11,6 +11,7 @@ from typing import Any
 from loregarden.services.operations.disk_operations import DISK_OPERATIONS
 from loregarden.services.operations.docker_capacity_operations import DOCKER_CAPACITY_OPERATIONS
 from loregarden.services.operations.github_issue_operations import GITHUB_ISSUE_OPERATIONS
+from loregarden.services.operations.handoff_operations import HANDOFF_OPERATIONS
 from loregarden.services.operations.initiatives import INITIATIVES
 from loregarden.services.operations.memory_discredit import MEMORY_DISCREDIT
 from loregarden.services.operations.memory_operations import MEMORY_OPERATIONS
@@ -66,6 +67,7 @@ OPERATIONS: Mapping[OperationId, Operation] = {
         *PULL_REQUEST_MERGES,
         *OPERATOR_QUESTIONS,
         *PATH_CLAIM_OPERATIONS,
+        *HANDOFF_OPERATIONS,
         *STAGE_ASKS,
     )
 }

@@ -54,6 +54,7 @@ from loregarden.testing.factories import (
     make_workspace,
 )
 from loregarden.testing.prod_shape_activity import add_activity
+from loregarden.testing.prod_shape_handoffs import handoff_doc
 from loregarden.testing.prod_shape_merge_queue import (
     MERGE_QUEUE_WORKSPACE,
     add_merge_queue_shape,
@@ -734,6 +735,14 @@ _WORKED_PIPELINE: list[tuple[str, list[tuple[str, str]], list[RunStatus]]] = [
     ("gate", [("gatekeeper", "")], [RunStatus.FAILED, RunStatus.FAILED, RunStatus.SUCCEEDED]),
 ]
 
+
+def _handoff_pair(n: int) -> tuple[str, str]:
+    """The agents of the worked pipeline's `n`th transition, wrapping round."""
+    agents = [lanes[0][0] for _stage, lanes, _statuses in _WORKED_PIPELINE] + ["gatekeeper"]
+    i = n % (len(agents) - 1)
+    return agents[i], agents[i + 1]
+
+
 #: Work-output kinds the filler draws from, weighted toward the live mix.
 _WORKED_FILLER = ["evidence", "test", "handoff", "review", "spec", "source_analysis", "test_spec"]
 
@@ -766,7 +775,7 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
     clock = _EPOCH + timedelta(days=10)
     run_n = 0
     rows: list[dict] = []
-    for stage, lanes, statuses in _WORKED_PIPELINE:
+    for stage_n, (stage, lanes, statuses) in enumerate(_WORKED_PIPELINE):
         rows.append(
             {
                 "kind": StageBudgetArtifactKind.DISPATCH.value,
@@ -860,12 +869,20 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
                     }
                 )
             clock = max(clock, finish + timedelta(minutes=1))
+        sender, receiver = _handoff_pair(stage_n)
         rows.append(
             {
                 "kind": "handoff",
-                "title": f"handoff {stage} → next",
+                "title": f"handoff {sender} → {receiver}",
                 "at": clock - timedelta(seconds=30),
-                "content": {"from_stage": stage, "checklist": [_title(rng) for _ in range(3)]},
+                "content": handoff_doc(
+                    seed=f"worked-handoff-{stage_n}",
+                    ext=ext,
+                    from_agent=sender,
+                    to_agent=receiver,
+                    item_names=[_title(rng) for _ in range(3)],
+                    evidence=f"{stage} finished: {verdict}",
+                ),
             }
         )
 
@@ -884,12 +901,26 @@ def _add_worked_history(session: Session, tickets: list, rng: random.Random) -> 
     while len(system) + len(work) < CALIBRATION.worked_artifacts:
         run = runs[n % len(runs)]
         kind = _WORKED_FILLER[n % len(_WORKED_FILLER)]
+        title = _title(rng)
+        summary = long_markdown(rng, "Summary", 1)
+        sender, receiver = _handoff_pair(n)
         work.append(
             {
                 "kind": kind,
-                "title": f"{kind.replace('_', ' ').capitalize()} — {_title(rng)}",
+                "title": f"handoff {sender} → {receiver}"
+                if kind == ArtifactKind.HANDOFF
+                else f"{kind.replace('_', ' ').capitalize()} — {title}",
                 "at": run.started_at + (run.finished_at - run.started_at) / 3,
-                "content": {"summary": long_markdown(rng, "Summary", 1)},
+                "content": handoff_doc(
+                    seed=f"worked-filler-{n}",
+                    ext=ext,
+                    from_agent=sender,
+                    to_agent=receiver,
+                    item_names=[title],
+                    evidence=summary,
+                )
+                if kind == ArtifactKind.HANDOFF
+                else {"summary": summary},
             }
         )
         n += 1

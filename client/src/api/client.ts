@@ -115,6 +115,7 @@ import type {
   RunMessage,
   TicketLedger,
   TicketArtifactsFeed,
+  HandoffFeed,
   McpServerInput,
   McpPolicy,
   McpTelemetry,
@@ -298,6 +299,14 @@ export const api = {
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
+  /** Newest first: one ticket's handoffs, one workspace's, or (neither given) every workspace's. */
+  handoffs: (scope: { ticketId?: string | null; workspace?: string }) => {
+    const q = new URLSearchParams();
+    if (scope.ticketId) q.set("ticket_id", scope.ticketId);
+    else if (scope.workspace) q.set("workspace", scope.workspace);
+    const query = q.toString();
+    return request<HandoffFeed>(`/api/handoffs${query ? `?${query}` : ""}`);
+  },
   runMessages: (runId: string) =>
     request<RunMessagesPayload>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>

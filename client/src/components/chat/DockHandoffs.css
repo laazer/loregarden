@@ -1,0 +1,173 @@
+/* The handoffs between agents, newest first: who passed work to whom, and what went with it. */
+.dock-handoffs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dock-handoffs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+
+.dock-handoffs-count {
+  flex: none;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.dock-handoffs-filter {
+  flex: 1;
+  min-width: 0;
+}
+
+.dock-handoffs-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dock-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.dock-handoff:last-child {
+  border-bottom: none;
+}
+
+.dock-handoff-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dock-handoff-pair {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--tx);
+}
+
+.dock-handoff-time {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--txm);
+}
+
+.dock-handoff-ticket {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  color: var(--ac);
+  text-decoration: none;
+}
+
+.dock-handoff-ticket:hover,
+.dock-handoff-ticket:focus-visible {
+  text-decoration: underline;
+}
+
+.dock-handoff-ticket-id {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.dock-handoff-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dock-handoff-toggle {
+  padding: 0;
+  font-size: var(--fs-small);
+  color: var(--ac);
+}
+
+.dock-handoff-toggle:hover,
+.dock-handoff-toggle:focus-visible {
+  text-decoration: underline;
+}
+
+.dock-handoff-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 0 10px;
+  border-left: 2px solid var(--bd);
+}
+
+.dock-handoff-note,
+.dock-handoff-unreadable {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.dock-handoff-unreadable {
+  color: var(--red);
+}
+
+.dock-handoff-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dock-handoff-item-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-small);
+}
+
+.dock-handoff-item-name {
+  color: var(--tx);
+}
+
+.dock-handoff-item-certainty {
+  font-size: var(--fs-micro);
+  color: var(--amb);
+}
+
+.dock-handoff-item-evidence {
+  margin: 2px 0 0;
+  font-size: var(--fs-small);
+  color: var(--txm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dock-handoffs-empty,
+.dock-handoffs-error {
+  margin: 0;
+  padding: 16px 12px;
+  font-size: var(--fs-small);
+  color: var(--txm);
+}
+
+.dock-handoffs-error p {
+  margin: 0 0 8px;
+}

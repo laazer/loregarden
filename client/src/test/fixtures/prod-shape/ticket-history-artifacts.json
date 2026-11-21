@@ -3,14 +3,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Split the approval inbox for parked stages",
-     "Fix docker capacity leases",
-     "Route gate outcomes on stage transitions"
-    ],
-    "from_stage": "gate"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "gate finished: pass",
+       "item": "Split the approval inbox for parked stages",
+       "item_key": "split_the_approval_inbox_for_parked_stag",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "gate finished: pass",
+       "item": "Fix docker capacity leases",
+       "item_key": "fix_docker_capacity_leases",
+       "required": true,
+       "status": "deferred"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "gate finished: pass",
+       "item": "Route gate outcomes on stage transitions",
+       "item_key": "route_gate_outcomes_on_stage_transitions",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "gatekeeper",
+     "required_items_met": 2,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "gatekeeper",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 157,
+   "content_bytes": 789,
    "created_at": "2026-09-11T05:46:30",
    "evidence_kind": "",
    "id": "f76d28b9-eea7-5795-b9cb-20ee851710ab",
@@ -18,7 +46,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff gate \u2192 next"
+   "title": "handoff gatekeeper \u2192 gatekeeper"
   },
   {
    "commit_sha": "",
@@ -201,9 +229,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show GitHub issue two-way sync \u2014 `review` stage, 12 runs\n- Fix initiative progress rollup \u2014 `spec` stage, 12 runs\n- Split the rework ledger's loop cap \u2014 `test-design` stage, 4 runs\n- Retry worktree isolation for chat turns \u2014 `spec` stage, 35 runs\n- Stop gate outcomes on stage transitions \u2014 `script_review` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 7 | 7 |\n| implement | 56 | 3 |\n| spec | 50 | 1 |\n| plan | 14 | 1 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "# Summary\n\n## Left out 1\n\nThe gate outcomes on stage transitions path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The memory recall ranking path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Show GitHub issue two-way sync \u2014 `review` stage, 12 runs\n- Fix initiative progress rollup \u2014 `spec` stage, 12 runs\n- Split the rework ledger's loop cap \u2014 `test-design` stage, 4 runs\n- Retry worktree isolation for chat turns \u2014 `spec` stage, 35 runs\n- Stop gate outcomes on stage transitions \u2014 `script_review` stage, 11 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 7 | 7 |\n| implement | 56 | 3 |\n| spec | 50 | 1 |\n| plan | 14 | 1 |\n",
+       "item": "Surface GitHub issue two-way sync",
+       "item_key": "surface_github_issue_two-way_sync",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "ticket_scoper",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "planner",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1179,
+   "content_bytes": 1526,
    "created_at": "2026-09-11T04:53:40",
    "evidence_kind": "",
    "id": "b5644b92-b017-5b2b-9c6e-b7561418bf6a",
@@ -211,7 +256,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Surface GitHub issue two-way sync"
+   "title": "handoff ticket_scoper \u2192 planner"
   },
   {
    "commit_sha": "",
@@ -242,14 +287,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Make branch cleanup after a squash merge",
-     "Cache GitHub issue two-way sync",
-     "Make gate outcomes on stage transitions"
-    ],
-    "from_stage": "review"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "review finished: pass",
+       "item": "Make branch cleanup after a squash merge",
+       "item_key": "make_branch_cleanup_after_a_squash_merge",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "review finished: pass",
+       "item": "Cache GitHub issue two-way sync",
+       "item_key": "cache_github_issue_two-way_sync",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "review finished: pass",
+       "item": "Make gate outcomes on stage transitions",
+       "item_key": "make_gate_outcomes_on_stage_transitions",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "static_qa",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "gatekeeper",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 161,
+   "content_bytes": 800,
    "created_at": "2026-09-11T04:48:30",
    "evidence_kind": "",
    "id": "07ac849f-d870-5bea-b731-69e178348cc2",
@@ -257,7 +330,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff review \u2192 next"
+   "title": "handoff static_qa \u2192 gatekeeper"
   },
   {
    "commit_sha": "",
@@ -507,14 +580,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Split gate outcomes on stage transitions",
-     "Retry GitHub issue two-way sync",
-     "Split the run log's live tail"
-    ],
-    "from_stage": "implement"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "implement finished: pass",
+       "item": "Split gate outcomes on stage transitions",
+       "item_key": "split_gate_outcomes_on_stage_transitions",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Retry GitHub issue two-way sync",
+       "item_key": "retry_github_issue_two-way_sync",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Split the run log's live tail",
+       "item_key": "split_the_run_log's_live_tail",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "backend_implementer",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "static_qa",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 154,
+   "content_bytes": 798,
    "created_at": "2026-09-11T04:29:30",
    "evidence_kind": "",
    "id": "de149b9d-494d-5876-9f09-aa9cf13edff0",
@@ -522,7 +623,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff implement \u2192 next"
+   "title": "handoff backend_implementer \u2192 static_qa"
   },
   {
    "commit_sha": "",
@@ -598,14 +699,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Split initiative progress rollup",
-     "Fix stage timeout budgets",
-     "Retry the queue board's stalled lane"
-    ],
-    "from_stage": "review"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "review finished: fail",
+       "item": "Split initiative progress rollup",
+       "item_key": "split_initiative_progress_rollup",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "review finished: fail",
+       "item": "Fix stage timeout budgets",
+       "item_key": "fix_stage_timeout_budgets",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "review finished: fail",
+       "item": "Retry the queue board's stalled lane",
+       "item_key": "retry_the_queue_board's_stalled_lane",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "static_qa",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "backend_implementer",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 144,
+   "content_bytes": 775,
    "created_at": "2026-09-11T04:14:30",
    "evidence_kind": "",
    "id": "57d03ba8-bab8-52a0-96de-76c948f26c93",
@@ -613,7 +742,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff review \u2192 next"
+   "title": "handoff static_qa \u2192 backend_implementer"
   },
   {
    "commit_sha": "",
@@ -786,9 +915,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Why this shape 1\n\nThe the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the rework ledger's loop cap \u2014 `spec` stage, 19 runs\n- Route GitHub issue two-way sync \u2014 `test-design` stage, 11 runs\n- Cache worktree isolation for chat turns \u2014 `review` stage, 6 runs\n- Surface docker capacity leases \u2014 `implement` stage, 40 runs\n- Show docker capacity leases \u2014 `test-design` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 2 |\n| implement | 52 | 0 |\n| spec | 21 | 8 |\n| plan | 19 | 2 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "# Summary\n\n## Why this shape 1\n\nThe the run log's live tail path reads `services/implement.py` before it writes, so a retry after a crash sees the committed row. The the queue board's stalled lane path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The the rework ledger's loop cap path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row.\n\n- Stop the rework ledger's loop cap \u2014 `spec` stage, 19 runs\n- Route GitHub issue two-way sync \u2014 `test-design` stage, 11 runs\n- Cache worktree isolation for chat turns \u2014 `review` stage, 6 runs\n- Surface docker capacity leases \u2014 `implement` stage, 40 runs\n- Show docker capacity leases \u2014 `test-design` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 2 |\n| implement | 52 | 0 |\n| spec | 21 | 8 |\n| plan | 19 | 2 |\n",
+       "item": "Make docker capacity leases",
+       "item_key": "make_docker_capacity_leases",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "verifier",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "backend_implementer",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1160,
+   "content_bytes": 1502,
    "created_at": "2026-09-11T03:56:20",
    "evidence_kind": "",
    "id": "5a8a649b-b5c8-53e3-9a1f-4b3b9fca3d83",
@@ -796,7 +942,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Make docker capacity leases"
+   "title": "handoff verifier \u2192 backend_implementer"
   },
   {
    "commit_sha": "",
@@ -866,14 +1012,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Retry the queue board's stalled lane",
-     "Route the rework ledger's loop cap",
-     "Route the rework ledger's loop cap"
-    ],
-    "from_stage": "verify"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "verify finished: pass",
+       "item": "Retry the queue board's stalled lane",
+       "item_key": "retry_the_queue_board's_stalled_lane",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "verify finished: pass",
+       "item": "Route the rework ledger's loop cap",
+       "item_key": "route_the_rework_ledger's_loop_cap",
+       "required": true,
+       "status": "incomplete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "verify finished: pass",
+       "item": "Route the rework ledger's loop cap",
+       "item_key": "route_the_rework_ledger's_loop_cap",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "verifier",
+     "required_items_met": 2,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "static_qa",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 155,
+   "content_bytes": 788,
    "created_at": "2026-09-11T03:54:30",
    "evidence_kind": "",
    "id": "3f65ee19-bf11-5efe-be1c-35e57aee55d0",
@@ -881,7 +1055,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff verify \u2192 next"
+   "title": "handoff verifier \u2192 static_qa"
   },
   {
    "commit_sha": "",
@@ -1018,14 +1192,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Add memory recall ranking",
-     "Add the run log's live tail",
-     "Make worktree isolation for chat turns"
-    ],
-    "from_stage": "implement"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Add memory recall ranking",
+       "item_key": "add_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Add the run log's live tail",
+       "item_key": "add_the_run_log's_live_tail",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "implement finished: pass",
+       "item": "Make worktree isolation for chat turns",
+       "item_key": "make_worktree_isolation_for_chat_turns",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "backend_implementer",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "verifier",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 144,
+   "content_bytes": 777,
    "created_at": "2026-09-11T03:24:30",
    "evidence_kind": "",
    "id": "e946ab13-3ad3-55c1-af72-3fe2cb6f20c6",
@@ -1033,7 +1235,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff implement \u2192 next"
+   "title": "handoff backend_implementer \u2192 verifier"
   },
   {
    "commit_sha": "",
@@ -1170,14 +1372,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Fix the approval inbox for parked stages",
-     "Retry memory recall ranking",
-     "Show memory recall ranking"
-    ],
-    "from_stage": "verify"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "verify finished: pass",
+       "item": "Fix the approval inbox for parked stages",
+       "item_key": "fix_the_approval_inbox_for_parked_stages",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "verify finished: pass",
+       "item": "Retry memory recall ranking",
+       "item_key": "retry_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "verify finished: pass",
+       "item": "Show memory recall ranking",
+       "item_key": "show_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "verifier",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "backend_implementer",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 144,
+   "content_bytes": 774,
    "created_at": "2026-09-11T02:50:30",
    "evidence_kind": "",
    "id": "c48cd372-6bee-5891-91dd-2017a0c5dd56",
@@ -1185,7 +1415,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff verify \u2192 next"
+   "title": "handoff verifier \u2192 backend_implementer"
   },
   {
    "commit_sha": "",
@@ -1207,9 +1437,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Why this shape 1\n\nThe initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make the run log's live tail \u2014 `spec` stage, 27 runs\n- Split the approval inbox for parked stages \u2014 `plan` stage, 4 runs\n- Add worktree isolation for chat turns \u2014 `spec` stage, 15 runs\n- Make GitHub issue two-way sync \u2014 `plan` stage, 18 runs\n- Fix worktree isolation for chat turns \u2014 `plan` stage, 22 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 58 | 9 |\n| implement | 19 | 2 |\n| spec | 55 | 3 |\n| plan | 22 | 6 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "# Summary\n\n## Why this shape 1\n\nThe initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Make the run log's live tail \u2014 `spec` stage, 27 runs\n- Split the approval inbox for parked stages \u2014 `plan` stage, 4 runs\n- Add worktree isolation for chat turns \u2014 `spec` stage, 15 runs\n- Make GitHub issue two-way sync \u2014 `plan` stage, 18 runs\n- Fix worktree isolation for chat turns \u2014 `plan` stage, 22 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 58 | 9 |\n| implement | 19 | 2 |\n| spec | 55 | 3 |\n| plan | 22 | 6 |\n",
+       "item": "Retry the run log's live tail",
+       "item_key": "retry_the_run_log's_live_tail",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "planner",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "ui_design_decision",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1170,
+   "content_bytes": 1514,
    "created_at": "2026-09-11T02:39:20",
    "evidence_kind": "",
    "id": "c63cb424-ed8e-5e31-ba13-6e298cd6798f",
@@ -1217,7 +1464,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Retry the run log's live tail"
+   "title": "handoff planner \u2192 ui_design_decision"
   },
   {
    "commit_sha": "",
@@ -1248,14 +1495,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Fix docker capacity leases",
-     "Surface branch cleanup after a squash merge",
-     "Show the approval inbox for parked stages"
-    ],
-    "from_stage": "implement"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Fix docker capacity leases",
+       "item_key": "fix_docker_capacity_leases",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "implement finished: pass",
+       "item": "Surface branch cleanup after a squash merge",
+       "item_key": "surface_branch_cleanup_after_a_squash_me",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "implement finished: pass",
+       "item": "Show the approval inbox for parked stages",
+       "item_key": "show_the_approval_inbox_for_parked_stage",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "backend_implementer",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "verifier",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 164,
+   "content_bytes": 813,
    "created_at": "2026-09-11T02:33:30",
    "evidence_kind": "",
    "id": "21c41b31-986b-5657-a589-a4ae21a6b1c1",
@@ -1263,7 +1538,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff implement \u2192 next"
+   "title": "handoff backend_implementer \u2192 verifier"
   },
   {
    "commit_sha": "",
@@ -1474,14 +1749,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Split worktree isolation for chat turns",
-     "Surface worktree isolation for chat turns",
-     "Retry the queue board's stalled lane"
-    ],
-    "from_stage": "test-break"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "test-break finished: pass",
+       "item": "Split worktree isolation for chat turns",
+       "item_key": "split_worktree_isolation_for_chat_turns",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "test-break finished: pass",
+       "item": "Surface worktree isolation for chat turns",
+       "item_key": "surface_worktree_isolation_for_chat_turn",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "test-break finished: pass",
+       "item": "Retry the queue board's stalled lane",
+       "item_key": "retry_the_queue_board's_stalled_lane",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "test_breaker",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "backend_implementer",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 171,
+   "content_bytes": 835,
    "created_at": "2026-09-11T02:19:30",
    "evidence_kind": "",
    "id": "acb72280-6c92-5236-ad86-75bf0c2c2650",
@@ -1489,7 +1792,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff test-break \u2192 next"
+   "title": "handoff test_breaker \u2192 backend_implementer"
   },
   {
    "commit_sha": "",
@@ -1626,14 +1929,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Surface the queue board's stalled lane",
-     "Fix the rework ledger's loop cap",
-     "Split memory recall ranking"
-    ],
-    "from_stage": "test-design"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "test-design finished: pass",
+       "item": "Surface the queue board's stalled lane",
+       "item_key": "surface_the_queue_board's_stalled_lane",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "test-design finished: pass",
+       "item": "Fix the rework ledger's loop cap",
+       "item_key": "fix_the_rework_ledger's_loop_cap",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "test-design finished: pass",
+       "item": "Split memory recall ranking",
+       "item_key": "split_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "test_designer",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "test_breaker",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 153,
+   "content_bytes": 795,
    "created_at": "2026-09-11T02:00:30",
    "evidence_kind": "",
    "id": "fb45c95a-2a49-5d2a-a251-bf432d525682",
@@ -1641,7 +1972,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff test-design \u2192 next"
+   "title": "handoff test_designer \u2192 test_breaker"
   },
   {
    "commit_sha": "",
@@ -1704,14 +2035,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Route the approval inbox for parked stages",
-     "Route branch cleanup after a squash merge",
-     "Stop the approval inbox for parked stages"
-    ],
-    "from_stage": "spec"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "spec finished: pass",
+       "item": "Route the approval inbox for parked stages",
+       "item_key": "route_the_approval_inbox_for_parked_stag",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "spec finished: pass",
+       "item": "Route branch cleanup after a squash merge",
+       "item_key": "route_branch_cleanup_after_a_squash_merg",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "spec finished: pass",
+       "item": "Stop the approval inbox for parked stages",
+       "item_key": "stop_the_approval_inbox_for_parked_stage",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "spec",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "test_designer",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 173,
+   "content_bytes": 816,
    "created_at": "2026-09-11T01:53:30",
    "evidence_kind": "",
    "id": "927389ea-2b82-5143-b82b-71e812ec6b3e",
@@ -1719,7 +2078,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff spec \u2192 next"
+   "title": "handoff spec \u2192 test_designer"
   },
   {
    "commit_sha": "",
@@ -1754,9 +2113,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Evidence 1\n\nThe worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split stage timeout budgets \u2014 `review` stage, 28 runs\n- Surface memory recall ranking \u2014 `spec` stage, 37 runs\n- Surface memory recall ranking \u2014 `script_review` stage, 7 runs\n- Route branch cleanup after a squash merge \u2014 `script_review` stage, 33 runs\n- Stop the approval inbox for parked stages \u2014 `test-design` stage, 30 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 6 |\n| implement | 59 | 8 |\n| spec | 47 | 8 |\n| plan | 11 | 4 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "# Summary\n\n## Evidence 1\n\nThe worktree isolation for chat turns path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/test-design.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The the approval inbox for parked stages path reads `services/review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Split stage timeout budgets \u2014 `review` stage, 28 runs\n- Surface memory recall ranking \u2014 `spec` stage, 37 runs\n- Surface memory recall ranking \u2014 `script_review` stage, 7 runs\n- Route branch cleanup after a squash merge \u2014 `script_review` stage, 33 runs\n- Stop the approval inbox for parked stages \u2014 `test-design` stage, 30 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 25 | 6 |\n| implement | 59 | 8 |\n| spec | 47 | 8 |\n| plan | 11 | 4 |\n",
+       "item": "Stop the run log's live tail",
+       "item_key": "stop_the_run_log's_live_tail",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "backend_implementer",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "verifier",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1200,
+   "content_bytes": 1544,
    "created_at": "2026-09-11T01:45:40",
    "evidence_kind": "",
    "id": "46513998-506a-5c98-99d6-1eab172bcef2",
@@ -1764,7 +2140,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Stop the run log's live tail"
+   "title": "handoff backend_implementer \u2192 verifier"
   },
   {
    "commit_sha": "",
@@ -1856,14 +2232,41 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Surface the rework ledger's loop cap",
-     "Make initiative progress rollup",
-     "Show GitHub issue two-way sync"
-    ],
-    "from_stage": "plan-synthesis"
+    "handoff": {
+     "checklist": [
+      {
+       "evidence": "plan-synthesis finished: pass",
+       "item": "Surface the rework ledger's loop cap",
+       "item_key": "surface_the_rework_ledger's_loop_cap",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "plan-synthesis finished: pass",
+       "item": "Make initiative progress rollup",
+       "item_key": "make_initiative_progress_rollup",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "plan-synthesis finished: pass",
+       "item": "Show GitHub issue two-way sync",
+       "item_key": "show_github_issue_two-way_sync",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "planner",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "spec",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 156,
+   "content_bytes": 765,
    "created_at": "2026-09-11T01:23:30",
    "evidence_kind": "",
    "id": "e0df97de-7417-56bf-baca-00c60f798f2e",
@@ -1871,7 +2274,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff plan-synthesis \u2192 next"
+   "title": "handoff planner \u2192 spec"
   },
   {
    "commit_sha": "",
@@ -1962,14 +2365,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Cache GitHub issue two-way sync",
-     "Show the run log's live tail",
-     "Surface memory recall ranking"
-    ],
-    "from_stage": "ui-design"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "ui-design finished: pass",
+       "item": "Cache GitHub issue two-way sync",
+       "item_key": "cache_github_issue_two-way_sync",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "ui-design finished: pass",
+       "item": "Show the run log's live tail",
+       "item_key": "show_the_run_log's_live_tail",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "ui-design finished: pass",
+       "item": "Surface memory recall ranking",
+       "item_key": "surface_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "ui_design_decision",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "planner",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 142,
+   "content_bytes": 771,
    "created_at": "2026-09-11T01:01:30",
    "evidence_kind": "",
    "id": "60b1caae-51cc-5f65-afbd-a74b4304d822",
@@ -1977,7 +2408,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff ui-design \u2192 next"
+   "title": "handoff ui_design_decision \u2192 planner"
   },
   {
    "commit_sha": "",
@@ -2055,14 +2486,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Split branch cleanup after a squash merge",
-     "Stop memory recall ranking",
-     "Make the approval inbox for parked stages"
-    ],
-    "from_stage": "plan"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "plan finished: pass",
+       "item": "Split branch cleanup after a squash merge",
+       "item_key": "split_branch_cleanup_after_a_squash_merg",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "plan finished: pass",
+       "item": "Stop memory recall ranking",
+       "item_key": "stop_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "plan finished: pass",
+       "item": "Make the approval inbox for parked stages",
+       "item_key": "make_the_approval_inbox_for_parked_stage",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "planner",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "ui_design_decision",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 157,
+   "content_bytes": 794,
    "created_at": "2026-09-11T00:38:30",
    "evidence_kind": "",
    "id": "99ec1a8b-fab6-5f72-8fc8-a4c5c5630840",
@@ -2070,7 +2529,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff plan \u2192 next"
+   "title": "handoff planner \u2192 ui_design_decision"
   },
   {
    "commit_sha": "",
@@ -2166,9 +2625,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Evidence 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface docker capacity leases \u2014 `implement` stage, 26 runs\n- Cache memory recall ranking \u2014 `test-design` stage, 24 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 33 runs\n- Cache gate outcomes on stage transitions \u2014 `implement` stage, 3 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 25 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 1 |\n| implement | 19 | 3 |\n| spec | 29 | 2 |\n| plan | 52 | 3 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "inferred",
+       "evidence": "# Summary\n\n## Evidence 1\n\nThe memory recall ranking path reads `services/plan.py` before it writes, so a retry after a crash sees the committed row. The GitHub issue two-way sync path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The initiative progress rollup path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row. The gate outcomes on stage transitions path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row.\n\n- Surface docker capacity leases \u2014 `implement` stage, 26 runs\n- Cache memory recall ranking \u2014 `test-design` stage, 24 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 33 runs\n- Cache gate outcomes on stage transitions \u2014 `implement` stage, 3 runs\n- Add worktree isolation for chat turns \u2014 `implement` stage, 25 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 44 | 1 |\n| implement | 19 | 3 |\n| spec | 29 | 2 |\n| plan | 52 | 3 |\n",
+       "item": "Retry docker capacity leases",
+       "item_key": "retry_docker_capacity_leases",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "ui_design_decision",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "planner",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1173,
+   "content_bytes": 1515,
    "created_at": "2026-09-11T00:22:40",
    "evidence_kind": "",
    "id": "7659f3a7-800c-5a2b-9662-eb52a723b618",
@@ -2176,7 +2652,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Retry docker capacity leases"
+   "title": "handoff ui_design_decision \u2192 planner"
   },
   {
    "commit_sha": "",
@@ -2414,9 +2890,26 @@
   {
    "commit_sha": "",
    "content": {
-    "summary": "# Summary\n\n## Left out 1\n\nThe docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route the rework ledger's loop cap \u2014 `plan` stage, 35 runs\n- Split memory recall ranking \u2014 `spec` stage, 35 runs\n- Stop worktree isolation for chat turns \u2014 `test-design` stage, 18 runs\n- Split branch cleanup after a squash merge \u2014 `test-design` stage, 3 runs\n- Fix initiative progress rollup \u2014 `implement` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 3 |\n| implement | 53 | 6 |\n| spec | 46 | 9 |\n| plan | 42 | 8 |\n"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "# Summary\n\n## Left out 1\n\nThe docker capacity leases path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/review.py` before it writes, so a retry after a crash sees the committed row. The the run log's live tail path reads `services/spec.py` before it writes, so a retry after a crash sees the committed row. The branch cleanup after a squash merge path reads `services/script_review.py` before it writes, so a retry after a crash sees the committed row.\n\n- Route the rework ledger's loop cap \u2014 `plan` stage, 35 runs\n- Split memory recall ranking \u2014 `spec` stage, 35 runs\n- Stop worktree isolation for chat turns \u2014 `test-design` stage, 18 runs\n- Split branch cleanup after a squash merge \u2014 `test-design` stage, 3 runs\n- Fix initiative progress rollup \u2014 `implement` stage, 2 runs\n\n```python\ndef settle(session, ticket):\n    return reconcile_parent(session, ticket.parent_ticket_id)\n```\n\n| stage | runs | failed |\n|---|---|---|\n| review | 32 | 3 |\n| implement | 53 | 6 |\n| spec | 46 | 9 |\n| plan | 42 | 8 |\n",
+       "item": "Make stage timeout budgets",
+       "item_key": "make_stage_timeout_budgets",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "backend_implementer",
+     "required_items_met": 1,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "verifier",
+     "total_required_items": 1
+    }
    },
-   "content_bytes": 1162,
+   "content_bytes": 1502,
    "created_at": "2026-09-11T00:16:00",
    "evidence_kind": "",
    "id": "709e1ddf-e605-55c2-9d54-43ab852ce2db",
@@ -2424,7 +2917,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "Handoff \u2014 Make stage timeout budgets"
+   "title": "handoff backend_implementer \u2192 verifier"
   },
   {
    "commit_sha": "",
@@ -2537,14 +3030,42 @@
   {
    "commit_sha": "",
    "content": {
-    "checklist": [
-     "Show initiative progress rollup",
-     "Retry memory recall ranking",
-     "Route branch cleanup after a squash merge"
-    ],
-    "from_stage": "triage"
+    "handoff": {
+     "checklist": [
+      {
+       "certainty": "verified",
+       "evidence": "triage finished: pass",
+       "item": "Show initiative progress rollup",
+       "item_key": "show_initiative_progress_rollup",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "inferred",
+       "evidence": "triage finished: pass",
+       "item": "Retry memory recall ranking",
+       "item_key": "retry_memory_recall_ranking",
+       "required": true,
+       "status": "complete"
+      },
+      {
+       "certainty": "verified",
+       "evidence": "triage finished: pass",
+       "item": "Route branch cleanup after a squash merge",
+       "item_key": "route_branch_cleanup_after_a_squash_merg",
+       "required": true,
+       "status": "complete"
+      }
+     ],
+     "from_agent": "ticket_scoper",
+     "required_items_met": 3,
+     "schema_version": "1.0",
+     "ticket_id": "lg-m5-220",
+     "to_agent": "planner",
+     "total_required_items": 3
+    }
    },
-   "content_bytes": 150,
+   "content_bytes": 778,
    "created_at": "2026-09-11T00:14:30",
    "evidence_kind": "",
    "id": "c4d6665d-7546-5b5d-9355-48f856be2bda",
@@ -2552,7 +3073,7 @@
    "run_id": null,
    "stage_key": null,
    "system": false,
-   "title": "handoff triage \u2192 next"
+   "title": "handoff ticket_scoper \u2192 planner"
   },
   {
    "commit_sha": "",

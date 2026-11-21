@@ -30,7 +30,7 @@ jest.mock("../TerminalWorkspace", () => ({
 }));
 jest.mock("../../api/client", () => {
   const actual = jest.requireActual("../../api/client");
-  return { ...actual, api: { ...actual.api, baxterChatSessions: jest.fn() } };
+  return { ...actual, api: { ...actual.api, baxterChatSessions: jest.fn(), handoffs: jest.fn(), workspaces: jest.fn().mockResolvedValue([]) } };
 });
 jest.mock("../../hooks/useApprovalResolution", () => ({
   useApprovalResolution: () => ({
@@ -1014,7 +1014,7 @@ describe("a chat wait", () => {
   });
 });
 
-describe("the Chat and Artifacts tabs", () => {
+describe("the Chat, Artifacts and Handoffs tabs", () => {
   const withCards = [
     { id: "u1", role: "user", content: "Plan it" },
     {
@@ -1066,6 +1066,39 @@ describe("the Chat and Artifacts tabs", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Artifacts" }));
 
     expect(screen.getByText(/Nothing made yet/)).toBeInTheDocument();
+  });
+
+  it("shows the handoffs behind the bound ticket under Handoffs, and the workspace's off a ticket", async () => {
+    mockedApi.handoffs.mockResolvedValue({ items: [], total: 0 });
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    const { unmount } = renderDock();
+    fireEvent.click(screen.getByRole("tab", { name: "Handoffs" }));
+    expect(await screen.findByText(/No handoffs on this ticket yet/)).toBeInTheDocument();
+    expect(mockedApi.handoffs).toHaveBeenCalledWith({ ticketId: "t1" });
+    unmount();
+
+    // The thread's own workspace, even with the page filtered to every workspace.
+    mockTerminal.mockReturnValue({ workspaceSlug: "", agent: "" });
+    useUiStore.setState({ chatScope: "loregarden", workspace: "all" });
+    mockResolver.mockReturnValue(bind({ session: session(), ticketId: null, label: "loregarden" }));
+    renderDock();
+    fireEvent.click(screen.getByRole("tab", { name: "Handoffs" }));
+    expect(await screen.findByText(/No handoffs here yet/)).toBeInTheDocument();
+    expect(mockedApi.handoffs).toHaveBeenLastCalledWith({ workspace: "loregarden" });
+  });
+
+  it("moves back with the left arrow, wrapping to the last tab", () => {
+    mockedApi.handoffs.mockResolvedValue({ items: [], total: 0 });
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true });
+
+    renderDock();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Chat" }), { key: "ArrowLeft" });
+
+    expect(screen.getByRole("tab", { name: "Handoffs" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Handoffs" })).toHaveFocus();
   });
 
   it("moves between the tabs with the arrow keys", () => {
