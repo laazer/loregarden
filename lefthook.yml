@@ -224,3 +224,28 @@ pre-push:
         bash .lefthook/scripts/capacity-run.sh "pre-push client-tests"
         --footprint stack --workspace loregarden
         -- bash .lefthook/scripts/client-tests.sh
+
+# Dependency sync: a pull, merge, rebase or branch switch that changes
+# server/uv.lock, server/pyproject.toml or client/package-lock.json re-runs
+# `uv sync` / `npm ci` (.lefthook/scripts/sync-deps.sh). Without it a pull left
+# the venv on the old lock, and the next dev-server reload died at import.
+post-merge:
+  commands:
+    sync-deps:
+      name: Sync dependencies a merge changed
+      run: bash .lefthook/scripts/sync-deps.sh merge
+
+# lefthook substitutes {N} in `run` but not in `skip`, so the script reads the
+# hook's arguments itself: post-checkout's third is 1 for a branch switch and 0
+# for `git checkout -- <file>`; post-rewrite's first is "rebase" or "amend".
+post-checkout:
+  commands:
+    sync-deps:
+      name: Sync dependencies a branch switch changed
+      run: bash .lefthook/scripts/sync-deps.sh checkout {1} {2} {3}
+
+post-rewrite:
+  commands:
+    sync-deps:
+      name: Sync dependencies a rebase changed
+      run: bash .lefthook/scripts/sync-deps.sh rewrite {1}
