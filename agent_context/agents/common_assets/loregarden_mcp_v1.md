@@ -145,7 +145,7 @@ refused). Pages are cached once for every later run. It never raises: read `erro
 | Read framework or library documentation | `loregarden_fetch_reference` — not WebFetch |
 | Queue an outside project for the reference survey, or ask what was concluded about one | `loregarden_survey_queue` (`enqueue`, `status`, `coverage`, `request_pass`) |
 | Run a survey pass: brief, reads, evidence, findings, unknowns, landing on tickets | `loregarden_survey_pass`, `loregarden_survey_record`, `loregarden_survey_write` |
-| Run the change you are checking (a branch server or client) | `loregarden_launch_instance`, then `loregarden_instance_status`, then `loregarden_stop_instance` |
+| Run the change you are checking (a branch server or client) | `loregarden_launch_instance`, then `loregarden_instance_status`, then `loregarden_stop_instance`; `loregarden_restart_instance` after editing its code (same id and URL; a launched server ignores `.self-improve-restart`) |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Ask the operator, and carry on with your default (see `checkpoint_protocol_v1.md`) | `loregarden_ask_operator`; `loregarden_list_operator_questions` to read them back |
 | Log an assumption that needs nobody's answer | `loregarden_append_checkpoint` |

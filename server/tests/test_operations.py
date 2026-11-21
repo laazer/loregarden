@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 from loregarden.mcp.operation_tools import OPERATION_TOOLS
-from loregarden.mcp.tool_ids import McpTool
+from loregarden.mcp.tool_ids import LOCAL_INSTANCE_MCP_TOOLS, McpTool
 from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import Artifact, Ticket
 from loregarden.services.operations import (
@@ -102,6 +102,14 @@ def test_each_transport_is_bound_or_says_why_not(operation: Operation):
         )
 
 
+#: Tools defined once in lore-eden (`lore_eden.instances.tools`), over the same
+#: manager its HTTP router serves the Instances panel from. That single
+#: definition is what an operation buys, so they are neither operations here
+#: nor debt in the ledger; `mcp/local_instance_tools.py` refuses to import if
+#: lore-eden's names and `LOCAL_INSTANCE_MCP_TOOLS` disagree.
+_DELEGATED_TO_LORE_EDEN = frozenset(tool.value for tool in LOCAL_INSTANCE_MCP_TOOLS)
+
+
 def test_every_mcp_tool_is_an_operation_or_in_the_ledger():
     tools = {tool.value for tool in McpTool}
     ledger = _ledger("mcp_tools.txt")
@@ -110,8 +118,11 @@ def test_every_mcp_tool_is_an_operation_or_in_the_ledger():
     assert not operations & ledger, (
         f"moved onto operations; remove from the ledger: {operations & ledger}"
     )
-    assert not tools - operations - ledger, (
-        f"new MCP tools must be operations (mcp/operation_tools.py): {tools - operations - ledger}"
+    assert not _DELEGATED_TO_LORE_EDEN & (ledger | operations), (
+        f"lore-eden defines these; remove them: {_DELEGATED_TO_LORE_EDEN & (ledger | operations)}"
+    )
+    assert not tools - operations - ledger - _DELEGATED_TO_LORE_EDEN, (
+        f"new MCP tools must be operations (mcp/operation_tools.py): {tools - operations - ledger - _DELEGATED_TO_LORE_EDEN}"
     )
     assert not ledger - tools, f"no such tool; remove from the ledger: {ledger - tools}"
 
