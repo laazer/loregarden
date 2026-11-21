@@ -211,7 +211,10 @@ class GitAutomationConfig(BaseModel):
     auto_resolve_conflicts: bool = True
     #: How many times the resolver agent may try before the ticket blocks.
     max_conflict_resolve_attempts: int = 2
-    #: Branch PRs target, and the branch a worktree is cut from.
+    #: Branch PRs target, and the branch a worktree is cut from. Read it through
+    #: `git_automation_config.base_branch`: a profile that leaves it unset means
+    #: the repository's own default branch, and only that accessor resolves it.
+    #: The `"main"` here is what an unreadable repository falls back to.
     base_branch: str = "main"
     #: Commands that must pass against the merge a land would publish, before
     #: its ref moves (lg-milestone-that-1238). Run in a detached worktree cut at
