@@ -3,7 +3,11 @@ import json
 from fastapi.testclient import TestClient
 from loregarden.models.domain import Ticket
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.ticket_discovery import list_tickets_mcp, looks_like_ticket_uuid
+from loregarden.services.ticket_discovery import (
+    list_tickets_mcp,
+    looks_like_ticket_uuid,
+    ticket_neighbors_mcp,
+)
 from sqlmodel import Session, select
 
 
@@ -114,3 +118,32 @@ def test_mcp_get_ticket_includes_hierarchy_children(client: TestClient):
     assert res.status_code == 200
     payload = json.loads(res.json()["result"]["content"][0]["text"])
     assert len(payload["hierarchy"]["children"]) >= 1
+
+
+def test_neighbors_carry_only_what_tells_them_apart(client: TestClient):
+    """Siblings and children share `parent` and its workspace, so their rows omit
+    them, and each row's external id still resolves to that ticket."""
+    from loregarden.db.session import engine
+
+    with Session(engine) as session:
+        parent = OrchestrationCallbackService(session).resolve_ticket(
+            ticket_id="m01-backend-platform", workspace_slug="loregarden"
+        )
+        neighbors = ticket_neighbors_mcp(session, parent)
+        assert neighbors["children"]
+        for row in neighbors["children"]:
+            assert set(row) == {
+                "external_id",
+                "title",
+                "state",
+                "work_item_type",
+                "workflow_stage_key",
+                "workflow_stage_status",
+            }
+            child = OrchestrationCallbackService(session).resolve_ticket(
+                ticket_id=row["external_id"], workspace_slug="loregarden"
+            )
+            assert child.parent_ticket_id == parent.id
+        # `self` keeps the full row: the ticket being read is the one an agent acts on.
+        assert neighbors["self"]["id"] == parent.id
+        assert neighbors["self"]["workspace_slug"] == "loregarden"

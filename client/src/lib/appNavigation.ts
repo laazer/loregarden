@@ -90,6 +90,9 @@ const PAGE_PATHS: Record<AppPage, string> = {
   workspaces: "/workspaces",
 };
 
+/** Every page, for the checks that hold its route, reader and visual-QA entry in step. */
+export const APP_PAGES = Object.keys(PAGE_PATHS) as AppPage[];
+
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
 const VIEW_PATH_RE = /^\/view\/([^/]+)/;
 const STUDIO_RESOURCE_PATH_RE = /^\/studio\/(agents|workflows|tickets|gates)(?:\/([^/]+))?/;

@@ -1,4 +1,7 @@
 {
+  "env": {
+    "LEFTHOOK_CONFIG": "lefthook-agent.yml"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -22,6 +25,17 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_signing_guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_bootstrap.sh\"",
             "timeout": 10
           }
         ]

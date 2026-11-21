@@ -1,0 +1,15 @@
+# Agent sessions' lefthook config: every gate in lefthook.yml, printed quietly.
+#
+# A green commit printed ~4 KB of box art and every gate's success log, and an
+# agent pays for that on every commit. Here a passing gate prints one summary
+# line and a failing gate prints its full output. `.claude/settings.json` points
+# Claude Code sessions here through LEFTHOOK_CONFIG. A person's terminal keeps
+# lefthook.yml's default output.
+#
+# This file only changes output. It must not add, skip or change a gate:
+# server/tests/test_lefthook_agent_config.py holds it to that.
+extends:
+  - lefthook.yml
+output:
+  - summary
+  - failure

@@ -103,6 +103,8 @@ def _defines(source: str, symbol: str) -> bool:
         rf"^\s*(?:async\s+)?(?:def|class)\s+{name}\b",  # function or class
         rf"^{name}\s*[:=]",  # module-level constant or annotated global
         rf"[\"']{name}[\"']\s*:",  # dict/config key, e.g. "role_file":
+        # TypeScript: the map resolves client/src paths, so it names hooks and components too.
+        rf"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|const|class|interface|type)\s+{name}\b",
     )
     return any(re.search(pattern, source, re.M) for pattern in patterns)
 
