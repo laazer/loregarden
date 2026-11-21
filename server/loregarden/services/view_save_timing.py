@@ -39,14 +39,28 @@ class ViewSaveTimer:
 
     def __init__(self, received_at: float) -> None:
         self._received_at = received_at
-        self._last = received_at
-        self._phases: dict[ViewSavePhase, float] = {}
+        #: Where each phase ended, in seconds since `received_at`.
+        self._ends: dict[ViewSavePhase, float] = {}
 
     def mark(self, phase: ViewSavePhase) -> None:
         """Close `phase` at the current moment."""
-        now = time.perf_counter()
-        self._phases[phase] = now - self._last
-        self._last = now
+        self._ends[phase] = time.perf_counter() - self._received_at
+
+    def _rounded_phases(self) -> dict[str, float]:
+        """Each phase's length in milliseconds, rounded at its boundaries.
+
+        Rounding each length on its own let the phases sum to more than the
+        rounded total (0.001 + 0.002 + 0.007 against 0.009). Rounding where
+        each phase ends instead makes the lengths sum to the last rounded end,
+        which rounding (monotonic) keeps at or below the rounded total.
+        """
+        phases: dict[str, float] = {}
+        previous = 0.0
+        for phase, end in self._ends.items():
+            boundary = round(end, 3)
+            phases[phase.value] = round(boundary - previous, 3)
+            previous = boundary
+        return phases
 
     def report(self, view_id: str, outcome: int) -> None:
         """Log the phases at warning level when the whole save was slow.
@@ -57,7 +71,7 @@ class ViewSaveTimer:
         total = time.perf_counter() - self._received_at
         if total < SLOW_SAVE_SECONDS:
             return
-        phases = {phase.value: round(seconds, 3) for phase, seconds in self._phases.items()}
+        phases = self._rounded_phases()
         logger.warning(
             "View save %s took %.2fs (status %d): %s",
             view_id,

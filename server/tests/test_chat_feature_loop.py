@@ -145,6 +145,32 @@ def test_a_blocked_ticket_holds_the_queue_and_says_why(
     started_workflows.assert_not_called()
 
 
+def test_a_queue_the_round_outgrew_holds_and_says_why(
+    client: TestClient, db_session: Session, loop: dict, started_workflows
+):
+    client.post(f"{BASE}/{loop['id']}/feature/criteria", json={"text": "Toggle persists"})
+    with mock.patch("loregarden.services.chat_feature_loop.activity_for", return_value="running"):
+        client.post(f"{BASE}/{loop['id']}/feature/criteria", json={"text": "Respects OS"})
+    # The round's own stages fill the ticket after "Respects OS" was accepted.
+    ticket = _ticket(db_session, loop)
+    ticket.acceptance_criteria_json = json.dumps(
+        [f"Spec criterion {n}" for n in range(MAX_ACCEPTANCE_CRITERIA)]
+    )
+    ticket.state = TicketState.DONE
+    db_session.add(ticket)
+    db_session.commit()
+
+    with mock.patch("loregarden.services.chat_feature_loop.logger") as log:
+        advance_feature_loops(db_session)
+    log.exception.assert_not_called()
+
+    snapshot = client.get(f"{BASE}/{loop['id']}").json()
+    assert snapshot["feature"]["status"] == "blocked"
+    assert f"it has {MAX_ACCEPTANCE_CRITERIA} and 1 are queued" in snapshot["feature"]["reason"]
+    assert _statuses(snapshot) == {"Toggle persists": "met", "Respects OS": "queued"}
+    assert started_workflows.call_count == 1
+
+
 def test_accepting_past_the_criteria_cap_is_refused_before_anything_changes(
     client: TestClient, db_session: Session, loop: dict, started_workflows
 ):

@@ -572,10 +572,15 @@ REFUSED_LANDINGS_WAIT_FOR_A_CHANGE = Invariant(
     # branch or the target (or a person) gives the landing another answer.
     repair=None,
     reentry=InvariantReentry.DEFECT,
-    since=date(2026, 11, 7),
+    # The guard that covers every writer: `land_ticket` itself refuses standing
+    # tips (#904, merged 2026-11-18 20:39 UTC). The 2026-11-07 guard sat only in
+    # the terminal sweep, so the orchestrator's finish and the MCP tool kept
+    # retrying (lg-protocol-executors-1612 on 11-13, lg-run-economics-2636 on
+    # 11-16); dating re-entry from it blamed this test for writers it never had.
+    since=date(2026, 11, 19),
     prevented_by=(
         "server/tests/test_terminal_stage_sweep.py"
-        "::test_a_landing_its_tests_refused_is_not_retried_on_the_same_tips"
+        "::test_land_ticket_itself_does_not_run_the_suite_again_on_refused_tips"
     ),
     unrepaired_action=(
         "Read the refusal on the ticket's Outputs tab, fix the branch (or wait out a "

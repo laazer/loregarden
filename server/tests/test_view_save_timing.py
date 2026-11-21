@@ -62,6 +62,25 @@ def test_a_slow_save_reports_every_phase_and_its_outcome(
     assert report.args[2] == 200
 
 
+def test_rounded_phases_never_sum_past_the_rounded_total(caplog: pytest.LogCaptureFixture):
+    """CI's numbers: phases of 0.51, 1.51 and 6.51ms each round up, to 0.010s
+    in all, inside a 8.6ms save that rounds to 0.009s."""
+    timer = view_save_timing.ViewSaveTimer(received_at=0.0)
+    clock = [0.00051, 0.00202, 0.00853, 0.0086]  # three phase ends, then the report
+    with (
+        mock.patch.object(view_save_timing.time, "perf_counter", side_effect=clock),
+        mock.patch.object(view_save_timing, "SLOW_SAVE_SECONDS", 0.0),
+        caplog.at_level(logging.WARNING),
+    ):
+        for phase in (ViewSavePhase.THREAD_WAIT, ViewSavePhase.READ, ViewSavePhase.WRITE):
+            timer.mark(phase)
+        timer.report("view-1", 200)
+
+    [report] = _save_reports(caplog)
+    assert report.view_save_seconds == 0.009
+    assert sum(report.view_save_phases.values()) <= report.view_save_seconds + 1e-9
+
+
 def test_a_slow_refusal_is_reported_as_the_refusal_it_was(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ):

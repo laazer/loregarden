@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services.symbol_map import definitions_for
 from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map import sources as sources_module
@@ -192,6 +193,47 @@ def test_a_refresh_failure_does_not_fail_or_delay_the_dispatch(
     assert _partitions(db_session, workspace.id)[identify(worktree)].head_sha == stored
     read = definitions_for(db_session, workspace.id, worktree, "added")
     assert read.status.freshness is Freshness.SHA_MISMATCH
+
+
+def test_a_cold_build_another_run_won_does_not_fail_the_dispatch(
+    db_session: Session, dispatch_case
+):
+    """Two members of a parallel stage share one checkout, and both find no map.
+
+    The second insert of that checkout's partition breaks the unique key. The
+    refresh degrades, but the failed flush used to leave the dispatch's own
+    Session pending a rollback, so its next write raised and the run failed:
+    test_parallel_stage_runs_all_agents blocked on CI three times this way.
+    The other run's row is committed from its own Session at the moment this
+    build has looked and found nothing, which is the race itself.
+    """
+    ticket, workspace, _primary = dispatch_case
+    real_partition_for = store_module.partition_for
+
+    def _the_other_run_wins(session: Session, workspace_id: str, repo_root: Path):
+        found = real_partition_for(session, workspace_id, repo_root)
+        with Session(db_session.get_bind()) as other:
+            other.add(
+                SymbolMapPartition(
+                    workspace_id=workspace_id,
+                    checkout_identity=identify(repo_root),
+                    checkout_root=str(repo_root),
+                    head_sha="0" * 40,
+                    built_at=utcnow(),
+                )
+            )
+            other.commit()
+        return found
+
+    with (
+        mock.patch.object(store_module, "partition_for", side_effect=_the_other_run_wins),
+        mock.patch.object(stage_turn, "run_print_mode", side_effect=_silent_agent),
+    ):
+        completed = CliAgentExecutor(db_session).execute(
+            _make_run(db_session, ticket, "run-entry-lost-race"), ticket
+        )
+
+    assert completed.status is RunStatus.SUCCEEDED, completed.stderr
 
 
 def test_the_call_site_wraps_the_refresh_in_no_try_except():
