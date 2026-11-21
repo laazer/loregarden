@@ -13,6 +13,7 @@ import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { LegacyKnowledgeRedirect, MemoryPage } from "./pages/MemoryPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { Dashboard } from "./pages/Dashboard";
 import { TicketPage } from "./pages/TicketPage";
 import { EditorPage } from "./pages/EditorPage";
@@ -128,6 +129,7 @@ export function AppShell() {
             <Route path="/knowledge/*" element={<LegacyKnowledgeRedirect />} />
             <Route path="/workspaces/*" element={<WorkspacesPage />} />
             <Route path="/instances/*" element={<LegacyInstancesRedirect />} />
+            <Route path="/review" element={<ReviewPage />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
             {/* Before the catch-all, which would otherwise bounce every view

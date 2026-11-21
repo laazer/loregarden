@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * Every bounded scrolling region, on BOTH axes, with its reachability
  * MEASURED rather than asserted in prose.

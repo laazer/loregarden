@@ -475,6 +475,15 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "tab stop in the subtree: <button> components/chat/MarkdownContent.tsx:114",
   },
   {
+    selector: ".review-page",
+    reason: "focusable-descendant",
+    note: "tab stop in the subtree: <Link> components/TopbarPageSlot.tsx:78",
+  },
+  {
+    selector: ".review-log pre, .review-request-body, .review-response pre",
+    reason: "tabbable",
+  },
+  {
     selector: ".hierarchyTree",
     reason: "unresolved",
     note: "declared in HierarchyEditor.module.css, so the bundler renames the class and no literal in any TSX can be joined to it.",

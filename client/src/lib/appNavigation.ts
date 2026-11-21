@@ -18,6 +18,7 @@ export type AppPage =
   | "queue"
   | "machine"
   | "branch-triage"
+  | "review"
   | "mcp"
   | "memory"
   | "workspaces";
@@ -83,6 +84,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   queue: "/machine/lanes",
   machine: "/machine",
   "branch-triage": "/branch-triage",
+  review: "/review",
   mcp: "/mcp",
   memory: "/memory",
   workspaces: "/workspaces",
@@ -433,6 +435,7 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/branch-triage" || pathname.startsWith("/branch-triage/")) {
     return "branch-triage";
   }
+  if (pathname === "/review" || pathname.startsWith("/review/")) return "review";
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
   if (pathname === "/memory" || pathname.startsWith("/memory/")) return "memory";
   if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) return "memory";

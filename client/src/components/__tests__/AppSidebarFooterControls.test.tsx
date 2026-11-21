@@ -37,6 +37,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import { AppSidebar } from "../AppSidebar";
+import { SIDEBAR_LABELS_IN_RAIL_ORDER } from "../../test/sidebarLabels";
 import {
   createView,
   fetchSidebarEntries,
@@ -341,18 +342,7 @@ test("each control is one tab stop, and the rows gain none", async () => {
   // and nothing from a row's own controls, which are reached with Left/Right
   // instead.
   expect(named).toEqual([
-    "Home",
-    "Chat",
-    "Console",
-    "Work items",
-    "Initiatives",
-    "Editor",
-    "Studios",
-    "Branch Triage",
-    "Machine",
-    "MCP Gateway",
-    "Workspaces",
-    "Memory",
+    ...SIDEBAR_LABELS_IN_RAIL_ORDER,
     "Build Board",
     "Sketch Surface",
     "Scratch Pad",

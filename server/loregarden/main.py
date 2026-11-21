@@ -48,6 +48,7 @@ from loregarden.api import (
     reference_library,
     reference_repos,
     reference_research,
+    review,
     runs,
     stage_fanout,
     studio,
@@ -336,6 +337,7 @@ app.include_router(composer_notes.router, prefix="/api")
 app.include_router(views.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
+app.include_router(review.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(docker_capacity.router, prefix="/api")
 app.include_router(machine_disk.router, prefix="/api")

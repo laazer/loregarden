@@ -30,6 +30,9 @@ from loregarden.services.ui_action_catalog import CATALOG, UiAction, UiActionEff
 from starlette.websockets import WebSocketDisconnect
 from tests.mcp_helpers import call_mcp
 
+# A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
+pytestmark = pytest.mark.registry
+
 _CLIENT = Path(__file__).resolve().parents[2] / "client" / "src"
 _INVOKE = f"mcp__loregarden__{McpTool.INVOKE_UI_ACTION.value}"
 

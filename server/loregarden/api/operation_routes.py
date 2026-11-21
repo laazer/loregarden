@@ -28,6 +28,7 @@ from loregarden.services.operations.disk_operations import (
 )
 from loregarden.services.operations.github_issue_operations import IssueNotLinked
 from loregarden.services.operations.initiatives import PlanNotFound
+from loregarden.services.operations.review_operations import CaptureNotFound
 from loregarden.services.organization_gate_service import UnknownWorkspaceError
 from loregarden.services.pull_request_merge import MergeFailed, MergeRefused
 from loregarden.services.run_resolution import RunNotFound
@@ -78,6 +79,7 @@ _STATUSES: Mapping[type[Exception], _Status] = {
     NoDiskScan: _Status(404),
     DiskNodeNotFound: _Status(404),
     IssueNotLinked: _Status(404),
+    CaptureNotFound: _Status(404),
     UnknownWorkspaceError: _Status(404),
     MemoryRelationError: _Status(422),
     MemoryGraphNotConfiguredError: _Status(409),

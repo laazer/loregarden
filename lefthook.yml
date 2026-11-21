@@ -50,6 +50,14 @@ pre-commit:
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py,client/**/*.{ts,tsx,js,jsx}}"
       run: bash .lefthook/scripts/format-staged.sh {staged_files}
       stage_fixed: true
+    registry-checks:
+      name: Registry checks (whole-tree tests pre-push selection cannot reach)
+      priority: 1
+      # "A new X must be registered in Y" rules: tests that walk the tree, so
+      # neither the import graph nor `jest --changedSince` selects them from the
+      # file you changed. Tests opt in where they are written; see the script.
+      glob: "{server/loregarden/**/*.py,server/tests/**/*.py,client/src/**/*.{ts,tsx,css,json}}"
+      run: bash .lefthook/scripts/registry-checks.sh {staged_files}
     py-review:
       name: Python (Ruff, server/pyproject.toml)
       priority: 1

@@ -60,6 +60,7 @@ import { ApiError } from "../../api/http";
 import { createQueryClient } from "../../api/queryClient";
 import { useToastStore } from "../../state/toastStore";
 import { AppSidebar } from "../AppSidebar";
+import { SIDEBAR_LABELS_IN_RAIL_ORDER } from "../../test/sidebarLabels";
 import {
   deleteView,
   fetchSidebarEntries,
@@ -94,20 +95,7 @@ const mockDeleteView = deleteView as jest.MockedFunction<typeof deleteView>;
 const SLUG = "loregarden";
 
 /** The built-in pages, in rail order: Work, then Build, then System. */
-const TOOL_LABELS = [
-  "Home",
-  "Chat",
-  "Console",
-  "Work items",
-  "Initiatives",
-  "Editor",
-  "Studios",
-  "Branch Triage",
-  "Machine",
-  "MCP Gateway",
-  "Workspaces",
-  "Memory",
-];
+const TOOL_LABELS = SIDEBAR_LABELS_IN_RAIL_ORDER;
 
 /** The three lists the built-in pages are drawn in, one per group. */
 const GROUP_NAMES = ["Work", "Build", "System"];

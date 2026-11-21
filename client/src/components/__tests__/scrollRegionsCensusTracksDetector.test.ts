@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * The census is derived from the detector, so when the detector is corrected
  * the census must be re-derived. This file is the check that it was.

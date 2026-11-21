@@ -143,6 +143,19 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
   {
+    key: "review",
+    group: "build",
+    label: "Review",
+    path: pathForPage("review"),
+    ownsPage: ownsOnly("review"),
+    icon: (
+      <svg {...STROKE} aria-hidden>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    ),
+  },
+  {
     key: "branch-triage",
     group: "build",
     label: "Branch Triage",

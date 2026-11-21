@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * Every <select> in the app goes through components/ui/Select, which replaces
  * the OS-drawn menu with a themed one. Checked against the source tree: the

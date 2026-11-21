@@ -90,6 +90,7 @@ class UiPage(StrEnum):
     QUEUE = "queue"
     MACHINE = "machine"
     BRANCH_TRIAGE = "branch-triage"
+    REVIEW = "review"
     MCP = "mcp"
     MEMORY = "memory"
     WORKSPACES = "workspaces"

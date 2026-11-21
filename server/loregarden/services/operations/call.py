@@ -20,6 +20,7 @@ from loregarden.services.operations.organization_operations import ORGANIZATION_
 from loregarden.services.operations.path_claim_operations import PATH_CLAIM_OPERATIONS
 from loregarden.services.operations.pull_request_merges import PULL_REQUEST_MERGES
 from loregarden.services.operations.research_record import RESEARCH_RECORD
+from loregarden.services.operations.review_operations import REVIEW_OPERATIONS
 from loregarden.services.operations.run_callbacks import RUN_CALLBACKS
 from loregarden.services.operations.spec import (
     Caller,
@@ -58,6 +59,7 @@ OPERATIONS: Mapping[OperationId, Operation] = {
         *MEMORY_OPERATIONS,
         *DOCKER_CAPACITY_OPERATIONS,
         *DISK_OPERATIONS,
+        *REVIEW_OPERATIONS,
         *GITHUB_ISSUE_OPERATIONS,
         *ORGANIZATION_OPERATIONS,
         *TICKET_WRITES,

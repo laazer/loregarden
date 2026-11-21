@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * The ways lg-milestone-that-2215 can be made to pass while shipping the
  * defect, closed one at a time.

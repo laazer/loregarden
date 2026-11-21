@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * lg-milestone-that-2187 AC8 / R6 — every polling surface's error-branch
  * posture, checked against the source tree rather than against a list.

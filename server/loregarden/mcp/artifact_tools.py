@@ -10,6 +10,7 @@ from sqlmodel import Session
 from loregarden.services.artifact_content import parse_content_object
 from loregarden.services.evidence import ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND
 from loregarden.services.evidence import EVIDENCE_KINDS, resolve_head_sha
+from loregarden.services.review_kit import ingest_review_kit
 
 
 def attach_evidence(
@@ -21,7 +22,9 @@ def attach_evidence(
         raise ValueError(
             f"Unknown evidence_kind '{evidence_kind}'. Valid kinds: {', '.join(EVIDENCE_KINDS)}"
         )
-    content = parse_content_object(arguments.get("content_json"))
+    # A `review` block's screenshots are copied in here, before the artifact
+    # exists, so a refused kit leaves no row pointing at missing captures.
+    content = ingest_review_kit(ticket.id, parse_content_object(arguments.get("content_json")))
     # Stamped here, not taken from the agent: an agent choosing its own sha can
     # claim proof against a commit its work predates.
     artifact = svc.attach_artifact(

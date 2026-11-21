@@ -25,6 +25,9 @@ from loregarden.services.reference_survey.schedule import ReviewNowIn
 from loregarden.services.reference_survey.schemas import SourceIn
 from pydantic import BaseModel, ValidationError
 
+# A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
+pytestmark = pytest.mark.registry
+
 #: Bodies that are not generated, and why each cannot drift from what validates it.
 _NOT_GENERATED: dict[type[BaseModel], str] = {
     # The survey and research operations multiplex several routes on `action`;

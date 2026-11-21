@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     #: Files attached to Home chat turns, one directory per conversation.
     #: Relative paths resolve against ``repo_root``, beside the database.
     chat_attachments_dir: Path = Path("data/chat-attachments")
+    #: Screenshots an agent attaches as review evidence, one directory per
+    #: ticket. Copied in at attach time so the review page never serves a path
+    #: an agent named.
+    review_captures_dir: Path = Path("data/review-captures")
     #: Where a detached agent writes its own stdout, stderr and exit code, one
     #: `<run_code>-<run_id[:8]>.{out,err,rc}` trio per run. Resolved against
     #: ``repo_root`` below, beside the other data dirs: the agent runs with a
