@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from loregarden.config import settings
 from loregarden.services.code_map import (
     code_map_reference,
@@ -9,6 +10,9 @@ from loregarden.services.code_map import (
     structure_tree,
     verify_code_map,
 )
+
+# A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
+pytestmark = pytest.mark.registry
 
 MAP = """
 ## STRUCTURE
@@ -66,6 +70,24 @@ def test_constants_and_config_keys_count_as_definitions(tmp_path):
     """The map legitimately points at more than functions; flagging a constant
     as missing would train everyone to ignore the check."""
     assert verify_code_map(_repo(tmp_path)) == []
+
+
+def test_a_typescript_export_counts_and_an_import_does_not(tmp_path):
+    """The map resolves client/src paths, so it names hooks; an import is a mention."""
+    repo = _repo(tmp_path)
+    hooks = repo / "client" / "src" / "hooks"
+    hooks.mkdir(parents=True)
+    (repo / "AGENTS.md").write_text(
+        MAP.replace(
+            "| Config |",
+            "| Hook | `hooks/useThing.ts` | `useThing` resolves it |\n| Config |",
+        )
+    )
+    (hooks / "useThing.ts").write_text("export function useThing() {\n  return 1;\n}\n")
+    assert verify_code_map(repo) == []
+
+    (hooks / "useThing.ts").write_text('import { useThing } from "./elsewhere";\nuseThing();\n')
+    assert any("useThing" in d.detail for d in verify_code_map(repo))
 
 
 def test_a_mention_is_not_a_definition(tmp_path):

@@ -29,7 +29,8 @@ server=0
 client=0
 for f in "$@"; do
   case "$f" in
-    server/loregarden/* | server/tests/*) server=1 ;;
+    # AGENTS.md: test_code_map holds its "where to look" table to the code.
+    AGENTS.md | server/loregarden/* | server/tests/*) server=1 ;;
     client/src/*) client=1 ;;
   esac
 done

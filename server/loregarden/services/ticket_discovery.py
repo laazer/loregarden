@@ -122,6 +122,24 @@ def list_tickets_mcp(
     return {"workspace_slug": workspace_slug, "count": len(rows), "tickets": rows}
 
 
+def _neighbor_row(ticket: Ticket) -> dict[str, Any]:
+    """A sibling or child, as much as an agent needs to tell them apart.
+
+    Neighbors share a parent and a workspace, which `self` and `parent` already
+    carry in full; repeating them, the uuid and the legacy id on every row made
+    the neighbor lists most of a read (31 KB of a 48 KB brief for a milestone
+    with 69 children). The external id resolves in every tool.
+    """
+    return {
+        "external_id": ticket.external_id,
+        "title": ticket.title,
+        "state": ticket.state.value,
+        "work_item_type": ticket.work_item_type.value,
+        "workflow_stage_key": ticket.workflow_stage_key,
+        "workflow_stage_status": ticket.workflow_stage_status.value,
+    }
+
+
 def ticket_neighbors_mcp(session: Session, ticket: Ticket) -> dict[str, Any]:
     """Parent, siblings, and direct children for the active ticket."""
     parent = None
@@ -131,7 +149,7 @@ def ticket_neighbors_mcp(session: Session, ticket: Ticket) -> dict[str, Any]:
         if parent_ticket:
             parent = compact_ticket_row(session, parent_ticket)
             siblings = [
-                compact_ticket_row(session, sibling)
+                _neighbor_row(sibling)
                 for sibling in session.exec(
                     select(Ticket).where(
                         Ticket.parent_ticket_id == parent_ticket.id,
@@ -141,7 +159,7 @@ def ticket_neighbors_mcp(session: Session, ticket: Ticket) -> dict[str, Any]:
             ]
 
     children = [
-        compact_ticket_row(session, child)
+        _neighbor_row(child)
         for child in session.exec(
             select(Ticket).where(Ticket.parent_ticket_id == ticket.id).order_by(Ticket.priority)
         ).all()

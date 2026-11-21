@@ -41,6 +41,13 @@
 #   - server/.venv (or uv on PATH) — see server/pyproject.toml; uv sync
 #   - client/node_modules (or npm on PATH) — cd client && npm ci
 
+# `**/` matches zero directories or more. lefthook's default matcher reads it
+# as one or more, so `client/src/**/*.tsx` skipped client/src/App.tsx,
+# `client/**/*.json` skipped client/package.json (a dependency-only push ran no
+# jest), and every gate on `client/**/*.ts` skipped client/vite.config.ts.
+# server/tests/test_lefthook_globs.py holds this setting.
+glob_matcher: doublestar
+
 pre-commit:
   parallel: true
   commands:
@@ -56,7 +63,7 @@ pre-commit:
       # "A new X must be registered in Y" rules: tests that walk the tree, so
       # neither the import graph nor `jest --changedSince` selects them from the
       # file you changed. Tests opt in where they are written; see the script.
-      glob: "{server/loregarden/**/*.py,server/tests/**/*.py,client/src/**/*.{ts,tsx,css,json}}"
+      glob: "{AGENTS.md,server/loregarden/**/*.py,server/tests/**/*.py,client/src/**/*.{ts,tsx,css,json}}"
       run: bash .lefthook/scripts/registry-checks.sh {staged_files}
     py-review:
       name: Python (Ruff, server/pyproject.toml)
