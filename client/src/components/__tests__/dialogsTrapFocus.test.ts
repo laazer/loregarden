@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * Every modal dialog in the app traps focus — checked against the source tree,
  * not against a list.

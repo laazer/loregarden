@@ -121,6 +121,14 @@ class OperationId(StrEnum):
     OPERATOR_QUESTION_LIST = "operator_question_list"
     #: A stage run's question to an earlier stage on its ticket (`stage_asks.py`).
     STAGE_ASK = "stage_ask"
+    #: The Review page: the queue, a capture, and the build launcher and try-it
+    #: request a person drives (`review_operations.py`).
+    REVIEW_QUEUE = "review_queue"
+    REVIEW_CAPTURE = "review_capture"
+    REVIEW_LAUNCH_STATUS = "review_launch_status"
+    REVIEW_LAUNCH = "review_launch"
+    REVIEW_LAUNCH_STOP = "review_launch_stop"
+    REVIEW_TRY = "review_try"
 
 
 @dataclass(frozen=True)

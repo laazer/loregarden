@@ -376,6 +376,7 @@ def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
         monkeypatch.setattr(target, engine)
     # Chat attachments are files beside the database; keep them beside this one.
     monkeypatch.setattr(settings, "chat_attachments_dir", tmp_path / "chat-attachments")
+    monkeypatch.setattr(settings, "review_captures_dir", tmp_path / "review-captures")
     return engine
 
 

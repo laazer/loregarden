@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * Every region this ticket fixes has the three per-site tests its criteria ask
  * for, and the list of which regions those are is COMPUTED rather than written

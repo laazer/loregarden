@@ -38,6 +38,9 @@ from loregarden.services.operations import (
 from loregarden.services.operations.ticket_reads import TicketRef
 from tests.factories import make_workspace_ticket
 
+# A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
+pytestmark = pytest.mark.registry
+
 API = Path(__file__).resolve().parents[1] / "loregarden" / "api"
 LEDGER = Path(__file__).resolve().parent / "operation_ledger"
 

@@ -88,6 +88,7 @@ asyncio_mode = "auto"
 tmp_path_retention_policy = "failed"
 markers = [
     "real_shell_command: opt out of the plain-shell patch and see the real argv",
+    "registry: a fast whole-tree check run on pre-commit (.lefthook/scripts/registry-checks.sh)",
 ]
 # A hung test used to be indistinguishable from a slow suite. Nothing capped a
 # test's wall clock, so a deadlock presented as a full run that never returned —

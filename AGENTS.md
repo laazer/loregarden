@@ -157,6 +157,29 @@ task cli -- mcp call loregarden_get_ticket ticket_id=lg-verdict-outcome-137  # e
     3. Run `uv run pytest tests/test_migration_registry.py`; it should pass with no fork.
   - Change only `after`, never either id. The live database records ids, so a renamed id runs again, and `test_no_merged_id_has_been_renamed_or_removed` rejects it. If the fork reached main, repoint whichever of the two merged later.
 
+## ADDING ONE OF THESE? IT IS REGISTERED SOMEWHERE ELSE TOO
+
+Several rules here have the shape "a new X must also appear in Y", and Y is
+not next to X. Each is held by a test that walks the tree (a *registry check*),
+which runs on pre-commit (`registry-checks` in `lefthook.yml`) whenever a
+staged file is under `server/loregarden`, `server/tests` or `client/src`.
+
+| You add | Also | Held by |
+|---|---|---|
+| A REST route in `api/*.py` | Run it through `run_rest_operation` with an `Operation` (`services/operations/`, id in `spec.py`, tuple in `call.py`). A request body is an `OperationBody` cut from the args model. A refusal of a new kind gets its status in `api/operation_routes.py` `_STATUSES`. The route ledger only shrinks | `test_operations.py`, `test_operation_route_bodies.py` |
+| An MCP tool | `McpTool` in `mcp/tool_ids.py`, backed by an operation (the tool ledger only shrinks) | `test_operations.py` |
+| A UI action (`useAgentAction`) | An entry in `services/ui_action_catalog.py` | `test_ui_actions.py` |
+| An app page | The `AppPage` union, `PAGE_PATHS` and `pageFromPath` in `lib/appNavigation.ts`; the route in `App.tsx`; `lib/visualQaRoutes.json`; a `SIDEBAR_PAGES` entry if it belongs in the rail | `tsc -b` for `PAGE_PATHS` (a `Record<AppPage, …>`); sidebar tests read `SIDEBAR_PAGES`. `pageFromPath`, the route and `visualQaRoutes.json` are held by nothing: check them by hand |
+| A CSS rule with `overflow: auto/scroll` and a bound height | An entry in `test/scrollRegionsBaseline.ts` with its measured reason. If nothing in it can take focus: `tabIndex={0}`, `scroll-focus-ring`, a role and a name on the element, and a keyboard test and an empty-state test in that component's own test file | `scrollRegions*.test.ts` |
+| A `className` | A rule that defines it | `classNamesResolve.test.ts` |
+| A `useQuery` with `refetchInterval` | `usePolledReadFailure` (+ `StaleReadNotice`) instead of branching on `isError` | `polledReadFailurePosture.test.ts` |
+| A dialog | `ModalShell`, or `useDialogFocusTrap` + `useDialogDismiss` | `dialogsTrapFocus.test.ts` |
+
+**Writing a new whole-tree test?** Opt it in where it is written, so the
+pre-commit step finds it without a list to keep: `pytestmark =
+pytest.mark.registry` in a pytest module, or a `// @registry-check` line in a
+jest file. Opt in only fast tests (seconds, no network, no full-volume DB).
+
 ## ANTI-PATTERNS (THIS PROJECT)
 
 | Pattern | Why forbidden | Evidence |

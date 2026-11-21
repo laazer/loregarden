@@ -8,6 +8,7 @@ should tell the operator to open — and keeps that git work out of the core.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from loregarden.core.workflow_loader import (
@@ -26,6 +27,8 @@ from sqlmodel import Session
 #: entry point in the workspaces that use the placeholder today; a workspace
 #: whose playable unit is something else adds its suffix here.
 SCENE_SUFFIXES = (".tscn",)
+
+logger = logging.getLogger(__name__)
 
 _GIT_TIMEOUT_SECONDS = 20
 
@@ -61,14 +64,48 @@ def resolve_playtest_scenes(session: Session, ticket: Ticket) -> list[str] | Non
     if base is None:
         return None
 
-    proc = _git(repo_root, "diff", "--name-only", f"{base}...{branch}")
+    proc = _git(repo_root, "diff", "--name-only", "--diff-filter=d", f"{base}...{branch}")
     if proc.returncode != 0:
         return None
+    return _scene_files(proc.stdout or "")
+
+
+def _scene_files(names: str) -> list[str]:
     return sorted(
-        line.strip()
-        for line in (proc.stdout or "").splitlines()
-        if line.strip().endswith(SCENE_SUFFIXES)
+        line.strip() for line in names.splitlines() if line.strip().endswith(SCENE_SUFFIXES)
     )
+
+
+def resolve_review_scenes(session: Session, ticket: Ticket) -> list[str] | None:
+    """Scenes a reviewer should open for ``ticket``, read from its own change set.
+
+    A landed ticket's branch diff against the base goes empty once its
+    integration branch reaches the base, which is exactly when a reviewer of
+    the combined build still needs the scene list. A landing merge
+    (``landed_sha`` with two parents) holds the ticket's change set on its own:
+    ``landed_sha^1..landed_sha``. A fast-forward landing has no such boundary,
+    so it falls back to the branch diff, as an unlanded ticket does.
+    """
+    workspace = workspace_for_ticket(session, ticket)
+    if ticket.landed_sha and workspace is not None:
+        repo_root = resolve_workspace_root(workspace)
+        parents = _git(repo_root, "rev-list", "--parents", "-n", "1", ticket.landed_sha)
+        if parents.returncode == 0 and len(parents.stdout.split()) == 3:
+            proc = _git(
+                repo_root,
+                "diff",
+                "--name-only",
+                "--diff-filter=d",
+                f"{ticket.landed_sha}^1",
+                ticket.landed_sha,
+            )
+            if proc.returncode == 0:
+                return _scene_files(proc.stdout or "")
+            logger.warning(
+                "could not diff landing %s of %s: %s",
+                ticket.landed_sha[:10], ticket.external_id, proc.stderr.strip(),
+            )  # fmt: skip
+    return resolve_playtest_scenes(session, ticket)
 
 
 def expand_gate_checklist_for_ticket(

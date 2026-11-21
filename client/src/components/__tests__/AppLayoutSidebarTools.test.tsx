@@ -23,6 +23,7 @@ import { AppLayout } from "../AppLayout";
 import { api } from "../../api/client";
 import { ApiError } from "../../api/http";
 import { useUiStore } from "../../state/uiStore";
+import { SIDEBAR_LABELS_IN_RAIL_ORDER } from "../../test/sidebarLabels";
 import {
   fetchSidebarEntries,
   fetchViews,
@@ -89,20 +90,7 @@ const mockSetPinned = setEntryPinned as jest.MockedFunction<typeof setEntryPinne
 const mockReorder = reorderSidebarEntries as jest.MockedFunction<typeof reorderSidebarEntries>;
 
 /** The built-in pages, in rail order: Work, then Build, then System. */
-const TOOL_LABELS = [
-  "Home",
-  "Chat",
-  "Console",
-  "Work items",
-  "Initiatives",
-  "Editor",
-  "Studios",
-  "Branch Triage",
-  "Machine",
-  "MCP Gateway",
-  "Workspaces",
-  "Memory",
-];
+const TOOL_LABELS = SIDEBAR_LABELS_IN_RAIL_ORDER;
 
 /** Each built-in page's name, in the order the rail draws them across its groups. */
 function toolNames(): string[] {

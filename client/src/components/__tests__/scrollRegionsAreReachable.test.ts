@@ -1,3 +1,4 @@
+// @registry-check: runs on pre-commit (.lefthook/scripts/registry-checks.sh)
 /**
  * Every bounded scrolling region in the client is enumerated, and each one
  * states the measured reason a keyboard can reach it.

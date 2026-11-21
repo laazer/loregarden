@@ -1,8 +1,10 @@
 import type { UseQueryResult } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 import type { Approval } from "../../api/chatTypes";
 import type { BlockedOn, TicketSummary, TicketTreeNode } from "../../api/types";
 import type { WorkspacePullRequests } from "../../api/workspaceDashboardApi";
+import { pathForPage } from "../../lib/appNavigation";
 import { useUiStore } from "../../state/uiStore";
 import { Button } from "../ui/Button";
 import { DashboardSection } from "./DashboardSection";
@@ -106,7 +108,11 @@ export function NeedsYouSection({
   pullRequests,
 }: NeedsYouSectionProps) {
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
+  const navigate = useNavigate();
   const pending = approvals.data ?? [];
+  // Stage sign-offs (playtests among them) are what the review page walks,
+  // with the build to run them against; the inbox still takes the rest.
+  const gateCount = pending.filter((approval) => approval.kind === "workflow_gate").length;
   const approvalGroups = groupApprovals(pending);
   const approvalCount = pending.length;
   // A ticket waiting on others is not yours to unblock: it is listed below,
@@ -130,9 +136,22 @@ export function NeedsYouSection({
       emptyMessage="Nothing is waiting on you: no approvals, no blocked tickets, no pull requests that cannot merge."
       actions={
         approvalCount > 0 ? (
-          <Button variant="secondary" compact onClick={() => setInboxOpen(true)}>
-            Open inbox
-          </Button>
+          <>
+            {gateCount > 0 ? (
+              <Button
+                variant="primary"
+                compact
+                onClick={() =>
+                  navigate(`${pathForPage("review")}?workspace=${encodeURIComponent(workspaceSlug)}`)
+                }
+              >
+                Start review ({gateCount})
+              </Button>
+            ) : null}
+            <Button variant="secondary" compact onClick={() => setInboxOpen(true)}>
+              Open inbox
+            </Button>
+          </>
         ) : null
       }
     >

@@ -436,7 +436,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     list(EVIDENCE_KINDS),
                 ),
                 "title": _string_prop("Short description of what was captured."),
-                "content_json": _string_prop("Captured output as a JSON string."),
+                "content_json": _string_prop(
+                    "Captured output as a JSON string. To hand a human reviewer what to "
+                    "look at, add a `review` object: `screenshots` [{path, caption}] "
+                    "(PNG/JPEG/GIF/WebP files on this machine, copied in at attach "
+                    "time), `links` [{url, label}] to a running server, and `requests` "
+                    "[{name, method, path, body, expect_status}] the reviewer can send "
+                    "from the review page against a local instance. Use real_surface."
+                ),
             },
             required=["run_id", "evidence_kind", "title"],
         ),
