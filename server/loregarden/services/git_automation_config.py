@@ -22,6 +22,8 @@ from loregarden.services.orchestration_profile import (
     GitAutomationConfig,
     resolve_orchestration_profile,
 )
+from loregarden.services.repo_default_branch import default_branch
+from loregarden.services.workspace_paths import resolve_workspace_root
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,26 @@ def base_branch(workspace: Workspace) -> str:
     One answer, and the workspace profile's. Takes no ticket: a ticket parameter
     is the defect this accessor exists to close, because it is what let two
     callers resolve two different bases for one repository.
+
+    A profile that does not name one gets the repository's own default branch
+    (`profile_git`), not the schema's `"main"`.
     """
-    return resolve_orchestration_profile(workspace).git.base_branch
+    return profile_git(workspace).base_branch
+
+
+def profile_git(workspace: Workspace) -> GitAutomationConfig:
+    """The workspace profile's git policy, with its base branch resolved.
+
+    `base_branch` is taken as written only when the profile sets it; otherwise
+    it is the default branch of the workspace's repository. Every reader of the
+    workspace's git policy goes through here, so the base a tree is cut from,
+    the base it publishes to and the base the settings pane shows are one answer.
+    """
+    git = resolve_orchestration_profile(workspace).git
+    if "base_branch" in git.model_fields_set:
+        return git
+    detected = default_branch(resolve_workspace_root(workspace))
+    return git.model_copy(update={"base_branch": detected})
 
 
 def _warn_about_dropped(override: dict[str, Any]) -> None:
@@ -106,7 +126,7 @@ def resolve_git_automation(
     workspace: Workspace, ticket: Ticket | None = None
 ) -> GitAutomationConfig:
     """The effective policy for this ticket in this workspace."""
-    base = resolve_orchestration_profile(workspace).git
+    base = profile_git(workspace)
     if ticket is None:
         return base
 

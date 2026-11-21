@@ -27,6 +27,7 @@ from loregarden.services.gate_runner import (
     sample_gate_context,
     transition_name,
 )
+from loregarden.services.git_automation_config import profile_git
 from loregarden.services.operations import OperationId
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
@@ -171,10 +172,10 @@ def get_workspace_git_automation(
     if not ws:
         raise HTTPException(404, "Workspace not found")
     try:
-        profile = resolve_orchestration_profile(ws)
+        git = profile_git(ws)
     except ProfileUnreadableError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
+    return GitAutomationView.model_validate(git.model_dump(mode="json"))
 
 
 @router.put("/workspaces/{slug}/profile/git", response_model=GitAutomationView)
@@ -184,10 +185,8 @@ def update_workspace_git_automation(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    profile = update_git_config(
-        ws, GitAutomationConfig.model_validate(body.model_dump(mode="json"))
-    )
-    return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
+    update_git_config(ws, GitAutomationConfig.model_validate(body.model_dump(mode="json")))
+    return GitAutomationView.model_validate(profile_git(ws).model_dump(mode="json"))
 
 
 class StartStageRequest(OperationBody, operation=OperationId.STAGE_START, supplied={"run_id"}):
