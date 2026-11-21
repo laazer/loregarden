@@ -17,7 +17,7 @@ from enum import StrEnum
 
 from loregarden.models.domain import Artifact, ArtifactKind, ClaimCertainty, Ticket, Workspace
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func
+from sqlalchemy import ColumnElement, func, or_
 from sqlmodel import Session, select
 
 
@@ -89,8 +89,33 @@ class HandoffEntry(BaseModel):
 
 class HandoffFeed(BaseModel):
     items: list[HandoffEntry]
-    #: Every handoff in scope, of which `items` is the newest `limit`.
+    #: Every handoff in scope that matches the search, of which `items` is the
+    #: newest `limit`.
     total: int
+
+
+def _agent(path: str) -> ColumnElement[str]:
+    """An agent field of the stored document, wrapped (`write_handoff`) or bare."""
+    return func.coalesce(
+        func.json_extract(Artifact.content_json, f"$.handoff.{path}"),
+        func.json_extract(Artifact.content_json, f"$.{path}"),
+        "",
+    )
+
+
+def _matching(search: str) -> ColumnElement[bool]:
+    """Rows whose agents, ticket id or ticket title contain `search`, ignoring case."""
+    return or_(
+        *(
+            field.icontains(search, autoescape=True)
+            for field in (
+                _agent("from_agent"),
+                _agent("to_agent"),
+                Ticket.external_id,
+                Ticket.title,
+            )
+        )
+    )
 
 
 def _parse(content_json: str) -> tuple[_HandoffBody | None, str]:
@@ -134,15 +159,23 @@ def handoff_feed(
     *,
     ticket_id: str | None = None,
     workspace: Workspace | None = None,
+    search: str = "",
     limit: int = 50,
 ) -> HandoffFeed:
-    """The newest `limit` handoffs on one ticket, in one workspace, or anywhere."""
+    """The newest `limit` handoffs on one ticket, in one workspace, or anywhere.
+
+    `search` narrows the whole scope, not the page: a workspace has over a
+    thousand handoffs, and a filter over only the newest fifty would report
+    "no match" for one it had simply not loaded.
+    """
     limit = max(1, min(limit, MAX_LIMIT))
     scope = [Artifact.kind == ArtifactKind.HANDOFF]
     if ticket_id is not None:
         scope.append(Artifact.ticket_id == ticket_id)
     if workspace is not None:
         scope.append(Ticket.workspace_id == workspace.id)
+    if search.strip():
+        scope.append(_matching(search.strip()))
 
     total = session.exec(
         select(func.count())

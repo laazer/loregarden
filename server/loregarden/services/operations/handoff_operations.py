@@ -15,15 +15,17 @@ class HandoffFeedArgs(BaseModel):
     """One ticket's handoffs, by UUID or external id. Takes precedence over `workspace`."""
     workspace: str | None = None
     """One workspace's handoffs, by slug. Neither given: every workspace's."""
+    q: str = Field("", max_length=200)
+    """Only handoffs whose agents, ticket id or ticket title contain this, ignoring case."""
     limit: int = Field(50, ge=1, le=MAX_LIMIT)
 
 
 def _handoff_feed(session: Session, args: HandoffFeedArgs, _caller: Caller) -> HandoffFeed:
     if args.ticket_id is not None:
         ticket = TicketKey(ticket_id=args.ticket_id).resolve(session)
-        return handoff_feed(session, ticket_id=ticket.id, limit=args.limit)
+        return handoff_feed(session, ticket_id=ticket.id, search=args.q, limit=args.limit)
     workspace = workspace_for_slug(session, args.workspace) if args.workspace is not None else None
-    return handoff_feed(session, workspace=workspace, limit=args.limit)
+    return handoff_feed(session, workspace=workspace, search=args.q, limit=args.limit)
 
 
 HANDOFF_OPERATIONS = (

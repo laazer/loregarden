@@ -36,23 +36,16 @@ beforeEach(() => {
 });
 
 describe("on a ticket", () => {
-  it("lists the ticket's chain over the scenario, filterable and usable", async () => {
+  it("lists the ticket's chain over the scenario, usable", async () => {
     mockHandoffs.mockResolvedValue(chain);
     const { container } = renderTab({ ticketId: "t1" });
 
     const list = await screen.findByRole("list", { name: "Handoffs between agents, newest first" });
-    expect(mockHandoffs).toHaveBeenCalledWith({ ticketId: "t1" });
+    expect(mockHandoffs).toHaveBeenCalledWith({ ticketId: "t1", q: "" });
     expect(within(list).getAllByRole("listitem", { hidden: false })).toHaveLength(chain.items.length);
     // On its own ticket a row does not link back to the page it is on.
     expect(within(list).queryAllByRole("link")).toHaveLength(0);
     expect(findUsabilityProblems(container)).toEqual([]);
-
-    const first = chain.items[0];
-    fireEvent.change(screen.getByLabelText("Filter handoffs by agent or ticket"), {
-      target: { value: first.to_agent },
-    });
-    const matches = chain.items.filter((entry) => [entry.from_agent, entry.to_agent].includes(first.to_agent));
-    expect(within(list).getAllByText(/→/)).toHaveLength(matches.length);
   });
 
   it("opens a handoff to the checklist and evidence that went with it", async () => {
@@ -90,7 +83,7 @@ describe("on a workspace", () => {
     renderTab({ ticketId: null });
 
     expect(await screen.findByText(`Newest ${feed.items.length} of 1,129`)).toBeInTheDocument();
-    expect(mockHandoffs).toHaveBeenCalledWith({ workspace: "loregarden" });
+    expect(mockHandoffs).toHaveBeenCalledWith({ workspace: "loregarden", q: "" });
     const link = screen.getAllByRole("link")[0];
     expect(link).toHaveAttribute("href", expect.stringContaining(`/tickets/${feed.items[0].ticket_id}`));
   });
@@ -103,6 +96,70 @@ describe("on a workspace", () => {
     expect(await screen.findByText("Unreadable handoff")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show details" }));
     expect(screen.getByText(unreadable.unreadable)).toBeInTheDocument();
+  });
+});
+
+describe("the filter", () => {
+  const narrowed = (q: string): HandoffFeed => {
+    const items = feed.items.filter((entry) => entry.to_agent === q || entry.from_agent === q);
+    return { items, total: items.length };
+  };
+
+  it("searches the whole workspace on the server, not the page already loaded", async () => {
+    mockHandoffs.mockImplementation(async ({ q }) => (q ? narrowed(q) : { ...feed, total: 1129 }));
+    renderTab({ ticketId: null });
+    const box = await screen.findByLabelText("Filter handoffs by agent or ticket");
+
+    const agent = feed.items[0].to_agent;
+    fireEvent.change(box, { target: { value: `  ${agent} ` } });
+    // Typed, not yet sent: the count says so rather than describing the old page.
+    expect(screen.getByText("Searching…")).toBeInTheDocument();
+
+    const expected = narrowed(agent);
+    expect(
+      await screen.findByText(`${expected.total} ${expected.total === 1 ? "handoff" : "handoffs"} matching`),
+    ).toBeInTheDocument();
+    expect(mockHandoffs).toHaveBeenLastCalledWith({ workspace: "loregarden", q: agent });
+    const list = screen.getByRole("list", { name: "Handoffs between agents, newest first" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(expected.items.length);
+    // Fewer results than the threshold leave the box where it is.
+    expect(screen.getByLabelText("Filter handoffs by agent or ticket")).toHaveValue(`  ${agent} `);
+  });
+
+  it("says nothing matched in this workspace, keeping the search to change", async () => {
+    mockHandoffs.mockImplementation(async ({ q }) => (q ? { items: [], total: 0 } : { ...feed, total: 1129 }));
+    renderTab({ ticketId: null });
+
+    fireEvent.change(await screen.findByLabelText("Filter handoffs by agent or ticket"), {
+      target: { value: "nobody" },
+    });
+    expect(await screen.findByText("No handoff in loregarden matches “nobody”.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter handoffs by agent or ticket")).toHaveValue("nobody");
+  });
+
+  it("never shows the last ticket's handoffs while the next ticket's load", async () => {
+    mockHandoffs.mockImplementation(({ ticketId }) => (ticketId === "t1" ? Promise.resolve(chain) : new Promise(() => {})));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tab = (ticketId: string) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <DockHandoffs ticketId={ticketId} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tab("t1"));
+    await screen.findByRole("list", { name: "Handoffs between agents, newest first" });
+
+    rerender(tab("t2"));
+    expect(screen.queryByRole("list", { name: "Handoffs between agents, newest first" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("offers no filter where there is too little to narrow", async () => {
+    mockHandoffs.mockResolvedValue({ items: chain.items.slice(0, 3), total: 3 });
+    renderTab({ ticketId: "t1" });
+    expect(await screen.findByText("3 handoffs")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter handoffs by agent or ticket")).not.toBeInTheDocument();
   });
 });
 
