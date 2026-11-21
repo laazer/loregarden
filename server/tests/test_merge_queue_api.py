@@ -34,6 +34,9 @@ class _GitHub:
             raise GitHubReadError("gh timed out after 30s")
         return list(REQUIRED)
 
+    def commit_checks(self, sha: str) -> list[GhCheck]:
+        return []
+
     def read_pull_request(self, number: int) -> StagedPullRequest:
         return StagedPullRequest(
             number=number,

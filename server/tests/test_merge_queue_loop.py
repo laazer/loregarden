@@ -28,11 +28,11 @@ from loregarden.models.domain import (
     Workspace,
     utcnow,
 )
-from loregarden.services import merge_queue_loop
+from loregarden.services import merge_queue_github, merge_queue_loop
 from loregarden.services.git_merge_noco import MergeOutcome
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import Candidate, enqueue, transition, withdraw
-from loregarden.services.merge_queue_github import StagedPullRequest
+from loregarden.services.merge_queue_github import RequiredChecksUnavailable, StagedPullRequest
 from loregarden.services.merge_queue_loop import MergeQueueLoop, MergeVerdict, merge_verdict
 from loregarden.services.pull_request_merge import MergeFailed
 from loregarden.services.ticket_pull_request import GhCheck
@@ -142,6 +142,8 @@ class FakeGitHub:
         self.checks: dict[str, list[GhCheck]] = {}
         self.pass_everything = False
         self.unreachable = False
+        #: GitHub refuses the rules read, as for a private repo on the free plan.
+        self.no_rulesets = False
         self.head_tree_override = ""
         self.merges: list[tuple[int, str]] = []
         self.on_read = None
@@ -153,7 +155,12 @@ class FakeGitHub:
     def required_contexts(self, base_branch: str) -> list[str]:
         if self.unreachable:
             raise GitHubReadError("GitHub did not answer within 30s")
+        if self.no_rulesets:
+            raise RequiredChecksUnavailable("GitHub will not show main's rules on this plan")
         return list(REQUIRED)
+
+    def commit_checks(self, sha: str) -> list[GhCheck]:
+        return list(self.checks.get(sha, []))
 
     def read_pull_request(self, number: int) -> StagedPullRequest:
         if self.on_read is not None:
@@ -376,6 +383,73 @@ def test_a_wait_that_expires_times_out_with_the_elapsed_time(session, workspace,
     assert "waited 120m" in entry.detail
 
 
+def test_a_timeout_names_the_hold_it_was_stuck_in(session, workspace, github, entry):
+    _cycle(session, workspace, github)
+    github.unreachable = True
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    transition(
+        session, entry, MergeQueueState.TESTING, testing_started_at=utcnow() - timedelta(hours=2)
+    )
+
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+
+    assert entry.state is MergeQueueState.TIMED_OUT
+    assert "did not answer" in entry.detail
+
+
+def test_a_repo_that_cannot_require_checks_gates_on_its_pr_heads_checks(
+    session, workspace, github, entry
+):
+    """GitHub Free refuses a private repo's rules; the queue lands on the PR head's checks."""
+    github.no_rulesets = True
+    github.checks[entry.head_sha] = [_check("claude-review", "SUCCESS")]
+    _cycle(session, workspace, github)
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    # Not yet reported on the staged commit: waited for, by name, with the stand-in shown.
+    assert entry.state is MergeQueueState.TESTING
+    assert entry.wait is MergeQueueWait.CHECKS_UNREPORTED
+    assert "claude-review" in entry.detail
+    assert "this plan" in entry.detail
+
+    github.checks[entry.staged_sha] = [_check("claude-review", "SUCCESS")]
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.MERGED
+    assert github.merges == [(7, entry.staged_sha)]
+
+
+def test_a_repo_that_cannot_require_checks_and_ran_none_never_lands_unverified(
+    session, workspace, github, entry
+):
+    github.no_rulesets = True
+    _cycle(session, workspace, github)
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+
+    assert entry.state is MergeQueueState.FAILED
+    assert "nothing to verify" in entry.detail
+    assert github.merges == []
+
+
+def test_a_stand_in_check_that_fails_on_the_staged_commit_fails_the_entry(
+    session, workspace, github, entry
+):
+    github.no_rulesets = True
+    github.checks[entry.head_sha] = [_check("claude-review", "SUCCESS")]
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    github.checks[entry.staged_sha] = [_check("claude-review", "FAILURE")]
+
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+
+    assert entry.state is MergeQueueState.FAILED
+    assert "claude-review" in entry.detail
+
+
 def test_unreported_checks_and_an_unreachable_github_are_distinct_waits(
     session, workspace, github, entry
 ):
@@ -486,3 +560,26 @@ def test_two_candidates_land_in_turn_each_on_the_tip_the_first_produced(
     assert second.staged_base_sha == entry.merge_commit
     assert git(origin, "rev-parse", "refs/heads/main") == second.merge_commit
     assert second.landed_tree == git(origin, "rev-parse", "refs/heads/main^{tree}")
+
+
+@pytest.mark.parametrize(
+    ("gh_error", "permanent"),
+    [
+        (
+            "gh: Upgrade to GitHub Pro or make this repository public to enable this "
+            "feature. (HTTP 403)",
+            True,
+        ),
+        ("GitHub did not answer within 30s", False),
+        ("gh: Bad credentials (HTTP 401)", False),
+    ],
+)
+def test_only_githubs_plan_refusal_reads_as_a_repo_without_required_checks(
+    tmp_path, gh_error, permanent
+):
+    """The plan refusal is an answer; a timeout or bad credentials stay a failure to ask."""
+    github = merge_queue_github.GhQueueGitHub(tmp_path)
+    with mock.patch.object(merge_queue_github, "read_gh", side_effect=GitHubReadError(gh_error)):
+        with pytest.raises(GitHubReadError) as raised:
+            github.required_contexts("main")
+    assert (type(raised.value) is RequiredChecksUnavailable) is permanent
