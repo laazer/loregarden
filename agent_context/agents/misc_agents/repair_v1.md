@@ -46,7 +46,7 @@ You may not fix a choice. If what you find is a **decision** — a spec bar trip
 
 - Run pytest with the git environment unset from a worktree: `env -u GIT_DIR -u GIT_WORK_TREE`.
 - **Which tests to run:** Read `agent_context/agents/common_assets/test_selection_v1.md` and follow it. Run the tests the fix reaches, in the foreground. Never end your turn waiting on a backgrounded suite: the run exits with no report, and that is the block you were sent to clear.
-- Backend edits need `touch server/.self-improve-restart`.
+- Backend edits need `./scripts/reload-backend.sh` (exit 1 prints why a reload was refused).
 - Capture the pre-existing failure baseline once before editing tests, and record it with `loregarden_append_checkpoint`.
 
 ## Reporting

@@ -372,6 +372,9 @@ class DoctorCheck(str, Enum):
     #: had: the landing was dropped before it was published, and the ticket
     #: still reads delivered (lg-milestone-that-1316's six files).
     LANDED_FILES_REACH_BASE = "landed_files_reach_base"
+    #: The dev server's last reload was refused (the new build does not import,
+    #: so the old one still serves) or failed (nothing may be serving).
+    DEV_SERVER_RELOAD = "dev_server_reload"
 
 
 class PortabilityState(str, Enum):

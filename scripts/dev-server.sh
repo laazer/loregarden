@@ -88,6 +88,11 @@ touch "$RELOAD_TRIGGER"
 # branch client launched from the Local instances panel finds it.
 export LOREGARDEN_DEV_HOST="${LOREGARDEN_DEV_HOST:-127.0.0.1}"
 export LOREGARDEN_DEV_PORT="${LOREGARDEN_DEV_PORT:-8000}"
-exec uv run uvicorn loregarden.main:app --reload \
+# The supervisor, not `uvicorn --reload`: a touch of the sentinel reloads only
+# into a build that imports, and a refused or failed reload is recorded rather
+# than leaving a dead port. Output goes to this terminal and to
+# data/dev-server/server.log; outcomes to data/dev-server/status.json, which
+# scripts/reload-backend.sh waits on. See server/loregarden/dev_supervisor.py.
+exec uv run python -m loregarden.dev_supervisor \
   --host "$LOREGARDEN_DEV_HOST" --port "$LOREGARDEN_DEV_PORT" \
-  --reload-exclude '*.py' --reload-include '.self-improve-restart'
+  --sentinel "$RELOAD_TRIGGER" --state-dir "$ROOT/data/dev-server"

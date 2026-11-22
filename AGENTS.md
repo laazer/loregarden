@@ -92,7 +92,7 @@ task server                    # backend only
 task client                    # frontend only
 
 # Backend edits are NOT picked up automatically:
-touch server/.self-improve-restart     # reload the backend
+./scripts/reload-backend.sh            # reload the backend; exit 1 + traceback if refused
 
 # Tests
 server/.venv/bin/python -m pytest server/tests/ -q          # backend

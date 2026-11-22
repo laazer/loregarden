@@ -112,8 +112,9 @@ and the full suites are `server-tests.sh` (ruff + pytest) and `client-tests.sh`
   first failure as a block.
 - Never bypass a gate. No `--no-verify`, no `LEFTHOOK=0` to get a commit
   through. A gate you skipped is a gate that fails in CI with your name on it.
-- Backend `.py` edits need `touch server/.self-improve-restart`, or you test
-  stale code and conclude your fix failed.
+- Backend `.py` edits need `./scripts/reload-backend.sh`, or you test stale
+  code and conclude your fix failed. Exit 1 means the reload was refused or
+  failed; read the traceback it prints.
 - Capture the pre-existing failure baseline **once** before editing tests, and
   record it with `loregarden_append_checkpoint`. Never attribute an inherited
   failure to this ticket, and never claim a green suite you did not run.
