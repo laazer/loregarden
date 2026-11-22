@@ -67,6 +67,8 @@ export interface ApprovalsListProps {
    * open it into, which removes the button rather than leaving it inert.
    */
   onInspect?: (approval: Approval) => void;
+  /** Open a stage gate on the review page. Omitted, as above, where there is no route. */
+  onOpenReview?: (approval: Approval) => void;
 }
 
 /**
@@ -92,7 +94,7 @@ function isColdFailure(query: { data: unknown; errorUpdateCount: number }): bool
   return query.data === undefined && query.errorUpdateCount > 0;
 }
 
-export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsListProps) {
+export function ApprovalsList({ workspaceSlug, isActive, onInspect, onOpenReview }: ApprovalsListProps) {
   const qc = useQueryClient();
   const [expandedApproval, setExpandedApproval] = useState<Approval | null>(null);
 
@@ -171,6 +173,12 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
     onInspect(approval);
   };
 
+  const openReview = (approval: Approval) => {
+    if (onOpenReview === undefined) return;
+    setExpandedApproval(null);
+    onOpenReview(approval);
+  };
+
   // One card, wherever it is rendered. Keyed by the approval's id and matched
   // to the in-flight mutation by the same id — never by position, which
   // grouping no longer agrees with.
@@ -182,6 +190,7 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect }: ApprovalsL
       onRecheck={(payload) => resolveApproval.mutate({ id: a.id, action: "recheck", ...payload })}
       onReject={(payload) => resolveApproval.mutate({ id: a.id, action: "reject", ...payload })}
       onInspect={onInspect !== undefined && a.ticket_id ? () => inspect(a) : undefined}
+      onOpenReview={onOpenReview !== undefined ? () => openReview(a) : undefined}
       onIgnore={(reason) => resolveApproval.mutate({ id: a.id, action: "ignore", response: reason })}
       hasDuplicate={duplicates.has(a.id)}
       collapsible

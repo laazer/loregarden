@@ -12,6 +12,7 @@ import {
   memoryPath,
   pageFromPath,
   pathForPage,
+  reviewPathForApproval,
   studioPath,
   studioResourceFromPath,
   studioResourcePath,
@@ -38,6 +39,7 @@ export {
   isStudioSection,
   pageFromPath,
   pathForPage,
+  reviewPathForApproval,
   studioAgentNewPath,
   studioAgentPath,
   studioPath,
@@ -131,6 +133,13 @@ export function navigateToTicket(
   const navigate = getRouterNavigate();
   if (!navigate) return;
   navigate(ticketPath(ticketId, options?.tab ?? DEFAULT_ARTIFACT_TAB), { replace: options?.replace ?? false });
+}
+
+/** The review page opened on one gate (an inbox card's Playtest button). */
+export function navigateToReview(approval: { id: string; workspace_slug: string }) {
+  const navigate = getRouterNavigate();
+  if (!navigate) return;
+  navigate(reviewPathForApproval(approval));
 }
 
 export function navigateToTicketTab(ticketId: string, tab: ArtifactTab, replace = false) {

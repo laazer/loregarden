@@ -71,6 +71,16 @@ describe("ApprovalInboxPanel inspect target", () => {
     expect(navigate).toHaveBeenCalledWith("/tickets/ticket_1/approvals", { replace: false });
   });
 
+  it("opens a playtest card's gate on the review page and closes", async () => {
+    mockApi.approvals.mockResolvedValue([approval()]);
+    renderInbox();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Playtest" }));
+
+    expect(navigate).toHaveBeenCalledWith("/review?approval=appr_1&workspace=blobert-tdd");
+    expect(useUiStore.getState().inboxOpen).toBe(false);
+  });
+
   it("ignores a card with the chosen reason", async () => {
     mockApi.approvals.mockResolvedValue([approval({ kind: "human_action" })]);
     mockApi.resolveApproval.mockResolvedValue({ id: "appr_1", status: "ignored" });

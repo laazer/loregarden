@@ -410,3 +410,41 @@ describe("ApprovalCard ticket identity", () => {
     expect(screen.getByText(/02-blobert-jump/)).toBeInTheDocument();
   });
 });
+
+describe("ApprovalCard review button", () => {
+  it("gives a playtest gate a Playtest button that opens the review page", () => {
+    const onOpenReview = jest.fn();
+    renderWithRouter(
+      <ApprovalCard approval={GATE_APPROVAL} onApprove={() => {}} onReject={() => {}} onOpenReview={onOpenReview} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Playtest" }));
+
+    expect(onOpenReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers other stage gates the review page under its own name", () => {
+    renderWithRouter(
+      <ApprovalCard
+        approval={{ ...GATE_APPROVAL, stage_key: "ui-design", stage_name: "UI Design" }}
+        onApprove={() => {}}
+        onReject={() => {}}
+        onOpenReview={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Open in Review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Playtest" })).not.toBeInTheDocument();
+  });
+
+  it("shows no button for a non-gate approval, or where no caller can open the page", () => {
+    const { unmount } = renderWithRouter(
+      <ApprovalCard approval={PERMISSION_APPROVAL} onApprove={() => {}} onReject={() => {}} onOpenReview={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: /Playtest|Open in Review/ })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithRouter(<ApprovalCard approval={GATE_APPROVAL} onApprove={() => {}} onReject={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Playtest" })).not.toBeInTheDocument();
+  });
+});

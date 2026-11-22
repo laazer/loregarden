@@ -1,3 +1,8 @@
+import json
+import re
+from pathlib import Path
+from unittest import mock
+
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.stage_context import build_orchestration_context, gate_prep_target
 from loregarden.models.domain import (
@@ -8,6 +13,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.review_kit import REVIEW_KEY, ingest_review_kit
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -236,6 +242,41 @@ def test_gate_prep_brief_tells_the_implementer_to_build_what_the_gate_runs():
 
     assert "last stage before the `playtest` human gate" in text
     assert "sign-off, not a build step" in text
+
+
+def test_gate_prep_brief_example_kit_is_one_the_server_accepts(tmp_path: Path):
+    """The kit the implementer is shown must survive `loregarden_attach_evidence`.
+
+    An example that drifts from the schema teaches every agent to send a kit
+    that is refused whole, so the review page stays empty — the state this
+    brief exists to end.
+    """
+    stages = [
+        WorkflowStageDef(key="implement", name="Implementation", agent_id="dev", order=1),
+        WorkflowStageDef(
+            key="playtest", name="Playtest", order=2, checklist=["{{playtest_scenes}}"]
+        ),
+    ]
+    ticket = Ticket(external_id="kit", workspace_id="ws", title="t", workflow_stage_key="implement")
+    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implement")
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
+
+    assert "`loregarden_attach_evidence`" in text
+    block = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
+    assert block is not None, "the brief carries no example kit"
+    example = json.loads(block.group(1))
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 16)
+    for item in example[REVIEW_KEY]["screenshots"]:
+        item["path"] = str(shot)
+
+    with mock.patch(
+        "loregarden.services.review_kit.captures_root", return_value=tmp_path / "captures"
+    ):
+        stored = ingest_review_kit("0123abcd-ticket", example)
+
+    kit = stored[REVIEW_KEY]
+    assert [len(kit[part]) for part in ("screenshots", "links", "requests")] == [1, 1, 1]
 
 
 def test_gate_prep_brief_absent_without_a_downstream_human_gate():

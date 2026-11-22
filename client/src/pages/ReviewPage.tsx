@@ -16,6 +16,18 @@ function buildKey(build: ReviewBuild): string {
   return `${build.workspace_slug}:${build.ref}`;
 }
 
+function findApproval(
+  builds: ReviewBuild[],
+  approvalId: string | null,
+): { build: ReviewBuild; index: number } | null {
+  if (!approvalId) return null;
+  for (const build of builds) {
+    const index = build.items.findIndex((item) => item.approval.id === approvalId);
+    if (index >= 0) return { build, index };
+  }
+  return null;
+}
+
 /**
  * "What is waiting for me to look at it, and what do I run to look?"
  *
@@ -26,7 +38,8 @@ function buildKey(build: ReviewBuild): string {
  * to the next one.
  *
  * `?workspace=` narrows to one workspace; `?build=` and `?item=` hold the
- * place so a link (or a reload) lands on the same ticket.
+ * place so a link (or a reload) lands on the same ticket; `?approval=` names
+ * the gate itself, for links from the inbox.
  */
 export function ReviewPage() {
   const [params, setParams] = useSearchParams();
@@ -38,12 +51,16 @@ export function ReviewPage() {
   });
 
   const builds = useMemo(() => queue.data?.builds ?? [], [queue.data]);
+  // `?approval=` (an inbox card's link) names the gate itself and wins over
+  // the positional `build`/`item`; a gate already resolved falls through.
+  const linked = findApproval(builds, params.get("approval"));
   const selected =
+    linked?.build ??
     builds.find((b) => buildKey(b) === params.get("build")) ??
     builds[0] ??
     null;
   const itemCount = selected?.items.length ?? 0;
-  const requested = Number(params.get("item") ?? 0);
+  const requested = linked?.index ?? Number(params.get("item") ?? 0);
   const index =
     itemCount === 0
       ? 0
@@ -55,6 +72,8 @@ export function ReviewPage() {
 
   const go = (next: { build?: ReviewBuild; item?: number }) => {
     const p = new URLSearchParams(params);
+    p.delete("approval");
+    if (!next.build && selected) p.set("build", buildKey(selected));
     if (next.build) p.set("build", buildKey(next.build));
     p.set("item", String(next.item ?? 0));
     setParams(p, { replace: true });

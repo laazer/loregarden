@@ -452,3 +452,13 @@ export function pageFromPath(pathname: string): AppPage {
 export function pathForPage(page: AppPage): string {
   return PAGE_PATHS[page];
 }
+
+/**
+ * The review page opened on one gate. Keyed by the approval id, not a list
+ * position: positions shift as other gates resolve, an id does not.
+ */
+export function reviewPathForApproval(approval: { id: string; workspace_slug: string }): string {
+  const params = new URLSearchParams({ approval: approval.id });
+  if (approval.workspace_slug) params.set("workspace", approval.workspace_slug);
+  return `${PAGE_PATHS.review}?${params.toString()}`;
+}
