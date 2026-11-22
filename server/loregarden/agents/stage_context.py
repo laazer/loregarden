@@ -145,6 +145,7 @@ def build_orchestration_context(
             "scene, level, harness, fixture, or entry point needed to exercise this change must "
             "exist and be committed when you finish, and your stage report must name the files "
             "the operator should open and run.",
+            *_review_kit_lines(),
         ]
 
     if posture is not None:
@@ -163,6 +164,38 @@ def build_orchestration_context(
     lines += turn_context_lines(session, ticket, run, stage_def)
 
     return "\n".join(lines)
+
+
+def _review_kit_lines() -> list[str]:
+    """How the gate's reviewer gets what this stage saw, not just a file list.
+
+    The Review page shows a kit beside each gate: screenshots, links, and
+    endpoint checks the reviewer can send. Nothing filled it until the stage
+    that made the change was told the tool and the shape.
+    """
+    return [
+        "",
+        "Hand the reviewer a review kit, so they can check the change instead of hunting for it. "
+        'Call `loregarden_attach_evidence` with `evidence_kind: "real_surface"` and a '
+        "`content_json` carrying a `review` block — include whichever parts apply, at least one:",
+        "",
+        "```json",
+        '{"review": {',
+        '  "screenshots": [{"path": "/abs/path/shot.png", "caption": "What it shows"}],',
+        '  "links": [{"url": "http://127.0.0.1:5173/the-page", "label": "Where to look"}],',
+        '  "requests": [{"name": "List items", "method": "GET", "path": "/api/items",',
+        '                "expect_status": 200}]',
+        "}}",
+        "```",
+        "",
+        "- **screenshots**: PNG/JPEG/GIF files you captured of the changed screen or scene "
+        "(10 MB each, 12 at most). They are copied in when you attach, so a temp path is fine.",
+        "- **links**: http(s) URLs on a locally running server where the change can be seen.",
+        "- **requests**: endpoints this change added or altered, as a path (never a full URL); "
+        "the reviewer sends each against their local server and sees whether the status matches.",
+        "",
+        "A malformed kit is refused whole and the error names the field; fix it and attach again.",
+    ]
 
 
 def turn_context_lines(

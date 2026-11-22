@@ -161,6 +161,7 @@ export function ApprovalCard({
   onExpand,
   impactText,
   stagedAnswer,
+  onOpenReview,
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
@@ -191,6 +192,11 @@ export function ApprovalCard({
   impactText?: string;
   /** An answer the operator already stated (to Baxter), preselected for them to confirm. */
   stagedAnswer?: string;
+  /**
+   * Open this gate on the review page. Omitted where there is no route to open
+   * it into (a container pane, the review page itself), which removes the button.
+   */
+  onOpenReview?: () => void;
 }) {
   // A decision block is asked the way an agent's question is — same payload
   // shape, same options, same answer — so it shares the whole question path.
@@ -392,6 +398,15 @@ export function ApprovalCard({
             <span> · {approval.workspace_slug}</span>
           )}
         </div>
+        {/* A stage gate is what the review page walks: there the build is one
+            click away, with the criteria and the agent's captures beside it. */}
+        {onOpenReview && approval.kind === "workflow_gate" && approval.ticket_id && (
+          <div style={{ marginBottom: 8 }}>
+            <Button variant="primary" compact onClick={onOpenReview}>
+              {approval.stage_key === "playtest" ? "Playtest" : "Open in Review"}
+            </Button>
+          </div>
+        )}
         {isExitActionGate ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
             {humanRequired.map((action) => (

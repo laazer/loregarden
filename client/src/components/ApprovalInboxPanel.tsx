@@ -1,6 +1,6 @@
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { type Approval } from "../api/client";
-import { navigateToTicket } from "../lib/useAppNavigation";
+import { navigateToReview, navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
 import { IconCloseButton } from "./IconCloseButton";
@@ -63,10 +63,18 @@ export function ApprovalInboxPanel() {
     setInboxOpen(false);
   };
 
+  // Playtest / Open in Review: the page it opens is the one on screen, so the
+  // drawer closes as it does for Inspect.
+  const openReview = (approval: Approval) => {
+    navigateToReview(approval);
+    setInboxOpen(false);
+  };
+
   // Escape and the overlay agree: both close the inbox. Above the early
   // return, because a hook that runs only while the panel is open changes
   // the hook count between renders.
   useDialogDismiss(inboxOpen ? () => setInboxOpen(false) : null);
+
 
   if (!inboxOpen) return null;
 
@@ -102,7 +110,12 @@ export function ApprovalInboxPanel() {
                   <span className="inbox-section-title">Approvals</span>
                   <span className="count-pill">{approvalCount}</span>
                 </div>
-                <ApprovalsList workspaceSlug="" isActive={inboxOpen} onInspect={inspectApproval} />
+                <ApprovalsList
+                  workspaceSlug=""
+                  isActive={inboxOpen}
+                  onInspect={inspectApproval}
+                  onOpenReview={openReview}
+                />
               </section>
 
               <section className="inbox-section" aria-label="Run notifications">

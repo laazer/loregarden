@@ -134,6 +134,23 @@ describe("ReviewPage", () => {
     );
   });
 
+  it("lands on the gate an inbox link names, in whichever build holds it", async () => {
+    renderAt("?approval=appr-2");
+
+    const tickets = await screen.findByRole("list", { name: "Tickets in this build" });
+    const current = within(tickets).getByRole("button", { current: "step" });
+    expect(current).toHaveTextContent("blob-core-2");
+    // The card on the review page does not offer the review page again.
+    expect(screen.queryByRole("button", { name: "Playtest" })).not.toBeInTheDocument();
+  });
+
+  it("falls back to the first gate when the linked one is already resolved", async () => {
+    renderAt("?approval=appr-gone");
+
+    const tickets = await screen.findByRole("list", { name: "Tickets in this build" });
+    expect(within(tickets).getByRole("button", { current: "step" })).toHaveTextContent("blob-core-1");
+  });
+
   it("opens a ticket's scene against the same build", async () => {
     reviewApi.launch.mockResolvedValue({ phase: "preparing" });
     renderAt();
