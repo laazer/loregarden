@@ -38,7 +38,7 @@ These make the red disappear without fixing anything:
 ## This repository
 
 - Run pytest with the git environment unset from a worktree: `env -u GIT_DIR -u GIT_WORK_TREE`. Otherwise the suite fails with `git add` exit-128 errors that have nothing to do with the bug you are chasing.
-- Backend edits need `touch server/.self-improve-restart` — the dev server ignores `.py` changes otherwise, and you will test stale code and believe your fix failed.
+- Backend edits need `./scripts/reload-backend.sh` — the dev server ignores `.py` changes otherwise, and you will test stale code and believe your fix failed. Exit 1 means the new build was refused or failed; it prints the traceback.
 - Capture the pre-existing failure baseline once before editing tests, and record it with `loregarden_append_checkpoint`. Do not attribute inherited failures to this change.
 - A green suite can still hide the bug: the tests here have repeatedly passed against an empty database or an adjacent stage while the real path was broken. If the fix is about state, seed the state.
 

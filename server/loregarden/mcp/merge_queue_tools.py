@@ -38,7 +38,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "loregarden_land_ticket first), or `pr_number` plus `workspace_slug` for any "
             "other PR, such as an interactive session's branch. A PR's branch is its "
             "author's: the queue pushes its staged commit there, and adopts a push the "
-            "author makes while it waits. A write: gated."
+            "author makes while it waits. To wait for it to land, run "
+            "`./scripts/loregarden-cli.sh merge-queue wait <entry id>` in the background "
+            "(exit 0 merged, 1 stopped, 75 no verdict) rather than polling. A write: gated."
         ),
     },
     {

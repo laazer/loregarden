@@ -14,6 +14,7 @@ the exit-code contract in `loregarden.cli.errors`.
     loregarden git change-pr --all-workspaces --branch B --title T -- <command> {worktree}
     loregarden git calls --writes
     loregarden capacity run --footprint heavy --label L -- <command>
+    loregarden merge-queue wait <entry-id>
     loregarden local_main
     loregarden instance run --name client --kind client --port 5173 -- <command>
 """
@@ -33,6 +34,7 @@ from loregarden.cli import (
     local_main,
     mcp_server,
     mcp_tools,
+    merge_queue,
     sandbox,
     survey,
 )
@@ -73,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     capacity_group = groups.add_parser("capacity", help="Hold machine capacity while running.")
     capacity_commands = capacity_group.add_subparsers(dest="command", required=True)
     capacity.register(capacity_commands)
+
+    queue_group = groups.add_parser("merge-queue", help="Wait on the merge queue.")
+    queue_commands = queue_group.add_subparsers(dest="command", required=True)
+    merge_queue.register(queue_commands)
 
     survey.register(groups)
     local_main.register(groups)

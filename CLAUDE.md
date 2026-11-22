@@ -669,8 +669,12 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   `0138` reached live two weeks before it merged and locked every main build out of writing.
   `db/shared_database_guard.py` now refuses a migration `origin/main` does not ship. If it
   refuses you, use the MCP tools or a checkout of main; never `--allow-stale` around it.
-- **Backend edits need a reload:** `touch server/.self-improve-restart`. The dev server ignores
-  `.py` changes otherwise, and you will test stale code and believe your fix failed.
+- **Backend edits need a reload:** `./scripts/reload-backend.sh`. The dev server ignores
+  `.py` changes otherwise, and you will test stale code and believe your fix failed. The script
+  touches `server/.self-improve-restart` and waits for the dev-server supervisor's answer: a
+  build that does not import is **refused** (exit 1, traceback printed) and the previous build
+  keeps serving. A bare `touch` reloads too but tells you nothing. The server's output is in
+  `data/dev-server/server.log`, and `loregarden_doctor` reports a refused or failed reload.
 - **Pushing from a worktree no longer breaks the pre-push suite.** Git exports an absolute
   `GIT_DIR` into hooks when you push from a worktree; tests that build throwaway repos in
   `tmp_path` inherited it (`GIT_DIR` beats `cwd`) and died with `git add .` exit-128.
@@ -691,6 +695,9 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   checks on that result, and lands it, so nobody updates a stale branch by hand. A `PreToolUse`
   hook (`.claude/hooks/pr_merge_queue_precheck.py`) refuses `gh pr merge` and names the call.
   The queue pushes its staged commit onto the PR's branch, and adopts any push you make there.
+  To wait for it, run `./scripts/loregarden-cli.sh merge-queue wait <entry-id>` in the
+  background: exit 0 merged, 1 stopped (reason printed), 75 no verdict (its deadline passed, or
+  the server that runs the queue stopped answering). Do not write a polling loop.
 
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
