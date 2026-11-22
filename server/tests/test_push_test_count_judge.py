@@ -578,7 +578,7 @@ def test_each_pre_push_script_sets_the_count_file_and_judges_through_the_seam(sc
 def test_the_server_script_judges_every_pytest_invocation() -> None:
     """Both branches — the full-suite fallback and the narrowed run."""
     source = SERVER_TESTS.read_text(encoding="utf-8")
-    pytest_runs = source.count(" pytest -x -q")
+    pytest_runs = source.count(" pytest -x --ff -q")
 
     assert pytest_runs == 2, f"expected the two known pytest invocations, found {pytest_runs}"
     assert source.count("run_and_judge pytest") == pytest_runs
