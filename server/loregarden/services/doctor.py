@@ -50,7 +50,10 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services.doctor_dev_server import check_dev_server_reload
+from loregarden.services.doctor_dev_server import (
+    check_dev_server_reload,
+    check_server_follows_main,
+)
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
 from loregarden.services.doctor_landings import check_landed_files_reach_base
 from loregarden.services.git_subprocess import (
@@ -710,6 +713,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.DB_RESOLUTION: check_db_resolution,
     DoctorCheck.BACKEND_RELOAD_SENTINEL: check_backend_reload_sentinel,
     DoctorCheck.DEV_SERVER_RELOAD: check_dev_server_reload,
+    DoctorCheck.SERVER_FOLLOWS_MAIN: check_server_follows_main,
     DoctorCheck.CLI_CREDENTIALS: check_cli_credentials,
     DoctorCheck.GIT_PORTABILITY: check_git_portability,
     DoctorCheck.STAGE_REPORT_CONTRACT: check_stage_report_contract,

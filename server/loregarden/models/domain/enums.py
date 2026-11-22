@@ -375,6 +375,9 @@ class DoctorCheck(str, Enum):
     #: The dev server's last reload was refused (the new build does not import,
     #: so the old one still serves) or failed (nothing may be serving).
     DEV_SERVER_RELOAD = "dev_server_reload"
+    #: The dev server is not following main: its checkout is on another branch,
+    #: has diverged, or refused the fast-forward (`services.follow_main`).
+    SERVER_FOLLOWS_MAIN = "server_follows_main"
 
 
 class PortabilityState(str, Enum):

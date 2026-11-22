@@ -638,8 +638,7 @@ def test_a_pr_maps_only_to_the_ticket_that_publishes_its_branch(session, workspa
 
 def test_a_workspace_whose_prs_cannot_be_listed_reports_it(session, workspace, gh_logs):
     gh_logs.return_value = subprocess.CompletedProcess(["gh"], 1, stdout="", stderr="no auth")
-    with mock.patch.dict(ci_poll_scheduler._last_list_error, clear=True):
-        poll = poll_workspace(session, workspace)
+    poll = poll_workspace(session, workspace)
     assert poll.errors and "no auth" in poll.errors[0]
 
 
@@ -652,8 +651,7 @@ def test_a_full_page_observes_what_it_read_and_reports_only_a_page_left_unread(
         _node(f"other/{n}", f"sha{n}", PASSING, number=100 + n) for n in range(PR_PAGE_SIZE - 1)
     ]
     gh_logs.return_value = _listing(nodes, has_next_page=has_next_page)
-    with mock.patch.dict(ci_poll_scheduler._last_list_error, clear=True):
-        poll = poll_workspace(session, workspace)
+    poll = poll_workspace(session, workspace)
 
     assert poll.observed == [done_ticket.external_id]
     if has_next_page:
@@ -664,8 +662,10 @@ def test_a_full_page_observes_what_it_read_and_reports_only_a_page_left_unread(
 
 def test_a_repeating_listing_failure_warns_once_not_every_tick(session, workspace, gh_logs, caplog):
     gh_logs.return_value = subprocess.CompletedProcess(["gh"], 1, stdout="", stderr="gone")
-    with mock.patch.dict(ci_poll_scheduler._last_list_error, clear=True):
+    with mock.patch.dict(ci_poll_scheduler._standing_errors, clear=True):
         polls = [poll_workspace(session, workspace) for _ in range(3)]
+        for poll in polls:
+            ci_poll_scheduler.report_tick_errors([poll])
 
     assert all(poll.errors for poll in polls), "every tick still reports the failure"
     warnings = [r for r in caplog.records if "could not list pull requests" in r.getMessage()]

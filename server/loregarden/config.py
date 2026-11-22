@@ -186,6 +186,10 @@ class Settings(BaseSettings):
     merge_queue_check_timeout_seconds: float = 5400.0
     # Restages one entry may take (base moved, push refused) before it fails.
     merge_queue_max_attempts: int = 6
+    # The dev server fast-forwards its own checkout onto landed main and reloads
+    # (`services.follow_main`). Off by default so no test, sandbox or ad-hoc
+    # server moves a checkout; `scripts/dev-server.sh` turns it on.
+    follow_main: bool = False
     # Parallel Execution settings
     max_parallel_agents: int = 3  # Max concurrent agent runs (2-5)
     worktree_cleanup_delay_hours: int = 1  # Auto-cleanup after merge

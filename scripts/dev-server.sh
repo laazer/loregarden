@@ -88,6 +88,11 @@ touch "$RELOAD_TRIGGER"
 # branch client launched from the Local instances panel finds it.
 export LOREGARDEN_DEV_HOST="${LOREGARDEN_DEV_HOST:-127.0.0.1}"
 export LOREGARDEN_DEV_PORT="${LOREGARDEN_DEV_PORT:-8000}"
+# Follow main: what the merge queue lands, this server pulls and reloads onto,
+# when its checkout is on main and no agent work is in flight. Only the
+# loregarden workspace whose root is this checkout; see services/follow_main.py.
+# Set LOREGARDEN_FOLLOW_MAIN=0 to pin the server to what you checked out.
+export LOREGARDEN_FOLLOW_MAIN="${LOREGARDEN_FOLLOW_MAIN:-1}"
 # The supervisor, not `uvicorn --reload`: a touch of the sentinel reloads only
 # into a build that imports, and a refused or failed reload is recorded rather
 # than leaving a dead port. Output goes to this terminal and to

@@ -51,6 +51,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TextIO
 
+#: Where `scripts/dev-server.sh` points the supervisor, under the server's checkout.
+STATE_DIR = Path("data") / "dev-server"
 STATUS_FILE = "status.json"
 LOG_FILE = "server.log"
 #: The log is rotated to `server.log.1` at startup once it passes this size.

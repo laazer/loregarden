@@ -51,4 +51,29 @@ class DirtyCheckoutCause(StrEnum):
     UNREADABLE = "unreadable"
 
 
-__all__ = ["BranchHolder", "DirtyCheckoutCause", "PrimaryCheckoutUse"]
+class FollowMainState(StrEnum):
+    """What the dev server did about main moving past the build it serves.
+
+    See `services.follow_main`. The first four are the server keeping up; the
+    rest are why it is not, each one shown by `loregarden_doctor`.
+    """
+
+    #: The checkout is main's tip and the server runs it.
+    CURRENT = "current"
+    #: Fast-forwarded onto main; nothing under `server/` changed, so no reload.
+    PULLED = "pulled"
+    #: Asked the supervisor to reload onto the checkout's new head.
+    RELOADING = "reloading"
+    #: Main moved, but an agent run or stage is in flight; retried next tick.
+    WAITING_FOR_IDLE = "waiting_for_idle"
+    #: The checkout is on another branch, so main is not its to follow.
+    OFF_BASE = "off_base"
+    #: The checkout has commits main does not; only a person can reconcile them.
+    DIVERGED = "diverged"
+    #: `git merge --ff-only` refused (uncommitted changes to files main changed).
+    REFUSED = "refused"
+    #: Main's tip could not be fetched or the checkout could not be read.
+    GIT_FAILED = "git_failed"
+
+
+__all__ = ["BranchHolder", "DirtyCheckoutCause", "FollowMainState", "PrimaryCheckoutUse"]
