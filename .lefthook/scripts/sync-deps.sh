@@ -44,8 +44,20 @@ esac
 null_rev=0000000000000000000000000000000000000000
 
 # `git worktree add` and a fresh clone check out from the null revision: there
-# is nothing to compare, and the SessionStart bootstrap installs a new worktree.
+# is nothing to compare. A new worktree has no server/.venv or
+# client/node_modules, and Claude Code's SessionStart bootstrap only covers a
+# session that starts inside one; a worktree made with `git worktree add` had
+# neither until a gate or a push failed for want of it. Start the same
+# bootstrap here: it installs only what is missing, in the background, and
+# leaves the primary checkout alone. Not for a worktree the server made
+# (LOREGARDEN_SERVER_GIT, set by its git chokepoint): those link the parent's
+# toolchain or run without one on purpose.
 if [ -z "$old" ] || [ "$old" = "$null_rev" ]; then
+  if [ "$1" = checkout ] && [ -z "${LOREGARDEN_SERVER_GIT:-}" ]; then
+    root="$(git rev-parse --show-toplevel)"
+    bootstrap="$root/.claude/hooks/worktree_bootstrap.sh"
+    [ -f "$bootstrap" ] && CLAUDE_PROJECT_DIR="$root" bash "$bootstrap"
+  fi
   exit 0
 fi
 

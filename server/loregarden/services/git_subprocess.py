@@ -48,6 +48,13 @@ GIT_LOCATION_ENV_VARS = (
 #: — the environment reaching the hole a committed `.gitattributes` opens.
 GIT_CONFIG_ENV_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
+#: Set on every git (and gh) command the server runs, so the repo's own hooks can
+#: tell its worktrees from one a person or agent made in a shell. A server-made
+#: worktree has its toolchain linked (`link_ignored_toolchains`) or deliberately
+#: absent (land verification), and must not get a background install from
+#: `post-checkout` (`.lefthook/scripts/sync-deps.sh`).
+SERVER_GIT_ENV = "LOREGARDEN_SERVER_GIT"
+
 
 def scrubbed_git_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
     """`env` (default: the ambient environment) minus git's repo bindings and config.
@@ -60,6 +67,7 @@ def scrubbed_git_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
         base.pop(name, None)
     for name in [n for n in base if n.startswith(GIT_CONFIG_ENV_PREFIXES)]:
         base.pop(name, None)
+    base[SERVER_GIT_ENV] = "1"
     return base
 
 

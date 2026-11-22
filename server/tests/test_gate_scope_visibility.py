@@ -33,10 +33,11 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-import yaml
 from loregarden.models.domain import Worktree
 from loregarden.services import worktree_lifecycle
+from loregarden.testing.lefthook_config import hook_jobs
 from tests.repo_templates import from_template
+from tests.toolchain import NPM_CI, require_path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
@@ -139,21 +140,15 @@ BASE_CONSUMING_SCOPES = ["worktree", "branch"]
 
 
 def _require_ts_parser() -> None:
-    """An absent parser must fail CI, not skip it.
+    """An absent parser fails, never skips.
 
     The `.cjs` gate needs `client/node_modules`, which the `server` CI job did
     not install — so all ten `[ts-org]` params skipped there and the gate's
     rewrite had no enforced coverage anywhere. A skip nobody reads is
     indistinguishable from a pass, which is the exact failure this whole file
-    exists to close. The job now runs `npm ci`; if that ever stops happening,
-    this fails instead of quietly reporting green.
+    exists to close (see `tests/toolchain.py`).
     """
-    if _TS_PARSER.is_dir():
-        return
-    message = f"the TS gate cannot parse without {_TS_PARSER}; run `npm ci` in client/"
-    if os.environ.get("CI"):
-        pytest.fail(message)
-    pytest.skip(message)
+    require_path(_TS_PARSER, NPM_CI)
 
 
 def _run_gate(
@@ -705,8 +700,7 @@ def test_the_gate_scripts_are_themselves_covered_by_the_precommit_glob(command: 
     either surface: a violation planted in a gate script goes undetected. These
     are the most-trusted 1,800 lines in the repo and the least-graded.
     """
-    hooks = yaml.safe_load(_LEFTHOOK_YML.read_text(encoding="utf-8"))
-    glob = hooks["pre-commit"]["commands"][command]["glob"]
+    glob = hook_jobs(_LEFTHOOK_YML, "pre-commit")[command]["glob"]
     uncovered = [rel for rel in _gate_script_relpaths() if not _glob_matches(glob, rel)]
 
     assert _gate_script_relpaths(), "precondition: there are gate scripts to grade"

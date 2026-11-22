@@ -12,15 +12,17 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 import yaml
-from loregarden.services.git_subprocess import run_git
+from loregarden.services.git_subprocess import SERVER_GIT_ENV, run_git
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO / ".lefthook" / "scripts"
 NULL_REV = "0" * 40
+BOOTSTRAP = REPO / ".claude" / "hooks" / "worktree_bootstrap.sh"
 
 
 class Repo:
@@ -42,16 +44,20 @@ class Repo:
         self.git("commit", "-q", "-m", f"edit {path}")
         return self.git("rev-parse", "HEAD")
 
-    def sync(self, *args: str) -> subprocess.CompletedProcess:
+    def sync(
+        self, *args: str, cwd: Path | None = None, extra_env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess:
+        tree = cwd or self.root
         env = {
             k: v
             for k, v in os.environ.items()
-            if k not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}
+            if k not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", SERVER_GIT_ENV}
         }
         env["PATH"] = f"{self.bin_dir}{os.pathsep}{env['PATH']}"
+        env.update(extra_env or {})
         return subprocess.run(
-            ["bash", str(self.root / ".lefthook" / "scripts" / "sync-deps.sh"), *args],
-            cwd=self.root,
+            ["bash", str(tree / ".lefthook" / "scripts" / "sync-deps.sh"), *args],
+            cwd=tree,
             env=env,
             capture_output=True,
             text=True,
@@ -79,6 +85,8 @@ def repo(tmp_path: Path) -> Repo:
     (root / ".lefthook" / "scripts").mkdir(parents=True)
     for script in ("sync-deps.sh", "ensure-node.sh"):
         shutil.copy(SCRIPTS / script, root / ".lefthook" / "scripts" / script)
+    (root / ".claude" / "hooks").mkdir(parents=True)
+    shutil.copy(BOOTSTRAP, root / ".claude" / "hooks" / BOOTSTRAP.name)
     run_git(["init", "-q", "-b", "main", str(root)], check=True, capture_output=True)
     made = Repo(root, calls, bin_dir)
     made.git("config", "user.email", "test@example.invalid")
@@ -134,7 +142,8 @@ def test_a_branch_switch_across_a_lock_change_syncs(repo: Repo):
     ("label", "old_is_null", "flag"),
     [
         ("a file checkout moves no branch", False, "0"),
-        ("worktree add / clone start from the null revision", True, "1"),
+        # The primary checkout's own dependencies are the operator's.
+        ("a clone starts from the null revision", True, "1"),
     ],
 )
 def test_checkouts_that_are_not_a_branch_move_install_nothing(
@@ -145,6 +154,63 @@ def test_checkouts_that_are_not_a_branch_move_install_nothing(
 
     assert repo.sync("checkout", NULL_REV if old_is_null else old, new, flag).returncode == 0, label
     assert repo.installs() == [], label
+
+
+@pytest.fixture
+def worktree(repo: Repo, tmp_path: Path) -> Path:
+    tree = tmp_path / "linked"
+    repo.git("worktree", "add", "-q", "-b", "side", str(tree))
+    return tree
+
+
+def _bootstrap_log(tree: Path) -> Path:
+    gitdir = run_git(
+        ["rev-parse", "--absolute-git-dir"], cwd=tree, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return Path(gitdir) / "worktree-bootstrap.log"
+
+
+def _wait_for_bootstrap(tree: Path) -> str:
+    log = _bootstrap_log(tree)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        text = log.read_text(encoding="utf-8") if log.exists() else ""
+        if "done" in text or "FAILED" in text:
+            return text
+        time.sleep(0.1)
+    raise AssertionError(f"the bootstrap did not finish: {log}")
+
+
+def test_a_worktree_made_in_a_shell_installs_what_it_lacks(repo: Repo, worktree: Path):
+    result = repo.sync("checkout", NULL_REV, "HEAD", "1", cwd=worktree)
+
+    assert result.returncode == 0, result.stderr
+    assert "installing it in the background" in result.stdout
+    assert "done" in _wait_for_bootstrap(worktree)
+    assert sorted(repo.installs()) == ["npm", "uv"]
+
+
+def test_a_worktree_the_server_made_is_left_to_the_server(repo: Repo, worktree: Path):
+    result = repo.sync(
+        "checkout", NULL_REV, "HEAD", "1", cwd=worktree, extra_env={SERVER_GIT_ENV: "1"}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not _bootstrap_log(worktree).exists()
+    assert repo.installs() == []
+
+
+def test_every_server_git_command_carries_the_marker(tmp_path: Path):
+    # A shell alias runs in the environment git was given: what a hook would see.
+    probe = run_git(
+        ["-c", f"alias.marker=!printenv {SERVER_GIT_ENV}", "marker"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert probe.stdout.strip() == "1"
 
 
 def _rebase_in_progress(repo: Repo) -> None:

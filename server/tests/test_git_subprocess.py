@@ -16,6 +16,7 @@ from loregarden.services.git_subprocess import (
     GH_BINARY_ENV,
     GH_USER_ENV,
     GIT_LOCATION_ENV_VARS,
+    SERVER_GIT_ENV,
     GhAccountUnavailable,
     gh_token_for_user,
     run_gh,
@@ -76,7 +77,8 @@ def test_scrubbed_git_env_drops_repo_bindings():
 
 def test_scrubbed_git_env_drops_every_location_var():
     polluted = dict.fromkeys(GIT_LOCATION_ENV_VARS, "/elsewhere")
-    assert scrubbed_git_env(polluted) == {}
+    # Only the marker remains: sync-deps.sh leaves a worktree the server made alone.
+    assert scrubbed_git_env(polluted) == {SERVER_GIT_ENV: "1"}
 
 
 def test_scrubbed_git_env_defaults_to_ambient_environment(monkeypatch):

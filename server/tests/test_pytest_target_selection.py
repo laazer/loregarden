@@ -48,7 +48,6 @@ selector = _load()
         "agent_context/orchestration/default.yaml",
         "agent_context/workflows/default.yaml",
         "agent_context/README.md",
-        "CLAUDE.md",
     ],
 )
 def test_unmappable_change_runs_everything(path):
@@ -66,6 +65,8 @@ def test_unmappable_change_runs_everything(path):
         ["agent_context/skills/refactor/SKILL.md"],
         [".lefthook/scripts/sync-deps.sh"],
         ["scripts/reload-backend.sh", "server/loregarden/services/doctor.py"],
+        ["CLAUDE.md"],
+        [".github/pull_request_template.md", "docs/tauri.md"],
     ],
 )
 def test_mappable_change_is_narrowed(paths):
@@ -307,6 +308,27 @@ def test_a_script_change_selects_the_tests_that_reach_it(
     script_repo: Path, changed: str, expected: set[str]
 ):
     assert _names(selector.select(script_repo, [changed])) == expected
+
+
+def test_repo_markdown_selects_the_tests_naming_it_and_the_scripts_that_read_it(
+    script_repo: Path,
+):
+    (script_repo / "CLAUDE.md").write_text("# rules\n", encoding="utf-8")
+    (script_repo / ".lefthook" / "scripts" / "md_check.py").write_text(
+        'ALLOWED = {"CLAUDE.md"}\n', encoding="utf-8"
+    )
+    tests = script_repo / "server" / "tests"
+    (tests / "test_reads_rules.py").write_text(
+        'RULES = ROOT / "CLAUDE.md"\ndef test_t():\n    pass\n', encoding="utf-8"
+    )
+    (tests / "test_md_check.py").write_text(
+        'NAME = "md_check"\ndef test_t():\n    pass\n', encoding="utf-8"
+    )
+
+    assert _names(selector.select(script_repo, ["CLAUDE.md"])) == {
+        "test_reads_rules.py",
+        "test_md_check.py",
+    }
 
 
 def test_a_deleted_script_still_selects_what_named_it(script_repo: Path):

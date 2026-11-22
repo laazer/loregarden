@@ -21,13 +21,17 @@ from pathlib import Path
 
 import pytest
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
+from tests.toolchain import require_client_modules, require_commands
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
 _NODE_MODULES = _ROOT / "client" / "node_modules"
 _GATES = sorted(p.name for p in _SCRIPTS.glob("ts_*_check.cjs"))
 
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+
+@pytest.fixture(autouse=True)
+def _node_on_path() -> None:
+    require_commands("node")
 
 
 def _env() -> dict[str, str]:
@@ -149,21 +153,21 @@ def test_nothing_to_parse_needs_no_toolchain(gate, scripts_without_client, works
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.skipif(not _NODE_MODULES.is_dir(), reason="needs client/node_modules")
 @pytest.mark.parametrize("gate", _GATES)
 def test_installed_toolchain_examines_the_change(gate, scripts_without_client, workspace):
     """Control: the same tree with node_modules present does not report 69, so
     the cases above reach the parser rather than failing for some other reason."""
+    require_client_modules()
     (scripts_without_client.parents[1] / "client" / "node_modules").symlink_to(_NODE_MODULES)
     result = _run(scripts_without_client, gate, _with_client_change(workspace))
     assert result.returncode in (0, 1), result.stdout + result.stderr
 
 
-@pytest.mark.skipif(not _NODE_MODULES.is_dir(), reason="needs client/node_modules")
 @pytest.mark.parametrize("gate", _GATES)
 def test_node_outside_engines_is_unavailable(gate, scripts_with_unsupported_node, workspace):
     """Under Node 14 typescript-estree does not load, `parseFile` swallowed the
     throw, and every gate reported "passed" over files it never parsed."""
+    require_client_modules()
     result = _run(scripts_with_unsupported_node, gate, _with_client_change(workspace))
     assert result.returncode == GATE_EX_UNAVAILABLE, result.stdout + result.stderr
     node_version = subprocess.run(
@@ -187,14 +191,14 @@ def test_package_that_fails_to_load_is_unavailable(gate, scripts_without_client,
 _OLD_NODES = sorted(Path.home().glob(".nvm/versions/node/v1[0-7].*/bin/node"))
 
 
-@pytest.mark.skipif(
-    not (_OLD_NODES and _NODE_MODULES.is_dir()), reason="needs an nvm Node <18 and node_modules"
-)
+# An nvm Node below 18 is optional on a host; client/node_modules is not.
+@pytest.mark.skipif(not _OLD_NODES, reason="needs an nvm Node <18 installed")
 @pytest.mark.parametrize("gate", _GATES)
 def test_a_real_old_node_never_changes_the_verdict(gate, workspace):
     """The installed toolchain under a real too-old Node, as it happened: each
     gate either reports itself unavailable or reaches the verdict current Node
     does (the motion gate's postcss supports Node 14; the parser does not)."""
+    require_client_modules()
     _with_client_change(workspace)
 
     def run(node: str) -> subprocess.CompletedProcess[str]:

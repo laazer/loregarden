@@ -230,14 +230,20 @@ def describe_signing(signed: bool | None) -> str:
     return "no commit written"
 
 
-def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[str, ...], str]:
+def _merge_tree(
+    repo_root: Path, target: str, source: str, *, base: str = ""
+) -> tuple[str, tuple[str, ...], str]:
     """The merged tree, the conflicted paths (empty when clean), and git's own words.
 
+    ``base`` replaces the merge base git would find (`landed_prefix`).
     Exit 0: the tree on the first line. Exit 1: the tree, then the conflicted
     paths up to a blank line. Higher: git could not merge at all — reported as
     a failure with no tree, never as "no conflicts".
     """
-    result = _git(repo_root, "merge-tree", "--write-tree", "--name-only", target, source)
+    chosen_base = [f"--merge-base={base}"] if base else []
+    result = _git(
+        repo_root, "merge-tree", "--write-tree", "--name-only", *chosen_base, target, source
+    )
     lines = result.stdout.splitlines()
     if result.returncode == 0:
         return lines[0].strip() if lines else "", (), ""
@@ -251,7 +257,9 @@ def _merge_tree(repo_root: Path, target: str, source: str) -> tuple[str, tuple[s
     return "", (), (result.stderr or result.stdout or "git merge-tree failed").strip()
 
 
-def squash_onto(repo_root: Path, base_sha: str, tip_sha: str, *, message: str) -> MergeOutcome:
+def squash_onto(
+    repo_root: Path, base_sha: str, tip_sha: str, *, message: str, replay_from: str = ""
+) -> MergeOutcome:
     """One commit on ``base_sha`` holding ``tip_sha`` merged into it. No ref moves.
 
     What a tree publishes (958): the integration branch's net change as a single
@@ -261,8 +269,11 @@ def squash_onto(repo_root: Path, base_sha: str, tip_sha: str, *, message: str) -
     merge of the two tips, not the branch's own tree, so a branch behind the
     base does not revert what the base gained since; a conflict is refused, for
     the integration sweep's merge turn to resolve on the branch first.
+
+    ``replay_from`` merges only what the tip adds after that commit
+    (`landed_prefix`): a stacked branch whose parent already landed.
     """
-    tree, conflicts, words = _merge_tree(repo_root, base_sha, tip_sha)
+    tree, conflicts, words = _merge_tree(repo_root, base_sha, tip_sha, base=replay_from)
     if conflicts:
         return MergeOutcome(ok=False, detail=words, conflicted_files=conflicts)
     if not tree:
@@ -274,6 +285,31 @@ def squash_onto(repo_root: Path, base_sha: str, tip_sha: str, *, message: str) -
         detail = (committed.stderr or committed.stdout or "git commit-tree failed").strip()
         return MergeOutcome(ok=False, detail=detail)
     return MergeOutcome(ok=True, sha=committed.stdout.strip(), signed=signing)
+
+
+def restack_onto(
+    repo_root: Path, base_sha: str, tip_sha: str, *, message: str
+) -> tuple[MergeOutcome, str]:
+    """`squash_onto`, replaying from `landed_prefix` when the plain merge conflicts.
+
+    Returns the outcome and the merge base it replayed from ("" for git's own),
+    which a preservation check of the result must measure from too. A replay
+    that still conflicts reports the plain merge's conflict. Raises when git
+    cannot say which commits landed.
+    """
+    outcome = squash_onto(repo_root, base_sha, tip_sha, message=message)
+    if not outcome.conflicted_files:
+        return outcome, ""
+    landed = landed_prefix(repo_root, base_sha, tip_sha)
+    if not landed:
+        return outcome, ""
+    replayed = squash_onto(repo_root, base_sha, tip_sha, message=message, replay_from=landed)
+    if not replayed.ok:
+        return outcome, ""
+    logger.info(
+        "restacked %s onto %s, replaying after %s", tip_sha[:12], base_sha[:12], landed[:12]
+    )
+    return replayed, landed
 
 
 def merge_preview(repo_root: Path, target_sha: str, source_sha: str) -> MergeOutcome:
@@ -308,6 +344,40 @@ def adds_nothing(repo_root: Path, base_sha: str, branch_sha: str) -> bool:
     if not tree:
         raise RuntimeError(f"git merge-tree failed for {branch_sha[:12]}: {words}")
     return tree == _tree_of(repo_root, base_sha)
+
+
+#: How many of a branch's own commits `landed_prefix` tries, newest first.
+LANDED_SCAN_LIMIT = 50
+
+
+def landed_prefix(repo_root: Path, base_sha: str, tip_sha: str) -> str:
+    """The newest commit behind ``tip_sha`` whose changes ``base_sha`` already
+    holds, or "" when there is none.
+
+    A branch stacked on another carries the parent's commits. Once the parent
+    lands as a squash, the base shares none of them, and merging the stacked
+    tip conflicts wherever it re-edited a line the parent added: the base's
+    side is the parent's version, the tip's side its own, both measured from
+    a merge base that has neither. The parent's tip is the right merge base.
+    Its changes are already in the base, so replaying what came after it
+    loses nothing. Found by content, not records: the newest of the tip's
+    first-parent ancestors that `adds_nothing` to the base. Raises when git
+    cannot answer.
+    """
+    listed = _git(
+        repo_root,
+        "rev-list",
+        "--first-parent",
+        f"--max-count={LANDED_SCAN_LIMIT}",
+        tip_sha,
+        f"^{base_sha}",
+    )
+    if listed.returncode != 0:
+        raise RuntimeError(f"git rev-list failed: {(listed.stderr or listed.stdout).strip()}")
+    for candidate in listed.stdout.split():
+        if adds_nothing(repo_root, base_sha, candidate):
+            return candidate
+    return ""
 
 
 #: How many base commits `superseding_commit` tries before giving up. Each try

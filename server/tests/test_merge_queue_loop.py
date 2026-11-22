@@ -583,3 +583,43 @@ def test_only_githubs_plan_refusal_reads_as_a_repo_without_required_checks(
         with pytest.raises(GitHubReadError) as raised:
             github.required_contexts("main")
     assert (type(raised.value) is RequiredChecksUnavailable) is permanent
+
+
+def test_a_pr_stacked_on_one_ahead_of_it_lands_without_a_rebase(
+    session, workspace, repo, origin, github, entry
+):
+    # Cut from the parent's branch, it re-edits the line the parent added. Once
+    # the parent lands as a squash, main shares none of its commits, so a plain
+    # merge of the stacked tip is an add/add conflict on feature.txt.
+    git(repo, "branch", "integration/lg-4", "integration/lg-1")
+    commit_file(repo, "integration/lg-4", "feature.txt", "feature.txt reworked\n")
+    head = commit_file(repo, "integration/lg-4", "child.txt", "child work\n")
+    git(repo, "push", "-q", "origin", f"{head}:refs/heads/publish/integration/lg-4")
+    github.open(10, "publish/integration/lg-4")
+    stacked = enqueue(
+        session,
+        _ticket(session, workspace, "lg-4"),
+        workspace,
+        Candidate(
+            10,
+            "https://github.com/o/r/pull/10",
+            "publish/integration/lg-4",
+            "integration/lg-4",
+            head,
+            "main",
+        ),
+    ).entry
+    _move_main(repo, "other.txt")
+    github.pass_everything = True
+
+    for _ in range(8):
+        _cycle(session, workspace, github)
+    session.refresh(entry)
+    session.refresh(stacked)
+
+    assert entry.state is MergeQueueState.MERGED
+    assert stacked.state is MergeQueueState.MERGED, stacked.detail
+    landed = git(origin, "rev-parse", "refs/heads/main")
+    assert git(origin, "show", f"{landed}:feature.txt") == "feature.txt reworked"
+    assert git(origin, "show", f"{landed}:child.txt") == "child work"
+    assert git(origin, "show", f"{landed}:other.txt") == "other.txt on main"

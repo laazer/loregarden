@@ -5,7 +5,9 @@ lg-milestone-that-969. Advanced once per workspace on the CI poll tick
 
 1. **Stage.** Fetch the base from origin and cut the candidate merged onto its
    tip with no checkout (`git_merge_noco.squash_onto`: `merge-tree` then
-   `commit-tree`, one commit whose only parent is the base tip). A conflict
+   `commit-tree`, one commit whose only parent is the base tip). A PR stacked
+   on one that already landed is replayed from that parent's tip
+   (`git_merge_noco.restack_onto`), so it needs no rebase. A conflict
    fails the entry with git's words and the conflicted paths, files a ticket a
    person resolves it through, and the next entry runs. A merge git cannot
    compute at all is *undetermined*, never "no conflicts".
@@ -83,7 +85,7 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services.git_automation import push_commit_as
-from loregarden.services.git_merge_noco import MergeOutcome, squash_onto
+from loregarden.services.git_merge_noco import MergeOutcome, restack_onto
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_preservation import target_preserved
@@ -412,7 +414,12 @@ class MergeQueueLoop:
                 MergeVerdict.UNDETERMINED,
                 detail=f"{entry.head_sha[:12]} is not a commit in {self.repo_root}",
             )
-        outcome = squash_onto(self.repo_root, base_sha, entry.head_sha, message=message)
+        try:
+            outcome, replay_from = restack_onto(
+                self.repo_root, base_sha, entry.head_sha, message=message
+            )
+        except RuntimeError as exc:
+            return Staged(MergeVerdict.UNDETERMINED, base_sha=base_sha, detail=str(exc))
         verdict = merge_verdict(outcome)
         if verdict is not MergeVerdict.CLEAN:
             return Staged(
@@ -427,6 +434,7 @@ class MergeQueueLoop:
                 target_sha=base_sha,
                 source_sha=entry.head_sha,
                 result_sha=outcome.sha,
+                replay_from=replay_from,
             )
         except RuntimeError as exc:
             return Staged(MergeVerdict.UNDETERMINED, base_sha=base_sha, detail=str(exc))

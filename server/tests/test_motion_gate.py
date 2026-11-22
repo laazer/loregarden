@@ -6,22 +6,24 @@ a 1.4s pulse is noise nobody keeps, and one that misses `transition: width` is
 a vacuous pass.
 """
 
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 from tests.repo_templates import from_template
 from tests.stylesheet_gate_helpers import build_client_repo, clean_env, git
+from tests.toolchain import NPM_CI, require_commands, require_path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _GATE = _ROOT / ".lefthook" / "scripts" / "ts_motion_check.cjs"
 _NODE_MODULES = _ROOT / "client" / "node_modules"
 
-pytestmark = pytest.mark.skipif(
-    not (_NODE_MODULES / "postcss").exists() or shutil.which("node") is None,
-    reason="needs node and client/node_modules (cd client && npm ci)",
-)
+
+@pytest.fixture(autouse=True)
+def _toolchain() -> None:
+    require_commands("node")
+    require_path(_NODE_MODULES / "postcss", NPM_CI)
+
 
 _ROOT_STYLESHEET = """:root {
   --t-fast: 0.12s;

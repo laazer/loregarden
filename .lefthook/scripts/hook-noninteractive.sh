@@ -10,6 +10,14 @@ set -o pipefail 2>/dev/null || true
 # does. No-op from a primary checkout, where git sets neither.
 unset GIT_DIR GIT_WORK_TREE
 
+# Run Python the way CI does. CI sets none of these; a developer's shell may, and
+# then pre-push tests a different interpreter than the one that gates the PR.
+# PYTHONDONTWRITEBYTECODE=1 on one machine hid a stale-.pyc failure in #936
+# that CI caught (a module rewritten at the same size within one second is
+# served from its old bytecode). server/tests/test_hook_python_env.py holds it.
+unset PYTHONDONTWRITEBYTECODE PYTHONPYCACHEPREFIX PYTHONPATH PYTHONHOME \
+  PYTHONWARNINGS PYTHONOPTIMIZE PYTHONHASHSEED PYTHONSAFEPATH
+
 export CI="${CI:-1}"
 export GIT_TERMINAL_PROMPT=0
 export GH_PROMPT_DISABLED=1
