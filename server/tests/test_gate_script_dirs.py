@@ -21,7 +21,8 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
+from loregarden.testing.lefthook_config import hook_jobs
+from tests.toolchain import UV_SYNC, require_path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
@@ -88,7 +89,7 @@ def test_the_three_lists_of_script_directories_agree() -> None:
     owned = {"/".join(parts) for parts in py_organization_check._OWNED_SCRIPT_DIR_PARTS}
     assert owned == set(SCRIPT_DIRS)
 
-    commands = yaml.safe_load((_ROOT / "lefthook.yml").read_text())["pre-commit"]["commands"]
+    commands = hook_jobs(_ROOT / "lefthook.yml", "pre-commit")
     for name in PYTHON_PRECOMMIT_GATES:
         glob = commands[name]["glob"]
         for directory in SCRIPT_DIRS:
@@ -135,11 +136,7 @@ def hook_repo(tmp_path: Path) -> Path:
     The scripts find `server/pyproject.toml` and `server/.venv` relative to
     themselves, so the copy carries both — the venv as a link, not a rebuild.
     """
-    if not (_VENV / "bin" / "ruff").exists():
-        message = f"the pre-commit scripts need {_VENV}; run `uv sync --extra dev` in server/"
-        if os.environ.get("CI"):
-            pytest.fail(message)
-        pytest.skip(message)
+    require_path(_VENV / "bin" / "ruff", UV_SYNC)
     repo = tmp_path / "repo"
     shutil.copytree(_SCRIPTS, repo / ".lefthook" / "scripts")
     (repo / "server").mkdir()

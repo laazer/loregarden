@@ -47,6 +47,10 @@ much:
   by `import`, never through the package graph, so before this every hook-only
   change ran the full suite: 32 minutes for a 20-line shell fix. A script no
   test names still selects zero, and zero still means everything.
+* Markdown outside `agent_context/` (`CLAUDE.md`, `AGENTS.md`, the PR template,
+  `docs/`) is read the same way, by name, so it takes the same path: the tests
+  that name it, and the tests of any script that names it. A one-line doc fix
+  beside a small code change used to cost the full suite.
 * String constants naming a package module count as imports, so the MCP tool
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
@@ -104,6 +108,12 @@ NARROWABLE_CONTEXT_TREES = (f"{CONTEXT_DIR}/agents/", f"{CONTEXT_DIR}/skills/")
 #: script (or a script that reaches it) are the ones a change can break.
 NARROWABLE_SCRIPT_DIRS = (".lefthook/scripts/", "scripts/")
 
+
+def is_named_doc(path: str) -> bool:
+    """Markdown read by name: anywhere but `agent_context/` (its own rule) and `client/`."""
+    return path.endswith(".md") and not path.startswith((f"{CONTEXT_DIR}/", f"{CLIENT_DIR}/"))
+
+
 #: Longest string constant kept as a possible script name; prose is longer.
 _MAX_NAME_LENGTH = 200
 
@@ -135,6 +145,8 @@ def full_suite_reason(paths: list[str]) -> str | None:
         if path.startswith("client/"):
             continue  # jest's problem, not pytest's
         if path.startswith(NARROWABLE_CONTEXT_TREES + NARROWABLE_SCRIPT_DIRS):
+            continue
+        if is_named_doc(path):
             continue
         if not path.startswith("server/"):
             return f"{path} is outside server/ (tests read repo files no import graph sees)"
@@ -434,7 +446,8 @@ class ChangeSet:
     client: bool
     #: changed agent prose, repo-relative (see `NARROWABLE_CONTEXT_TREES`)
     context_files: frozenset[str]
-    #: changed hook and repo scripts, repo-relative (see `NARROWABLE_SCRIPT_DIRS`)
+    #: changed files tests reach only by name: hook and repo scripts
+    #: (`NARROWABLE_SCRIPT_DIRS`) and markdown outside `agent_context/` (`is_named_doc`)
     script_files: frozenset[str] = frozenset()
 
 
@@ -450,7 +463,7 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
             client = True
         elif rel.startswith(NARROWABLE_CONTEXT_TREES):
             context_files.add(rel)
-        elif rel.startswith(NARROWABLE_SCRIPT_DIRS):
+        elif rel.startswith(NARROWABLE_SCRIPT_DIRS) or is_named_doc(rel):
             # A deleted script still names what used to call it.
             script_files.add(rel)
         elif not rel.startswith("server/") or not rel.endswith(".py"):

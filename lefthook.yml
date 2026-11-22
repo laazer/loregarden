@@ -8,16 +8,17 @@
 # match .github/workflows/ci.yml — with one deliberate exception: pre-push runs
 # only the tests the pushed commits reach (see below).
 #
-# pre-commit — format first (priority 100), then parallel checks (priority 1):
+# pre-commit — format first, alone; then the checks, in parallel:
 #   - format-staged: ruff format/fix (Python); oxlint --fix (client)
 #   - py-review / py-pylint / py-complexity / py-organization / py-silent-except / …
 #   - py-mypy: mypy on staged server Python (skips tests + migrations)
 #   - client-lint / client-dup (jscpd) / ts-organization
 #
-# Lefthook runs equal-priority commands in parallel; higher priority finishes
-# first so format can restage before lint/org see the tree.
+# format-staged is the first job and the checks are a parallel group after it,
+# so they see the tree it restaged. (`priority` cannot do this: lefthook orders
+# by it only when a hook is not parallel.)
 #
-# pre-push — the CI jobs, with the test runners narrowed (parallel: true):
+# pre-push — the CI jobs, with the test runners narrowed, one after the other:
 #   - server-tests: ruff check, ruff format --check (full), then pytest on the
 #     test files that reach the pushed changes through the import graph
 #   - client-tests: oxlint, tsc -b (full), then jest --changedSince
@@ -35,7 +36,7 @@
 #     rejecting pushes whose diff never touched the client. Sequential costs a
 #     few minutes; the parallel version cost a false failure per push under
 #     load. See lg-workflow-integrity-621.
-#   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
+#   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<job> skips one job
 #
 # Requires:
 #   - server/.venv (or uv on PATH) — see server/pyproject.toml; uv sync
@@ -48,123 +49,121 @@
 # server/tests/test_lefthook_globs.py holds this setting.
 glob_matcher: doublestar
 
+# A passing gate prints one summary line; a failing gate prints its full output.
+# A green commit used to print ~4 KB of box art and every gate's success log,
+# which an agent paid for on every commit. This lives here, not in a config
+# picked by LEFTHOOK_CONFIG: that variable reaches every repo a session commits
+# in, and in one without the named file lefthook skips every hook and exits 0.
+output:
+  - summary
+  - failure
+
 pre-commit:
-  parallel: true
-  commands:
-    format-staged:
-      name: Format staged (ruff / oxlint --fix)
-      priority: 100
+  # Sequential, then parallel. format-staged runs alone first and restages
+  # what it fixed; only then do the checks run, in parallel, on the formatted
+  # tree. These were one parallel `commands` map whose `priority` was meant to
+  # run format first, but lefthook orders by priority only when NOT parallel,
+  # so every check raced the formatter and an import order ruff fixes failed
+  # the commit. server/tests/test_lefthook_hook_order.py holds this.
+  jobs:
+    - name: format-staged
+      # Format staged (ruff / oxlint --fix)
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py,client/**/*.{ts,tsx,js,jsx}}"
       run: bash .lefthook/scripts/format-staged.sh {staged_files}
       stage_fixed: true
-    registry-checks:
-      name: Registry checks (whole-tree tests pre-push selection cannot reach)
-      priority: 1
-      # "A new X must be registered in Y" rules: tests that walk the tree, so
-      # neither the import graph nor `jest --changedSince` selects them from the
-      # file you changed. Tests opt in where they are written; see the script.
-      glob: "{AGENTS.md,server/loregarden/**/*.py,server/tests/**/*.py,client/src/**/*.{ts,tsx,css,json}}"
-      run: bash .lefthook/scripts/registry-checks.sh {staged_files}
-    py-review:
-      name: Python (Ruff, server/pyproject.toml)
-      priority: 1
-      # Python outside server/ that the gates own: Claude Code hooks, the gate
-      # scripts, CI's helper scripts — stdlib-only, run by the system python3.
-      # Same directories as PY_SCRIPT_DIRS in .lefthook/scripts/py-staged-paths.sh,
-      # which is what maps them through to the tool; a glob alone checks nothing.
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/py-review.sh {staged_files}
-    py-pylint:
-      name: Python (Pylint too-many-statements)
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/py-pylint.sh {staged_files}
-    py-complexity:
-      name: Python (Ruff C901 McCabe complexity)
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/py-complexity.sh {staged_files}
-    py-organization:
-      name: Python organization guardrails
-      priority: 1
-      # The gate scripts are graded by the rules they enforce. Everything
-      # under .lefthook/scripts/ was outside every glob, so a violation planted
-      # in a gate went undetected by the gate itself.
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
-    py-defensive-normalization:
-      name: Python defensive normalization check (code smell)
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
-    py-silent-except:
-      name: Python silently-caught exceptions
-      priority: 1
-      # The gate scripts are graded by the rules they enforce. Everything
-      # under .lefthook/scripts/ was outside every glob, so a violation planted
-      # in a gate went undetected by the gate itself.
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
-    md-report:
-      name: Report markdown written into the tree
-      priority: 1
-      glob: "{*.md,**/*.md}"
-      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/md_report_check.py {staged_files}
-    py-git-subprocess:
-      name: Python git subprocess routing (GIT_DIR safety)
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
-    py-ref-writers:
-      name: Python branch moves outside integration_branch_moves
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_ref_writers_check.py {staged_files}
-    py-mypy:
-      name: Python (mypy, staged files)
-      priority: 1
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
-      run: bash .lefthook/scripts/mypy-changed.sh {staged_files}
-    client-lint:
-      name: Client (oxlint)
-      priority: 1
-      glob: "client/**/*.{ts,tsx,js,jsx}"
-      run: bash .lefthook/scripts/client-lint.sh {staged_files}
-    client-dup:
-      name: Client duplication (jscpd)
-      priority: 1
-      glob: "client/src/**/*.{ts,tsx}"
-      run: bash .lefthook/scripts/client-dup-check.sh {staged_files}
-    ts-organization:
-      name: TypeScript organization guardrails
-      priority: 1
-      glob: "client/**/*.{ts,tsx}"
-      run: bash .lefthook/scripts/ts-organization.sh {staged_files}
-    ts-silent-failures:
-      name: TypeScript silent failure check (swallowed rejections)
-      priority: 1
-      glob: "client/**/*.{ts,tsx}"
-      run: bash .lefthook/scripts/ts-silent-failures.sh {staged_files}
-    ts-ux-states:
-      name: TypeScript user-experience check (naming, keyboard, empty states, agent-drivable)
-      priority: 1
-      glob: "client/**/*.{ts,tsx}"
-      run: bash .lefthook/scripts/ts-ux-states.sh {staged_files}
-    ts-theme:
-      name: Theme check (raw form controls, hardcoded colours, OS colour-scheme branches)
-      priority: 1
-      glob: "client/**/*.{ts,tsx,css}"
-      run: bash .lefthook/scripts/ts-theme.sh {staged_files}
-    ts-type:
-      name: Type scale check (hardcoded font sizes off the --fs-* steps)
-      priority: 1
-      glob: "client/**/*.{ts,tsx,css}"
-      run: bash .lefthook/scripts/ts-type.sh {staged_files}
-    ts-motion:
-      name: Motion check (layout-property animation, hardcoded durations, reduced-motion policy)
-      priority: 1
-      glob: "client/**/*.css"
-      run: bash .lefthook/scripts/ts-motion.sh {staged_files}
+    - name: checks
+      group:
+        parallel: true
+        jobs:
+          - name: registry-checks
+            # Registry checks (whole-tree tests pre-push selection cannot reach)
+            # "A new X must be registered in Y" rules: tests that walk the tree, so
+            # neither the import graph nor `jest --changedSince` selects them from the
+            # file you changed. Tests opt in where they are written; see the script.
+            glob: "{AGENTS.md,server/loregarden/**/*.py,server/tests/**/*.py,client/src/**/*.{ts,tsx,css,json}}"
+            run: bash .lefthook/scripts/registry-checks.sh {staged_files}
+          - name: py-review
+            # Python (Ruff, server/pyproject.toml)
+            # Python outside server/ that the gates own: Claude Code hooks, the gate
+            # scripts, CI's helper scripts — stdlib-only, run by the system python3.
+            # Same directories as PY_SCRIPT_DIRS in .lefthook/scripts/py-staged-paths.sh,
+            # which is what maps them through to the tool; a glob alone checks nothing.
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/py-review.sh {staged_files}
+          - name: py-pylint
+            # Python (Pylint too-many-statements)
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/py-pylint.sh {staged_files}
+          - name: py-complexity
+            # Python (Ruff C901 McCabe complexity)
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/py-complexity.sh {staged_files}
+          - name: py-organization
+            # Python organization guardrails
+            # The gate scripts are graded by the rules they enforce. Everything
+            # under .lefthook/scripts/ was outside every glob, so a violation planted
+            # in a gate went undetected by the gate itself.
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
+          - name: py-defensive-normalization
+            # Python defensive normalization check (code smell)
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
+          - name: py-silent-except
+            # Python silently-caught exceptions
+            # The gate scripts are graded by the rules they enforce. Everything
+            # under .lefthook/scripts/ was outside every glob, so a violation planted
+            # in a gate went undetected by the gate itself.
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
+          - name: md-report
+            # Report markdown written into the tree
+            glob: "{*.md,**/*.md}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/md_report_check.py {staged_files}
+          - name: py-git-subprocess
+            # Python git subprocess routing (GIT_DIR safety)
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
+          - name: py-ref-writers
+            # Python branch moves outside integration_branch_moves
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_ref_writers_check.py {staged_files}
+          - name: py-mypy
+            # Python (mypy, staged files)
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/mypy-changed.sh {staged_files}
+          - name: client-lint
+            # Client (oxlint)
+            glob: "client/**/*.{ts,tsx,js,jsx}"
+            run: bash .lefthook/scripts/client-lint.sh {staged_files}
+          - name: client-dup
+            # Client duplication (jscpd)
+            glob: "client/src/**/*.{ts,tsx}"
+            run: bash .lefthook/scripts/client-dup-check.sh {staged_files}
+          - name: ts-organization
+            # TypeScript organization guardrails
+            glob: "client/**/*.{ts,tsx}"
+            run: bash .lefthook/scripts/ts-organization.sh {staged_files}
+          - name: ts-silent-failures
+            # TypeScript silent failure check (swallowed rejections)
+            glob: "client/**/*.{ts,tsx}"
+            run: bash .lefthook/scripts/ts-silent-failures.sh {staged_files}
+          - name: ts-ux-states
+            # TypeScript user-experience check (naming, keyboard, empty states, agent-drivable)
+            glob: "client/**/*.{ts,tsx}"
+            run: bash .lefthook/scripts/ts-ux-states.sh {staged_files}
+          - name: ts-theme
+            # Theme check (raw form controls, hardcoded colours, OS colour-scheme branches)
+            glob: "client/**/*.{ts,tsx,css}"
+            run: bash .lefthook/scripts/ts-theme.sh {staged_files}
+          - name: ts-type
+            # Type scale check (hardcoded font sizes off the --fs-* steps)
+            glob: "client/**/*.{ts,tsx,css}"
+            run: bash .lefthook/scripts/ts-type.sh {staged_files}
+          - name: ts-motion
+            # Motion check (layout-property animation, hardcoded durations, reduced-motion policy)
+            glob: "client/**/*.css"
+            run: bash .lefthook/scripts/ts-motion.sh {staged_files}
 
 # commit-msg — the one hook that sees both a merge's result and its message:
 #   - merge-drops: a merge concluded by hand may not delete a file only its own
@@ -183,21 +182,25 @@ pre-push:
   # Stream output as it happens: a push queued for capacity prints its place in
   # line, and buffered until exit that reads exactly like a hang.
   follow: true
-  commands:
+  # A list, not a `commands` map: lefthook runs a map's commands in name order
+  # (client-tests, server-tests, signed-commits), so the signature check meant
+  # to refuse an unsigned commit first ran after both suites. A jobs list runs
+  # in the order written. server/tests/test_lefthook_hook_order.py holds it.
+  jobs:
     # First and cheap: a git read per pushed commit, no capacity lease. An
     # unsigned commit is refused before the test suites spend minutes on it.
-    signed-commits:
-      name: Every pushed commit is signed
+    - name: signed-commits
+      # Every pushed commit is signed
       use_stdin: true
       run: bash .lefthook/scripts/signed-commits.sh
     # Each runs under a host-capacity lease (capacity-run.sh), so pushes from
     # every repo on this machine queue instead of piling on; the grant sets the
     # worker count. `interactive` hands the terminal to the wrapper's
     # proceed/retry/stop prompt when the ledger cannot be reached.
-    server-tests:
-      name: Server tests (ruff full + pytest on reached tests)
+    - name: server-tests
+      # Server tests (ruff full + pytest on reached tests)
       # The script directories too: their ruff runs here, and their tests live
-      # in server/tests (select_pytest_targets.py runs the full suite for them).
+      # in server/tests (select_pytest_targets.py selects the tests naming them).
       glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
       skip:
         - run: bash .lefthook/scripts/staged-push.sh server-tests
@@ -214,8 +217,8 @@ pre-push:
     # first-come, first-served, so this pays off when a client run reaches the
     # head while a server suite holds. test_prepush_footprints_share_the_host
     # checks the fit.
-    client-tests:
-      name: Client tests (oxlint + tsc full + jest --changedSince)
+    - name: client-tests
+      # Client tests (oxlint + tsc full + jest --changedSince)
       glob: "client/**/*.{ts,tsx,js,jsx,json}"
       skip:
         - run: bash .lefthook/scripts/staged-push.sh client-tests

@@ -1,7 +1,4 @@
 {
-  "env": {
-    "LEFTHOOK_CONFIG": "lefthook-agent.yml"
-  },
   "hooks": {
     "PreToolUse": [
       {

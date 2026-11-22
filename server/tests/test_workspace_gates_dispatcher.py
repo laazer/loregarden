@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.toolchain import require_commands
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DISPATCHER = _ROOT / ".lefthook" / "scripts" / "workspace-gates.sh"
@@ -53,8 +54,7 @@ def _gates() -> list[str]:
 @pytest.fixture
 def stubbed(tmp_path: Path) -> Path:
     """A copy of the dispatcher beside stub checkers, so it runs nothing real."""
-    if shutil.which("node") is None:
-        pytest.skip("node is not on PATH")
+    require_commands("node")
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     shutil.copy(_DISPATCHER, scripts / _DISPATCHER.name)
@@ -179,8 +179,7 @@ def test_no_node_on_path_is_unavailable_not_failed(stubbed: Path, tmp_path: Path
 def no_python_env(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     """The real gate scripts in a repo whose server/ has no venv, on a PATH with
     node and git but no uv: what a fresh worktree or another machine looks like."""
-    if shutil.which("node") is None or shutil.which("git") is None:
-        pytest.skip("node and git are needed on PATH")
+    require_commands("node", "git")
     repo = tmp_path / "repo"
     shutil.copytree(_DISPATCHER.parent, repo / ".lefthook" / "scripts")
     (repo / "server").mkdir()

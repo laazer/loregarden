@@ -26,7 +26,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-import yaml
 from loregarden.cli import capacity as capacity_cli
 from loregarden.cli.errors import UsageError
 from loregarden.config import settings
@@ -52,6 +51,7 @@ from loregarden.services.capacity_run import (
     run_holding,
 )
 from loregarden.services.docker_ledger import load_pool
+from loregarden.testing.lefthook_config import hook_jobs
 from sqlalchemy import create_engine
 from sqlmodel import Session, select
 
@@ -355,8 +355,7 @@ def test_the_stall_clock_restarts_whenever_something_ahead_finishes(session, bus
 
 def _prepush_footprint(command: str) -> DockerFootprint:
     """The `--footprint` lefthook.yml books for one pre-push command."""
-    config = yaml.safe_load((SERVER_ROOT.parent / "lefthook.yml").read_text())
-    words = config["pre-push"]["commands"][command]["run"].split()
+    words = hook_jobs(SERVER_ROOT.parent / "lefthook.yml", "pre-push")[command]["run"].split()
     return DockerFootprint(words[words.index("--footprint") + 1])
 
 

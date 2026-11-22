@@ -96,8 +96,12 @@ def target_preserved(
     source_sha: str,
     result_sha: str,
     declared: Sequence[DroppedLine] = (),
+    replay_from: str = "",
 ) -> PreservationReport:
     """Check ``result_sha`` against what ``target_sha`` contributed since the merge base.
+
+    ``replay_from`` is the merge base the result was computed from, when it
+    was not git's own (`git_merge_noco.landed_prefix`).
 
     Raises `RuntimeError` when git cannot answer; that is "could not be
     determined", which a caller must never read as preserved.
@@ -105,7 +109,7 @@ def target_preserved(
     structural = _structural(repo_root, target_sha=target_sha, result_sha=result_sha)
     if structural:
         return PreservationReport(ok=False, structural=tuple(structural))
-    base = merge_base(repo_root, target_sha, source_sha)
+    base = replay_from or merge_base(repo_root, target_sha, source_sha)
     if not base:
         raise RuntimeError(
             f"{target_sha[:12]} and {source_sha[:12]} share no history; nothing to compare from"

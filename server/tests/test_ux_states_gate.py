@@ -11,21 +11,22 @@ did not touch must not fail the commit that touched a different line.
 """
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 from tests.repo_templates import from_template
+from tests.toolchain import NPM_CI, require_commands, require_path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _GATE = _ROOT / ".lefthook" / "scripts" / "ts_ux_states_check.cjs"
 _ESTREE = _ROOT / "client" / "node_modules" / "@typescript-eslint" / "typescript-estree"
 
-pytestmark = pytest.mark.skipif(
-    not _ESTREE.exists() or shutil.which("node") is None,
-    reason="needs node and client/node_modules (cd client && npm ci)",
-)
+
+@pytest.fixture(autouse=True)
+def _toolchain() -> None:
+    require_commands("node")
+    require_path(_ESTREE, NPM_CI)
 
 
 def _git(repo: Path, *args: str) -> None:

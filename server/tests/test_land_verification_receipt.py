@@ -83,6 +83,7 @@ from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session, col, select
 from tests import land_receipt_helpers as helpers
 from tests.land_receipt_helpers import FAILING_SUITE, PASSING_SUITE
+from tests.toolchain import require_client_modules, require_commands
 from tests.worktree_helpers import commit_on, git
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -728,7 +729,6 @@ def test_the_armed_command_parses_and_launches_where_it_will_actually_run(detach
     )
 
 
-@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not on PATH on this machine")
 def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root(detached):
     """The armed server command, run for real where it will run: a fresh
     `worktree add --detach` tree with no `server/.venv`, cwd at the repository
@@ -736,6 +736,7 @@ def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root
     small test file, so the script must narrow to it rather than run the full
     suite that timed out lg-milestone-that-2250's landing seven times.
     """
+    require_commands("uv")
     touched = detached / "server" / "tests" / "test_pytest_target_selection.py"
     touched.write_text(
         touched.read_text(encoding="utf-8") + "\n\n# the landing\n", encoding="utf-8"
@@ -764,16 +765,13 @@ def test_the_server_command_runs_what_the_landing_reaches_from_the_detached_root
     assert "1 test file(s) reach the pushed changes" in outcome.output, outcome.output[-3000:]
 
 
-@pytest.mark.skipif(shutil.which("npm") is None, reason="npm is not on PATH on this machine")
-@pytest.mark.skipif(
-    not (REPO_ROOT / "client" / "node_modules").is_dir(),
-    reason="this checkout has no client/node_modules to link into the tree",
-)
 def test_jest_finds_the_client_suite_from_the_detached_worktrees_root(detached):
     """The jest command, exercised where it will run: a fresh detached tree at
     the repository root, given the parent checkout's `client/node_modules` the
     way `_verify_candidate` gives it. `--listTests` proves npm resolves the
     package script and jest finds the suite without paying for the run."""
+    require_client_modules()
+    require_commands("npm")
     link_ignored_toolchains(REPO_ROOT, detached)
     probe = shlex.join([*shlex.split(JEST_COMMAND), "--listTests"])
 

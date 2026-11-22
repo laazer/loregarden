@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from tests.repo_templates import from_template
+from tests.toolchain import NPM_CI, require_path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
@@ -102,11 +103,8 @@ def _build_repo(root: Path) -> None:
 
 
 def _run(gate: list[str], repo: Path, *paths: str) -> subprocess.CompletedProcess:
-    if gate[0] == "node" and not _TS_PARSER.is_dir():
-        message = f"the TS gates need {_TS_PARSER}; run `npm ci` in client/"
-        if os.environ.get("CI"):
-            pytest.fail(message)
-        pytest.skip(message)
+    if gate[0] == "node":
+        require_path(_TS_PARSER, NPM_CI)
     return subprocess.run(
         [*gate, "--repo", str(repo), "--scope", "staged", *paths],
         capture_output=True,
