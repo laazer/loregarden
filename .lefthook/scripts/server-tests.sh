@@ -91,6 +91,20 @@ progress_begin "server-tests" 5
 # is ~45 minutes idle and over 90 under load; stopping at the first red returns
 # the answer in the time it takes to reach it.
 #
+# `-x` alone only helps once the run reaches the failure, so the order matters
+# as much: `--ff` runs last push's failures first (the re-push after a fix
+# answers in seconds, not another full run), and a full run starts with the
+# tests the change reaches (pytest_run_first.py). One broken test once surfaced
+# 23 minutes into a full run forced by a `lefthook.yml` edit, and its one-line
+# fix paid 30 more.
+#
+# `--maxschedchunk=1` is what makes that order real under xdist. Load
+# scheduling otherwise hands each worker a contiguous quarter of its share up
+# front, so everything at the front of the collection queues behind worker 1
+# alone (the #938 replay: 858 tests ahead of the broken one, all on one worker).
+# One at a time, workers take tests in collection order. Measured on 2337 tests
+# at -n 4: 412s vs 408s and 345s vs 362s, i.e. within run-to-run noise.
+#
 # CI still runs to completion without `-x`, so the total count is never lost —
 # this only changes which report arrives first, and how long a broken push waits
 # to be told.
@@ -118,16 +132,19 @@ fi
 progress_step "select tests"
 TARGETS=""
 SELECT_REASON=""
-if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
-  SELECT_REASON="LOREGARDEN_FULL_TESTS is set"
-elif [ -z "$BASE" ]; then
+# The tests a full run starts with: what the diff's mappable part reaches (see
+# run_first in select_pytest_targets.py). Written by the selector in every case
+# it runs; empty when it did not.
+RUN_FIRST_REPO="$RUN_TEMP/run-first-repo.txt"
+: > "$RUN_FIRST_REPO"
+if [ -z "$BASE" ]; then
   SELECT_REASON="no @{push} or origin/main to diff against"
 else
   ERR_FILE="$(mktemp)"
   set +e
   # The server interpreter, not `python3`: a 3.9 on PATH cannot parse a module
   # using `match`, and an import graph missing its edges selects too little.
-  TARGETS="$(bash "$ROOT/.lefthook/scripts/server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" 2>"$ERR_FILE")"
+  TARGETS="$(bash "$ROOT/.lefthook/scripts/server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" --run-first-out "$RUN_FIRST_REPO" 2>"$ERR_FILE")"
   SELECT_STATUS=$?
   set -e
   if [ $SELECT_STATUS -ne 0 ]; then
@@ -135,6 +152,11 @@ else
     SELECT_REASON="$(cat "$ERR_FILE")"
   fi
   rm -f "$ERR_FILE"
+fi
+# Asked for in full: the selection still orders the run, it no longer narrows it.
+if [ -n "${LOREGARDEN_FULL_TESTS:-}" ]; then
+  TARGETS=""
+  SELECT_REASON="LOREGARDEN_FULL_TESTS is set"
 fi
 
 # The plugin records what collection found, and counts tests into the progress
@@ -151,9 +173,17 @@ export LOREGARDEN_TEST_COUNT_FILE="$RUN_TEMP/test-count.json"
 
 if [ -z "$TARGETS" ]; then
   echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
+  # pytest runs from server/; the selector names files from the repo root.
+  RUN_FIRST="$RUN_TEMP/run-first.txt"
+  sed 's#^server/##' "$RUN_FIRST_REPO" > "$RUN_FIRST"
+  RUN_FIRST_COUNT="$(grep -c . "$RUN_FIRST" || true)"
+  if [ "$RUN_FIRST_COUNT" -gt 0 ]; then
+    echo "pre-push: running first the ${RUN_FIRST_COUNT} test file(s) the change reaches, then the rest"
+  fi
   progress_step "pytest, full suite"
   run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress
+    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress \
+    -p pytest_run_first --run-first="$RUN_FIRST"
 else
   # Paths arrive repo-relative; pytest runs from server/.
   FILES=()
@@ -175,5 +205,5 @@ else
   echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   progress_step "pytest on ${#FILES[@]} file(s)"
   run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -x -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" -p pytest_push_progress "${FILES[@]}"
+    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress "${FILES[@]}"
 fi

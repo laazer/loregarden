@@ -377,9 +377,9 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=_SCRUBBED_ENV)
 
 
-def _run_cli(repo: Path, base: str) -> subprocess.CompletedProcess:
+def _run_cli(repo: Path, base: str, *extra: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(_SELECTOR), "--repo", str(repo), "--base", base],
+        [sys.executable, str(_SELECTOR), "--repo", str(repo), "--base", base, *extra],
         capture_output=True,
         text=True,
         env=_SCRUBBED_ENV,
@@ -414,6 +414,77 @@ def test_cli_signals_full_suite_with_a_reason(git_repo: Path):
     result = _run_cli(git_repo, "HEAD~1")
     assert result.returncode == selector.EXIT_RUN_EVERYTHING
     assert "lefthook.yml" in result.stderr
+
+
+def test_a_full_run_still_names_what_the_mappable_changes_reach(git_repo: Path, tmp_path: Path):
+    """`lefthook.yml` forces the full suite; the leaf change's tests go first in it."""
+    (git_repo / "lefthook.yml").write_text("x: 1\n", encoding="utf-8")
+    leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
+    leaf.write_text("VALUE = 2\n", encoding="utf-8")
+    _git(git_repo, "add", "-A")
+    _git(git_repo, "commit", "-qm", "touch repo config and leaf")
+    out = tmp_path / "run-first.txt"
+
+    result = _run_cli(git_repo, "HEAD~1", "--run-first-out", str(out))
+
+    assert result.returncode == selector.EXIT_RUN_EVERYTHING, result.stderr
+    assert "lefthook.yml" in result.stderr
+    assert result.stdout == ""
+    assert out.read_text(encoding="utf-8").split() == [
+        "server/tests/test_dynamic.py",
+        "server/tests/test_middle.py",
+    ]
+
+
+def test_run_first_puts_the_closest_tests_first(fake_repo: Path):
+    """Changed tests, then direct importers, then transitive ones — not alphabetical.
+
+    "Reaches" is most of the real suite for a widely imported module (691 of
+    ~720 files for `git_subprocess.py`); in path order the broken test there
+    ran 4546th of 14386, and closest-first moved it to 859th.
+    """
+    tests = fake_repo / "server" / "tests"
+    (tests / "test_aaa_transitive.py").write_text(
+        "from loregarden.services import middle\n\ndef test_a():\n    assert middle\n",
+        encoding="utf-8",
+    )
+    (tests / "test_zzz_changed.py").write_text("def test_c():\n    pass\n", encoding="utf-8")
+
+    order = selector.run_first(
+        fake_repo,
+        ["lefthook.yml", "server/loregarden/services/leaf.py", "server/tests/test_zzz_changed.py"],
+    )
+
+    assert [path.name for path in order] == [
+        "test_zzz_changed.py",
+        "test_dynamic.py",
+        "test_aaa_transitive.py",
+        "test_middle.py",
+    ]
+
+
+def test_a_narrowed_run_names_its_selection_to_run_first(git_repo: Path, tmp_path: Path):
+    leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
+    leaf.write_text("VALUE = 2\n", encoding="utf-8")
+    _git(git_repo, "commit", "-aqm", "change leaf")
+    out = tmp_path / "run-first.txt"
+
+    result = _run_cli(git_repo, "HEAD~1", "--run-first-out", str(out))
+
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert out.read_text(encoding="utf-8").split() == result.stdout.split()
+
+
+def test_an_unmappable_only_diff_names_nothing_to_run_first(git_repo: Path, tmp_path: Path):
+    (git_repo / "lefthook.yml").write_text("x: 1\n", encoding="utf-8")
+    _git(git_repo, "add", "-A")
+    _git(git_repo, "commit", "-qm", "touch repo config")
+    out = tmp_path / "run-first.txt"
+
+    result = _run_cli(git_repo, "HEAD~1", "--run-first-out", str(out))
+
+    assert result.returncode == selector.EXIT_RUN_EVERYTHING
+    assert out.read_text(encoding="utf-8") == ""
 
 
 def test_cli_runs_everything_when_nothing_is_reachable(git_repo: Path):
@@ -538,6 +609,13 @@ def test_both_pre_push_runners_stop_at_the_first_failure():
     assert len(pytest_calls) >= 2, f"expected both invocation sites, found {pytest_calls}"
     for call in pytest_calls:
         assert call.startswith("pytest -x "), f"call site is no longer fail-fast: {call}"
+        # `-x` stops at a failure only once the run reaches it: last push's
+        # failures go first, so the re-push after a fix answers in seconds.
+        assert " --ff " in call, f"call site no longer runs last failures first: {call}"
+        # Without it xdist hands worker 1 the whole front of the collection.
+        assert " --maxschedchunk=1 " in call, f"call site no longer runs in order: {call}"
+    # A full run starts with what the change reaches (pytest_run_first.py).
+    assert '-p pytest_run_first --run-first="$RUN_FIRST"' in server
 
     for line in client.splitlines():
         stripped = line.strip()

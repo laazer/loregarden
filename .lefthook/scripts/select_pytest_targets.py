@@ -59,9 +59,10 @@ What can still be missed: a test that reaches changed code through a data file,
 a subprocess, or a name assembled at runtime. CI still runs the whole suite on
 every PR, so the cost of a miss is a slower signal, never an unguarded merge.
 
-Usage: select_pytest_targets.py --repo PATH --base REF
+Usage: select_pytest_targets.py --repo PATH --base REF [--run-first-out FILE]
 Prints one test path per line. Exit 2 means "run the full suite" and the reason
-goes to stderr.
+goes to stderr. --run-first-out also writes, in every case, the tests a full run
+should start with: the selection for the part of the diff that can be narrowed.
 """
 
 from __future__ import annotations
@@ -489,10 +490,17 @@ def select(repo: Path, paths: list[str]) -> list[Path]:
     — when agent prose changed — the tests that read it, plus — when a script
     changed — the tests that name it or a script reaching it."""
     changes = classify(repo, paths)
-    if not (changes.modules or changes.client or changes.context_files or changes.script_files):
+    if not _needs_graph(changes):
         return sorted(changes.tests)
-
     graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
+    return sorted(_select(repo, changes, graph))
+
+
+def _needs_graph(changes: ChangeSet) -> bool:
+    return bool(changes.modules or changes.client or changes.context_files or changes.script_files)
+
+
+def _select(repo: Path, changes: ChangeSet, graph: ImportGraph) -> set[Path]:
     selected = set(changes.tests)
     if changes.client:
         selected |= graph.client_tests
@@ -508,7 +516,7 @@ def select(repo: Path, paths: list[str]) -> list[Path]:
             for test_file, imports in graph.test_edges.items()
             if reachable(imports, graph.module_edges) & changes.modules
         }
-    return sorted(selected)
+    return selected
 
 
 def _modules_naming(graph: ImportGraph, files: frozenset[str]) -> set[str]:
@@ -541,29 +549,79 @@ def _tests_naming(graph: ImportGraph, files: frozenset[str]) -> set[Path]:
     }
 
 
+def run_first(repo: Path, paths: list[str]) -> list[Path]:
+    """The tests to run FIRST when the suite runs in full: the selection for
+    the part of the diff that can be narrowed.
+
+    A full run caused by one unmappable file (`lefthook.yml`) still holds a
+    diff whose other changes the graph maps, and the tests reaching those are
+    the likeliest to fail. Running them first moves a failure from wherever path
+    order put it to near the start; the full run still runs everything.
+    This is an order, never a selection, so a hole in it costs speed only.
+
+    Closest first, because "reaches" is often most of the suite: a change to
+    `git_subprocess.py` reaches 691 of ~720 files through the graph. So the
+    changed tests lead, then the files importing a changed module directly
+    (`test_git_subprocess.py`), then everything reaching one transitively.
+    """
+    narrowable = [path for path in paths if full_suite_reason([path]) is None]
+    if not narrowable:
+        return []
+    changes = classify(repo, narrowable)
+    if not _needs_graph(changes):
+        return sorted(changes.tests)
+    graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
+
+    def closeness(test: Path) -> tuple[int, Path]:
+        if test in changes.tests:
+            return (0, test)
+        if graph.test_edges.get(test, set()) & changes.modules:
+            return (1, test)
+        return (2, test)
+
+    return sorted(_select(repo, changes, graph), key=closeness)
+
+
+def _write_run_first(out: Path | None, repo: Path, tests: list[Path]) -> None:
+    if out is not None:
+        out.write_text(
+            "".join(f"{test.relative_to(repo).as_posix()}\n" for test in tests), encoding="utf-8"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--base", required=True)
+    parser.add_argument(
+        "--run-first-out",
+        type=Path,
+        default=None,
+        help="also write the tests a full run should start with (see run_first), one per line",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
 
     paths = changed_files(repo, args.base)
     if not paths:
         print(f"no diff against {args.base}", file=sys.stderr)
+        _write_run_first(args.run_first_out, repo, [])
         return EXIT_RUN_EVERYTHING
 
     reason = full_suite_reason(paths)
-    if reason:
-        print(reason, file=sys.stderr)
-        return EXIT_RUN_EVERYTHING
-
     try:
-        selected = select(repo, paths)
+        selected = run_first(repo, paths) if reason else select(repo, paths)
     except UnexaminableError as exc:
         # A module whose imports are unknown may be the only path from a test
-        # to the change, so no subset is honest.
+        # to the change, so no subset is honest — not even as an order.
+        if reason:
+            print(reason, file=sys.stderr)
         print(f"cannot map the import graph: {exc}", file=sys.stderr)
+        _write_run_first(args.run_first_out, repo, [])
+        return EXIT_RUN_EVERYTHING
+    _write_run_first(args.run_first_out, repo, selected)
+    if reason:
+        print(reason, file=sys.stderr)
         return EXIT_RUN_EVERYTHING
     if not selected:
         # More often a hole in the graph than a module nothing tests.
