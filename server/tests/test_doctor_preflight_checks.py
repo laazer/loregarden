@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from loregarden.agents import mcp_context
 from loregarden.agents.mcp_context import (
     STAGE_REPORT_SECTION_TITLE,
     WORKFLOW_ENFORCEMENT_DOC_REL,
@@ -68,7 +69,16 @@ def _write_contract(repo, body: str) -> None:
 # -- AC2: the stage-report contract -------------------------------------------
 
 
-def test_a_workspace_with_no_contract_doc_fails(session, workspace, repo):
+@pytest.fixture(name="no_shared_contract")
+def no_shared_contract_fixture(tmp_path):
+    """This control plane with no contract of its own, so no fallback exists."""
+    empty = tmp_path / "control-plane-agent-context"
+    empty.mkdir()
+    with mock.patch.object(mcp_context.settings, "agent_context_dir", empty):
+        yield empty
+
+
+def test_a_workspace_with_no_contract_doc_fails(session, workspace, repo, no_shared_contract):
     """Blobert measured 0 characters against loregarden's 3303, and nothing said
     so — every stage there failed on a report it was never told how to write.
 
@@ -83,7 +93,9 @@ def test_a_workspace_with_no_contract_doc_fails(session, workspace, repo):
     assert WORKFLOW_ENFORCEMENT_DOC_REL.name in finding.remediation
 
 
-def test_a_contract_doc_missing_its_section_fails_the_same_way(session, workspace, repo):
+def test_a_contract_doc_missing_its_section_fails_the_same_way(
+    session, workspace, repo, no_shared_contract
+):
     """The second, quieter half: the doc is present, so a human looking for it
     finds it, but the loader matches on the section title and returns "" when it
     is absent. Both routes to empty must fail, or the check only covers the one
@@ -95,6 +107,20 @@ def test_a_contract_doc_missing_its_section_fails_the_same_way(session, workspac
     finding = check_stage_report_contract(session, workspace, repo)
 
     assert finding.status is DoctorStatus.FAIL
+    assert STAGE_REPORT_SECTION_TITLE in finding.remediation
+
+
+def test_a_workspace_without_the_section_warns_and_uses_loregardens(session, workspace, repo):
+    """Loremaker's module had no such section and every stage parked before an
+    agent ran. Loregarden's own copy now stands in, and the gap is a WARN, which
+    does not park a dispatch, rather than a silence."""
+    path = repo / "agent_context" / WORKFLOW_ENFORCEMENT_DOC_REL
+    path.write_text("a doc with no such section\n", encoding="utf-8")
+
+    finding = check_stage_report_contract(session, workspace, repo)
+
+    assert finding.status is DoctorStatus.WARN
+    assert str(mcp_context.settings.agent_context_dir) in finding.finding
     assert STAGE_REPORT_SECTION_TITLE in finding.remediation
 
 

@@ -34,7 +34,7 @@ from uuid import uuid4
 from loregarden.agents.mcp_context import (
     STAGE_REPORT_SECTION_TITLE,
     WORKFLOW_ENFORCEMENT_DOC_REL,
-    load_stage_report_contract_doc,
+    resolve_stage_report_contract,
 )
 from loregarden.config import resolved_database_path, settings
 from loregarden.db.migration_ledger import ledger_orphans
@@ -331,6 +331,10 @@ def check_stage_report_contract(
 ) -> DoctorFinding:
     """The stage-report contract reaches the agent's prompt with content in it.
 
+    A workspace whose own module lacks the section gets loregarden's copy
+    (`resolve_stage_report_contract`); that is reported as WARN. What follows is
+    the FAIL case, where neither copy has it.
+
     `load_stage_report_contract_doc` returns "" for two unrelated reasons and
     says nothing about either: the workflow-enforcement doc is absent from this
     workspace's agent_context, or the doc is there but its STAGE REPORT CONTRACT
@@ -345,13 +349,28 @@ def check_stage_report_contract(
     """
     # Either audience proves the section is there and readable; OTHER is the one
     # most stages are dispatched with.
-    contract = load_stage_report_contract_doc(
-        resolve_agent_context_dir(workspace), audience=ContractAudience.OTHER
-    )
-    if contract.strip():
+    agent_context_dir = resolve_agent_context_dir(workspace)
+    contract = resolve_stage_report_contract(agent_context_dir, audience=ContractAudience.OTHER)
+    if contract.fallback:
+        # WARN, not FAIL: agents get a working contract, so parking every
+        # dispatch over a missing workspace copy would stop work for nothing.
+        return DoctorFinding(
+            check=DoctorCheck.STAGE_REPORT_CONTRACT,
+            status=DoctorStatus.WARN,
+            finding=(
+                f"This workspace's {WORKFLOW_ENFORCEMENT_DOC_REL} has no "
+                f"'{STAGE_REPORT_SECTION_TITLE}' section; agents get loregarden's "
+                f"copy from {contract.source}."
+            ),
+            remediation=(
+                f"Add the '{STAGE_REPORT_SECTION_TITLE}' section to {WORKFLOW_ENFORCEMENT_DOC_REL} "
+                "under this workspace's agent_context to give it its own."
+            ),
+        )
+    if contract.text.strip():
         return _ok(
             DoctorCheck.STAGE_REPORT_CONTRACT,
-            f"Stage-report contract is {len(contract)} characters.",
+            f"Stage-report contract is {len(contract.text)} characters.",
         )
     return DoctorFinding(
         check=DoctorCheck.STAGE_REPORT_CONTRACT,

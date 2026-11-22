@@ -29,7 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.mcp_registry import cli_server_entries
 from loregarden.services.sandbox_endpoint import SandboxMcpUrlError, require_this_instance
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -561,6 +561,51 @@ def select_audience_blocks(text: str, audience: ContractAudience) -> str:
     return _AUDIENCE_BLOCK_RE.sub(_keep, text)
 
 
+#: Workspace agent_context dirs already warned about falling back, so the
+#: warning is once per process rather than once per dispatch.
+_contract_fallback_warned: set[str] = set()
+
+
+class StageReportContract(BaseModel):
+    """The STAGE REPORT CONTRACT section an agent is given, and where it came from.
+
+    ``text`` is empty only when neither the workspace nor this control plane has
+    the section. ``fallback`` is True when the workspace's own copy lacked it and
+    this control plane's was used instead.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    source: Path | None
+    fallback: bool
+
+
+def resolve_stage_report_contract(
+    agent_context_dir: Path, *, audience: ContractAudience
+) -> StageReportContract:
+    """The workspace's STAGE REPORT CONTRACT section, or this control plane's.
+
+    The workspace's own copy wins when it has the section: a workspace may have
+    tuned it. When it does not, this control plane's copy is used rather than
+    an empty contract, because no installer carries the module into other
+    workspaces: loremaker's had no such section, and every one of its stages
+    parked at preflight before an agent ran (2026-11-22). The doctor
+    check reports the fallback as a warning, so the gap stays visible.
+    """
+    own = agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL
+    text = _contract_section(own, audience)
+    if text:
+        return StageReportContract(text=text, source=own, fallback=False)
+    shared = settings.agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL
+    if shared.resolve() == own.resolve():
+        return StageReportContract(text="", source=None, fallback=False)
+    text = _contract_section(shared, audience)
+    if not text:
+        return StageReportContract(text="", source=None, fallback=False)
+    return StageReportContract(text=text, source=shared, fallback=True)
+
+
 def load_stage_report_contract_doc(agent_context_dir: Path, *, audience: ContractAudience) -> str:
     """Body of the workflow-enforcement module's STAGE REPORT CONTRACT section, for ``audience``.
 
@@ -569,9 +614,22 @@ def load_stage_report_contract_doc(agent_context_dir: Path, *, audience: Contrac
     ticket markdown files that do not exist, and pins a stage enum that predates
     `workflow_templates`, whose values would poison `reroute_to_stage`. Within it,
     the rules only a judging stage uses (findings, rechecks, when a reject
-    stands) reach only a judging stage.
+    stands) reach only a judging stage. Falls back to this control plane's copy
+    (`resolve_stage_report_contract`).
     """
-    path = agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL
+    contract = resolve_stage_report_contract(agent_context_dir, audience=audience)
+    if contract.fallback and str(agent_context_dir) not in _contract_fallback_warned:
+        _contract_fallback_warned.add(str(agent_context_dir))
+        logger.warning(
+            "%s has no %s section; agents get this control plane's copy from %s",
+            agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL,
+            STAGE_REPORT_SECTION_TITLE,
+            contract.source,
+        )
+    return contract.text
+
+
+def _contract_section(path: Path, audience: ContractAudience) -> str:
     if not path.is_file():
         return ""
     # Dividers split the module into alternating title and body chunks, so the
