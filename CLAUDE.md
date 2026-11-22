@@ -684,9 +684,10 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   because the server's own git helpers pass the ambient environment through.
 - **Pre-push runs only the tests your commits reach.** `select_pytest_targets.py` walks the
   import graph (string constants included, so `import_module("loregarden.x")` counts) and pytest
-  runs that subset; jest runs `--changedSince`. Anything unmappable (`conftest.py`,
-  `pyproject.toml`, a non-Python file, anything outside `server/`/`client/`) falls back to the
-  full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
+  runs that subset; jest runs `--changedSince`. A hook or repo script (`.lefthook/scripts/`,
+  `scripts/`) selects the tests that name it, or name a script that runs or imports it. Anything
+  unmappable (`conftest.py`, `pyproject.toml`, `lefthook.yml`, another non-Python file, anything
+  else outside `server/`/`client/`) falls back to the full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
   CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
   `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
 
@@ -698,6 +699,11 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   To wait for it, run `./scripts/loregarden-cli.sh merge-queue wait <entry-id>` in the
   background: exit 0 merged, 1 stopped (reason printed), 75 no verdict (its deadline passed, or
   the server that runs the queue stopped answering). Do not write a polling loop.
+  What lands, the dev server then runs: on each CI poll tick it fast-forwards its own checkout
+  onto main and reloads when `server/` changed, once no agent work is in flight
+  (`services/follow_main.py`). A checkout on another branch, with local commits on main, or
+  with uncommitted changes to a landed file is left alone and reported by `loregarden_doctor`
+  (`server_follows_main`). `LOREGARDEN_FOLLOW_MAIN=0` pins the server to what you checked out.
 
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 

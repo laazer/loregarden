@@ -44,6 +44,7 @@ selector = _load()
         "server/pyproject.toml",
         "server/loregarden/data/seed.json",
         "lefthook.yml",
+        ".lefthook/lefthook-local.yml",
         "agent_context/orchestration/default.yaml",
         "agent_context/workflows/default.yaml",
         "agent_context/README.md",
@@ -63,6 +64,8 @@ def test_unmappable_change_runs_everything(path):
         ["server/loregarden/services/doctor.py", "client/src/App.tsx"],
         ["agent_context/agents/misc_agents/repair_v1.md"],
         ["agent_context/skills/refactor/SKILL.md"],
+        [".lefthook/scripts/sync-deps.sh"],
+        ["scripts/reload-backend.sh", "server/loregarden/services/doctor.py"],
     ],
 )
 def test_mappable_change_is_narrowed(paths):
@@ -246,6 +249,101 @@ def test_agent_prose_and_a_module_change_select_both(prose_repo: Path):
 )
 def test_a_constant_names_a_prose_file_by_path_suffix_or_basename(constant, names_it):
     assert selector.names_context_file(frozenset([constant]), ROLE) is names_it
+
+
+# --------------------------------------------------------------------------- #
+# hook and repo scripts: named by path, module name or import, never the graph
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def script_repo(fake_repo: Path) -> Path:
+    """`run.sh` runs `gate.py`, which imports `helper`; tests name each a different way."""
+    hooks = fake_repo / ".lefthook" / "scripts"
+    hooks.mkdir(parents=True)
+    (hooks / "run.sh").write_text('python3 .lefthook/scripts/gate.py "$@"\n', encoding="utf-8")
+    (hooks / "gate.py").write_text("from helper import parse\n", encoding="utf-8")
+    (hooks / "helper.py").write_text("def parse(): ...\n", encoding="utf-8")
+    (hooks / "lonely.sh").write_text("echo hi\n", encoding="utf-8")
+    (fake_repo / "scripts").mkdir()
+    (fake_repo / "scripts" / "reload.sh").write_text("touch x\n", encoding="utf-8")
+    (fake_repo / "scripts" / "unnamed.sh").write_text("echo\n", encoding="utf-8")
+    pkg = fake_repo / "server" / "loregarden" / "services"
+    (pkg / "runner.py").write_text('SCRIPT = "lonely.sh"\n', encoding="utf-8")
+
+    tests = fake_repo / "server" / "tests"
+    bodies = {
+        "test_runs_hook.py": 'HOOK = ROOT / ".lefthook" / "scripts" / "run.sh"',
+        "test_spec_gate.py": 'spec = spec_from_file_location("gate", PATH)',
+        "test_imports_helper.py": "import helper",
+        "test_reload.py": 'SCRIPT = "scripts/reload.sh"',
+        "test_runner.py": "from loregarden.services import runner",
+        "test_bystander.py": 'NAME = "something else.sh"',
+    }
+    for name, body in bodies.items():
+        (tests / name).write_text(f"{body}\ndef test_t():\n    pass\n", encoding="utf-8")
+    return fake_repo
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        # Named by its own path; nothing reaches it.
+        ("scripts/reload.sh", {"test_reload.py"}),
+        # By module name; and run.sh, which runs it, brings in test_runs_hook.
+        (".lefthook/scripts/gate.py", {"test_spec_gate.py", "test_runs_hook.py"}),
+        # Imported by gate.py, which run.sh runs: every way in is selected.
+        (
+            ".lefthook/scripts/helper.py",
+            {"test_imports_helper.py", "test_spec_gate.py", "test_runs_hook.py"},
+        ),
+        # Named only by a package module: the tests importing that module.
+        (".lefthook/scripts/lonely.sh", {"test_runner.py"}),
+        # Named by nothing: zero, which the CLI turns into the full suite.
+        ("scripts/unnamed.sh", set()),
+    ],
+)
+def test_a_script_change_selects_the_tests_that_reach_it(
+    script_repo: Path, changed: str, expected: set[str]
+):
+    assert _names(selector.select(script_repo, [changed])) == expected
+
+
+def test_a_deleted_script_still_selects_what_named_it(script_repo: Path):
+    (script_repo / ".lefthook" / "scripts" / "helper.py").unlink()
+
+    selected = _names(selector.select(script_repo, [".lefthook/scripts/helper.py"]))
+
+    assert "test_imports_helper.py" in selected
+
+
+@pytest.mark.parametrize(
+    ("names", "rel", "named"),
+    [
+        ({"sync-deps.sh"}, ".lefthook/scripts/sync-deps.sh", True),
+        ({"scripts/sync-deps.sh"}, ".lefthook/scripts/sync-deps.sh", True),
+        ({"py_organization_check"}, ".lefthook/scripts/py_organization_check.py", True),
+        # A stem names a Python module only; `capture` is not `capture.sh`.
+        ({"capture"}, ".lefthook/scripts/capture.sh", False),
+        ({"sync-deps"}, ".lefthook/scripts/sync-deps.sh", False),
+    ],
+)
+def test_a_name_reaches_a_script_by_path_basename_or_module(names, rel, named):
+    assert selector.names_script(frozenset(names), rel) is named
+
+
+def test_cli_narrows_a_hook_only_change(script_repo: Path):
+    _git(script_repo, "init", "-q", ".")
+    _git(script_repo, "config", "user.email", "t@example.com")
+    _git(script_repo, "config", "user.name", "t")
+    _git(script_repo, "add", "-A")
+    _git(script_repo, "commit", "-qm", "base")
+    (script_repo / "scripts" / "reload.sh").write_text("touch y\n", encoding="utf-8")
+    _git(script_repo, "commit", "-aqm", "revise the reload script")
+
+    result = _run_cli(script_repo, "HEAD~1")
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == ["server/tests/test_reload.py"]
 
 
 # --------------------------------------------------------------------------- #

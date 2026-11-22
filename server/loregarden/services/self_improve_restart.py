@@ -23,8 +23,8 @@ from sqlmodel import Session, col, select
 
 _ACTIVE_AGENT_STATUSES = frozenset({RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION})
 
-# The dev server runs with `--reload-exclude *.py --reload-include .self-improve-restart`,
-# so editing Python does NOT reload it — touching this file is the only trigger. Without
+# The dev-server supervisor (`loregarden.dev_supervisor`) does not watch Python files,
+# so editing one does NOT reload it — touching this file is the only trigger. Without
 # it an agent's backend fix sits in the working tree while the running process serves the
 # old code, and the human testing at a gate sees the bug as unfixed.
 RELOAD_SENTINEL = Path("server") / ".self-improve-restart"
@@ -233,6 +233,11 @@ def trigger_reload(session: Session, *, workspace_slug: str = SELF_IMPROVE_WORKS
         # but a reload that fails to fire would leave this one refusing forever.
         end_drain()
 
+    return touch_reload_sentinel()
+
+
+def touch_reload_sentinel() -> dict:
+    """Write the sentinel the dev-server supervisor watches; the caller checked readiness."""
     sentinel = settings.repo_root / RELOAD_SENTINEL
     sentinel.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

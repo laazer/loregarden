@@ -39,6 +39,14 @@ much:
   are found by globbing for `"SKILL.md"`). The rest of `agent_context/` (orchestration profiles,
   workflow seeds) is configuration that changes how runs behave, and still
   falls back.
+* A change to a hook or repo script (`.lefthook/scripts/`, `scripts/`) selects
+  the tests that name it, or name a script that runs or imports it, and the
+  tests importing a package module that names one of those (one hop, as for
+  prose). Tests reach these by path (`"server-tests.sh"`), by module name
+  (`spec_from_file_location("py_organization_check", …)`, `f"{name}.py"`) or
+  by `import`, never through the package graph, so before this every hook-only
+  change ran the full suite: 32 minutes for a 20-line shell fix. A script no
+  test names still selects zero, and zero still means everything.
 * String constants naming a package module count as imports, so the MCP tool
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
@@ -57,6 +65,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -91,6 +100,13 @@ CONTEXT_DIR = "agent_context"
 #: the tests reaching those modules are the ones a change can break.
 NARROWABLE_CONTEXT_TREES = (f"{CONTEXT_DIR}/agents/", f"{CONTEXT_DIR}/skills/")
 
+#: Hook and repo scripts: run or imported by path, so the tests that name a
+#: script (or a script that reaches it) are the ones a change can break.
+NARROWABLE_SCRIPT_DIRS = (".lefthook/scripts/", "scripts/")
+
+#: Longest string constant kept as a possible script name; prose is longer.
+_MAX_NAME_LENGTH = 200
+
 #: Changing one of these changes how every test runs, so nothing narrower is honest.
 _SHARED_TEST_FILES = frozenset({"conftest.py", "factories.py", "worktree_helpers.py"})
 
@@ -118,7 +134,7 @@ def full_suite_reason(paths: list[str]) -> str | None:
     for path in paths:
         if path.startswith("client/"):
             continue  # jest's problem, not pytest's
-        if path.startswith(NARROWABLE_CONTEXT_TREES):
+        if path.startswith(NARROWABLE_CONTEXT_TREES + NARROWABLE_SCRIPT_DIRS):
             continue
         if not path.startswith("server/"):
             return f"{path} is outside server/ (tests read repo files no import graph sees)"
@@ -192,6 +208,8 @@ class _PathNames:
     context_tree: bool = False
     #: constants that could name an `agent_context` markdown file
     markdown: frozenset[str] = frozenset()
+    #: constants and bare imports that could name a script, by path or module name
+    scripts: frozenset[str] = frozenset()
 
 
 class _PathFinder(ast.NodeVisitor):
@@ -199,6 +217,15 @@ class _PathFinder(ast.NodeVisitor):
         self.client = False
         self.context_tree = False
         self.markdown: set[str] = set()
+        self.scripts: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        # `import select_pytest_targets` after a sys.path insert names the script.
+        self.scripts.update(alias.name for alias in node.names)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module and not node.level:
+            self.scripts.add(node.module)
 
     def visit_Constant(self, node: ast.Constant) -> None:
         value = node.value
@@ -210,6 +237,8 @@ class _PathFinder(ast.NodeVisitor):
         self.context_tree = self.context_tree or _is_tree_path(value, CONTEXT_DIR)
         if value.endswith(".md"):
             self.markdown.add(value)
+        if len(value) <= _MAX_NAME_LENGTH and value.strip() and not any(c.isspace() for c in value):
+            self.scripts.add(value)
 
 
 def _path_names(tree: ast.AST) -> _PathNames:
@@ -219,6 +248,7 @@ def _path_names(tree: ast.AST) -> _PathNames:
         client=finder.client,
         context_tree=finder.context_tree,
         markdown=frozenset(finder.markdown),
+        scripts=frozenset(finder.scripts),
     )
 
 
@@ -235,6 +265,67 @@ def names_context_file(constants: frozenset[str], rel: str) -> bool:
         if "/" in value and rel.endswith(f"/{value.lstrip('/')}"):
             return True
     return False
+
+
+def names_script(names: frozenset[str], rel: str) -> bool:
+    """Does one of these constants or imports name `rel`, a repo-relative script?
+
+    As `names_context_file` does, plus a Python script's module name: tests load
+    gates with `spec_from_file_location("py_organization_check", …)`, build
+    `f"{name}.py"` from a stem, or `import` the script after a sys.path insert.
+    """
+    if rel.endswith(".py") and rel.rsplit("/", 1)[-1].removesuffix(".py") in names:
+        return True
+    return names_context_file(names, rel)
+
+
+def _script_files(repo: Path) -> dict[str, str]:
+    """Every file under the script dirs, repo-relative, with its text."""
+    found: dict[str, str] = {}
+    for tree in NARROWABLE_SCRIPT_DIRS:
+        root = repo / tree
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (
+                UnicodeDecodeError
+            ):  # silent-ok: a binary file cannot name a script; nothing to read
+                continue
+            found[path.relative_to(repo).as_posix()] = text
+    return found
+
+
+def _mentions(text: str, rel: str) -> bool:
+    """Does a script's text run or import `rel`? By basename, or `import stem`."""
+    basename = rel.rsplit("/", 1)[-1]
+    if basename in text:
+        return True
+    if not basename.endswith(".py"):
+        return False
+    stem = re.escape(basename.removesuffix(".py"))
+    return re.search(rf"^\s*(?:from\s+{stem}\s+import|import\s+{stem}\b)", text, re.M) is not None
+
+
+def scripts_reaching(repo: Path, changed: frozenset[str]) -> set[str]:
+    """The changed scripts plus every script that runs or imports one, transitively.
+
+    A test of `py-review.sh` exercises the Python gate it calls, so a change to
+    that gate must select it.
+    """
+    texts = _script_files(repo)
+    reached = set(changed)
+    frontier = list(changed)
+    while frontier:
+        current = frontier.pop()
+        for rel, text in texts.items():
+            if rel not in reached and _mentions(text, current):
+                reached.add(rel)
+                frontier.append(rel)
+    return reached
 
 
 def _parse(path: Path) -> ast.AST:
@@ -268,6 +359,9 @@ class ImportGraph:
     #: module or test file -> the markdown paths its string constants name
     module_markdown: dict[str, frozenset[str]]
     test_markdown: dict[Path, frozenset[str]]
+    #: module or test file -> what could name a script (see `_PathNames.scripts`)
+    module_scripts: dict[str, frozenset[str]]
+    test_scripts: dict[Path, frozenset[str]]
 
 
 def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
@@ -279,13 +373,17 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
 
     module_edges: dict[str, set[str]] = {}
     module_markdown: dict[str, frozenset[str]] = {}
+    module_scripts: dict[str, frozenset[str]] = {}
     for name, py in known.items():
         tree = _parse(py)
         module_edges[name] = {m for m in _imported_modules(tree) if m in known}
-        module_markdown[name] = _path_names(tree).markdown
+        names = _path_names(tree)
+        module_markdown[name] = names.markdown
+        module_scripts[name] = names.scripts
 
     test_edges: dict[Path, set[str]] = {}
     test_markdown: dict[Path, frozenset[str]] = {}
+    test_scripts: dict[Path, frozenset[str]] = {}
     client_tests: set[Path] = set()
     context_tests: set[Path] = set()
     for py in sorted(test_root.rglob("test_*.py")):
@@ -293,6 +391,7 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
         test_edges[py] = {m for m in _imported_modules(tree) if m in known}
         names = _path_names(tree)
         test_markdown[py] = names.markdown
+        test_scripts[py] = names.scripts
         if names.client:
             client_tests.add(py)
         if names.context_tree:
@@ -305,6 +404,8 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
         context_tests=frozenset(context_tests),
         module_markdown=module_markdown,
         test_markdown=test_markdown,
+        module_scripts=module_scripts,
+        test_scripts=test_scripts,
     )
 
 
@@ -333,6 +434,8 @@ class ChangeSet:
     client: bool
     #: changed agent prose, repo-relative (see `NARROWABLE_CONTEXT_TREES`)
     context_files: frozenset[str]
+    #: changed hook and repo scripts, repo-relative (see `NARROWABLE_SCRIPT_DIRS`)
+    script_files: frozenset[str] = frozenset()
 
 
 def classify(repo: Path, paths: list[str]) -> ChangeSet:
@@ -341,11 +444,15 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
     modules: set[str] = set()
     client = False
     context_files: set[str] = set()
+    script_files: set[str] = set()
     for rel in paths:
         if rel.startswith(f"{CLIENT_DIR}/"):
             client = True
         elif rel.startswith(NARROWABLE_CONTEXT_TREES):
             context_files.add(rel)
+        elif rel.startswith(NARROWABLE_SCRIPT_DIRS):
+            # A deleted script still names what used to call it.
+            script_files.add(rel)
         elif not rel.startswith("server/") or not rel.endswith(".py"):
             continue
         elif rel.startswith("server/tests/"):
@@ -359,15 +466,17 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
         modules=frozenset(modules),
         client=client,
         context_files=frozenset(context_files),
+        script_files=frozenset(script_files),
     )
 
 
 def select(repo: Path, paths: list[str]) -> list[Path]:
     """Test files that import a changed module, plus changed tests themselves,
     plus — when the client changed — the tests that read the client tree, plus
-    — when agent prose changed — the tests that read it."""
+    — when agent prose changed — the tests that read it, plus — when a script
+    changed — the tests that name it or a script reaching it."""
     changes = classify(repo, paths)
-    if not changes.modules and not changes.client and not changes.context_files:
+    if not (changes.modules or changes.client or changes.context_files or changes.script_files):
         return sorted(changes.tests)
 
     graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
@@ -378,6 +487,8 @@ def select(repo: Path, paths: list[str]) -> list[Path]:
         readers = _modules_naming(graph, changes.context_files)
         selected |= graph.context_tests | _tests_naming(graph, changes.context_files)
         selected |= {test for test, imports in graph.test_edges.items() if imports & readers}
+    if changes.script_files:
+        selected |= _tests_reaching_scripts(graph, scripts_reaching(repo, changes.script_files))
     if changes.modules:
         selected |= {
             test_file
@@ -392,6 +503,20 @@ def _modules_naming(graph: ImportGraph, files: frozenset[str]) -> set[str]:
         module
         for module, constants in graph.module_markdown.items()
         if any(names_context_file(constants, rel) for rel in files)
+    }
+
+
+def _tests_reaching_scripts(graph: ImportGraph, scripts: set[str]) -> set[Path]:
+    """Tests naming one of these scripts, and tests importing a module that names one."""
+    readers = {
+        module
+        for module, names in graph.module_scripts.items()
+        if any(names_script(names, rel) for rel in scripts)
+    }
+    return {
+        test_file
+        for test_file, names in graph.test_scripts.items()
+        if any(names_script(names, rel) for rel in scripts) or graph.test_edges[test_file] & readers
     }
 
 

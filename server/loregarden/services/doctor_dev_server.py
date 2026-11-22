@@ -18,12 +18,17 @@ import os
 from pathlib import Path
 
 from loregarden.config import settings
-from loregarden.dev_supervisor import ReloadState, read_status
-from loregarden.models.domain import DoctorCheck, DoctorFinding, DoctorStatus, Workspace
+from loregarden.dev_supervisor import STATE_DIR, ReloadState, read_status
+from loregarden.models.domain import (
+    DoctorCheck,
+    DoctorFinding,
+    DoctorStatus,
+    FollowMainState,
+    Workspace,
+)
+from loregarden.services.follow_main_status import read_follow_status
 from sqlmodel import Session
 
-#: Where `scripts/dev-server.sh` points the supervisor, under the server's checkout.
-STATE_DIR = Path("data") / "dev-server"
 #: Traceback lines carried in the finding; the log holds the rest.
 FINDING_TAIL = 8
 #: Outcomes that leave the current build serving.
@@ -81,4 +86,58 @@ def check_dev_server_reload(
         remediation=(
             f"Fix the error, then run ./scripts/reload-backend.sh. Full log: {status.log_file}"
         ),
+    )
+
+
+#: What a person does about each way the server stops following main.
+_FOLLOW_REMEDIATION = {
+    FollowMainState.OFF_BASE: "Check out main in the server's checkout to follow it again, or "
+    "set LOREGARDEN_FOLLOW_MAIN=0 if pinning this branch is deliberate.",
+    FollowMainState.DIVERGED: "Push or move the local commits off main, then `git reset` main to "
+    "origin/main; the next CI poll tick pulls and reloads.",
+    FollowMainState.REFUSED: "Commit, move or discard the uncommitted changes to the files main "
+    "changed; the next CI poll tick pulls and reloads.",
+    FollowMainState.GIT_FAILED: "Run the git command it names in the server's checkout to see "
+    "why; a network failure clears on its own.",
+}
+
+
+def check_server_follows_main(
+    _session: Session, _workspace: Workspace, _repo_root: Path
+) -> DoctorFinding:
+    """Is the dev server keeping up with what the merge queue lands?
+
+    `services.follow_main` records each CI poll tick's outcome under the
+    server's checkout; one that leaves the server on an old build is a WARN
+    naming why, since a fix that landed is not running until it clears.
+    """
+    try:
+        status = read_follow_status(settings.repo_root)
+    except ValueError as exc:
+        return DoctorFinding(
+            check=DoctorCheck.SERVER_FOLLOWS_MAIN,
+            status=DoctorStatus.WARN,
+            finding=f"The server's follow-main status is unreadable: {exc}",
+            remediation="It is rewritten on the next CI poll tick; delete it if it persists.",
+        )
+    if status is None:
+        return DoctorFinding(
+            check=DoctorCheck.SERVER_FOLLOWS_MAIN,
+            status=DoctorStatus.PASS,
+            finding="This server does not follow main (not the dev server, or "
+            "LOREGARDEN_FOLLOW_MAIN is off); not applicable.",
+        )
+    remediation = _FOLLOW_REMEDIATION.get(status.state)
+    if remediation is None:
+        return DoctorFinding(
+            check=DoctorCheck.SERVER_FOLLOWS_MAIN,
+            status=DoctorStatus.PASS,
+            finding=f"Following main: {status.state.value} at {status.at} ({status.detail}).",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.SERVER_FOLLOWS_MAIN,
+        status=DoctorStatus.WARN,
+        finding=f"The server is not following main ({status.state.value} at {status.at}): "
+        f"{status.detail}. What the merge queue lands is not running here.",
+        remediation=remediation,
     )

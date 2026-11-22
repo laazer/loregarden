@@ -86,6 +86,7 @@ from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.chat_wait_watch import resume_chat_waits
 from loregarden.services.ci_poll_scheduler import start_ci_poll_loop
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
+from loregarden.services.follow_main import remember_running_build
 from loregarden.services.github_push_on_edit import start_push_worker
 from loregarden.services.github_sync_scheduler import start_github_sync_loop
 from loregarden.services.initiative_planner_service import fail_interrupted_planner_turns
@@ -241,6 +242,8 @@ async def lifespan(app: FastAPI):
         else:
             _recover_previous_boot(session)
 
+    if not settings.sandbox:
+        remember_running_build()
     background_loops = _start_background_loops()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
