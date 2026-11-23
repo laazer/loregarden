@@ -142,7 +142,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     )  # fmt: skip
 
 
-def _resolve_sha(repo_root: Path, ref: str) -> str:
+def resolve_ref_sha(repo_root: Path, ref: str) -> str:
     if ref.startswith("-"):
         raise LaunchError(f"{ref!r} is not a ref")
     result = _git(repo_root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
@@ -155,7 +155,7 @@ def _resolve_sha(repo_root: Path, ref: str) -> str:
 def checkout_review_worktree(workspace: Workspace, ref: str) -> tuple[Path, str]:
     """The review worktree, detached at ``ref``'s tip, created on first use."""
     repo_root = resolve_workspace_root(workspace)
-    sha = _resolve_sha(repo_root, ref)
+    sha = resolve_ref_sha(repo_root, ref)
     path = review_worktree_path(workspace)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)

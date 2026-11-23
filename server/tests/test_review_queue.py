@@ -114,6 +114,17 @@ def test_ingest_stores_screenshot_and_replaces_its_path(tmp_path: Path):
     assert content["review"]["requests"][0]["method"] == "GET"
 
 
+def test_a_link_may_be_a_path_on_whichever_instance_runs_the_build():
+    content = ingest_review_kit(
+        "0f0f0f0f-aaaa",
+        {"review": {"links": [{"path": "/work-items?filter=mine", "label": "Work items"}]}},
+    )
+
+    assert content["review"]["links"] == [
+        {"url": "", "path": "/work-items?filter=mine", "label": "Work items"}
+    ]
+
+
 def test_content_without_a_review_block_is_untouched():
     content = {"status": 201}
     assert ingest_review_kit("0f0f0f0f-aaaa", content) is content
@@ -126,6 +137,10 @@ def test_content_without_a_review_block_is_untouched():
         ({"links": [{"url": "file:///etc/passwd"}]}, r"http\(s\) URL"),
         ({"requests": [{"name": "x", "path": "http://evil.example/"}]}, "single '/'"),
         ({"requests": [{"name": "x", "path": "//evil.example/"}]}, "single '/'"),
+        ({"links": [{"path": "//evil.example/"}]}, "single '/'"),
+        ({"links": [{"path": "http://evil.example/x"}]}, "single '/'"),
+        ({"links": [{"label": "neither"}]}, "exactly one"),
+        ({"links": [{"path": "/x", "url": "http://127.0.0.1:5173/x"}]}, "exactly one"),
         ({"bogus": []}, "malformed"),
     ],
 )
@@ -192,6 +207,18 @@ def test_capture_endpoint_refuses_anything_but_a_stored_id(client: TestClient, c
 def test_try_refuses_anything_but_a_loopback_origin(client: TestClient, base_url: str):
     response = client.post("/api/review/try", json={"base_url": base_url, "path": "/x"})
     assert response.status_code == 422
+
+
+def test_an_operation_route_refuses_a_bad_argument_with_a_422_not_a_500(client: TestClient):
+    """A validator's ValueError rides in the error's context, which JSON cannot encode;
+    run_rest_operation used to answer it with a bare 500 Internal Server Error."""
+    response = client.post(
+        "/api/review/capture/loregarden",
+        json={"ref": "main", "ticket_id": "t", "paths": ["//evil.example/"]},
+    )
+
+    assert response.status_code == 422
+    assert "single '/'" in response.json()["detail"][0]["msg"]
 
 
 def test_try_sends_the_request_and_reports_the_response():

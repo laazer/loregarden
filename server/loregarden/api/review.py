@@ -9,8 +9,10 @@ from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.services.operations import OperationId
 from loregarden.services.operations.review_operations import LaunchView
+from loregarden.services.review_capture import CaptureResult
 from loregarden.services.review_kit import capture_mime
 from loregarden.services.review_launcher import LaunchState
+from loregarden.services.review_preview import PreviewView
 from loregarden.services.review_queue import ReviewQueue
 from loregarden.services.review_try import TryRequest, TryResult
 from sqlmodel import Session
@@ -25,6 +27,15 @@ class LaunchBody(
     extra="forbid",
 ):
     """The build to launch: a ref, and optionally one scene in it."""
+
+
+class CaptureBody(
+    OperationBody,
+    operation=OperationId.REVIEW_CAPTURE_PAGES,
+    supplied={"workspace_slug"},
+    extra="forbid",
+):
+    """The pages to screenshot on the running build, and the ticket to file them under."""
 
 
 @router.get("/queue")
@@ -79,3 +90,34 @@ def stop_launch(workspace_slug: str, session: Session = Depends(get_session)) ->
 @router.post("/try")
 def try_request(body: TryRequest, session: Session = Depends(get_session)) -> TryResult:
     return run_rest_operation(session, OperationId.REVIEW_TRY, body.model_dump())
+
+
+@router.get("/preview/{workspace_slug}")
+def get_preview(
+    workspace_slug: str, ref: str, session: Session = Depends(get_session)
+) -> PreviewView:
+    return run_rest_operation(
+        session, OperationId.REVIEW_PREVIEW_STATUS, {"workspace_slug": workspace_slug, "ref": ref}
+    )
+
+
+@router.post("/preview/{workspace_slug}")
+def start_preview(
+    workspace_slug: str, ref: str, session: Session = Depends(get_session)
+) -> PreviewView:
+    return run_rest_operation(
+        session, OperationId.REVIEW_PREVIEW_START, {"workspace_slug": workspace_slug, "ref": ref}
+    )
+
+
+@router.post("/capture/{workspace_slug}")
+def capture_pages(
+    workspace_slug: str,
+    body: CaptureBody,
+    session: Session = Depends(get_session),
+) -> CaptureResult:
+    return run_rest_operation(
+        session,
+        OperationId.REVIEW_CAPTURE_PAGES,
+        {"workspace_slug": workspace_slug, **body.model_dump()},
+    )

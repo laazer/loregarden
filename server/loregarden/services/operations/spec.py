@@ -130,6 +130,9 @@ class OperationId(StrEnum):
     REVIEW_LAUNCH = "review_launch"
     REVIEW_LAUNCH_STOP = "review_launch_stop"
     REVIEW_TRY = "review_try"
+    REVIEW_PREVIEW_STATUS = "review_preview_status"
+    REVIEW_PREVIEW_START = "review_preview_start"
+    REVIEW_CAPTURE_PAGES = "review_capture_pages"
 
 
 @dataclass(frozen=True)

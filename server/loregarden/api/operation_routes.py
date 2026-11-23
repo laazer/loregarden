@@ -145,6 +145,8 @@ def run_rest_operation(
     except WorkQueued as queued:
         raise HTTPException(409, detail=queued.as_dict()) from queued
     except ValidationError as exc:  # a ValueError, answered with its field errors
-        raise HTTPException(422, exc.errors(include_url=False)) from exc
+        # No context: a validator's own `ValueError` rides in `ctx`, cannot be
+        # encoded as JSON, and turned a 422 into a bare 500. Its words are in `msg`.
+        raise HTTPException(422, exc.errors(include_url=False, include_context=False)) from exc
     except _REFUSALS as exc:
         raise _refused(exc, refusals or {}) from exc

@@ -182,7 +182,7 @@ def _review_kit_lines() -> list[str]:
         "```json",
         '{"review": {',
         '  "screenshots": [{"path": "/abs/path/shot.png", "caption": "What it shows"}],',
-        '  "links": [{"url": "http://127.0.0.1:5173/the-page", "label": "Where to look"}],',
+        '  "links": [{"path": "/the-page", "label": "Where to look"}],',
         '  "requests": [{"name": "List items", "method": "GET", "path": "/api/items",',
         '                "expect_status": 200}]',
         "}}",
@@ -190,7 +190,9 @@ def _review_kit_lines() -> list[str]:
         "",
         "- **screenshots**: PNG/JPEG/GIF files you captured of the changed screen or scene "
         "(10 MB each, 12 at most). They are copied in when you attach, so a temp path is fine.",
-        "- **links**: http(s) URLs on a locally running server where the change can be seen.",
+        "- **links**: pages where the change can be seen, as a `path` on the app (`/work-items`). "
+        "The review page opens it on whichever instance of this branch is running, and can "
+        "capture it; use `url` only for a page outside the app.",
         "- **requests**: endpoints this change added or altered, as a path (never a full URL); "
         "the reviewer sends each against their local server and sees whether the status matches.",
         "",
