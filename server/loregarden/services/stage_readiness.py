@@ -47,6 +47,7 @@ from loregarden.services.orchestrator_decisions import record_orchestrator_decis
 from loregarden.services.parent_ref import live_diff_base
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_checkout
+from loregarden.services.toolchain_links import excluding_own_links
 from sqlmodel import Session, col, func, select
 
 logger = logging.getLogger(__name__)
@@ -125,7 +126,10 @@ def _diff_missing(session: Session, ticket: Ticket, stage_key: str) -> MissingIn
             stage_key,
         )
         return None
-    code, untracked = _git(["ls-files", "--others", "--exclude-standard"], checkout.path)
+    code, untracked = _git(
+        ["ls-files", "--others", "--exclude-standard", *excluding_own_links(checkout.path)],
+        checkout.path,
+    )
     if code != 0:
         logger.warning(
             "Readiness: listing untracked files failed in %s (exit %s); %s runs unchecked",
@@ -239,7 +243,7 @@ def unchanged_since(session: Session, ticket: Ticket, run: AgentRun) -> str | No
     head = head.strip()
     if code != 0 or not head:
         return None
-    code, dirty = _git(["status", "--porcelain"], root)
+    code, dirty = _git(["status", "--porcelain", *excluding_own_links(root)], root)
     if code != 0 or dirty.strip():
         return None
     if head != since:

@@ -49,6 +49,7 @@ from loregarden.services.run_worktree_commit import (
     WorktreeCommitSkip,
     commit_succeeded_run_worktree,
 )
+from loregarden.services.toolchain_links import excluding_own_links
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session
 
@@ -151,7 +152,7 @@ def _is_dirty(repo_root: Path) -> bool | None:
     is.
     """
     status = run_git(
-        ["status", "--porcelain"],
+        ["status", "--porcelain", *excluding_own_links(repo_root)],
         cwd=repo_root,
         check=False,
         capture_output=True,
