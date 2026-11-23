@@ -11,8 +11,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 _CHECKER_PATH = _SCRIPTS / "py_ref_writers_check.py"
 
 
@@ -178,5 +179,5 @@ def test_a_new_module_with_no_ref_write_passes(repo_with_an_old_writer):
 
 def test_it_runs_wherever_the_git_subprocess_gate_runs():
     """Wired beside py-git-subprocess in lefthook.yml, with the same glob."""
-    lefthook = (Path(__file__).resolve().parents[2] / "lefthook.yml").read_text()
+    lefthook = (REPO_ROOT / "lefthook.yml").read_text()
     assert "py_ref_writers_check.py {staged_files}" in lefthook

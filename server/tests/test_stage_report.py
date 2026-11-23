@@ -16,6 +16,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from tests.repo_paths import REPO_ROOT
 
 
 def _wrap(payload: str) -> str:
@@ -352,12 +353,8 @@ def test_a_report_without_the_field_still_parses():
 def test_the_contract_schema_shows_the_field_it_asks_for():
     """The schema block listed four fields while the prose told agents to send a
     fifth. Whichever changes, they must not disagree again."""
-    from pathlib import Path
 
-    module = (
-        Path(__file__).resolve().parents[2]
-        / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
-    )
+    module = REPO_ROOT / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
     text = module.read_text(encoding="utf-8")
     schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
     assert "unmet_criteria" in schema_line, "the schema omits a field the prose demands"
@@ -365,12 +362,8 @@ def test_the_contract_schema_shows_the_field_it_asks_for():
 
 def test_the_contract_schema_shows_the_waivers_sidecar():
     """136 R5. Producer waiver is StageReport.waivers; the contract schema must name it."""
-    from pathlib import Path
 
-    module = (
-        Path(__file__).resolve().parents[2]
-        / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
-    )
+    module = REPO_ROOT / "agent_context/agents/common_assets/workflow_enforcement_v1.md"
     text = module.read_text(encoding="utf-8")
     schema_line = next(line for line in text.splitlines() if line.startswith('{"status":'))
     assert "waivers" in schema_line, "producer waiver sidecar is missing from the contract schema"

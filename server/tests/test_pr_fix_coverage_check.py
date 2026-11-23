@@ -6,8 +6,9 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _spec = importlib.util.spec_from_file_location(
     "pr_fix_coverage_check", _ROOT / ".github" / "scripts" / "pr_fix_coverage_check.py"
 )

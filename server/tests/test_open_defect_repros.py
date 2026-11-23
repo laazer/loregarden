@@ -68,8 +68,9 @@ from loregarden.services.gate_runner import _run_command
 from loregarden.services.process_identity import liveness, record_process_identity
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 PY_ORGANIZATION_GATE = [sys.executable, str(_SCRIPTS / "py_organization_check.py")]
 
 

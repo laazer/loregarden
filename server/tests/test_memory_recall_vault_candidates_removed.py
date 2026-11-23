@@ -22,9 +22,10 @@ from loregarden.services.memory_store import (
     MemoryStoreReadError,
     ObsidianMemoryStore,
 )
+from tests.repo_paths import REPO_ROOT
 
 _SERVER_ROOT = Path(__file__).resolve().parents[1]
-_REPO_ROOT = _SERVER_ROOT.parent
+_REPO_ROOT = REPO_ROOT
 _MEMORY_STORE = _SERVER_ROOT / "loregarden" / "services" / "memory_store.py"
 _DEAD_HELPER = "_" + "obsidian_candidates"
 

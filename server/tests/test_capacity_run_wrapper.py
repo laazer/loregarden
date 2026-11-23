@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 from loregarden.services.git_subprocess import run_git
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / ".lefthook" / "scripts" / "capacity-run.sh"
 
 #: Fails while its counter is below FAKE_FAILURES; then touches the started file

@@ -17,6 +17,7 @@ import pytest
 from loregarden.services import artifact_service, worktree_lifecycle
 from loregarden.services.publish_ref import comparison_ref
 from loregarden.services.worktree_lifecycle import _base_ref
+from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import commit_on, git, make_repo
 
 _PARENT_REF_PATH = Path(__file__).resolve().parents[1] / "loregarden" / "services" / "parent_ref.py"
@@ -355,7 +356,7 @@ def test_leave_alone_surfaces_do_not_import_parent_ref():
         assert "live_diff_base" not in imported, relative
         assert "parent_comparison_ref" not in imported, relative
         assert "TicketCheckout" not in imported, relative
-    client_src = Path(__file__).resolve().parents[2] / "client" / "src"
+    client_src = REPO_ROOT / "client" / "src"
     offenders: list[str] = []
     for pattern in ("*.ts", "*.tsx"):
         for path in client_src.rglob(pattern):

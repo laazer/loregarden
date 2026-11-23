@@ -8,7 +8,6 @@ what `origin/main` ships.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from unittest import mock
@@ -31,9 +30,9 @@ from loregarden.models.domain import DoctorCheck, DoctorStatus, Workspace
 from loregarden.services import doctor
 from loregarden.services.git_subprocess import run_git
 from sqlmodel import select
+from tests.repo_paths import REPO_ROOT
 
 ROOT = "0151_ticket_criteria_checked"
-REPO_ROOT = Path(os.environ.get("LOREGARDEN_REPO_ROOT") or Path(__file__).resolve().parents[2])
 
 
 def _noop(conn) -> None:

@@ -44,6 +44,7 @@ from loregarden.services.triage_service import TRIAGE_AGENT_ID, triage_snapshot
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
+from tests.repo_paths import REPO_ROOT
 from tests.test_chat_wait import (
     BRANCH,
     CAP_COPY,
@@ -58,7 +59,7 @@ from tests.test_chat_wait import (
 )
 
 #: Paths below are repo-relative; pytest runs from server/, CI included.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = REPO_ROOT
 
 LOG_TAIL_CHARS = 8000
 

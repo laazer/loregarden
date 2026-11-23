@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -19,10 +18,11 @@ from loregarden.services import git_automation
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.tree_fix_section import tree_fix_section
 from sqlmodel import Session
+from tests.repo_paths import REPO_ROOT
 from tests.test_tree_ux_section import FakeGitHub
 from tests.worktree_helpers import git, make_repo, make_tree_ticket
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _spec = importlib.util.spec_from_file_location(
     "pr_fix_coverage_check", _ROOT / ".github" / "scripts" / "pr_fix_coverage_check.py"
 )

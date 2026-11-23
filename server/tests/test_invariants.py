@@ -51,8 +51,8 @@ from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.testing.factories import make_ticket
 from loregarden.testing.prod_shape import build_prod_shape
 from sqlmodel import Session, col, select
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 #: A ticket named by external id, never by a bare number (`ticket_ids.resolve_one`).
 EXTERNAL_ID = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)+-\d+$")
 

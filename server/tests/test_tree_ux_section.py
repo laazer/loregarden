@@ -11,7 +11,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -32,9 +31,10 @@ from loregarden.services.tree_ux_section import missing_card_title
 from loregarden.services.ux_answers import UxAnswers, is_surface, latest_ux_answers
 from pydantic import ValidationError
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
 
-_SCRIPT = Path(__file__).resolve().parents[2] / ".github" / "scripts" / "pr_ux_section_check.py"
+_SCRIPT = REPO_ROOT / ".github" / "scripts" / "pr_ux_section_check.py"
 _spec = importlib.util.spec_from_file_location("pr_ux_section_check", _SCRIPT)
 assert _spec and _spec.loader
 check = importlib.util.module_from_spec(_spec)

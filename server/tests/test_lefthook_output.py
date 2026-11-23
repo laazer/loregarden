@@ -11,15 +11,15 @@ another workspace passed gates it never ran.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import yaml
+from tests.repo_paths import REPO_ROOT
 
 # A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
 pytestmark = pytest.mark.registry
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = REPO_ROOT
 
 
 def test_a_passing_gate_is_quiet_and_a_failing_one_prints_its_output():

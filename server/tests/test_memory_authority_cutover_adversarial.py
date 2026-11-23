@@ -21,6 +21,7 @@ from loregarden.services.memory_store import (
     AgentMemoryService,
     ObsidianMemoryStore,
 )
+from tests.repo_paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Helpers (mirrors cutover suite so this file stays runnable alone)
@@ -489,7 +490,7 @@ def test_r6_precutover_vault_memory_peer_absent_from_obsidian_hits(vault_dir, tm
 
 def test_r7_learning_role_drops_peer_dual_write_language():
     """R7 companion — learning agent role must not teach vault+graph peer dual-write."""
-    root = Path(__file__).resolve().parents[2]
+    root = REPO_ROOT
     role = root / "agent_context" / "agents" / "9_learning" / "learning_v1.md"
     text = role.read_text(encoding="utf-8").casefold()
     # Peer framing that the cutover retires.

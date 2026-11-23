@@ -19,6 +19,7 @@ from loregarden.services import workspace_integration
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_integration import primary_checkout
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
 LEFTHOOK = "pre-commit:\n  commands:\n    lint:\n      run: echo lint\n"
 
@@ -147,7 +148,7 @@ def loregarden_repo_fixture(repo: Path):
 
     The scripts are linked in so a missing guard would install rather than fail for want of one.
     """
-    (repo / "scripts").symlink_to(Path(__file__).resolve().parents[2] / "scripts")
+    (repo / "scripts").symlink_to(REPO_ROOT / "scripts")
     with mock.patch.object(settings, "repo_root", repo):
         yield repo
 

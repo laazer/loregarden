@@ -209,6 +209,25 @@ tasks:
         trap 'rm -rf "$base"' EXIT
         uv run pytest -q -n auto --basetemp "$base" {{.CLI_ARGS}}
 
+  mutation:
+    desc: Mutation-test the server functions changed against a base (default origin/main)
+    summary: |
+      `task mutation -- [--base REF]` maps the diff (working tree included) to the
+      functions it touched, picks tests with select_pytest_targets.py, and runs
+      mutmut on only those functions' mutants under capacity-run.sh (heavy):
+      first against the tests importing the changed modules, then only the
+      survivors against the rest of the selector's reach (`--reach direct` or
+      `--reach transitive` for a single pass).
+      Survivors are listed per function with their diff; exit 1 when any survive.
+      `--dry-run` prints the plan; `--file PATH` mutates a whole module;
+      `--baseline-only` stops after the clean run on mutmut's copy.
+      task reports every failure as 201; `task -x mutation` passes the script's
+      own exit code through (1 survivors, 2 error, 3 baseline red, 4 no mutants,
+      5 no tests reach the change).
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/server_python.sh .lefthook/scripts/mutation_changed_lines.py {{.CLI_ARGS}}
+
   hooks:client:
     desc: Run pre-push client hook (oxlint + tsc + jest, mirrors CI) on demand
     dir: "{{.ROOT_DIR}}"

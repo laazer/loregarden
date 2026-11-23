@@ -17,8 +17,9 @@ from unittest import mock
 
 import pytest
 from loregarden.services.git_subprocess import scrubbed_git_env
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _GUARD = _ROOT / ".claude" / "hooks" / "git_signing_guard.py"
 _GATE = _ROOT / ".lefthook" / "scripts" / "signed-commits.sh"
 _spec = importlib.util.spec_from_file_location("git_signing_guard", _GUARD)

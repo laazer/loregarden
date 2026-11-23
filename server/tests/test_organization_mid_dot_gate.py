@@ -10,10 +10,9 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_CHECKER_PATH = (
-    Path(__file__).resolve().parents[2] / ".lefthook" / "scripts" / "py_organization_check.py"
-)
+_CHECKER_PATH = REPO_ROOT / ".lefthook" / "scripts" / "py_organization_check.py"
 
 
 def _load_checker():

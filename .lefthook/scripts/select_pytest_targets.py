@@ -496,6 +496,23 @@ def select(repo: Path, paths: list[str]) -> list[Path]:
     return sorted(_select(repo, changes, graph))
 
 
+def select_direct(repo: Path, paths: list[str]) -> list[Path]:
+    """Test files that import a changed package module themselves — the nearest
+    ring of `select`, and the "closeness 1" tier of `run_first`.
+
+    For callers that pay per test rather than per run: mutation testing runs
+    every selected test once per mutant's stats pass, and a change to a widely
+    imported module reaches most of the suite transitively (691 of ~720 files
+    for `git_subprocess.py`). A test that reaches the module only through
+    another one is the miss this leaves; mutation testing reports that as a
+    surviving mutant, which is the safe direction."""
+    changes = classify(repo, paths)
+    if not changes.modules:
+        return []
+    graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
+    return sorted(test for test, imports in graph.test_edges.items() if imports & changes.modules)
+
+
 def _needs_graph(changes: ChangeSet) -> bool:
     return bool(changes.modules or changes.client or changes.context_files or changes.script_files)
 

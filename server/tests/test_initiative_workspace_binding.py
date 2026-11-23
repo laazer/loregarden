@@ -8,7 +8,6 @@ from __future__ import annotations
 import inspect
 import re
 import tempfile
-from pathlib import Path
 
 import pytest
 from loregarden.db import migrations as M
@@ -23,6 +22,7 @@ from loregarden.services.ticket_service import TicketService
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
+from tests.repo_paths import REPO_ROOT
 from tests.ticket_row_helpers import raw_ticket_insert
 
 PREV_TIP = "0130_retire_unmerged_branch_ledger_ids"
@@ -536,6 +536,6 @@ class TestWritersAndSurfaces:
 
     def test_client_tree_untouched_contract(self):
         """AC8 — no client/** changes required; pin that this ticket's suite is server-only."""
-        root = Path(__file__).resolve().parents[2]
+        root = REPO_ROOT
         # Presence check only — implement must not add client files for this ticket.
         assert (root / "client").is_dir()

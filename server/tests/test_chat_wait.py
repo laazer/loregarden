@@ -92,6 +92,7 @@ from loregarden.services.triage_service import (
 )
 from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
+from tests.repo_paths import REPO_ROOT
 
 STOP_COPY = (
     "Stopped waiting for {command} at your request. "
@@ -111,7 +112,7 @@ BOOT_UNKNOWN_COPY = (
 )
 
 #: Paths below are repo-relative; pytest runs from server/, CI included.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = REPO_ROOT
 
 COMMAND = "git push origin HEAD"
 BRANCH = "chat-wait-branch"

@@ -344,8 +344,11 @@ def _landed_with_uncommitted_work(session: Session) -> list[Violation]:
                     subject_id=worktree.id,
                     ticket_id=ticket.id,
                     entered_at=ticket.resolved_at,
-                    detail=f"{ticket.external_id}: {len(paths)} file(s) uncommitted in "
-                    f"{worktree.worktree_path}: {', '.join(paths)}",
+                    # Files before the tree: the finding keeps only the first
+                    # _DETAIL_LIMIT characters, and a long worktree path in front
+                    # once pushed the file names (what a person acts on) out of it.
+                    detail=f"{ticket.external_id}: {len(paths)} file(s) uncommitted "
+                    f"({', '.join(paths)}) in {worktree.worktree_path}",
                 )
             )
     return found

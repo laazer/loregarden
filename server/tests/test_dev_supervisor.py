@@ -21,8 +21,9 @@ from pathlib import Path
 
 import pytest
 from loregarden.dev_supervisor import LOG_FILE, ReloadState, Status, read_status
+from tests.repo_paths import REPO_ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = REPO_ROOT
 RELOAD_SCRIPT = REPO / "scripts" / "reload-backend.sh"
 TIMEOUT = 60.0
 

@@ -50,6 +50,7 @@ from loregarden.services.directory_release import DirectoryReleaseFailed
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import (
     git,
     grant_receipt,
@@ -486,7 +487,7 @@ def test_no_cleanup_refusal_vocabulary_reaches_the_client():
     search rather than trusted to review, because the cheapest way for this to
     leak is a response model someone widens "for the UI".
     """
-    client_src = Path(worktree_service_module.__file__).parents[3] / "client" / "src"
+    client_src = REPO_ROOT / "client" / "src"
     assert client_src.is_dir(), f"the search is wrong, not the code: {client_src}"
 
     needles = ["CleanupRefusal", *(member.value for member in CleanupRefusal)]

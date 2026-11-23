@@ -42,8 +42,8 @@ from loregarden.services.docker_board import capacity_status
 from loregarden.services.docker_ledger import load_pool
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 
 #: This module spawns pytest with the pre-push plugin loaded. Under

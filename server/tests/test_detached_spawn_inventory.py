@@ -23,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
 SERVER = Path(__file__).resolve().parents[1] / "loregarden"
 
@@ -125,7 +126,7 @@ def test_the_print_mode_path_does_not_reach_for_the_pipe_reader():
 
 # --- AC23: exactly three user-facing surfaces --------------------------------
 
-CLIENT = Path(__file__).resolve().parents[2] / "client" / "src"
+CLIENT = REPO_ROOT / "client" / "src"
 
 TRANSPORT_SURFACES = [
     "components/RunLogModal.tsx",

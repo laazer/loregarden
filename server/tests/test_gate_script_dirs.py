@@ -22,9 +22,10 @@ from pathlib import Path
 
 import pytest
 from loregarden.testing.lefthook_config import hook_jobs
+from tests.repo_paths import REPO_ROOT
 from tests.toolchain import UV_SYNC, require_path
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
 _VENV = _ROOT / "server" / ".venv"
 

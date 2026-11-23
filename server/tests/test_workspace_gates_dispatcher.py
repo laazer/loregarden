@@ -17,9 +17,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 from tests.toolchain import require_commands
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _DISPATCHER = _ROOT / ".lefthook" / "scripts" / "workspace-gates.sh"
 _EX_UNAVAILABLE = 69
 

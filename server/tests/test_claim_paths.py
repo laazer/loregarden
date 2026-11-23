@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from loregarden.db.versions.plan_skills_name_their_files import (
@@ -35,9 +34,10 @@ from loregarden.services.path_claims import (
 from loregarden.testing.factories import make_artifact, make_ticket
 from sqlmodel import Session, select
 from tests.factories import make_agent_run
+from tests.repo_paths import REPO_ROOT
 
 LAND = "server/loregarden/services/land_ticket.py"
-SKILLS_DIR = Path(__file__).resolve().parents[2] / "agent_context" / "skills"
+SKILLS_DIR = REPO_ROOT / "agent_context" / "skills"
 
 
 @pytest.fixture(name="pair")

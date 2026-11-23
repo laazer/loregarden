@@ -15,10 +15,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 from tests.repo_templates import from_template
 from tests.toolchain import NPM_CI, require_commands, require_path
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _GATE = _ROOT / ".lefthook" / "scripts" / "ts_ux_states_check.cjs"
 _ESTREE = _ROOT / "client" / "node_modules" / "@typescript-eslint" / "typescript-estree"
 

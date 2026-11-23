@@ -43,8 +43,12 @@ def session_fixture(client, isolated_db):
 
 
 @pytest.fixture(name="repo")
-def repo_fixture(tmp_path):
-    repo = make_repo(tmp_path)
+def repo_fixture(tmp_path, request):
+    # `indirect` param: extra directory depth, to put the tree's path past the
+    # finding's detail limit wherever pytest's tmp dir happens to be.
+    parent = tmp_path / getattr(request, "param", "")
+    parent.mkdir(parents=True, exist_ok=True)
+    repo = make_repo(parent)
     (repo / "service.py").write_text("VALUE = 1\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "a tracked source file")
@@ -255,6 +259,7 @@ def _bugs(session) -> list[Ticket]:
     )
 
 
+@pytest.mark.parametrize("repo", ["", "d" * 120 + "/" + "e" * 120], indirect=True)
 def test_a_tree_left_dirty_before_the_guard_is_reported_for_a_person(session, ticket, tree):
     _edit_without_committing(tree)
     _done(session, ticket, resolved_days_from_since=-4)

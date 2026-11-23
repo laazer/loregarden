@@ -83,10 +83,9 @@ from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session, col, select
 from tests import land_receipt_helpers as helpers
 from tests.land_receipt_helpers import FAILING_SUITE, PASSING_SUITE
+from tests.repo_paths import REPO_ROOT
 from tests.toolchain import require_client_modules, require_commands
 from tests.worktree_helpers import commit_on, git
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: `sysexits.h` EX_UNAVAILABLE: the gate convention for "this never ran".
 NEVER_RAN = "python3 -c 'import sys; sys.exit(69)'"

@@ -14,9 +14,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import commit_on, git, make_repo
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / ".lefthook" / "scripts" / "staged-push.sh"
 
 

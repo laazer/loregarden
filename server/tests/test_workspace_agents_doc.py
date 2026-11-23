@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 
 from loregarden.mcp.tool_ids import McpTool
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _INSTALLER = _ROOT / "scripts" / "install_workspace_agents_doc.py"
 
 

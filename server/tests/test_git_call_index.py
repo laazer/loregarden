@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 from loregarden.cli.main import main
 from loregarden.services.git_call_index import GitCall, RefWrite, index_git_calls, ref_write_kind
+from tests.repo_paths import REPO_ROOT
 
-_GATE = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts" / "py_ref_writers_check.py"
+_GATE = REPO_ROOT / ".lefthook" / "scripts" / "py_ref_writers_check.py"
 
 _CHOKEPOINT = """
 import subprocess

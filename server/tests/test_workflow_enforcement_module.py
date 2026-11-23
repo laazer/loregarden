@@ -17,15 +17,12 @@ direct cause of a hallucinated `implementation` reroute.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from loregarden.agents.mcp_context import load_stage_report_contract_doc
 from loregarden.models.domain import ContractAudience
+from tests.repo_paths import REPO_ROOT
 
-MODULE = Path(__file__).resolve().parents[2] / (
-    "agent_context/agents/common_assets/workflow_enforcement_v1.md"
-)
+MODULE = REPO_ROOT / ("agent_context/agents/common_assets/workflow_enforcement_v1.md")
 
 
 @pytest.fixture(scope="module")

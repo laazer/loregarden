@@ -18,8 +18,9 @@ from pathlib import Path
 import pytest
 import yaml
 from loregarden.services.git_subprocess import SERVER_GIT_ENV, run_git
+from tests.repo_paths import REPO_ROOT
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = REPO_ROOT
 SCRIPTS = REPO / ".lefthook" / "scripts"
 NULL_REV = "0" * 40
 BOOTSTRAP = REPO / ".claude" / "hooks" / "worktree_bootstrap.sh"

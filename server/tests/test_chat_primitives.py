@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import typing
-from pathlib import Path
 
 import pytest
 from loregarden.agents.chat_role_prompt import chat_ui_primitives_blocks
@@ -33,6 +32,7 @@ from loregarden.services.chat_primitives.parser import (
 from loregarden.services.chat_primitives.resolver import resolve_parts
 from loregarden.services.chat_primitives.storage import load_parts_json
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
 
 def test_plain_text_is_a_single_text_part():
@@ -344,9 +344,7 @@ def test_reply_preview_shows_prose_never_card_json(text: str, expected: str):
     assert reply_preview(text) == expected
 
 
-_CLIENT_TYPES = (
-    Path(__file__).resolve().parents[2] / "client/src/components/chat/primitives/types.ts"
-)
+_CLIENT_TYPES = REPO_ROOT / "client/src/components/chat/primitives/types.ts"
 
 #: The least each kind needs to be a card. Every kind the parser knows is here,
 #: so a kind added without a way to parse it fails below rather than in a chat.

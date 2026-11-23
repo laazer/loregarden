@@ -46,6 +46,7 @@ from loregarden.services.symbol_map import (
 from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map.checkout_identity import identify
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
 #: MEASURED, not estimated. One partition built on this repository at HEAD
 #: ca54966801 on 2026-11-17, into a scratch SQLite carrying the final schema
@@ -123,7 +124,7 @@ def other_workspace_fixture(session: Session) -> Workspace:
 #: nothing about the branch under test. A test that asserts against its own
 #: branch's source must locate that source the one way no environment can
 #: override.
-THIS_CHECKOUT = Path(__file__).resolve().parents[2]
+THIS_CHECKOUT = REPO_ROOT
 
 
 @pytest.fixture(name="repo_root")

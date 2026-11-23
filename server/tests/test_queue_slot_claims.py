@@ -19,7 +19,6 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 from loregarden.models.domain import AgentSlot
@@ -28,8 +27,8 @@ from loregarden.services.queue_slot_claims import (
     claim_is_fresh,
     slot_is_busy_with_nothing,
 )
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 9, 21, 12, 36, tzinfo=timezone.utc)
 
 

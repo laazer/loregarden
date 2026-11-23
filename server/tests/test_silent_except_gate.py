@@ -17,8 +17,9 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 _CHECKER_PATH = _SCRIPTS / "py_silent_except_check.py"
 
 
@@ -573,7 +574,7 @@ def test_a_file_this_gate_cannot_parse_is_not_reported_clean(tmp_path):
 # wiring: a gate nobody invokes is a gate that stopped running
 # --------------------------------------------------------------------------- #
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = REPO_ROOT
 
 
 def test_lefthook_runs_the_gate_pre_commit():
@@ -625,7 +626,7 @@ def test_real_services_are_clean():
     real repository tree, so they are where the read guard meets real source
     rather than fixtures (594).
     """
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     services = Path(__file__).resolve().parents[1] / "loregarden"
     offenders = [
         f"{py}:{lineno}"
@@ -968,7 +969,7 @@ def test_the_live_tree_holds_no_unclassifiable_constructs():
     wrong, not that the tree is. Zero was measured at spec time over these same
     three trees, so the new arm fires on nothing that exists today.
     """
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     # Named explicitly rather than `server/`: `server/.venv` is thousands of
     # third-party files written for other interpreters, and walking it would
     # measure something other than this repository.

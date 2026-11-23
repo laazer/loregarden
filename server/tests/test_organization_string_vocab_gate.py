@@ -12,7 +12,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+from tests.repo_paths import REPO_ROOT
+
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 
 
 def _load_module(name: str):
