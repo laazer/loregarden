@@ -14,16 +14,18 @@ and `mutmut run` takes those names as globs. So this:
    the changed lines in ``server/loregarden/**/*.py``;
 2. maps each line to the top-level function or method enclosing it, the same
    units mutmut puts trampolines on (`ast`, below);
-3. picks tests with the pre-push selector (``select_pytest_targets``,
-   imported rather than re-implemented) in two rings: the files importing a
-   changed module themselves (``select_direct``), and the rest of what
-   ``select`` reaches through the import graph;
-4. runs ``mutmut run`` on just those functions' mutants against the direct
-   ring, under the capacity ledger (``mutmut_driver.py``) — then re-runs only
-   the survivors against the wider ring. mutmut's stats pass runs every
-   selected file serially, and the wider ring of a widely imported module is
-   most of the suite, so only mutants the near tests missed pay for it
-   (``--reach direct`` / ``--reach transitive`` pick one pass instead);
+3. picks pass 1's tests with the pre-push selector (``select_pytest_targets``,
+   imported rather than re-implemented): the files importing a changed module
+   themselves (``select_direct``);
+4. runs ``mutmut run`` on just those functions' mutants against them, under
+   the capacity ledger (``mutmut_driver.py``), then re-runs only the survivors
+   against the tests that *call* a surviving function, a few calls out
+   (``mutation_callers``). Not the import graph's transitive reach: mutmut's
+   stats pass runs every selected file serially, and for a widely imported
+   module that reach is most of the suite (566 of 808 files, 2h36m, no kills on
+   #939). Over ``--pass2-cap`` files, pass 2 is skipped and says so
+   (``--reach direct`` stops after pass 1; ``--reach transitive`` runs one pass
+   over the whole import reach);
 5. reports survivors grouped by function, with ``mutmut show``'s diff.
 
 Exit codes — "it failed" and "there was nothing to test" never share one:
@@ -49,7 +51,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
@@ -58,6 +60,7 @@ _SCRIPTS = Path(__file__).resolve().parent
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+import mutation_callers  # noqa: E402
 import select_pytest_targets  # noqa: E402
 from mutmut_driver import Phase  # noqa: E402
 
@@ -68,6 +71,10 @@ EXIT_BASELINE_FAILED = 3
 EXIT_NO_MUTANTS = 4
 EXIT_NO_TESTS = 5
 EXIT_CAPACITY_STALLED = 75
+
+#: Most test files pass 2 runs. mutmut's stats pass took them serially at about
+#: 17s a file on #939 (566 files, 2h36m), so 100 keeps pass 2 near half an hour.
+DEFAULT_PASS2_CAP = 100
 
 PACKAGE_PREFIX = "server/loregarden/"
 SERVER_DIR = "server"
@@ -452,21 +459,48 @@ class TestRings:
     #: files importing a changed module themselves (`select_direct`)
     direct: list[str]
     #: the rest of what the pre-push selector reaches through the graph
-    wider: list[str]
+    #: (`--reach transitive` only)
+    wider: list[str] = field(default_factory=list)
+    #: target glob -> tests outside `direct` that call that function, a few
+    #: calls out (`mutation_callers`; `--reach escalate` only)
+    callers: dict[str, list[str]] = field(default_factory=dict)
 
 
-def select_tests(repo: Path, plan: Plan) -> TestRings:
-    """Both rings. mutmut runs its stats pass over every selected file serially,
-    and the wider ring of a widely imported module is most of the suite, so the
-    run starts on the direct ring and only survivors pay for the wider one."""
+def select_tests(repo: Path, plan: Plan, reach: str = "escalate") -> TestRings:
+    """The rings ``reach`` needs. mutmut runs its stats pass over every selected
+    file serially, so each ring is built only when a pass will run it."""
     paths = sorted({t.path for t in plan.targets})
     server = repo / SERVER_DIR
-    direct = [
-        p.relative_to(server).as_posix() for p in select_pytest_targets.select_direct(repo, paths)
-    ]
-    reach = [p.relative_to(server).as_posix() for p in select_pytest_targets.select(repo, paths)]
+
+    def rel(tests: Iterable[Path]) -> list[str]:
+        return sorted(p.relative_to(server).as_posix() for p in tests)
+
+    direct = rel(select_pytest_targets.select_direct(repo, paths))
     near = set(direct)
-    return TestRings(direct=direct, wider=[test for test in reach if test not in near])
+    if reach == "transitive":
+        wider = rel(select_pytest_targets.select(repo, paths))
+        return TestRings(direct=direct, wider=[test for test in wider if test not in near])
+    if reach == "direct":
+        return TestRings(direct=direct)
+    index = mutation_callers.build_index(server / "loregarden", server / "tests")
+    callers = {
+        t.glob: [
+            test
+            for test in rel(mutation_callers.caller_tests(index, _symbol(t)))
+            if test not in near
+        ]
+        for t in plan.targets
+    }
+    return TestRings(direct=direct, callers=callers)
+
+
+def _symbol(target: Target) -> mutation_callers.Symbol:
+    """What a caller writes to reach the target: its name, or a method's name."""
+    return mutation_callers.Symbol(target.module, target.unit.qualname.rpartition(".")[2])
+
+
+def _union(lists: Iterable[list[str]]) -> list[str]:
+    return sorted({test for tests in lists for test in tests})
 
 
 @dataclass
@@ -595,6 +629,13 @@ def run_driver(
     return proc.returncode, json.loads(result_path.read_text(encoding="utf-8"))
 
 
+def _count(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or more, not {value}")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -624,9 +665,16 @@ def _parser() -> argparse.ArgumentParser:
         default="escalate",
         help=(
             "escalate (default): direct importers first, then only the survivors against "
-            "the rest of the selector's reach; direct: stop after the first pass; "
-            "transitive: one pass over everything the selector reaches"
+            "the tests that call their functions; direct: stop after the first pass; "
+            "transitive: one pass over everything the import graph reaches"
         ),
+    )
+    parser.add_argument(
+        "--pass2-cap",
+        type=_count,
+        default=DEFAULT_PASS2_CAP,
+        metavar="N",
+        help=f"skip pass 2 when more than N test files call the survivors (default {DEFAULT_PASS2_CAP})",
     )
     return parser
 
@@ -652,11 +700,19 @@ def _announce_passes(first: list[str], second: list[str], reach: str) -> None:
     for test in first:
         print(f"  {test}")
     if second:
-        print(f"mutation: pass 2, for survivors only, adds {len(second)} more test file(s)")
+        print(
+            f"mutation: pass 2, for survivors only, draws on up to {len(second)} more test "
+            "file(s) that call a changed function"
+        )
 
 
 def _run_passes(
-    repo: Path, plan: Plan, first: list[str], second: list[str], baseline_only: bool, started: float
+    repo: Path,
+    plan: Plan,
+    first: list[str],
+    second: PassTwo | None,
+    baseline_only: bool,
+    started: float,
 ) -> int:
     globs = [t.glob for t in plan.targets]
     with tempfile.TemporaryDirectory(prefix="loregarden-mutation-") as tmp:
@@ -670,7 +726,7 @@ def _run_passes(
                 f"mutation: clean baseline green on mutmut's copy ({len(first)} test file(s), {elapsed:.0f}s)"
             )
             return EXIT_OK
-        if second:
+        if second is not None:
             code, result = escalate(repo, plan, code, result, second, work / "pass2")
     return finish(plan, code, result, time.monotonic() - started)
 
@@ -689,39 +745,66 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_OK
 
     try:
-        rings = select_tests(repo, plan)
+        rings = select_tests(repo, plan, args.reach)
     except select_pytest_targets.UnexaminableError as exc:
         print(f"mutation: cannot map the import graph: {exc}", file=sys.stderr)
         return EXIT_ERROR
     first, second = first_and_second_pass(rings, args.reach)
     if not first:
-        print("mutation: FAIL — no test file reaches the changed modules", file=sys.stderr)
+        print(
+            "mutation: FAIL — no test file imports a changed module or calls a changed "
+            "function (--reach transitive follows the whole import graph)",
+            file=sys.stderr,
+        )
         return EXIT_NO_TESTS
+    pass_two = PassTwo(rings.callers, args.pass2_cap) if second else None
     _announce_passes(first, second, args.reach)
     if args.dry_run:
         for t in plan.targets:
             print(f"  glob {t.glob}")
         return EXIT_OK
-    return _run_passes(repo, plan, first, second, args.baseline_only, started)
+    return _run_passes(repo, plan, first, pass_two, args.baseline_only, started)
 
 
 def first_and_second_pass(rings: TestRings, reach: str) -> tuple[list[str], list[str]]:
-    """The tests for each pass. With no direct importer, escalation starts wide."""
-    if reach == "transitive" or (reach == "escalate" and not rings.direct):
+    """The tests for each pass; pass 2's are the most it could draw on. With no
+    direct importer, escalation starts on the callers."""
+    if reach == "transitive":
         return rings.direct + rings.wider, []
     if reach == "direct":
         return rings.direct, []
-    return rings.direct, rings.wider
+    callers = _union(rings.callers.values())
+    if not rings.direct:
+        return callers, []
+    return rings.direct, callers
+
+
+@dataclass(frozen=True)
+class PassTwo:
+    #: target glob -> tests calling that function (`TestRings.callers`)
+    callers: Mapping[str, list[str]]
+    cap: int = DEFAULT_PASS2_CAP
+
+    def tests_for(self, names: list[str]) -> list[str]:
+        """The callers of every function a surviving mutant (or glob) lives in."""
+        prefixes = {name.rpartition("__mutmut_")[0] for name in names}
+        return _union(
+            tests
+            for glob, tests in self.callers.items()
+            if glob.rpartition("__mutmut_")[0] in prefixes
+        )
 
 
 def escalate(
-    repo: Path, plan: Plan, code: int, result: dict | None, wider: list[str], workdir: Path
+    repo: Path, plan: Plan, code: int, result: dict | None, pass_two: PassTwo, workdir: Path
 ) -> tuple[int, dict | None]:
-    """Re-run pass 1's survivors — only those mutants — against the wider ring.
+    """Re-run pass 1's survivors — only those mutants — against the tests that
+    call the functions they live in. Over ``pass_two.cap`` such files, or with
+    none, pass 2 is skipped, says why, and pass 1's verdict stands.
 
     A mutant pass 2 kills is killed (marked ``killed_by: wider``). One pass 2
     leaves standing, or cannot reach (its tests run none of that code), stays a
-    survivor. Pass 2 failing its own baseline fails the run: the wider tests are
+    survivor. Pass 2 failing its own baseline fails the run: its tests are
     red on the unmutated copy, so no verdict from them can be trusted."""
     if result is None:
         return code, result
@@ -738,14 +821,28 @@ def escalate(
     else:
         return code, result
 
+    wider = pass_two.tests_for(names)
+    if not wider:
+        print(
+            f"\nmutation: pass 2 skipped — no test outside pass 1 calls the surviving "
+            f"function(s) within {mutation_callers.DEFAULT_HOPS} calls; pass 1's verdict stands"
+        )
+        return code, result
+    if len(wider) > pass_two.cap:
+        print(
+            f"\nmutation: pass 2 skipped — {len(wider)} test file(s) call the surviving "
+            f"function(s), over --pass2-cap {pass_two.cap}; pass 1's verdict stands"
+        )
+        return code, result
     print(
-        f"\nmutation: pass 2 — {len(names)} survivor pattern(s) against {len(wider)} more test file(s)"
+        f"\nmutation: pass 2 — {len(names)} survivor pattern(s) against {len(wider)} test file(s) "
+        "that call them"
     )
     code2, result2 = run_driver(repo, plan.targets, names, wider, workdir)
     if result2 is None or result2["phase"] in (Phase.BASELINE_FAILED, Phase.ERROR):
         return code2, result2
     if result2["phase"] == Phase.NO_COVERAGE:
-        print("mutation: pass 2 — the wider tests run none of the surviving code either")
+        print("mutation: pass 2 — the calling tests run none of the surviving code either")
         if phase == Phase.DONE:
             return code, result  # pass 1's survivors stand
         return code2, result2

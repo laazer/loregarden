@@ -216,8 +216,9 @@ tasks:
       functions it touched, picks tests with select_pytest_targets.py, and runs
       mutmut on only those functions' mutants under capacity-run.sh (heavy):
       first against the tests importing the changed modules, then only the
-      survivors against the rest of the selector's reach (`--reach direct` or
-      `--reach transitive` for a single pass).
+      survivors against the tests that call their functions, up to
+      `--pass2-cap` files (`--reach direct` or `--reach transitive` for a
+      single pass).
       Survivors are listed per function with their diff; exit 1 when any survive.
       `--dry-run` prints the plan; `--file PATH` mutates a whole module;
       `--baseline-only` stops after the clean run on mutmut's copy.

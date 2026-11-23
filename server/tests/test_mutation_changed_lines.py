@@ -481,27 +481,38 @@ def test_units_match_the_functions_mutmut_generates_mutants_for(tmp_path, monkey
 
 
 # --------------------------------------------------------------------------- #
-# two passes: near tests first, survivors only against the wider reach
+# two passes: near tests first, survivors only against the tests calling them
 # --------------------------------------------------------------------------- #
 
-RINGS = mcl.TestRings(direct=["tests/test_near.py"], wider=["tests/test_far.py"])
+GLOB = "loregarden.services.sample.x_waiter__mutmut_*"
+OTHER_GLOB = "loregarden.services.sample.x_other__mutmut_*"
+RINGS = mcl.TestRings(
+    direct=["tests/test_near.py"],
+    wider=["tests/test_far.py"],
+    callers={GLOB: ["tests/test_caller.py"], OTHER_GLOB: ["tests/test_other.py"]},
+)
 
 
 @pytest.mark.parametrize(
     ("rings", "reach", "first", "second"),
     [
-        (RINGS, "escalate", ["tests/test_near.py"], ["tests/test_far.py"]),
+        (
+            RINGS,
+            "escalate",
+            ["tests/test_near.py"],
+            ["tests/test_caller.py", "tests/test_other.py"],
+        ),
         (RINGS, "direct", ["tests/test_near.py"], []),
         (RINGS, "transitive", ["tests/test_near.py", "tests/test_far.py"], []),
         (
-            mcl.TestRings(direct=[], wider=["tests/test_far.py"]),
+            mcl.TestRings(direct=[], wider=["tests/test_far.py"], callers=RINGS.callers),
             "escalate",
-            ["tests/test_far.py"],
+            ["tests/test_caller.py", "tests/test_other.py"],
             [],
         ),
-        (mcl.TestRings(direct=[], wider=[]), "escalate", [], []),
+        (mcl.TestRings(direct=[], wider=["tests/test_far.py"]), "escalate", [], []),
     ],
-    ids=["escalate", "direct", "transitive", "no-direct-starts-wide", "nothing"],
+    ids=["escalate", "direct", "transitive", "no-direct-starts-on-callers", "nothing"],
 )
 def test_each_reach_picks_its_passes(rings, reach, first, second):
     assert mcl.first_and_second_pass(rings, reach) == (first, second)
@@ -518,19 +529,41 @@ PASS1 = {
 }
 
 
-def _escalate(pass2, pass1=PASS1):
+def _escalate(pass2, pass1=PASS1, callers=None, cap=mcl.DEFAULT_PASS2_CAP):
+    pass_two = mcl.PassTwo(callers or RINGS.callers, cap)
     with mock.patch.object(mcl, "run_driver", return_value=pass2) as driver:
         code, result = mcl.escalate(
-            Path("/repo"), _one_target_plan(), 0, pass1, ["tests/test_far.py"], Path("/w")
+            Path("/repo"), _one_target_plan(), 1, pass1, pass_two, Path("/w")
         )
     return driver, code, result
 
 
-def test_pass_two_runs_only_the_survivors_against_only_the_wider_tests():
+def test_pass_two_runs_only_the_survivors_against_only_their_callers():
     driver, _code, _result = _escalate((0, {"phase": "done", "mutants": []}))
     _repo, _targets, globs, tests, _workdir = driver.call_args.args
     assert globs == [SURVIVOR]
-    assert tests == ["tests/test_far.py"]
+    assert tests == ["tests/test_caller.py"]
+
+
+@pytest.mark.parametrize(
+    ("callers", "cap"),
+    [
+        ({GLOB: [f"tests/test_c{i}.py" for i in range(3)]}, 2),
+        ({GLOB: [], OTHER_GLOB: ["tests/test_other.py"]}, 100),
+    ],
+    ids=["over-the-cap", "no-caller"],
+)
+def test_pass_two_is_skipped_and_pass_one_s_survivors_stand(callers, cap, capsys):
+    driver, code, result = _escalate((0, None), callers=callers, cap=cap)
+    driver.assert_not_called()
+    assert result is PASS1
+    assert mcl.finish(_one_target_plan(), code, result, 1.0) == mcl.EXIT_SURVIVORS
+    assert "pass 2 skipped" in capsys.readouterr().out
+
+
+def test_a_negative_pass_two_cap_is_refused():
+    with pytest.raises(SystemExit):
+        mcl._parser().parse_args(["--pass2-cap", "-1"])
 
 
 def test_a_survivor_pass_two_kills_is_killed_and_marked():
@@ -575,4 +608,5 @@ def test_direct_tests_covering_nothing_send_every_target_wide():
         (0, {"phase": "done", "mutants": [{"name": SURVIVOR, "status": "killed"}]}),
         pass1={"phase": "no_coverage", "detail": "x"},
     )
-    assert driver.call_args.args[2] == ["loregarden.services.sample.x_waiter__mutmut_*"]
+    assert driver.call_args.args[2] == [GLOB]
+    assert driver.call_args.args[3] == ["tests/test_caller.py"]
