@@ -776,7 +776,7 @@ class RunService:
         if not ws:
             raise ValueError("Ticket workspace not found")
         profile = resolve_orchestration_profile(ws)
-        chosen = driver or profile.driver
+        chosen = driver or profile.unattended_driver
 
         if chosen == OrchestrationDriver.BUILTIN_AUTOPILOT:
             return BuiltinOrchestrator(self.session).execute(

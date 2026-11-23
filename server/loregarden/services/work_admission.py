@@ -57,7 +57,7 @@ class OrchestrationStart(BaseModel):
 
     ticket_id: str
     """Loregarden ticket UUID."""
-    #: None takes the workspace profile's driver.
+    #: None takes the profile's `unattended_driver`: a terminal agent names its own.
     driver: OrchestrationDriver | None = None
     """Orchestration driver."""
     #: An outside harness drives the run; no slot is taken (see `start_external`).
@@ -153,7 +153,7 @@ def _run_on_bound_claim(
 def start_orchestration_admitted(
     session: Session, svc, start: OrchestrationStart
 ) -> tuple[Reservation, Any]:
-    """Start a run on whichever driver the workspace profile selects, gated.
+    """Start a run on the driver named, else the profile's unattended one, gated.
 
     Mostly admission: resolve the driver, take a slot, dispatch, bind. The
     caller renders the result.
@@ -181,7 +181,7 @@ def start_orchestration_admitted(
     if not ws:
         raise ValueError("Workspace not found")
     profile = resolve_orchestration_profile(ws)
-    driver = start.driver or profile.driver
+    driver = start.driver or profile.unattended_driver
     if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):
         raise ValueError(
             f"An orchestration cannot start on the {driver.value} driver; start a single stage"
