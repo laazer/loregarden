@@ -15,6 +15,11 @@
           },
           {
             "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin_dispatch.py\" shared_stash_guard",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/plugin_dispatch.py\" pr_ux_section_precheck",
             "timeout": 30
           },

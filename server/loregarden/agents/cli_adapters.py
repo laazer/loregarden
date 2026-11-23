@@ -208,14 +208,57 @@ def _control_plane_http_hook() -> dict[str, object]:
     return {"matcher": "Bash", "hooks": [{"type": "command", "command": command}]}
 
 
+_STASH_GUARD = Path(__file__).with_name("shared_stash_guard.py")
+
+#: The cursor plugin whose ``beforeShellExecution`` hook runs ``_STASH_GUARD``.
+#: cursor-agent takes no settings flag; ``--plugin-dir`` is the one way to hand
+#: it a hook per run, without writing into the workspace or the home directory.
+#: A `git` shim on PATH does not reach it: cursor runs commands in `zsh -ilc`,
+#: and macOS's /etc/zprofile puts the real git back in front.
+_CURSOR_GUARD_PLUGIN = Path(__file__).with_name("cursor_plugin")
+
+#: Why no hook keeps each adapter's shell off the shared stash stack, or "" when
+#: one does or the adapter has no shell. `test_shared_stash_guard` fails when a
+#: new adapter declares neither.
+STASH_GUARD_UNSUPPORTED: dict[CliAdapter, str] = {
+    CliAdapter.CLAUDE: "",
+    CliAdapter.CURSOR: "",
+    CliAdapter.LMSTUDIO: "",  # its tools are this server's MCP tools; it has no shell
+    CliAdapter.LOCAL: "",  # runs no model and no commands
+    CliAdapter.CODEX: "codex exec is given no pre-command hook",
+    CliAdapter.OPENCODE: "opencode run is given no pre-command hook",
+}
+
+
+def _warn_if_stash_unguarded(adapter: str) -> None:
+    reason = STASH_GUARD_UNSUPPORTED[CliAdapter(adapter)]
+    if reason:
+        logger.warning(
+            "%s; `git stash` is forbidden to this %s agent by its prompt only", reason, adapter
+        )
+
+
+def _stash_guard_hook() -> dict[str, object]:
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(_STASH_GUARD))} --agent-run"
+    return {"matcher": "Bash", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
+
+
+def chat_hook_settings() -> str:
+    """``--settings`` JSON for a chat turn: the shared-stash guard and nothing else."""
+    return json.dumps({"hooks": {"PreToolUse": [_stash_guard_hook()]}})
+
+
 def stage_run_hook_settings(*, stage_report: bool) -> str:
     """``--settings`` JSON for a run this control plane supervises.
 
-    Every supervised run gets the ``PreToolUse`` hook that keeps its Bash off
-    this control plane's HTTP API (``agents/control_plane_http_hook``); a stage
-    run also gets the stage-report ``Stop`` hook.
+    Every supervised run gets the ``PreToolUse`` hooks that keep its Bash off
+    this control plane's HTTP API (``agents/control_plane_http_hook``) and off
+    the shared stash stack (``agents/shared_stash_guard``); a stage run also
+    gets the stage-report ``Stop`` hook.
     """
-    hooks: dict[str, list[dict[str, object]]] = {"PreToolUse": [_control_plane_http_hook()]}
+    hooks: dict[str, list[dict[str, object]]] = {
+        "PreToolUse": [_control_plane_http_hook(), _stash_guard_hook()]
+    }
     if stage_report:
         hooks["Stop"] = [_stage_report_stop_hook()]
     return json.dumps({"hooks": hooks})
@@ -330,7 +373,8 @@ def build_interactive_invocation(
     files a chat turn attached, for instance.
 
     ``require_stage_report`` installs the stage-report ``Stop`` hook; stage runs
-    pass it, chat turns (which report nothing) do not.
+    pass it, chat turns (which report nothing) do not. Every turn gets the
+    shared-stash guard.
     """
     cwd = str(workspace_root)
 
@@ -359,8 +403,12 @@ def build_interactive_invocation(
             argv.extend(["--add-dir", str(extra)])
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        if orchestrated or require_stage_report:
-            argv.extend(["--settings", stage_run_hook_settings(stage_report=require_stage_report)])
+        hook_settings = (
+            stage_run_hook_settings(stage_report=require_stage_report)
+            if orchestrated or require_stage_report
+            else chat_hook_settings()
+        )
+        argv.extend(["--settings", hook_settings])
         argv.extend(
             claude_tool_flags(
                 tool_grants,
@@ -642,6 +690,8 @@ def _cursor_print_invocation(
         output_format,
         "--workspace",
         str(workspace_root),
+        "--plugin-dir",
+        str(_CURSOR_GUARD_PLUGIN),
     ]
     # Partial deltas only apply with print + stream-json; skip when the operator
     # forces text (or another format) via LOREGARDEN_CURSOR_OUTPUT_FORMAT.
@@ -1039,6 +1089,7 @@ def resolve_cli_invocation(
     selected = resolve_effective_adapter(
         agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
     )
+    _warn_if_stash_unguarded(selected)
     pins_apply = adapter_model_pins_apply(agent_adapter=adapter, selected_adapter=selected)
     model = resolve_model_for_adapter(
         selected,
@@ -1202,6 +1253,7 @@ def _claude_triage_invocation(
         argv.extend(["--add-dir", str(extra)])
     _append_model_flag(argv, triage_model)
     _append_claude_effort_flag(argv, effort)
+    argv.extend(["--settings", chat_hook_settings()])
     argv.extend(tool_flags)
     # Chat/studio oneshot — not a pipeline stage. Keep create_ticket open.
     append_mcp_cli_args(
@@ -1273,6 +1325,7 @@ def build_triage_invocation(
         return override
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    _warn_if_stash_unguarded(selected)
     # Workspace already carries any triage/studio runtime overrides. Stage/agent
     # pins are not a one-shot concern — same resolver, empty pin tiers.
     model = resolve_model_for_adapter(selected, workspace)
@@ -1331,6 +1384,8 @@ def build_triage_invocation(
             [
                 "--workspace",
                 str(workspace_root),
+                "--plugin-dir",
+                str(_CURSOR_GUARD_PLUGIN),
                 f"{triage_user_prompt}\n\n{prompt}",
             ]
         )

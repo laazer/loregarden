@@ -276,4 +276,4 @@ def test_a_chat_turn_carries_no_stage_report_hook(tmp_path):
         workspace_root=tmp_path,
         orchestrated=False,
     )
-    assert "--settings" not in inv.argv
+    assert "Stop" not in json.loads(inv.argv[inv.argv.index("--settings") + 1])["hooks"]

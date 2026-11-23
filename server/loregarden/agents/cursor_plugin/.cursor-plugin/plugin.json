@@ -1,0 +1,5 @@
+{
+  "name": "loregarden-run-guards",
+  "version": "0.1.0",
+  "description": "Guards on the shell of a cursor-agent this control plane spawned."
+}
