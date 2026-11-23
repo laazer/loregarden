@@ -24,6 +24,12 @@ from loregarden.services.self_improve_restart import (
 )
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import set_stage_status
+from loregarden.testing.factories import (
+    make_agent_run,
+    make_orchestration_run,
+    make_ticket,
+    make_workspace,
+)
 from sqlmodel import Session, select
 
 
@@ -186,6 +192,59 @@ def test_reload_refuses_while_an_agent_run_is_in_flight(client: TestClient, db_s
     res = client.post("/api/system/reload?workspace=loregarden")
     assert res.status_code == 409
     assert "active_agent_runs" in res.json()["detail"]["blockers"]
+
+
+def _agent_run_in(db_session: Session, ticket: Ticket) -> None:
+    make_agent_run(
+        db_session,
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        stage_key="implement",
+        status=RunStatus.RUNNING,
+    )
+
+
+def _orchestration_in(db_session: Session, ticket: Ticket) -> None:
+    run = make_orchestration_run(db_session, workspace_id=ticket.workspace_id, ticket_id=ticket.id)
+    run.status = OrchestrationRunStatus.RUNNING
+    db_session.add(run)
+    db_session.commit()
+
+
+def _running_stage_in(db_session: Session, ticket: Ticket) -> None:
+    ticket.workflow_stage_key = "implement"
+    ticket.workflow_stage_status = StageStatus.RUNNING
+    db_session.add(ticket)
+    db_session.commit()
+
+
+@pytest.mark.parametrize(
+    ("plant", "blocker"),
+    [
+        (_agent_run_in, "active_agent_runs"),
+        (_orchestration_in, "active_orchestrations"),
+        (_running_stage_in, "running_workflow_stages"),
+    ],
+)
+def test_work_in_another_workspace_blocks_the_reload(
+    client: TestClient, db_session, plant, blocker
+):
+    """One process serves every workspace, so a reload kills a loremaker
+    ticket's driver as surely as loregarden's own. A follow-main reload that only
+    counted loregarden's work killed lmkr-execution-leaves-11 mid-implement."""
+    other = make_workspace(db_session, slug="loremaker")
+    ticket = make_ticket(
+        db_session, workspace_id=other.id, external_id="lmkr-1", state=TicketState.IN_PROGRESS
+    )
+    assert evaluate_reload_readiness(db_session, workspace_slug="loregarden")["ready"] is True
+
+    plant(db_session, ticket)
+
+    readiness = evaluate_reload_readiness(db_session, workspace_slug="loregarden")
+    assert readiness["ready"] is False
+    assert readiness["blockers"] == [blocker]
+    watcher = evaluate_self_improve_restart(db_session, workspace_slug="loregarden")
+    assert blocker in watcher["blockers"]
 
 
 def test_reload_touches_the_sentinel(client: TestClient, tmp_path, monkeypatch):
