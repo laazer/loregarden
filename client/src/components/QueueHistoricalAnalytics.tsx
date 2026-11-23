@@ -4,10 +4,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { API_BASE } from '../api/client';
+import { request } from '../api/http';
 import { describeError } from '../state/toastStore';
 import './QueueHistoricalAnalytics.css';
 import { progressFillStyle } from '../lib/progressFill';
+import { Button } from './ui/Button';
 
 export interface RunMetrics {
   ticket_type: string;
@@ -33,34 +34,39 @@ export function QueueHistoricalAnalytics({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
-    const fetchMetrics = async () => {
-      setLoading(true);
-      setError(null);
+    // An answer for a range the operator has since left must not replace the
+    // one on screen.
+    let current = true;
+    setLoading(true);
+    setError(null);
 
-      try {
-        const path = workspaceId
-          ? `${API_BASE}/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
-          : `${API_BASE}/api/parallel/analytics?range=${timeRange}`;
-        const response = await fetch(path);
+    const path = workspaceId
+      ? `/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
+      : `/api/parallel/analytics?range=${timeRange}`;
+    request<{ metrics: RunMetrics[] }>(path)
+      .then((data) => {
+        if (current) setMetrics(data.metrics);
+      })
+      .catch((err: unknown) => {
+        if (current) setError(describeError(err, 'Failed to load analytics'));
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch analytics');
-        }
-
-        const data = await response.json();
-        setMetrics(data.metrics || []);
-      } catch (err) {
-        setError(
-          describeError(err, 'Failed to load analytics')
-        );
-      } finally {
-        setLoading(false);
-      }
+    return () => {
+      current = false;
     };
+  }, [workspaceId, timeRange, attempt]);
 
-    fetchMetrics();
-  }, [workspaceId, timeRange]);
+  // Each type's own rate and average, weighed by its runs: a type with one run
+  // must not move the total as far as a type with six hundred.
+  const totalRuns = metrics.reduce((sum, m) => sum + m.count, 0);
+  const weighted = (value: (m: RunMetrics) => number) =>
+    totalRuns === 0 ? 0 : metrics.reduce((sum, m) => sum + value(m) * m.count, 0) / totalRuns;
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -81,28 +87,31 @@ export function QueueHistoricalAnalytics({
         <h3>Run Performance History</h3>
         <div className="time-range-selector">
           {(['7d', '30d', '90d'] as const).map((range) => (
-            <button
+            <Button
               key={range}
+              variant="plain"
               className={`range-btn ${timeRange === range ? 'active' : ''}`}
+              aria-pressed={timeRange === range}
               onClick={() => setTimeRange(range)}
             >
               {range === '7d' && 'Last 7 days'}
               {range === '30d' && 'Last 30 days'}
               {range === '90d' && 'Last 90 days'}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
-      {error && (
-        <div className="analytics-error">
-          <span>{error}</span>
-        </div>
-      )}
-
       {loading ? (
         <div className="analytics-loading">
           <span>Loading analytics...</span>
+        </div>
+      ) : error ? (
+        <div className="analytics-error" role="alert">
+          <span>{error}</span>
+          <Button variant="secondary" compact onClick={() => setAttempt((n) => n + 1)}>
+            Retry
+          </Button>
         </div>
       ) : metrics.length === 0 ? (
         <div className="analytics-empty">
@@ -188,34 +197,26 @@ export function QueueHistoricalAnalytics({
       )}
 
       {/* Summary Statistics */}
-      {metrics.length > 0 && (
+      {!loading && !error && metrics.length > 0 && (
         <div className="analytics-summary">
           <div className="summary-card">
             <div className="summary-label">Overall Success Rate</div>
             <div className="summary-value">
-              {Math.round(
-                (metrics.reduce((sum, m) => sum + m.success_rate, 0) /
-                  metrics.length) *
-                  100
-              )}
-              %
+              {Math.round(weighted((m) => m.success_rate) * 100)}%
             </div>
           </div>
 
           <div className="summary-card">
             <div className="summary-label">Total Runs Completed</div>
             <div className="summary-value">
-              {metrics.reduce((sum, m) => sum + m.count, 0)}
+              {totalRuns}
             </div>
           </div>
 
           <div className="summary-card">
             <div className="summary-label">Average Run Duration</div>
             <div className="summary-value">
-              {formatDuration(
-                metrics.reduce((sum, m) => sum + m.avg_duration_seconds, 0) /
-                  metrics.length
-              )}
+              {formatDuration(weighted((m) => m.avg_duration_seconds))}
             </div>
           </div>
 

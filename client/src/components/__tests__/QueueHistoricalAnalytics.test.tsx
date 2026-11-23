@@ -1,436 +1,211 @@
-/**
- * Tests for QueueHistoricalAnalytics component
- * Covers metrics display, time ranges, success rates, and data fetching
- */
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { QueueHistoricalAnalytics } from '../QueueHistoricalAnalytics';
+import { QueueHistoricalAnalytics, type RunMetrics } from "../QueueHistoricalAnalytics";
 
-describe('QueueHistoricalAnalytics', () => {
-  const mockMetrics = [
-    {
-      ticket_type: 'feature-branch',
-      count: 42,
-      avg_duration_seconds: 245,
-      min_duration_seconds: 120,
-      max_duration_seconds: 420,
-      success_rate: 0.95,
-      last_7_days_count: 8,
-      last_7_days_success_rate: 0.98,
-    },
-    {
-      ticket_type: 'bug-fix',
-      count: 28,
-      avg_duration_seconds: 180,
-      min_duration_seconds: 60,
-      max_duration_seconds: 360,
-      success_rate: 0.85,
-      last_7_days_count: 5,
-      last_7_days_success_rate: 0.8,
-    },
-  ];
+function metric(overrides: Partial<RunMetrics> = {}): RunMetrics {
+  return {
+    ticket_type: "feature",
+    count: 42,
+    avg_duration_seconds: 245,
+    min_duration_seconds: 50,
+    max_duration_seconds: 420,
+    success_rate: 0.9,
+    last_7_days_count: 8,
+    last_7_days_success_rate: 0.75,
+    ...overrides,
+  };
+}
 
-  beforeEach(() => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ metrics: mockMetrics }),
-      });
+const fetchMock = jest.fn();
+
+const ok = (metrics: RunMetrics[]) => ({ ok: true, status: 200, json: async () => ({ metrics }) });
+const refused = (detail: string) => ({
+  ok: false,
+  status: 500,
+  statusText: "Internal Server Error",
+  text: async () => JSON.stringify({ detail }),
+});
+const requested = () => fetchMock.mock.calls.map(([url]) => String(url).replace(/^https?:\/\/[^/]+/, ""));
+const summary = (label: string) =>
+  screen.getByText(label).closest(".summary-card")!.querySelector(".summary-value")!.textContent;
+const row = (label: string) =>
+  screen.getByText(label).closest(".metric-row")!.querySelector(".metric-value")!.textContent;
+
+beforeEach(() => {
+  fetchMock.mockReset().mockResolvedValue(ok([metric()]));
+  global.fetch = fetchMock;
+});
+
+describe("what it asks for", () => {
+  it("is the last 7 days across every workspace, unless told otherwise", async () => {
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    expect(requested()).toEqual(["/api/parallel/analytics?range=7d"]);
+    expect(screen.getByRole("button", { name: "Last 7 days" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  describe('Rendering', () => {
-    test('renders analytics container', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        expect(
-          container.querySelector('.queue-analytics-container')
-        ).toBeInTheDocument();
-      });
-    });
-
-    test('displays header with title', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Run Performance History')).toBeInTheDocument();
-      });
-    });
-
-    test('displays time range selector', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Last 7 days')).toBeInTheDocument();
-        expect(screen.getByText('Last 30 days')).toBeInTheDocument();
-        expect(screen.getByText('Last 90 days')).toBeInTheDocument();
-      });
-    });
+  it("is one workspace when given one", async () => {
+    render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
+    await screen.findByText("feature");
+    expect(requested()).toEqual(["/api/parallel/workspace/ws-1/analytics?range=7d"]);
   });
 
-  describe('Metrics Display', () => {
-    test('displays ticket type metrics', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
+  it.each([
+    ["Last 30 days", "30d"],
+    ["Last 90 days", "90d"],
+  ])("becomes %s when that is chosen", async (name, range) => {
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    fetchMock.mockResolvedValue(ok([metric({ ticket_type: "bug" })]));
 
-      await waitFor(() => {
-        expect(screen.getByText('feature-branch')).toBeInTheDocument();
-        expect(screen.getByText('bug-fix')).toBeInTheDocument();
-      });
-    });
-
-    test('displays success rate badges', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText('95%')).toBeInTheDocument();
-        expect(screen.getByText('85%')).toBeInTheDocument();
-      });
-    });
-
-    test('displays total run count', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        // One "Total Runs" label per ticket-type card (2 in mockMetrics)
-        expect(screen.getAllByText(/Total Runs/).length).toBeGreaterThan(0);
-      });
-    });
-
-    test('displays average duration', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText(/Avg Duration/).length).toBeGreaterThan(0);
-      });
-    });
-
-    test('displays duration range', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText(/Range/).length).toBeGreaterThan(0);
-      });
-    });
-
-    test('displays last 7 days stats', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getAllByText(/Last 7 Days/).length).toBeGreaterThan(0);
-      });
-    });
+    await userEvent.click(screen.getByRole("button", { name }));
+    expect(await screen.findByText("bug")).toBeInTheDocument();
+    expect(screen.queryByText("feature")).not.toBeInTheDocument();
+    expect(requested()[1]).toBe(`/api/parallel/analytics?range=${range}`);
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Last 7 days" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  describe('Success Rate Coloring', () => {
-    test('applies excellent color for >95% success', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
+  it("shows the range chosen last, however late an earlier answer arrives", async () => {
+    let answerFirst: (response: unknown) => void = () => {};
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)));
+    render(<QueueHistoricalAnalytics />);
+    fetchMock.mockResolvedValue(ok([metric({ ticket_type: "bug" })]));
+    await userEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
+    await screen.findByText("bug");
 
-      await waitFor(() => {
-        const excellentBadges = container.querySelectorAll(
-          '.success-badge.excellent'
-        );
-        expect(excellentBadges.length).toBeGreaterThan(0);
-      });
-    });
-
-    test('applies good color for 85-95% success', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        const goodBadges = container.querySelectorAll('.success-badge.good');
-        // May not be present if no metrics in that range
-        expect(goodBadges).toBeDefined();
-      });
-    });
-
-    test('applies fair color for 75-85% success', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        expect(container.querySelector('.success-badge')).toBeInTheDocument();
-      });
-    });
-
-    test('applies poor color for <75% success', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        expect(container.querySelector('.success-badge')).toBeInTheDocument();
-      });
-    });
+    await act(async () => answerFirst(ok([metric({ ticket_type: "milestone" })])));
+    expect(screen.getByText("bug")).toBeInTheDocument();
+    expect(screen.queryByText("milestone")).not.toBeInTheDocument();
   });
 
-  describe('Insights', () => {
-    test('shows fast execution indicator for runs <2min', async () => {
-      // mockMetrics' avg durations (245s, 180s) are both >= 2min, so neither
-      // qualifies; override with a run whose avg duration is under 120s.
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            metrics: [{ ...mockMetrics[0], avg_duration_seconds: 90 }],
-          }),
-      });
+  it("stays loading when an abandoned range fails first", async () => {
+    let failFirst: (reason: Error) => void = () => {};
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => (failFirst = reject)));
+    render(<QueueHistoricalAnalytics />);
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    await userEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
 
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        const fastInsights = container.querySelectorAll('.insight.fast');
-        expect(fastInsights.length).toBeGreaterThan(0);
-      });
-    });
-
-    test('shows reliability indicator for >95% success', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        const reliableInsights = container.querySelectorAll(
-          '.insight.reliable'
-        );
-        expect(reliableInsights.length).toBeGreaterThan(0);
-      });
-    });
-
-    test('shows warning for success rate <85%', async () => {
-      // mockMetrics' success rates (0.95, 0.85) are both >= 85%, so neither
-      // qualifies (bug-fix sits exactly at the 85% boundary); override with
-      // a run that's strictly below it.
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            metrics: [{ ...mockMetrics[1], success_rate: 0.8 }],
-          }),
-      });
-
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        const concerningInsights = container.querySelectorAll(
-          '.insight.concerning'
-        );
-        expect(concerningInsights.length).toBeGreaterThan(0);
-      });
-    });
+    await act(async () => failFirst(new Error("gone")));
+    expect(screen.getByText("Loading analytics...")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  describe('Time Range Selection', () => {
-    test('default time range is 7d', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
+  it("is not replaced by an abandoned range's late failure", async () => {
+    let failFirst: (reason: Error) => void = () => {};
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => (failFirst = reject)));
+    render(<QueueHistoricalAnalytics />);
+    await userEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
+    await screen.findByText("feature");
 
-      await waitFor(() => {
-        const sevenDayBtn = screen.getByText('Last 7 days');
-        expect(sevenDayBtn).toHaveClass('active');
-      });
-    });
+    await act(async () => failFirst(new Error("gone")));
+    expect(screen.getByText("feature")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
 
-    test('changes time range on button click', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        const thirtyDayBtn = screen.getByText('Last 30 days');
-        fireEvent.click(thirtyDayBtn);
-      });
-
-      await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('range=30d')
-        );
-      });
-    });
-
-    test('fetches new data on range change', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      const initialCallCount = (global.fetch as jest.Mock).mock.calls.length;
-
-      await waitFor(() => {
-        const ninetyDayBtn = screen.getByText('Last 90 days');
-        fireEvent.click(ninetyDayBtn);
-      });
-
-      await waitFor(() => {
-        expect((global.fetch as jest.Mock).mock.calls.length).toBeGreaterThan(
-          initialCallCount
-        );
-      });
-    });
+describe("a ticket type's card", () => {
+  it("shows its figures", async () => {
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    expect(row("Total Runs")).toBe("42");
+    expect(row("Avg Duration")).toBe("4m");
+    expect(row("Range")).toBe("50s — 7m");
+    expect(row("Last 7 Days")).toBe("8 runs (75%)");
   });
 
-  describe('Summary Statistics', () => {
-    test('displays overall success rate', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Overall Success Rate/)).toBeInTheDocument();
-      });
-    });
-
-    test('displays total runs completed', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Total Runs Completed/)).toBeInTheDocument();
-      });
-    });
-
-    test('displays average run duration', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Average Run Duration/)).toBeInTheDocument();
-      });
-    });
-
-    test('displays ticket types tracked', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Ticket Types Tracked/)).toBeInTheDocument();
-      });
-    });
+  it.each([
+    [1, "excellent"],
+    [0.95, "excellent"],
+    [0.94, "good"],
+    [0.85, "good"],
+    [0.84, "fair"],
+    [0.75, "fair"],
+    [0.74, "poor"],
+  ])("grades a success rate of %p as %s", async (success_rate, grade) => {
+    fetchMock.mockResolvedValue(ok([metric({ success_rate })]));
+    const { container } = render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    const badge = container.querySelector(".success-badge")!;
+    expect(badge).toHaveClass(grade);
+    expect(badge).toHaveTextContent(`${Math.round(success_rate * 100)}%`);
+    expect(container.querySelector(".success-fill")).toHaveClass(grade);
   });
 
-  describe('Empty State', () => {
-    test('shows empty state when no metrics', async () => {
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ metrics: [] }),
-      });
+  it.each([
+    [{ avg_duration_seconds: 119, success_rate: 0.9 }, ["⚡ Fast execution"]],
+    [{ avg_duration_seconds: 120, success_rate: 0.95 }, ["✓ Highly reliable"]],
+    [{ avg_duration_seconds: 120, success_rate: 0.85 }, []],
+    [{ avg_duration_seconds: 120, success_rate: 0.84 }, ["⚠️ Success rate needs attention"]],
+  ])("remarks on %p with %p", async (figures, remarks) => {
+    fetchMock.mockResolvedValue(ok([metric(figures)]));
+    const { container } = render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    expect([...container.querySelectorAll(".insight")].map((el) => el.textContent)).toEqual(remarks);
+  });
+});
 
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
+describe("the summary", () => {
+  it("weighs each type by how many runs it had", async () => {
+    fetchMock.mockResolvedValue(
+      ok([
+        metric({ ticket_type: "task", count: 99, success_rate: 1, avg_duration_seconds: 60 }),
+        metric({ ticket_type: "bug", count: 1, success_rate: 0, avg_duration_seconds: 6060 }),
+      ]),
+    );
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("task");
+    expect(summary("Overall Success Rate")).toBe("99%");
+    expect(summary("Average Run Duration")).toBe("2m");
+    expect(summary("Total Runs Completed")).toBe("100");
+    expect(summary("Ticket Types Tracked")).toBe("2");
+  });
+});
 
-      await waitFor(() => {
-        expect(
-          screen.getByText('No run history available yet')
-        ).toBeInTheDocument();
-      });
-    });
+describe("with nothing to show", () => {
+  const noSummary = () => expect(screen.queryByText("Overall Success Rate")).not.toBeInTheDocument();
 
-    test('doesn\'t show summary when no metrics', async () => {
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ metrics: [] }),
-      });
+  it("says it is loading, and shows no figures from the range before", async () => {
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("Overall Success Rate");
+    fetchMock.mockReturnValue(new Promise(() => {}));
 
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        expect(
-          container.querySelector('.analytics-summary')
-        ).not.toBeInTheDocument();
-      });
-    });
+    await userEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
+    expect(screen.getByText("Loading analytics...")).toBeInTheDocument();
+    expect(screen.queryByText("feature")).not.toBeInTheDocument();
+    noSummary();
   });
 
-  describe('Loading State', () => {
-    test('shows loading message initially', () => {
-      (global.fetch as jest.Mock).mockImplementation(
-        () =>
-          new Promise(() => {
-            /* never resolves */
-          })
-      );
-
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      expect(screen.getByText('Loading analytics...')).toBeInTheDocument();
-    });
+  it("says there is no history when there is none", async () => {
+    fetchMock.mockResolvedValue(ok([]));
+    render(<QueueHistoricalAnalytics />);
+    expect(await screen.findByText("No run history available yet")).toBeInTheDocument();
+    noSummary();
   });
 
-  describe('Error Handling', () => {
-    test('displays error message on fetch failure', async () => {
-      (global.fetch as jest.Mock).mockRejectedValue(
-        new Error('Failed to fetch')
-      );
+  it("shows the server's reason for a failure, never the empty state, and retries", async () => {
+    fetchMock.mockResolvedValue(refused("Could not retrieve analytics: disk I/O error"));
+    render(<QueueHistoricalAnalytics />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not retrieve analytics: disk I/O error");
+    expect(screen.queryByText("No run history available yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading analytics...")).not.toBeInTheDocument();
 
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        // Component surfaces the underlying Error's own message verbatim
-        expect(
-          screen.getByText('Failed to fetch')
-        ).toBeInTheDocument();
-      });
-    });
-
-    test('handles invalid response gracefully', async () => {
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: false,
-        status: 500,
-      });
-
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Failed to fetch analytics/)
-        ).toBeInTheDocument();
-      });
-    });
+    fetchMock.mockResolvedValue(ok([metric()]));
+    await userEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("feature")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  describe('API Integration', () => {
-    test('fetches metrics on mount', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
+  it("drops the figures of a range that loaded when the next one fails", async () => {
+    render(<QueueHistoricalAnalytics />);
+    await screen.findByText("feature");
+    fetchMock.mockRejectedValue(new Error("Failed to fetch"));
 
-      await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/parallel/workspace/ws-1/analytics')
-        );
-      });
-    });
-
-    test('passes workspace ID to API', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-custom" />);
-
-      await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/ws-custom/')
-        );
-      });
-    });
-  });
-
-  describe('Responsive Design', () => {
-    test('uses responsive grid layout', async () => {
-      const { container } = render(
-        <QueueHistoricalAnalytics workspaceId="ws-1" />
-      );
-
-      await waitFor(() => {
-        expect(
-          container.querySelector('.analytics-grid')
-        ).toBeInTheDocument();
-      });
-    });
-
-    test('displays summary in grid layout', async () => {
-      render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
-
-      await waitFor(() => {
-        const summary = document.querySelector('.analytics-summary');
-        expect(summary).toBeInTheDocument();
-      });
-    });
+    await userEvent.click(screen.getByRole("button", { name: "Last 90 days" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to fetch");
+    await waitFor(noSummary);
+    expect(screen.queryByText("feature")).not.toBeInTheDocument();
   });
 });

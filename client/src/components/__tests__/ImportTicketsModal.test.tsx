@@ -1,76 +1,34 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { ImportTicketsModal } from "../ImportTicketsModal";
+import { ImportTicketsModal, type ImportTicketsModalProps } from "../ImportTicketsModal";
 
-/**
- * Behavioral + adversarial test suite for ImportTicketsModal.
- *
- * Ticket:   33-add-smart-import-button-to-import-modal-ui
- * Stage:    test_break (test_breaker)
- * Design:   client/src/components/__tests__/TEST_DESIGN_SmartImportButton.md
- *
- * These tests encode the DOM/behavioral contract for the smart-import mode
- * selector. They are written test-first: the mode selector is not yet
- * implemented, so the mode-specific cases are expected to fail (red) until the
- * Implementer adds the selector. The regression cases (Group C) already
- * describe existing behavior and must stay green throughout.
- *
- * Requirement mapping (from the test design):
- *   - Group R  — Rendering                (AC-a, AC-c)
- *   - Group S  — Selection behavior       (AC-a)
- *   - Group H  — Handoff on Continue      (AC-a, contract)
- *   - Group L  — Labels & tooltips        (AC-b)
- *   - Group C  — Regression / back-compat
- *   - Group X  — Adversarial edge cases
- *
- * NOTE (spec discrepancy flagged for Spec Agent):
- *   The design's Test Coverage Summary names `vitest` as the framework, but the
- *   client is wired for Jest (`@swc/jest`, `jest-environment-jsdom`,
- *   `"test": "jest"`). This suite is authored for Jest to run in-repo.
- *
- * NOTE (behavioral discrepancy flagged for Spec Agent):
- *   Design case H2 states the emitted file order is "selection order". The real
- *   modal derives its list via `selectedImportFileList`, which sorts by
- *   `repo_path.localeCompare`. The emitted order is therefore ALPHABETICAL by
- *   repo_path, not selection order. Tests below assert the true (sorted)
- *   contract and X-group explicitly pins it so an implementer cannot silently
- *   "fix" it to selection order without breaking a test.
- */
-
-// ---------------------------------------------------------------------------
-// Deterministic mock of the file explorer (a true external boundary: it makes
-// network calls via `api.browseImportDirectory`). The mock renders one toggle
-// button per fixture file and forwards clicks to `onToggleFile`, letting each
-// test drive selection deterministically without any network/timer.
-// ---------------------------------------------------------------------------
+// Paths and repo paths sort differently, so neither can stand in for the other.
 jest.mock("../ImportTicketFileExplorer", () => {
-  const FIXTURE_FILES = [
-    { path: "a.md", name: "a.md", repo_path: "a.md" },
-    { path: "b.md", name: "b.md", repo_path: "b.md" },
-    // repo_path sorts BEFORE b.md but is toggled after it in some tests, to
-    // expose the sort-vs-selection-order behavior.
-    { path: "nested/aa.md", name: "aa.md", repo_path: "nested/aa.md" },
+  const FILES = [
+    { path: "/repo/z/a.md", name: "a.md", repo_path: "a.md" },
+    { path: "/repo/y/b.md", name: "b.md", repo_path: "b.md" },
+    { path: "/repo/x/c.md", name: "c.md", repo_path: "c.md" },
   ];
+  type File = (typeof FILES)[number];
 
   return {
     __esModule: true,
     ImportTicketFileExplorer: (props: {
-      selectedFiles: Map<string, { path: string; name: string; repo_path: string }>;
-      onToggleFile: (
-        file: { path: string; name: string; repo_path: string },
-        checked: boolean,
-      ) => void;
-      disabled?: boolean;
+      selectedFiles: Map<string, File>;
+      onToggleFile: (file: File, checked: boolean) => void;
+      onToggleFiles: (files: File[], checked: boolean) => void;
+      disabled: boolean;
+      startPath: string;
     }) => (
-      <div data-testid="mock-file-explorer" data-disabled={String(Boolean(props.disabled))}>
-        {FIXTURE_FILES.map((file) => {
+      <div data-testid="mock-file-explorer" data-start-path={props.startPath}>
+        {FILES.map((file) => {
           const checked = props.selectedFiles.has(file.path);
           return (
             <button
               key={file.path}
               type="button"
-              data-testid={`toggle-${file.path}`}
+              data-testid={`toggle-${file.repo_path}`}
               aria-pressed={checked}
               disabled={props.disabled}
               onClick={() => props.onToggleFile(file, !checked)}
@@ -79,28 +37,19 @@ jest.mock("../ImportTicketFileExplorer", () => {
             </button>
           );
         })}
+        <button type="button" onClick={() => props.onToggleFiles(FILES, true)}>
+          Select folder
+        </button>
+        <button type="button" onClick={() => props.onToggleFiles(FILES.slice(0, 2), false)}>
+          Clear two
+        </button>
       </div>
     ),
   };
 });
 
-// ImportMode is additive to the public contract; keep a local alias so the test
-// intent is legible even before the component exports the type.
-type ImportMode = "regular" | "smart";
-
-interface ModalProps {
-  open: boolean;
-  workspaceSlug: string;
-  initialBrowsePath?: string;
-  isLoading: boolean;
-  errorMessage?: string | null;
-  onClose: () => void;
-  onContinue: (filePaths: string[], mode: ImportMode) => void | Promise<void>;
-  initialMode?: ImportMode;
-}
-
-function renderModal(overrides: Partial<ModalProps> = {}) {
-  const props: ModalProps = {
+function renderModal(overrides: Partial<ImportTicketsModalProps> = {}) {
+  const props: ImportTicketsModalProps = {
     open: true,
     workspaceSlug: "loregarden",
     isLoading: false,
@@ -109,331 +58,276 @@ function renderModal(overrides: Partial<ModalProps> = {}) {
     ...overrides,
   };
   const utils = render(<ImportTicketsModal {...props} />);
-  return { ...utils, props };
+  const update = (next: Partial<ImportTicketsModalProps>) =>
+    utils.rerender(<ImportTicketsModal {...props} {...next} />);
+  return { props, update };
 }
 
-async function toggle(file: string) {
-  await userEvent.click(screen.getByTestId(`toggle-${file}`));
+const toggle = (file: string) => userEvent.click(screen.getByTestId(`toggle-${file}`));
+const regular = () => screen.getByRole("radio", { name: "Regular import" });
+const smart = () => screen.getByRole("radio", { name: "Smart import" });
+const continueButton = () => screen.getByRole("button", { name: /continue|reading files/i });
+const selectedList = () => screen.getByRole("list", { name: "Selected ticket files" });
+const selectedNames = () => within(selectedList()).getAllByRole("listitem").map((li) => li.textContent);
+
+function expectMode(mode: "regular" | "smart") {
+  expect(regular()).toHaveAttribute("aria-checked", String(mode === "regular"));
+  expect(smart()).toHaveAttribute("aria-checked", String(mode === "smart"));
 }
 
-function getModeGroup(): HTMLElement {
-  return screen.getByRole("radiogroup", { name: /import mode/i });
-}
+describe("the import mode", () => {
+  it.each([
+    [undefined, "regular"],
+    ["regular", "regular"],
+    ["smart", "smart"],
+    [null, "regular"],
+    ["nonsense", "regular"],
+  ] as const)("opens on initialMode %p as %s", (initialMode, expected) => {
+    renderModal({ initialMode: initialMode as ImportTicketsModalProps["initialMode"] });
+    expect(within(screen.getByRole("radiogroup", { name: "Import mode" })).getAllByRole("radio")).toHaveLength(2);
+    expectMode(expected);
+  });
 
-function getRegularOption(): HTMLElement {
-  return within(getModeGroup()).getByRole("radio", { name: /^regular import$/i });
-}
+  it("is chosen by click, keeps the files picked, and starts nothing", async () => {
+    const { props } = renderModal();
+    await toggle("a.md");
 
-function getSmartOption(): HTMLElement {
-  return within(getModeGroup()).getByRole("radio", { name: /^smart import$/i });
-}
+    await userEvent.click(smart());
+    expectMode("smart");
+    await userEvent.click(regular());
+    expectMode("regular");
+    expect(selectedNames()).toEqual(["a.md"]);
+    expect(props.onContinue).not.toHaveBeenCalled();
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
 
-function checkedCount(): number {
-  return screen
-    .getAllByRole("radio")
-    .filter((el) => el.getAttribute("aria-checked") === "true").length;
-}
+  it.each(["{ArrowRight}", "{ArrowDown}", "{ArrowLeft}", "{ArrowUp}"])(
+    "moves both ways with %s, and focus moves with it",
+    async (key) => {
+      renderModal();
+      regular().focus();
 
-beforeEach(() => {
-  jest.clearAllMocks();
+      await userEvent.keyboard(key);
+      expectMode("smart");
+      expect(smart()).toHaveFocus();
+
+      await userEvent.keyboard(key);
+      expectMode("regular");
+      expect(regular()).toHaveFocus();
+    },
+  );
+
+  it("is one tab stop, on the checked option", async () => {
+    renderModal();
+    expect(regular()).toHaveAttribute("tabindex", "0");
+    expect(smart()).toHaveAttribute("tabindex", "-1");
+
+    await userEvent.click(smart());
+    expect(regular()).toHaveAttribute("tabindex", "-1");
+    expect(smart()).toHaveAttribute("tabindex", "0");
+  });
+
+  it("ignores other keys", async () => {
+    renderModal();
+    regular().focus();
+    await userEvent.keyboard("x");
+    expectMode("regular");
+  });
+
+  it("is locked while files are read", () => {
+    renderModal({ isLoading: true });
+    expect(regular()).toBeDisabled();
+    expect(smart()).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("radiogroup"), { key: "ArrowRight" });
+    expectMode("regular");
+  });
+
+  it("is described by text that exists", () => {
+    renderModal();
+    expect(smart()).toHaveAccessibleDescription(/smart import includes/i);
+    expect(regular()).toHaveAccessibleDescription(/smart import includes/i);
+  });
+
+  it("is not offered when the caller locks it, and the locked mode is what is sent", async () => {
+    const { props } = renderModal({ lockMode: true, initialMode: "smart" });
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.getByText(/open as a scoping session in ticket studio/i)).toBeInTheDocument();
+
+    await toggle("a.md");
+    await userEvent.click(continueButton());
+    expect(props.onContinue).toHaveBeenCalledWith(["/repo/z/a.md"], "smart");
+  });
+
+  it("promises a scoping session only where the mode is locked to one", () => {
+    renderModal({ initialMode: "smart" });
+    expect(screen.queryByText(/open as a scoping session/i)).not.toBeInTheDocument();
+  });
 });
 
-// ===========================================================================
-// Group R — Rendering (AC-a, AC-c)
-// ===========================================================================
-describe("Group R — Rendering", () => {
-  it("R1: renders an 'Import mode' radiogroup with exactly two options", () => {
-    // Design R1
+describe("the files picked", () => {
+  it("are listed and counted as they are toggled, in repo-path order", async () => {
     renderModal();
-    const group = getModeGroup();
-    const options = within(group).getAllByRole("radio");
-    expect(options).toHaveLength(2);
-    expect(getRegularOption()).toBeInTheDocument();
-    expect(getSmartOption()).toBeInTheDocument();
+    expect(continueButton()).toBeDisabled();
+    expect(continueButton()).toHaveTextContent("Continue with 0 files");
+
+    await toggle("b.md");
+    expect(continueButton()).toHaveTextContent("Continue with 1 file");
+    expect(continueButton()).toHaveTextContent(/file$/);
+    await toggle("a.md");
+    expect(selectedNames()).toEqual(["a.md", "b.md"]);
+    expect(screen.getByText("Selected (2)")).toBeInTheDocument();
+    expect(continueButton()).toHaveTextContent("Continue with 2 files");
+
+    await toggle("a.md");
+    await toggle("b.md");
+    expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
+    expect(continueButton()).toBeDisabled();
   });
 
-  it("R2: renders nothing when open={false}", () => {
-    // Design R2
-    renderModal({ open: false });
+  it("can be added and removed a folder at a time", async () => {
+    renderModal();
+    await userEvent.click(screen.getByRole("button", { name: "Select folder" }));
+    expect(selectedNames()).toEqual(["a.md", "b.md", "c.md"]);
+    await userEvent.click(screen.getByRole("button", { name: "Clear two" }));
+    expect(selectedNames()).toEqual(["c.md"]);
+  });
+
+  it("start from the path the caller gives", () => {
+    renderModal({ initialBrowsePath: "/repo/docs" });
+    expect(screen.getByTestId("mock-file-explorer")).toHaveAttribute("data-start-path", "/repo/docs");
+  });
+
+  it("are cleared, and the mode reset, each time the dialog opens", async () => {
+    const { update } = renderModal();
+    await toggle("a.md");
+    await userEvent.click(smart());
+
+    update({ open: false });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    update({ open: true });
+    expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
+    expectMode("regular");
   });
 
-  it("R3: defaults to Regular checked when no initialMode is given", () => {
-    // Design R3
-    renderModal();
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "true");
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "false");
+  it("survive a change of error, loading or workspace while it is open", async () => {
+    const { update } = renderModal();
+    await toggle("a.md");
+    await userEvent.click(smart());
+
+    update({ isLoading: true });
+    update({ errorMessage: "Could not read directory", workspaceSlug: "blobert" });
+    expect(selectedNames()).toEqual(["a.md"]);
+    expectMode("smart");
+  });
+});
+
+describe("continuing", () => {
+  it.each(["regular", "smart"] as const)("sends the paths in repo-path order, and %s mode", async (mode) => {
+    const { props } = renderModal();
+    await toggle("c.md");
+    await toggle("a.md");
+    await toggle("b.md");
+    if (mode === "smart") await userEvent.click(smart());
+
+    await userEvent.click(continueButton());
+    expect((props.onContinue as jest.Mock).mock.calls).toEqual([
+      [["/repo/z/a.md", "/repo/y/b.md", "/repo/x/c.md"], mode],
+    ]);
   });
 
-  it("R4: honors initialMode='smart' on open", () => {
-    // Design R4
-    renderModal({ initialMode: "smart" });
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "false");
+  it("sends once however often it is clicked", async () => {
+    const { props } = renderModal();
+    await toggle("a.md");
+    await userEvent.tripleClick(continueButton());
+    expect(props.onContinue).toHaveBeenCalledTimes(1);
+    expect(continueButton()).toBeDisabled();
   });
 
-  it("R5: mode selector lives inside modal-body and applies no inline color styles", () => {
-    // Design R5 — structural guard for AC-c (JSDOM can't compute real styles).
-    renderModal();
-    const group = getModeGroup();
-    const body = document.querySelector(".modal-body");
-    expect(body).not.toBeNull();
-    expect(body).toContainElement(group);
-    for (const option of within(group).getAllByRole("radio")) {
-      // No bespoke inline color/background — styling must come from token classes.
-      expect(option.style.color).toBe("");
-      expect(option.style.backgroundColor).toBe("");
+  it("can be sent again after the dialog is reopened", async () => {
+    const { props, update } = renderModal();
+    await toggle("a.md");
+    await userEvent.click(continueButton());
+
+    update({ open: false });
+    update({ open: true });
+    await toggle("a.md");
+    await userEvent.click(continueButton());
+    expect(props.onContinue).toHaveBeenCalledTimes(2);
+  });
+
+  it("can be sent again once the caller offers a new handler", async () => {
+    const retry = jest.fn();
+    const { update } = renderModal();
+    await toggle("a.md");
+    await userEvent.click(continueButton());
+
+    update({ onContinue: retry });
+    await userEvent.click(continueButton());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["throws", () => { throw new Error("no"); }],
+    ["rejects", () => Promise.reject(new Error("no"))],
+  ])("stays open with its files when the handler %s", async (_how, handler) => {
+    const unhandled = jest.fn();
+    process.on("unhandledRejection", unhandled);
+    const uncaught = jest.fn((event: ErrorEvent) => event.preventDefault());
+    window.addEventListener("error", uncaught);
+    try {
+      const { props } = renderModal({ onContinue: handler });
+      await toggle("a.md");
+      await userEvent.click(continueButton());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(uncaught).not.toHaveBeenCalled();
+      expect(selectedNames()).toEqual(["a.md"]);
+      expect(props.onClose).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      window.removeEventListener("error", uncaught);
     }
   });
-});
 
-// ===========================================================================
-// Group S — Selection behavior (AC-a)
-// ===========================================================================
-describe("Group S — Selection behavior", () => {
-  it("S1: clicking Smart checks it and unchecks Regular", async () => {
-    // Design S1
-    renderModal();
-    await userEvent.click(getSmartOption());
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "false");
-  });
-
-  it("S2: clicking Regular after Smart restores Regular", async () => {
-    // Design S2
-    renderModal();
-    await userEvent.click(getSmartOption());
-    await userEvent.click(getRegularOption());
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "true");
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "false");
-  });
-
-  it("S3: exactly one option is checked across every transition", async () => {
-    // Design S3 — invariant.
-    renderModal();
-    expect(checkedCount()).toBe(1);
-    await userEvent.click(getSmartOption());
-    expect(checkedCount()).toBe(1);
-    await userEvent.click(getRegularOption());
-    expect(checkedCount()).toBe(1);
-    await userEvent.click(getSmartOption());
-    expect(checkedCount()).toBe(1);
-  });
-
-  it("S4: switching mode does not clear an existing file selection", async () => {
-    // Design S4
-    renderModal();
-    await toggle("a.md");
-    expect(screen.getByText(/selected \(1\)/i)).toBeInTheDocument();
-    await userEvent.click(getSmartOption());
-    // Selection list survives the mode switch.
-    expect(screen.getByText(/selected \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByTestId("toggle-a.md")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("S5: selecting a mode does not call onClose or onContinue", async () => {
-    // Design S5
-    const { props } = renderModal();
-    await userEvent.click(getSmartOption());
-    await userEvent.click(getRegularOption());
-    expect(props.onClose).not.toHaveBeenCalled();
-    expect(props.onContinue).not.toHaveBeenCalled();
-  });
-
-  it("S6: keyboard Space selects the focused option", async () => {
-    // Design S6 — asserts the button-group keyboard model (Space toggles the
-    // focused option). Works for native radio and button+aria-checked alike.
-    renderModal();
-    const smart = getSmartOption();
-    smart.focus();
-    expect(smart).toHaveFocus();
-    await userEvent.keyboard(" ");
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
-    expect(checkedCount()).toBe(1);
+  it("shows the caller's error as text", () => {
+    renderModal({ errorMessage: "<img src=x> unreadable" });
+    expect(screen.getByText("<img src=x> unreadable")).toBeInTheDocument();
   });
 });
 
-// ===========================================================================
-// Group H — Handoff on Continue (AC-a, contract)
-// ===========================================================================
-describe("Group H — Handoff on Continue", () => {
-  const continueButton = () => screen.getByRole("button", { name: /continue/i });
+describe("leaving", () => {
+  const overlay = () => document.querySelector(".modal-overlay") as HTMLElement;
 
-  it("H1: default regular mode emits (paths, 'regular')", async () => {
-    // Design H1
+  it.each([
+    ["Cancel", () => userEvent.click(screen.getByRole("button", { name: "Cancel" }))],
+    ["the close button", () => userEvent.click(screen.getByRole("button", { name: /close/i }))],
+    ["the backdrop", () => userEvent.click(overlay())],
+    ["Escape", () => userEvent.keyboard("{Escape}")],
+  ])("closes by %s", async (_by, leave) => {
     const { props } = renderModal();
-    await toggle("a.md");
-    await userEvent.click(continueButton());
-    expect(props.onContinue).toHaveBeenCalledTimes(1);
-    expect(props.onContinue).toHaveBeenCalledWith(["a.md"], "regular");
-  });
-
-  it("H2: smart mode emits (sorted paths, 'smart')", async () => {
-    // Design H2 — but sorted, not selection order (see file header note).
-    const { props } = renderModal();
-    await userEvent.click(getSmartOption());
-    await toggle("a.md");
-    await toggle("b.md");
-    await userEvent.click(continueButton());
-    expect(props.onContinue).toHaveBeenCalledTimes(1);
-    expect(props.onContinue).toHaveBeenCalledWith(["a.md", "b.md"], "smart");
-  });
-
-  it("H3: Continue stays disabled with zero files in both modes; onContinue not called", async () => {
-    // Design H3
-    const { props } = renderModal();
-    expect(continueButton()).toBeDisabled();
-    await userEvent.click(continueButton());
-    expect(props.onContinue).not.toHaveBeenCalled();
-
-    await userEvent.click(getSmartOption());
-    expect(continueButton()).toBeDisabled();
-    await userEvent.click(continueButton());
-    expect(props.onContinue).not.toHaveBeenCalled();
-  });
-
-  it("H4: isLoading disables both mode options and the Continue button", () => {
-    // Design H4
-    renderModal({ isLoading: true });
-    expect(getRegularOption()).toBeDisabled();
-    expect(getSmartOption()).toBeDisabled();
-    const button = screen.getByRole("button", { name: /reading files/i });
-    expect(button).toBeDisabled();
-  });
-
-  it("H4b: mode cannot change while isLoading", async () => {
-    // Adversarial extension of H4 — a disabled option must not flip selection.
-    renderModal({ isLoading: true, initialMode: "regular" });
-    await userEvent.click(getSmartOption());
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "true");
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "false");
-  });
-});
-
-// ===========================================================================
-// Group L — Labels & tooltips (AC-b)
-// ===========================================================================
-describe("Group L — Labels & tooltips", () => {
-  it("L1: Smart option exposes a non-empty, distinguishing title tooltip", () => {
-    // Design L1
-    renderModal();
-    const smart = getSmartOption();
-    const title = smart.getAttribute("title");
-    expect(title).toBeTruthy();
-    expect((title ?? "").trim().length).toBeGreaterThan(0);
-    expect(title?.toLowerCase()).toContain("smart");
-  });
-
-  it("L2: Smart option references a rendered, distinct description via aria-describedby", () => {
-    // Design L2
-    renderModal();
-    const smart = getSmartOption();
-    const describedById = smart.getAttribute("aria-describedby");
-    expect(describedById).toBeTruthy();
-    const description = document.getElementById(describedById ?? "");
-    expect(description).not.toBeNull();
-    expect((description?.textContent ?? "").trim().length).toBeGreaterThan(0);
-    // Distinct from the option's own accessible label.
-    expect(description?.textContent?.trim().toLowerCase()).not.toBe("smart import");
-  });
-
-  it("L3: accessible names are exactly 'Regular import' and 'Smart import'", () => {
-    // Design L3 — no icon-only ambiguity.
-    renderModal();
-    expect(
-      within(getModeGroup()).getByRole("radio", { name: /smart import/i }),
-    ).toBeInTheDocument();
-    expect(
-      within(getModeGroup()).getByRole("radio", { name: /regular import/i }),
-    ).toBeInTheDocument();
-  });
-});
-
-// ===========================================================================
-// Group C — Regression / backward compatibility (must stay green)
-// ===========================================================================
-describe("Group C — Regression / backward compatibility", () => {
-  it("C1a: file explorer renders and toggling a file updates 'Selected (N)'", async () => {
-    renderModal();
-    expect(screen.getByTestId("mock-file-explorer")).toBeInTheDocument();
-    expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
-    await toggle("a.md");
-    expect(screen.getByText(/selected \(1\)/i)).toBeInTheDocument();
-    await toggle("b.md");
-    expect(screen.getByText(/selected \(2\)/i)).toBeInTheDocument();
-  });
-
-  it("C1b: Cancel calls onClose", async () => {
-    const { props } = renderModal();
-    await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    await leave();
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("C1c: overlay click calls onClose only when not loading", async () => {
-    const onClose = jest.fn();
-    const { rerender } = renderModal({ onClose });
-    const overlay = document.querySelector(".modal-overlay") as HTMLElement;
-    expect(overlay).not.toBeNull();
-    await userEvent.click(overlay);
-    expect(onClose).toHaveBeenCalledTimes(1);
+  it("is refused while files are read, and everything but the list is disabled", async () => {
+    const { props, update } = renderModal();
+    await toggle("a.md");
+    update({ isLoading: true });
 
-    onClose.mockClear();
-    rerender(
-      <ImportTicketsModal
-        {...({
-          open: true,
-          workspaceSlug: "loregarden",
-          isLoading: true,
-          onClose,
-          onContinue: jest.fn(),
-        })}
-      />,
-    );
-    await userEvent.click(document.querySelector(".modal-overlay") as HTMLElement);
-    expect(onClose).not.toHaveBeenCalled();
+    await userEvent.click(overlay());
+    await userEvent.keyboard("{Escape}");
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /close/i })).toBeDisabled();
+    expect(screen.getByTestId("toggle-a.md")).toBeDisabled();
+    expect(continueButton()).toHaveTextContent("Reading files…");
+    expect(continueButton()).toBeDisabled();
   });
 
-  it("C2: re-opening resets mode to initialMode and clears selected files", async () => {
-    const { rerender, props } = renderModal({ initialMode: "regular" });
-    await userEvent.click(getSmartOption());
-    await toggle("a.md");
-    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(/selected \(1\)/i)).toBeInTheDocument();
-
-    // Close.
-    rerender(
-      <ImportTicketsModal
-        {...({ ...props, open: false })}
-      />,
-    );
+  it("renders no dialog until opened", () => {
+    renderModal({ open: false });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-    // Re-open — selection cleared, mode reset to default.
-    rerender(
-      <ImportTicketsModal
-        {...({ ...props, open: true })}
-      />,
-    );
-    expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
-    expect(getRegularOption()).toHaveAttribute("aria-checked", "true");
-  });
-
-  it("C3: a caller that ignores the mode arg still receives its file paths", async () => {
-    // Additive contract — legacy single-arg consumers keep working.
-    const received: string[][] = [];
-    const legacyOnContinue = (paths: string[]) => {
-      received.push(paths);
-    };
-    renderModal({ onContinue: legacyOnContinue as ModalProps["onContinue"] });
-    await toggle("a.md");
-    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(received).toEqual([["a.md"]]);
-  });
-
-  it("C-err: errorMessage renders inside the modal body", () => {
-    renderModal({ errorMessage: "Could not read directory" });
-    expect(screen.getByText("Could not read directory")).toBeInTheDocument();
   });
 });
 

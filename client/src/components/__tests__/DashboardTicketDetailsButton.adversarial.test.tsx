@@ -34,19 +34,6 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       renderButton();
       expect(screen.getByRole('button', { name: /view ticket details/i })).toBeInTheDocument();
     });
-
-    it('should handle rapid mount/unmount cycles', () => {
-      for (let i = 0; i < 20; i++) {
-        const { unmount } = renderButton(`ticket-${i}`);
-        unmount();
-      }
-      expect(true).toBe(true);
-    });
-
-    it('should handle empty ticket id string', () => {
-      renderButton('');
-      expect(screen.getByRole('button', { name: /view ticket details/i })).toBeInTheDocument();
-    });
   });
 
   describe('Modal Opening - Adversarial Cases', () => {

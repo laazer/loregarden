@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useAgentAction } from '../lib/agentActions/useAgentAction';
 import { describeError } from '../state/toastStore';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
+import { Button } from './ui/Button';
 import './QueueAdvancedControls.css';
 
 export type { ActiveRun, QueuedRun };
@@ -24,9 +25,15 @@ export function QueueAdvancedControls({
   onRunControl,
 }: QueueAdvancedControlsProps) {
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
-  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
+  const [checkedRuns, setCheckedRuns] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // A run leaves the queue while its box is ticked (it starts, or someone else
+  // cancels it); only what is still queued is selected.
+  const selectedRuns = new Set(
+    queuedRuns.map((run) => run.run_id).filter((runId) => checkedRuns.has(runId))
+  );
 
   // The same call the row's Promote / Cancel buttons make — not through
   // handleRunAction, which keeps a failure in local state and would tell the
@@ -85,7 +92,7 @@ export function QueueAdvancedControls({
         );
       }
 
-      setSelectedRuns(new Set());
+      setCheckedRuns(new Set());
     } catch (err) {
       setError(describeError(err, `Failed to ${action} runs`));
     } finally {
@@ -100,7 +107,7 @@ export function QueueAdvancedControls({
     } else {
       newSelected.add(runId);
     }
-    setSelectedRuns(newSelected);
+    setCheckedRuns(newSelected);
   };
 
   return (
@@ -216,20 +223,22 @@ export function QueueAdvancedControls({
       {/* Bulk Actions */}
       {selectedRuns.size > 0 && (
         <div className="bulk-actions">
-          <button
+          <Button
+            variant="plain"
             className="bulk-btn cancel"
             onClick={() => handleBulkAction('cancel')}
             disabled={isProcessing === 'bulk'}
           >
             {isProcessing === 'bulk' ? '⏳' : '✕'} Cancel Selected ({selectedRuns.size})
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="plain"
             className="bulk-btn"
-            onClick={() => setSelectedRuns(new Set())}
+            onClick={() => setCheckedRuns(new Set())}
             disabled={isProcessing === 'bulk'}
           >
             Clear Selection
-          </button>
+          </Button>
         </div>
       )}
 

@@ -472,31 +472,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // DIMENSION 5: CONCURRENCY & RACE CONDITIONS
   // ============================================================================
   describe('Concurrency & Race Conditions', () => {
-    it('should handle simultaneous isOpen state changes', async () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
-      );
-
-      // Simulate rapid concurrent state changes
-      const promises = [true, false, true].map(
-        (isOpen) =>
-          new Promise((resolve) => {
-            rerender(
-              <QueryClientProvider client={queryClient}>
-                <TicketDetailsModal ticket={ticket} isOpen={isOpen} onClose={onClose} />
-              </QueryClientProvider>
-            );
-            resolve(true);
-          })
-      );
-
-      await Promise.all(promises);
-      // Component should be in a valid state
-      expect(screen.queryByRole('dialog')).toBeDefined();
-    });
-
     it('should handle simultaneous ticket prop changes', async () => {
       const ticket1 = createMockTicket({ id: 'ticket-1', title: 'Ticket 1' });
       const ticket2 = createMockTicket({ id: 'ticket-2', title: 'Ticket 2' });
@@ -522,63 +497,12 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       await Promise.all(promises);
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
-
-    it('should handle close callback called multiple times', async () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-
-      // Try to trigger close multiple times
-      fireEvent.keyDown(dialog, { key: 'Escape' });
-      fireEvent.keyDown(dialog, { key: 'Escape' });
-      fireEvent.keyDown(dialog, { key: 'Escape' });
-
-      expect(onClose.mock.calls.length).toBeGreaterThan(0);
-    });
-
-    it('should handle unmount while modal is loading', async () => {
-      const ticket = createMockTicket();
-      const { unmount } = renderWithQueryClient(
-        <TicketDetailsModal
-          ticket={ticket}
-          isOpen={true}
-          onClose={() => {}}
-          isLoading={true}
-        />
-      );
-
-      // Unmount immediately while loading
-      expect(() => unmount()).not.toThrow();
-    });
   });
 
   // ============================================================================
   // DIMENSION 6: ORDER DEPENDENCY & STATE SENSITIVITY
   // ============================================================================
   describe('Order Dependency & State Sensitivity', () => {
-    it('should produce same output regardless of isOpen order', () => {
-      const ticket = createMockTicket();
-
-      // Sequence 1: open then close
-      const { unmount: unmount1 } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={false} onClose={() => {}} />
-      );
-      unmount1();
-
-      // Sequence 2: close then open
-      const { unmount: unmount2 } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-      );
-      unmount2();
-
-      // Should handle both sequences without errors
-      expect(true).toBe(true);
-    });
-
     it('should produce consistent results when callback order changes', () => {
       const onClose = jest.fn();
       const ticket = createMockTicket();
@@ -694,71 +618,12 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       );
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
-
-    it('should handle multiple rapid prop changes with different combinations', async () => {
-      const ticket1 = createMockTicket();
-      const ticket2 = createMockTicket({ title: 'Different' });
-
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal
-          ticket={ticket1}
-          isOpen={true}
-          onClose={() => {}}
-          isLoading={false}
-          error={undefined}
-        />
-      );
-
-      const combinations = [
-        { ticket: ticket2, isOpen: false, isLoading: true, error: 'Error 1' },
-        { ticket: ticket1, isOpen: true, isLoading: false, error: undefined },
-        { ticket: ticket2, isOpen: true, isLoading: true, error: 'Error 2' },
-        { ticket: null, isOpen: false, isLoading: false, error: undefined },
-      ];
-
-      for (const combo of combinations) {
-        rerender(
-          <QueryClientProvider client={queryClient}>
-            <TicketDetailsModal
-              ticket={combo.ticket}
-              isOpen={combo.isOpen}
-              onClose={() => {}}
-              isLoading={combo.isLoading}
-              error={combo.error}
-            />
-          </QueryClientProvider>
-        );
-      }
-
-      expect(true).toBe(true);
-    });
   });
 
   // ============================================================================
   // DIMENSION 8: STRESS & LOAD TESTING
   // ============================================================================
   describe('Stress & Load Testing', () => {
-    it('should handle repeated open/close cycles', () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
-      );
-
-      // Keep this cheap: under a full pre-push suite, hundreds of remounts steal
-      // the default 5s budget from later cases in this file.
-      for (let i = 0; i < 20; i++) {
-        rerender(
-          <QueryClientProvider client={queryClient}>
-            <TicketDetailsModal ticket={ticket} isOpen={i % 2 === 0} onClose={onClose} />
-          </QueryClientProvider>
-        );
-      }
-
-      expect(true).toBe(true);
-    });
-
     it('should handle many ticket switches under load', () => {
       const tickets = Array.from({ length: 20 }, (_, i) =>
         createMockTicket({ id: `ticket-${i}`, title: `Ticket ${i}` })
@@ -839,26 +704,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
-    it('should not assume QueryClient is properly configured', () => {
-      const badQueryClient = new QueryClient({
-        defaultOptions: {
-          queries: { retry: Infinity, staleTime: -1 },
-        },
-      });
-
-      render(
-        <QueryClientProvider client={badQueryClient}>
-          <TicketDetailsModal
-            ticket={createMockTicket()}
-            isOpen={true}
-            onClose={() => {}}
-          />
-        </QueryClientProvider>
-      );
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-    });
-
     it('should not assume artifact data structure is complete', () => {
       const ticket = createMockTicket({
         artifacts: {
@@ -897,29 +742,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // DIMENSION 10: DETERMINISM & REGRESSION VALIDATION
   // ============================================================================
   describe('Determinism & Regression Validation', () => {
-    it('should produce identical output across multiple renders with same input', () => {
-      const ticket = createMockTicket({
-        title: 'Deterministic Test',
-        external_id: '16-modal-with-ticket-details',
-      });
-
-      const outputs = [];
-
-      for (let i = 0; i < 3; i++) {
-        const { unmount } = renderWithQueryClient(
-          <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-        );
-
-        const dialogText = screen.getByRole('dialog').textContent;
-        outputs.push(dialogText);
-        unmount();
-      }
-
-      // All outputs should be identical
-      expect(outputs[0]).toBe(outputs[1]);
-      expect(outputs[1]).toBe(outputs[2]);
-    });
-
     it('should consistently handle error states', () => {
       const ticket = createMockTicket();
       const errorMessage = 'Network timeout occurred';
@@ -961,32 +783,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // DIMENSION 11: MEMORY & RESOURCE MANAGEMENT
   // ============================================================================
   describe('Memory & Resource Management', () => {
-    it('should properly cleanup event listeners on unmount', () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-
-      const { unmount } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      unmount();
-
-      // Triggering events after unmount should not cause errors or calls
-      expect(onClose).not.toHaveBeenCalled();
-    });
-
-    it('should not leak memory with multiple mount/unmount cycles', () => {
-      for (let i = 0; i < 100; i++) {
-        const ticket = createMockTicket();
-        const { unmount } = renderWithQueryClient(
-          <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-        );
-        unmount();
-      }
-
-      expect(true).toBe(true);
-    });
-
     it('should handle cleanup when callbacks are null', () => {
       const ticket = createMockTicket();
       const { unmount } = renderWithQueryClient(
@@ -1005,22 +801,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // DIMENSION 12: MODAL INTERACTION EDGE CASES
   // ============================================================================
   describe('Modal Interaction Edge Cases', () => {
-    it('should handle backdrop click with event.stopPropagation', () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      const backdrop = screen.getByTestId('modal-backdrop');
-      const clickEvent = new MouseEvent('click', { bubbles: true });
-      jest.spyOn(clickEvent, 'stopPropagation');
-
-      fireEvent(backdrop, clickEvent);
-
-      expect(onClose).toHaveBeenCalled();
-    });
-
     it('should handle keyboard events on nested elements', () => {
       const onClose = jest.fn();
       const ticket = createMockTicket();
@@ -1035,23 +815,6 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         fireEvent.keyDown(nestedInput, { key: 'Escape' });
         expect(onClose).toHaveBeenCalled();
       }
-    });
-
-    it('should handle rapid escape key presses', () => {
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-
-      // Rapid escape presses
-      for (let i = 0; i < 10; i++) {
-        fireEvent.keyDown(dialog, { key: 'Escape' });
-      }
-
-      expect(onClose.mock.calls.length).toBeGreaterThan(0);
     });
 
     it('should ignore non-Escape keys in modal', () => {

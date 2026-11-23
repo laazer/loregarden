@@ -1,4 +1,6 @@
 import { useNavigate } from "react-router-dom";
+
+import type { WorkItemType } from "../api/client";
 import "./FinalizationConfirmation.css";
 
 export interface FinalizationBreakdown {
@@ -24,13 +26,15 @@ export interface FinalizationConfirmationProps {
   onClose?: () => void;
 }
 
-const BREAKDOWN_ORDER: Array<{ key: string; singular: string; plural: string }> = [
-  { key: "initiative", singular: "initiative", plural: "initiatives" },
-  { key: "milestone", singular: "milestone", plural: "milestones" },
-  { key: "feature", singular: "feature", plural: "features" },
-  { key: "capability", singular: "capability", plural: "capabilities" },
-  { key: "task", singular: "task", plural: "tasks" },
-];
+/** Every type a commit can create. Keyed by the type, so a new one will not compile until it is listed. */
+const BREAKDOWN_LABELS: Record<WorkItemType, { singular: string; plural: string }> = {
+  initiative: { singular: "initiative", plural: "initiatives" },
+  milestone: { singular: "milestone", plural: "milestones" },
+  feature: { singular: "feature", plural: "features" },
+  capability: { singular: "capability", plural: "capabilities" },
+  task: { singular: "task", plural: "tasks" },
+  bug: { singular: "bug", plural: "bugs" },
+};
 
 function safeCount(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -91,7 +95,7 @@ export function FinalizationConfirmation({
       : null;
 
   const breakdownSummary = breakdown && total > 0
-    ? BREAKDOWN_ORDER.map(({ key, singular, plural }) => {
+    ? Object.entries(BREAKDOWN_LABELS).map(([key, { singular, plural }]) => {
         const count = safeCount(breakdown[key]);
         return `${count} ${count === 1 ? singular : plural}`;
       }).join(", ")
