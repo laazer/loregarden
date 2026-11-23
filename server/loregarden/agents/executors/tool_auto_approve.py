@@ -6,6 +6,7 @@ import shlex
 from pathlib import PurePath
 from typing import Any
 
+from loregarden.agents.shared_stash_guard import denial as shared_stash_denial
 from loregarden.mcp.tool_ids import (
     ARGUMENT_GATED_MCP_TOOLS,
     AUTO_APPROVED_MCP_TOOLS,
@@ -86,7 +87,6 @@ _SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&"})
 _CHAT_HARMLESS_COMMANDS = frozenset({"cd", "true", ":"})
 _FORCE_FLAGS = frozenset({"--force", "--force-with-lease", "-f"})
 _DELETE_FLAGS = frozenset({"-D", "-d", "--delete"})
-_STASH_DESTRUCTIVE = frozenset({"drop", "clear"})
 _FORCEFUL_CHECKOUT = frozenset({"checkout", "switch"})
 
 
@@ -149,9 +149,13 @@ def denied_cli_tool_message(tool_name: str, tool_input: dict[str, Any]) -> str:
     if tool_name != "Bash":
         return ""
     command = tool_input.get("command")
-    if isinstance(command, str) and _git_commit_bypasses_hooks(command):
+    if not isinstance(command, str):  # py-org: allow-isinstance
+        return ""
+    if _git_commit_bypasses_hooks(command):
         return "git commit hook bypass is forbidden; run git commit without --no-verify/-n."
-    return ""
+    # The same answer the shell hook gives (`shared_stash_guard`), for a call that
+    # reaches the bridge: neither this policy nor a click may approve it.
+    return shared_stash_denial(command, agent_run=True)
 
 
 def is_auto_approved_cli_tool(tool_name: str) -> bool:
@@ -171,6 +175,8 @@ def is_chat_auto_approved_cli_tool(tool_name: str, tool_input: dict[str, Any]) -
         return False
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():  # py-org: allow-isinstance
+        return False
+    if denied_cli_tool_message(tool_name, tool_input):
         return False
     return _bash_is_chat_auto_approved_git(command)
 
@@ -221,10 +227,6 @@ def _git_args_are_destructive(subcommand: str, args: list[str]) -> bool:
         return True
     if subcommand == "tag" and tokens & _DELETE_FLAGS:
         return True
-    if subcommand == "stash":
-        action = next((arg for arg in args if not arg.startswith("-")), "")
-        if action in _STASH_DESTRUCTIVE:
-            return True
     return False
 
 

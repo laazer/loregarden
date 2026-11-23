@@ -211,7 +211,8 @@ of finishing a stage. Leave your work in the tree. A stage that commits by hand
 races the orchestrator's own commit and can strand half the change.
 
 **`git stash` is forbidden** — see TESTING DISCIPLINE below for why, and for what
-to do instead.
+to do instead. A guard refuses the command; only `list`, `show`, `create`,
+`store` and `apply <commit SHA>` run.
 
 If you believe a git operation is genuinely required and cannot be left to the
 orchestrator, say so in your stage report rather than doing it.

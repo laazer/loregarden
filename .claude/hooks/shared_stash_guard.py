@@ -1,0 +1,1 @@
+../../server/loregarden/agents/shared_stash_guard.py

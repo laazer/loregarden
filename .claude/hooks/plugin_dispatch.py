@@ -19,7 +19,12 @@ from pathlib import Path
 
 #: The hooks the plugin ships. A name outside this set is a broken hooks.json.
 PLUGIN_HOOKS = frozenset(
-    {"git_signing_guard", "pr_duplicate_work_precheck", "pr_ux_section_precheck"}
+    {
+        "git_signing_guard",
+        "pr_duplicate_work_precheck",
+        "pr_ux_section_precheck",
+        "shared_stash_guard",
+    }
 )
 
 

@@ -69,10 +69,14 @@ def test_a_configured_host_is_matched_as_well_as_loopback():
 
 def _hook_command(settings_json: str) -> str:
     settings = json.loads(settings_json)
-    (entry,) = settings["hooks"]["PreToolUse"]
-    assert entry["matcher"] == "Bash"
-    (command,) = entry["hooks"]
-    return command["command"]
+    (command,) = [
+        hook["command"]
+        for entry in settings["hooks"]["PreToolUse"]
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "control_plane_http_hook" in hook["command"]
+    ]
+    return command
 
 
 def test_every_supervised_run_installs_the_hook_and_stage_runs_keep_their_stop_hook():
@@ -81,14 +85,14 @@ def test_every_supervised_run_installs_the_hook_and_stage_runs_keep_their_stop_h
     _hook_command(stage_run_hook_settings(stage_report=False))
 
 
-def test_a_chat_turn_gets_no_hook(tmp_path):
+def test_a_chat_turn_gets_no_http_hook(tmp_path):
     """Chat surfaces are not orchestrated and may use the API as a person would."""
     prompt = tmp_path / "prompt.md"
     prompt.write_text("hi", encoding="utf-8")
     invocation = build_interactive_invocation(
         adapter="claude", prompt_file=prompt, workspace_root=tmp_path, orchestrated=False
     )
-    assert "--settings" not in invocation.argv
+    assert not any("control_plane_http_hook" in arg for arg in invocation.argv)
 
 
 def test_the_installed_command_denies_as_claude_code_runs_it():
