@@ -31,7 +31,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: 320px;
+  max-width: 380px;
   padding: 4px 10px;
   border: 1px solid var(--border, #23252b);
   border-radius: 999px;
@@ -78,7 +78,8 @@
 .dash-active-ticket__code {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   color: var(--text-dim, #8b8f98);
-  flex: 0 1 auto;
+  /* Capped, not shrunk: sharing the squeeze with the title left it "lg-b…". */
+  flex: none;
   max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -86,6 +87,7 @@
 }
 
 .dash-active-ticket__title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

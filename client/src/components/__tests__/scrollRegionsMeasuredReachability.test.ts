@@ -17,7 +17,7 @@
  * and so excluded the flex-bound class wholesale.
  *
  * This file is the amended AC10(b)/(c): the geometry question asked **per
- * axis**, as `usabilityCheck.ts:405-406` has asked it since
+ * axis**, as `usabilityCheck.ts` has asked it since
  * lg-milestone-that-2230 (`2d7a71446`), with the counts reported per axis and
  * per bound kind so a class of region cannot go missing inside one total.
  *

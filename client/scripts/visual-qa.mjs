@@ -78,11 +78,15 @@ try {
 mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch();
 
+const VIEWPORT = { width: 1440, height: 900 };
+/** A 13-inch laptop's window, and half a desktop screen. */
+const NARROWER_WIDTHS = [1280, 1024];
+
 class Unsettled extends Error {}
 
 /** One visit. Throws `Unsettled` when the page never settles within `budget`. */
 async function visit(route, budget) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: VIEWPORT });
   await page.addInitScript(TRACK_FETCHES);
   const errors = [];
   // Console errors are the cheapest signal that a surface rendered but is broken.
@@ -108,9 +112,19 @@ async function visit(route, budget) {
     throw err;
   }
   const settledMs = Date.now() - started;
-  const usability = await page.evaluate(
-    `(() => { ${usabilityCheck}; return findUsabilityProblems(document.body); })()`,
-  );
+  const check = () =>
+    page.evaluate(`(() => { ${usabilityCheck}; return findUsabilityProblems(document.body); })()`);
+  const usability = await check();
+  // Only a narrower window shows what a layout squeezes, and only squeezing is
+  // asked of it: the other shapes do not depend on the window's width.
+  for (const width of NARROWER_WIDTHS) {
+    await page.setViewportSize({ width, height: VIEWPORT.height });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    for (const problem of await check()) {
+      if (problem.kind === "squeezed-text") usability.push({ ...problem, detail: `at ${width}px wide: ${problem.detail}` });
+    }
+  }
+  await page.setViewportSize(VIEWPORT);
   const screenshot = join(outDir, `${route.name}.png`);
   await page.screenshot({ path: screenshot, fullPage: true });
   await page.close();

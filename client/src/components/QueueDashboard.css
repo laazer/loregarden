@@ -63,9 +63,19 @@
   /* Uses shared .tab-bar / .tab-btn from index.css — only the card-edge tweak. */
   flex: none;
   border-bottom: 1px solid var(--bd);
-  padding-left: 10px;
-  padding-right: 10px;
+  padding-left: 6px;
+  padding-right: 6px;
   min-height: 0;
+}
+
+/* All five panels fit the rail, so no tab hides behind a sideways scroll. */
+.queue-rail-tabs .tab-bar-scroll {
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.queue-rail-tabs .tab-btn {
+  padding-inline: 5px;
 }
 
 .queue-rail-body {
@@ -308,16 +318,21 @@
 }
 
 @media (max-width: 1100px) {
+  /* The page scrolls, not the board inside it. */
   .queue-layout {
+    flex: none;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: visible;
   }
 
+  /* As tall as the lanes: at the height left over, they spilled under the rail. */
   .queue-layout-main {
+    flex: none;
     overflow: visible;
   }
 
   .queue-rail {
+    flex: none;
     width: auto;
     align-self: stretch;
     max-height: min(60vh, 480px);

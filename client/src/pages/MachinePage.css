@@ -36,6 +36,13 @@
   padding: 0 24px 24px;
 }
 
+/* The rail stacks under the lanes, so the board is as tall as both. */
+@media (max-width: 1100px) {
+  .machine-lanes-board {
+    height: auto;
+  }
+}
+
 @media (max-width: 640px) {
   .machine-lanes-merge-queue {
     padding: 0 16px 16px;

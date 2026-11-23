@@ -33,7 +33,8 @@ export type UsabilityProblemKind =
   | "tabular-list"
   | "key-value-table"
   | "nested-boxes"
-  | "scrollable-region-focusable";
+  | "scrollable-region-focusable"
+  | "squeezed-text";
 
 export interface UsabilityProblem {
   kind: UsabilityProblemKind;
@@ -120,6 +121,18 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
    * level, where everything is a card and nothing is the hierarchy.
    */
   const NESTED_BOX_DEPTH = 2;
+  /**
+   * Text with less than this many ems to itself shows about eight characters.
+   * Measured: the Lanes board gave a stopped ticket's title 0-5px at 1280 and
+   * 47px (3.9em) at 1440, and Ticket Studio's title 3.2em at 1024.
+   */
+  const SQUEEZED_EMS = 4;
+  /** Shorter than this is a tag or a count, which may be narrow. */
+  const SQUEEZED_CHARS = 8;
+  /** A column this many lines deep at that width is a word or a letter per line. */
+  const SQUEEZED_LINES = 3;
+  /** A label cut on purpose carries its whole text in `title`; below this many ems it is still a sliver. */
+  const CUT_LABEL_EMS = 2;
 
   const problems: UsabilityProblem[] = [];
 
@@ -438,6 +451,56 @@ export function findUsabilityProblems(root: ParentNode): UsabilityProblem[] {
       problems.push({
         kind: "scrollable-region-focusable",
         detail: `.${name} clips its content and scrolls, but neither it nor anything inside it can take focus — no key reaches it`,
+      });
+    }
+  }
+
+  // Text left almost no width: cut to a few letters, or wrapped to a word per
+  // line. It takes layout to see, so like `nested-boxes` it stands aside in jsdom.
+  if (laidOut && view) {
+    const shown = (el: Element): boolean =>
+      typeof el.checkVisibility !== "function" ||
+      el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    const blocks = new Set<Element>();
+    for (const el of Array.from(root.querySelectorAll("*"))) {
+      if (el.closest("svg, script, style, option, [aria-hidden='true'], [inert]")) continue;
+      const own = Array.from(el.childNodes).some(
+        (node) => node.nodeType === 3 && (node.textContent ?? "").trim() !== "",
+      );
+      if (!own) continue;
+      // An inline box has no width of its own; its block is what was squeezed.
+      let block: Element = el;
+      while (block.parentElement && view.getComputedStyle(block).display === "inline") block = block.parentElement;
+      blocks.add(block);
+    }
+    const squeezed = new Map<string, { count: number; narrowest: number }>();
+    for (const el of blocks) {
+      if ((el.textContent ?? "").trim().length < SQUEEZED_CHARS || !shown(el)) continue;
+      const style = view.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      // The visually-hidden idiom: 1px on purpose, for a screen reader.
+      if (style.position === "absolute" && rect.width <= 1) continue;
+      const width = Math.max(0, rect.width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0));
+      const fontSize = parseFloat(style.fontSize) || 16;
+      if (width >= SQUEEZED_EMS * fontSize) continue;
+      // The text's own line boxes, not the element's height: a table cell is as
+      // tall as its row.
+      const range = doc?.createRange();
+      range?.selectNodeContents(el);
+      const rects = range && typeof range.getClientRects === "function" ? Array.from(range.getClientRects()) : [];
+      const lines = new Set(rects.filter((line) => line.width > 0).map((line) => Math.round(line.top))).size;
+      const text = (el.textContent ?? "").trim();
+      if (el.getAttribute("title") === text && lines < SQUEEZED_LINES && width >= CUT_LABEL_EMS * fontSize) continue;
+      const cut = el.scrollWidth > el.clientWidth + 1;
+      if (!cut && lines < SQUEEZED_LINES) continue;
+      const name = (el.getAttribute("class") ?? "").trim().split(/\s+/)[0] || el.tagName.toLowerCase();
+      const seen = squeezed.get(name) ?? { count: 0, narrowest: width };
+      squeezed.set(name, { count: seen.count + 1, narrowest: Math.min(seen.narrowest, width) });
+    }
+    for (const [name, { count, narrowest }] of squeezed) {
+      problems.push({
+        kind: "squeezed-text",
+        detail: `.${name} ×${count} has as little as ${Math.round(narrowest)}px for its text — a few letters, or a word per line`,
       });
     }
   }

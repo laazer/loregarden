@@ -375,8 +375,13 @@
 
 .queue-slot-grid {
   display: grid;
-  /* minmax(0, 1fr): long hierarchy titles must not stretch one column wider. */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Three to a row while each keeps 230px, then two, then one: the board's width
+     depends on the sidebar and the rail, not only the window. A fixed floor, not
+     the content's, so long hierarchy titles do not stretch one column wider. */
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(230px, (100% - 24px) / 3)), 1fr)
+  );
   gap: 12px;
   /* Takes whatever height the panel has spare, so the lanes reach the bottom of
      the card instead of leaving it blank on a tall window. A lane never drops
@@ -782,8 +787,10 @@
     border-left: 0;
   }
 
+  /* The page is as tall as the lanes here, so there is no spare height to share:
+     a row is its own tallest lane, not the board's. */
   .queue-slot-grid {
-    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
   }
 }
 
@@ -813,6 +820,11 @@
   gap: 8px;
 }
 
+.queue-lane-attention-header > button {
+  flex: none;
+  white-space: nowrap;
+}
+
 .queue-lane-attention-label {
   font-size: var(--fs-micro);
   letter-spacing: 0.04em;
@@ -824,9 +836,14 @@
    left rule stays: it is the mark, not a box. */
 .queue-lane-attention-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  /* What stopped and what you can do about it on one line, the ticket on its own
+     below: beside them it got the 0-5px a 154px row had left. */
+  grid-template-areas:
+    "badge menu close"
+    "copy copy copy";
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px 8px;
   border-left: 2px solid var(--amb);
 }
@@ -838,6 +855,8 @@
 /* Divided rows sit flush; the gap was spacing between cards. */
 .queue-lane-attention .queue-lane-scroller {
   gap: 0;
+  /* One whole row: its status line, a two-line title, the id, a two-line reason. */
+  min-height: 124px;
 }
 
 .queue-lane-attention-item.is-busy {
@@ -845,7 +864,8 @@
 }
 
 .queue-lane-attention-badge {
-  align-self: start;
+  grid-area: badge;
+  justify-self: start;
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid currentcolor;
@@ -867,13 +887,15 @@
 }
 
 .queue-lane-attention-copy {
+  grid-area: copy;
   min-width: 0;
 }
 
 .queue-lane-attention-title {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   font-size: var(--fs-small);
   color: var(--tx);
 }
