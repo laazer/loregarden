@@ -141,14 +141,7 @@ describe("ADVA-1: Null & Empty Value Mutations", () => {
       rootHierarchyId: "",
     });
 
-    // Navigation button should be disabled
-    const navButton = screen.queryByRole("button", {
-      name: /view.*hierarchy/i,
-    });
-
-    if (navButton) {
-      expect(navButton).toBeDisabled();
-    }
+    expect(screen.getByRole("button", { name: "View hierarchy" })).toBeDisabled();
   });
 
   it("ADVA-1.4: handles workspaceSlug as empty string", () => {
@@ -544,13 +537,8 @@ describe("ADVA-3: Type & Structure Mutations", () => {
       finalizationResponse: {} as any,
     });
 
-    // May show nothing or minimal info. Use queryAllByText (never throws on
-    // ambiguous matches, unlike queryByText/getByText) since the title and
-    // the total count can both independently match this pattern — the point
-    // here is just that querying the DOM doesn't crash.
-    screen.queryAllByText(/success|0|completed/i);
-    // Either shows success (falsy check on undefined fields) or nothing
-    // Important: it shouldn't crash
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("items")).toBeInTheDocument();
   });
 });
 
@@ -604,23 +592,6 @@ describe("ADVA-4: Invalid/Corrupt Inputs", () => {
 
     // Should not break or allow traversal
     expect(screen.getByText(/success/i)).toBeInTheDocument();
-  });
-
-  it("ADVA-4.4: handles rootHierarchyId with protocol injection", () => {
-    // URL injection
-    renderConfirmation({
-      rootHierarchyId: "javascript:alert('xss')",
-    });
-
-    // Should not execute as code
-    const navButton = screen.getByRole("button", {
-      name: /view.*hierarchy/i,
-    });
-    // Should be disabled because ID is invalid
-    if (navButton) {
-      // Navigation call should NOT execute script
-      expect(navButton).toBeInTheDocument();
-    }
   });
 
   it("ADVA-4.5: handles breakdown with negative and positive counts mixed", () => {
@@ -810,12 +781,8 @@ describe("ADVA-5: Concurrency & Race Conditions", () => {
       isLoading: true,
     });
 
-    // Should prioritize loading state or show both
-    // Spinner should be visible
-    const spinner = screen.queryByRole("status", { hidden: true });
-    if (spinner) {
-      expect(spinner).toBeInTheDocument();
-    }
+    expect(screen.getByRole("status")).toHaveTextContent("Finalizing hierarchy");
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
   });
 
   it("ADVA-5.6: handles both error and finalizationResponse present", () => {
@@ -827,20 +794,6 @@ describe("ADVA-5: Concurrency & Race Conditions", () => {
 
     // Error should take precedence
     expect(screen.getByText(/error|simulation/i)).toBeInTheDocument();
-  });
-
-  it("ADVA-5.7: handles unmounting while API call in flight (simulated)", async () => {
-    // Simulate component unmounting
-    const { unmount } = renderConfirmation({
-      finalizationResponse: null,
-      isLoading: true,
-    });
-
-    // Unmount while loading
-    unmount();
-
-    // Should not cause memory leak or error
-    // (In real scenario, this would test cleanup in useEffect)
   });
 });
 
@@ -982,14 +935,7 @@ describe("ADVA-7: Combinatorial & Stress Testing", () => {
       rootHierarchyId: undefined,
     });
 
-    const navButton = screen.queryByRole("button", {
-      name: /view.*hierarchy/i,
-    });
-
-    // Should be disabled or absent
-    if (navButton) {
-      expect(navButton).toBeDisabled();
-    }
+    expect(screen.getByRole("button", { name: "View hierarchy" })).toBeDisabled();
   });
 
   it("ADVA-7.4: handles all props undefined except finalizationResponse", () => {
@@ -1103,14 +1049,8 @@ describe("ADVA-8: Assumption Validation", () => {
       onClose: undefined,
     });
 
-    const closeButton = screen.queryByRole("button", {
-      name: /close|done|dismiss/i,
-    });
-
-    // Should still render or safely handle undefined callback
-    if (closeButton) {
-      expect(closeButton).toBeInTheDocument();
-    }
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View hierarchy" })).toBeInTheDocument();
   });
 
   it("ADVA-8.4: assumes breakdown.milestone is always first in display order", () => {

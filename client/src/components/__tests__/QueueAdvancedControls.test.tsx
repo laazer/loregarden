@@ -273,6 +273,62 @@ describe('QueueAdvancedControls', () => {
     });
   });
 
+  describe('Cancelling the selection', () => {
+    const cancelled = () =>
+      (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url).replace(API_BASE, ''));
+    const reply = (status: number, body: object) => ({
+      ok: status < 400,
+      status,
+      statusText: '',
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(JSON.stringify(body)),
+    });
+    const renderSelected = () => {
+      const utils = render(
+        <QueueAdvancedControls activeRuns={mockActiveRuns} queuedRuns={mockQueuedRuns} />
+      );
+      screen.getAllByRole('checkbox').forEach((box) => fireEvent.click(box));
+      return utils;
+    };
+
+    test('cancels each selected run, then clears the selection', async () => {
+      global.fetch = jest.fn().mockResolvedValue(reply(200, {}));
+      renderSelected();
+
+      fireEvent.click(screen.getByRole('button', { name: /Cancel Selected \(2\)/ }));
+
+      await waitFor(() => expect(screen.queryByText(/selected/i)).not.toBeInTheDocument());
+      expect(cancelled()).toEqual([
+        '/api/parallel/queue/run-2/cancel',
+        '/api/parallel/queue/run-3/cancel',
+      ]);
+    });
+
+    test('says how many the server refused, and why', async () => {
+      global.fetch = jest.fn().mockResolvedValue(reply(409, { detail: 'already running' }));
+      renderSelected();
+
+      fireEvent.click(screen.getByRole('button', { name: /Cancel Selected/ }));
+
+      expect(
+        await screen.findByText('Failed to cancel 2 of 2 run(s): already running')
+      ).toBeInTheDocument();
+    });
+
+    test('leaves out a run that left the queue after it was selected', async () => {
+      global.fetch = jest.fn().mockResolvedValue(reply(200, {}));
+      const { rerender } = renderSelected();
+
+      rerender(
+        <QueueAdvancedControls activeRuns={mockActiveRuns} queuedRuns={[mockQueuedRuns[1]]} />
+      );
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Cancel Selected \(1\)/ }));
+
+      await waitFor(() => expect(cancelled()).toEqual(['/api/parallel/queue/run-3/cancel']));
+    });
+  });
+
   describe('Error Handling', () => {
     test('displays error message on action failure', async () => {
       const mockOnRunControl = jest

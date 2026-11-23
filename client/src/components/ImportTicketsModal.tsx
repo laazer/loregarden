@@ -1,6 +1,6 @@
 import { IconCloseButton } from "./IconCloseButton";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
 
 import {
   ImportTicketFileExplorer,
@@ -46,13 +46,14 @@ export function ImportTicketsModal({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const descriptionId = useId();
 
-  const handleModeKeyDown = (key: string, currentMode: ImportMode) => {
-    if (isLoading) return;
-    if (key === "ArrowRight" || key === "ArrowDown") {
-      setMode(currentMode === "regular" ? "smart" : "regular");
-    } else if (key === "ArrowLeft" || key === "ArrowUp") {
-      setMode(currentMode === "smart" ? "regular" : "smart");
-    }
+  // Two options, so every arrow lands on the other one. Focus goes with the
+  // choice: the group is a single tab stop, on the checked option.
+  const handleModeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isLoading || !event.key.startsWith("Arrow")) return;
+    event.preventDefault();
+    const next: ImportMode = mode === "regular" ? "smart" : "regular";
+    setMode(next);
+    event.currentTarget.querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
   };
 
   useEffect(() => {
@@ -147,17 +148,14 @@ export function ImportTicketsModal({
           <div
             role="radiogroup"
             aria-label="Import mode"
-            onKeyDown={(e) => {
-              if (e.key.startsWith("Arrow")) {
-                e.preventDefault();
-                handleModeKeyDown(e.key, mode);
-              }
-            }}
+            onKeyDown={handleModeKeyDown}
           >
             <Button
               variant="plain"
               role="radio"
               aria-checked={mode === "regular"}
+              data-mode="regular"
+              tabIndex={mode === "regular" ? 0 : -1}
               aria-describedby={descriptionId}
               disabled={isLoading}
               onClick={() => !isLoading && setMode("regular")}
@@ -169,6 +167,8 @@ export function ImportTicketsModal({
               variant="plain"
               role="radio"
               aria-checked={mode === "smart"}
+              data-mode="smart"
+              tabIndex={mode === "smart" ? 0 : -1}
               aria-describedby={descriptionId}
               title="Smart import enriches your work items with Studio-style preview data and enhanced descriptions"
               disabled={isLoading}

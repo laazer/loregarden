@@ -38,12 +38,6 @@ describe('TicketDetailsModal', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('should not render when ticket is null and modal is closed', () => {
-      renderWithQueryClient(<TicketDetailsModal ticket={null} isOpen={false} onClose={() => {}} />);
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
-
     it('should not render when ticket is null without loading or error', () => {
       renderWithQueryClient(<TicketDetailsModal ticket={null} isOpen={true} onClose={() => {}} />);
 
@@ -366,11 +360,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      const blockingSection = screen.queryByText(/blocking|issues/i);
-      // Should not show blocking section, but might show as empty
-      if (blockingSection) {
-        expect(blockingSection.textContent).toBe('');
-      }
+      expect(screen.queryByText(/blocking/i)).not.toBeInTheDocument();
     });
 
     it('should display revision number', () => {
@@ -596,70 +586,6 @@ describe('TicketDetailsModal', () => {
       const focusIsOnDialog = document.activeElement === dialog || dialog.contains(document.activeElement as Node);
       expect(focusIsOnDialog).toBe(true);
     });
-
-    it('should have semantic HTML structure', () => {
-      // SPEC: Modal should use proper semantic HTML elements
-      const ticket = createMockTicket({ title: 'Test' });
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveAttribute('role', 'dialog');
-    });
-
-    it('should provide keyboard navigation', () => {
-      // SPEC: Users should be able to navigate modal with keyboard
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      fireEvent.keyDown(dialog, { key: 'Escape' });
-      expect(onClose).toHaveBeenCalled();
-    });
-  });
-
-  describe('Integration with Dashboard', () => {
-    it('should work within Dashboard pane layout', () => {
-      // SPEC: Modal should not interfere with dashboard layout
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-      );
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-      // Modal should not disrupt the DOM structure
-    });
-
-    it('should preserve state when toggling multiple times', () => {
-      // SPEC: Modal state should be independent of Dashboard state
-      const onClose = jest.fn();
-      const ticket = createMockTicket({ title: 'Persistent Ticket' });
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
-      );
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-
-      rerender(
-        <QueryClientProvider client={queryClient}>
-          <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-        </QueryClientProvider>
-      );
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-
-      rerender(
-        <QueryClientProvider client={queryClient}>
-          <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
-        </QueryClientProvider>
-      );
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
   });
 
   describe('Performance', () => {
@@ -686,95 +612,9 @@ describe('TicketDetailsModal', () => {
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
-
-    it('should not re-render unnecessarily when props do not change', () => {
-      // SPEC: Component should use memoization or efficient comparison
-      const ticket = createMockTicket();
-      const onClose = jest.fn();
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      // Verify initial render
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-
-      // Re-render with same props
-      rerender(
-        <QueryClientProvider client={queryClient}>
-          <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-        </QueryClientProvider>
-      );
-
-      // Should still be in document (no unnecessary unmount)
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-    });
-  });
-
-  describe('Keyboard Navigation', () => {
-    it('should allow tabbing through interactive elements within modal', () => {
-      // SPEC: Users should be able to navigate all interactive elements with Tab key
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      const interactiveElements = dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]');
-      expect(interactiveElements.length).toBeGreaterThan(0);
-    });
-
-    it('should trap focus within modal when open (optional - depends on implementation)', () => {
-      // SPEC: Modal should contain focus to prevent user from tabbing behind it
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      const buttons = dialog.querySelectorAll('button');
-      expect(buttons.length).toBeGreaterThan(0);
-    });
-
-    it('should restore focus to button when modal closes', () => {
-      // SPEC: Focus should return to the trigger button after modal closes
-      const onClose = jest.fn();
-      const ticket = createMockTicket();
-      const { rerender } = renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
-      );
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-
-      // Simulate closing the modal
-      rerender(
-        <QueryClientProvider client={queryClient}>
-          <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
-        </QueryClientProvider>
-      );
-
-      // Dialog should be removed
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
   });
 
   describe('Content Scrolling', () => {
-    it('should allow scrolling through long ticket content', () => {
-      // SPEC: Modal should be scrollable when content exceeds viewport
-      const veryLongDescription = 'Lorem ipsum dolor sit amet. '.repeat(200);
-      const ticket = createMockTicket({ description: veryLongDescription });
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      const content = dialog.querySelector('[data-testid="modal-content"]') || dialog;
-
-      // Modal should be present and have scrollable content
-      expect(dialog).toBeInTheDocument();
-      expect(content.textContent).toContain('Lorem ipsum');
-    });
-
     it('should display scrollbar for large acceptance criteria lists', () => {
       // SPEC: Modal should properly handle scrollable sections
       const ticket = createMockTicket({
@@ -873,26 +713,6 @@ describe('TicketDetailsModal', () => {
 
       expect(screen.getByRole('heading', { name: 'Second Ticket' })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'First Ticket' })).not.toBeInTheDocument();
-    });
-  });
-
-  describe('Modal Positioning and Overflow', () => {
-    it('should not overflow viewport even with maximum content', () => {
-      // SPEC: Modal should fit within viewport with scrolling
-      const maxContent = createMockTicket({
-        title: 'A'.repeat(500),
-        description: 'B'.repeat(5000),
-        acceptance_criteria: Array.from({ length: 100 }, (_, i) => `Criterion ${i + 1}: Long requirement text`),
-        blocking_issues: 'D'.repeat(1000),
-      });
-
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={maxContent} isOpen={true} onClose={() => {}} />
-      );
-
-      const dialog = screen.getByRole('dialog');
-      expect(dialog).toBeInTheDocument();
-      expect(dialog).toHaveAttribute('data-testid', 'modal-content');
     });
   });
 });

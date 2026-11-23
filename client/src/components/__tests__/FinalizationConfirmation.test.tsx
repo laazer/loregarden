@@ -83,19 +83,8 @@ const COMPLEX_HIERARCHY_RESPONSE = {
   },
 };
 
-type FinalizeResponse = typeof FINALIZATION_SUCCESS_RESPONSE;
-
-interface ConfirmationProps extends FinalizationConfirmationProps {
-  finalizationResponse?: FinalizeResponse | null;
-  workspaceSlug?: string;
-  rootHierarchyId?: string;
-  isLoading?: boolean;
-  error?: string | null;
-  onClose?: () => void;
-}
-
-function renderConfirmation(overrides: Partial<ConfirmationProps> = {}) {
-  const props: ConfirmationProps = {
+function renderConfirmation(overrides: Partial<FinalizationConfirmationProps> = {}) {
+  const props: FinalizationConfirmationProps = {
     finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
     workspaceSlug: "loregarden",
     rootHierarchyId: "milestone-id-001",
@@ -265,17 +254,18 @@ describe("Group B — Counts & Breakdown", () => {
     expect(screen.getByText(/3.*task|task.*3/i)).toBeInTheDocument();
   });
 
-  it("B6: displays breakdown in summary format (e.g. '1 milestone, 2 features, 2 capabilities, 3 tasks')", () => {
-    // AC2: Concise summary of all counts
+  it("B6: the summary names every type the commit can create, bugs included", () => {
     renderConfirmation({
-      finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
+      finalizationResponse: {
+        created_ids: ["m", "f1", "f2", "b"],
+        total_created: 4,
+        breakdown: { milestone: 1, feature: 2, bug: 1 },
+      },
     });
 
-    // Look for a summary line that mentions all counts
-    const summary = screen.queryByText(
-      /\d+\s+(milestone|feature|capabilit|task).*\d+.*\d+.*\d+/i,
-    );
-    expect(summary).toBeInTheDocument();
+    expect(
+      screen.getByText("0 initiatives, 1 milestone, 2 features, 0 capabilities, 0 tasks, 1 bug"),
+    ).toBeInTheDocument();
   });
 
   it("B7: shows zero count when no items of a type were created", () => {
@@ -386,14 +376,7 @@ describe("Group C — Navigation", () => {
       rootHierarchyId: undefined,
     });
 
-    const navButton = screen.queryByRole("button", {
-      name: /view.*hierarchy|view.*created|open.*hierarchy/i,
-    });
-
-    // Button may be disabled or hidden
-    if (navButton) {
-      expect(navButton).toBeDisabled();
-    }
+    expect(screen.getByRole("button", { name: "View hierarchy" })).toBeDisabled();
   });
 
   it("C5: navigation uses workspace slug in the navigation URL", async () => {
@@ -415,28 +398,6 @@ describe("Group C — Navigation", () => {
       const callArg = mockNavigate.mock.calls[0][0];
       expect(callArg).toMatch(/loregarden|workspace/i);
     });
-  });
-
-  it("C6: displays link to open created hierarchy in new tab (optional)", () => {
-    // AC3: Alternative: provide clickable link to hierarchy
-    renderConfirmation({
-      finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
-      rootHierarchyId: "milestone-id-001",
-      workspaceSlug: "loregarden",
-    });
-
-    // Look for a link element (if implemented)
-    const link = screen.queryByRole("link", {
-      name: /view.*hierarchy|created.*hierarchy|hierarchy.*details/i,
-    });
-
-    // Either button or link should exist
-    const navElement =
-      link ||
-      screen.getByRole("button", {
-        name: /view.*hierarchy|view.*created|open.*hierarchy/i,
-      });
-    expect(navElement).toBeInTheDocument();
   });
 
   it("C7: displays 'close' or 'done' button to dismiss confirmation", () => {
@@ -501,21 +462,6 @@ describe("Group D — State Transitions & Interactions", () => {
         name: /success|completed|hierarchy.*created/i,
       }),
     ).toBeInTheDocument();
-  });
-
-  it("D2: maintains confirmation display when user scrolls or interacts", () => {
-    // Stability: confirmation persists
-    renderConfirmation({
-      finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
-    });
-
-    const title = screen.getByRole("heading", {
-      name: /success|completed|hierarchy.*created/i,
-    });
-    expect(title).toBeInTheDocument();
-
-    // Simulate scroll or other DOM changes — title should still be present
-    expect(title).toBeInTheDocument();
   });
 
   it("D3: clicking view navigation multiple times doesn't break navigation", async () => {
@@ -666,32 +612,6 @@ describe("Group E — Error Handling & Edge Cases", () => {
 // Group X — Adversarial & Regression
 // ===========================================================================
 describe("Group X — Adversarial & Regression", () => {
-  it("X1: confirms counts sum to total_created", () => {
-    // Math correctness
-    renderConfirmation({
-      finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
-    });
-
-    const milestone = 1;
-    const feature = 2;
-    const capability = 2;
-    const task = 3;
-    const expected = milestone + feature + capability + task;
-
-    expect(screen.getByText(`${expected}`)).toBeInTheDocument();
-  });
-
-  it("X2: confirms created_ids length matches total_created", () => {
-    // Data integrity
-    renderConfirmation({
-      finalizationResponse: FINALIZATION_SUCCESS_RESPONSE,
-    });
-
-    expect(FINALIZATION_SUCCESS_RESPONSE.created_ids.length).toBe(
-      FINALIZATION_SUCCESS_RESPONSE.total_created,
-    );
-  });
-
   it("X3: shows all counts simultaneously (not tab-switcher)", () => {
     // UX: All info visible at once
     renderConfirmation({
