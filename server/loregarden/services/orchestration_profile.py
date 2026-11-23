@@ -380,6 +380,22 @@ class OrchestrationProfile(BaseModel):
     # bound a whole unattended subtree run. 0 = unlimited, same convention.
     max_subtree_stages_per_run: int = 0
 
+    @property
+    def unattended_driver(self) -> OrchestrationDriver:
+        """The driver for a start that names none.
+
+        Never `EXTERNAL_MCP`. That driver spawns nothing here: it waits for a
+        terminal agent, and one that is there opens its own run and says so
+        (`driver` or `external_harness`). A start that names no driver came from
+        an approval, a lane, initiative autopilot or the Run button, so a profile
+        naming `external_mcp` used to open a run nobody drove. It read "Running"
+        until its lease expired, and autopilot then opened the next one
+        (lmkr-execution-leaves-11: 14 of them on 2026-11-20).
+        """
+        if self.driver is OrchestrationDriver.EXTERNAL_MCP:
+            return OrchestrationDriver.BUILTIN_AUTOPILOT
+        return self.driver
+
 
 def orchestration_dir() -> Path:
     return settings.repo_root / "agent_context" / "orchestration"

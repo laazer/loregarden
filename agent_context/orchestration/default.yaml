@@ -1,5 +1,7 @@
 slug: default
 name: Default External MCP Orchestration
+# A terminal agent names this driver itself. A start that names none (an approval,
+# a lane, initiative autopilot, Run) is driven by the builtin orchestrator.
 driver: external_mcp
 workflow_template: loregarden-tdd
 orchestrator:

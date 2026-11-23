@@ -206,7 +206,7 @@ class OrchestrationCallbackService:
             if not workspace:
                 raise ValueError("Workspace not found")
             profile = resolve_orchestration_profile(workspace)
-            driver = driver or profile.driver
+            driver = driver or profile.unattended_driver
             profile_slug = profile_slug or profile.slug
 
         run = OrchestrationRun(

@@ -20,10 +20,11 @@ def resume_orchestration(session: Session, ticket: Ticket, *, carry_driver: bool
     Resuming without it would silently downgrade an unattended run into one
     that stops at the next tool prompt.
 
-    ``carry_driver`` keeps the harness too, for an exit-action continuation:
-    it continues the stage the previous run was driving, and handing it to
-    the workspace's default driver instead could give it to a harness that
-    is not there. A manual run has no orchestration to carry.
+    ``carry_driver`` keeps the driver too, for an exit-action continuation: it
+    continues the stage the previous run was driving. Only the builtin driver can
+    be carried. A manual run has no orchestration to carry, and an external one
+    is over (a live one returned above): carrying it would open a run for a
+    terminal agent that has left.
     """
     if find_active_orchestration_run(session, ticket.id):
         return
@@ -37,7 +38,7 @@ def resume_orchestration(session: Session, ticket: Ticket, *, carry_driver: bool
         previous.driver
         if carry_driver
         and previous is not None
-        and previous.driver != OrchestrationDriver.MANUAL_STAGE
+        and previous.driver == OrchestrationDriver.BUILTIN_AUTOPILOT
         else None
     )
     schedule_orchestration(
