@@ -94,6 +94,7 @@ from loregarden.services.invariant_registry import (
     RUN_PARENTS_END_WITH_THEIR_RUN,
     RUNS_COMPLETE_ONCE,
     SETTLED_HOLDS_READ_BLOCKED,
+    STALE_PARKS_ARE_CLOSED,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT,
     SURVEY_CARDS_CLOSE,
@@ -406,6 +407,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # (lg-workflow-integrity-2751). Settled CANCELLED, which leaves the stage
     # PENDING with no block, as the stop would have.
     _invariant(STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT),
+    # A park card whose stage left AWAITING without it being answered (a
+    # requeue, a hand move): every answer on it would move a stage it no longer
+    # describes (lg-workflow-integrity-2759). Closed as superseded.
+    _invariant(STALE_PARKS_ARE_CLOSED),
     # A ticket created over a write-time size cap: the write guards make that
     # unreachable, so a violation dated after they landed is a writer that
     # walked around one (lg-milestone-that-2250). Report-only — only a person

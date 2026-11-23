@@ -91,6 +91,7 @@ from loregarden.services.settled_hold_checks import (
     settled_hold_violations,
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
+from loregarden.services.stale_park_invariant import STALE_PARKS_ARE_CLOSED
 from loregarden.services.stopped_run_invariant import STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT
 from loregarden.services.symbol_map.partitions import (
     orphaned_partitions,
@@ -1488,6 +1489,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     RUNS_COMPLETE_ONCE,
     FAILED_RUNS_HAVE_A_FAILURE_KIND,
     STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT,
+    STALE_PARKS_ARE_CLOSED,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     ORPHANED_SYMBOL_MAP_PARTITION,

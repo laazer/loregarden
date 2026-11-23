@@ -32,6 +32,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.run_concurrency import IN_FLIGHT_STATUSES
+from loregarden.services.stale_stage_parks import is_stale_park
 from sqlmodel import Session
 
 #: Kinds a live agent process polls for an answer (`permission_bridge`).
@@ -58,6 +59,9 @@ def ignore_effect(session: Session, approval: Approval) -> IgnoreEffect:
         run = session.get(AgentRun, approval.run_id) if approval.run_id else None
         if run is not None and run.status in IN_FLIGHT_STATUSES:
             return IgnoreEffect.DENIES_AGENT
+        return IgnoreEffect.NONE
+    if is_stale_park(session, approval):
+        # Its stage has moved on; declining it would block a stage it no longer describes.
         return IgnoreEffect.NONE
     if approval.kind in _STAGE_WAITER_KINDS and approval.ticket_id:
         ticket = session.get(Ticket, approval.ticket_id)

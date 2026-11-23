@@ -78,6 +78,10 @@ from loregarden.services.stage_retry_budget import (
     evaluate_standalone_stage_dispatch,
 )
 from loregarden.services.stage_transient_retry import clear_transient_retries
+from loregarden.services.stale_stage_parks import (
+    close_stale_parks,
+    refuse_answering_a_stale_park,
+)
 from loregarden.services.studio_routing import (
     find_terminal_stage,
     is_agentless_stage,
@@ -984,6 +988,9 @@ class OrchestrationService:
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
+        close_stale_parks(
+            self.session, ticket, target_key, why="Closed when the stage was dispatched again"
+        )
 
         # Pin the agent-definition version this run executes under, for
         # reproducibility (which definition produced this run's behavior).
@@ -1157,6 +1164,7 @@ class ApprovalService(ExitActionApprovalMixin):
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
         refuse_rerunning_a_closed_ticket(self.session, approval)
+        refuse_answering_a_stale_park(self.session, approval)
         # Approve and reject both close it; neither may lose unpublished work.
         refuse_closing_unpublished(self.session, approval)
 
