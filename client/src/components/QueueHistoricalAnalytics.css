@@ -16,18 +16,13 @@
 
 .analytics-header {
   display: flex;
+  /* Wraps by its own width: it sits in a 326px rail whatever the window is. */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--bd);
-}
-
-@media (max-width: 600px) {
-  .analytics-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
 }
 
 .analytics-header h3 {
@@ -45,6 +40,7 @@
 
 .range-btn {
   padding: 5px 10px;
+  white-space: nowrap;
   background: var(--bg3);
   border: 1px solid var(--bd);
   border-radius: 9px;

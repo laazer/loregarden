@@ -111,7 +111,7 @@ type BoundKind = "declared" | "flex";
  * The axis a block clips on.
  *
  * Required, not polish. Since lg-milestone-that-2230 (`2d7a71446`) the
- * detector asks the geometry question per axis (`usabilityCheck.ts:405-406`),
+ * detector asks the geometry question per axis (`clipsVertically`/`clipsHorizontally` in `usabilityCheck.ts`),
  * so a vertical-only predicate cannot PRODUCE a horizontally-clipping region
  * as a candidate — and shrink-only cannot fire for a candidate the predicate
  * never produces. That is why a second, independently written extractor did

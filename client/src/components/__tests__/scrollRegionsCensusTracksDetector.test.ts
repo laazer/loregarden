@@ -13,7 +13,7 @@
  * - **lg-milestone-that-2230** (`2d7a71446`) made the rule ask the geometry
  *   question per axis: `scrollWidth > clientWidth` where the horizontal axis
  *   has a scrollbar, not only `scrollHeight > clientHeight`
- *   (`usabilityCheck.ts:405-406`). The instrument now reports a region clipped
+ *   (`clipsVertically`/`clipsHorizontally` in `usabilityCheck.ts`). The instrument now reports a region clipped
  *   sideways.
  * - **lg-milestone-that-2232** (`55eb13139`) made the rule's tabbability test
  *   the house definition again, so a control inside a disabled `<fieldset>`, a
@@ -85,7 +85,7 @@ const RULES: Rule[] = CSS.flatMap((file) => {
 });
 
 /**
- * Does the named axis scroll — the question `usabilityCheck.ts:389-399` now
+ * Does the named axis scroll — the question `axisScrolls` in `usabilityCheck.ts` now
  * asks of computed style, asked here of the declarations.
  *
  * The per-axis longhand wins where there is one. Otherwise the shorthand's

@@ -429,11 +429,13 @@ textarea::placeholder {
 
 /*
  * Where you are: the rail page, then the page's own title when it adds
- * something. The last step is the page's h1, and it gives up width (truncating)
- * before the search box does.
+ * something. The last step is the page's h1. It keeps its width up to the cap,
+ * where a long one truncates: the hints and controls after it shrink first, or a
+ * crowded row names the page "M..".
  */
 .topbar-crumbs {
-  flex: 0 1 auto;
+  flex: none;
+  max-width: 30%;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -662,7 +664,12 @@ textarea::placeholder {
 @media (max-width: 1100px) {
   .topbar-workspace-picker-label {
     display: none;
-  }}
+  }
+
+  .topbar-search {
+    min-width: 120px;
+  }
+}
 
 .topbar-workspace-picker-select.btn-secondary {
   height: 30px;
@@ -719,6 +726,13 @@ textarea::placeholder {
   text-overflow: ellipsis;
 }
 
+/* A hint, and by here a few letters of one: the controls need its room. */
+@media (max-width: 1100px) {
+  .topbar-page-note {
+    display: none;
+  }
+}
+
 .topbar-page-btn.btn-primary {
   height: 30px;
   padding: 0 14px;
@@ -730,8 +744,24 @@ textarea::placeholder {
    page title, search and the workspace picker stay. */
 @media (max-width: 640px) {
   .topbar {
-    gap: 8px;
-    padding: 0 10px;
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 6px 10px;
+  }
+
+  /* The page's own controls take a second row: beside the title, search and the
+     inbox they overlapped or were cut off. */
+  .topbar-page:not(:empty) {
+    order: 1;
+    flex: 1 0 100%;
+  }
+
+  .topbar-page-actions {
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .topbar-wordmark,
@@ -741,6 +771,7 @@ textarea::placeholder {
   }
 
   .topbar-crumbs {
+    max-width: 55%;
     padding-left: 0;
     border-left: none;
   }
@@ -818,6 +849,7 @@ textarea::placeholder {
   height: 100%;
   display: flex;
   min-height: 0;
+  container: studio / inline-size;
 }
 
 /* Ticket and Gate Studio's left list: plain rows on the night ground, not a
@@ -1971,8 +2003,8 @@ label:is(
 }
 
 .ticket-studio-rail {
-  width: 232px;
-  flex: none;
+  flex: 0 1 232px;
+  min-width: 200px;
   overflow-y: auto;
   padding: 16px 10px;
   border-right: 1px solid var(--bd);
@@ -2095,7 +2127,9 @@ label:is(
 }
 
 .ticket-studio-chat {
-  flex: 1;
+  /* The chat grows into spare width; when there is none, the rail and the drafts
+     give up theirs first. They were fixed, and left it 196px of a 1024px window. */
+  flex: 1 0 320px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -2458,11 +2492,43 @@ label:is(
 }
 
 .ticket-studio-drafts {
-  width: 400px;
-  flex: none;
+  flex: 0 1 400px;
+  min-width: 280px;
   overflow-y: auto;
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   padding: 20px 18px 40px;
+}
+
+/* Too narrow for three columns at their floors (200 + 320 + 280): one column
+   that scrolls, in the same order. */
+@container studio (max-width: 799px) {
+  .ticket-studio-shell {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .ticket-studio-rail,
+  .ticket-studio-chat,
+  .ticket-studio-drafts {
+    flex: none;
+    min-width: 0;
+    border-right: 0;
+  }
+
+  .ticket-studio-rail {
+    max-height: 260px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .ticket-studio-chat {
+    height: min(100%, 560px);
+    min-height: 440px;
+  }
+
+  .ticket-studio-drafts {
+    overflow-y: visible;
+    border-top: 1px solid var(--bd);
+  }
 }
 
 .ticket-studio-drafts-header {
@@ -5977,10 +6043,22 @@ button.send-leaf:hover:not(:disabled) {
   min-width: 0;
 }
 
+/* One chip tall and wrapping: a chip that does not fit leaves whole, rather than
+   as a label with its number cut off. The rail below repeats all three. */
 .queue-topbar-metrics {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  height: 30px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 1100px) {
+  .queue-topbar-metrics {
+    display: none;
+  }
 }
 
 /* `align-items: baseline` left the label/value pair sitting high in the pill —
@@ -5990,6 +6068,7 @@ button.send-leaf:hover:not(:disabled) {
 .queue-topbar-metric {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 7px;
   height: 30px;
   padding: 0 11px;
