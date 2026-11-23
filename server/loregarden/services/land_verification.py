@@ -73,8 +73,8 @@ from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE, strip_ansi
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.target_branch import target_branch_name
+from loregarden.services.toolchain_links import link_ignored_toolchains
 from loregarden.services.workspace_paths import resolve_workspace_root
-from loregarden.services.worktree_service import link_ignored_toolchains
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)

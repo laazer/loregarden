@@ -24,6 +24,7 @@ from loregarden.services.orchestration_profile import ProfileUnreadableError
 from loregarden.services.target_branch import TargetBranchError, target_branch_name
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.toolchain_links import excluding_own_links
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
@@ -104,7 +105,9 @@ def describe_handoff_tree(tree: PreparedTree, *, ticket_external_id: str) -> Han
     behind = _count_lines(
         repo_root, ["rev-list", "--count", f"HEAD..{target_branch}"], single_number=True
     )
-    dirty = _count_lines(repo_root, ["status", "--porcelain"], single_number=False)
+    dirty = _count_lines(
+        repo_root, ["status", "--porcelain", *excluding_own_links(repo_root)], single_number=False
+    )
     if behind is None or dirty is None:
         return _unreadable(repo_root, target_branch, ticket_external_id, "git refused the read")
 

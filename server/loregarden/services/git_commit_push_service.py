@@ -11,6 +11,7 @@ from loregarden.services.branch_names import resolve_ticket_branch, validate_bra
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.toolchain_links import excluding_own_links
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_snapshot import git_reading, read_tree
 from sqlmodel import Session
@@ -248,7 +249,7 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     validate_branch_name(branch)
 
     add = run_git(
-        ["add", "-A"],
+        ["add", "-A", *excluding_own_links(repo_root)],
         cwd=repo_root,
         capture_output=True,
         text=True,

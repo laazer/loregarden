@@ -15,6 +15,7 @@ from loregarden.models.domain.enums import EditorChangeStatus
 from loregarden.services.artifact_service import git_base_ref
 from loregarden.services.file_editor import resolve_editor_root
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.toolchain_links import excluding_own_links
 from pydantic import BaseModel
 
 #: Files listed before the rest are only counted. A branch that rewrote more
@@ -105,7 +106,11 @@ def list_editor_changes(workspace: Workspace, *, context_root: str | None = None
     tracked = {change.path for change in changes}
     changes.extend(
         EditorChange(path=path, status=EditorChangeStatus.UNTRACKED, additions=None, deletions=None)
-        for path in _nul_fields(_git(root, "ls-files", "--others", "--exclude-standard", "-z"))
+        for path in _nul_fields(
+            _git(
+                root, "ls-files", "--others", "--exclude-standard", "-z", *excluding_own_links(root)
+            )
+        )
         if path not in tracked
     )
     changes.sort(key=lambda change: change.path)

@@ -45,6 +45,7 @@ from loregarden.services.git_merge_noco import (
     rev,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.toolchain_links import excluding_own_links
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,9 @@ def _checkout_holding(repo_root: Path, branch: str) -> Path | None:
 
 
 def _merge_in_checkout(checkout: Path, own: str, integration: str) -> SyncOutcome:
-    status = _git(checkout, "status", "--porcelain", "--untracked-files=all")
+    status = _git(
+        checkout, "status", "--porcelain", "--untracked-files=all", *excluding_own_links(checkout)
+    )
     if status.returncode != 0:
         return SyncOutcome(False, f"cannot read {checkout}: {_words(status, 'git status failed')}")
     if status.stdout.strip():

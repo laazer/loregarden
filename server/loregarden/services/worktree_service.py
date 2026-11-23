@@ -39,6 +39,7 @@ from loregarden.services.process_identity import (
     claim_fields,
 )
 from loregarden.services.publish_ref import comparison_ref
+from loregarden.services.toolchain_links import excluding_own_links, link_ignored_toolchains
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -108,42 +109,6 @@ def repo_path_for_workspace(session: Session, workspace_id: str) -> str:
 def repo_path_for_worktree(session: Session, worktree: Worktree) -> str:
     """Same, for a handler that starts from a worktree row."""
     return repo_path_for_workspace(session, worktree.workspace_id)
-
-
-#: Directories a gate needs but git never puts in a worktree, because they are
-#: gitignored build output. Linked from the parent checkout rather than
-#: installed: `npm ci` per ticket costs minutes, and a worktree of the same repo
-#: wants the same dependencies by definition.
-_LINKED_TOOLCHAIN_DIRS = ("client/node_modules",)
-
-
-def link_ignored_toolchains(repo_path: Path, worktree_path: Path) -> None:
-    """Point a fresh worktree at the parent checkout's installed dependencies.
-
-    Without this the client gate runs `npx oxlint` in a tree with no
-    node_modules, npx tries to fetch it over the network on every gate, and the
-    300s budget expires — which the orchestrator handed to the stage's own agent
-    as a code failure, re-running a stage that had already passed. Every ticket
-    hit it, every transition.
-
-    Best-effort: a missing source, a link that cannot be made, or a directory
-    the ticket already has are all fine and leave the gate to report for itself.
-    """
-    for relative in _LINKED_TOOLCHAIN_DIRS:
-        source = repo_path / relative
-        target = worktree_path / relative
-        if not source.is_dir() or target.exists():
-            continue
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.symlink_to(source, target_is_directory=True)
-        except OSError:
-            logger.warning(
-                "Could not link %s into worktree %s; gates needing it will report unavailable",
-                relative,
-                worktree_path,
-                exc_info=True,
-            )
 
 
 class WorktreeService:
@@ -590,7 +555,7 @@ class WorktreeService:
 
             # Check if there are changes to commit
             result = run_git(
-                ["status", "--porcelain"],
+                ["status", "--porcelain", *excluding_own_links(worktree_path)],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
