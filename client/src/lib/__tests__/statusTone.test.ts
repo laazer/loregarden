@@ -5,10 +5,8 @@
  * creeping back in as a status colour (it is the accent's).
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import type { StageStatus, TicketActivity, TicketState } from "../../api/types";
+import { channels, contrast, tint, token } from "../../test/contrast";
 import { STATUS_TONE_COLORS } from "../statusTone";
 import {
   TICKET_ACTIVITY_COLORS,
@@ -89,39 +87,9 @@ describe("status tones", () => {
 });
 
 // The chip's text sits on its own tint over every resting surface; each pairing
-// must clear AA for body text. Values are read from index.css so a token change
-// that breaks a pairing fails here.
-const css = readFileSync(join(__dirname, "..", "..", "index.css"), "utf8");
-const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
-
-function token(name: string): string {
-  const match = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6});`).exec(root);
-  if (!match) throw new Error(`index.css :root defines no hex --${name}`);
-  return match[1];
-}
-
-function channels(hex: string): number[] {
-  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-}
-
-function luminance(rgb: number[]): number {
-  const [r, g, b] = rgb.map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrast(a: number[], b: number[]): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-/** `color-mix(in srgb, hue p%, transparent)` composited over a surface. */
-function tint(hue: string, percent: number, surface: string): number[] {
-  const h = channels(hue);
-  return channels(surface).map((s, i) => h[i] * (percent / 100) + s * (1 - percent / 100));
-}
+// must clear AA for body text. The arithmetic and the token reads live in
+// `src/test/contrast.ts`, shared with themeContrast.test.ts: three copies of a
+// WCAG formula in one suite is three chances for them to disagree.
 
 // [tone, text token, hue token, tint %], as StatusChip.css sets them.
 const TINTED: Array<[string, string, string, number]> = [

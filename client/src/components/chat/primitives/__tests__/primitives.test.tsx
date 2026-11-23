@@ -1077,7 +1077,7 @@ describe("Calendar week schedule", () => {
 describe("PrimitiveParts component", () => {
   it("skips empty text parts", () => {
     const { container } = render(
-      <PrimitiveParts parts={[{ primitive: "text", content: "   " }]} />,
+      <PrimitiveParts parts={[{ primitive: "text", content: "   " }]} laterUserReply={null} />,
     );
     expect(container.querySelector(".lg-primitive-parts")).toBeNull();
   });
@@ -1108,6 +1108,7 @@ describe("primitive size tiers", () => {
           { primitive: "thinking", content: "hmm", collapsed: false },
           { primitive: "terminal", title: "pytest", lines: [] },
         ]}
+        laterUserReply={null}
       />,
     );
     const slots = container.querySelectorAll(".lg-primitive-slot");
@@ -1157,7 +1158,7 @@ describe("primitive size tiers", () => {
 
 describe("primitive expansion", () => {
   it("offers no expand control for regular primitives", () => {
-    render(<PrimitiveParts parts={[{ primitive: "thinking", content: "hmm", collapsed: false }]} />);
+    render(<PrimitiveParts parts={[{ primitive: "thinking", content: "hmm", collapsed: false }]} laterUserReply={null} />);
     expect(screen.queryByRole("button", { name: "Expand" })).toBeNull();
   });
 
@@ -1167,6 +1168,7 @@ describe("primitive expansion", () => {
         parts={[
           { primitive: "terminal", title: "pytest", lines: [{ kind: "stdout", text: "ok" }] },
         ]}
+        laterUserReply={null}
       />,
     );
 

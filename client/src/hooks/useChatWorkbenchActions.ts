@@ -128,6 +128,7 @@ export function useChatWorkbenchState({
     isGlobal: isGlobalChatScope(scope),
     hostSlug,
     feature: snapshot?.feature ?? null,
+    featureLoading: chat.isLoading,
     chatBranch: snapshot?.chat_branch ?? null,
     loopWorkspaces,
     defaultLoopWorkspace:

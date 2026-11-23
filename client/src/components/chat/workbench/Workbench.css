@@ -148,30 +148,37 @@
   color: var(--txl);
 }
 
+/* Light text over a 14% tint of the hue, the convention StatusChip.css sets.
+   This used to be the inversion of it — --amb on --aml, 1.35:1 — and it is the
+   class the Feature card's cap message renders in. */
 .chat-wb-warn {
   margin: 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: var(--aml);
+  background: color-mix(in srgb, var(--amb) 14%, transparent);
   font-size: var(--fs-small);
   line-height: 1.45;
-  color: var(--amb);
+  color: var(--aml);
 }
 
+/* Every variant declares both halves of its pair: the base pill used to inherit
+   its colour from .chat-wb-card-meta, so no rule held the pair and no test
+   could read it. */
 .chat-wb-status {
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--bg2);
+  color: var(--txm);
 }
 
 .chat-wb-status--running {
-  background: var(--bll);
-  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+  color: var(--bll);
 }
 
 .chat-wb-status--blocked {
-  background: var(--aml);
-  color: var(--amb);
+  background: color-mix(in srgb, var(--amb) 14%, transparent);
+  color: var(--aml);
 }
 
 /* The title gets its own line; the id and state tags wrap beneath it. */

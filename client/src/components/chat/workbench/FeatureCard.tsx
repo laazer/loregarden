@@ -9,6 +9,7 @@ import type {
 import { TicketLink } from "../../TicketLink";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
+import { PaneSkeleton } from "../../ui/PaneSkeleton";
 import { FeatureLoopStartModal } from "./FeatureLoopStartModal";
 import { WorkbenchCard } from "./WorkbenchCard";
 
@@ -27,12 +28,19 @@ const LOOP_STATUS_LABEL: Record<FeatureLoop["status"], string> = {
 };
 
 /**
- * "What is this feature asked to do, and what is waiting on me?" The loop's
- * criteria by stage, Accept / Drop on each proposal, and one field to add a
- * criterion yourself. Without a loop, the way to start one.
+ * "What is this feature asked to do, what is waiting on my yes or no, and can
+ * the ticket still take it?" The loop's criteria by stage, Accept / Drop on each
+ * proposal, and one field to add a criterion yourself. Without a loop, the way
+ * to start one.
+ *
+ * At the cap the third question's answer is no, so the card says so inline —
+ * above the groups and above every control it disables — and the controls carry
+ * the HTML `disabled` attribute rather than a style, so they leave the tab order
+ * and the ticket link the message names is the last control a keyboard reaches.
  */
 export function FeatureCard({
   feature,
+  loading = false,
   workspaces,
   defaultWorkspace,
   busy,
@@ -42,6 +50,12 @@ export function FeatureCard({
   onAdd,
 }: {
   feature: FeatureLoop | null;
+  /**
+   * The thread snapshot is still on the wire. Without it, `feature: snapshot
+   * ?.feature ?? null` collapses "not loaded" into "no loop" and a thread that
+   * already has one flashes the start-a-loop empty state on every cold open.
+   */
+  loading?: boolean;
   workspaces: string[];
   defaultWorkspace: string;
   /** A decision or an add is in flight: every write control waits for it. */
@@ -55,6 +69,13 @@ export function FeatureCard({
   const [draft, setDraft] = useState("");
 
   if (!feature) {
+    if (loading) {
+      return (
+        <WorkbenchCard title="Feature">
+          <PaneSkeleton variant="list" rows={3} label="Loading this chat's feature loop…" />
+        </WorkbenchCard>
+      );
+    }
     return (
       <WorkbenchCard title="Feature">
         <p className="chat-side-card-empty">
@@ -89,7 +110,13 @@ export function FeatureCard({
     feature.criteria.filter((c) => c.status === status);
   const proposed = byStatus("proposed");
   const met = byStatus("met").length;
-  const { ticket } = feature;
+  const { ticket, capacity } = feature;
+  // The server's reading, not arithmetic over the counts: `would_grow_past`
+  // answers "at cap" on a ticket already past it, where `on_ticket + queued >=
+  // max` would read as room. Either flag alone disables, so the cap message
+  // never appears or vanishes because a click is in flight.
+  const atCap = capacity.at_cap;
+  const frozen = busy || atCap;
 
   return (
     <WorkbenchCard
@@ -108,9 +135,18 @@ export function FeatureCard({
         <span className="chat-wb-tag">{ticket.external_id}</span>
         <span className="chat-wb-tag">{ticket.state.replace("_", " ")}</span>
       </p>
-      {feature.reason ? (
+      {/* At the cap both strings are _capacity_message's output over the same counts, so
+          they are byte-identical and one of them is a stutter. Compared rather than
+          suppressed on at_cap, because reason also carries the blocked-ticket and
+          stopped-round assessments, which must still render at the cap. */}
+      {feature.reason && feature.reason !== capacity.message ? (
         <p className="chat-wb-warn" role="status">
           {feature.reason}
+        </p>
+      ) : null}
+      {atCap && capacity.message ? (
+        <p className="chat-wb-warn" role="status">
+          {capacity.message}
         </p>
       ) : null}
       {feature.criteria.length === 0 ? (
@@ -130,9 +166,9 @@ export function FeatureCard({
                 </h4>
                 {status === "proposed" && rows.length > 1 ? (
                   <Button
-                    variant="plain"
-                    className="chat-side-card-link"
-                    disabled={busy}
+                    variant="secondary"
+                    compact
+                    disabled={frozen}
                     onClick={() => onDecide(rows.map((r) => r.id), true)}
                   >
                     Accept all
@@ -141,7 +177,13 @@ export function FeatureCard({
               </div>
               <ul className="chat-wb-criteria">
                 {rows.map((criterion) => (
-                  <CriterionRow key={criterion.id} criterion={criterion} busy={busy} onDecide={onDecide} />
+                  <CriterionRow
+                    key={criterion.id}
+                    criterion={criterion}
+                    busy={busy}
+                    atCap={atCap}
+                    onDecide={onDecide}
+                  />
                 ))}
               </ul>
             </div>
@@ -153,7 +195,10 @@ export function FeatureCard({
         onSubmit={(event) => {
           event.preventDefault();
           const text = draft.trim();
-          if (!text || busy) return;
+          // Not only the Queue button: Enter in the field submits the form
+          // without going near it, and `add_criterion` calls the same
+          // `_check_capacity` with adding=1.
+          if (!text || frozen) return;
           void onAdd(text).then(
             () => setDraft(""),
             () => {
@@ -166,10 +211,10 @@ export function FeatureCard({
           aria-label="Add an acceptance criterion"
           placeholder="Add a criterion yourself…"
           value={draft}
-          disabled={busy}
+          disabled={frozen}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <Button type="submit" variant="secondary" compact disabled={busy || !draft.trim()}>
+        <Button type="submit" variant="secondary" compact disabled={frozen || !draft.trim()}>
           Queue
         </Button>
       </form>
@@ -184,10 +229,13 @@ export function FeatureCard({
 function CriterionRow({
   criterion,
   busy,
+  atCap,
   onDecide,
 }: {
   criterion: FeatureCriterion;
   busy: boolean;
+  /** Accept is certain to be refused; Drop never is, and it is the way out. */
+  atCap: boolean;
   onDecide: (ids: string[], accept: boolean) => void;
 }) {
   return (
@@ -198,7 +246,7 @@ function CriterionRow({
           <Button
             variant="secondary"
             compact
-            disabled={busy}
+            disabled={busy || atCap}
             aria-label={`Accept: ${criterion.text}`}
             onClick={() => onDecide([criterion.id], true)}
           >

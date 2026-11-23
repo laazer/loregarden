@@ -48,6 +48,26 @@ export interface FeatureLoopRun {
   finished_at: string | null;
 }
 
+/**
+ * Whether the ticket can still take the loop's proposals, as the server reads
+ * it.
+ *
+ * `at_cap` is the growth guard's own `would_grow_past`, not `on_ticket + queued
+ * >= max`: the two disagree on a ticket already past the cap, and the card
+ * disabling the wrong set is the lie this replaces. `message` is the server's
+ * refusal wording, built once in `chat_feature_loop._capacity_message`; the
+ * card renders the string it is given and composes none of its own. It is null
+ * whenever there is room, so "there is space" and "here is why you cannot"
+ * never collapse into one answer.
+ */
+export interface FeatureLoopCapacity {
+  on_ticket: number;
+  queued: number;
+  max: number;
+  at_cap: boolean;
+  message: string | null;
+}
+
 export interface FeatureLoop {
   ticket: {
     id: string;
@@ -63,6 +83,8 @@ export interface FeatureLoop {
   reason: string;
   round: number;
   max_criteria: number;
+  /** Required: a missing payload must not be readable as "not at cap". */
+  capacity: FeatureLoopCapacity;
   criteria: FeatureCriterion[];
   runs: FeatureLoopRun[];
 }
