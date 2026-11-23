@@ -77,8 +77,15 @@ def _workspace_or_error(session: Session, workspace_slug: str) -> Workspace:
     return workspace
 
 
-def _in_flight_state(session: Session, workspace: Workspace, tickets: list[Ticket]) -> dict:
-    """Work a restart would kill. Shared by the watcher's poll and the manual reload."""
+def _in_flight_state(session: Session) -> dict:
+    """Work a restart would kill. Shared by the watcher's poll and the manual reload.
+
+    Counted in every workspace, not only the one being reloaded: there is one
+    server process, and the builtin driver of a loremaker ticket dies with it as
+    surely as loregarden's own. Scoping this to the reloaded workspace is how a
+    follow-main reload onto #941 killed lmkr-execution-leaves-11's driver
+    mid-implement, and its orchestration lapsed half an hour later.
+    """
     # A dead terminal-handoff run is not work a restart would kill — and left
     # unreaped it deadlocks the watcher: the restart that would recover it is
     # blocked by it. The watcher polls this continuously, so reaping here keeps
@@ -87,7 +94,6 @@ def _in_flight_state(session: Session, workspace: Workspace, tickets: list[Ticke
     active_agent_runs = list(
         session.exec(
             select(AgentRun).where(
-                AgentRun.workspace_id == workspace.id,
                 col(AgentRun.status).in_(_ACTIVE_AGENT_STATUSES),
             )
         ).all()
@@ -95,14 +101,15 @@ def _in_flight_state(session: Session, workspace: Workspace, tickets: list[Ticke
     active_orchestrations = list(
         session.exec(
             select(OrchestrationRun).where(
-                OrchestrationRun.workspace_id == workspace.id,
                 OrchestrationRun.status == OrchestrationRunStatus.RUNNING,
             )
         ).all()
     )
-    running_workflow_tickets = [
-        ticket for ticket in tickets if ticket.workflow_stage_status == StageStatus.RUNNING
-    ]
+    running_workflow_tickets = list(
+        session.exec(
+            select(Ticket).where(Ticket.workflow_stage_status == StageStatus.RUNNING)
+        ).all()
+    )
 
     blockers: list[str] = []
     if active_agent_runs:
@@ -161,7 +168,7 @@ def evaluate_self_improve_restart(
         if (payload := _human_gate_ticket_payload(session, ticket, orch)) is not None
     ]
 
-    state = _in_flight_state(session, workspace, tickets)
+    state = _in_flight_state(session)
     blockers = list(state["blockers"])
     if not human_gate_tickets:
         # Only the unattended watcher needs a ticket parked at a human gate; a person
@@ -188,9 +195,8 @@ def evaluate_reload_readiness(
     workspace_slug: str = SELF_IMPROVE_WORKSPACE,
 ) -> dict:
     """Whether a human can pull working-tree changes into the running server now."""
-    workspace = _workspace_or_error(session, workspace_slug)
-    tickets = list(session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all())
-    state = _in_flight_state(session, workspace, tickets)
+    _workspace_or_error(session, workspace_slug)
+    state = _in_flight_state(session)
     return {
         "workspace_slug": workspace_slug,
         "supported": workspace_slug == SELF_IMPROVE_WORKSPACE,
