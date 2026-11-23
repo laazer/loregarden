@@ -29,7 +29,14 @@ from uuid import uuid4
 from loregarden.config import settings
 from loregarden.models.domain import Artifact, ArtifactKind
 from loregarden.services.path_resolve import expand_path
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -70,18 +77,45 @@ class ReviewScreenshot(BaseModel):
     caption: str = ""
 
 
+def _single_slash_path(value: str) -> str:
+    # A path, never a URL: the base is an instance the reviewer picks, so an
+    # agent cannot point the reviewer's click at a host of its choosing.
+    if not value.startswith("/") or value.startswith("//"):
+        raise ValueError("a path must start with a single '/'")
+    return value
+
+
 class ReviewLink(BaseModel):
+    """A page to look at: a ``path`` on a running instance of the build, or a ``url``.
+
+    Prefer ``path``. A URL names one port, and the instance on it is usually
+    gone by the time a person reviews; the review page resolves a path against
+    whichever instance of the build's branch is running then.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    url: str
+    url: str = ""
+    path: str = ""
     label: str = ""
 
     @field_validator("url")
     @classmethod
     def _http_only(cls, value: str) -> str:
-        if not value.startswith(("http://", "https://")):
+        if value and not value.startswith(("http://", "https://")):
             raise ValueError("a review link must be an http(s) URL")
         return value
+
+    @field_validator("path")
+    @classmethod
+    def _relative(cls, value: str) -> str:
+        return _single_slash_path(value) if value else value
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> ReviewLink:
+        if bool(self.url) == bool(self.path):
+            raise ValueError("a review link needs exactly one of `path` or `url`")
+        return self
 
 
 class ReviewRequest(BaseModel):
@@ -98,11 +132,7 @@ class ReviewRequest(BaseModel):
     @field_validator("path")
     @classmethod
     def _relative_path(cls, value: str) -> str:
-        # A path, never a URL: the base is the instance the reviewer picks, so
-        # an agent cannot point the reviewer's click at a host of its choosing.
-        if not value.startswith("/") or value.startswith("//"):
-            raise ValueError("a request path must start with a single '/'")
-        return value
+        return _single_slash_path(value)
 
 
 class ReviewKit(BaseModel):

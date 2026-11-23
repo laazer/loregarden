@@ -13,6 +13,9 @@ jest.mock("../../api/reviewApi", () => ({
     launch: jest.fn(),
     stop: jest.fn(),
     tryRequest: jest.fn(),
+    preview: jest.fn(),
+    startPreview: jest.fn(),
+    capture: jest.fn(),
   },
 }));
 jest.mock("../../api/localInstancesApi", () => ({
@@ -82,7 +85,7 @@ const QUEUE: ReviewQueue = {
         item(1, {
           kit: {
             screenshots: [{ capture_id: `${"a".repeat(32)}.png`, caption: "Marker pulse" }],
-            links: [{ url: "http://127.0.0.1:5173/x", label: "Sandbox page" }],
+            links: [{ url: "http://127.0.0.1:5173/x", path: "", label: "Sandbox page" }],
             requests: [
               { name: "List enemies", method: "GET", path: "/api/enemies", body: "", expect_status: 200 },
             ],
@@ -96,8 +99,27 @@ const QUEUE: ReviewQueue = {
   ],
 };
 
+const NO_PREVIEW = { ref: "integration/blob-core-131", client: null, server: null, can_start: true, unavailable: "" };
+
+function withPages(links: ReviewItem["kit"]["links"]): ReviewQueue {
+  return {
+    total: 1,
+    builds: [
+      {
+        workspace_slug: "loregarden",
+        ref: "loregarden/lg-9",
+        combined: false,
+        items: [item(9, { scenes: [], kit: { screenshots: [], links, requests: [], unreadable: [] } })],
+      },
+    ],
+  };
+}
+
+const BRANCH_CLIENT = { id: "c", url: "http://127.0.0.1:5181", state: "ready" as const, worktree: "/w/lg-9" };
+
 beforeEach(() => {
   jest.clearAllMocks();
+  reviewApi.preview.mockResolvedValue(NO_PREVIEW);
   reviewApi.queue.mockResolvedValue(QUEUE);
   reviewApi.launchStatus.mockResolvedValue({
     config: { configured: true, path: "/ws/blobert/.loregarden/review.yaml", error: "" },
@@ -244,5 +266,83 @@ describe("ReviewPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
 
     expect(await screen.findByRole("heading", { name: "2 tickets in one build" })).toBeInTheDocument();
+  });
+
+  describe("pages to check", () => {
+    const PAGES = [
+      { url: "", path: "/work-items", label: "Work items" },
+      { url: "", path: "/review", label: "" },
+    ];
+
+    it("opens a path on the instance running the build and captures every page", async () => {
+      reviewApi.queue.mockResolvedValue(withPages(PAGES));
+      reviewApi.preview.mockResolvedValue({ ...NO_PREVIEW, ref: "loregarden/lg-9", client: BRANCH_CLIENT });
+      reviewApi.capture.mockResolvedValue({
+        base_url: "http://127.0.0.1:5181",
+        artifact_id: "a1",
+        pages: [
+          { path: "/work-items", captured: true, note: "" },
+          { path: "/review", captured: false, note: "net::ERR_CONNECTION_REFUSED" },
+        ],
+      });
+      renderAt();
+
+      expect(await screen.findByRole("link", { name: "Work items" })).toHaveAttribute(
+        "href",
+        "http://127.0.0.1:5181/work-items",
+      );
+      expect(reviewApi.preview).toHaveBeenCalledWith("loregarden", "loregarden/lg-9");
+      fireEvent.click(screen.getByRole("button", { name: "Capture 2 page(s)" }));
+
+      await waitFor(() =>
+        expect(reviewApi.capture).toHaveBeenCalledWith("loregarden", {
+          ref: "loregarden/lg-9",
+          ticket_id: "t-9",
+          paths: ["/work-items", "/review"],
+        }),
+      );
+      expect(await screen.findByText(/1 of 2 captured/)).toBeInTheDocument();
+      expect(screen.getByText(/not captured: net::ERR_CONNECTION_REFUSED/)).toBeInTheDocument();
+    });
+
+    it("offers Start preview when nothing runs the build, and does not link to a dead page", async () => {
+      reviewApi.queue.mockResolvedValue(withPages(PAGES));
+      reviewApi.startPreview.mockResolvedValue({
+        ...NO_PREVIEW,
+        ref: "loregarden/lg-9",
+        client: { ...BRANCH_CLIENT, state: "starting" },
+      });
+      renderAt();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Start preview" }));
+
+      await waitFor(() => expect(reviewApi.startPreview).toHaveBeenCalledWith("loregarden", "loregarden/lg-9"));
+      expect(await screen.findByText(/is starting; the links open once it is ready/)).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Work items" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Capture 2 page(s)" })).toBeDisabled();
+    });
+
+    it("says where to start one when this workspace has no preview templates", async () => {
+      reviewApi.queue.mockResolvedValue(withPages(PAGES));
+      reviewApi.preview.mockResolvedValue({
+        ...NO_PREVIEW,
+        can_start: false,
+        unavailable: "start blobert's instance for this branch on the Instances page.",
+      });
+      renderAt();
+
+      expect(await screen.findByText(/on the Instances page/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start preview" })).not.toBeInTheDocument();
+    });
+
+    it("shows a failed instance check with a retry, not an empty section", async () => {
+      reviewApi.queue.mockResolvedValue(withPages(PAGES));
+      reviewApi.preview.mockRejectedValueOnce(new Error("down"));
+      renderAt();
+
+      expect(await screen.findByText(/Could not check which instance runs/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByRole("button", { name: "Start preview" })).toBeInTheDocument();
+    });
   });
 });

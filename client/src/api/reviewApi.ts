@@ -5,6 +5,7 @@
 
 import type { Approval } from "./client";
 import { API_BASE, request } from "./http";
+import type { LocalInstanceState } from "./localInstancesTypes";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -14,9 +15,43 @@ export interface ReviewScreenshot {
   caption: string;
 }
 
+/**
+ * Mirrors `ReviewLink`: exactly one of `path` (a page of the app, opened on the
+ * running build) or `url` (a page outside it) is set.
+ */
 export interface ReviewLink {
   url: string;
+  path: string;
   label: string;
+}
+
+/** Mirrors `PreviewInstance` in `services/review_preview.py`. */
+export interface PreviewInstance {
+  id: string;
+  url: string;
+  state: LocalInstanceState;
+  worktree: string;
+}
+
+/** Which running instance shows a build, and whether Start preview can launch one. */
+export interface PreviewView {
+  ref: string;
+  client: PreviewInstance | null;
+  server: PreviewInstance | null;
+  can_start: boolean;
+  unavailable: string;
+}
+
+export interface CapturedPage {
+  path: string;
+  captured: boolean;
+  note: string;
+}
+
+export interface CaptureResult {
+  base_url: string;
+  pages: CapturedPage[];
+  artifact_id: string;
 }
 
 /** Mirrors `ReviewRequest`: a path on whichever local server the reviewer picks. */
@@ -115,7 +150,26 @@ export const reviewApi = {
     request<LaunchView>(`/api/review/launch/${encodeURIComponent(workspaceSlug)}/stop`, { method: "POST" }),
   tryRequest: (body: { base_url: string; method: HttpMethod; path: string; body: string }): Promise<TryResult> =>
     request<TryResult>("/api/review/try", { method: "POST", body: JSON.stringify(body) }),
+  preview: (workspaceSlug: string, ref: string): Promise<PreviewView> =>
+    request<PreviewView>(`/api/review/preview/${encodeURIComponent(workspaceSlug)}?ref=${encodeURIComponent(ref)}`),
+  startPreview: (workspaceSlug: string, ref: string): Promise<PreviewView> =>
+    request<PreviewView>(`/api/review/preview/${encodeURIComponent(workspaceSlug)}?ref=${encodeURIComponent(ref)}`, {
+      method: "POST",
+    }),
+  capture: (
+    workspaceSlug: string,
+    body: { ref: string; ticket_id: string; paths: string[] },
+  ): Promise<CaptureResult> =>
+    request<CaptureResult>(`/api/review/capture/${encodeURIComponent(workspaceSlug)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
+
+/** A preview whose instances are still coming up, worth re-reading. */
+export function previewIsStarting(view: PreviewView | undefined): boolean {
+  return view?.client?.state === "starting" || view?.server?.state === "starting";
+}
 
 export function captureUrl(ticketId: string, captureId: string): string {
   return `${API_BASE}/api/review/captures/${encodeURIComponent(ticketId)}/${encodeURIComponent(captureId)}`;

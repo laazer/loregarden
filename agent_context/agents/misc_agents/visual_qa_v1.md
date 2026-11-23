@@ -99,7 +99,22 @@ Attach the run as evidence with `loregarden_attach_evidence`:
 
 - `evidence_kind: "real_surface"` — this is output captured from the surface a user touches, not a test result.
 - `title` — what you checked, e.g. "8 surfaces after queue filter change".
-- `content_json` — the contents of `summary.json`.
+- `content_json` — the contents of `summary.json`, plus a `review` block that hands the
+  human gate what you saw: the screenshots of the surfaces this ticket changed, and each
+  surface as a path link. Paths, not URLs: your sandbox is gone by the time a person
+  reviews, and the review page opens a path on whichever instance of this branch is running.
+
+  ```json
+  {"summary": {…summary.json…},
+   "review": {
+     "screenshots": [{"path": "/abs/.visual-qa/work-items.png", "caption": "Work items, 2286 open, filter bar"}],
+     "links": [{"path": "/work-items", "label": "Work items"}]
+   }}
+  ```
+
+  At most 12 screenshots, 10 MB each, PNG/JPEG/GIF/WebP. They are copied in when you
+  attach, so a path under `.visual-qa/` is fine. A malformed block is refused whole with
+  the field named; fix it and attach again.
 
 Then report:
 

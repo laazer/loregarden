@@ -5,11 +5,13 @@ import { api } from "../../api/client";
 import { captureUrl, type ReviewBuild, type ReviewItem } from "../../api/reviewApi";
 import { approvalVariables, useApprovalResolution } from "../../hooks/useApprovalResolution";
 import { REVIEW_QUEUE_KEY, useLaunchBuild } from "../../hooks/useReviewLaunch";
+import { useReviewPreview } from "../../hooks/useReviewPreview";
 import { ticketPath } from "../../lib/appNavigation";
 import { impactWithoutCriteria } from "../../utils/approvalCriteria";
 import { ApprovalCard } from "../ApprovalCard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { ReviewPages } from "./ReviewPages";
 import { ReviewRequests } from "./ReviewRequests";
 
 /**
@@ -30,6 +32,11 @@ export function ReviewItemPanel({
   const qc = useQueryClient();
   const { ticket, kit, scenes, approval } = item;
   const openScene = useLaunchBuild(build, "Open scene");
+  const { status: preview, start: startPreview } = useReviewPreview(
+    build.workspace_slug,
+    build.ref,
+    kit.links.some((link) => link.path) || kit.requests.length > 0,
+  );
   const resolve = useApprovalResolution(ticket.id, () => {
     void qc.invalidateQueries({ queryKey: REVIEW_QUEUE_KEY });
     onResolved();
@@ -112,7 +119,7 @@ export function ReviewItemPanel({
 
       {kit.screenshots.length > 0 ? (
         <section className="review-section" aria-label="Screenshots">
-          <h3 className="review-section-title">Captured by the agent ({kit.screenshots.length})</h3>
+          <h3 className="review-section-title">Screenshots ({kit.screenshots.length})</h3>
           <ul className="review-shots">
             {kit.screenshots.map((shot) => {
               const src = captureUrl(ticket.id, shot.capture_id);
@@ -134,23 +141,20 @@ export function ReviewItemPanel({
         </section>
       ) : null}
 
-      {kit.links.length > 0 ? (
-        <section className="review-section" aria-label="Pages to open">
-          <h3 className="review-section-title">Open on a running server</h3>
-          <ul className="review-links">
-            {kit.links.map((link) => (
-              <li key={link.url}>
-                <a href={link.url} target="_blank" rel="noreferrer">
-                  {link.label || link.url}
-                </a>
-                {link.label ? <span className="review-mono review-muted"> {link.url}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <ReviewPages
+        links={kit.links}
+        workspaceSlug={build.workspace_slug}
+        buildRef={build.ref}
+        ticketId={ticket.id}
+        preview={preview}
+        start={startPreview}
+      />
 
-      <ReviewRequests requests={kit.requests} workspaceSlug={build.workspace_slug} />
+      <ReviewRequests
+        requests={kit.requests}
+        workspaceSlug={build.workspace_slug}
+        buildServerUrl={preview.data?.server?.state === "ready" ? preview.data.server.url : undefined}
+      />
 
       {kit.unreadable.length > 0 ? (
         <p className="review-error" role="alert">

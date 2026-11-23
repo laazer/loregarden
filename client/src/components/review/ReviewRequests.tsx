@@ -23,15 +23,21 @@ function serverOptions(instances: LocalInstance[]) {
 export function ReviewRequests({
   requests,
   workspaceSlug,
+  buildServerUrl,
 }: {
   requests: ReviewRequest[];
   workspaceSlug: string;
+  /** The server running the build under review, when one is up: the default target. */
+  buildServerUrl?: string;
 }) {
   const baseId = useId();
   const instances = useQuery({ queryKey: INSTANCES_KEY, queryFn: localInstancesApi.list });
   const servers = serverOptions(instances.data?.instances ?? []);
   const suggested =
-    servers.find((s) => s.project === workspaceSlug)?.url ?? servers[0]?.url ?? "http://127.0.0.1:8000";
+    buildServerUrl ??
+    servers.find((s) => s.project === workspaceSlug)?.url ??
+    servers[0]?.url ??
+    "http://127.0.0.1:8000";
   const [base, setBase] = useState<string | null>(null);
   const baseUrl = base ?? suggested;
 
