@@ -23,7 +23,7 @@ import { TicketListPrimitive } from "./TicketListPrimitive";
 import { TicketPrimitive } from "./TicketPrimitive";
 import { TicketWorkflowPrimitive } from "./TicketWorkflowPrimitive";
 import { TodoListPrimitive } from "./TodoListPrimitive";
-import type { ChatPart, PrimitiveKind, UnknownPart } from "./types";
+import type { ChatPart, LaterUserReply, PrimitiveKind, UnknownPart } from "./types";
 import { WorkflowPrimitive } from "./WorkflowPrimitive";
 import { WorkspacePrimitive } from "./WorkspacePrimitive";
 import { MarkdownContent } from "../MarkdownContent";
@@ -31,6 +31,7 @@ import { MarkdownContent } from "../MarkdownContent";
 type Renderer = ComponentType<{
   part: never;
   onSubmit?: (content: string) => void;
+  laterUserReply?: LaterUserReply | null;
 }>;
 
 function TextPrimitive({ part }: { part: Extract<ChatPart, { primitive: "text" }> }) {
@@ -82,10 +83,25 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   pr_cycle: PrCyclePrimitive as Renderer,
 };
 
+/**
+ * What a part is rendered *in*, beside the part itself.
+ *
+ * One object rather than trailing positional arguments, and `laterUserReply` is
+ * required rather than optional, so a surface that renders cards has to say
+ * what followed them. It is the omission this type exists to stop: the second
+ * caller of `renderChatPart` was left behind when the fact was added, and every
+ * `qa` card in the dock's artifacts panel went on asking a question the
+ * operator had already answered. `null` is the honest answer where nothing did.
+ */
+export interface ChatPartContext {
+  onSubmit?: (content: string) => void;
+  laterUserReply: LaterUserReply | null;
+}
+
 export function renderChatPart(
   part: ChatPart | UnknownPart,
   key: string,
-  onSubmit?: (content: string) => void,
+  { onSubmit, laterUserReply }: ChatPartContext,
 ) {
   const kind = part.primitive as PrimitiveKind;
   const Renderer = PRIMITIVE_RENDERERS[kind];
@@ -95,6 +111,9 @@ export function renderChatPart(
   const Comp = Renderer as ComponentType<{
     part: ChatPart;
     onSubmit?: (content: string) => void;
+    laterUserReply?: LaterUserReply | null;
   }>;
-  return <Comp key={key} part={part as ChatPart} onSubmit={onSubmit} />;
+  return (
+    <Comp key={key} part={part as ChatPart} onSubmit={onSubmit} laterUserReply={laterUserReply} />
+  );
 }

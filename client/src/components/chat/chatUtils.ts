@@ -1,4 +1,4 @@
-import type { ChatPart, UnknownPart } from "./primitives/types";
+import type { ChatPart, LaterUserReply, UnknownPart } from "./primitives/types";
 
 export interface ChatMessageView {
   id: string;
@@ -131,6 +131,38 @@ export function normalizeChatMarkdown(text: string): string {
 
 export function isUserChatRole(role: string): boolean {
   return role === "user";
+}
+
+/**
+ * The first user message after each message, keyed by message id.
+ *
+ * What settles a `qa` card: `living_map/records.py` settles the Living Map on
+ * `any(later.role == USER …)` over the messages after the card, so a card the
+ * Map records as settled must not still be asking. A card cannot see the
+ * message after its own, so whoever renders the thread works it out and hands
+ * it down.
+ *
+ * It lives here, beside `isUserChatRole` and `chatMessageBody`, because two
+ * surfaces render the same parts from the same messages — the thread
+ * (`StudioChatMessages`) and the dock's "Made in this chat" panel, through
+ * `primitiveHistory` — and the operator meets one card in both places. Two
+ * copies of this pass is two chances for them to disagree, which is the defect
+ * in a new shape.
+ *
+ * One backwards pass. The FIRST user message after a card is the one that
+ * answered it; the last is whatever the thread happened to say next.
+ */
+export function laterUserReplies(
+  messages: readonly ChatMessageView[],
+): Map<string, LaterUserReply> {
+  const byMessageId = new Map<string, LaterUserReply>();
+  let firstUserAfter: LaterUserReply | null = null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (firstUserAfter) byMessageId.set(message.id, firstUserAfter);
+    if (isUserChatRole(message.role)) firstUserAfter = { text: chatMessageBody(message) };
+  }
+  return byMessageId;
 }
 
 /** Prefer structured parts for display; fall back to stripping fences from content. */

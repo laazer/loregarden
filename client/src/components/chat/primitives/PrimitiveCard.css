@@ -1936,6 +1936,38 @@
   line-height: 1.45;
 }
 
+/* The reply that answered the whole card, once the operator has answered in
+   prose. Deliberately uncapped and unclamped: the measured longest live reply is
+   509 characters, and hiding part of it is the same lie in a new place. */
+.lg-primitive-qa-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--bd2);
+  border-radius: 0 8px 8px 0;
+  background: var(--bg0);
+}
+
+.lg-primitive-qa-reply-label {
+  color: var(--txl);
+  font-family: var(--ui);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.lg-primitive-qa-reply-text {
+  margin: 0;
+  color: var(--tx);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .lg-primitive-giphy {
   margin: 0;
   overflow: hidden;

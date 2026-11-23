@@ -24,6 +24,11 @@ export interface ChatWorkbenchState {
   /** The checkout turns run in; null until the thread exists. */
   hostSlug: string | null;
   feature: FeatureLoop | null;
+  /**
+   * The thread snapshot's first load. `feature` is null throughout it, so
+   * without this the Feature card cannot tell "no loop" from "not asked yet".
+   */
+  featureLoading: boolean;
   chatBranch: ChatBranch | null;
   /** Where a new feature ticket may live, and the one picked by default. */
   loopWorkspaces: string[];
@@ -117,6 +122,7 @@ export function ChatSideCard({
 
         <FeatureCard
           feature={workbench.feature}
+          loading={workbench.featureLoading}
           workspaces={workbench.loopWorkspaces}
           defaultWorkspace={workbench.defaultLoopWorkspace}
           busy={workbench.decidingCriteria}

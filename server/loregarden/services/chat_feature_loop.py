@@ -204,6 +204,36 @@ def propose_criteria(
     return rows
 
 
+def _capacity_message(on_ticket: int, queued: int, adding: int | None) -> str:
+    """Why the ticket cannot take more, in one sentence, built once.
+
+    Three audiences, one wording: ``_check_capacity`` raises it at a write the
+    operator attempted, ``feature_loop_view`` carries it to the Feature card
+    before they attempt one, and ``_assess_capacity`` gives it as the reason a
+    queue the ticket outgrew is held. The card renders the string it is given
+    and composes none of its own, so a reword cannot drift between the three.
+
+    ``adding`` is the count a write is asking for, or None where nothing has
+    been clicked and there is no N to name -- the card and the held-queue
+    assessment both read nothing clicked.
+
+    Both ways out are named. Lowering the count on the ticket really does clear
+    the refusal, so the sentence the write seam raises says so too; the held
+    queue's "so the next round cannot start" is carried by the BLOCKED status
+    the card's pill renders as "stalled", not by a second sentence here.
+    """
+    counts = (
+        f"{queued} are queued, and this would add {adding}"
+        if adding is not None
+        else f"and {queued} are queued"
+    )
+    return (
+        f"The ticket holds at most {MAX_ACCEPTANCE_CRITERIA} criteria: it has {on_ticket}, "
+        f"{counts}. Remove criteria from the ticket, or finish this feature and start a new "
+        "loop for the rest."
+    )
+
+
 def _check_capacity(ticket: Ticket, queued: int, adding: int) -> None:
     """Refuse before accepting what the ticket could never take.
 
@@ -216,11 +246,7 @@ def _check_capacity(ticket: Ticket, queued: int, adding: int) -> None:
     # arithmetic: a pre-flight that disagrees with the guard either strands
     # criteria the operator already said yes to, or refuses a write the seam takes.
     if would_grow_past(on_ticket, total, MAX_ACCEPTANCE_CRITERIA):
-        raise FeatureLoopError(
-            f"The ticket holds at most {MAX_ACCEPTANCE_CRITERIA} criteria: it has {on_ticket}, "
-            f"{queued} are queued, and this would add {adding}. Finish this feature, then "
-            "start a new loop for the rest."
-        )
+        raise FeatureLoopError(_capacity_message(on_ticket, queued, adding))
 
 
 def add_criterion(session: Session, chat_session: BaxterChatSession, text: str) -> FeatureCriterion:
@@ -309,11 +335,12 @@ def _assess_capacity(ticket: Ticket, rows: Sequence[FeatureCriterion]) -> LoopAs
     on_ticket = len(load_criteria(ticket.acceptance_criteria_json))
     if not queued or not would_grow_past(on_ticket, on_ticket + queued, MAX_ACCEPTANCE_CRITERIA):
         return LoopAssessment(FeatureLoopStatus.IDLE)
+    # The same sentence the card shows and the write seam raises. The fact this
+    # reason used to add -- that the next round cannot start -- is the BLOCKED
+    # status itself, which the card's pill renders as "stalled".
     return LoopAssessment(
         FeatureLoopStatus.BLOCKED,
-        f"The ticket holds at most {MAX_ACCEPTANCE_CRITERIA} criteria: it has {on_ticket} "
-        f"and {queued} are queued, so the next round cannot start. Remove criteria from the "
-        "ticket, or finish this feature and start a new loop for the rest.",
+        _capacity_message(on_ticket, queued, None),
     )
 
 
@@ -513,6 +540,30 @@ def _runs_view(session: Session, ticket_id: str) -> list[dict]:
     ]
 
 
+def _capacity_view(ticket: Ticket, rows: Sequence[FeatureCriterion]) -> dict:
+    """Whether the ticket can still take this loop's proposals, for the card.
+
+    ``at_cap`` asks the growth guard the question the next write would ask it —
+    room for one more — rather than comparing the counts here: ``would_grow_past``
+    and ``on_ticket + queued >= max`` disagree on a ticket already past the cap,
+    and the card disabling the wrong set is the lie this removes. Proposals are
+    not counted, because a proposal is a draft and ``add_criterion`` counts only
+    queued rows; counting them would disable the controls that accept them.
+    """
+    on_ticket = len(load_criteria(ticket.acceptance_criteria_json))
+    queued = sum(1 for r in rows if r.status == FeatureCriterionStatus.QUEUED)
+    at_cap = would_grow_past(on_ticket, on_ticket + queued + 1, MAX_ACCEPTANCE_CRITERIA)
+    return {
+        "on_ticket": on_ticket,
+        "queued": queued,
+        "max": MAX_ACCEPTANCE_CRITERIA,
+        "at_cap": at_cap,
+        # None where there is room: "there is space" and "here is why you
+        # cannot" must not collapse into one answer on the card.
+        "message": _capacity_message(on_ticket, queued, None) if at_cap else None,
+    }
+
+
 def feature_loop_view(session: Session, chat_session: BaxterChatSession) -> dict | None:
     """The Feature card's data, or None for a thread with no loop."""
     ticket = loop_ticket(session, chat_session)
@@ -535,6 +586,7 @@ def feature_loop_view(session: Session, chat_session: BaxterChatSession) -> dict
         "reason": reading.reason,
         "round": max((r.round for r in rows), default=0),
         "max_criteria": MAX_ACCEPTANCE_CRITERIA,
+        "capacity": _capacity_view(ticket, rows),
         "criteria": [
             {"id": r.id, "text": r.text, "status": r.status.value, "round": r.round}
             for r in rows

@@ -30,6 +30,7 @@ import {
   chatMessageBody,
   chatRoleLabel,
   isUserChatRole,
+  laterUserReplies,
   type ChatMessageView,
 } from "../chat/chatUtils";
 import { useStickToBottom } from "../chat/useStickToBottom";
@@ -163,6 +164,10 @@ export const StudioChatMessages = memo(function StudioChatMessages({
     () => withLivePlans(messages, thinking.plans, supersededPlans),
     [messages, thinking.plans, supersededPlans],
   );
+  // Which later user reply, if any, answers each message's cards. The same pass
+  // `primitiveHistory` runs for the dock's artifacts panel, so the two surfaces
+  // cannot disagree about a card they both render.
+  const laterReplies = useMemo(() => laterUserReplies(shownMessages), [shownMessages]);
   const threadPlanIdentities = useMemo(
     () =>
       new Set(
@@ -226,9 +231,10 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             !supersededPlans.has(agentPlanPartKey(message.id, index)),
         );
         const hasNonTextParts = nonTextParts.length > 0;
+        const laterUserReply = laterReplies.get(message.id) ?? null;
         const partsSize = widestPrimitiveSize(nonTextParts);
         const leadingReasoning = leadingParts.length ? (
-          <PrimitiveParts parts={leadingParts} onSubmit={onPrimitiveSubmit} />
+          <PrimitiveParts parts={leadingParts} onSubmit={onPrimitiveSubmit} laterUserReply={null} />
         ) : null;
         const textBody =
           parts?.length && hasNonTextParts
@@ -328,7 +334,11 @@ export const StudioChatMessages = memo(function StudioChatMessages({
               </div>
             ) : null}
             {hasNonTextParts ? (
-              <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+              <PrimitiveParts
+                parts={nonTextParts}
+                onSubmit={onPrimitiveSubmit}
+                laterUserReply={laterUserReply}
+              />
             ) : null}
           </>
         );
@@ -356,14 +366,22 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                     </div>
                   ) : cardIsTheReply ? (
                     <div className="lg-chat-assistant-cards">
-                      <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+                      <PrimitiveParts
+                        parts={nonTextParts}
+                        onSubmit={onPrimitiveSubmit}
+                        laterUserReply={laterUserReply}
+                      />
                     </div>
                   ) : (
                     <div style={{ flex: 1 }} />
                   )}
                 </div>
                 {hasNonTextParts && !cardIsTheReply ? (
-                  <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+                  <PrimitiveParts
+                    parts={nonTextParts}
+                    onSubmit={onPrimitiveSubmit}
+                    laterUserReply={laterUserReply}
+                  />
                 ) : null}
                 {actionsRow}
               </div>

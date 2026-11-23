@@ -45,7 +45,16 @@ export function StreamingReply({
           case "card": {
             const identity = chunk.plan ? agentPlanIdentity(chunk.plan) : null;
             if (chunk.plan && !(identity && threadPlanIdentities.has(identity))) {
-              return <PrimitiveParts key={index} parts={[chunk.plan]} onSubmit={onPrimitiveSubmit} />;
+              // A plan still streaming in: nothing has followed it yet, by
+              // definition, and a plan card does not read the reply anyway.
+              return (
+                <PrimitiveParts
+                  key={index}
+                  parts={[chunk.plan]}
+                  onSubmit={onPrimitiveSubmit}
+                  laterUserReply={null}
+                />
+              );
             }
             return (
               <p key={index} className="lg-chat-streaming-note">

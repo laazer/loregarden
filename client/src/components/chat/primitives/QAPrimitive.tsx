@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { PrimitiveCard } from "./PrimitiveCard";
-import type { QAItem, QAPart } from "./types";
+import type { LaterUserReply, QAItem, QAPart } from "./types";
 import { Button } from "../../ui/Button";
 
 function initialAnswers(items: QAItem[]): string[] {
@@ -11,9 +11,18 @@ function initialAnswers(items: QAItem[]): string[] {
 export function QAPrimitive({
   part,
   onSubmit,
+  laterUserReply,
 }: {
   part: QAPart;
   onSubmit?: (content: string) => void;
+  /**
+   * The first user message after this card's, supplied by the thread.
+   *
+   * The card cannot see the message after its own, so it is given the fact
+   * rather than inferring one from `part`. Absent or null is the card exactly as
+   * it has always been.
+   */
+  laterUserReply?: LaterUserReply | null;
 }) {
   const items = part.items ?? [];
   const signature = JSON.stringify(items);
@@ -30,13 +39,31 @@ export function QAPrimitive({
   const { answers, submitted } = state;
   const setAnswers = (next: (current: string[]) => string[]) =>
     setState((current) => ({ ...current, answers: next(current.answers) }));
+  // Text the operator typed and has not sent. Compared against what
+  // `initialAnswers` seeded the state with, not against "": a card that arrived
+  // carrying stored answers is not a draft, and comparing against "" would pin
+  // every such card open forever.
+  const draft = answers.some((answer, index) => answer !== (items[index]?.answer ?? ""));
+  // The third reason a card is read-only, beside `part.interactive` and a submit
+  // made here: the operator already answered in prose, which is the rule
+  // `living_map/records.py` settles the Living Map on. A card the Map records as
+  // settled must not still be asking.
+  //
+  // Zero items keeps its own branch — "Answered" over a card that never asked
+  // anything is a new lie — and a draft wins, because the flip must never
+  // discard text the operator typed.
+  const answeredInThread = items.length > 0 && Boolean(laterUserReply) && !submitted && !draft;
   // A card with no questions is unanswerable, so it must not present itself as
   // something to answer: it used to render "Answer these before continuing"
   // over a Send button that could never enable, with nothing to type into.
   // The server now rejects an empty `items` at parse time; this covers the rows
   // stored before it did.
   const canAnswer =
-    items.length > 0 && part.interactive !== false && Boolean(onSubmit) && !submitted;
+    items.length > 0 &&
+    part.interactive !== false &&
+    Boolean(onSubmit) &&
+    !submitted &&
+    !answeredInThread;
   const complete = items.length > 0 && items.every((_, index) => answers[index]?.trim());
 
   const submit = () => {
@@ -65,11 +92,15 @@ export function QAPrimitive({
       status={
         submitted
           ? { tone: "done", label: "Answers sent" }
-          : canAnswer
-            ? { tone: "you", label: items.length === 1 ? "Needs you" : `Needs you · ${items.length}` }
-            : items.length
-              ? null
-              : { tone: "wait", label: "Nothing to answer" }
+          : answeredInThread
+            // Where the answer came from, which is what distinguishes it from
+            // "Answers sent" — a submit made through this card in this session.
+            ? { tone: "done", label: "Answered in the thread" }
+            : canAnswer
+              ? { tone: "you", label: items.length === 1 ? "Needs you" : `Needs you · ${items.length}` }
+              : items.length
+                ? null
+                : { tone: "wait", label: "Nothing to answer" }
       }
       footerHint={canAnswer ? "Answers go back into this chat" : null}
       actions={
@@ -102,10 +133,16 @@ export function QAPrimitive({
                     })
                   }
                 />
+              ) : answers[index]?.trim() ? (
+                <span className="lg-primitive-qa-answer">{answers[index].trim()}</span>
+              ) : answeredInThread ? (
+                // The per-item "Not answered" placeholder is the other half of
+                // the same lie: one reply is not an answer to question 2
+                // specifically, but neither did the operator leave it unanswered.
+                // The whole card's answer is the one block below.
+                null
               ) : (
-                <span className="lg-primitive-qa-answer">
-                  {answers[index]?.trim() || "Not answered"}
-                </span>
+                <span className="lg-primitive-qa-answer">Not answered</span>
               )}
             </label>
           ))}
@@ -117,6 +154,17 @@ export function QAPrimitive({
           above; reply in the thread to keep going.
         </p>
       )}
+      {answeredInThread && laterUserReply ? (
+        // One block for the whole card, read after the questions. In full and
+        // wrapped: a clamp or a "show more" would be the same lie in a new
+        // place, hiding what the operator said.
+        <div className="lg-primitive-qa-reply">
+          <span className="lg-primitive-qa-reply-label">Your reply</span>
+          <p className="lg-primitive-qa-reply-text">
+            {laterUserReply.text.trim() || "The reply that followed carried no text."}
+          </p>
+        </div>
+      ) : null}
     </PrimitiveCard>
   );
 }

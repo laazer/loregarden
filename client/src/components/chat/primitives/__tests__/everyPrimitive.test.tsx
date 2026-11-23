@@ -52,7 +52,7 @@ function renderPart(part: ChatPart) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>{renderChatPart(part, "part")}</MemoryRouter>
+      <MemoryRouter>{renderChatPart(part, "part", { laterUserReply: null })}</MemoryRouter>
     </QueryClientProvider>,
   );
 }

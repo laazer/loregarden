@@ -237,6 +237,18 @@ export interface QAItem {
   answer?: string;
 }
 
+/**
+ * The first user message after a card's own message, as the thread sees it.
+ *
+ * Presence — not the text — is what settles a `qa` card: `living_map/records.py`
+ * settles the Living Map on `any(later.role == USER …)`, so a reply that carried
+ * no text is still a reply, and treating it as none would put the card back in
+ * disagreement with the Map, which is the defect.
+ */
+export interface LaterUserReply {
+  text: string;
+}
+
 export interface QAPart {
   primitive: "qa";
   items?: QAItem[];

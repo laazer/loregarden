@@ -1,6 +1,6 @@
-import type { ChatMessageView } from "./chatUtils";
+import { laterUserReplies, type ChatMessageView } from "./chatUtils";
 import { agentPlanPartKey, supersededAgentPlanKeys } from "./primitives/agentPlan";
-import type { ChatPart, UnknownPart } from "./primitives/types";
+import type { ChatPart, LaterUserReply, UnknownPart } from "./primitives/types";
 
 /** One card an assistant turn sent, as the side card lists it. */
 export interface PrimitiveHistoryEntry {
@@ -10,6 +10,15 @@ export interface PrimitiveHistoryEntry {
   part: ChatPart | UnknownPart;
   kind: string;
   label: string;
+  /**
+   * The first user message after the turn that sent this card, or null.
+   *
+   * Carried on the entry rather than left to the panel: the panel is handed
+   * entries, not messages, so without this it cannot know — and a `qa` card it
+   * renders without it goes back to asking a question the operator already
+   * answered, which is the same lie in the other half of the screen.
+   */
+  laterUserReply: LaterUserReply | null;
 }
 
 /** Prose and reasoning are the turn itself, not a card it produced. */
@@ -93,6 +102,9 @@ export function primitiveLabel(part: ChatPart | UnknownPart): string {
  */
 export function primitiveHistory(messages: ChatMessageView[]): PrimitiveHistoryEntry[] {
   const superseded = supersededAgentPlanKeys(messages);
+  // Computed over the messages, before user turns are dropped and the list is
+  // reversed: an entry alone cannot tell what followed it.
+  const replies = laterUserReplies(messages);
   const entries: PrimitiveHistoryEntry[] = [];
   for (const message of messages) {
     if (message.role === "user") continue;
@@ -106,6 +118,7 @@ export function primitiveHistory(messages: ChatMessageView[]): PrimitiveHistoryE
         part,
         kind: part.primitive,
         label: primitiveLabel(part),
+        laterUserReply: replies.get(message.id) ?? null,
       });
     });
   }

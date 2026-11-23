@@ -52,7 +52,7 @@ export function ChatArtifactsList({
               Show in chat
             </Button>
           </div>
-          <PrimitiveSlot kind={entry.part.primitive}>{renderChatPart(entry.part, entry.key, onSubmit)}</PrimitiveSlot>
+          <PrimitiveSlot kind={entry.part.primitive}>{renderChatPart(entry.part, entry.key, { onSubmit, laterUserReply: entry.laterUserReply })}</PrimitiveSlot>
         </li>
       ))}
     </ol>
