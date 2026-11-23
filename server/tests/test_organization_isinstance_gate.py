@@ -12,8 +12,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 _CHECKER_PATH = _SCRIPTS / "py_organization_check.py"
 
 
@@ -272,7 +273,7 @@ def test_the_same_source_reports_the_same_findings_twice():
 
 
 def test_the_live_tree_holds_no_unclassifiable_isinstance_calls():
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     # Named explicitly rather than `server/`: `server/.venv` is thousands of
     # third-party files written for other interpreters, and walking it would
     # measure something other than this repository.

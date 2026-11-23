@@ -16,8 +16,9 @@ from pathlib import Path
 
 import pytest
 from loregarden.services.organization_gate_service import OrganizationScope, check_repo
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 _GATE = _SCRIPTS / "md_report_check.py"
 _DISPATCHER = _SCRIPTS / "workspace-gates.sh"
 

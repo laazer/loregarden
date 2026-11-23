@@ -17,11 +17,11 @@ from __future__ import annotations
 import importlib
 import os
 import sys
-from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
 
 

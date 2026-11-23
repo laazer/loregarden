@@ -11,11 +11,11 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-HOOK_ENV = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts" / "hook-noninteractive.sh"
+HOOK_ENV = REPO_ROOT / ".lefthook" / "scripts" / "hook-noninteractive.sh"
 
 #: Interpreter settings CI's workflow never sets, with a value that changes behaviour.
 NOT_SET_ON_CI = {

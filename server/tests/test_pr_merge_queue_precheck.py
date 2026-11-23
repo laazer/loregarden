@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _HOOK = _ROOT / ".claude" / "hooks" / "pr_merge_queue_precheck.py"
 _spec = importlib.util.spec_from_file_location("pr_merge_queue_precheck", _HOOK)
 hook = importlib.util.module_from_spec(_spec)

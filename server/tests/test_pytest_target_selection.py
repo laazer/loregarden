@@ -13,8 +13,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _SELECTOR = _ROOT / ".lefthook" / "scripts" / "select_pytest_targets.py"
 _SCRUBBED_ENV = {k: v for k, v in os.environ.items() if k not in ("GIT_DIR", "GIT_WORK_TREE")}
 
@@ -121,6 +122,18 @@ def test_string_reference_counts_as_an_import(fake_repo: Path):
     """importlib.import_module("loregarden.x") is invisible to an import-only walk."""
     selected = selector.select(fake_repo, ["server/loregarden/services/leaf.py"])
     assert "test_dynamic.py" in _names(selected)
+
+
+def test_select_direct_keeps_only_the_tests_importing_the_module_themselves(fake_repo: Path):
+    """test_middle reaches leaf only through middle, so the direct ring drops it;
+    test_dynamic names leaf itself (a string import counts) and stays."""
+    selected = selector.select_direct(fake_repo, ["server/loregarden/services/leaf.py"])
+    assert _names(selected) == {"test_dynamic.py"}
+    assert set(selected) <= set(selector.select(fake_repo, ["server/loregarden/services/leaf.py"]))
+
+
+def test_select_direct_ignores_changed_tests_and_non_modules(fake_repo: Path):
+    assert selector.select_direct(fake_repo, ["server/tests/test_unrelated.py"]) == []
 
 
 def test_changed_test_file_runs_itself(fake_repo: Path):

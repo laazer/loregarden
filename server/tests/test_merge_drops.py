@@ -12,9 +12,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import commit_on, git, make_repo
 
-SCRIPT = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts" / "merge_drops_check.py"
+SCRIPT = REPO_ROOT / ".lefthook" / "scripts" / "merge_drops_check.py"
 BRANCH = "integration/ms"
 
 

@@ -57,7 +57,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, NamedTuple
 
 import pytest
@@ -96,8 +95,8 @@ from loregarden.testing.factories import (
 )
 from sqlalchemy import text
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = REPO_ROOT / "server" / "loregarden"
 
 #: The reserved set, written out so a kind DROPPED from the mapping fails too.

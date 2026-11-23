@@ -40,6 +40,9 @@ dev = [
     "pylint>=3.3",
     # Pre-commit: mypy on staged server files (see [tool.mypy]).
     "mypy>=1.14",
+    # `task mutation` (see [tool.mutmut]). Pinned exactly: the driver sets
+    # per-run config through mutmut internals and refuses any other version.
+    "mutmut==3.8.1",
 ]
 
 [dependency-groups]
@@ -51,6 +54,7 @@ dev = [
     "ruff>=0.9.0",
     "pylint>=3.3",
     "mypy>=1.14",
+    "mutmut==3.8.1",
 ]
 # Only pulled in by scripts/build-backend.sh when packaging the desktop
 # sidecar — not part of the default dev sync, so `uv run`/tests stay fast.
@@ -110,6 +114,29 @@ markers = [
 # acquisitions, all of which SIGALRM does interrupt.
 timeout = 120
 timeout_method = "signal"
+
+[tool.mutmut]
+# Changed-lines mutation testing: `task mutation -- [--base REF]`
+# (.lefthook/scripts/mutation_changed_lines.py). Never run over the whole
+# package — one 644-line module yields ~920 mutants and the package is ~216k
+# lines. The driver (.lefthook/scripts/mutmut_driver.py) sets two fields per run
+# on top of this: `only_mutate` (the changed files) and
+# `pytest_add_cli_args_test_selection` (the tests select_pytest_targets.py
+# picks). mutmut copies loregarden/ and tests/ into server/mutants/ and runs
+# there, inside the checkout, so git works and tests find the repo root through
+# tests/repo_paths.py.
+source_paths = ["loregarden"]
+# The suite's own per-test ceiling (120s, [tool.pytest.ini_options]) and
+# mutmut's CPU-time limit already bound a hang; no extra pytest args needed.
+pytest_add_cli_args = ["-p", "no:cacheprovider"]
+mutate_only_covered_lines = false
+# Not "fork": that forks every session from the process that already ran the
+# stats pass, so its imports leak into the clean run and every mutant. Measured:
+# test_migration_registry imports a package from its tmp_path, pytest deletes
+# passing tests' tmp dirs (tmp_path_retention_policy), and the clean run then
+# found the cached module pointing at nothing — a red baseline on green code.
+# A fork server only collects, so each session starts from collection alone.
+process_isolation = "forkserver"
 
 [tool.ruff]
 target-version = "py310"

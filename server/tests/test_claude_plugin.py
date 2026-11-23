@@ -17,8 +17,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _PLUGIN = _ROOT / "claude-plugin"
 _HOOKS = _ROOT / ".claude" / "hooks"
 _spec = importlib.util.spec_from_file_location("plugin_dispatch", _HOOKS / "plugin_dispatch.py")

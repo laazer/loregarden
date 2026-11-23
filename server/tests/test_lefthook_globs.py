@@ -12,15 +12,14 @@ which reads like a pass.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import yaml
+from tests.repo_paths import REPO_ROOT
 
 # A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
 pytestmark = pytest.mark.registry
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = REPO_ROOT
 
 
 def test_globs_use_the_doublestar_matcher():

@@ -18,8 +18,8 @@ import shutil
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_MODULES = REPO_ROOT / "client" / "node_modules"
 DEV_VENV = REPO_ROOT / "server" / ".venv"
 

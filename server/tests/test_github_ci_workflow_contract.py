@@ -19,13 +19,12 @@ Test-break mutations (must raise under the same helpers as live AC tests):
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 # Frozen pre-change job bodies (AC4). Implement must leave these byte-stable.

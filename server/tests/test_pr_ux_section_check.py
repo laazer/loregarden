@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPT = Path(__file__).resolve().parents[2] / ".github" / "scripts" / "pr_ux_section_check.py"
+_SCRIPT = REPO_ROOT / ".github" / "scripts" / "pr_ux_section_check.py"
 _spec = importlib.util.spec_from_file_location("pr_ux_section_check", _SCRIPT)
 check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check)
 
 PAGE = ["client/src/pages/MemoryPage.tsx"]
-TEMPLATE = (
-    Path(__file__).resolve().parents[2] / ".github" / "pull_request_template.md"
-).read_text()
+TEMPLATE = (REPO_ROOT / ".github" / "pull_request_template.md").read_text()
 
 FILLED = """## Summary
 x

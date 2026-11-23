@@ -45,8 +45,8 @@ from pathlib import Path
 import pytest
 from loregarden.services.capacity_progress import LeaseProgress, describe_progress
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 JUDGE = SCRIPTS / "judge_test_run.py"
 GUARD_SEAM = SCRIPTS / "test-count-guard.sh"

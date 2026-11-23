@@ -17,6 +17,7 @@ from loregarden.services.memory_store import (
     AgentMemoryService,
     ObsidianMemoryStore,
 )
+from tests.repo_paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -501,7 +502,7 @@ def test_r7_protocol_authority_appears_in_first_8000_chars():
     language — not unpinned prose.
     """
     # Resolve the same tree the executor embeds from this checkout.
-    root = Path(__file__).resolve().parents[2]
+    root = REPO_ROOT
     protocol = root / "agent_context" / "agents" / "common_assets" / "memory_protocol_v1.md"
     text = protocol.read_text(encoding="utf-8")
     head = text[:8000].casefold()

@@ -10,10 +10,9 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-_CHECKER_PATH = (
-    Path(__file__).resolve().parents[2] / ".lefthook" / "scripts" / "py_git_subprocess_check.py"
-)
+_CHECKER_PATH = REPO_ROOT / ".lefthook" / "scripts" / "py_git_subprocess_check.py"
 
 
 def _load_checker():
@@ -170,7 +169,7 @@ def test_real_services_are_clean():
     source — opting it out of the boundary (which the signature migration did)
     left the rule exercised solely by fixtures (594).
     """
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     services = Path(__file__).resolve().parents[1] / "loregarden"
     offenders = [
         str(py) for py in services.rglob("*.py") if checker.violations_in(py, repo=repo_root)

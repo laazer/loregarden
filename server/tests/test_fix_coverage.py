@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -37,8 +36,9 @@ from loregarden.services.rework_feedback import MAX_REWORK_REROUTES, render_rewo
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from pydantic import ValidationError
 from sqlmodel import Session
+from tests.repo_paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _spec = importlib.util.spec_from_file_location(
     "pr_fix_coverage_check", _ROOT / ".github" / "scripts" / "pr_fix_coverage_check.py"
 )

@@ -19,7 +19,6 @@ import json
 import os
 from contextlib import ExitStack
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -39,10 +38,9 @@ from loregarden.testing.prod_shape import (
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
 from sqlalchemy import func
 from sqlmodel import Session, col, select
+from tests.repo_paths import REPO_ROOT
 
-FIXTURES = (
-    Path(__file__).resolve().parents[2] / "client" / "src" / "test" / "fixtures" / "prod-shape"
-)
+FIXTURES = REPO_ROOT / "client" / "src" / "test" / "fixtures" / "prod-shape"
 RECORD = os.environ.get("LOREGARDEN_RECORD_FIXTURES") == "1"
 
 #: Written at record time and therefore different on every run; pinned so the

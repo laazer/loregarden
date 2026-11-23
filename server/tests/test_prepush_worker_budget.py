@@ -19,7 +19,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+from tests.repo_paths import REPO_ROOT
+
+SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 WORKERS_SH = SCRIPTS / "test-workers.sh"
 
 

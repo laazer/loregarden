@@ -11,16 +11,15 @@ Both are `jobs` lists now, which run as written.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import yaml
 from loregarden.testing.lefthook_config import hook_jobs
+from tests.repo_paths import REPO_ROOT
 
 # A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
 pytestmark = pytest.mark.registry
 
-LEFTHOOK = Path(__file__).resolve().parents[2] / "lefthook.yml"
+LEFTHOOK = REPO_ROOT / "lefthook.yml"
 
 
 def _hook(name: str) -> dict:

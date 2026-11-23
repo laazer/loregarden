@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.repo_paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 
 #: Scrubbed from every nested runner, so the outer run's narrowing cannot

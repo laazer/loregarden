@@ -21,9 +21,10 @@ from pathlib import Path
 
 import pytest
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
+from tests.repo_paths import REPO_ROOT
 from tests.toolchain import require_client_modules, require_commands
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = REPO_ROOT
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
 _NODE_MODULES = _ROOT / "client" / "node_modules"
 _GATES = sorted(p.name for p in _SCRIPTS.glob("ts_*_check.cjs"))

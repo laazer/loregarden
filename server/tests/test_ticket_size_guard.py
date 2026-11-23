@@ -67,10 +67,11 @@ from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape, prod_sh
 from sqlmodel import Session, select
 from tests.factories import make_ticket
 from tests.mcp_helpers import call_mcp
+from tests.repo_paths import REPO_ROOT
 
 SERVER_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = SERVER_ROOT / "loregarden"
-CLIENT_ROOT = SERVER_ROOT.parent / "client"
+CLIENT_ROOT = REPO_ROOT / "client"
 
 
 def _criteria(n: int) -> list[str]:

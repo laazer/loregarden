@@ -20,8 +20,9 @@ from unittest import mock
 
 import pytest
 from loregarden.services.git_subprocess import run_git
+from tests.repo_paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / ".lefthook" / "scripts"
+_SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 diff = importlib.import_module("precommit_git_diff")

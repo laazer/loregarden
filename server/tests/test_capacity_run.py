@@ -54,6 +54,7 @@ from loregarden.services.docker_ledger import load_pool
 from loregarden.testing.lefthook_config import hook_jobs
 from sqlalchemy import create_engine
 from sqlmodel import Session, select
+from tests.repo_paths import REPO_ROOT
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
@@ -355,7 +356,7 @@ def test_the_stall_clock_restarts_whenever_something_ahead_finishes(session, bus
 
 def _prepush_footprint(command: str) -> DockerFootprint:
     """The `--footprint` lefthook.yml books for one pre-push command."""
-    words = hook_jobs(SERVER_ROOT.parent / "lefthook.yml", "pre-push")[command]["run"].split()
+    words = hook_jobs(REPO_ROOT / "lefthook.yml", "pre-push")[command]["run"].split()
     return DockerFootprint(words[words.index("--footprint") + 1])
 
 
@@ -657,7 +658,7 @@ def test_the_real_cli_script_runs_the_command_where_it_was_called(tmp_path) -> N
     checkout gained `capacity run`."""
     caller = tmp_path / "caller"
     caller.mkdir()
-    script = SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"
+    script = REPO_ROOT / "scripts" / "loregarden-cli.sh"
 
     result = subprocess.run(
         [
@@ -754,7 +755,7 @@ def test_the_cli_script_records_the_callers_repo_root_before_defaulting_it(
     if caller_root is not None:
         env[REPO_ROOT_ENV] = caller_root
     subprocess.run(
-        ["bash", str(SERVER_ROOT.parent / "scripts" / "loregarden-cli.sh"), "capacity"],
+        ["bash", str(REPO_ROOT / "scripts" / "loregarden-cli.sh"), "capacity"],
         env=env,
         check=True,
         timeout=60,
