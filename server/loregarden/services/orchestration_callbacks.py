@@ -26,8 +26,6 @@ from loregarden.models.domain import (
     HumanActionTier,
     OrchestrationRun,
     OrchestrationRunStatus,
-    ProcessState,
-    RunStatus,
     StageReportStatus,
     StageStatus,
     StageVerdictChannel,
@@ -40,7 +38,6 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
-from loregarden.services.capacity_errors import CAPACITY_UNAVAILABLE_PREFIX
 from loregarden.services.criterion_settle_check import refuse_pass_with_unsettled
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.discovered_work import refuse_undecided
@@ -52,12 +49,12 @@ from loregarden.services.gate_approvals import (
 from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
 from loregarden.services.hold_line import truncate_for_storage
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration_children import fail_in_flight_children
 from loregarden.services.path_claims import validate_plan_files
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
 )
-from loregarden.services.process_identity import liveness
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.rework_pause import file_rework_pause
 from loregarden.services.run_concurrency import (
@@ -66,10 +63,8 @@ from loregarden.services.run_concurrency import (
     find_active_run,
 )
 from loregarden.services.run_interruption import (
-    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     blocked_by_interruption,
 )
-from loregarden.services.run_lease import SUPERVISED
 from loregarden.services.stage_report import Finding
 from loregarden.services.stage_retry_budget import (
     DispatchOrigin,
@@ -84,6 +79,7 @@ from loregarden.services.stage_verdict import (
     handoff_expected_for,
     routing_outcome,
 )
+from loregarden.services.stale_stage_parks import close_stale_parks
 from loregarden.services.studio_routing import (
     is_prunable_stage,
     prunable_stage_keys,
@@ -273,53 +269,8 @@ class OrchestrationCallbackService:
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()
-        self._fail_in_flight_children(run)
+        fail_in_flight_children(self.session, self.orch, run)
         self._release_execution_lane(run)
-
-    def _fail_in_flight_children(self, orch_run: OrchestrationRun) -> None:
-        """Fail leftover agent runs so they stop reading as live work.
-
-        A run left in flight because the orchestration ended on a capacity wait
-        never started: it is the run that waited. It is failed with that
-        message, not the generic orphan one, so the run's own record names the
-        cause. Recorded as an orphan, lg-milestone-that-1425's spec runs read as
-        "parent orchestration is already terminal" and sent the triage agent
-        looking for a dead driver instead of a full machine.
-        """
-        stderr = (
-            orch_run.error_message
-            if orch_run.error_message.startswith(CAPACITY_UNAVAILABLE_PREFIX)
-            else ORPHAN_OF_TERMINAL_ORCH_MESSAGE
-        )
-        children = self.session.exec(
-            select(AgentRun)
-            .where(AgentRun.orchestration_run_id == orch_run.id)
-            .where(col(AgentRun.status).in_(list(SUPERVISED)))
-        ).all()
-        for child in children:
-            state = liveness(child.agent_pid, child.agent_pid_identity)
-            if state is not ProcessState.GONE:
-                # A leftover is a row nobody is working under. A verified-live
-                # process is somebody working (757): its row stays, and its own
-                # completion — under a parent it will find terminal — says what
-                # came of it. The startup reaper skips its parent for the same
-                # reason; this is the same rule at the other end of the edge.
-                # A pid `ps` could not answer about is spared the same way (862);
-                # the lease reaper settles it once it is knowably gone.
-                logger.warning(
-                    "Not failing agent run %s under terminal orchestration %s: pid %s is %s",
-                    child.run_code,
-                    orch_run.run_code,
-                    child.agent_pid,
-                    "still its process" if state is ProcessState.ALIVE else "of unknown state",
-                )
-                continue
-            self.orch.complete_run(
-                child,
-                status=RunStatus.FAILED,
-                stderr=stderr,
-                advance_workflow=False,
-            )
 
     def abandon_claim(self, run: OrchestrationRun, *, message: str) -> None:
         """Fail a claim nothing will adopt, so it stops looking live.
@@ -527,6 +478,9 @@ class OrchestrationCallbackService:
         self.session.add(instance)
         self.session.add(orch_run)
         self.session.commit()
+        close_stale_parks(
+            self.session, ticket, stage_key, why="Closed when the stage was dispatched again"
+        )
 
         event_bus.publish(
             self.session,
@@ -784,6 +738,7 @@ class OrchestrationCallbackService:
         self.session.add(instance)
         self.session.add(orch_run)
         self.session.commit()
+        close_stale_parks(self.session, ticket, stage_key, why="Closed when the stage was skipped")
 
         event_bus.publish(
             self.session,
