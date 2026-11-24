@@ -37,6 +37,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.capacity_errors import CapacityWaitStopped
+from loregarden.services.capacity_passing import is_standing
 from loregarden.services.docker_leases import (
     DockerReservation,
     drain_waiters,
@@ -68,6 +69,11 @@ def leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]
 
     A waiter ahead that is granted stays in the set — it moved, but nothing
     freed up. Only a lease leaving the set means capacity came back.
+
+    A standing claim that asked later and passed this one is not ahead of it: it
+    was let through because it cannot delay it (`capacity_passing`). Counting it
+    would also let a stream of agents finishing every few minutes read as the
+    line moving, and a hung holder would never be reported.
     """
     rows = session.exec(
         select(DockerLease).where(
@@ -78,7 +84,11 @@ def leases_ahead(session: Session, lease: DockerLease) -> dict[str, DockerLease]
             )
         )
     ).all()
-    return {row.id: row for row in rows}
+    return {row.id: row for row in rows if not _passed(row, lease)}
+
+
+def _passed(row: DockerLease, waiter: DockerLease) -> bool:
+    return is_standing(row) and as_utc(row.requested_at) > as_utc(waiter.requested_at)
 
 
 def wait_while_line_moves(
@@ -146,9 +156,17 @@ def wait_while_line_moves(
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
 
 
-def occupying_lease_ids(session: Session) -> set[str]:
-    """Every lease holding capacity now. One leaving the set means capacity came back."""
-    return set(session.exec(select(DockerLease.id).where(col(DockerLease.status).in_(OCCUPYING))))
+def occupying_lease_ids(session: Session, *, standing: set[str] | None = None) -> set[str]:
+    """Every lease holding capacity now. One leaving the set means capacity came back.
+
+    `standing` limits which standing claims count, to the ones already held when
+    the wait began: later ones may pass the line, so their ending says nothing
+    about whether what holds this claim back is moving.
+    """
+    rows = session.exec(select(DockerLease).where(col(DockerLease.status).in_(OCCUPYING))).all()
+    return {
+        row.id for row in rows if standing is None or row.id in standing or not is_standing(row)
+    }
 
 
 def retry_while_pool_moves(
@@ -181,7 +199,7 @@ def retry_while_pool_moves(
     """
     moved_at = clock()
     beat_at: float | None = None
-    holding = occupying_lease_ids(session)
+    holding = at_start = occupying_lease_ids(session)
     warned = False
     while True:
         reservation = attempt()
@@ -211,7 +229,7 @@ def retry_while_pool_moves(
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
         reclaim_dead_holders(session)
         session.expire_all()
-        now_holding = occupying_lease_ids(session)
+        now_holding = occupying_lease_ids(session, standing=at_start)
         if holding - now_holding:
             moved_at = clock()
         holding = now_holding

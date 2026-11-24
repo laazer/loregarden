@@ -471,9 +471,9 @@ def test_the_1912_sequence_pays_the_capacity_line_once_not_twice(
     # 29 minutes came out of: a 4.0-cpu head that does not fit, in front of a
     # *gate's* claim. Parking it before the parent is acquired asks something
     # else — that a 0.5-cpu claim queued behind a head which never fits is
-    # granted anyway, which is FIFO backfill (lg-machine-resource-1925) and is
-    # out of this ticket's scope. The run still pays the line at most once,
-    # which is what `_waited` counts below.
+    # granted anyway, which is `capacity_passing`'s rule and has its own tests.
+    # The run still pays the line at most once, which is what `_waited` counts
+    # below.
     blocked = _reserve(session, CapacityPool.HOST, label="land-verify lg-other-1", cpus=4.0)
     assert blocked.state is DockerGrantState.QUEUED, (
         "the head of the line must not fit, or there is no head-of-line to replay"

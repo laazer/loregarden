@@ -7,8 +7,9 @@ The contract this file pins, beyond "the arithmetic adds up":
   and it is invisible until a machine is memory-bound.
 - **Refused is not queued.** A claim larger than the whole ceiling can never be
   granted, so parking it would block everything behind it forever.
-- **Strictly head-of-line.** A small waiter does not jump a large one. Fairness
-  is the property here; backfill is deliberately not implemented.
+- **Head-of-line.** A small waiter does not jump a large one. Fairness is the
+  property here; the one exception is a small standing claim that cannot delay
+  the head (`test_capacity_passing.py`).
 - **A run holds one lease.** The `AgentSlot` double-claim (lg-workflow-integrity-568)
   in a new table, and the same reason release-by-run-id would be ambiguous.
 """

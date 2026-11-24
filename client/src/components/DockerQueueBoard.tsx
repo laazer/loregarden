@@ -648,7 +648,8 @@ export function DockerQueueBoard({
         {/* One line, not one per slot: capacity is a single pool, so the next
             claim starts wherever room appears. */}
         <div className="queue-section-hint">
-          One shared line — strict order, no jumping the head
+          One shared line, in order. An agent&apos;s small claim may go first when the head
+          would not wait for it
         </div>
       </div>
 

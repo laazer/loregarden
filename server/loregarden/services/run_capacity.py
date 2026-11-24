@@ -29,6 +29,11 @@ stall window: lg-milestone-that-1425's spec twice and lg-milestone-that-1431's
 test-break on 2026-11-13. So the run is a child of that lease when one is held.
 A child never waits; one the parent cannot cover is refused at once, and the run
 then takes its ordinary place in line, exactly as it did before.
+
+**Nor behind a suite it fits beside.** Before the first gate there is no such
+lease, so a run queues top-level. A small claim may then pass a head it cannot
+delay (`capacity_passing`), and while it does wait its own log says so
+(`run_wait_log`).
 """
 
 from __future__ import annotations
@@ -67,6 +72,7 @@ from loregarden.services.docker_leases import (
 )
 from loregarden.services.orchestration_capacity import parent_lease_for
 from loregarden.services.run_cancellation import cancel_requested
+from loregarden.services.run_wait_log import RunWaitLog
 from loregarden.services.stage_docker_capacity import stage_docker_capacity
 from sqlmodel import Session
 
@@ -195,17 +201,26 @@ def _wait_in_line(
     )
     orchestration_run_id = run.orchestration_run_id
     run_id = run.id
-    return wait_while_line_moves(
+    lease_id = reservation.lease_id
+    log = RunWaitLog(run)
+
+    def on_poll() -> None:
+        # The log first: it writes on its own connection, which the renewal's
+        # uncommitted write would lock out.
+        log.waiting(session, lease_id)
+        if orchestration_run_id:
+            renew_orchestration_lease(session, orchestration_run_id)
+
+    reservation = wait_while_line_moves(
         session,
         reservation,
         stall_seconds=stall,
-        on_poll=(
-            (lambda: renew_orchestration_lease(session, orchestration_run_id))
-            if orchestration_run_id
-            else None
-        ),
+        on_poll=on_poll,
         stop_requested=lambda: cancel_requested(run_id),
     )
+    if reservation.granted:
+        log.granted()
+    return reservation
 
 
 def _acquire(

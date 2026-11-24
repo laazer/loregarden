@@ -177,8 +177,9 @@ class DockerLease(SQLModel, table=True):
     compose_project: str = ""
     container_names_json: str = "[]"
 
-    #: FIFO order among waiters. Strictly head-of-line: a large claim at the head
-    #: is not skipped by a small one behind it.
+    #: FIFO order among waiters. Head-of-line: a large claim at the head is not
+    #: skipped, except by a small standing claim that cannot delay it
+    #: (`services/capacity_passing.py`).
     position: int = 0
     ttl_seconds: int = 900
 
