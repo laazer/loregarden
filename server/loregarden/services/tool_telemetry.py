@@ -72,6 +72,11 @@ DECISION_RATE_LIMITED = "rate_limited"  # refused by the server's own ceiling
 # skips its unattended decisions on them (see `bridge_would_double_count`).
 DECISION_EXECUTED = "executed"  # the tool ran
 DECISION_FAILED = "failed"  # the tool raised, including a policy refusal
+# A recoverable condition answered as ordinary content (see `mcp/shaped_errors`).
+# Its own value rather than `executed`: recording a refusal as a success deletes
+# the only person-visible evidence a tool refused, and the operator surface that
+# renders it cannot recover rows that were never written that way.
+DECISION_SHAPED = "shaped"  # the tool refused, with a remedy the agent can act on
 
 DECISIONS = (
     DECISION_TRUSTED_SERVER,
@@ -84,6 +89,7 @@ DECISIONS = (
     DECISION_RATE_LIMITED,
     DECISION_EXECUTED,
     DECISION_FAILED,
+    DECISION_SHAPED,
 )
 
 #: Decisions the bridge makes on its own, with nobody asked.

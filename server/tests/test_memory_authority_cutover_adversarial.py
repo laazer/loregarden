@@ -100,7 +100,7 @@ def test_search_empty_and_whitespace_query_keeps_envelope_and_empty_hits(vault_d
     service = _both(vault_dir, tmp_path)
     for query in ("", "   ", "\t\n"):
         found = service.search(query, workspace_slug="lg")
-        assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+        assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
         assert found["obsidian"] == []
         assert found["graph"] == []
 
@@ -110,7 +110,7 @@ def test_search_limit_zero_returns_envelope_with_empty_arrays(vault_dir, tmp_pat
     service = _both(vault_dir, tmp_path)
     service.upsert_memory(title="Cap", body="limit-zero-needle", workspace_slug="lg")
     found = service.search("limit-zero-needle", workspace_slug="lg", limit=0)
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
     assert found["obsidian"] == []
     assert found["graph"] == []
 
@@ -133,7 +133,7 @@ def test_r2_export_failure_after_graph_write_leaves_graph_node(vault_dir, tmp_pa
     must not roll back the node. A shim that writes vault first then graph would
     leave neither or only vault under a different id."""
     service = _both(vault_dir, tmp_path)
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     assert graph is not None
 
     # Cutover writes GRAPH first, then export. Patch only the vault half so a
@@ -238,7 +238,7 @@ def test_r5_checkpoint_overlap_never_enters_recall(vault_dir, tmp_path):
         run_id="run-adv",
         entry="### Assumption\ntrusted server throttle checkpoint only",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Graph policy",
         body="trusted server throttle in graph",
         workspace_slug="lg",
@@ -297,7 +297,7 @@ def test_r4_rebuild_quarantines_vault_file_with_missing_id(vault_dir, tmp_path):
         body="missing-id-orphan-needle-662",
     )
     assert ghost.is_file()
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Keeper",
         body="kept",
         workspace_slug="lg",
@@ -349,7 +349,7 @@ def test_r4_rebuild_is_workspace_scoped(vault_dir, tmp_path):
         note_type="memory",
     )
     other_path = vault_dir / other.path
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Lg only",
         body="lg body",
         workspace_slug="lg",
@@ -376,7 +376,7 @@ def test_r4_rebuild_idempotent_does_not_delete_prior_orphans(vault_dir, tmp_path
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Live",
         body="live",
         workspace_slug="lg",
@@ -399,7 +399,7 @@ def test_r4_rebuild_exports_match_graph_count_under_stress(vault_dir, tmp_path):
     from loregarden.services.memory_export import rebuild_workspace_exports
 
     service = _both(vault_dir, tmp_path)
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     n = 40
     for i in range(n):
         graph.upsert_node(
@@ -456,7 +456,7 @@ def test_r6_search_excludes_vault_memory_even_when_graph_returns_empty(vault_dir
         body=needle,
     )
 
-    with patch.object(service._graph_for_workspace("lg"), "search", return_value=[]):
+    with patch.object(service.graph_for_workspace("lg"), "search", return_value=[]):
         found = service.search(needle, workspace_slug="lg")
     assert found["graph"] == []
     assert all(row.get("note_type") != "memory" for row in found["obsidian"])

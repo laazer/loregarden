@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any, Literal
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import Ticket, Workspace
 from sqlmodel import Session
 
@@ -145,7 +146,7 @@ def add_workspace_allow_rule(
 ) -> bool:
     workspace = session.get(Workspace, workspace_id)
     if not workspace:
-        raise ValueError("Workspace not found")
+        raise UnknownWorkspaceSlug(workspace_id)
 
     normalized = normalize_tool_input(tool_input)
     rules = load_workspace_allowlist(workspace)

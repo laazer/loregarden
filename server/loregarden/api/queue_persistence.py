@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     QueueSnapshot,
     Workspace,
 )
+from loregarden.services.sql_like import like_contains
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])
@@ -308,13 +309,19 @@ def search_snapshots(
     base_query = select(QueueSnapshot).where(QueueSnapshot.workspace_id == workspace_id)
 
     if query:
+        needle = like_contains(query)
         base_query = base_query.where(
-            (QueueSnapshot.name.ilike(f"%{query}%"))
-            | (QueueSnapshot.description.ilike(f"%{query}%"))
+            QueueSnapshot.name.ilike(needle.pattern, escape=needle.escape)
+            | QueueSnapshot.description.ilike(needle.pattern, escape=needle.escape)
         )
 
     if tag:
-        base_query = base_query.where(QueueSnapshot.tags.ilike(f"%{tag}%"))
+        # `tags` is a JSON-ish text column, so an unescaped `%` or `_` in a tag
+        # would match neighbouring tags as well as the one asked for.
+        tag_needle = like_contains(tag)
+        base_query = base_query.where(
+            QueueSnapshot.tags.ilike(tag_needle.pattern, escape=tag_needle.escape)
+        )
 
     snapshots = session.exec(base_query.order_by(QueueSnapshot.created_at.desc())).all()
 

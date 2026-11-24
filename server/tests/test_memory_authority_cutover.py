@@ -143,7 +143,7 @@ def test_r2_append_learning_writes_graph_before_vault_export(vault_dir, tmp_path
         content="Ordering proof for graph-then-export.",
     )
     node_id = result["graph"]["id"]
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     rows = [r for r in graph.list_nodes(workspace_slug="lg") if r["id"] == node_id]
     assert len(rows) == 1
     assert rows[0]["node_type"] == "learning"
@@ -249,7 +249,7 @@ def test_r4_rebuild_projects_every_graph_memory_and_learning(vault_dir, tmp_path
     from loregarden.services.memory_export import rebuild_workspace_exports
 
     service = _both(vault_dir, tmp_path)
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     mem = graph.upsert_node(
         title="Graph memory A",
         body="Body A.",
@@ -296,7 +296,7 @@ def test_r4_rebuild_quarantines_vault_files_whose_id_is_absent_from_graph(vault_
     ghost_path = vault_dir / ghost.path
     assert ghost_path.is_file()
 
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     graph.upsert_node(
         title="Kept graph memory",
         body="Stays as export.",
@@ -325,7 +325,7 @@ def test_r4_orphans_are_not_search_or_recall_inputs(vault_dir, tmp_path):
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Live graph node",
         body="unrelated",
         workspace_slug="lg",
@@ -347,7 +347,7 @@ def test_r4_orphans_are_not_search_or_recall_inputs(vault_dir, tmp_path):
 def test_r5_recall_related_returns_only_sqlite_source_candidates(vault_dir, tmp_path):
     """Cutover R5 — every durable hit carries source=sqlite."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
@@ -375,7 +375,7 @@ def test_r5_recall_related_never_returns_blog_posts(vault_dir, tmp_path):
         title="Trusted server retrospective",
         body="A trusted server story that must not enter recall.",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="trusted server throttle policy",
         workspace_slug="lg",
@@ -425,7 +425,7 @@ def test_r5_recall_does_not_open_obsidian_list_notes(vault_dir, tmp_path):
     from unittest.mock import patch
 
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server",
         body="Cap the rate.",
         workspace_slug="lg",
@@ -447,7 +447,7 @@ def test_r6_search_keeps_envelope_keys(vault_dir, tmp_path):
     """Cutover R6 — MCP/client keep {query, workspace_slug, obsidian, graph}."""
     service = _both(vault_dir, tmp_path)
     found = service.search("anything", workspace_slug="lg")
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
 
 
 def test_r6_search_graph_hits_are_only_memory_or_learning(vault_dir, tmp_path):

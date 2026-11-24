@@ -5,6 +5,8 @@ codex and external harnesses have no bridge — so the count moved to dispatch,
 the one seam every transport crosses (lg-workflow-integrity-759).
 """
 
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 from loregarden.models.domain import (
     AgentRun,
@@ -20,6 +22,7 @@ from loregarden.services.tool_telemetry import (
     DECISION_EXECUTED,
     DECISION_FAILED,
     DECISION_REJECTED,
+    DECISION_SHAPED,
     bridge_would_double_count,
 )
 from sqlmodel import Session, select
@@ -99,11 +102,37 @@ def test_a_call_that_names_a_ticket_by_external_id_is_attributed(
 
 
 def test_a_failing_call_is_recorded_as_failed_not_dropped(client: TestClient, db_session: Session):
-    body = _rpc(client, "loregarden_get_ticket", {"ticket_id": "does-not-exist"})
+    """An unshaped fault still writes `failed` and still answers `isError`.
+
+    The tool is stubbed to raise something the classifier does not recognise,
+    because the condition this test used to use — an unknown ticket id — is
+    recoverable since `lg-code-knowledge-1113` and is covered by the test
+    below. Keeping a genuine fault here is the point: `failed` is what the
+    operator surface reads as "a tool broke", and losing its only coverage
+    while adding `shaped` would trade one gap for another.
+    """
+    with patch("loregarden.mcp.protocol.execute_tool", side_effect=RuntimeError("disk I/O error")):
+        body = _rpc(client, "loregarden_get_ticket", {"ticket_id": "does-not-exist"})
 
     assert body["result"]["isError"]
     [row] = _rows(db_session)
     assert row.decision == DECISION_FAILED
+
+
+def test_a_recoverable_refusal_is_recorded_as_shaped_not_failed(
+    client: TestClient, db_session: Session
+):
+    """An unknown ticket id is a refusal the agent can act on, and says so.
+
+    The decision has to be its own value: recording it as `executed` would
+    delete the only person-visible evidence a tool refused, and recording it
+    as `failed` would make it indistinguishable from a tool that broke.
+    """
+    body = _rpc(client, "loregarden_get_ticket", {"ticket_id": "does-not-exist"})
+
+    assert "isError" not in body["result"]
+    [row] = _rows(db_session)
+    assert row.decision == DECISION_SHAPED
     assert row.ticket_id == ""
 
 

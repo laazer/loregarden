@@ -54,6 +54,7 @@ from loregarden.services.initiative_coverage import (
 from loregarden.services.initiative_forecast import measure_paces
 from loregarden.services.initiative_plan_service import update_plan
 from loregarden.services.initiative_service import workspace_slugs
+from loregarden.services.sql_like import like_contains
 from loregarden.services.ticket_rollup import RESOLVED_STATES, reconcile_lineage
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, col, select
@@ -472,7 +473,7 @@ def addable_work(session: Session, initiative_id: str, search: str) -> list[Sugg
     Leaves out what a sprint must not take — integration reviews, which run
     after their siblings — and what this initiative already covers.
     """
-    needle = f"%{search.strip()}%"
+    needle = like_contains(search.strip())
     covered = initiative_coverage(session, initiative_id).ticket_ids()
     rows = session.exec(
         select(Ticket)
@@ -481,7 +482,8 @@ def addable_work(session: Session, initiative_id: str, search: str) -> list[Sugg
             col(Ticket.state).not_in(list(RESOLVED_STATES)),
             col(Ticket.is_integration_review).is_(False),
             col(Ticket.id).not_in(covered),
-            col(Ticket.title).ilike(needle) | col(Ticket.external_id).ilike(needle),
+            col(Ticket.title).ilike(needle.pattern, escape=needle.escape)
+            | col(Ticket.external_id).ilike(needle.pattern, escape=needle.escape),
         )
         .order_by(Ticket.priority, Ticket.created_at)
     ).all()

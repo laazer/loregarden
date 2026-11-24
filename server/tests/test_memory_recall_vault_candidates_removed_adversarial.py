@@ -62,7 +62,7 @@ def test_recall_related_does_not_delegate_to_search(vault_dir, tmp_path):
     """Assumption check — a search()-first recall reopens vault kind walks and
     defeats GRAPH-only durable ranking."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="trusted server throttle",
         workspace_slug="lg",
@@ -95,7 +95,7 @@ def test_limit_zero_returns_empty_without_opening_vault(vault_dir, tmp_path):
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server graph",
         body="Cap the rate in graph.",
         workspace_slug="lg",
@@ -112,7 +112,7 @@ def test_limit_zero_returns_empty_without_opening_vault(vault_dir, tmp_path):
 def test_repeated_recall_never_opens_list_notes(vault_dir, tmp_path):
     """Stress — N recalls must not accumulate vault enumeration."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server",
         body="Cap the rate.",
         workspace_slug="lg",
@@ -133,7 +133,7 @@ def test_recall_with_obsidian_none_still_ranks_graph(tmp_path):
         obsidian=None,
         graph_sqlite_base=tmp_path / "Loregarden" / "memory.db",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server",
         body="Cap the rate.",
         workspace_slug="lg",
@@ -159,7 +159,7 @@ def test_high_overlap_vault_memory_cannot_outrank_weaker_graph_hit(vault_dir, tm
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Partial",
         body="trusted server somewhere in graph only",
         workspace_slug="lg",
@@ -192,7 +192,7 @@ def test_vault_learning_and_blog_peers_never_appear_in_recall(vault_dir, tmp_pat
         title="Blog peer",
         body=needle,
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Graph weak",
         body="trusted server only",
         workspace_slug="lg",
@@ -212,7 +212,7 @@ def test_graph_failure_still_labels_graph_not_vault(vault_dir, tmp_path):
     """Error handling — GRAPH read failure must remain GRAPH-labelled; a leftover
     VAULT wrapper must not steal the label when list_notes is unused."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="trusted server",
         workspace_slug="lg",

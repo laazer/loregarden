@@ -74,7 +74,7 @@ def test_aliases_are_cleaned_kept_on_update_and_versioned(tmp_path):
     )["graph"]
     assert node["aliases"] == ["RAG"]
 
-    graph = memory._graph_for_workspace(WS)
+    graph = memory.graph_for_workspace(WS)
     graph.upsert_node(node_id=node["id"], title=node["title"], body="new body", workspace_slug=WS)
     assert graph.get_node(node["id"])["aliases"] == ["RAG"]
     assert graph.node_versions(node["id"])[-1]["aliases"] == ["RAG"]

@@ -94,7 +94,7 @@ def rebuild_workspace_exports(
     if not slug:
         raise ValueError("workspace_slug is required for rebuild_workspace_exports")
 
-    graph = service._graph_for_workspace(slug)
+    graph = service.graph_for_workspace(slug)
     if not graph:
         raise ValueError("Memory graph SQLite is not configured; cannot rebuild exports.")
     if not service.obsidian:

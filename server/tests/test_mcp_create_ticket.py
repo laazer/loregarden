@@ -27,6 +27,7 @@ import json
 import re
 
 import pytest
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.acceptance_criteria import load_criteria
@@ -237,7 +238,15 @@ def test_milestone_under_initiative_succeeds_via_mcp(client, db_session):
 
 
 def test_unknown_workspace_slug_is_rejected_with_service_message(client, db_session):
-    with pytest.raises(ValueError, match="Workspace not found: does-not-exist"):
+    """The typed condition, which is still a `ValueError` so `api/` keeps its 400.
+
+    `lg-code-knowledge-1113` moved the sixteen untyped
+    `ValueError("Workspace not found: …")` raises onto `UnknownWorkspaceSlug`,
+    so an agent meeting this over MCP now gets a remedy instead of `isError`.
+    The slug it could not resolve is still named, which is what this test was
+    really about; the sentence around it is not pinned by any spec.
+    """
+    with pytest.raises(UnknownWorkspaceSlug) as raised:
         _create(
             db_session,
             {
@@ -246,6 +255,8 @@ def test_unknown_workspace_slug_is_rejected_with_service_message(client, db_sess
                 "work_item_type": "milestone",
             },
         )
+    assert "does-not-exist" in str(raised.value)
+    assert raised.value.remedy.strip()
 
 
 def test_duplicate_external_id_is_rejected_with_service_message(client, db_session):

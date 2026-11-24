@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from loregarden.agents.cli_adapters import resolve_effective_adapter
 from loregarden.agents.mcp_context import resolve_mcp_url
 from loregarden.agents.registry import get_agent
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.mcp.tool_ids import TICKET_STUDIO_MCP_TOOLS, mcp_tool_values
 from loregarden.models.domain import (
     VALID_HIERARCHY,
@@ -974,7 +975,7 @@ class TicketStudioService:
             select(Workspace).where(Workspace.slug == body.workspace_slug)
         ).first()
         if not ws:
-            raise ValueError(f"Workspace not found: {body.workspace_slug}")
+            raise UnknownWorkspaceSlug(body.workspace_slug)
 
         parent: Ticket | None = None
         if body.parent_ticket_id:
@@ -1342,7 +1343,7 @@ class TicketStudioService:
 
         workspace = self.session.get(Workspace, row.workspace_id)
         if not workspace:
-            raise ValueError("Workspace not found")
+            raise UnknownWorkspaceSlug(row.workspace_id)
 
         draft = [item for item in _load_draft(row) if item.selected]
         if not draft:

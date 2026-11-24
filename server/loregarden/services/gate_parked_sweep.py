@@ -58,6 +58,8 @@ def parked_by_gate(session: Session) -> list[ParkedTicket]:
     runs = session.exec(
         select(OrchestrationRun)
         .where(OrchestrationRun.status == OrchestrationRunStatus.SUCCEEDED)
+        # A fixed literal prefix we write ourselves, and its trailing `%` is the
+        # like-ok: wildcard this predicate wants — no caller text reaches it.
         .where(col(OrchestrationRun.error_message).like("Transition gate failed at %"))
         .order_by(col(OrchestrationRun.created_at).desc())
     ).all()

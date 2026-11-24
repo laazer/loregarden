@@ -611,7 +611,7 @@ def test_recall_related_reads_graph_and_ignores_vault_memory(vault_dir, tmp_path
         workspace_slug="lg",
         note_type="memory",
     )
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     graph.upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
@@ -628,7 +628,7 @@ def test_recall_related_works_with_the_graph_alone(tmp_path):
     """AC3.3 — obsidian=None is the real deployment shape for a machine with no
     vault; the graph must still be ranked."""
     service = AgentMemoryService(obsidian=None, graph_sqlite_base=tmp_path / "LG" / "memory.db")
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
@@ -684,13 +684,13 @@ def test_recall_related_ranks_graph_nodes_only(vault_dir, tmp_path):
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
         node_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Weak throttle mention",
         body="throttled once.",
         workspace_slug="lg",
@@ -708,11 +708,11 @@ def test_recall_related_ranks_a_newer_graph_node_above_an_equally_matching_older
     """AC3.5 / AC2 — the recency tiebreak among GRAPH candidates."""
     service = _both_backends(vault_dir, tmp_path)
     with frozen_clock("2026-01-01T00:00:00+00:00"):
-        service._graph_for_workspace("lg").upsert_node(
+        service.graph_for_workspace("lg").upsert_node(
             title="Older throttle node", body="trusted server", workspace_slug="lg"
         )
     with frozen_clock("2026-02-01T00:00:00+00:00"):
-        service._graph_for_workspace("lg").upsert_node(
+        service.graph_for_workspace("lg").upsert_node(
             title="Newer throttle node", body="trusted server", workspace_slug="lg"
         )
 
@@ -731,7 +731,7 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
     of the recency tiebreak: truncation must drop the WEAKEST, not the last one
     enumerated, so a limit applied before ranking fails here as well."""
     service = _both_backends(vault_dir, tmp_path)
-    graph = service._graph_for_workspace("lg")
+    graph = service.graph_for_workspace("lg")
     graph.upsert_node(title="Weakest throttle note", body="Body.", workspace_slug="lg")
     graph.upsert_node(title="Trusted server", body="Body.", workspace_slug="lg")
     graph.upsert_node(title="Trusted server throttle", body="Body.", workspace_slug="lg")
@@ -750,7 +750,7 @@ def test_recall_related_truncates_to_its_limit_keeping_the_top_ranked(vault_dir,
 def test_recall_related_does_not_enumerate_obsidian(vault_dir, tmp_path):
     """AC3.6 / Cutover R5 — vault list_notes is off the durable recall path."""
     service = _both_backends(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server throttle", body="Cap the rate.", workspace_slug="lg"
     )
 
@@ -767,7 +767,7 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
     whatever survived the whole-query substring match, i.e. almost always
     nothing. Neither store's search may be touched."""
     service = _both_backends(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
@@ -785,9 +785,18 @@ def test_recall_related_never_pre_filters_through_search(vault_dir, tmp_path):
     assert len(ranked) == 1
 
 
-def test_service_search_still_substring_matches_and_keeps_its_envelope(vault_dir, tmp_path):
+def test_service_search_matches_on_terms_and_keeps_its_envelope(vault_dir, tmp_path):
     """AC3.8 / Cutover R6 — search() stays the loregarden_search_memory tool path;
-    envelope keys unchanged; vault memory peers are not in obsidian[]."""
+    envelope keys unchanged; vault memory peers are not in obsidian[].
+
+    `lg-code-knowledge-1113` changed what this path matches ON. It used to
+    LIKE the caller's whole phrase, so "throttle rate" found nothing in a node
+    titled "Trusted server throttle" with body "Cap the call rate." — which is
+    the retrieval regression AC8 exists to remove, since an agent asks a
+    question rather than typing a substring. The whole-phrase behaviour is
+    still pinned, on the surface that kept it: `MemoryGraphStore.search`, which
+    is what the operator Memory browser calls.
+    """
     service = _both_backends(vault_dir, tmp_path)
     service.upsert_memory(
         title="Trusted server throttle",
@@ -802,10 +811,18 @@ def test_service_search_still_substring_matches_and_keeps_its_envelope(vault_dir
     )
 
     found = service.search("Cap the call", workspace_slug="lg")
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
     assert [row["title"] for row in found["graph"]] == ["Trusted server throttle"]
     assert all(row.get("note_type") == "blog_post" for row in found["obsidian"])
-    assert service.search("throttle rate", workspace_slug="lg")["graph"] == []
+
+    # The agent path reduces the question to terms, so words scattered across
+    # a node's title and body now match it.
+    scattered = service.search("throttle rate", workspace_slug="lg")["graph"]
+    assert [row["title"] for row in scattered] == ["Trusted server throttle"]
+
+    # The operator path does not, and must not: somebody typing a substring
+    # means a substring (spec A5, which exempts services/memory_browser.py).
+    assert service.require_graph("lg").search("throttle rate", workspace_slug="lg") == []
 
 
 # ---------------------------------------------------------------------------
@@ -924,7 +941,7 @@ def test_agent_memory_service_search_includes_checkpoints(vault_dir, tmp_path):
     )
 
     found = service.search(_CHECKPOINT_NEEDLE, workspace_slug="loregarden")
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
     checkpoint_hits = [
         row
         for row in found["obsidian"]
@@ -1268,7 +1285,7 @@ def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_d
             run_id=f"run-flood-{index}",
             entry=f"### Assumption\nflood entry {index} trusted server throttle",
         )
-    service._graph_for_workspace("loregarden").upsert_node(
+    service.graph_for_workspace("loregarden").upsert_node(
         title="Trusted server throttle",
         body="Cap the call rate.",
         workspace_slug="loregarden",

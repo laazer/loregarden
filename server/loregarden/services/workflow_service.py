@@ -11,6 +11,7 @@ from loregarden.core.workflow_loader import (
     safe_load_yaml_file,
     sync_workflow_templates,
 )
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     StageStatus,
@@ -288,7 +289,7 @@ class WorkflowService:
     def set_workspace_template(self, workspace_slug: str, template_slug: str) -> Workspace:
         ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
         if not ws:
-            raise ValueError(f"Workspace not found: {workspace_slug}")
+            raise UnknownWorkspaceSlug(workspace_slug)
         template = self.get_template_by_slug(template_slug)
         if not template:
             raise ValueError(f"Unknown workflow template: {template_slug}")
@@ -331,7 +332,7 @@ class WorkflowService:
 
         ws = workspace_for_ticket(self.session, ticket)
         if not ws:
-            raise ValueError("Workspace not found")
+            raise UnknownWorkspaceSlug(ticket.external_id)
 
         stages = get_template_stages(template)
         override = load_workspace_override(ws.slug)

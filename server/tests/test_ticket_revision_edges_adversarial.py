@@ -399,6 +399,11 @@ def test_an_unknown_ticket_with_a_token_reports_the_ticket_not_a_conflict(client
         {"ticket_id": "lg-no-such-ticket-9999", "title": "Renamed", "expected_revision": 3},
     )
 
-    assert body["result"]["isError"] is True, body
     text = _mcp_text(body)
     assert "revision_conflict" not in text, text
+    # `lg-code-knowledge-1113` made an unknown ticket id a recoverable
+    # condition, so this answers as content with a remedy rather than as
+    # `isError`. What this test is about is unchanged: the reply must name the
+    # ticket that could not be resolved, not a concurrent writer that does not
+    # exist.
+    assert "lg-no-such-ticket-9999" in text, text
