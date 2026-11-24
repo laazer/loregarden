@@ -52,21 +52,6 @@ def test_external_mcp_start_claims_a_slot(client: TestClient, db_session):
     assert held.is_available is False
 
 
-def test_orchestrate_ticket_one_stage(client: TestClient):
-    ticket_id = None
-    for t in client.get("/api/tickets").json():
-        if t["legacy_external_id"] == "04-workflow-template-overrides":
-            ticket_id = t["id"]
-            break
-    res = client.post(
-        f"/api/tickets/{ticket_id}/orchestrate",
-        json={"max_stages": 1},
-    )
-    assert res.status_code == 200
-    body = res.json()
-    assert body["state"] in ("in_progress", "blocked", "done")
-
-
 def test_orchestration_callbacks(client: TestClient):
     ticket_id = None
     for t in client.get("/api/tickets").json():

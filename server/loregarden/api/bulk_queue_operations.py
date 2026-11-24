@@ -263,6 +263,13 @@ def retry_failed_entry(
     entry = _entry(session, workspace_id, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    # Retry writes QUEUED, so on a live entry it would put running work back in
+    # its lane to be started a second time.
+    if entry.status is not QueuePosition.FAILED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Entry is {entry.status.value}; only a failed entry can be retried",
+        )
     if entry.retry_count >= entry.max_retries:
         raise HTTPException(
             status_code=400,

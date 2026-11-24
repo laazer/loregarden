@@ -44,12 +44,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ): "A zero-second window must not wait. Two orders of magnitude of margin on "
     "a wait whose correct value is 0.0, so load cannot plausibly reach it.",
     (
-        "test_bulk_operations.py",
-        "(stored - now).total_seconds() < 1",
-    ): "Not a duration at all: `now` is the value the row was written with, so the "
-    "difference is zero by construction. The slack absorbs SQLite's datetime "
-    "round-trip precision, not elapsed time.",
-    (
         "test_runtime_effort.py",
         "cold_elapsed < 2.0",
     ): "The 2s budget is criterion B6 of lg-bug-hole-689, and the quantity under test "

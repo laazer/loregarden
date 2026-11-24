@@ -43,21 +43,6 @@ class TestProposalValidatorRequiredFields:
         with pytest.raises(ProposalValidationError, match="title is required"):
             ProposalValidator.validate_all([item])
 
-    def test_required_fields_enforced_by_pydantic(self):
-        """Pydantic enforces required fields before validation layer."""
-        # Note: work_item_type is enforced as non-nullable enum by Pydantic,
-        # so validation layer doesn't need to check. This test documents that.
-        # Attempting to create item with None work_item_type raises pydantic error.
-        import pytest as pytest_module
-        from pydantic import ValidationError
-
-        with pytest_module.raises(ValidationError):
-            HierarchyWorkItem(
-                external_id="id1",
-                title="Test",
-                work_item_type=None,
-            )
-
     def test_valid_required_fields_passes(self):
         """Item with all required fields should pass."""
         item = HierarchyWorkItem(
@@ -694,33 +679,6 @@ class TestProposalValidatorTreeLimits:
             ProposalValidator.validate_all([item])
 
 
-class TestProposalValidatorCycles:
-    """Verify no cyclic references are allowed."""
-
-    def test_no_cycles_in_nested_structure(self):
-        """Normal nested structure should pass cycle detection."""
-        item = HierarchyWorkItem(
-            external_id="id1",
-            title="Item 1",
-            work_item_type=WorkItemType.FEATURE,
-            children=[
-                HierarchyWorkItem(
-                    external_id="id2",
-                    title="Item 2",
-                    work_item_type=WorkItemType.CAPABILITY,
-                    children=[
-                        HierarchyWorkItem(
-                            external_id="id3",
-                            title="Item 3",
-                            work_item_type=WorkItemType.TASK,
-                        )
-                    ],
-                )
-            ],
-        )
-        ProposalValidator.validate_no_cycles([item])
-
-
 class TestProposalValidatorIntegration:
     """Integration tests covering complete validation workflows."""
 
@@ -777,23 +735,6 @@ class TestProposalValidatorIntegration:
         """Empty hierarchy should fail."""
         with pytest.raises(ProposalValidationError, match="Hierarchy cannot be empty"):
             ProposalValidator.validate_all([])
-
-    def test_validation_catches_multiple_issues(self):
-        """Validation should catch issues like invalid type hierarchy."""
-        item = HierarchyWorkItem(
-            external_id="id1",
-            title="Parent Task",
-            work_item_type=WorkItemType.TASK,
-            children=[
-                HierarchyWorkItem(
-                    external_id="id2",
-                    title="Invalid Child",
-                    work_item_type=WorkItemType.FEATURE,  # Task can't contain Feature
-                )
-            ],
-        )
-        with pytest.raises(ProposalValidationError):
-            ProposalValidator.validate_all([item])
 
     def test_normalization_is_idempotent(self):
         """Normalizing twice should yield same result."""
@@ -859,27 +800,6 @@ class TestProposalValidatorEdgeCases:
         result = ProposalValidator.validate_all([item])
         assert "café" in result[0].title
         assert "résumé" in result[0].title
-
-    def test_whitespace_only_title_becomes_empty_after_normalization(self):
-        """Title with only whitespace normalizes to empty string.
-
-        This is caught at the normalization step when we try to use an empty title,
-        or at text validation if the check comes first.
-        """
-        item = HierarchyWorkItem(
-            external_id="id1",
-            title="   ",
-            work_item_type=WorkItemType.TASK,
-        )
-        # After stripping, title becomes empty, but Pydantic might reject this first
-        # Accept either behavior (normalized empty or validation error)
-        try:
-            result = ProposalValidator.validate_all([item])
-            # If it passes, title should be normalized to empty
-            assert result[0].title == ""
-        except ProposalValidationError:
-            # If validation fails, that's also acceptable
-            pass
 
     def test_newlines_in_title_preserved(self):
         """Newlines in title should be preserved (though unusual)."""

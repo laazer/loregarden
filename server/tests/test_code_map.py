@@ -28,7 +28,7 @@ repo/
 | Task | Location | Notes |
 |------|----------|-------|
 | Routing | `services/router.py` | `resolve_route` does the work |
-| Config | `settings.py` | `MAX_SIZE` and `"role_file"` |
+| Config | `settings.py` | `MAX_SIZE` and `role_file` |
 
 ## NEXT SECTION
 
@@ -37,6 +37,7 @@ not part of the map
 
 
 def _repo(tmp_path: Path, *, router: str = "", settings_py: str = "") -> Path:
+    tmp_path.mkdir(exist_ok=True)
     (tmp_path / "AGENTS.md").write_text(MAP)
     services = tmp_path / "server" / "loregarden" / "services"
     services.mkdir(parents=True)
@@ -60,6 +61,15 @@ def test_a_moved_function_is_caught(tmp_path):
     assert "resolve_route" in drift[0].detail
 
 
+@pytest.mark.parametrize("name", ["copy_tickets", "happy"])
+def test_a_moved_function_is_caught_whatever_its_name_ends_in(tmp_path, name):
+    """A suffix filter meant for file extensions skipped every name in -ts or -py."""
+    repo = _repo(tmp_path)
+    agents = repo / "AGENTS.md"
+    agents.write_text(agents.read_text().replace("resolve_route", name))
+    assert [d.detail.split()[0] for d in verify_code_map(repo)] == [name]
+
+
 def test_a_deleted_file_is_caught(tmp_path):
     repo = _repo(tmp_path)
     (repo / "server" / "loregarden" / "services" / "router.py").unlink()
@@ -67,9 +77,12 @@ def test_a_deleted_file_is_caught(tmp_path):
 
 
 def test_constants_and_config_keys_count_as_definitions(tmp_path):
-    """The map legitimately points at more than functions; flagging a constant
-    as missing would train everyone to ignore the check."""
-    assert verify_code_map(_repo(tmp_path)) == []
+    """The map legitimately points at more than functions; a constant or a
+    config key counts when it is there and is reported when it is gone."""
+    present = _repo(tmp_path / "present")
+    assert verify_code_map(present) == []
+    gone = verify_code_map(_repo(tmp_path / "gone", settings_py="OTHER = 1\n"))
+    assert [d.detail.split()[0] for d in gone] == ["MAX_SIZE", "role_file"]
 
 
 def test_a_typescript_export_counts_and_an_import_does_not(tmp_path):

@@ -71,7 +71,11 @@ from loregarden.services.parallel_queue import (
     release_slot,
 )
 from loregarden.services.proven_evidence_ledger import PROVEN_EVIDENCE_IS_NOT_HELD_OPEN
-from loregarden.services.queue_repair import held_but_blocked, rearm_held
+from loregarden.services.queue_invariants import (
+    HELD_REPAIRS_READ_IN_PROGRESS,
+    SETTLED_HOLDS_READ_BLOCKED,
+    WAITING_ENTRIES_HAVE_NO_LIVE_WORK,
+)
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.queued_override_invariant import QUEUED_OVERRIDES_APPLY
 from loregarden.services.reference_survey.invariants import (
@@ -86,10 +90,6 @@ from loregarden.services.scope_invariants import (
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     FINDINGS_OUTLIVE_THEIR_SOURCE,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
-)
-from loregarden.services.settled_hold_checks import (
-    reblock_settled_violations,
-    settled_hold_violations,
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_park_invariant import STALE_PARKS_ARE_CLOSED
@@ -1077,54 +1077,6 @@ LAND_VERIFICATION_RAN = Invariant(
 )
 
 
-def _held_but_blocked(session: Session) -> list[Violation]:
-    return [
-        Violation(
-            subject_id=ticket.id,
-            ticket_id=ticket.id,
-            entered_at=entry.repairing_since,
-            detail=f"{ticket.external_id} reads blocked on '{ticket.workflow_stage_key}' while "
-            f"lane {entry.slot_number} is held for its {entry.repair_route} repair",
-        )
-        for entry, ticket in held_but_blocked(session)
-    ]
-
-
-def _rearm_held(session: Session, violations: Sequence[Violation]) -> int:
-    return rearm_held(session, _tickets(session, violations))
-
-
-HELD_REPAIRS_READ_IN_PROGRESS = Invariant(
-    name="held_repairs_read_in_progress",
-    ticket="lg-queue-execution-1656",
-    statement=(
-        "no ticket whose lane is held for a repair (other than an interruption) reads blocked"
-    ),
-    detect=_held_but_blocked,
-    repair=_rearm_held,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 10, 29),
-    prevented_by="server/tests/test_lane_repair_hold.py::test_every_lane_hold_re_arms_its_stage",
-)
-
-
-SETTLED_HOLDS_READ_BLOCKED = Invariant(
-    name="settled_holds_read_blocked",
-    ticket="lg-milestone-that-1420",
-    statement=(
-        "no ticket whose lane hold ended without its repair reads in progress with nothing "
-        "running it"
-    ),
-    detect=settled_hold_violations,
-    repair=reblock_settled_violations,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 11, 14),
-    prevented_by=(
-        "server/tests/test_held_repairs_settle_blocked.py::"
-        "test_every_way_a_hold_settles_leaves_the_ticket_blocked"
-    ),
-)
-
 DONE_TICKET_SHIP_IS_OBSERVABLE = Invariant(
     # Spelled out, not imported: `pr_fix_coverage_check` reads names off this
     # file without importing it. test_done_ticket_ship finds it by
@@ -1394,6 +1346,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_TAKE_NO_ANSWERS,
     QUEUED_OVERRIDES_APPLY,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
+    WAITING_ENTRIES_HAVE_NO_LIVE_WORK,
     HELD_REPAIRS_READ_IN_PROGRESS,
     SETTLED_HOLDS_READ_BLOCKED,
     EXHAUSTED_GATES_BLOCK,

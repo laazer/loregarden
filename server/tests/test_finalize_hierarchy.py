@@ -380,7 +380,7 @@ class TestFinalizeHierarchyValidation:
                 ],
             },
         )
-        assert res.status_code in (400, 422)
+        assert res.status_code == 422
 
     def test_missing_title(self, client: TestClient):
         """Endpoint rejects work item without title."""
@@ -435,11 +435,8 @@ class TestFinalizeHierarchyEdgeCases:
                 "hierarchy": [],
             },
         )
-        # Empty hierarchy should either succeed with 0 created or fail with clear error
-        assert res.status_code in (201, 400)
-        if res.status_code == 201:
-            body = res.json()
-            assert body.get("total_created") == 0
+        assert res.status_code == 201
+        assert res.json() == {"created_ids": [], "total_created": 0}
 
     def test_hierarchy_with_sibling_nodes(self, client: TestClient, db_session: Session):
         """Finalize hierarchy with multiple siblings at same level."""
@@ -865,7 +862,7 @@ class TestFinalizeHierarchyDefaultValues:
         ticket = db_session.exec(
             select(Ticket).where(Ticket.legacy_external_id == "test-default-desc")
         ).first()
-        assert ticket.description == "" or ticket.description is None
+        assert ticket.description == ""
 
 
 class TestFinalizeHierarchyAdvancedTypeValidation:

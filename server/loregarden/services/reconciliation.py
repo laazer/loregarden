@@ -106,6 +106,7 @@ from loregarden.services.invariant_registry import (
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
+    WAITING_ENTRIES_HAVE_NO_LIVE_WORK,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
 from loregarden.services.invariants import Invariant, run_invariant
@@ -207,6 +208,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # rows naming no occupant, this one reads a held entry against its ticket's
     # state, so either order gives the same answer.
     _invariant(HELD_REPAIRS_READ_IN_PROGRESS),
+    # Before the lanes are driven: a waiting entry whose own run is live would be
+    # started a second time by that pass.
+    _invariant(WAITING_ENTRIES_HAVE_NO_LIVE_WORK),
     SweepStep("reconcile_lanes", _reconcile_lanes),
     # After the lanes are driven, which is where a hold settles: a settled hold
     # whose stage is still re-armed is blocked again here (1420).

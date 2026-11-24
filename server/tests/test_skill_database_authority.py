@@ -20,6 +20,7 @@ from loregarden.models.domain import (
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
@@ -136,7 +137,7 @@ def test_fresh_sqlmodel_metadata_contains_skill_tables_and_constraints(tmp_path)
                 "'2026-01-01T00:00:00+00:00')"
             )
         )
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             conn.execute(
                 text(
                     "INSERT INTO skill_versions "

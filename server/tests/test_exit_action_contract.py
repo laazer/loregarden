@@ -456,6 +456,6 @@ def test_studio_rejects_an_identifier_outside_the_catalog(client: TestClient):
         "/api/studio/workflows", json=_workflow_with_capability("known-cap", known)
     )
 
-    assert 400 <= rejected.status_code < 500, rejected.text
+    assert rejected.status_code == 400, rejected.text
     assert "no_such_probe" in rejected.text
-    assert accepted.status_code in (200, 201), accepted.text
+    assert accepted.status_code == 200, accepted.text

@@ -76,7 +76,7 @@ def lookup_entries(text: str) -> list[MapEntry]:
         notes = cells[2] if len(cells) > 2 else ""
         paths = _PATH.findall(location)
         # Symbols are named in the notes; the location column holds paths.
-        symbols = [s for s in _SYMBOL.findall(notes) if not s.endswith(("py", "ts"))]
+        symbols = _SYMBOL.findall(notes)
         if paths:
             entries.append(MapEntry(task=task, paths=paths, symbols=symbols))
     return entries

@@ -1471,7 +1471,7 @@ def test_snapshot_is_waiting_with_payload_and_null_active_ids(db_session, ticket
         assert active is None
         snap = triage_snapshot(db_session, ticket)
         assert snap["run_status"] == "waiting"
-        assert snap["active_run_id"] is None or snap.get("active_turn_id") is None
+        assert snap["active_run_id"] is None
         wait = snap["wait"]
         assert wait["command"] == COMMAND
         assert wait["log_path"] == str(log_path)

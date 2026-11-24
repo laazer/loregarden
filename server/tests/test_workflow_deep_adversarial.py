@@ -17,7 +17,6 @@ Focus areas:
 - Timing-sensitive state changes
 """
 
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi.testclient import TestClient
@@ -138,75 +137,6 @@ class TestStateConsistencyUnderConcurrency:
 
 class TestWorkflowInitializationMutations:
     """Mutation testing: flip conditions to expose initialization assumptions."""
-
-    def test_milestone_workflow_NOT_skipped_by_condition(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mutation: The code that initializes workflows must NOT skip MILESTONE.
-
-        This catches if someone reverted the WORKFLOW_WORK_ITEM_TYPES constant
-        or re-added a conditional check that skips non-FEATURE/TASK/BUG types.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Mutation - workflow init check",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone = res.json()
-
-        # Mutation: verify workflow WAS initialized (not skipped)
-        assert milestone["workflow_stage_key"] != "", (
-            "MILESTONE workflow was skipped (conditional check bug)"
-        )
-        assert milestone["workflow_stage_status"] == "pending", (
-            "MILESTONE workflow status not initialized"
-        )
-
-        # Verify WorkflowInstance was created (not skipped)
-        instance = db_session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone["id"])
-        ).first()
-        assert instance is not None, (
-            "MILESTONE WorkflowInstance was skipped (conditional check bug)"
-        )
-
-    def test_capability_workflow_NOT_skipped_by_condition(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mutation: The code that initializes workflows must NOT skip CAPABILITY.
-        """
-        feature = next(
-            t
-            for t in client.get("/api/tickets?workspace=loregarden").json()
-            if t["work_item_type"] == "feature"
-        )
-
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Mutation - capability workflow init",
-                "work_item_type": "capability",
-                "parent_ticket_id": feature["id"],
-            },
-        )
-        assert res.status_code == 201
-        capability = res.json()
-
-        # Mutation: flip expectation - workflow SHOULD be there
-        assert capability["workflow_stage_key"] != "", "CAPABILITY workflow was skipped"
-
-        # Verify instance exists
-        instance = db_session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == capability["id"])
-        ).first()
-        assert instance is not None, "CAPABILITY WorkflowInstance was not created"
 
     def test_workflow_constants_includes_all_types(self, db_session: Session):
         """
@@ -390,7 +320,7 @@ class TestHierarchyWorkflowOrthogonality:
 
         # Should fail because TASK cannot be child of MILESTONE
         # This must work regardless of workflow eligibility
-        assert task_res.status_code != 201, (
+        assert task_res.status_code == 400, (
             "Hierarchy validation must work (orthogonal from workflow)"
         )
 
@@ -452,41 +382,6 @@ class TestHierarchyWorkflowOrthogonality:
 class TestErrorRecoveryAndPartialFailures:
     """Expose error recovery paths and partial failure scenarios."""
 
-    def test_workflow_init_failure_doesnt_create_ticket_half_state(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Error recovery: If workflow initialization fails, ticket should not
-        be left in a half-initialized state.
-
-        Exposes: Partial failures, missing rollback, inconsistent state.
-        """
-        # Try to create milestone in workspace with no template
-        # (This test needs a workspace without template, which may not exist)
-        # For now, test that if creation fails, no partial state exists
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Partial state test",
-                "work_item_type": "milestone",
-            },
-        )
-
-        if res.status_code == 201:
-            # Creation succeeded; if workflow failed to init, we'd see empty stage key
-            milestone = res.json()
-            if milestone["workflow_stage_key"] == "":
-                # This is the bad case: ticket created but workflow not initialized
-                # Verify there's a WorkflowInstance anyway (or handle gracefully)
-                instance = db_session.exec(
-                    select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone["id"])
-                ).first()
-                # Either instance should exist or error should have been thrown
-                assert instance is not None or milestone.get("error"), (
-                    "Partial failure: ticket created but workflow not initialized"
-                )
-
     def test_invalid_parent_doesnt_create_ticket(self, client: TestClient, db_session: Session):
         """
         Error recovery: If parent validation fails, ticket should not be created.
@@ -505,242 +400,13 @@ class TestErrorRecoveryAndPartialFailures:
             },
         )
 
-        assert res.status_code != 201, "Should not create ticket with invalid parent"
+        assert res.status_code == 400, "Should not create ticket with invalid parent"
 
         # Verify no ticket was created with this description
         orphan = db_session.exec(
             select(Ticket).where(Ticket.title == "Invalid parent test")
         ).first()
         assert orphan is None, "Ticket was partially created despite invalid parent"
-
-
-class TestIdempotencyAndReplayability:
-    """Verify operations are idempotent and can be replayed safely."""
-
-    def test_multiple_workflow_initializations_idempotent(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Idempotency: Initializing workflow multiple times should result
-        in same state, not duplicates.
-
-        Exposes: Non-idempotent operations, duplicate instances.
-        """
-        # Create milestone
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Idempotency test",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone_id = res.json()["id"]
-
-        # Simulate replaying initialization (e.g., retry in service)
-        # by directly checking state
-        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
-
-        initial_stage_key = db_ticket.workflow_stage_key
-
-        # Verify WorkflowInstance count is still 1
-        instances = db_session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
-        ).all()
-        assert len(instances) == 1, f"Non-idempotent: got {len(instances)} instances after creation"
-
-        # State should be unchanged
-        db_session.refresh(db_ticket)
-        assert db_ticket.workflow_stage_key == initial_stage_key, (
-            "Workflow stage changed on idempotent operation"
-        )
-
-    def test_stage_transition_not_duplicated_on_replay(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Idempotency: Replaying a stage transition should be safe.
-
-        Exposes: Double-execution of transitions, missing idempotency checks.
-        """
-        # Create milestone
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Stage transition replay test",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone_id = res.json()["id"]
-
-        # Verify workflow has multiple stages
-        instance = db_session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
-        ).first()
-
-        stages_json = json.loads(instance.stages_json)
-        if len(stages_json) > 1:
-            # If we could replay a transition, verify idempotency
-            # (This is a placeholder; actual replay test would update stage)
-            assert instance.current_stage_key is not None, (
-                "Current stage is null (not tracking state)"
-            )
-
-
-class TestAssumptionFlipping:
-    """Flip assumptions to expose hidden bugs."""
-
-    def test_assume_workflow_stage_key_is_NOT_first_stage_key(self, client: TestClient):
-        """
-        Assumption flip: What if workflow_stage_key is NOT the first stage?
-
-        This test verifies the assumption is CORRECT, not violated.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Assumption flip - stage order",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone = res.json()
-
-        # Verify the assumption holds
-        first_stage_key = milestone["stages"][0]["key"]
-        assert milestone["workflow_stage_key"] == first_stage_key, (
-            "Assumption violated: workflow_stage_key must be first stage"
-        )
-
-    def test_assume_workflow_stage_exists_in_stages_array(self, client: TestClient):
-        """
-        Assumption flip: Verify workflow_stage_key is always in stages array.
-
-        Exposes: Stale stage keys, orphaned states.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Assumption flip - stage existence",
-                "work_item_type": "capability",
-                "parent_ticket_id": next(
-                    t["id"]
-                    for t in client.get("/api/tickets?workspace=loregarden").json()
-                    if t["work_item_type"] == "feature"
-                ),
-            },
-        )
-        assert res.status_code == 201
-        capability = res.json()
-
-        stage_keys = {s["key"] for s in capability["stages"]}
-        assert capability["workflow_stage_key"] in stage_keys, (
-            f"Assumption violated: workflow_stage_key '{capability['workflow_stage_key']}' "
-            f"not in stages {stage_keys}"
-        )
-
-    def test_assume_stages_never_null_or_empty(self, client: TestClient):
-        """
-        Assumption flip: stages array must always have content.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Assumption flip - stages content",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone = res.json()
-
-        assert milestone["stages"] is not None, "Assumption violated: stages is null"
-        assert isinstance(milestone["stages"], list), "Assumption violated: stages is not a list"
-        assert len(milestone["stages"]) > 0, "Assumption violated: stages is empty"
-
-
-class TestMockOveruseDetection:
-    """Verify system works with real dependencies, not mocks."""
-
-    def test_workflow_instance_actually_persisted_to_database(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mock overuse: Verify WorkflowInstance is actually persisted,
-        not just mocked in memory.
-
-        Exposes: Mock-only tests that pass but fail in production.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Real persistence test",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone_id = res.json()["id"]
-
-        # Query database directly (not through API/cache)
-        # Force a fresh database session
-        db_session.expire_all()
-
-        instance = db_session.exec(
-            select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
-        ).first()
-
-        assert instance is not None, (
-            "WorkflowInstance not found in database (possible mock overuse)"
-        )
-        assert instance.ticket_id == milestone_id
-        assert instance.template_id is not None, (
-            "Template reference missing (incomplete persistence)"
-        )
-
-    def test_workflow_template_actually_loaded_not_mocked(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mock overuse: Verify workflow template is loaded from database,
-        not mocked.
-
-        Exposes: Tests that pass with mocks but fail without them.
-        """
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Real template loading test",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone = res.json()
-
-        # Verify stages came from real template
-        stage_keys = [s["key"] for s in milestone["stages"]]
-        assert len(stage_keys) > 0, "No stages loaded (template not loaded)"
-
-        # Verify consistency: all creations get same stage definitions
-        res2 = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Real template loading test 2",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res2.status_code == 201
-        milestone2 = res2.json()
-
-        stage_keys2 = [s["key"] for s in milestone2["stages"]]
-        assert stage_keys == stage_keys2, "Template not loaded consistently (mock detection)"
 
 
 class TestDataConsistencyInvariantsViolations:

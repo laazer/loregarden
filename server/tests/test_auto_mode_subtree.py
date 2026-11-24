@@ -684,7 +684,7 @@ def test_blocked_child_stops_subtree_auto_run(db_session: Session, tmp_path, mon
     assert parent.state != TicketState.DONE, (
         "auto-mode must never convert a blocked child into a passing subtree run"
     )
-    assert orch_run.status in (OrchestrationRunStatus.SUCCEEDED, OrchestrationRunStatus.BLOCKED)
+    assert orch_run.status is OrchestrationRunStatus.BLOCKED
     assert "blocked" in (orch_run.error_message or "").lower()
 
 
@@ -927,7 +927,7 @@ def test_grandchild_blocked_stops_subtree_auto_run(db_session: Session, tmp_path
     assert grandparent.state != TicketState.DONE, (
         "a block two levels down must bubble all the way up to the top-level auto run"
     )
-    assert orch_run.status in (OrchestrationRunStatus.SUCCEEDED, OrchestrationRunStatus.BLOCKED)
+    assert orch_run.status is OrchestrationRunStatus.BLOCKED
     assert "blocked" in (orch_run.error_message or "").lower()
 
 

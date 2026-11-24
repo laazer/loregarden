@@ -733,7 +733,7 @@ def test_a_success_payload_survives_json_dumps(session, resolver):
 
     restored = json.loads(json.dumps(payload.model_dump(mode="json")))
 
-    assert restored["cache"] == ReferenceCacheOutcome.HIT.value or restored["cache"] == "miss"
+    assert restored["cache"] == ReferenceCacheOutcome.MISS.value
     assert isinstance(restored["fetched_at"], str), (  # py-org: allow-isinstance
         "fetched_at did not survive as a JSON scalar"
     )

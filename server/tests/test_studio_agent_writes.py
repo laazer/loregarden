@@ -89,11 +89,10 @@ def test_the_delete_never_answers_500(client: TestClient, session, workspace):
     add_template(session, "tpl-blocks", [stage(agent_id=agent["slug"])])
 
     refused = client.delete(f"{AGENTS_PATH}/{agent['slug']}")
-    assert refused.status_code < 500, refused.text
-    assert refused.status_code == 409
+    assert refused.status_code == 409, refused.text
 
     other = create_agent(client, slug="delete-probe-free")
-    assert client.delete(f"{AGENTS_PATH}/{other['slug']}").status_code < 500
+    assert client.delete(f"{AGENTS_PATH}/{other['slug']}").status_code == 200
 
 
 def test_a_referenced_agent_is_refused_and_nothing_is_deleted(

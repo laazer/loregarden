@@ -338,7 +338,7 @@ def test_attaching_a_repo_from_another_workspace_is_rejected(
         "/api/workspaces",
         json={"slug": "other-project", "name": "Other", "repo_path": str(tmp_path)},
     )
-    assert other.status_code in (200, 201), other.text
+    assert other.status_code == 201, other.text
 
     create = client.post(
         "/api/ticket-studio/sessions",

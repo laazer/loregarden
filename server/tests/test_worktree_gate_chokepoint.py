@@ -193,9 +193,8 @@ def test_the_parallel_cleanup_endpoint_reports_the_gate_s_outcome(session, works
 
     refused = client.post(f"/api/parallel/worktree/{row.id}/cleanup")
 
-    assert refused.status_code in (200, 409)
-    body = refused.json()
-    assert KeepReason.NO_RECEIPT.value in str(body) or "no_receipt" in str(body)
+    assert refused.status_code == 409
+    assert KeepReason.NO_RECEIPT.value in str(refused.json())
     assert path.is_dir(), "the endpoint deleted a checkout the gate refused"
 
 
