@@ -33,6 +33,7 @@ from loregarden.services.directory_release import (
     release_directory,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
 from loregarden.services.process_identity import (
     BootIdentityUnavailable,
@@ -40,7 +41,7 @@ from loregarden.services.process_identity import (
     claim_fields,
 )
 from loregarden.services.publish_ref import comparison_ref
-from loregarden.services.toolchain_links import excluding_own_links, link_ignored_toolchains
+from loregarden.services.toolchain_links import link_ignored_toolchains
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -556,7 +557,7 @@ class WorktreeService:
 
             # Check if there are changes to commit
             result = run_git(
-                ["status", "--porcelain", *excluding_own_links(worktree_path)],
+                ["status", "--porcelain", *excluding_own_files(worktree_path)],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,

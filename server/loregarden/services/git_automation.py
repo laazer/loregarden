@@ -39,7 +39,7 @@ from loregarden.services.branch_names import (
 from loregarden.services.git_automation_config import enabled_steps
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.orchestration_profile import GitAutomationConfig
-from loregarden.services.toolchain_links import excluding_own_links
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.workspace_paths import resolve_run_root, resolve_workspace_root
 from sqlmodel import Session
 
@@ -172,7 +172,7 @@ def _fail_text(result: subprocess.CompletedProcess, fallback: str) -> str:
 
 
 def _commit(repo_root: Path, subject: PublishSubject) -> StepResult:
-    add = _git(["add", "-A", *excluding_own_links(repo_root)], repo_root)
+    add = _git(["add", "-A", *excluding_own_files(repo_root)], repo_root)
     if add.returncode != 0:
         return StepResult("commit", False, _fail_text(add, "git add failed"))
 

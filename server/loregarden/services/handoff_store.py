@@ -14,7 +14,7 @@ produced the handoff and the commit it attests to.
 
 The gate still wants a file, and keeping it that way keeps the gate a pure function of a
 directory rather than a client of this database. So the file becomes an *export*: written
-to a gitignored scratch tree just before the gate runs, never into the repo's tracked
+to a self-ignoring scratch tree just before the gate runs, never into the repo's tracked
 checkpoints. ``todos-latest.json`` is a separate artifact with no write path of its own and
 still lives in the tracked checkpoints dir, so the scratch tree mirrors the ticket's real
 checkpoint directory and overlays the database handoff on top — the todo gate reads the
@@ -39,8 +39,9 @@ HANDOFF_ARTIFACT_KIND = ArtifactKind.HANDOFF
 HANDOFF_FILENAME = "handoff-latest.yaml"
 CHECKPOINTS_SUBDIR = "project_board/checkpoints"
 # Under the repo so the gate's own `_checkpoints_dir_allowed` accepts it (it requires a
-# path beneath the repo root or cwd), and inside the already-gitignored `.loregarden/`
-# runtime tree so an export is never committable.
+# path beneath the repo root or cwd). Only loregarden's own repository ignores
+# `.loregarden/`, and others commit `review.yaml` and `instances.yaml` there, so the
+# export ignores itself; `own_tree_files` covers a branch that already tracks one.
 HANDOFF_SCRATCH_SUBDIR = ".loregarden/handoffs"
 
 #: Deliberately still 1.0 after the `boundary` block was added. The validator is
@@ -168,6 +169,9 @@ def export_for_gate(session: Session, ticket: Ticket, *, repo_root: Path) -> Pat
     if ticket_scratch.exists():
         shutil.rmtree(ticket_scratch)
     ticket_scratch.mkdir(parents=True, exist_ok=True)
+    ignore = root / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text("*\n", encoding="utf-8")
 
     # Mirror the tracked checkpoint dir so co-located artifacts the other gates read
     # (todos-latest.json above all) are still found under the redirected root.

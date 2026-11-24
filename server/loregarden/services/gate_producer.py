@@ -36,9 +36,9 @@ from loregarden.core.timestamps import as_utc
 from loregarden.models.domain import AgentRun, CliAdapter, OrchestrationRun, Ticket
 from loregarden.services.gate_eval_classify import canonical_stage
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_ticket_root
-from loregarden.services.toolchain_links import excluding_own_links
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
@@ -179,7 +179,7 @@ def snapshot_worktree(repo_root: Path) -> WorktreeSnapshot:
         scratch = Path(tmp) / "index"
         if real_index.is_file():
             shutil.copyfile(real_index, scratch)
-        added = _git(["add", "-A", *excluding_own_links(repo_root)], repo_root, index_file=scratch)
+        added = _git(["add", "-A", *excluding_own_files(repo_root)], repo_root, index_file=scratch)
         if added.returncode != 0:
             return WorktreeSnapshot(head_sha, error=f"add -A: {added.stderr.strip()}")
         tree = _git(["write-tree"], repo_root, index_file=scratch)

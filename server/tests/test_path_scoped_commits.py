@@ -6,9 +6,11 @@ swept into whichever ticket committed next.
 """
 
 import subprocess
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
+from loregarden.services import git_commit_push_service
 from loregarden.services.git_commit_push_service import commit_paths, working_tree_paths
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -92,3 +94,43 @@ def test_working_tree_paths_handles_paths_with_spaces(git_repo):
     """Quoted paths from porcelain would not round-trip back into `git add`."""
     (git_repo / "a file with spaces.txt").write_text("x\n")
     assert "a file with spaces.txt" in working_tree_paths(git_repo)
+
+
+def test_a_file_untracked_because_it_is_ignored_is_committed_as_removed(
+    session_and_ticket, git_repo
+):
+    """`git rm --cached` plus an ignore rule: the removal is staged, and `git add` refuses it."""
+    session, ticket = session_and_ticket
+    (git_repo / "built é.txt").write_text("generated\n")
+    commit_paths(session, ticket, "committed by mistake", ["built é.txt"])
+    (git_repo / ".gitignore").write_text("built*\n")
+    subprocess.run(["git", "rm", "-q", "--cached", "built é.txt"], cwd=git_repo, check=True)
+
+    assert commit_paths(session, ticket, "untrack it", ["built é.txt", ".gitignore"]) is True
+
+    held = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", "-z", "HEAD"],
+        cwd=git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    assert ".gitignore" in held and "built é.txt" not in held
+    assert (git_repo / "built é.txt").is_file()
+
+
+def test_a_git_that_cannot_say_what_is_ignored_is_not_committed_past(session_and_ticket, git_repo):
+    session, ticket = session_and_ticket
+    (git_repo / "work.py").write_text("x\n")
+    real = git_commit_push_service.run_git
+
+    def refuse(args, **kwargs):
+        if args[0] == "check-ignore":
+            return subprocess.CompletedProcess(args, 128, "", "fatal: refused")
+        return real(args, **kwargs)
+
+    with (
+        mock.patch.object(git_commit_push_service, "run_git", refuse),
+        pytest.raises(ValueError, match="fatal: refused"),
+    ):
+        commit_paths(session, ticket, "work", ["work.py"])
