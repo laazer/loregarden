@@ -40,6 +40,8 @@ describe("buildHiveWorld", () => {
     expect(model.idle).toBe(false);
     expect(model.floorTitle).toBe("Officeplace floor");
     expect(model.orchestratorLabel).toBe("Regional Manager");
+    expect(model.orchestratorActive).toBe(true);
+    expect(model.agents[0]?.name).toBe("Planner");
     // Officeplace staffs each station with a crew, so the two agents put five
     // bodies on the floor: planner_hq's pair plus coding's trio.
     expect(model.agents).toHaveLength(5);

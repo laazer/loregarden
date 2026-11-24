@@ -643,11 +643,6 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "tab stop in the subtree: <button> components/chat/MarkdownContent.tsx:114",
   },
   {
-    selector: ".studio-preview-modal-scroll",
-    reason: "focusable-descendant",
-    note: "tab stop in the subtree: <button> components/chat/MarkdownContent.tsx:114",
-  },
-  {
     selector: ".studio-version-body",
     reason: "tabbable",
   },

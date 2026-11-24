@@ -166,6 +166,10 @@ pre-commit:
             # Motion check (layout-property animation, hardcoded durations, reduced-motion policy)
             glob: "client/**/*.css"
             run: bash .lefthook/scripts/ts-motion.sh {staged_files}
+          - name: ts-unreachable
+            # Every client module is imported, or names the open ticket it waits for (kept-for:)
+            glob: "client/**/*.{ts,tsx}"
+            run: bash .lefthook/scripts/ts-unreachable.sh
 
 # commit-msg — the one hook that sees both a merge's result and its message:
 #   - merge-drops: a merge concluded by hand may not delete a file only its own

@@ -1,3 +1,4 @@
+// used-by: client/src/components/views/__tests__/containerPrimitiveRegistry.test.tsx - the recorded exclusions that test holds the registry to
 /**
  * Panels that were considered for the container registry and ruled out, with
  * the reason each one is not embeddable as it stands.
@@ -37,11 +38,6 @@ export const EXCLUDED_PANELS: ExcludedPanel[] = [
     component: "HiveSimulationPanel",
     reason:
       "Needs a TicketDetail, and shares a global skin and speed setting, so two panes could not disagree about either.",
-  },
-  {
-    component: "TicketDiffReviewPanel",
-    reason:
-      "Driven by the page's run list rather than by an id, so a container has nothing to pass it.",
   },
   {
     component: "InlineCodeDiffReview",

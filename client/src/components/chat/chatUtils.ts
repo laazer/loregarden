@@ -9,15 +9,6 @@ export interface ChatMessageView {
   parts?: Array<ChatPart | UnknownPart>;
 }
 
-export function formatChatTime(iso?: string): string {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
-}
-
 export function chatRoleLabel(role: string, assistantLabel = "Assistant"): string {
   if (role === "user") return "You";
   // `system` is the control plane reporting on itself — where a chat turn's work

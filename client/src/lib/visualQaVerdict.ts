@@ -1,3 +1,4 @@
+// used-by: client/scripts/visual-qa.mjs - transpiled and run there for the verdict and exit code
 /**
  * The visual check's verdict over every surface.
  *

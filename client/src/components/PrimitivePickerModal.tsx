@@ -17,7 +17,7 @@
  * React tree beneath a zoomed canvas would be laid out inside that scaled
  * surface: offset, and drawn at the canvas's scale. `createPortal` to
  * `document.body` puts it outside any transformed ancestor, so the pane it was
- * opened from cannot move it. `AgentPreviewModal` is the precedent.
+ * opened from cannot move it.
  *
  * It sits here rather than beside the pane chrome because the suites under
  * `components/views/` parse every stylesheet and source they find there and

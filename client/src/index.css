@@ -1869,23 +1869,6 @@ label:is(
   font-size: var(--fs-micro);
 }
 
-.studio-preview-modal-scroll {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  padding: 16px 20px 20px;
-}
-
-.studio-preview-modal-scroll .studio-preview-hint {
-  margin-top: 0;
-}
-
-.studio-preview-modal-scroll .studio-preview-card-body {
-  max-height: none;
-  overflow: visible;
-}
-
 .studio-pipeline-title {
   font-family: var(--ui);
   font-size: var(--fs-lead);
@@ -4722,19 +4705,6 @@ button.send-leaf:hover:not(:disabled) {
   min-height: 0;
 }
 
-.modal-panel.studio-preview-modal {
-  width: min(1120px, calc(100vw - 24px));
-  height: min(92vh, 980px);
-  max-height: min(92vh, 980px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.modal-panel.studio-preview-modal .modal-header {
-  min-height: 0;
-}
-
 .parent-ticket-selector-trigger {
   width: 100%;
   box-sizing: border-box;
@@ -5026,63 +4996,29 @@ button.send-leaf:hover:not(:disabled) {
   line-height: 1.55;
 }
 
-.chat-message {
-  max-width: 92%;
-  padding: 10px 12px;
-  border-radius: 10px;
-}
-
-.chat-message-user {
-  align-self: flex-end;
-  background: rgba(96, 165, 250, 0.12);
-  border: 1px solid rgba(96, 165, 250, 0.25);
-}
-
-.chat-message-assistant {
-  align-self: flex-start;
-  background: var(--bg3);
-  border: 1px solid var(--bd);
-}
-
-.chat-message-meta {
-  font-size: var(--fs-micro);
-  color: var(--txl);
-  margin-bottom: 4px;
-}
-
-.chat-message-body {
-  font-size: var(--fs-small);
-  line-height: 1.6;
-}
-
 /* Compact markdown, shared by every surface that renders agent prose inline:
-   chat bubbles, approval impact text, and the plan body on a plan approval. */
-.chat-message-body.markdown-preview > :first-child,
+   approval impact text, and the plan body on a plan approval. */
 .approval-impact.markdown-preview > :first-child,
 .permission-details-markdown.markdown-preview > :first-child {
   margin-top: 0;
 }
 
-.chat-message-body.markdown-preview > :last-child,
 .approval-impact.markdown-preview > :last-child,
 .permission-details-markdown.markdown-preview > :last-child {
   margin-bottom: 0;
 }
 
-.chat-message-body.markdown-preview :is(h1, h2, h3, h4),
 .approval-impact.markdown-preview :is(h1, h2, h3, h4),
 .permission-details-markdown.markdown-preview :is(h1, h2, h3, h4) {
   margin-top: 0.65em;
   margin-bottom: 0.35em;
 }
 
-.chat-message-body.markdown-preview :is(p, ul, ol),
 .approval-impact.markdown-preview :is(p, ul, ol),
 .permission-details-markdown.markdown-preview :is(p, ul, ol) {
   margin: 0.35em 0;
 }
 
-.chat-message-body.markdown-preview pre,
 .approval-impact.markdown-preview pre,
 .permission-details-markdown.markdown-preview pre {
   margin: 0.45em 0;

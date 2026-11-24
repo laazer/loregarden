@@ -1,3 +1,4 @@
+// kept-for: lg-workflow-dag-599 - canvas undo and redo reuse this editor's command history
 export { HierarchyEditor, type HierarchyEditorProps } from "./HierarchyEditor";
 export {
   ProposalItem,

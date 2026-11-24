@@ -1,3 +1,5 @@
+// kept-for: lg-hive-workplace-72 - the Pixi floor its click-target criteria are written for
+// kept-for: lg-hive-workplace-1993 - a criterion drives scene/Character through a blocked route
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 

@@ -28,6 +28,8 @@ _ROOT = REPO_ROOT
 _SCRIPTS = _ROOT / ".lefthook" / "scripts"
 _NODE_MODULES = _ROOT / "client" / "node_modules"
 _GATES = sorted(p.name for p in _SCRIPTS.glob("ts_*_check.cjs"))
+#: Every client package a gate loads.
+_LOADED = ("@typescript-eslint/typescript-estree", "postcss", "typescript")
 
 
 @pytest.fixture(autouse=True)
@@ -124,7 +126,7 @@ def _semver_dir() -> Path:
 def scripts_with_unsupported_node(scripts_without_client: Path) -> Path:
     """Every client package the gates load declares an engines range no Node meets."""
     checkout = scripts_without_client.parents[1]
-    for name in ("@typescript-eslint/typescript-estree", "postcss"):
+    for name in _LOADED:
         _stub_package(checkout, name, engines=">=999", index="module.exports = {};\n")
     (checkout / "client" / "node_modules" / "semver").symlink_to(_semver_dir())
     return scripts_without_client
@@ -182,7 +184,7 @@ def test_node_outside_engines_is_unavailable(gate, scripts_with_unsupported_node
 def test_package_that_fails_to_load_is_unavailable(gate, scripts_without_client, workspace):
     """Any load error, not only a missing package: a throw would reach `parseFile`."""
     checkout = scripts_without_client.parents[1]
-    for name in ("@typescript-eslint/typescript-estree", "postcss"):
+    for name in _LOADED:
         _stub_package(checkout, name, engines=None, index="module.exports = ;\n")
     result = _run(scripts_without_client, gate, _with_client_change(workspace))
     assert result.returncode == GATE_EX_UNAVAILABLE, result.stdout + result.stderr

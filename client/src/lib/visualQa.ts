@@ -1,3 +1,4 @@
+// used-by: client/src/lib/__tests__/pageRegistry.test.ts - holds the visual QA routes to the app's pages
 import routes from "./visualQaRoutes.json";
 import { summarizeVisualQa as summarize, type VisualQaSummary, type VisualQaResult } from "./visualQaVerdict";
 

@@ -1,3 +1,4 @@
+// used-by: client/scripts/visual-qa.mjs - visual QA runs it inside every page it opens
 /**
  * Find the shapes an unusable surface takes, in rendered DOM.
  *

@@ -15,6 +15,7 @@ from typing import Any
 from loregarden.models.domain import Ticket, WorkflowStageView
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.dependency_readiness import unmet_prerequisites_for_start
+from loregarden.services.kept_code import ticket_kept_code
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.stage_shape import current_stage_shape
@@ -186,4 +187,6 @@ def ticket_brief(session: Session, ticket: Ticket) -> dict[str, Any]:
         ticket_state_for_read(session, ticket)
         | ticket_body(ticket)
         | {"documents": document_index(session, ticket)}
+        # Modules nothing imports yet that say they wait for this ticket.
+        | ticket_kept_code(session, ticket)
     )

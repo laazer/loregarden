@@ -114,4 +114,5 @@ def test_rest_and_mcp_return_one_payload(client, db_session):
         "acceptance_criteria",
         "out_of_scope",
         "documents",
+        "kept_code",
     }
