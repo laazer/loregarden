@@ -53,6 +53,7 @@ import { useSidebarTabs } from "../hooks/useSidebarTabs";
 import { pageFromPath, viewIdFromPath, viewPath } from "../lib/appNavigation";
 import type { TicketStatusSummary } from "../api/types";
 import { railCounts } from "../lib/railCounts";
+import { followScreenArea } from "../lib/screenArea";
 import { runningTickets } from "../lib/runningTickets";
 import type { SidebarEntry, ViewSummary } from "../lib/viewsApi";
 import { useQueueStatus } from "../state/QueueStatusContext";
@@ -207,8 +208,9 @@ function PinTabMenu({
  *
  * The expanded panel is clipped out of both bands (see `.app-sidebar-panel`),
  * so the bars beside the rail stay whole instead of being half-covered by — or
- * half-covering — the panel. The bottom band is not a constant: the dock moves
- * between edges and the action bar wraps, so it is measured at runtime.
+ * half-covering — the panel. Neither band is a constant: the topbar wraps at
+ * phone width, the dock moves between edges and the action bar wraps, so both
+ * are measured at runtime.
  *
  * The bottom band is the action bar alone, not everything below the screen
  * area: an open omnibar (the chat or terminal above the bar) is page content
@@ -220,11 +222,8 @@ function PinTabMenu({
 function useRailInsets(navRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const nav = navRef.current;
-    const area = document.querySelector(".screen-area");
-    if (!nav || !area) return;
-
-    const measure = () => {
-      const rect = area.getBoundingClientRect();
+    if (!nav) return;
+    return followScreenArea((rect) => {
       const frame = nav.getBoundingClientRect();
       // Queried per measure: the bar swaps its root element between modes.
       const bar = document.querySelector(".app-action-bar")?.getBoundingClientRect();
@@ -232,17 +231,7 @@ function useRailInsets(navRef: RefObject<HTMLElement | null>) {
       const bottom = barBesideRail ? bar.top : rect.bottom;
       nav.style.setProperty("--rail-inset-top", `${Math.max(0, rect.top - frame.top)}px`);
       nav.style.setProperty("--rail-inset-bottom", `${Math.max(0, frame.bottom - bottom)}px`);
-    };
-    measure();
-
-    window.addEventListener("resize", measure);
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    observer?.observe(area);
-    return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
-    };
+    });
   }, [navRef]);
 }
 

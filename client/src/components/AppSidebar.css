@@ -75,8 +75,8 @@
   clip-path: polygon(
     0 0,
     59px 0,
-    59px var(--rail-inset-top, 54px),
-    100% var(--rail-inset-top, 54px),
+    59px var(--rail-inset-top, var(--topbar-h)),
+    100% var(--rail-inset-top, var(--topbar-h)),
     100% calc(100% - var(--rail-inset-bottom, 0px)),
     52px calc(100% - var(--rail-inset-bottom, 0px)),
     52px 100%,
@@ -95,9 +95,9 @@
     clip-path: shape(
       from 0 0,
       hline to 59px,
-      vline to var(--rail-inset-top, 54px),
+      vline to var(--rail-inset-top, var(--topbar-h)),
       hline to calc(100% - 12px),
-      arc to 100% calc(var(--rail-inset-top, 54px) + 12px) of 12px cw,
+      arc to 100% calc(var(--rail-inset-top, var(--topbar-h)) + 12px) of 12px cw,
       vline to calc(100% - var(--rail-inset-bottom, 0px) - 12px),
       arc to calc(100% - 12px) calc(100% - var(--rail-inset-bottom, 0px)) of 12px cw,
       hline to 52px,
@@ -139,7 +139,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: calc(var(--rail-inset-top, 54px) - 1px);
+  height: calc(var(--rail-inset-top, var(--topbar-h)) - 1px);
   padding: 0 3px;
   margin-bottom: -4px;
 }

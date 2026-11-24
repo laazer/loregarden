@@ -12,6 +12,7 @@ import {
 import { IS_DEV } from "../api/viteEnv";
 import { useAutoDismiss } from "../hooks/useAutoDismiss";
 import { DURATION, EASE_OUT } from "../lib/motionTokens";
+import { followScreenArea } from "../lib/screenArea";
 import { toastCopyWhat, toastDismissLabel } from "../lib/toastControlNames";
 import { splitMessageForWrap } from "../lib/toastWrap";
 
@@ -180,26 +181,12 @@ function useScreenAreaCorner() {
   const [corner, setCorner] = useState({ right: EDGE_GAP, bottom: EDGE_GAP });
 
   useEffect(() => {
-    const area = document.querySelector(".screen-area");
-    if (!area) return;
-
-    const measure = () => {
-      const rect = area.getBoundingClientRect();
+    return followScreenArea((rect) => {
       setCorner({
         right: Math.max(EDGE_GAP, window.innerWidth - rect.right + EDGE_GAP),
         bottom: Math.max(EDGE_GAP, window.innerHeight - rect.bottom + EDGE_GAP),
       });
-    };
-    measure();
-
-    window.addEventListener("resize", measure);
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    observer?.observe(area);
-    return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
-    };
+    });
   }, []);
 
   return corner;

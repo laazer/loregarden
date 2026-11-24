@@ -181,13 +181,14 @@ describe("the seams, read off the source", () => {
 
   it("S1.9 — the host subscribes to no focus or pointer event on the document", () => {
     // The hook's own source is already fenced. The escape hatch the fence does
-    // not cover is putting the listener in the host instead, which `ToastHost`
-    // is one `window.addEventListener("resize")` away from looking normal with.
+    // not cover is putting the listener in the host instead. Its one window
+    // listener, the resize that follows the page area, lives in `screenArea`.
     const host = source("components/ToastHost.tsx");
     for (const escape of ["focusin", "focusout", "pointerover", "pointerout", ":focus-within"]) {
       expect(host).not.toContain(escape);
     }
-    expect(host.match(/addEventListener\((["'])([a-z]+)\1/g) ?? []).toEqual([
+    expect(host).not.toContain("addEventListener(");
+    expect(source("lib/screenArea.ts").match(/addEventListener\((["'])([a-z]+)\1/g) ?? []).toEqual([
       'addEventListener("resize"',
     ]);
   });

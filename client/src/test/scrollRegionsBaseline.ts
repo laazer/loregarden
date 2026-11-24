@@ -372,6 +372,11 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "tab stop in the subtree: <Input> components/editor/EditorStartPane.tsx:92",
   },
   {
+    selector: ".inbox-panel-body",
+    reason: "focusable-descendant",
+    note: "tab stop in the subtree: <Button> components/inbox/InboxSection.tsx:59",
+  },
+  {
     selector: ".initiative-create-picked-list",
     reason: "tabbable",
   },
