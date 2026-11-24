@@ -324,13 +324,3 @@ class TestConflictDetectorEventEmissions:
 
         assert result["has_conflicts"] is True
         assert result["severity"] == "high"
-
-    async def test_merge_worktree_emits_conflict_resolved(self, db_session):
-        """Verify conflict_resolved event emitted on successful merge."""
-        # This tests the API endpoint, covered in integration tests
-        assert True
-
-    async def test_merge_worktree_emits_error_on_failure(self, db_session):
-        """Verify emit_error called on merge failure."""
-        # Covered in integration tests
-        assert True

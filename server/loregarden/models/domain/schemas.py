@@ -482,7 +482,9 @@ class HandoffCheckinRequest(SQLModel):
 
 class StartOrchestrationRequest(SQLModel):
     driver: OrchestrationDriver | None = None
-    max_stages: int | None = None
+    #: Null uses the profile's limit; 0 is unlimited, as in the profile. Negative
+    #: is refused: the loop only compares limits above zero, so -1 ran every stage.
+    max_stages: int | None = Field(default=None, ge=0)
     stop_at_stage_key: str | None = None
     auto_approve: bool = False
     #: Let the orchestrator sign off the design/plan stages' gate itself. Off

@@ -55,15 +55,12 @@ def _build_metrics(session: Session, *, workspace_id: str | None, range: str) ->
                 },
             }
 
-        duration = (
-            (run.finished_at - run.started_at).total_seconds()
-            if run.started_at and run.finished_at
-            else 0
-        )
-
         bucket = metrics_by_type[ticket_type]
         bucket["count"] += 1
-        bucket["durations"].append(duration)
+        # A run that failed before it started has no duration. Counting it as
+        # zero seconds made the minimum 0 and pulled the average down.
+        if run.started_at and run.finished_at:
+            bucket["durations"].append((run.finished_at - run.started_at).total_seconds())
 
         if run.status == RunStatus.SUCCEEDED:
             bucket["successes"] += 1

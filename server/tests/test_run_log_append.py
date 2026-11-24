@@ -62,7 +62,7 @@ def test_the_artifact_row_no_longer_carries_the_lines(db_session):
     ).first()
     body = json.loads(artifact.content_json)
     assert body["storage"] == LOG_STORAGE_ROWS
-    assert "lines" not in body or not body.get("lines")
+    assert not body.get("lines")
 
     rows = db_session.exec(select(RunLogLine).where(RunLogLine.run_id == streamer.run_id)).all()
     assert len(rows) == 50

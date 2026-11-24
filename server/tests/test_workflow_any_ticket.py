@@ -549,33 +549,6 @@ class TestWorkflowStateConsistency:
         assert list_ticket["workflow_stage_status"] == detail_ticket["workflow_stage_status"]
 
 
-class TestWorkflowInitializationWithoutTemplate:
-    """Verify graceful degradation when workspace has no workflow template."""
-
-    def test_milestone_fails_without_template_error_message(self, client: TestClient):
-        """
-        Acceptance: When creating a workflow-eligible ticket in a workspace
-        with no template, the error message should be clear.
-
-        Note: This test assumes the seeded database always has a template.
-        If a workspace without template exists, it should handle MILESTONE.
-        """
-        # This test documents the expected behavior.
-        # The seeded loregarden workspace has a template, so this verifies
-        # the normal path works.
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Milestone with template",
-                "work_item_type": "milestone",
-            },
-        )
-        # Should succeed because loregarden has a template
-        assert res.status_code == 201
-        assert res.json()["workflow_stage_key"] == "plan"
-
-
 class TestWorkflowEdgeCases:
     """Test edge cases and boundary conditions for all-ticket workflow support."""
 

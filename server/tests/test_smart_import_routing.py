@@ -246,28 +246,14 @@ class TestPreviewStateRecognition:
                 "imported_tickets": studio_context["imported_tickets"],
             },
         )
-        assert session_res.status_code == 200 or session_res.status_code == 201
+        assert session_res.status_code == 200
         session = session_res.json()
         assert session.get("is_preview") is True
 
-    def test_regular_import_session_not_marked_as_preview(self, client: TestClient):
-        """
-        P2: Regular import sessions do not use is_preview flag.
-
-        Regular flow goes through confirmation modal before any session creation.
-        """
-        # Regular import doesn't create session directly; confirmed import does.
-        # This test documents expected behavior.
-        pass
-
-    def test_preview_session_prevents_direct_commit(self, client: TestClient):
-        """
-        P3: Preview session cannot be committed until reviewed by user.
-
-        Prevents accidental finalization of imported data.
-        """
-        # Create a preview session
-        session_res = client.post(
+    def test_an_empty_preview_session_cannot_be_committed(self, client: TestClient):
+        """The server refuses an empty draft. Confirming the preview itself is a
+        UI step (`TicketStudioPanel`); the commit route does not ask for it."""
+        session_id = client.post(
             "/api/ticket-studio/sessions",
             json={
                 "workspace_slug": "loregarden",
@@ -275,19 +261,11 @@ class TestPreviewStateRecognition:
                 "brief": "Smart imported tickets",
                 "is_preview": True,
             },
-        )
-        session_id = session_res.json()["id"]
+        ).json()["id"]
 
-        # Attempt to commit without going through UI validation
-        commit_res = client.post(
-            f"/api/ticket-studio/sessions/{session_id}/commit",
-            json={"confirm_preview": False},
-        )
-        # Should either fail or require explicit preview confirmation
-        assert (
-            commit_res.status_code >= 400
-            or commit_res.json().get("requires_preview_confirmation") is True
-        )
+        commit_res = client.post(f"/api/ticket-studio/sessions/{session_id}/commit", json={})
+
+        assert commit_res.status_code == 400
 
     def test_preview_session_survives_clarifications(self, client: TestClient):
         """
@@ -303,7 +281,7 @@ class TestPreviewStateRecognition:
                 "is_preview": True,
             },
         )
-        assert session_res.status_code == 200 or session_res.status_code == 201
+        assert session_res.status_code == 200
         session_id = session_res.json()["id"]
 
         # Request clarifications on preview session
@@ -356,7 +334,7 @@ class TestSmartImportEndToEnd:
                 "imported_tickets": studio_context["imported_tickets"],
             },
         )
-        assert session_res.status_code in [200, 201]
+        assert session_res.status_code == 200
         session = session_res.json()
 
         # Step 3: Verify session is marked as preview
@@ -399,7 +377,7 @@ class TestSmartImportEndToEnd:
                 "imported_tickets": imported,
             },
         )
-        assert session_res.status_code in [200, 201]
+        assert session_res.status_code == 200
         session = session_res.json()
         assert session.get("is_preview") is True
         draft = session.get("draft", [])

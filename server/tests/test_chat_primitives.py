@@ -288,7 +288,7 @@ def test_ticket_triage_reply_persists_parts(client, monkeypatch):
     )
     ticket_id = client.get("/api/tickets").json()[0]["id"]
     sent = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "status?"})
-    assert sent.status_code in (200, 202)
+    assert sent.status_code == 202
 
     snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
     assistant = [m for m in snapshot["messages"] if m["role"] == "assistant"][-1]

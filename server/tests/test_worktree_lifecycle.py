@@ -948,23 +948,6 @@ def test_a_removal_that_was_tried_and_failed_is_not_reported_as_a_removal(sessio
     assert path.is_dir()
 
 
-def test_a_successful_removal_has_nothing_to_say_about_why_it_kept_the_tree(session, workspace):
-    """AC14 — `detail` is words for a caller to print, and on the happy path
-    there is nothing to park and nothing to report. A caller that printed a
-    parked path here would be announcing a refusal that never happened."""
-    ticket = _ticket(session, workspace)
-    _tree_for(session, workspace, ticket)
-    row = session.exec(select(Worktree).where(Worktree.ticket_id == ticket.id)).one()
-    service = mock.MagicMock(spec=worktree_lifecycle.WorktreeService)
-
-    with mock.patch.object(worktree_lifecycle, "_keep_reason", return_value=None):
-        outcome = retire_worktree(session, service, row)
-
-    assert outcome.refusal is None
-    assert outcome.deleted_nothing is False
-    assert outcome.parked_path == ""
-
-
 def test_the_failure_is_reported_once_from_this_module_and_names_the_tree(
     session, workspace, caplog
 ):

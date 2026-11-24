@@ -528,7 +528,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
     initiative = client.post(
         "/api/tickets", json={"title": "Smoke initiative", "work_item_type": "initiative"}
     )
-    assert initiative.status_code in (200, 201), initiative.text
+    assert initiative.status_code == 201, initiative.text
     initiative_id = initiative.json()["id"]
 
     chat_session_id = _feature_loop_chat(client)

@@ -153,9 +153,6 @@ def test_start_run_success_updates_stage(client: TestClient):
     started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
     body = started.json()
-    assert body["workflow_stage_status"] in {"running", "done"}
-    if body["workflow_stage_status"] == "running":
-        body = _ticket_detail(client, ticket_id)
     assert body["workflow_stage_status"] == "done"
     assert body["artifacts"]["logs"]
 

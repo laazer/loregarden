@@ -153,6 +153,94 @@ def test_a_split_that_drops_a_criterion_is_refused(db_session: Session, oversize
     callbacks.attach_artifact.assert_called_once()
 
 
+def _reply_with(**overrides) -> str:
+    """A reply that would split cleanly, with ``overrides`` on the first child."""
+    _, _, fenced = _reply(HALVES).partition("```json\n")
+    payload = json.loads(fenced.removesuffix("\n```"))
+    payload["children"][0].update(overrides)
+    return json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "no JSON here",
+        json.dumps({}),
+        json.dumps({"children": None}),
+        json.dumps({"children": "ab"}),
+        json.dumps({"children": {"a": 1}}),
+        json.dumps({"children": ["a", "b"]}),
+        _reply([CRITERIA]),
+        _reply(HALVES, work_item_type="milestone"),
+        _reply_with(work_item_type="epic"),
+        _reply_with(external_id=None),
+        _reply_with(title=" "),
+        _reply_with(priority=None),
+        _reply_with(priority="high"),
+        _reply_with(priority=4),
+        _reply_with(acceptance_criteria=None),
+        _reply_with(children="x"),
+        _reply_with(
+            children=[{"external_id": "leaf", "title": "Leaf", "work_item_type": "task"}],
+        ),
+    ],
+    ids=[
+        "prose",
+        "no-children",
+        "null-children",
+        "string-children",
+        "object-children",
+        "non-object-child",
+        "one-child",
+        "wrong-type",
+        "unknown-type",
+        "no-id",
+        "blank-title",
+        "null-priority",
+        "word-priority",
+        "priority-out-of-range",
+        "null-criteria",
+        "string-grandchildren",
+        "grandchildren",
+    ],
+)
+def test_a_malformed_reply_fails_the_split_rather_than_the_run(
+    db_session: Session, oversized: Ticket, reply: str
+):
+    result = split_oversized_ticket(db_session, oversized, MagicMock(), generate=lambda _p: reply)
+
+    assert result.outcome is SplitOutcome.FAILED
+    assert result.detail
+    assert _children(db_session, oversized) == []
+
+
+def test_null_children_on_a_child_means_none(db_session: Session, oversized: Ticket):
+    result = split_oversized_ticket(
+        db_session, oversized, MagicMock(), generate=lambda _p: _reply_with(children=None)
+    )
+
+    assert result.outcome is SplitOutcome.SPLIT
+    assert len(result.child_ids) == 2
+
+
+def test_the_split_prompt_carries_the_whole_ticket(db_session: Session, oversized: Ticket):
+    prompts: list[str] = []
+
+    def generate(prompt: str) -> str:
+        prompts.append(prompt)
+        return _reply(HALVES)
+
+    oversized.description = "The one line only this ticket has."
+    db_session.add(oversized)
+    db_session.commit()
+    split_oversized_ticket(db_session, oversized, MagicMock(), generate=generate)
+
+    (prompt,) = prompts
+    assert [
+        text for text in [oversized.title, oversized.description, *CRITERIA] if text not in prompt
+    ] == []
+
+
 def test_a_failed_model_turn_leaves_the_ticket_whole_and_visible(
     db_session: Session, oversized: Ticket
 ):

@@ -97,9 +97,8 @@ def test_an_unreadable_stages_json_is_neither_a_500_nor_a_silent_pass(
     breaks the first, and `except Exception: return no_references()` breaks the
     second — it deletes an agent whose references were never actually read.
 
-    Both permitted answers are accepted here: refuse, or delete and say on the
-    log that a row could not be read. What is not accepted is a 500, or a 200
-    with nothing reported anywhere.
+    It deletes and says on the log that a row could not be read. What is not
+    accepted is a 500, or a 200 with nothing reported anywhere.
     """
     agent = create_agent(client)
     add_raw_template(session, "tpl-unreadable", stages_json)
@@ -108,13 +107,11 @@ def test_an_unreadable_stages_json_is_neither_a_500_nor_a_silent_pass(
     with caplog.at_level(logging.WARNING):
         res = client.delete(f"{AGENTS_PATH}/{agent['slug']}")
 
-    assert res.status_code != 500, res.text
-    assert res.status_code in (200, 409), res.text
-    if res.status_code == 200:
-        assert warnings_in(caplog), (
-            "the scan could not read tpl-unreadable and deleted the agent anyway, "
-            "with nothing on the log, the response or anywhere else (AC4)"
-        )
+    assert res.status_code == 200, res.text
+    assert warnings_in(caplog), (
+        "the scan could not read tpl-unreadable and deleted the agent anyway, "
+        "with nothing on the log, the response or anywhere else (AC4)"
+    )
 
 
 @pytest.mark.parametrize("stages_json", UNREADABLE_STAGES_JSON)

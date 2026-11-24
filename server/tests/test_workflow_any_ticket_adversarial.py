@@ -23,46 +23,12 @@ from fastapi.testclient import TestClient
 from loregarden.models.domain import (
     Ticket,
     WorkflowInstance,
-    WorkItemType,
 )
 from sqlmodel import Session, select
 
 
 class TestNullAndEmptyValues:
     """Test null, empty, and missing values in workflow initialization."""
-
-    def test_milestone_with_empty_workflow_stage_key_persists(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mutation: What if workflow_stage_key is empty string instead of None?
-
-        This tests data integrity: the system should either populate the field
-        correctly or reject the ticket creation, not silently leave it empty.
-        """
-        # Create a milestone
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Milestone with empty workflow key",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone = res.json()
-
-        # If workflow_stage_key is empty, verify it's not actually empty in DB
-        # (this would indicate initialization failure)
-        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone["id"])).first()
-
-        assert db_ticket is not None
-        assert db_ticket.workflow_stage_key != "", (
-            "workflow_stage_key should not be empty string after creation"
-        )
-        assert db_ticket.workflow_stage_key is not None, (
-            "workflow_stage_key should not be None for workflow-eligible ticket"
-        )
 
     def test_capability_workflow_stages_not_empty_array(self, client: TestClient):
         """
@@ -119,48 +85,8 @@ class TestBoundaryConditions:
             },
         )
 
-        # Should succeed (or fail gracefully with 400, not 500)
-        assert res.status_code in [201, 400], (
-            f"Long title should succeed or return 400, not {res.status_code}: {res.text}"
-        )
-
-        if res.status_code == 201:
-            milestone = res.json()
-            assert milestone["workflow_stage_key"] != "", (
-                "Workflow should initialize even with long title"
-            )
-
-    def test_multiple_concurrent_milestone_creations_each_get_workflow(self, client: TestClient):
-        """
-        Concurrency: Creating multiple MILESTONEs simultaneously should each
-        get their own workflow instance.
-
-        This tests for race conditions in workflow initialization.
-        """
-        # Simulate rapid sequential creations (approximating concurrency)
-        results = []
-        for i in range(5):
-            res = client.post(
-                "/api/tickets",
-                json={
-                    "workspace_slug": "loregarden",
-                    "title": f"Concurrent Milestone {i}",
-                    "work_item_type": "milestone",
-                },
-            )
-            assert res.status_code == 201, f"Creation {i} failed: {res.text}"
-            results.append(res.json())
-
-        # All should have workflows initialized
-        milestone_ids = [r["id"] for r in results]
-        assert len(set(milestone_ids)) == len(milestone_ids), "Each milestone should have unique ID"
-
-        for r in results:
-            assert r["workflow_stage_key"] == "plan", (
-                f"Milestone {r['id']} missing workflow initialization"
-            )
-            assert r["workflow_stage_status"] == "pending"
-            assert len(r["stages"]) > 0
+        assert res.status_code == 201, res.text
+        assert res.json()["workflow_stage_key"] == "plan"
 
     def test_zero_sized_capability_collection_edge_case(
         self, client: TestClient, db_session: Session
@@ -214,11 +140,7 @@ class TestTypeMutations:
             },
         )
 
-        # Should fail with 400 (bad request), not 201
-        assert res.status_code != 201, "CAPABILITY without parent should not be allowed"
-        assert res.status_code in [400, 422], (
-            f"CAPABILITY without parent should return 400/422, not {res.status_code}"
-        )
+        assert res.status_code == 400
 
     def test_wrong_work_item_type_string_rejected(self, client: TestClient):
         """
@@ -234,9 +156,7 @@ class TestTypeMutations:
             },
         )
 
-        # Should reject with 400/422, not 201
-        assert res.status_code != 201, "Invalid work_item_type should be rejected"
-        assert res.status_code in [400, 422, 400], f"Expected 400/422, got {res.status_code}"
+        assert res.status_code == 422
 
 
 class TestInvalidAndCorruptInputs:
@@ -256,7 +176,7 @@ class TestInvalidAndCorruptInputs:
         )
 
         # Should fail validation
-        assert res.status_code != 201
+        assert res.status_code == 422
 
     def test_milestone_with_empty_title_fails(self, client: TestClient):
         """
@@ -272,7 +192,7 @@ class TestInvalidAndCorruptInputs:
         )
 
         # Should fail validation
-        assert res.status_code != 201
+        assert res.status_code == 400
 
     def test_capability_with_invalid_parent_id_fails(self, client: TestClient):
         """
@@ -289,31 +209,11 @@ class TestInvalidAndCorruptInputs:
         )
 
         # Should fail, not silently ignore
-        assert res.status_code != 201
+        assert res.status_code == 400
 
 
 class TestOrderDependency:
     """Test that execution order doesn't affect behavior."""
-
-    def test_create_child_before_parent_fails(self, client: TestClient):
-        """
-        Order dependency: Creating a CAPABILITY before its FEATURE parent
-        should fail (not be silently reordered).
-        """
-        fake_parent_id = "00000000-0000-0000-0000-000000000000"
-
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Capability created first",
-                "work_item_type": "capability",
-                "parent_ticket_id": fake_parent_id,
-            },
-        )
-
-        # Should fail because parent doesn't exist
-        assert res.status_code != 201
 
     def test_parent_child_workflow_initialization_order_independent(self, client: TestClient):
         """
@@ -420,110 +320,8 @@ class TestCombinatorialInputs:
             assert len(ticket["stages"]) > 0, f"{name} has empty stages"
 
 
-class TestMutationTesting:
-    """Introduce controlled mutations to reveal hidden assumptions."""
-
-    def test_workflow_stage_status_mutation_invalid_state(
-        self, client: TestClient, db_session: Session
-    ):
-        """
-        Mutation: If stage status is manually set to invalid value,
-        does the system handle it gracefully?
-        """
-        # Create a milestone
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",
-                "title": "Mutation test - stage status",
-                "work_item_type": "milestone",
-            },
-        )
-        assert res.status_code == 201
-        milestone_id = res.json()["id"]
-
-        # Mutate the database directly
-        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
-
-        # Try to set invalid status (not in StageStatus enum)
-        # This should either be prevented or handled gracefully
-        try:
-            db_ticket.workflow_stage_status = "invalid_status"  # type: ignore
-            db_session.add(db_ticket)
-            db_session.commit()
-        except Exception:
-            # Expected: database or ORM should enforce enum
-            pass
-
-        # Re-fetch and verify — invalid enum values may fail on read (acceptable enforcement).
-        try:
-            db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
-        except LookupError:
-            return
-
-        valid_statuses = {"pending", "running", "blocked", "awaiting", "done", "wont_do"}
-        status_value = getattr(
-            db_ticket.workflow_stage_status, "value", db_ticket.workflow_stage_status
-        )
-        assert str(status_value) in valid_statuses or status_value == "invalid_status", (
-            "Stage status mutation should be handled"
-        )
-
-    def test_workflow_work_item_types_constant_not_hardcoded_enum(self, db_session: Session):
-        """
-        Mutation: Verify that WORKFLOW_WORK_ITEM_TYPES is properly defined,
-        not accidentally hardcoded to old values.
-
-        This catches if someone reverts the constant to the old three-type set.
-        """
-        from loregarden.models.domain import WORKFLOW_WORK_ITEM_TYPES
-
-        # Should include all 5 types (was previously 3)
-        assert len(WORKFLOW_WORK_ITEM_TYPES) >= 5, (
-            f"WORKFLOW_WORK_ITEM_TYPES has only {len(WORKFLOW_WORK_ITEM_TYPES)} types, expected >= 5"
-        )
-
-        # Should include MILESTONE and CAPABILITY
-        assert WorkItemType.MILESTONE in WORKFLOW_WORK_ITEM_TYPES, (
-            "MILESTONE not in WORKFLOW_WORK_ITEM_TYPES"
-        )
-        assert WorkItemType.CAPABILITY in WORKFLOW_WORK_ITEM_TYPES, (
-            "CAPABILITY not in WORKFLOW_WORK_ITEM_TYPES"
-        )
-
-        # Should still include the original three
-        assert WorkItemType.FEATURE in WORKFLOW_WORK_ITEM_TYPES
-        assert WorkItemType.TASK in WORKFLOW_WORK_ITEM_TYPES
-        assert WorkItemType.BUG in WORKFLOW_WORK_ITEM_TYPES
-
-
 class TestErrorHandling:
     """Validate robustness against exceptions and failures."""
-
-    def test_workflow_initialization_failure_returns_500_not_silent(self, client: TestClient):
-        """
-        Error handling: If workflow initialization fails (e.g., no template),
-        the system should return an error, not silently create a ticketless workflow.
-        """
-        # Try to create MILESTONE in workspace with no template
-        # (This test assumes loregarden has a template; need to find/create workspace without)
-        res = client.post(
-            "/api/tickets",
-            json={
-                "workspace_slug": "loregarden",  # This workspace has a template
-                "title": "Test error handling",
-                "work_item_type": "milestone",
-            },
-        )
-
-        # Should succeed (loregarden has template)
-        assert res.status_code == 201
-        milestone = res.json()
-
-        # If it succeeded, workflow must be initialized
-        assert milestone["workflow_stage_key"] != "", (
-            "If ticket creation succeeded, workflow must initialize"
-        )
 
     def test_invalid_parent_type_hierarchy_violation(self, client: TestClient):
         """
@@ -554,7 +352,7 @@ class TestErrorHandling:
         )
 
         # Should fail, not succeed
-        assert task_res.status_code != 201, "TASK under MILESTONE should fail per VALID_HIERARCHY"
+        assert task_res.status_code == 400, "TASK under MILESTONE should fail per VALID_HIERARCHY"
 
 
 class TestAssumptionChecks:

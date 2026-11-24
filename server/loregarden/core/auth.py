@@ -33,6 +33,12 @@ def _extract_token(request: Request) -> str | None:
     return token.strip() if token else None
 
 
+def _same_token(presented: str, expected: str) -> bool:
+    """Constant-time match. On bytes, because `compare_digest` raises on a
+    non-ASCII `str`, which turned a wrong token into a 500."""
+    return hmac.compare_digest(presented.encode(), expected.encode())
+
+
 def websocket_token_ok(websocket: WebSocket) -> bool:
     """Whether a websocket connection carries the configured token.
 
@@ -52,7 +58,7 @@ def websocket_token_ok(websocket: WebSocket) -> bool:
         return True
     presented = websocket.query_params.get("token") or ""
     header = websocket.headers.get("x-loregarden-token") or ""
-    return hmac.compare_digest(presented or header, expected)
+    return _same_token(presented or header, expected)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -72,7 +78,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         presented = _extract_token(request)
-        if presented is None or not hmac.compare_digest(presented, self._token):
+        if presented is None or not _same_token(presented, self._token):
             return JSONResponse(
                 {"detail": "Missing or invalid API token"},
                 status_code=401,

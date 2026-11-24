@@ -379,7 +379,7 @@ def test_sending_a_kind_alongside_the_layout_is_rejected(client: TestClient):
         json={"kind": "canvas", "title": "Bad", "icon": "", "layout": _grid_layout()},
     )
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     assert client.get(VIEWS).json() == before
 
 
@@ -393,7 +393,7 @@ def test_sending_a_kind_to_the_update_is_rejected_too(client: TestClient):
 
     res = client.patch(f"{VIEWS}/{created['id']}", json={"kind": "canvas", "title": "Renamed"})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     body = client.get(f"{VIEWS}/{created['id']}").json()
     assert body["title"] == "Board"
     assert body["kind"] == ViewKind.FLEX_GRID.value
@@ -431,7 +431,7 @@ def test_a_rejected_update_writes_none_of_its_fields(client: TestClient):
         },
     )
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     body = client.get(f"{VIEWS}/{created['id']}").json()
     assert body["layout"] == _grid_layout()
     assert body["title"] == "Board"
@@ -547,7 +547,7 @@ def test_a_partial_reorder_is_rejected(client: TestClient):
 
     res = client.patch(SIDEBAR, json={"entry_ids": [before[1]["id"]]})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert _entries(client) == before
 
 
@@ -564,7 +564,7 @@ def test_a_reorder_repeating_an_entry_is_rejected(client: TestClient):
 
     res = client.patch(SIDEBAR, json={"entry_ids": [before[0]["id"], before[0]["id"]]})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert _entries(client) == before
 
 
@@ -574,7 +574,7 @@ def test_a_reorder_naming_an_unknown_entry_is_rejected(client: TestClient):
 
     res = client.patch(SIDEBAR, json={"entry_ids": [before[0]["id"], "no-such-entry"]})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert _entries(client) == before
 
 
@@ -627,7 +627,7 @@ def test_a_reorder_cannot_name_another_workspaces_entry(client: TestClient, db_s
 
     res = client.patch(SIDEBAR, json={"entry_ids": [mine[0]["id"], theirs[0]["id"]]})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert _entries(client) == mine
 
 
@@ -691,7 +691,7 @@ def test_an_unbounded_split_chain_is_refused_and_leaves_the_store_readable(clien
 
     res = client.post(VIEWS, json={"title": "Deep", "icon": "", "layout": _split_chain(200)})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     listed = client.get(VIEWS)
     assert listed.status_code == 200, listed.text
     assert listed.json() == before
@@ -795,7 +795,7 @@ def test_an_update_to_an_oversized_layout_is_refused_too(client: TestClient):
 
     res = client.patch(f"{VIEWS}/{created['id']}", json={"layout": _fat_layout()})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert client.get(f"{VIEWS}/{created['id']}").json()["layout"] == _grid_layout()
 
 
@@ -818,7 +818,7 @@ def test_an_oversized_page_key_is_refused(client: TestClient):
 
     res = client.post(SIDEBAR, json={"page_key": "k" * (MAX_PAGE_KEY_LENGTH + 1)})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     assert _entries(client) == before
 
 
@@ -852,7 +852,7 @@ def test_a_non_finite_canvas_number_is_a_4xx_not_a_500(
 
     res = client.post(VIEWS, content=body, headers={"content-type": "application/json"})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     assert client.get(VIEWS).json() == before
 
 
@@ -867,7 +867,7 @@ def test_a_non_finite_node_size_is_a_4xx_not_a_500(client: TestClient, literal: 
 
     res = client.post(VIEWS, content=body, headers={"content-type": "application/json"})
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 422, res.status_code
     assert client.get(VIEWS).json() == before
 
 
@@ -897,7 +897,7 @@ def test_a_views_sidebar_entry_cannot_be_unpinned(client: TestClient):
 
     res = client.delete(f"{SIDEBAR}/{entry['id']}")
 
-    assert 400 <= res.status_code < 500, res.status_code
+    assert res.status_code == 400, res.status_code
     assert [e["id"] for e in _entries(client)] == [entry["id"]]
     assert [v["id"] for v in client.get(VIEWS).json()] == [view["id"]]
 
@@ -1564,7 +1564,7 @@ def test_a_malformed_viewport_is_refused_and_stores_nothing(client: TestClient, 
 
     res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": viewport})
 
-    assert 400 <= res.status_code < 500, res.text
+    assert res.status_code == 422, res.text
     assert _stored_viewport(client, created["id"]) == _viewport()
 
 

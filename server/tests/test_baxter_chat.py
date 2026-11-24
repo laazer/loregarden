@@ -251,7 +251,7 @@ def test_baxter_chat_session_scoped_to_its_workspace(client: TestClient, monkeyp
         "/api/workspaces",
         json={"slug": "other-ws", "name": "Other", "repo_path": "/tmp/other-ws"},
     )
-    assert other.status_code in (200, 201)
+    assert other.status_code == 201
     session_id = _new_session(client)
 
     res = client.get(f"/api/workspaces/other-ws/baxter-chat/sessions/{session_id}")

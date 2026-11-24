@@ -763,5 +763,7 @@ def test_the_cli_script_records_the_callers_repo_root_before_defaulting_it(
     recorded, resolved = out.read_text().splitlines()
     assert recorded == (caller_root or "")
     # The CLI itself still resolves a root for its own database.
-    assert resolved != "unset"
-    assert resolved == (caller_root or resolved)
+    if caller_root is None:
+        assert (Path(resolved) / "scripts" / "loregarden-cli.sh").is_file()
+    else:
+        assert resolved == caller_root

@@ -124,26 +124,6 @@ class ProposalValidator:
         )
 
     @staticmethod
-    def validate_required_fields(item: HierarchyWorkItem) -> None:
-        """Verify all required fields are present and non-empty.
-
-        This validates raw (non-normalized) values. Prefer validate_required_fields_normalized
-        for post-normalization validation.
-
-        Args:
-            item: Work item to validate
-
-        Raises:
-            ProposalValidationError: If required fields are missing or empty
-        """
-        if not item.external_id:
-            raise ProposalValidationError("external_id is required and cannot be empty")
-        if not item.title:
-            raise ProposalValidationError("title is required and cannot be empty")
-        if item.work_item_type is None:
-            raise ProposalValidationError("work_item_type is required")
-
-    @staticmethod
     def validate_required_fields_normalized(
         external_id: str, title: str, work_item_type: WorkItemType
     ) -> None:
@@ -204,42 +184,6 @@ class ProposalValidator:
                 raise ProposalValidationError("Child item missing external_id")
 
     @staticmethod
-    def validate_no_cycles(hierarchy: list[HierarchyWorkItem]) -> None:
-        """Detect cyclic references in hierarchy tree.
-
-        Note: Current implementation uses nested objects, making cycles
-        structurally impossible. This validates against future API changes.
-
-        Args:
-            hierarchy: Root items to check
-
-        Raises:
-            ProposalValidationError: If cycle detected
-        """
-        visited = set()
-        rec_stack = set()
-
-        def has_cycle(item: HierarchyWorkItem) -> bool:
-            if item.external_id in rec_stack:
-                return True
-            if item.external_id in visited:
-                return False
-
-            visited.add(item.external_id)
-            rec_stack.add(item.external_id)
-
-            for child in item.children:
-                if has_cycle(child):
-                    return True
-
-            rec_stack.remove(item.external_id)
-            return False
-
-        for root in hierarchy:
-            if has_cycle(root):
-                raise ProposalValidationError("Cyclic reference detected in hierarchy")
-
-    @staticmethod
     def validate_external_id_uniqueness(hierarchy: list[HierarchyWorkItem]) -> None:
         """Verify no duplicate external IDs within proposal.
 
@@ -275,45 +219,6 @@ class ProposalValidator:
             raise ProposalValidationError(f"Priority must be integer, got {type(priority)}")
         if not (ProposalValidator.PRIORITY_MIN <= priority <= ProposalValidator.PRIORITY_MAX):
             raise ProposalValidationError(f"Priority must be 1-3, got {priority}")
-
-    @staticmethod
-    def validate_text_fields(item: HierarchyWorkItem) -> None:
-        """Validate text field lengths and encoding.
-
-        This validates raw (non-normalized) values. Prefer validate_text_fields_normalized
-        for post-normalization validation.
-
-        Args:
-            item: Work item with text fields to validate
-
-        Raises:
-            ProposalValidationError: If text constraints violated
-        """
-        if len(item.title) > ProposalValidator.MAX_TITLE_LENGTH:
-            raise ProposalValidationError(
-                f"Title exceeds max length {ProposalValidator.MAX_TITLE_LENGTH} "
-                f"(got {len(item.title)})"
-            )
-
-        if len(item.description) > ProposalValidator.MAX_DESCRIPTION_LENGTH:
-            raise ProposalValidationError(
-                f"Description exceeds max length {ProposalValidator.MAX_DESCRIPTION_LENGTH} "
-                f"(got {len(item.description)})"
-            )
-
-        if len(item.acceptance_criteria) > ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS:
-            raise ProposalValidationError(
-                f"Acceptance criteria exceeds max items {ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS} "
-                f"(got {len(item.acceptance_criteria)})"
-            )
-
-        for i, criterion in enumerate(item.acceptance_criteria):
-            if len(criterion) > ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH:
-                raise ProposalValidationError(
-                    f"Acceptance criterion {i} exceeds max length "
-                    f"{ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH} "
-                    f"(got {len(criterion)})"
-                )
 
     @staticmethod
     def validate_text_fields_normalized(

@@ -44,6 +44,14 @@ def test_configured_token_rejects_wrong_credentials():
     assert client.get("/api/ping", headers={"X-Loregarden-Token": "nope"}).status_code == 401
 
 
+@pytest.mark.parametrize("header", ["Authorization", "X-Loregarden-Token"])
+def test_a_non_ascii_token_is_refused_not_a_server_error(header):
+    client = TestClient(_build_app("s3cret"), raise_server_exceptions=False)
+    value = "Bearer s\u00e9cret" if header == "Authorization" else "s\u00e9cret"
+    res = client.get("/api/ping", headers={header: value.encode("latin-1")})
+    assert res.status_code == 401
+
+
 def test_bearer_token_accepted():
     client = TestClient(_build_app("s3cret"))
     res = client.get("/api/ping", headers={"Authorization": "Bearer s3cret"})
@@ -117,22 +125,12 @@ def test_websocket_token_accepted_as_header():
             assert socket.receive_text() == "ok"
 
 
-def test_websocket_with_wrong_token_is_refused():
+@pytest.mark.parametrize("token", ["nope", "", "s%C3%A9cret"])
+def test_websocket_with_wrong_token_is_refused(token):
     client = TestClient(_build_websocket_app())
 
     with patch("loregarden.core.auth.settings") as cfg:
         cfg.api_token = "s3cret"
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/ws?token=nope") as socket:
+            with client.websocket_connect(f"/ws?token={token}") as socket:
                 socket.receive_text()
-
-
-def test_websocket_without_a_configured_token_is_open():
-    """The rest of the API is already reachable by any local process; refusing
-    only websockets would be theatre."""
-    client = TestClient(_build_websocket_app())
-
-    with patch("loregarden.core.auth.settings") as cfg:
-        cfg.api_token = ""
-        with client.websocket_connect("/ws") as socket:
-            assert socket.receive_text() == "ok"

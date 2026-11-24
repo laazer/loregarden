@@ -12,6 +12,7 @@ import pytest
 from loregarden.db.migration_utils import index_exists
 from loregarden.db.migrations_ticket_ids import TICKET_NUMBER_INDEX, m_unique_ticket_number
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 
 def _tickets_table(conn) -> None:
@@ -33,7 +34,7 @@ def test_index_is_created_and_blocks_a_duplicate_number() -> None:
         _insert(conn, "a", "ws1", 501)
         m_unique_ticket_number(conn)
         assert index_exists(conn, TICKET_NUMBER_INDEX)
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             _insert(conn, "b", "ws1", 501)
 
 

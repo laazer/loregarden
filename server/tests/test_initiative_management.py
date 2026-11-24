@@ -54,7 +54,7 @@ def _set_state(session: Session, ticket: Ticket, state: TicketState) -> None:
 
 def test_rest_create_initiative_without_workspace_slug(client):
     res = client.post("/api/tickets", json={"title": "Q4", "work_item_type": "initiative"})
-    assert res.status_code in (200, 201), res.text
+    assert res.status_code == 201, res.text
     body = res.json()
     assert body["work_item_type"] == "initiative"
     assert body["workspace_slug"] == ""
