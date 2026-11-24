@@ -41,8 +41,9 @@ export function McpServerModal({
             {server ? `Edit ${server.name}` : "Register MCP server"}
           </h2>
           <p className="modal-subtitle">
-            A registered server is composed into every agent&rsquo;s MCP config at start —
-            there is no per-agent grant, so registering it grants it to all of them.
+            A registered server joins every agent&rsquo;s MCP config at start, so registering
+            it grants it to all of them, except an agent whose Agent Studio grant names other
+            servers.
           </p>
         </div>
         <IconCloseButton onClick={onClose} />

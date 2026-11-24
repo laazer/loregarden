@@ -246,7 +246,7 @@ export function McpGatewayPage() {
           <div className="mcp-section-head">
             <span className="mcp-section-title">Routing switchboard</span>
             <span className="mcp-section-note">
-              every MCP-enabled agent reaches every enabled server — there is no per-agent grant
+              every MCP-enabled agent reaches every enabled server, unless its Agent Studio grant names servers
             </span>
           </div>
           <McpSwitchboard

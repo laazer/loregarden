@@ -116,8 +116,8 @@ export function HeadChecks({ entryId, live = true }: { entryId: string; live?: b
     queryFn: () => mergeQueueApi.entry(entryId, live),
     refetchInterval: QUEUE_REFETCH_MS,
   });
-  // This query sets no `staleTime`, `retry` or `placeholderData`, and
-  // `createQueryClient()` sets no query `defaultOptions`, so a failed RE-READ
+  // This query sets no `staleTime` or `placeholderData`, and
+  // `createQueryClient()` defaults only `retry`, so a failed RE-READ
   // keeps `data` and sets `status: "error"`. Guarded on the read's own checks,
   // a failure over checks already on screen keeps them and says so below;
   // guarded on `isError` it threw away the one-shot content this row exists to
