@@ -86,9 +86,10 @@ describe("repeated-text exempts rows the fold only made alike", () => {
     }
     root.appendChild(list);
 
-    // The three measured buckets: 58 occurrences over 37 distinct unfolded
+    // The three measured stage buckets: 58 occurrences over 37 distinct unfolded
     // strings, 52 over 16, 18 over 8. Surpluses 21, 36 and 10, so the strict
-    // exemption leaves all three standing with a margin of at least 10.
+    // exemption leaves all three standing with a margin of at least 10. The two
+    // invariant buckets are one sentence each, word for word.
     expect(
       findUsabilityProblems(root)
         .filter((p) => p.kind === "repeated-text")
@@ -99,6 +100,8 @@ describe("repeated-text exempts rows the fold only made alike", () => {
         `58 elements say "Stage '…' ran # times in one orchestration run (baseline # attempts per stage)." — group or fold them`,
         `52 elements say "Stage '…' has # successful duration samples (need #); configured floor is #s. No" — group or fold them`,
         `18 elements say "Run has been RUNNING for #h, past the #h bound for this stage." — group or fold them`,
+        `300 elements say "'…' was violated again after its guard landed; the test guarding it does not cov" — group or fold them`,
+        `94 elements say "'…' is violated, and nothing repairs it automatically. Split the ticket the find" — group or fold them`,
       ].sort(),
     );
   });

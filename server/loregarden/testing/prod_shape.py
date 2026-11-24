@@ -54,6 +54,7 @@ from loregarden.testing.factories import (
     make_workspace,
 )
 from loregarden.testing.prod_shape_activity import add_activity
+from loregarden.testing.prod_shape_findings import add_invariant_findings
 from loregarden.testing.prod_shape_handoffs import handoff_doc
 from loregarden.testing.prod_shape_merge_queue import (
     MERGE_QUEUE_WORKSPACE,
@@ -532,6 +533,8 @@ def build_prod_shape(
         queue_roots,
         prod_shape_id,
     )
+    # Last: other shapes look for a ticket that holds nothing yet.
+    findings += add_invariant_findings(session, all_tickets, prod_shape_id)
     return ProdShapeSummary(
         tickets=len(all_tickets) + milestones,
         milestones=milestones,

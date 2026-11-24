@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import type { Approval } from "../../api/client";
 import type { ReviewItem, ReviewQueue } from "../../api/reviewApi";
@@ -185,6 +186,20 @@ describe("ReviewPage", () => {
         scene: "scenes/level_1.tscn",
       }),
     );
+  });
+
+  it("says a screenshot's file did not load, and lets the reviewer try it again", async () => {
+    renderAt();
+
+    fireEvent.error(await screen.findByRole("img", { name: "Marker pulse" }));
+
+    expect(screen.queryByRole("img", { name: "Marker pulse" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open full size: Marker pulse" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/did not load/);
+    expect(screen.getByText("Marker pulse")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.getByRole("img", { name: "Marker pulse" })).toBeInTheDocument();
   });
 
   it("shows what the agent captured: screenshot, link and an endpoint check", async () => {

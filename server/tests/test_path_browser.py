@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from loregarden.config import settings
@@ -61,6 +62,40 @@ def test_assert_browse_allowed_blocks_outside_home(tmp_path, monkeypatch):
     assert_browse_allowed(repo)
     with pytest.raises(ValueError, match="outside the allowed browse scope"):
         assert_browse_allowed(outside)
+
+
+def test_a_checkout_outside_home_can_open_its_own_files(tmp_path):
+    home, checkout, elsewhere = (tmp_path / name for name in ("home", "checkout", "elsewhere"))
+    for directory in (home, checkout, elsewhere):
+        directory.mkdir()
+    (checkout / "client").mkdir()
+    (checkout / "escape").symlink_to(elsewhere)
+
+    with (
+        patch.object(settings, "browse_root", ""),
+        patch.object(settings, "repo_root", checkout),
+        patch.object(Path, "home", return_value=home),
+    ):
+        payload = list_browse(checkout, repo_root=checkout)
+        assert [entry["name"] for entry in payload["entries"]] == ["client"]
+        assert payload["parent_path"] is None
+        assert assert_browse_allowed(checkout / "client") == (checkout / "client").resolve()
+        for outside in (tmp_path, elsewhere, checkout / "escape", tmp_path / "checkout-2"):
+            with pytest.raises(ValueError, match="outside the allowed browse scope"):
+                assert_browse_allowed(outside)
+
+
+def test_a_configured_browse_root_still_excludes_the_checkout(tmp_path):
+    checkout, allowed = tmp_path / "checkout", tmp_path / "checkout" / "docs"
+    allowed.mkdir(parents=True)
+
+    with (
+        patch.object(settings, "browse_root", str(allowed)),
+        patch.object(settings, "repo_root", checkout),
+    ):
+        assert_browse_allowed(allowed)
+        with pytest.raises(ValueError, match="outside the allowed browse scope"):
+            assert_browse_allowed(checkout)
 
 
 def test_browse_import_lists_files_and_directories(tmp_path, monkeypatch):

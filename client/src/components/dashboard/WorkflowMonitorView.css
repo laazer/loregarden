@@ -1,4 +1,5 @@
 .wm-root {
+  container: monitor / inline-size;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -196,6 +197,8 @@
 }
 
 .wm-line-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--txm);
 }
 
@@ -316,10 +319,44 @@
   color: var(--txl);
 }
 
+.wm-shared-summary {
+  grid-column: 1 / -1;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.wm-line-detail {
+  display: block;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.wm-show-all {
+  margin-top: 10px;
+}
+
+.wm-recurring-note {
+  display: block;
+  line-height: 1.5;
+  color: var(--txm);
+  overflow-wrap: anywhere;
+}
+
+.wm-filter {
+  padding: 5px 10px;
+  font-size: var(--fs-small);
+  flex: 1 1 180px;
+  max-width: 320px;
+  min-width: 0;
+}
+
 .wm-recurring-tickets {
-  gap: 6px;
+  gap: 10px;
   margin-top: 10px;
   font-size: var(--fs-small);
+  line-height: 1.7;
 }
 
 .wm-recurring-tickets a {
@@ -336,10 +373,20 @@
   color: var(--txl);
 }
 
-@media (max-width: 640px) {
-  .wm-line {
+/* The pane's width, not the window's: it is one column of a split. */
+@container monitor (max-width: 560px) {
+  .wm-line,
+  .wm-recurring summary {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+  }
+
+  .wm-recurring-count {
+    justify-self: start;
+  }
+
+  .wm-root code {
+    overflow-wrap: anywhere;
   }
 }
 

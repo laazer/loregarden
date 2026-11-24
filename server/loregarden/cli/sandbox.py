@@ -20,13 +20,13 @@ from loregarden.config import resolved_database_path, resolved_memory_sqlite_pat
 from loregarden.db.session import engine, init_db
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.path_resolve import sqlite_url_for_path
-from loregarden.services.sandbox_snapshot import take_snapshot
+from loregarden.services.sandbox_snapshot import CAPTURES_DIR_NAME, take_snapshot
 from loregarden.services.seed import seed_database
 from loregarden.testing.prod_shape import build_prod_shape
 from sqlmodel import Session
 
 
-def _exports(summary: str, database: Path, memory_sqlite: Path | None) -> str:
+def _exports(summary: str, database: Path, memory_sqlite: Path | None, captures: Path) -> str:
     env = {
         "LOREGARDEN_SANDBOX": "1",
         "LOREGARDEN_DATABASE_URL": sqlite_url_for_path(database),
@@ -34,6 +34,7 @@ def _exports(summary: str, database: Path, memory_sqlite: Path | None) -> str:
         # vault, and an empty value is what `config` reads as "none".
         "LOREGARDEN_MEMORY_SQLITE_URL": sqlite_url_for_path(memory_sqlite) if memory_sqlite else "",
         "LOREGARDEN_OBSIDIAN_VAULT_DIR": "",
+        "LOREGARDEN_REVIEW_CAPTURES_DIR": str(captures.resolve()),
     }
     lines = [f"# {summary}"]
     lines += [f"export {key}={shlex.quote(value)}" for key, value in env.items()]
@@ -47,7 +48,9 @@ def _snapshot(args: argparse.Namespace) -> str:
         if snap.memory_sqlite
         else "no memory graph configured"
     )
-    return _exports(f"snapshot in {args.into}; {memory}", snap.database, snap.memory_sqlite)
+    return _exports(
+        f"snapshot in {args.into}; {memory}", snap.database, snap.memory_sqlite, snap.captures
+    )
 
 
 def _inside(path: Path | None, root: Path) -> bool:
@@ -90,6 +93,7 @@ def _seed(args: argparse.Namespace) -> str:
         f"findings, memory {summary.memory_records}",
         database,
         memory,
+        into / CAPTURES_DIR_NAME,
     )
 
 

@@ -410,13 +410,15 @@ def test_the_first_pass_over_productions_shape_reports_nothing(prod_shape_sessio
         "exercised by dates, not by nulls"
     )
 
+    recorded = _finding_contents(prod_shape_session)
     check = run_invariant(prod_shape_session, LAND_VERIFICATION_RAN)
 
     assert (check.found, check.reentered, check.unrepaired) == (0, 0, 0), (
         f"{check} — the backlog is being reported; a report-only invariant "
         "re-reports it on every 30-second pass"
     )
-    assert _findings(prod_shape_session) == []
+    # The scenario holds the findings live already had; the pass adds and bumps none.
+    assert _finding_contents(prod_shape_session) == recorded
     assert _escalations(prod_shape_session) == []
 
 
@@ -428,12 +430,14 @@ def test_one_landing_after_the_guard_is_found_in_the_same_scenario(prod_shape_se
         select(Workspace).where(Workspace.slug == "loregarden")
     ).one()
     fresh = _landed(prod_shape_session, workspace, "lg-fresh-1", days_from_since=2)
+    recorded = _finding_contents(prod_shape_session)
 
     check = run_invariant(prod_shape_session, LAND_VERIFICATION_RAN)
 
     assert [v.subject_id for v in _detect(prod_shape_session)] == [fresh.id]
     assert (check.found, check.reentered) == (1, 1), check
-    assert [f.ticket_id for f in _findings(prod_shape_session)] == [fresh.id]
+    changed = _finding_contents(prod_shape_session).items() - recorded.items()
+    assert [ticket_id for ticket_id, _content in changed] == [fresh.id]
 
 
 def test_the_detector_runs_no_suite_and_shells_out_to_nothing(prod_shape_session, monkeypatch):
@@ -467,6 +471,11 @@ def _findings(session: Session) -> list[Artifact]:
             )
         ).all()
     )
+
+
+def _finding_contents(session: Session) -> dict[str, str]:
+    """Each ticket's finding as stored, so a bumped count shows as well as a new row."""
+    return {finding.ticket_id: finding.content_json for finding in _findings(session)}
 
 
 def _escalations(session: Session) -> list[Ticket]:

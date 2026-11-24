@@ -54,6 +54,7 @@
 }
 
 .editor-start-filter {
+  padding: 5px 10px;
   max-width: 320px;
   margin: 4px 0;
 }
@@ -128,6 +129,24 @@ button.editor-start-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--mono);
+}
+
+@media (max-width: 640px) {
+  .editor-start-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 6px;
+  }
+
+  .editor-start-row .editor-start-name {
+    flex: 1 1 0;
+    max-width: none;
+  }
+
+  .editor-start-row .editor-start-folder {
+    order: 1;
+    flex: 1 0 100%;
+  }
 }
 
 .editor-start-folder {

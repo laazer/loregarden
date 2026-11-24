@@ -15,6 +15,7 @@ from loregarden.services.workspace_activity import workspace_activity
 from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape
 from loregarden.testing.prod_shape_activity import ACTIVITY_CALIBRATION
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
+from loregarden.testing.prod_shape_findings import INVARIANT_FINDINGS
 from loregarden.testing.prod_shape_tree import TREE_CALIBRATION
 from sqlmodel import Session, select
 
@@ -32,7 +33,8 @@ def test_counts_match_the_calibration(prod_shape):
     expected = sum(ws.tickets for ws in CALIBRATION.workspaces.values())
     assert abs(prod_shape.tickets - expected) <= len(CALIBRATION.types) * 4
     assert prod_shape.milestones == 75
-    assert prod_shape.findings == CALIBRATION.findings_total
+    invariants = sum(shape.live + shape.finished for shape in INVARIANT_FINDINGS)
+    assert prod_shape.findings == CALIBRATION.findings_total + invariants
     assert prod_shape.memory_records == CALIBRATION.memory
 
 
@@ -47,9 +49,15 @@ def test_the_monitor_sees_mostly_finished_tickets(prod_shape, client):
     on_tickets = [f for f in findings if f["ticket_id"]]
     finished = [f for f in on_tickets if f["ticket_state"] in ("done", "wont_do")]
 
-    assert len(on_tickets) == 94
-    assert len(finished) == 85
+    assert len(on_tickets) == 488
+    assert len(finished) == 441
     assert all(f["ticket_title"] for f in on_tickets)
+    oversized = [
+        f for f in on_tickets if f["stage_key"] == "tickets_are_created_under_the_size_caps"
+    ]
+    assert len({f["ticket_id"] for f in oversized}) == 94
+    assert len({f["summary"] for f in oversized}) == 1
+    assert len({f["evidence"]["detail"] for f in oversized}) == 94
 
 
 def test_memory_has_no_recorded_links_but_real_groups(prod_shape, client):

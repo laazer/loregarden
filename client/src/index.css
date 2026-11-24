@@ -5924,8 +5924,10 @@ button.send-leaf:hover:not(:disabled) {
    page title and the global actions. */
 .git-ref-switcher-label {
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .git-ref-switcher-label > span {
@@ -5936,10 +5938,12 @@ button.send-leaf:hover:not(:disabled) {
 }
 
 .git-ref-select.btn-secondary {
-  min-width: 130px;
+  flex: 1 1 180px;
+  min-width: 96px;
   max-width: 180px;
-  height: 34px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+  text-overflow: ellipsis;
   font-size: var(--fs-small);
   font-weight: 500;
   border-radius: 9px;
@@ -5961,6 +5965,46 @@ button.send-leaf:hover:not(:disabled) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The Editor's row holds three pickers. What a picker already says goes first
+   (the active worktree, then, on a phone, the labels: each select is still named for a
+   screen reader); shrinking the pickers instead ran the labels over them. */
+@media (max-width: 1500px) {
+  .git-ref-current,
+  .topbar-workspace-picker:has(+ .git-ref-switcher) .topbar-workspace-picker-label {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .topbar:has(.git-ref-switcher) {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding-block: 6px;
+  }
+
+  .topbar:has(.git-ref-switcher) .topbar-page {
+    order: 1;
+    flex: 1 0 100%;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .git-ref-switcher-label > span {
+    display: none;
+  }
+}
+
+.topbar-workspace-picker:has(+ .git-ref-switcher) {
+  flex: none;
+}
+
+.git-ref-switcher {
+  flex: 0 1 auto;
 }
 
 .git-ref-error,
@@ -5987,6 +6031,29 @@ button.send-leaf:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* Beside a 280px tree a phone has no width left to read a file in. */
+@media (max-width: 640px) {
+  .editor-layout {
+    flex-direction: column;
+  }
+
+  .editor-sidebar {
+    width: auto;
+    max-height: 40%;
+    border-right: 0;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .git-ref-switcher,
+  .topbar-workspace-picker:has(+ .git-ref-switcher) {
+    flex: 1 1 100%;
+  }
+
+  .git-ref-switcher-label {
+    flex: 1 1 0;
+  }
 }
 
 .editor-sidebar-title {

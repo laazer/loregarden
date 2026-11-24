@@ -88,9 +88,13 @@ def test_server_runs_sandboxed_on_a_snapshot_of_main(
 ) -> None:
     ctx = _ctx(registry, tmp_path)
     feat = str((tmp_path / "feat-x").resolve())
+    live_captures = tmp_path / "live-captures"
+    (live_captures / "t1").mkdir(parents=True)
+    (live_captures / "t1" / "shot.png").write_bytes(b"png")
     with (
         patch.object(settings, "repo_root", checkout),
         patch.object(settings, "database_url", f"sqlite:///{main_db}"),
+        patch.object(settings, "review_captures_dir", live_captures),
     ):
         spec = ServerTemplate().build(
             LaunchRequest(template="server", params={"worktree": feat}), ctx
@@ -102,6 +106,9 @@ def test_server_runs_sandboxed_on_a_snapshot_of_main(
     assert spec.env["LOREGARDEN_DATABASE_URL"].endswith(str(snapshot))
     with sqlite3.connect(snapshot) as db:
         assert db.execute("select title from tickets").fetchall() == [("from main",)]
+    captures = Path(spec.env["LOREGARDEN_REVIEW_CAPTURES_DIR"])
+    assert captures == ctx.instance_dir / "review-captures"
+    assert (captures / "t1" / "shot.png").read_bytes() == b"png"
     assert spec.labels["branch"] == "feat-x"
 
 

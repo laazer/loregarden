@@ -1,4 +1,4 @@
-"""Copy production's database and memory graphs for a sandbox server to read.
+"""Copy production's database, review screenshots and memory graphs for a sandbox server to read.
 
 UI built against a fixture or an empty dev database looks fine at three rows and
 fails at production volume: the Monitor tab with 138 findings, a memory map of
@@ -20,8 +20,10 @@ from pathlib import Path
 
 from loregarden.config import resolved_memory_sqlite_path
 from loregarden.services.local_instances import snapshot_database
+from loregarden.services.review_kit import snapshot_captures
 from pydantic import BaseModel
 
+CAPTURES_DIR_NAME = "review-captures"
 _SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
 
 
@@ -31,6 +33,8 @@ class SandboxSnapshot(BaseModel):
     memory_sqlite: Path | None
     #: Per-workspace graphs copied beside it (`<slug>/memory.db`).
     memory_workspaces: list[str]
+    #: The review screenshots the database names.
+    captures: Path
 
 
 def _clear(db_path: Path) -> None:
@@ -50,20 +54,23 @@ def _backup(source: Path, target: Path) -> None:
 
 
 def take_snapshot(into: Path) -> SandboxSnapshot:
-    """Snapshot the configured database and every memory graph into `into`.
+    """Snapshot the configured database, its screenshots and every memory graph.
 
     Memory keeps its layout — `memory.db` at the root, `<slug>/memory.db` per
     workspace — because the server derives the per-workspace path from the base
     one (`resolved_memory_sqlite_path`).
     """
     into.mkdir(parents=True, exist_ok=True)
+    captures = snapshot_captures(into / CAPTURES_DIR_NAME)
     database = into / "loregarden.db"
     _clear(database)
     snapshot_database(database)
 
     base = resolved_memory_sqlite_path()
     if base is None:
-        return SandboxSnapshot(database=database, memory_sqlite=None, memory_workspaces=[])
+        return SandboxSnapshot(
+            database=database, memory_sqlite=None, memory_workspaces=[], captures=captures
+        )
 
     memory_root = into / "memory"
     memory_base = memory_root / base.name
@@ -77,5 +84,8 @@ def take_snapshot(into: Path) -> SandboxSnapshot:
                 _backup(graph, memory_root / child.name / base.name)
                 workspaces.append(child.name)
     return SandboxSnapshot(
-        database=database, memory_sqlite=memory_base, memory_workspaces=workspaces
+        database=database,
+        memory_sqlite=memory_base,
+        memory_workspaces=workspaces,
+        captures=captures,
     )
