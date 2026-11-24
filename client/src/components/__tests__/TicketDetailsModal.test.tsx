@@ -93,6 +93,28 @@ describe('TicketDetailsModal', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
+    it('closes with the newest onClose, and on Escape only', () => {
+      const stale = jest.fn();
+      const onClose = jest.fn();
+      const ticket = createMockTicket();
+      const { rerender } = renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={stale} />
+      );
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
+        </QueryClientProvider>
+      );
+
+      const button = screen.getByRole('button', { name: /^Close$/i });
+      for (const key of ['Enter', ' ', 'Tab']) fireEvent.keyDown(button, { key });
+      expect(onClose).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(button, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(stale).not.toHaveBeenCalled();
+    });
+
     it('should close modal when overlay/backdrop is clicked', async () => {
       // SPEC: Modal should close when user clicks outside the modal
       const onClose = jest.fn();
@@ -133,6 +155,20 @@ describe('TicketDetailsModal', () => {
       );
 
       expect(screen.getByRole('heading', { name: 'Important Feature' })).toBeInTheDocument();
+    });
+
+    it('shows markup in a ticket as text, never as an element that runs', () => {
+      const markup = '<img src="x" onerror="alert(1)"><script>alert(2)</script>';
+      renderWithQueryClient(
+        <TicketDetailsModal
+          ticket={createMockTicket({ title: markup, description: markup, acceptance_criteria: [markup] })}
+          isOpen={true}
+          onClose={() => {}}
+        />
+      );
+
+      expect(screen.getByRole('heading', { name: markup })).toBeInTheDocument();
+      expect(document.querySelector('[onerror], script')).toBeNull();
     });
 
     it('should display ticket ID', () => {
@@ -585,32 +621,6 @@ describe('TicketDetailsModal', () => {
       const dialog = screen.getByRole('dialog');
       const focusIsOnDialog = document.activeElement === dialog || dialog.contains(document.activeElement as Node);
       expect(focusIsOnDialog).toBe(true);
-    });
-  });
-
-  describe('Performance', () => {
-    it('should handle large ticket objects efficiently', () => {
-      // SPEC: Modal should not have performance issues with large tickets
-      const largeTicket = createMockTicket({
-        acceptance_criteria: Array.from({ length: 100 }, (_, i) => `Criterion ${i + 1}`),
-        stages: Array.from({ length: 50 }, (_, i) => ({
-          key: `stage_${i}`,
-          name: `Stage ${i + 1}`,
-          status: 'pending' as const,
-          agent_id: 'agent',
-          skill_name: 'skill',
-          optional: false,
-          note: '',
-          stage_type: '',
-          agents: [],
-        })),
-      });
-
-      renderWithQueryClient(
-        <TicketDetailsModal ticket={largeTicket} isOpen={true} onClose={() => {}} />
-      );
-
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
   });
 

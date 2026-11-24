@@ -633,17 +633,7 @@ export function TicketStudioPanel({
         )}
       {commit && !commit.isIdle && (
         <FinalizationConfirmation
-          finalizationResponse={
-            commit.isSuccess
-              ? {
-                  created_ids: commit.data.created_ticket_ids,
-                  total_created: commit.data.created_count,
-                  breakdown: commit.data.breakdown,
-                }
-              : null
-          }
-          workspaceSlug={workspaceSlug}
-          rootHierarchyId={commit.data?.root_ticket_id ?? undefined}
+          result={commit.data ?? null}
           isLoading={commit.isPending}
           error={commit.isError ? (commit.error as Error).message : null}
           onClose={() => commit.reset()}

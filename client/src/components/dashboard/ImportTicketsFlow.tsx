@@ -5,7 +5,7 @@ import { api, type TicketImportPreviewResponse } from "../../api/client";
 import { navigateToStudioTicketSession, navigateToTicket } from "../../lib/useAppNavigation";
 import { toastWarning } from "../../state/toastStore";
 import { errorDetail } from "../../utils/errorDetail";
-import { ImportTicketsConfirmModal } from "../ImportTicketsConfirmModal";
+import { ImportTicketsConfirmModal, type PartialImport } from "../ImportTicketsConfirmModal";
 import { ImportTicketsModal, type ImportMode } from "../ImportTicketsModal";
 
 const UNREADABLE: TicketImportPreviewResponse = {
@@ -34,6 +34,7 @@ export function ImportTicketsFlow({ workspaceSlug, browsePath, onClose }: Import
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [preview, setPreview] = useState<TicketImportPreviewResponse | null>(null);
+  const [partial, setPartial] = useState<PartialImport | null>(null);
 
   const showPreview = (next: TicketImportPreviewResponse) => {
     setPreview(next);
@@ -81,21 +82,16 @@ export function ImportTicketsFlow({ workspaceSlug, browsePath, onClose }: Import
     meta: { errorTitle: "Import tickets" },
     mutationFn: (tickets: TicketImportPreviewResponse["tickets"]) =>
       api.importTickets({ workspace_slug: workspaceSlug, tickets }),
-    onSuccess: (result) => {
+    onSuccess: (result, tickets) => {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
-      if (result.ticket_ids.length > 0) {
-        navigateToTicket(result.ticket_ids[0], { replace: true });
-      }
       if (result.errors.length > 0) {
-        setPreview((current) =>
-          current
-            ? { ...current, tickets: [], total: 0, errors: result.errors, warnings: [], show_preview: false }
-            : current,
-        );
+        // Stay: leaving for the first ticket unmounts this and the reasons with it.
+        setPartial({ created: result.created_count, total: tickets.length, errors: result.errors });
         return;
       }
       onClose();
+      if (result.ticket_ids.length > 0) navigateToTicket(result.ticket_ids[0], { replace: true });
     },
   });
 
@@ -137,13 +133,13 @@ export function ImportTicketsFlow({ workspaceSlug, browsePath, onClose }: Import
         workspaceSlug={workspaceSlug}
         preview={preview}
         isImporting={importTickets.isPending}
+        partial={partial}
         importError={errorDetail(importTickets.error)}
         onClose={() => {
           if (!importTickets.isPending) onClose();
         }}
-        onConfirm={async (tickets) => {
-          if (tickets.length === 0) return;
-          await importTickets.mutateAsync(tickets);
+        onConfirm={(tickets) => {
+          if (tickets.length > 0) importTickets.mutate(tickets);
         }}
       />
     </>
