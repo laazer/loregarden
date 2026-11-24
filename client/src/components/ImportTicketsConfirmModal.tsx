@@ -20,14 +20,23 @@ import { Select } from "./ui/Select";
 import { Button } from "./ui/Button";
 import { ModalShell } from "./ui/ModalShell";
 
+/** An import that came back with tickets it did not create, and why. */
+export interface PartialImport {
+  created: number;
+  total: number;
+  errors: string[];
+}
+
 export interface ImportTicketsConfirmModalProps {
   open: boolean;
   workspaceSlug: string;
   preview: TicketImportPreviewResponse | null;
   isImporting: boolean;
   importError?: string | null;
+  partial: PartialImport | null;
   onClose: () => void;
-  onConfirm: (tickets: TicketImportItem[]) => void | Promise<void>;
+  /** Starts the import. A failure comes back as `importError`, so there is nothing to await. */
+  onConfirm: (tickets: TicketImportItem[]) => void;
 }
 
 function formatCounts(byType: Record<string, number>): string {
@@ -45,6 +54,7 @@ export function ImportTicketsConfirmModal({
   preview,
   isImporting,
   importError,
+  partial,
   onClose,
   onConfirm,
 }: ImportTicketsConfirmModalProps) {
@@ -86,6 +96,40 @@ export function ImportTicketsConfirmModal({
   if (!open || !preview) {
     // Closed but mounted: the shell plays its exit with the last content it drew.
     return <ModalShell open={false} onDismiss={undefined} labelledBy="import-tickets-title">{null}</ModalShell>;
+  }
+
+  if (partial) {
+    return (
+      <ModalShell open onDismiss={onClose} labelledBy="import-tickets-title" panelClassName="import-confirm-modal">
+        <div className="modal-header">
+          <div>
+            <div className="state-label">{workspaceSlug}</div>
+            <h2 id="import-tickets-title" className="modal-title">
+              Some work items were not imported
+            </h2>
+            <p className="modal-subtitle">
+              {partial.created} of {partial.total} created. Fix the others and import only those again.
+            </p>
+          </div>
+          <IconCloseButton onClick={onClose} />
+        </div>
+        <div className="modal-body scroll-focus-ring" role="group" aria-label="Work items not imported" tabIndex={0}>
+          <div className="modal-field">
+            <div className="modal-field-label">Not imported</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "var(--fs-small)", color: "var(--rdl)" }}>
+              {partial.errors.map((error, index) => (
+                <li key={`${index}:${error}`}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </ModalShell>
+    );
   }
 
   const updateTicket = (index: number, ticket: TicketImportItem) => {
@@ -368,7 +412,7 @@ export function ImportTicketsConfirmModal({
         <Button
           variant="primary"
           disabled={!canImport}
-          onClick={() => void onConfirm(draftTickets)}
+          onClick={() => onConfirm(draftTickets)}
         >
           {isImporting
             ? "Importing…"

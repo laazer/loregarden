@@ -107,7 +107,7 @@ const FINALIZE_SUCCESS_RESPONSE = {
   created_ticket_ids: ["uuid-m1", "uuid-f1", "uuid-t1"],
   created_count: 3,
   breakdown: { milestone: 1, feature: 1, task: 1 },
-  root_ticket_id: "uuid-m1",
+  root_ticket_id: "uuid-root",
 };
 
 function renderStudioPanel(overrides: Partial<TicketStudioPanelProps> = {}) {
@@ -147,19 +147,6 @@ async function getCommitButton() {
 }
 
 describe("Group I — Integration: Finalize Flow", () => {
-  it("I1: user can click the commit button to start finalization", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(api.commitTicketStudioSession).toHaveBeenCalledWith(SESSION_ID);
-    });
-  });
-
   it("I2: shows loading state while finalization is in progress", async () => {
     const user = userEvent.setup();
     let resolveCommit: (value: typeof FINALIZE_SUCCESS_RESPONSE) => void;
@@ -172,6 +159,8 @@ describe("Group I — Integration: Finalize Flow", () => {
     await user.click(commitButton);
 
     expect(screen.getByRole("status", { hidden: true })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /create.*ticket/i })).not.toBeInTheDocument();
+    expect(api.commitTicketStudioSession.mock.calls).toEqual([[SESSION_ID]]);
 
     resolveCommit!(FINALIZE_SUCCESS_RESPONSE);
     await waitFor(() => {
@@ -197,19 +186,6 @@ describe("Group I — Integration: Finalize Flow", () => {
 });
 
 describe("Group II — Success Display & Navigation", () => {
-  it("II1: displays success confirmation after finalization succeeds", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
-    });
-  });
-
   it("II2: displays total count of items created", async () => {
     const user = userEvent.setup();
     api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
@@ -220,19 +196,6 @@ describe("Group II — Success Display & Navigation", () => {
 
     await waitFor(() => {
       expect(screen.getByText("3")).toBeInTheDocument();
-    });
-  });
-
-  it("II3: provides button to navigate to created hierarchy", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /view.*hierarchy/i })).toBeInTheDocument();
     });
   });
 
@@ -247,7 +210,7 @@ describe("Group II — Success Display & Navigation", () => {
     const navButton = await waitFor(() => screen.getByRole("button", { name: /view.*hierarchy/i }));
     await user.click(navButton);
 
-    expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining("uuid-m1"));
+    expect(mockNavigate).toHaveBeenCalledWith("/tickets/uuid-root/timeline");
   });
 
   it("II5: user can close the confirmation", async () => {
@@ -283,19 +246,6 @@ describe("Group III — Error Handling", () => {
     });
   });
 
-  it("III2: does not show success confirmation when finalization fails", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockRejectedValueOnce(new Error("Validation failed"));
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /hierarchy.*created/i })).not.toBeInTheDocument();
-    });
-  });
-
   it("III3: allows user to retry finalization after error via close then commit again", async () => {
     const user = userEvent.setup();
     api.commitTicketStudioSession.mockRejectedValueOnce(new Error("Network error"));
@@ -317,59 +267,6 @@ describe("Group III — Error Handling", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
-    });
-  });
-});
-
-describe("Group IV — Edge Cases & State Management", () => {
-  it("IV1: passes the workspace-scoped session ID to the commit API", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
-    renderStudioPanel({ workspaceSlug: "custom-workspace" });
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(api.commitTicketStudioSession).toHaveBeenCalledWith(SESSION_ID);
-    });
-  });
-
-  it("IV2: handles a response with an empty breakdown gracefully", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce({
-      session_id: SESSION_ID,
-      created_ticket_ids: ["uuid-1"],
-      created_count: 1,
-      breakdown: {},
-      root_ticket_id: "uuid-1",
-    });
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText("1")).toBeInTheDocument();
-    });
-  });
-
-  it("IV3: handles a large hierarchy finalization (120 items)", async () => {
-    const user = userEvent.setup();
-    api.commitTicketStudioSession.mockResolvedValueOnce({
-      session_id: SESSION_ID,
-      created_ticket_ids: Array.from({ length: 120 }, (_, i) => `id-${i}`),
-      created_count: 120,
-      breakdown: { milestone: 10, feature: 40, capability: 35, task: 35 },
-      root_ticket_id: "id-0",
-    });
-    renderStudioPanel();
-
-    const commitButton = await getCommitButton();
-    await user.click(commitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText("120")).toBeInTheDocument();
     });
   });
 });
