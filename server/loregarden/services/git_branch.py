@@ -24,8 +24,8 @@ from loregarden.services.checkout_release import (
 from loregarden.services.git_merge_noco import is_ancestor
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.git_trees import is_main_working_tree, main_working_tree
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.primary_checkout import require_clean_tree
-from loregarden.services.toolchain_links import excluding_own_links
 from loregarden.services.worktree_snapshot import read_tree
 from sqlmodel import Session
 
@@ -324,7 +324,7 @@ def _refresh_onto(
     repo_root: Path, branch: str, start_point: str, *, seat: MergeTurnSeat | None = None
 ) -> None:
     dirty = run_git(
-        ["status", "--porcelain", *excluding_own_links(repo_root)],
+        ["status", "--porcelain", *excluding_own_files(repo_root)],
         cwd=repo_root,
         capture_output=True,
         text=True,

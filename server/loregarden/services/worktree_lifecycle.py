@@ -45,6 +45,7 @@ from loregarden.services.directory_release import (
     directory_state,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.parent_ref import parent_comparison_ref
 from loregarden.services.process_identity import (
     BootIdentityUnavailable,
@@ -52,7 +53,6 @@ from loregarden.services.process_identity import (
     claim_is_live,
     parse_claim,
 )
-from loregarden.services.toolchain_links import excluding_own_links
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_premises import (
     KeepReason,
@@ -87,7 +87,7 @@ def _is_dirty(path: Path) -> bool:
     a repo's config would otherwise turn this guard into a rubber stamp.
     """
     status = run_git(
-        ["status", "--porcelain", "--untracked-files=all", *excluding_own_links(path)],
+        ["status", "--porcelain", "--untracked-files=all", *excluding_own_files(path)],
         cwd=str(path),
         check=False,
         capture_output=True,

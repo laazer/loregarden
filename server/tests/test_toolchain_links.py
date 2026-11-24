@@ -30,9 +30,10 @@ from loregarden.services.git_automation import PublishSubject, _commit
 from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.land_ticket import land_ticket, landing_would_succeed
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.run_worktree_commit import commit_succeeded_run_worktree
 from loregarden.services.ticket_worktree import resolve_execution_root
-from loregarden.services.toolchain_links import excluding_own_links, own_toolchain_links
+from loregarden.services.toolchain_links import own_toolchain_links
 from loregarden.services.worktree_lifecycle import KeepReason, checkout_loss
 from loregarden.services.worktree_snapshot import read_tree
 from sqlmodel import Session
@@ -256,7 +257,7 @@ def test_a_git_that_cannot_answer_discounts_nothing(linked, failing, caplog):
 
 def test_a_tree_with_no_link_costs_no_git_call(repo):
     with mock.patch.object(toolchain_links, "run_git") as run_git:
-        assert excluding_own_links(repo) == []
+        assert excluding_own_files(repo) == []
     run_git.assert_not_called()
 
 
@@ -264,7 +265,7 @@ def test_a_tree_with_no_link_costs_no_git_call(repo):
 def test_a_link_git_already_ignores_changes_no_command(tree):
     assert (tree / LINK).is_symlink()
     with mock.patch.object(toolchain_links, "run_git", wraps=toolchain_links.run_git) as run_git:
-        assert excluding_own_links(tree) == []
+        assert excluding_own_files(tree) == []
     assert run_git.call_count == 1, "the common case: every loregarden tree, on every read"
 
 
@@ -318,10 +319,12 @@ def test_the_link_alone_does_not_keep_a_finished_tree(linked, tmp_path):
 
 # ---- every other reader -------------------------------------------------------
 
-#: A git read or sweep of a whole tree that does not need to pass over the link.
+#: A git read or sweep of a whole tree that does not need to pass over loregarden's own files
+#: (the link, and `test_own_tree_files`' handoff export).
 EXEMPT = {
-    "services/toolchain_links.py": "the helper itself",
-    "services/worktree_snapshot.py": "read_tree takes the links out of what it parsed",
+    "services/toolchain_links.py": "finds the links",
+    "services/own_tree_files.py": "finds the handoff exports",
+    "services/worktree_snapshot.py": "read_tree takes loregarden's own files out of what it parsed",
     "services/landing_uncommitted.py": "intersected with read_tree's dirty paths",
     "services/symbol_map/sources.py": "keeps source files only, by suffix",
     "services/artifact_service.py": "skips paths that are not files; the link is to a directory",
@@ -349,12 +352,12 @@ def _unguarded_sweeps(source: str) -> list[int]:
         if type(items) is not list:  # a `def`'s `args` is not a list of expressions
             continue
         words = [str(item.value) for item in items if type(item) is ast.Constant]
-        if _sweeps_a_tree(words) and "excluding_own_links(" not in ast.unparse(node):
+        if _sweeps_a_tree(words) and "excluding_own_files(" not in ast.unparse(node):
             found.append(node.lineno)
     return found
 
 
-def test_every_reader_of_a_ticket_tree_passes_over_the_link():
+def test_every_reader_of_a_ticket_tree_passes_over_loregardens_own_files():
     package = REPO_ROOT / "server" / "loregarden"
     unguarded = {}
     for path in sorted(package.rglob("*.py")):
@@ -363,6 +366,6 @@ def test_every_reader_of_a_ticket_tree_passes_over_the_link():
             unguarded[path.relative_to(package).as_posix()] = lines
 
     assert {name: at for name, at in unguarded.items() if name not in EXEMPT} == {}, (
-        "add `*excluding_own_links(tree)` to the command, or exempt the file with its reason"
+        "add `*excluding_own_files(tree)` to the command, or exempt the file with its reason"
     )
     assert set(EXEMPT) == set(unguarded), "an exemption nothing needs any more"

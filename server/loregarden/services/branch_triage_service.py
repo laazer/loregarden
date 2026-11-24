@@ -45,8 +45,8 @@ from loregarden.services.github_pr_listing import (
 )
 from loregarden.services.integration_branch_moves import BranchMoveRefused, move_integration_branch
 from loregarden.services.landing_survival import refuse_dropping_landings
+from loregarden.services.own_tree_files import excluding_own_files
 from loregarden.services.publish_ref import INTEGRATION_PREFIX, branch_for_pr_head
-from loregarden.services.toolchain_links import excluding_own_links
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlmodel import Session, select
@@ -235,7 +235,7 @@ def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:
 
 def _worktree_dirty(worktree_path: str) -> bool:
     tree = Path(worktree_path)
-    proc = _git(tree, "status", "--porcelain", *excluding_own_links(tree))
+    proc = _git(tree, "status", "--porcelain", *excluding_own_files(tree))
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
 
 

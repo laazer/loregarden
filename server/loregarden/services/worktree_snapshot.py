@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.toolchain_links import own_toolchain_links
+from loregarden.services.own_tree_files import own_files
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,8 @@ class TreeSnapshot:
 def read_tree(repo_root: Path) -> TreeSnapshot:
     """One `git status` of `repo_root`: HEAD, branch, and every dirty path.
 
-    Untracked files are included (`--untracked-files=all`), except the dependency
-    links loregarden made itself (`toolchain_links`), and `-z` keeps paths
+    Untracked files are included (`--untracked-files=all`). The files loregarden
+    put there itself are not (`own_tree_files`), and `-z` keeps paths
     with spaces or non-ASCII unquoted so they round-trip back into `git add`.
     `--no-ahead-behind` because the branch header would otherwise walk history
     to count commits against the upstream, which nothing here reads.
@@ -161,5 +161,5 @@ def _parse_status_v2(repo_root: Path, stdout: str) -> TreeSnapshot:
         repo_root=repo_root,
         head_sha=head_sha,
         branch=branch,
-        dirty_paths=frozenset(paths - own_toolchain_links(repo_root)),
+        dirty_paths=frozenset(paths - own_files(repo_root)),
     )

@@ -83,17 +83,6 @@ def own_toolchain_links(tree: Path) -> frozenset[str]:
     return frozenset(path for path in untracked if _points_at(tree / path, main / path))
 
 
-def excluding_own_links(tree: Path) -> list[str]:
-    """Arguments ending a `git status`, `add -A` or `ls-files` so it passes over those links.
-
-    Empty when there are none, which leaves the command exactly as it was.
-    """
-    links = own_toolchain_links(tree)
-    if not links:
-        return []
-    return ["--", ":/", *(f":(top,exclude){path}" for path in sorted(links))]
-
-
 def _points_at(link: Path, source: Path) -> bool:
     """Whether ``link`` names ``source`` itself, whose own target, if any, is not followed."""
     target = link.parent / os.readlink(link)
