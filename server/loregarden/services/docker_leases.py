@@ -20,10 +20,11 @@ the winner.
 runs out" to "reapable when docker agrees nothing of it is running" — the whole
 difference between a TTL that guesses and one that checks.
 
-**Strict head-of-line.** Only the front of the queue is eligible, and the drain
-stops at the first waiter that does not fit. A stream of small claims would
-otherwise starve a large one indefinitely. Backfill is a real improvement and a
-real source of starvation bugs; it is deliberately not here yet.
+**Head-of-line, with one exception.** The drain stops at the first waiter that
+does not fit. A stream of small claims would otherwise starve a large one
+indefinitely. The exception is an agent run's or orchestration's small standing
+claim, which may pass a blocked head when doing so cannot delay it
+(`capacity_passing`). General backfill (lg-machine-resource-1925) is not here.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.docker_tables import GLOBAL_POOL_ID, POOL_ROW_IDS
 from loregarden.models.domain.enums_capacity import DockerCeilingSource
+from loregarden.services.capacity_passing import may_pass_now, next_to_pass
 from loregarden.services.docker_capacity import (
     Ceiling,
     DockerInvoke,
@@ -456,10 +458,11 @@ def _waiters(session: Session) -> list[DockerLease]:
 def drain_waiters(session: Session) -> list[str]:
     """Promote the front of the queue for as long as it fits. The only granter.
 
-    Strictly head-of-line: the walk stops at the first waiter that does not fit
-    rather than looking past it for something smaller. Skipping is how a stream
-    of light claims starves a heavy one forever, and a queue that is unfair is
-    harder to reason about than one that is merely slow.
+    Head-of-line: the walk stops at the first waiter that does not fit rather
+    than looking past it for something smaller. Skipping is how a stream of
+    light claims starves a heavy one forever. The one claim it does look past
+    the head for is a small standing one that cannot delay it
+    (`_book_next_grant`).
 
     Returns the ids promoted, so a caller can tell an operator what its release
     set moving.
@@ -492,11 +495,13 @@ def drain_waiters(session: Session) -> list[str]:
         # So: book, then compare-and-set the row, then refund if the row was
         # lost. The refund window over-counts the pool for an instant, which
         # errs towards refusing a claim rather than double-granting one.
-        if not _book_capacity_for(session, lease):
+        booked_for = _book_next_grant(session, lease)
+        if booked_for is None:
             break  # the head does not fit, which is what head-of-line means
+        lease = booked_for
 
         if not _claim_promotion(session, lease):
-            # A peer took this head, so it is no longer WAITING and the next
+            # A peer took this waiter, so it is no longer WAITING and the next
             # read returns whoever is first now — including anyone refused while
             # this booking made the pool look full.
             _return_capacity(session, lease)
@@ -505,6 +510,20 @@ def drain_waiters(session: Session) -> list[str]:
 
         promoted.append(lease.id)
     return promoted
+
+
+def _book_next_grant(session: Session, head: DockerLease) -> DockerLease | None:
+    """Book capacity for the head, or for a small claim that may pass it.
+
+    None when neither may start. The lease returned has its capacity booked and
+    its row still WAITING; the caller claims or refunds it.
+    """
+    if _book_capacity_for(session, head):
+        return head
+    passing = next_to_pass(session, head)
+    if passing is not None and _book_capacity_for(session, passing, ahead_of=head):
+        return passing
+    return None
 
 
 def _refresh_stale_host_load(session: Session) -> None:
@@ -573,7 +592,9 @@ def _claim_promotion(session: Session, lease: DockerLease) -> bool:
     return bool(result.rowcount == 1)
 
 
-def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
+def _book_capacity_for(
+    session: Session, lease: DockerLease, *, ahead_of: DockerLease | None = None
+) -> bool:
     """Book this lease's price against the pool, retrying only real contention.
 
     A failed conditional UPDATE means either "the pool moved under this read" or
@@ -584,6 +605,10 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
     A lease charged to two pools books both in one transaction: a miss on the
     second rolls back the first, so no observer sees the docker pool booked for
     a claim the host pool refused.
+
+    `ahead_of` is the blocked head this lease would pass. Whether it may is asked
+    after the revision is read, so a booking that changes the answer also fails
+    the compare-and-set: two drains cannot each pass the last claim that fits.
     """
     pools = CHARGED_POOLS[lease.pool]
     deadline = time.monotonic() + CLAIM_CONTENTION_BUDGET_SECONDS
@@ -594,6 +619,11 @@ def _book_capacity_for(session: Session, lease: DockerLease) -> bool:
         rows = {pool: load_pool(session, pool) for pool in pools}
         revisions = {pool: row.revision for pool, row in rows.items()}
         gated = {pool: load_gate_cpus(pool, row, lease) > 0 for pool, row in rows.items()}
+        if ahead_of is not None and not may_pass_now(
+            session, rows[CapacityPool.HOST], head=ahead_of, claim=lease
+        ):
+            session.commit()  # end the read this answer came from
+            return False
         if all(
             claim_pool_capacity(
                 session,

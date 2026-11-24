@@ -103,14 +103,15 @@ class ScriptedLine:
 
 
 def _moving_line(session: Session, pool: CapacityPool, line: ScriptedLine) -> None:
-    """Two 2-cpu holders on a 4-cpu pool, and a 3-cpu waiter ahead of ours.
+    """Two holders filling a 4-cpu pool, and a 3-cpu waiter ahead of ours.
 
     The first holder finishing at t=10 is the line moving, though it frees too
-    little for the waiter ahead. The second finishing at t=20 lets both start.
+    little for anyone: less than the waiter ahead needs, and less than a claim
+    that may pass it. The second finishing at t=20 lets both start.
     """
     _set_ceiling(session, pool, cpus=4, memory_mb=8192, leases=6)
-    first = _reserve(session, pool, label="pre-push server-tests", cpus=2)
-    second = _reserve(session, pool, label="pre-push client-tests", cpus=2)
+    first = _reserve(session, pool, label="short check", cpus=0.1)
+    second = _reserve(session, pool, label="pre-push client-tests", cpus=3.9)
     ahead = _reserve(session, pool, label="gates land-verify", cpus=3)
     assert first.granted and second.granted and not ahead.granted
     line.finish_at(10, first.lease_id)

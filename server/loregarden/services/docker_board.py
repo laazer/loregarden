@@ -232,7 +232,8 @@ def capacity_status(
     estimates = estimate_waits(session, now=stamp)
 
     # What the head of the line is short of, from admission's own test. The rest
-    # of the line waits on the head (strict order), so only its reason is news.
+    # of the line waits on the head, so only its reason is news (a small standing
+    # claim may pass it, and then it is a holder: `capacity_passing`).
     # None with nobody waiting; an empty list means it fits and is about to start.
     head_shortfall = None
     if waiting:

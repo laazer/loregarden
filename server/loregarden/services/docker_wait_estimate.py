@@ -35,6 +35,7 @@ those once dragged the `heavy` median for a test suite down to seconds.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from statistics import median
@@ -47,6 +48,12 @@ from loregarden.models.domain import (
     DockerLeaseEndReason,
     DockerLeaseStatus,
     DockerWaitBasis,
+)
+from loregarden.services.capacity_passing import (
+    Room,
+    is_standing,
+    may_pass_head,
+    passing_leaves_head_alone,
 )
 from loregarden.services.docker_ledger import (
     CHARGED_POOLS,
@@ -173,6 +180,8 @@ class _Holder:
     #: Whether `releases_in` came from measured history or from a TTL. A waiter
     #: is only as well-predicted as the weakest holder it had to wait for.
     basis: DockerWaitBasis = DockerWaitBasis.UNKNOWN
+    #: Held for a run's lifetime rather than for work that finishes.
+    standing: bool = False
 
 
 def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Holder]:
@@ -207,6 +216,7 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
                 pools=CHARGED_POOLS[lease.pool],
                 releases_in=releases_in,
                 basis=basis,
+                standing=is_standing(lease),
             )
         )
     return holders
@@ -221,86 +231,35 @@ def estimate_waits(
     """Seconds until each waiting lease is expected to start, keyed by lease id.
 
     ``None`` for any waiter whose answer depends on a holder nothing can predict.
-    Head-of-line throughout, matching `drain_waiters`: a waiter is never
-    projected to start before the one ahead of it, even when it would fit
-    sooner, because the drain will not grant it sooner.
+    Head-of-line, matching `drain_waiters`: a waiter is never projected to start
+    before the one ahead of it, even when it would fit sooner, because the drain
+    will not grant it sooner. The exception is the drain's too: a small standing
+    claim is projected past a blocked head when it may pass (`capacity_passing`).
     """
     stamp = now or datetime.now(timezone.utc)
     hold_stats = stats if stats is not None else observed_hold_times(session, now=stamp)
-    free = {
-        name: _Free(
-            cpus=row.ceiling_cpus - row.held_cpus,
-            memory_mb=row.ceiling_memory_mb - row.held_memory_mb,
-            leases=row.ceiling_leases - row.held_count,
-        )
-        for name in CapacityPool
-        for row in (load_pool(session, name),)
-    }
-
-    holders = _holders(session, hold_stats, now=stamp)
+    rows = {name: load_pool(session, name) for name in CapacityPool}
+    host = rows[CapacityPool.HOST]
     waiters = session.exec(
         select(DockerLease)
         .where(DockerLease.status == DockerLeaseStatus.WAITING)
         .order_by(col(DockerLease.position))
     ).all()
-
-    estimates: dict[str, WaitEstimate] = {}
-    clock = 0.0
-    #: Degrades to TTL_BOUND the moment any holder we wait on was predicted from
-    #: a TTL. A chain is only as strong as its weakest link, and presenting a
-    #: bound as a forecast is the failure this whole field exists to prevent.
-    basis = DockerWaitBasis.HISTORY
-    #: Once a holder with no prediction has to be waited on, nothing behind it
-    #: can be estimated either. Sticky rather than per-waiter: the queue is
-    #: ordered, so an unpredictable blocker blocks everything after it.
-    blind = False
-
-    for waiter in waiters:
-        charged = CHARGED_POOLS[waiter.pool]
-        while not blind and not all(free[name].fits(waiter) for name in charged):
-            pending = [h for h in holders if h.releases_in is not None]
-            if not pending:
-                # Either nothing is holding (so the ceiling itself is too small,
-                # which admission refuses rather than queues) or every holder is
-                # unpredictable. Both mean there is no honest number.
-                blind = True
-                break
-            soonest = min(pending, key=lambda h: h.releases_in or 0.0)
-            if any(h.releases_in is None for h in holders):
-                # An unpredictable holder might free capacity sooner than the
-                # one we are about to wait for, so this estimate would be an
-                # upper bound presented as a prediction.
-                blind = True
-                break
-            clock = max(clock, soonest.releases_in or 0.0)
-            if soonest.basis is DockerWaitBasis.TTL_BOUND:
-                basis = DockerWaitBasis.TTL_BOUND
-            for name in soonest.pools:
-                free[name].add(soonest.cpus, soonest.memory_mb, soonest.count)
-            holders.remove(soonest)
-
-        if blind:
-            estimates[waiter.id] = UNKNOWN_WAIT
-            continue
-
-        estimates[waiter.id] = WaitEstimate(seconds=int(round(clock)), basis=basis)
-        # This waiter now occupies capacity, and the ones behind it must wait for
-        # it too — the head-of-line rule, carried into the projection.
-        for name in charged:
-            free[name].add(-waiter.cpus, -waiter.memory_mb, -booked(waiter).count)
-        predicted = hold_stats.predict(waiter.pool, waiter.footprint, held_for=0.0)
-        holders.append(
-            _Holder(
-                cpus=waiter.cpus,
-                memory_mb=waiter.memory_mb,
-                count=booked(waiter).count,
-                pools=charged,
-                releases_in=None if predicted is None else clock + predicted,
-                basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
+    projection = _Projection(
+        stats=hold_stats,
+        waiters=waiters,
+        holders=_holders(session, hold_stats, now=stamp),
+        free={
+            name: _Free(
+                cpus=row.ceiling_cpus - row.held_cpus,
+                memory_mb=row.ceiling_memory_mb - row.held_memory_mb,
+                leases=row.ceiling_leases - row.held_count,
             )
-        )
-
-    return estimates
+            for name, row in rows.items()
+        },
+        host_ceiling=Room(host.ceiling_cpus, host.ceiling_memory_mb),
+    )
+    return projection.run()
 
 
 @dataclass
@@ -322,6 +281,111 @@ class _Free:
         self.cpus += cpus
         self.memory_mb += memory_mb
         self.leases += leases
+
+
+@dataclass
+class _Projection:
+    """The queue walked forward: who holds what, what is free, and when it is now."""
+
+    stats: HoldStats
+    waiters: Sequence[DockerLease]
+    holders: list[_Holder]
+    free: dict[CapacityPool, _Free]
+    host_ceiling: Room
+    clock: float = 0.0
+    #: Degrades to TTL_BOUND the moment any holder we wait on was predicted from
+    #: a TTL. A chain is only as strong as its weakest link, and presenting a
+    #: bound as a forecast is the failure this whole field exists to prevent.
+    basis: DockerWaitBasis = DockerWaitBasis.HISTORY
+    #: Once a holder with no prediction has to be waited on, nothing behind it
+    #: can be estimated either. Sticky rather than per-waiter: the queue is
+    #: ordered, so an unpredictable blocker blocks everything after it.
+    blind: bool = False
+    estimates: dict[str, WaitEstimate] = field(default_factory=dict)
+
+    def run(self) -> dict[str, WaitEstimate]:
+        for waiter in self.waiters:
+            if waiter.id in self.estimates:
+                continue  # already projected past an earlier head
+            while not self.blind and not self._fits(waiter):
+                for passing in self._passing(waiter):
+                    self._start(passing)
+                self._release_soonest()
+            if self.blind:
+                self.estimates[waiter.id] = UNKNOWN_WAIT
+            else:
+                self._start(waiter)
+        return self.estimates
+
+    def _fits(self, waiter: DockerLease) -> bool:
+        return all(self.free[name].fits(waiter) for name in CHARGED_POOLS[waiter.pool])
+
+    def _start(self, waiter: DockerLease) -> None:
+        self.estimates[waiter.id] = WaitEstimate(seconds=int(round(self.clock)), basis=self.basis)
+        # This waiter now occupies capacity, and the ones behind it must wait for
+        # it too — the head-of-line rule, carried into the projection.
+        for name in CHARGED_POOLS[waiter.pool]:
+            self.free[name].add(-waiter.cpus, -waiter.memory_mb, -booked(waiter).count)
+        predicted = self.stats.predict(waiter.pool, waiter.footprint, held_for=0.0)
+        self.holders.append(
+            _Holder(
+                cpus=waiter.cpus,
+                memory_mb=waiter.memory_mb,
+                count=booked(waiter).count,
+                pools=CHARGED_POOLS[waiter.pool],
+                releases_in=None if predicted is None else self.clock + predicted,
+                basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
+                standing=is_standing(waiter),
+            )
+        )
+
+    def _release_soonest(self) -> None:
+        """Move to the next release, or go blind when nothing honest says when that is."""
+        pending = [h for h in self.holders if h.releases_in is not None]
+        if not pending or len(pending) < len(self.holders):
+            # Nothing is holding (so the ceiling itself is too small, which
+            # admission refuses rather than queues), or a holder is
+            # unpredictable: it might free capacity sooner than the one we are
+            # about to wait for, so this estimate would be an upper bound
+            # presented as a prediction. Neither leaves an honest number.
+            self.blind = True
+            return
+        soonest = min(pending, key=lambda h: h.releases_in or 0.0)
+        self.clock = max(self.clock, soonest.releases_in or 0.0)
+        if soonest.basis is DockerWaitBasis.TTL_BOUND:
+            self.basis = DockerWaitBasis.TTL_BOUND
+        for name in soonest.pools:
+            self.free[name].add(soonest.cpus, soonest.memory_mb, soonest.count)
+        self.holders.remove(soonest)
+
+    def _passing(self, head: DockerLease) -> Iterator[DockerLease]:
+        """The waiters that may start ahead of `head` at this point of the projection.
+
+        `drain_waiters`' own rule, asked of the projected pool. Lazy on purpose:
+        the caller starts each one before the next is judged.
+        """
+        for waiter in self.waiters:
+            if waiter.position <= head.position or waiter.id in self.estimates:
+                continue
+            if not may_pass_head(waiter):
+                continue
+            if not self._leaves_alone(head, waiter):
+                return  # passing claims keep their own order, as in the drain
+            yield waiter
+
+    def _leaves_alone(self, head: DockerLease, waiter: DockerLease) -> bool:
+        free = self.free[CapacityPool.HOST]
+        return free.fits(waiter) and passing_leaves_head_alone(
+            ceiling=self.host_ceiling,
+            held=self.host_ceiling - Room(free.cpus, free.memory_mb),
+            work=[
+                Room(holder.cpus, holder.memory_mb)
+                for holder in self.holders
+                if not holder.standing and CapacityPool.HOST in holder.pools
+            ],
+            head=Room(head.cpus, head.memory_mb),
+            claim=Room(waiter.cpus, waiter.memory_mb),
+        )
 
 
 def poll_interval_for(estimate: WaitEstimate | None) -> int:

@@ -36,6 +36,7 @@ from loregarden.services.capacity_errors import CapacityUnavailable
 from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
 from loregarden.services.docker_leases import DockerReservation, release_lease, reserve
 from loregarden.services.run_cancellation import cancel_requested
+from loregarden.services.run_wait_log import RunWaitLog
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -103,17 +104,25 @@ def docker_capacity_for_stage(
     if reservation.state is DockerGrantState.QUEUED:
         orchestration_run_id = run.orchestration_run_id
         run_id = run.id
+        lease_id = reservation.lease_id
+        log = RunWaitLog(run)
+
+        def on_poll() -> None:
+            # The log first: it writes on its own connection, which the renewal's
+            # uncommitted write would lock out.
+            log.waiting(session, lease_id)
+            if orchestration_run_id:
+                renew_orchestration_lease(session, orchestration_run_id)
+
         reservation = wait_while_line_moves(
             session,
             reservation,
             stall_seconds=budget,
-            on_poll=(
-                (lambda: renew_orchestration_lease(session, orchestration_run_id))
-                if orchestration_run_id
-                else None
-            ),
+            on_poll=on_poll,
             stop_requested=lambda: cancel_requested(run_id),
         )
+        if reservation.granted:
+            log.granted()
 
     if not reservation.granted:
         # Give the place in line back rather than leaving a waiter nobody will
