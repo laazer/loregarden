@@ -1,3 +1,4 @@
+// used-by: client/src/lib/agentActions/__tests__/writeCoverage.test.ts - the write surfaces that test checks for agent actions
 /**
  * How an agent reaches every write the UI can make — or why it may not.
  *

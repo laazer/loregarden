@@ -34,6 +34,8 @@ gates:
     - node {loregarden_root}/.lefthook/scripts/ts_type_check.cjs --repo {workspace_root} --scope worktree
     # loregarden only for now: it asks for the --t-* motion tokens on :root.
     - node {loregarden_root}/.lefthook/scripts/ts_motion_check.cjs --repo {workspace_root} --scope worktree
+    # loregarden only for now: it reads the app's entry from client/index.html.
+    - node {loregarden_root}/.lefthook/scripts/ts_unreachable_check.cjs --repo {workspace_root} --scope worktree
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."
     - bash -c "cd server && uv run ruff format ."

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Pre-commit wrapper: unreachable client modules, over every file the commit holds.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# shellcheck source=ensure-node.sh
+source "$SCRIPT_DIR/ensure-node.sh"
+
+# A missing client toolchain is reported by the checker itself, as exit 69
+# ("could not run") — see gate_client_modules.cjs.
+
+cd "$ROOT"
+exec node "$SCRIPT_DIR/ts_unreachable_check.cjs"

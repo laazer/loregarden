@@ -64,6 +64,7 @@ from loregarden.services.git_subprocess import (
     gh_logins,
     run_git,
 )
+from loregarden.services.kept_code import check_kept_code_tickets
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.preflight_ledger import PreflightLedger
 from loregarden.services.stage_parking import park_stage
@@ -747,6 +748,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.GH_ACCOUNT: check_gh_account,
     DoctorCheck.AGENT_DETACH_TRANSPORT: check_agent_detach_transport,
     DoctorCheck.LANDED_FILES_REACH_BASE: check_landed_files_reach_base,
+    DoctorCheck.KEPT_CODE_TICKETS: check_kept_code_tickets,
 }
 
 

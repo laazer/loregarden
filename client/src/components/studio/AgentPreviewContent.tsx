@@ -72,38 +72,32 @@ export function AgentPreviewContent({
   loading,
   slug,
   compact = false,
-  showMeta = true,
 }: {
   preview: StudioAgentPreview | undefined;
   loading: boolean;
   slug?: string;
   compact?: boolean;
-  showMeta?: boolean;
 }) {
   const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
 
   return (
     <>
-      {showMeta ? (
-        <>
-          <p className="studio-preview-hint">role + MCP + gates + hand-offs</p>
-          {preview?.sections && preview.sections.length > 0 && (
-            <div className="studio-preview-chips">
-              {PREVIEW_SECTIONS.map(({ key, label }) => {
-                const active = sectionActive(key, preview.sections);
-                return (
-                  <span
-                    key={key}
-                    className={`studio-preview-chip${active ? " studio-preview-chip--active" : ""}`}
-                  >
-                    {label}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </>
-      ) : null}
+      <p className="studio-preview-hint">role + MCP + gates + hand-offs</p>
+      {preview?.sections && preview.sections.length > 0 && (
+        <div className="studio-preview-chips">
+          {PREVIEW_SECTIONS.map(({ key, label }) => {
+            const active = sectionActive(key, preview.sections);
+            return (
+              <span
+                key={key}
+                className={`studio-preview-chip${active ? " studio-preview-chip--active" : ""}`}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="studio-preview-card">
         <div className="studio-preview-card-bar">
           <span className="studio-preview-card-title">{fileLabel}</span>

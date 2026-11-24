@@ -114,6 +114,11 @@ jobs:
       - name: Type check
         run: npx tsc -b
 
+      # Whole-tree, so it is here and not among the PR-diff gates: what strands a
+      # module is usually an import removed somewhere else.
+      - name: Unreachable modules
+        run: node ../.lefthook/scripts/ts_unreachable_check.cjs --repo .. --scope branch
+
       - name: Test
         run: npm test
 

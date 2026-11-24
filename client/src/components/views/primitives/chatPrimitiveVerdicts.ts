@@ -1,3 +1,4 @@
+// used-by: client/src/components/views/__tests__/chatPanePrimitives.test.tsx - the recorded verdicts that test holds the registry to
 /**
  * The verdict on every chat primitive, as a view container (557).
  *

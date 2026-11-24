@@ -132,12 +132,12 @@ blocks every commit. Whole-file-on-touch converts the backlog into steady amorti
 
 ### Known violations, to migrate on touch
 
-Eight tab implementations: `.tab-btn` (Dashboard), `.terminal-tab`, `.studio-subtab`,
-`.operation-diff-review-tab`, `.ticket-diff-review-tabs`, `.code-editor-tab`,
+Seven tab implementations: `.tab-btn` (Dashboard), `.terminal-tab`, `.studio-subtab`,
+`.operation-diff-review-tab`, `.code-editor-tab`,
 `.branch-triage-tab`, `.tab-bar`.
 
 One `*Modal.tsx`, `TicketDetailsModal`, still hand-rolls `role="dialog"`; the rest go through
 `ModalShell`.
 
-Five diff viewers: `InlineCodeDiffReview`, `OperationDiffReviewView`, `QueueDiffViewer`,
-`TicketDiffReviewPanel`, `BranchTriageDiffPanel`.
+Four diff viewers: `InlineCodeDiffReview`, `OperationDiffReviewView`, `QueueDiffViewer`,
+`BranchTriageDiffPanel`.

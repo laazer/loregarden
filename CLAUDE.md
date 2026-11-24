@@ -496,6 +496,19 @@ A waiver asserting a control is decorative, or that a parent renders the empty s
 Beyond the gate, review what it cannot see: does the empty state say something useful, does the
 error name the thing that failed, does the loading state match the length of the wait.
 
+The `ts-unreachable` gate (`ts_unreachable_check.cjs`, loregarden only) keeps unused code tied to
+the work it waits for. It walks imports from `client/index.html` over the whole tree, so it also
+catches a module stranded by an import you removed elsewhere. A module the app does not reach is
+wired in, deleted with its tests, or says which open ticket needs it, in its own comment:
+
+    // kept-for: lg-hive-workplace-72 - the Pixi floor its click criteria need
+
+The marker covers what that module imports. `loregarden_get_ticket` returns a ticket's marked
+modules as `kept_code`, and `loregarden_doctor` (`kept_code_tickets`) reports a marker whose ticket
+is over or unknown. When you wire the code in, the gate fails until you remove the marker.
+`used-by: <repo path> - <reason>` is for a module only a script or a registry test loads. **Before
+deleting code as unused, look for its marker, then search open tickets for its name.**
+
 The `ts-theme` gate (`ts_theme_check.cjs`, loregarden only) keeps surfaces on the theme. Colors
 are defined once, as tokens on `:root` in `index.css`, and a light theme will arrive as a second
 token set under `[data-theme]`. A hardcoded color is a place it will not reach. On changed lines
