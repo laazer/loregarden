@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     AgentRun,
     BaxterChatSession,
@@ -102,7 +103,7 @@ def repo_path_for_workspace(session: Session, workspace_id: str) -> str:
     """
     workspace = session.get(Workspace, workspace_id)
     if not workspace:
-        raise ValueError(f"Workspace not found: {workspace_id}")
+        raise UnknownWorkspaceSlug(workspace_id)
     return str(resolve_workspace_root(workspace))
 
 

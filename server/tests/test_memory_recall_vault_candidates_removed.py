@@ -96,7 +96,7 @@ def test_graph_candidates_remains_on_agent_memory_service():
 def test_r5_recall_does_not_open_obsidian_list_notes(vault_dir, tmp_path):
     """AC-R5-GREEN — vault enumeration stays off the durable recall path."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server",
         body="Cap the rate.",
         workspace_slug="lg",
@@ -112,7 +112,7 @@ def test_r5_recall_does_not_open_obsidian_list_notes(vault_dir, tmp_path):
 def test_recall_related_does_not_enumerate_obsidian(vault_dir, tmp_path):
     """AC-R5-GREEN — vault list_notes stays off the durable recall path."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Trusted server throttle",
         body="Cap the rate.",
         workspace_slug="lg",
@@ -134,7 +134,7 @@ def test_recall_related_returns_only_sqlite_sources_when_vault_peer_exists(vault
         workspace_slug="lg",
         note_type="memory",
     )
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="A throttled server returns before the trusted retry loop runs.",
         workspace_slug="lg",
@@ -150,7 +150,7 @@ def test_recall_related_returns_only_sqlite_sources_when_vault_peer_exists(vault
 def test_recall_related_labels_graph_read_failures(vault_dir, tmp_path):
     """AC-RECALL-GRAPH-ONLY — GRAPH MemoryStoreReadError wrapping stays."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="trusted server throttle",
         workspace_slug="lg",
@@ -166,7 +166,7 @@ def test_recall_related_labels_graph_read_failures(vault_dir, tmp_path):
 def test_recall_related_ignores_failing_vault_list_notes(vault_dir, tmp_path):
     """AC-RECALL-GRAPH-ONLY — vault list_notes failure must not raise VAULT error."""
     service = _both(vault_dir, tmp_path)
-    service._graph_for_workspace("lg").upsert_node(
+    service.graph_for_workspace("lg").upsert_node(
         title="Retry budget",
         body="trusted server throttle",
         workspace_slug="lg",
@@ -199,7 +199,7 @@ def test_r6_search_keeps_envelope_keys(vault_dir, tmp_path):
     """AC-R6-GREEN — MCP/client envelope keys unchanged."""
     service = _both(vault_dir, tmp_path)
     found = service.search("anything", workspace_slug="lg")
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph"}
+    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
 
 
 def test_r6_search_graph_hits_are_only_memory_or_learning(vault_dir, tmp_path):

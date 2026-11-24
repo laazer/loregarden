@@ -16,13 +16,16 @@ import json
 import logging
 from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from loregarden.models.domain import AgentRun, MemoryOriginKind
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
+from loregarden.models.domain import AgentRun, MemoryOriginKind, Workspace
+from loregarden.models.domain.enums import MemoryStoreState
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.operations.memory_discredit import refuse_unreasoned_discredit
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.retrieval_basis import envelope_partial
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,65 @@ MEMORY_TOOL_NAMES = frozenset(
         "loregarden_search_memory",
     }
 )
+
+
+def _resolved_slug(session: Session, workspace_slug: str) -> str:
+    """Resolve the slug to a `Workspace` row once, here at the boundary.
+
+    It used to be passed straight through, unresolved, so a typo returned an
+    empty hit list — the most expensive wrong answer this tool can give, and
+    the one indistinguishable from "nothing is known". The typed condition
+    reaches the agent as a shaped reply with a remedy rather than as `[]`.
+
+    **Only the exact empty string is the shared-base case.** This used to
+    `.strip()` first, which quietly turned a slug of spaces into "no slug
+    given" — and an empty slug resolves to the shared BASE graph file, which
+    holds every tenant's rows and is filtered by `workspace_slug` only when
+    that slug is non-empty. One MCP argument of `"   "` therefore read another
+    workspace's memory. `memory_scope.graph_path_for_workspace` rejects
+    whitespace correctly; stripping here meant it was never asked.
+
+    So no normalisation happens before the lookup, and **an empty slug is
+    refused too**. That is the half the strip was hiding: the MCP argument
+    coercer (`tool_args.coerce_optional_string`) also strips, so by the time
+    a handler sees it a slug of spaces has *already* become `""` — fixing
+    this function alone would leave the leak reachable through the real
+    transport. There is no legitimate every-tenant memory search for an
+    agent: the memory protocol requires `workspace_slug` on every call, and
+    the run prompt always carries one.
+
+    Whitespace, padding, a typo and an omitted argument therefore take the
+    same route — a shaped reply naming what was passed. Repairing a slug on
+    the agent's behalf is how the wrong scope gets queried silently.
+    """
+    found = (
+        session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
+        if workspace_slug
+        else None
+    )
+    if not found:
+        raise UnknownWorkspaceSlug(workspace_slug)
+    return found.slug
+
+
+def _search_envelope(result: dict[str, Any]) -> dict[str, Any]:
+    """The reply an agent reads: hits, the basis, and one `partial` field.
+
+    `partial` is a mapping of key to VALUE, never a list of key names: the
+    producer already holds the answer behind each flag, and naming only the
+    key would discard it. A degraded leg appears as its `MemoryStoreState`,
+    not as the word "graph".
+    """
+    basis = result["basis"]
+    partial = envelope_partial(
+        basis,
+        extra={
+            kind: state.value
+            for kind, state in basis.legs.items()
+            if state is not MemoryStoreState.READ
+        },
+    )
+    return {**result, "basis": basis.as_dict(), "partial": partial}
 
 
 def _write_origin(
@@ -158,11 +220,12 @@ def execute_memory_tool(
         return json.dumps(result, indent=2)
 
     if name == "loregarden_search_memory":
+        slug = _resolved_slug(session, arguments.get("workspace_slug", ""))
         result = memory.search(
             arguments["query"],
-            workspace_slug=arguments.get("workspace_slug", ""),
+            workspace_slug=slug,
             limit=int(arguments.get("limit") or 20),
         )
-        return json.dumps(result, indent=2)
+        return json.dumps(_search_envelope(result), indent=2)
 
     raise ValueError(f"{name} is a memory tool with no handler")

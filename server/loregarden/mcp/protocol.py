@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.shaped_errors import shape
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
 from loregarden.services.tool_call_ledger import record_dispatch
-from loregarden.services.tool_telemetry import DECISION_EXECUTED, DECISION_FAILED
+from loregarden.services.tool_telemetry import (
+    DECISION_EXECUTED,
+    DECISION_FAILED,
+    DECISION_SHAPED,
+)
 
 SERVER_INFO = {"name": "loregarden", "version": "0.1.0"}
 PROTOCOL_VERSION = "2024-11-05"
@@ -48,18 +54,29 @@ def handle_request(
             result = execute_tool(
                 session, name, arguments, orchestrated=orchestrated, run_id=run_id
             )
-        except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: any tool failure becomes an isError result
+        except Exception as exc:  # noqa: BLE001 - JSON-RPC boundary: a tool failure becomes a shaped reply or an isError result
             # The failed tool may have left writes pending on this session; a
-            # ledger commit must not carry them through.
+            # ledger commit must not carry them through. True on the shaped
+            # path too: the reply reads as a success, the transaction did not.
             session.rollback()
+            # Classification is by exception TYPE, in one place. A substring
+            # match here would let a caller forge any reply by quoting it.
+            shaped = shape(exc)
             record_dispatch(
                 session,
                 name=name,
                 arguments=arguments,
-                decision=DECISION_FAILED,
+                decision=DECISION_SHAPED if shaped["shaped"] else DECISION_FAILED,
                 decision_ms=int((time.monotonic() - started) * 1000),
                 transport_run_id=run_id,
             )
+            if shaped["shaped"]:
+                reply = {key: value for key, value in shaped.items() if key != "shaped"}
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"content": [{"type": "text", "text": json.dumps(reply, indent=2)}]},
+                }
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,

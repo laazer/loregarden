@@ -1,4 +1,10 @@
-"""Recall of what was already attempted on tickets like this one (Cat F)."""
+"""Recall of what was already attempted on tickets like this one (Cat F).
+
+`search_prior_work` returns `{results, basis}` rather than a bare list
+(lg-code-knowledge-1113): three different facts used to come back as the same
+`[]`. These tests read `["results"]`; the basis itself is pinned in
+`test_prior_work_basis.py`.
+"""
 
 from datetime import datetime, timezone
 
@@ -35,7 +41,9 @@ def _ticket(session, external_id, title, *, state=TicketState.DONE, description=
 def test_finds_a_finished_ticket_covering_the_same_ground(tmp_path):
     session = _session(tmp_path)
     _ticket(session, "30-smart-import", "Smart ticket import from markdown")
-    hits = search_prior_work(session, "smart import of markdown tickets", workspace_slug="ws")
+    hits = search_prior_work(session, "smart import of markdown tickets", workspace_slug="ws")[
+        "results"
+    ]
     assert [h["external_id"] for h in hits] == ["30-smart-import"]
     assert "import" in hits[0]["matched_terms"]
 
@@ -44,21 +52,24 @@ def test_unrelated_work_is_not_returned(tmp_path):
     """A recall tool that always answers is worse than one that says nothing."""
     session = _session(tmp_path)
     _ticket(session, "30-smart-import", "Smart ticket import from markdown")
-    assert search_prior_work(session, "quantum blockchain renderer", workspace_slug="ws") == []
+    assert (
+        search_prior_work(session, "quantum blockchain renderer", workspace_slug="ws")["results"]
+        == []
+    )
 
 
 def test_in_flight_tickets_are_excluded(tmp_path):
     """A ticket still in progress has not established anything yet."""
     session = _session(tmp_path)
     _ticket(session, "40-running", "Smart import rework", state=TicketState.IN_PROGRESS)
-    assert search_prior_work(session, "smart import rework", workspace_slug="ws") == []
+    assert search_prior_work(session, "smart import rework", workspace_slug="ws")["results"] == []
 
 
 def test_abandoned_work_still_counts(tmp_path):
     """Why an approach was dropped is exactly what a later attempt needs."""
     session = _session(tmp_path)
     _ticket(session, "41-dropped", "Smart import via websocket", state=TicketState.WONT_DO)
-    hits = search_prior_work(session, "smart import via websocket", workspace_slug="ws")
+    hits = search_prior_work(session, "smart import via websocket", workspace_slug="ws")["results"]
     assert [h["state"] for h in hits] == ["wont_do"]
 
 
@@ -67,7 +78,7 @@ def test_the_current_ticket_is_not_its_own_prior_work(tmp_path):
     current = _ticket(session, "50-self", "Smart import parser")
     hits = search_prior_work(
         session, "smart import parser", workspace_slug="ws", exclude_ticket_id=current.id
-    )
+    )["results"]
     assert hits == []
 
 
@@ -79,7 +90,9 @@ def test_errors_surface_before_successes(tmp_path):
     svc.attach_artifact(ticket, kind="diff", title="the change", content={})
     svc.attach_artifact(ticket, kind="error", title="gate failed twice", content={})
 
-    hits = search_prior_work(session, "route smart import selection", workspace_slug="ws")
+    hits = search_prior_work(session, "route smart import selection", workspace_slug="ws")[
+        "results"
+    ]
     kinds = [a["kind"] for a in hits[0]["artifacts"]]
     assert kinds[0] == "error"
 
@@ -108,7 +121,9 @@ def test_mixed_naive_and_aware_artifact_timestamps_do_not_raise(tmp_path):
         created_at=datetime(2026, 8, 2, 12, 0, 0),
     )
 
-    hits = search_prior_work(session, "search prior work datetime mix", workspace_slug="ws")
+    hits = search_prior_work(session, "search prior work datetime mix", workspace_slug="ws")[
+        "results"
+    ]
     assert hits[0]["external_id"] == "462-mixed"
     kinds = [a["kind"] for a in hits[0]["artifacts"]]
     assert kinds[0] == "error"
@@ -131,7 +146,9 @@ def test_all_aware_errors_keep_older_first(tmp_path):
         title="older error",
         created_at=datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc),
     )
-    hits = search_prior_work(session, "all aware artifact timestamps", workspace_slug="ws")
+    hits = search_prior_work(session, "all aware artifact timestamps", workspace_slug="ws")[
+        "results"
+    ]
     titles = [a["title"] for a in hits[0]["artifacts"]]
     assert titles[:2] == ["older error", "newer error"]
 
@@ -153,7 +170,9 @@ def test_all_naive_errors_keep_older_first(tmp_path):
         title="older error",
         created_at=datetime(2026, 8, 1, 12, 0, 0),
     )
-    hits = search_prior_work(session, "all naive artifact timestamps", workspace_slug="ws")
+    hits = search_prior_work(session, "all naive artifact timestamps", workspace_slug="ws")[
+        "results"
+    ]
     titles = [a["title"] for a in hits[0]["artifacts"]]
     assert titles[:2] == ["older error", "newer error"]
 
@@ -162,7 +181,9 @@ def test_ranking_prefers_the_closer_match(tmp_path):
     session = _session(tmp_path)
     _ticket(session, "10-weak", "Import parser tweak")
     _ticket(session, "11-strong", "Smart import parser rewrite for markdown tickets")
-    hits = search_prior_work(session, "smart import parser markdown rewrite", workspace_slug="ws")
+    hits = search_prior_work(session, "smart import parser markdown rewrite", workspace_slug="ws")[
+        "results"
+    ]
     assert hits[0]["external_id"] == "11-strong"
 
 

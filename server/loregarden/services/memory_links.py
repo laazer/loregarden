@@ -236,3 +236,65 @@ def lineage(conn: sqlite3.Connection, node_id: str, *, max_steps: int = 25) -> l
                 chain.append(nxt)
             current = nxt
     return chain
+
+
+def neighbours_of(
+    conn: sqlite3.Connection, node_ids: list[str], *, workspace_slug: str
+) -> list[sqlite3.Row]:
+    """Visible nodes one edge away from `node_ids`, both directions, one tenant.
+
+    Each row names the surfaced node it hangs off (`anchor_id`), the
+    neighbour's title and `updated_at`, the edge's `relation_type`, and
+    `direction` — ``out`` when the anchor is the edge's source, ``in`` when it
+    is the target. No bodies: a digest that carried them would be a second
+    briefing. Discredited neighbours are excluded, like every other read path
+    (182). Ranking and capping are the caller's.
+
+    `workspace_slug` is required, not defaulted: an optional scope is an
+    unscoped query on every caller that forgets it. It rides in the JOIN
+    condition on BOTH legs and is filtered again outside, because the file is
+    not the scope — `graph_path_for_workspace` returns the shared BASE file
+    for an empty slug, so `memory_nodes` there holds rows for more than one
+    `workspace_slug` and an edge can have its two ends in different tenants.
+    Scoping the anchor as well as the neighbour is deliberate: a node id read
+    from one workspace's reply is one line of agent code away from being
+    passed into another workspace's call.
+    """
+    anchors = list(dict.fromkeys(node_ids))
+    if not anchors:
+        # `IN ()` is a syntax error in SQLite, and the usual repair is to drop
+        # the predicate — which returns every edge in the file.
+        return []
+    marks = ", ".join("?" for _ in anchors)
+    visible = "COALESCE(n.discredited, 0) = 0"
+    return conn.execute(
+        f"""
+        SELECT r.source_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+               r.relation_type, 'out' AS direction
+        FROM memory_relations r
+        JOIN memory_nodes a ON a.id = r.source_id AND a.workspace_slug = ?
+        JOIN memory_nodes n ON n.id = r.target_id AND n.workspace_slug = ?
+        WHERE r.source_id IN ({marks}) AND {visible}
+          AND a.workspace_slug = ? AND n.workspace_slug = ?
+        UNION ALL
+        SELECT r.target_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
+               r.relation_type, 'in' AS direction
+        FROM memory_relations r
+        JOIN memory_nodes a ON a.id = r.target_id AND a.workspace_slug = ?
+        JOIN memory_nodes n ON n.id = r.source_id AND n.workspace_slug = ?
+        WHERE r.target_id IN ({marks}) AND {visible}
+          AND a.workspace_slug = ? AND n.workspace_slug = ?
+        """,  # noqa: S608 - only bind-parameter marks are interpolated
+        (
+            workspace_slug,
+            workspace_slug,
+            *anchors,
+            workspace_slug,
+            workspace_slug,
+            workspace_slug,
+            workspace_slug,
+            *anchors,
+            workspace_slug,
+            workspace_slug,
+        ),
+    ).fetchall()

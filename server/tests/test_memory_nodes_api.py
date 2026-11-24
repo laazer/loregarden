@@ -132,7 +132,7 @@ def test_an_operator_can_mark_one_side_superseded(client, node_id):
 
 
 def test_a_relation_with_no_graph_configured_is_a_conflict_not_a_bad_request(client):
-    with mock.patch.object(AgentMemoryService, "_graph_for_workspace", return_value=None):
+    with mock.patch.object(AgentMemoryService, "graph_for_workspace", return_value=None):
         response = client.post(
             "/api/memory/relations",
             json={

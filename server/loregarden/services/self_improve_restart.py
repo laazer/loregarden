@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from loregarden.config import settings
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     AgentRun,
     OrchestrationRun,
@@ -73,7 +74,7 @@ def _human_gate_ticket_payload(
 def _workspace_or_error(session: Session, workspace_slug: str) -> Workspace:
     workspace = session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
     if not workspace:
-        raise ValueError(f"Workspace not found: {workspace_slug}")
+        raise UnknownWorkspaceSlug(workspace_slug)
     return workspace
 
 

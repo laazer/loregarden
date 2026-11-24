@@ -5,6 +5,8 @@ implementation it exists to catch. The module is pure by design, so nothing in
 this file touches a vault, a database, or the clock.
 """
 
+from pathlib import Path
+
 from loregarden.services import prior_work, term_overlap
 
 
@@ -223,15 +225,23 @@ def test_ranked_records_keep_their_identity_for_the_rrf_seam():
     assert ranked[0]["source"] == "sqlite"
 
 
-def test_the_tokenizer_has_not_drifted_from_the_copy_it_was_taken_from():
-    """AC3 guard — this module's tokenizer is a deliberate verbatim copy of
-    `prior_work.py`'s, which the ticket forbids touching. Nothing else notices
-    if one of the two is edited later, and two call sites disagreeing about
-    what a term is would be silent: the briefing would just quietly rank
-    differently from prior-work search. Reading these names does not modify
-    `prior_work`, so AC3 still holds."""
-    sample = "Cap how fast a trusted MCP server can be called when throttled"
+def test_there_is_no_second_tokenizer_left_to_drift_from():
+    """This guard's own premise is gone, which is the stronger outcome.
 
-    assert prior_work._STOPWORDS == term_overlap.STOPWORDS
-    assert prior_work._MIN_TERM_LEN == term_overlap._MIN_TERM_LEN
-    assert prior_work._terms(sample) == term_overlap.terms(sample)
+    It used to assert that `prior_work.py`'s verbatim copy of the tokenizer
+    still agreed with this module's, because the ticket that wrote it was
+    forbidden from touching `prior_work`. `lg-code-knowledge-1113` opened that
+    module and deleted the copy, so there is nothing left to drift: the names
+    below are the only ones, and `prior_work` imports them.
+
+    Asserted as an absence rather than as an equality — an equality between a
+    module and itself passes for no reason.
+    """
+    sample = "Cap how fast a trusted MCP server can be called when throttled"
+    source = Path(prior_work.__file__).read_text(encoding="utf-8")
+
+    assert "_STOPWORDS" not in source
+    assert "_MIN_TERM_LEN" not in source
+    assert not hasattr(prior_work, "_terms")
+    assert prior_work.terms is term_overlap.terms
+    assert prior_work.terms(sample) == term_overlap.terms(sample)

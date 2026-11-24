@@ -47,20 +47,36 @@ from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.ui_action_tools import HANDLERS as UI_ACTION_HANDLERS
 from loregarden.mcp.ux_answers_tools import HANDLERS as UX_ANSWERS_HANDLERS
 from loregarden.services.prior_work import search_prior_work
+from loregarden.services.retrieval_basis import envelope_partial
 
 ToolHandler = Callable[[Session, dict[str, Any]], str]
 
 
 def _search_prior_work(session: Session, arguments: dict[str, Any]) -> str:
+    """The envelope an agent actually reads, basis included.
+
+    `search_prior_work` returns `{results, basis}`; a basis the service
+    produces and the tool drops is the same empty answer with more code
+    behind it. `partial` carries values rather than key names — the producer
+    already holds the answer, and naming only the key would discard it.
+    """
+    answer = search_prior_work(
+        session,
+        arguments["query"],
+        workspace_slug=arguments.get("workspace_slug", ""),
+        exclude_ticket_id=arguments.get("ticket_id", ""),
+    )
+    basis = answer["basis"]
+    # `not_examined` is this envelope's own entry: rows the scan never
+    # reached. A cap is partiality of a different kind — those rows were
+    # matched and then dropped — and `envelope_partial` carries it with the
+    # omitted ids inline, which is what makes the truncation reversible
+    # without a second store to read from.
+    partial = envelope_partial(
+        basis, extra={"not_examined": basis.not_examined} if basis.not_examined else None
+    )
     return json.dumps(
-        {
-            "results": search_prior_work(
-                session,
-                arguments["query"],
-                workspace_slug=arguments.get("workspace_slug", ""),
-                exclude_ticket_id=arguments.get("ticket_id", ""),
-            )
-        },
+        {"results": answer["results"], "basis": basis.as_dict(), "partial": partial},
         indent=2,
     )
 

@@ -22,6 +22,7 @@ from loregarden.services.agent_retry import spent_agent_blocks
 from loregarden.services.blocked_on import StuckPage, blocked_on_clause
 from loregarden.services.hierarchy_service import child_counts
 from loregarden.services.initiative_coverage import covered_ticket_ids
+from loregarden.services.sql_like import like_contains
 from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_detail_view import latest_run_codes, ticket_summary
 from loregarden.services.workflow_service import prime_workflow_instances, stage_resolution_memo
@@ -66,8 +67,11 @@ def apply_ticket_query_filters(
     if milestone:
         query = query.where(Ticket.milestone == milestone)
     if search:
-        term = f"%{search.strip()}%"
-        query = query.where((col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term)))
+        term = like_contains(search.strip())
+        query = query.where(
+            col(Ticket.title).like(term.pattern, escape=term.escape)
+            | col(Ticket.external_id).like(term.pattern, escape=term.escape)
+        )
     return query
 
 

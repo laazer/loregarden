@@ -65,6 +65,8 @@ def repair_split_json_tags(conn: sqlite3.Connection) -> int:
     changed = 0
     for column in _COLUMNS:
         rows = conn.execute(
+            # `%"[%` is this module's own fixed probe for a split JSON fragment:
+            # like-ok: not caller text, and its `%` are the wildcards it wants.
             f"SELECT id, {column} FROM memory_nodes WHERE {column} LIKE ?",  # noqa: S608 - column from a fixed tuple
             ('%"[%',),
         ).fetchall()

@@ -16,7 +16,11 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
-from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
+from loregarden.mcp.shaped_errors import StoreUnconfigured
+from loregarden.models.domain.enums import (
+    MemoryStoreKind,
+    MemoryStoreState,
+)
 from loregarden.models.domain.memory_enums import (
     MemoryNodeType,
     MemoryOriginKind,
@@ -24,7 +28,12 @@ from loregarden.models.domain.memory_enums import (
     RelationDirection,
 )
 from loregarden.services import term_overlap
-from loregarden.services.memory_authority import SEARCH_GRAPH_KINDS, SEARCH_OBSIDIAN_KINDS
+from loregarden.services.memory_agent_search import (
+    VaultScan,
+    agent_search,
+    graph_rows_for_terms,
+    vault_notes_for_terms,
+)
 from loregarden.services.memory_export import export_node_to_vault
 from loregarden.services.memory_history import (
     ChangeAttribution,
@@ -38,9 +47,15 @@ from loregarden.services.memory_links import (
     insert_relation,
     learning_title,
     lineage,
+    neighbours_of,
     relations_among,
     relations_of,
     superseded_by,
+)
+from loregarden.services.memory_scope import (
+    graph_path_for_workspace,
+    require_bare_segment,
+    sample_readiness,
 )
 from loregarden.services.memory_tag_repair import repair_split_json_tags
 from loregarden.services.path_resolve import (
@@ -48,6 +63,7 @@ from loregarden.services.path_resolve import (
     resolve_icloud_root,
     sqlite_url_for_path,
 )
+from loregarden.services.sql_like import like_contains
 
 # How many records `recall_related` may consider, per store, per prompt build.
 # AC5 pins the Obsidian side at one pass over at most this many notes, and the
@@ -112,9 +128,15 @@ class MemoryNodeNotFoundError(LookupError):
     """No graph node has this id in this workspace's shard."""
 
 
-class MemoryGraphNotConfiguredError(ValueError):
+class MemoryGraphNotConfiguredError(StoreUnconfigured):
     """This installation has no memory graph for the workspace: a setup state,
-    not a bad request. A ValueError, as it was before it had a name."""
+    not a bad request.
+
+    Named so `operation_routes` can answer it 409 rather than the generic 400
+    a bare `ValueError` gets; a `StoreUnconfigured` so the same raise reaches
+    an agent over MCP as a shaped reply with a remedy instead of `isError`.
+    Still a `ValueError` through that base, as it was before it had a name.
+    """
 
 
 class MemoryWriteNotAppliedError(RuntimeError):
@@ -416,6 +438,17 @@ class ObsidianMemoryStore:
                 return notes
         return notes
 
+    def count_notes(self, *, workspace_slug: str = "", include_checkpoints: bool = True) -> int:
+        """How many note files sit in the scope, without reading any of them.
+
+        The corpus half of the vault's basis. `list_notes` reads every file it
+        walks, so counting through it would make reporting the scope cost as
+        much as searching it; the paths are the scope, and globbing them is
+        cheap.
+        """
+        roots = self._standard_note_roots(workspace_slug, include_checkpoints=include_checkpoints)
+        return sum(1 for _ in self._iter_note_paths(roots))
+
     @staticmethod
     def _iter_note_paths(roots: list[Path]):
         for root in roots:
@@ -498,6 +531,15 @@ class ObsidianMemoryStore:
             hits.extend(checkpoints[:remaining])
         return hits
 
+    def search_terms(self, search_terms: set[str], *, workspace_slug: str = "") -> VaultScan:
+        """Every note matching ANY term, and how many were read to find out.
+
+        See `memory_agent_search.VaultScan`: separating the matched set from
+        the emitted set is the caller's job, because only the caller knows the
+        reply's cap.
+        """
+        return vault_notes_for_terms(self, search_terms, workspace_slug=workspace_slug)
+
     def _read_note(self, path: Path) -> MemoryNote | None:
         if not path.is_file():
             return None
@@ -552,12 +594,12 @@ class ObsidianMemoryStore:
 class MemoryGraphStore:
     """Structured memory graph backed by SQLite (safe for iCloud when using DELETE journal)."""
 
-    _NODE_COLUMNS = (
+    NODE_COLUMNS = (
         "id, title, body, tags_json, ticket_id, workspace_slug, "
         "node_type, created_at, updated_at, discredited, aliases_json, "
         "origin_kind, origin_ref"
     )
-    _VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
+    VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path.resolve()
@@ -654,7 +696,9 @@ class MemoryGraphStore:
         return self._connect()
 
     @staticmethod
-    def _node_row(row: sqlite3.Row) -> dict[str, Any]:
+    def node_row(row: sqlite3.Row) -> dict[str, Any]:
+        """One `memory_nodes` row as a dict. Public because
+        `memory_agent_search` maps rows for the agent's term search."""
         return {
             "id": row["id"],
             "title": row["title"],
@@ -811,47 +855,24 @@ class MemoryGraphStore:
         """One node by id, discredited or not — None only when it does not exist.
 
         An operator read: the discredit control acts on exactly the rows
-        `_VISIBLE_NODES` hides, so this must not filter them.
+        `VISIBLE_NODES` hides, so this must not filter them.
         """
         with self._connect() as conn:
             row = conn.execute(
-                f"SELECT {self._NODE_COLUMNS} FROM memory_nodes WHERE id = ?", (node_id,)
+                f"SELECT {self.NODE_COLUMNS} FROM memory_nodes WHERE id = ?", (node_id,)
             ).fetchone()
-        return self._node_row(row) if row else None
+        return self.node_row(row) if row else None
 
-    def related_nodes(self, node_ids: list[str]) -> list[dict[str, Any]]:
+    def related_nodes(self, node_ids: list[str], *, workspace_slug: str) -> list[dict[str, Any]]:
         """Every visible node one `memory_relations` edge away, in both directions.
 
-        A reader only (179): `memory_relations` is the sole edge store, and this
-        writes nothing. Each row names the surfaced node it hangs off
-        (`anchor_id`), the neighbour's title and `updated_at`, the edge's
-        `relation_type`, and `direction` — ``out`` when the anchor is the
-        edge's source, ``in`` when it is the target. No bodies: a digest that
-        carried them would be a second briefing.
-
-        Discredited neighbours are excluded here, like every other read path
-        (182). Ranking and capping are the caller's — see
-        `inherited_wisdom.rank_related`.
+        A reader only (179): `memory_relations` is the sole edge store, and
+        this writes nothing. `workspace_slug` is required rather than
+        defaulted — see `memory_links.neighbours_of`, which holds the query
+        and the reason the tenant predicate is on both ends of every edge.
         """
-        if not node_ids:
-            return []
-        marks = ", ".join("?" for _ in node_ids)
-        visible = "COALESCE(n.discredited, 0) = 0"
         with self._connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT r.source_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
-                       r.relation_type, 'out' AS direction
-                FROM memory_relations r JOIN memory_nodes n ON n.id = r.target_id
-                WHERE r.source_id IN ({marks}) AND {visible}
-                UNION ALL
-                SELECT r.target_id AS anchor_id, n.id AS node_id, n.title, n.updated_at,
-                       r.relation_type, 'in' AS direction
-                FROM memory_relations r JOIN memory_nodes n ON n.id = r.source_id
-                WHERE r.target_id IN ({marks}) AND {visible}
-                """,
-                (*node_ids, *node_ids),
-            ).fetchall()
+            rows = neighbours_of(conn, node_ids, workspace_slug=workspace_slug)
         return [{**dict(row), "direction": RelationDirection(row["direction"])} for row in rows]
 
     def node_versions(self, node_id: str) -> list[dict[str, Any]]:
@@ -883,7 +904,7 @@ class MemoryGraphStore:
         clauses = ["workspace_slug = ?"] if slug else []
         params: list[Any] = [slug] if slug else []
         if not include_discredited:
-            clauses.append(self._VISIBLE_NODES)
+            clauses.append(self.VISIBLE_NODES)
         if node_type is not None:
             clauses.append("node_type = ?")
             params.append(node_type.value)
@@ -891,7 +912,7 @@ class MemoryGraphStore:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT {self._NODE_COLUMNS}
+                SELECT {self.NODE_COLUMNS}
                 FROM memory_nodes
                 {where}
                 ORDER BY updated_at DESC
@@ -899,7 +920,7 @@ class MemoryGraphStore:
                 """,
                 (*params, limit),
             ).fetchall()
-        return [self._node_row(row) for row in rows]
+        return [self.node_row(row) for row in rows]
 
     def search(
         self,
@@ -917,21 +938,27 @@ class MemoryGraphStore:
         """
         if query.strip() == "":
             return []
-        needle = f"%{query.strip()}%"
+        # Caller text, read as a wildcard expression without this: an agent
+        # searching for `memory_store` matched `memoryXstore`, and the data
+        # side (`tags_json`, `aliases_json`) is metacharacter-dense too.
+        needle = like_contains(query.strip())
         slug = workspace_slug.strip()
         clauses = ["workspace_slug = ?"] if slug else []
         params: list[Any] = [slug] if slug else []
         if not include_discredited:
-            clauses.append(self._VISIBLE_NODES)
-        clauses.append("(title LIKE ? OR body LIKE ? OR tags_json LIKE ? OR aliases_json LIKE ?)")
-        params.extend([needle] * 4)
+            clauses.append(self.VISIBLE_NODES)
+        clauses.append(
+            "(title LIKE ? ESCAPE ? OR body LIKE ? ESCAPE ? "
+            "OR tags_json LIKE ? ESCAPE ? OR aliases_json LIKE ? ESCAPE ?)"
+        )
+        params.extend([needle.pattern, needle.escape] * 4)
         if node_type is not None:
             clauses.append("node_type = ?")
             params.append(node_type.value)
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT {self._NODE_COLUMNS}
+                SELECT {self.NODE_COLUMNS}
                 FROM memory_nodes
                 WHERE {" AND ".join(clauses)}
                 ORDER BY updated_at DESC
@@ -939,7 +966,30 @@ class MemoryGraphStore:
                 """,
                 (*params, limit),
             ).fetchall()
-        return [self._node_row(row) for row in rows]
+        return [self.node_row(row) for row in rows]
+
+    def search_terms(
+        self,
+        search_terms: set[str],
+        *,
+        workspace_slug: str = "",
+        node_type: MemoryNodeType | None = None,
+        include_discredited: bool = False,
+    ) -> list[dict[str, Any]]:
+        """EVERY visible node matching ANY term, best-matching first.
+
+        No `limit`: the caller caps the reply and records what it dropped, so
+        a cap becomes a `Reduction` that can name rows rather than rows nobody
+        read. `search` beside it stays a whole-phrase substring match, which
+        is what the operator Memory browser calls.
+        """
+        return graph_rows_for_terms(
+            self,
+            search_terms,
+            workspace_slug=workspace_slug,
+            node_type=node_type,
+            include_discredited=include_discredited,
+        )
 
     def list_relations(self, node_ids: list[str]) -> list[dict[str, Any]]:
         """Edges whose source and target are both in `node_ids` (766).
@@ -954,7 +1004,7 @@ class MemoryGraphStore:
     def node_type_counts(self, workspace_slug: str) -> dict[str, int]:
         """Visible nodes per `node_type` in the workspace."""
         slug = workspace_slug.strip()
-        where = f"WHERE {self._VISIBLE_NODES}" + (" AND workspace_slug = ?" if slug else "")
+        where = f"WHERE {self.VISIBLE_NODES}" + (" AND workspace_slug = ?" if slug else "")
         with self._connect() as conn:
             rows = conn.execute(
                 f"SELECT node_type, COUNT(*) FROM memory_nodes {where} GROUP BY node_type",
@@ -985,13 +1035,10 @@ class AgentMemoryService:
         )
 
     def _graph_path_for_workspace(self, workspace_slug: str) -> Path | None:
-        base = self._graph_sqlite_base or resolved_memory_sqlite_path()
-        if not base:
-            return None
-        slug = workspace_slug.strip()
-        if not slug:
-            return base
-        return base.parent / slug / base.name
+        """Where this workspace's graph lives; see `memory_scope` for the rules."""
+        return graph_path_for_workspace(
+            self._graph_sqlite_base or resolved_memory_sqlite_path(), workspace_slug
+        )
 
     def graph_path(self, workspace_slug: str) -> Path | None:
         """Where the workspace's graph lives, or None when none is configured.
@@ -1001,62 +1048,46 @@ class AgentMemoryService:
         """
         return self._graph_path_for_workspace(workspace_slug)
 
-    def _graph_for_workspace(self, workspace_slug: str) -> MemoryGraphStore | None:
+    def graph_for_workspace(self, workspace_slug: str) -> MemoryGraphStore | None:
+        """The workspace's graph store, or None when none is configured.
+
+        Public because `memory_agent_search` needs it: reaching through an
+        underscore from another module was the quieter option and the wrong
+        one, as it was for `node_row`/`NODE_COLUMNS`/`VISIBLE_NODES`.
+        """
         path = self._graph_path_for_workspace(workspace_slug)
         if not path:
             return None
         return MemoryGraphStore(path)
 
     def store_readiness(self, *, workspace_slug: str) -> dict[MemoryStoreKind, MemoryStoreState]:
-        """What each store *is*, sampled from configuration and the filesystem.
+        """What each store *is*, sampled from the path and a stat.
 
-        MUST be called before any lookup runs. `MemoryGraphStore.__init__`
-        mkdirs its parent and runs `_init_schema`, so merely constructing one
-        CREATES an empty database — a wrong or unset graph path then reads back
-        as a real store that happened to be empty. Answering from the path
-        before anything is constructed is what keeps "silently absent" from
-        being recorded as "read and empty".
-
-        Reports only the three real stores. `MemoryStoreKind.SERVICE` never
-        appears here: it names a factory failure, at which point there is no
-        service to ask.
-
-        The vault is stat'd, not inferred from being configured. Reporting READ
-        because `self.obsidian` exists made a vault pointed at a path that does
-        not exist the only READ in the set, and `classify` returns EMPTY the
-        moment anything reads — so the operator was told "the vault was there
-        and had nothing to say" when the truth was "the vault path is wrong".
-        That is the counts-versus-states defect 183 removed, reappearing inside
-        the sampler 183 added (545).
-
-        Only the vault *root* is checked. The subdirectories are created on
-        first write, so a vault that exists and has never been written to is
-        genuinely readable and genuinely empty — which is EMPTY, correctly.
-
-        Stat'ing here is safe for the ordering rule above: the directory
-        accessors build paths and never `mkdir`. Only the write paths and
-        `MemoryGraphStore.__init__` create anything, and none of them run here.
+        MUST be called before any lookup runs: `MemoryGraphStore.__init__`
+        creates the database it is pointed at, so a wrong or unset graph path
+        would otherwise read back as a real store that happened to be empty.
         """
-        vault = (
-            MemoryStoreState.READ
-            if self.obsidian is not None and self.obsidian.vault_dir.is_dir()
-            else MemoryStoreState.UNCONFIGURED
+        return sample_readiness(
+            vault_dir=self.obsidian.vault_dir if self.obsidian else None,
+            graph_path=self._graph_path_for_workspace(workspace_slug),
         )
-        graph_path = self._graph_path_for_workspace(workspace_slug)
-        return {
-            MemoryStoreKind.CHECKPOINTS: vault,
-            MemoryStoreKind.VAULT: vault,
-            MemoryStoreKind.GRAPH: (
-                MemoryStoreState.READ
-                if graph_path is not None and graph_path.is_file()
-                else MemoryStoreState.UNCONFIGURED
-            ),
-        }
 
     def status(self, *, workspace_slug: str = "") -> dict[str, Any]:
+        """Where this workspace's stores are, refusing a slug that is not one.
+
+        The rule runs FIRST and independently of whether a graph base is
+        configured, because the vault half rewrites rather than refuses:
+        `ObsidianMemoryStore._workspace_segment` slugifies, so `'../../other'`
+        reported the directory `other` and `'./loregarden'` reported a live
+        workspace's own Memory, Learnings, BlogPosts and Checkpoints. Every
+        one of those paths is inside the vault, so an assertion about escaping
+        the vault passes while the agent is told it is reading a workspace it
+        is not.
+        """
+        require_bare_segment(workspace_slug)
         obsidian_vault = resolved_obsidian_vault()
         memory_db = resolved_memory_sqlite_path(workspace_slug)
-        slug = workspace_slug.strip()
+        slug = workspace_slug
         return {
             "enabled": self.obsidian is not None or memory_db is not None,
             "workspace_slug": slug or None,
@@ -1108,12 +1139,12 @@ class AgentMemoryService:
         """
         # Cutover R2 — GRAPH is the record; vault is a labelled export. Fail closed
         # without a graph: vault-only peer writes are not a valid path.
-        graph = self._graph_for_workspace(workspace_slug)
+        graph = self.graph_for_workspace(workspace_slug)
         if not graph:
-            raise ValueError(
-                "Memory graph SQLite is not configured. Durable learnings require "
+            raise StoreUnconfigured(
+                "the memory graph. Durable learnings require "
                 "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
-                "are not allowed."
+                "are not allowed"
             )
         name, derived = learning_title(title, content)
         result: dict[str, Any] = {
@@ -1153,12 +1184,12 @@ class AgentMemoryService:
         origin_kind: MemoryOriginKind | None = None,
         origin_ref: str | None = None,
     ) -> dict[str, Any]:
-        graph = self._graph_for_workspace(workspace_slug)
+        graph = self.graph_for_workspace(workspace_slug)
         if not graph:
-            raise ValueError(
-                "Memory graph SQLite is not configured. Durable memory requires "
+            raise StoreUnconfigured(
+                "the memory graph. Durable memory requires "
                 "LOREGARDEN_MEMORY_SQLITE_URL (or iCloud defaults); vault-only writes "
-                "are not allowed."
+                "are not allowed"
             )
         node_id = node_id.strip() or str(uuid4())
         result: dict[str, Any] = {}
@@ -1183,10 +1214,16 @@ class AgentMemoryService:
         return result
 
     def require_graph(self, workspace_slug: str) -> MemoryGraphStore:
-        """The workspace's graph store; raises MemoryGraphNotConfiguredError when none is."""
-        graph = self._graph_for_workspace(workspace_slug)
+        """The workspace's graph store, or AC3's typed condition when none is configured.
+
+        `MemoryGraphNotConfiguredError` is a `StoreUnconfigured`, and so still a
+        `ValueError`: the `api/` handlers that map one to a 400 are unaffected,
+        `operation_routes` answers it 409 by name, and an agent reaching this
+        over MCP gets a remedy instead of `isError`.
+        """
+        graph = self.graph_for_workspace(workspace_slug)
         if not graph:
-            raise MemoryGraphNotConfiguredError("Memory graph SQLite is not configured.")
+            raise MemoryGraphNotConfiguredError("the memory graph")
         return graph
 
     def list_graph_nodes(
@@ -1340,39 +1377,14 @@ class AgentMemoryService:
         workspace_slug: str = "",
         limit: int = 20,
     ) -> dict[str, Any]:
-        # Cutover R6 — envelope unchanged; membership filtered by kind.
-        # Vault hits: blog_post | checkpoint only. Graph hits: memory | learning.
-        obsidian_hits: list[dict[str, Any]] = []
-        graph_hits: list[dict[str, Any]] = []
-        graph = self._graph_for_workspace(workspace_slug)
-        if self.obsidian:
-            obsidian_hits = [
-                {
-                    "id": n.id,
-                    "title": n.title,
-                    "body": n.body,
-                    "tags": n.tags,
-                    "ticket_id": n.ticket_id,
-                    "workspace_slug": n.workspace_slug,
-                    "note_type": n.note_type,
-                    "path": n.path,
-                    "source": "obsidian",
-                }
-                for n in self.obsidian.search(query, workspace_slug=workspace_slug, limit=limit)
-                if n.note_type in SEARCH_OBSIDIAN_KINDS
-            ]
-        if graph:
-            graph_hits = [
-                {**row, "source": "sqlite"}
-                for row in graph.search(query, workspace_slug=workspace_slug, limit=limit)
-                if row.get("node_type") in SEARCH_GRAPH_KINDS
-            ]
-        return {
-            "query": query,
-            "workspace_slug": workspace_slug.strip() or None,
-            "obsidian": obsidian_hits,
-            "graph": graph_hits,
-        }
+        """Hits from both legs, with the basis for however many there are.
+
+        The orchestration lives in `services/memory_agent_search.py`: the
+        reduction of the agent's question, the search of each leg on the
+        resulting tokens, and the cap that becomes a reportable `Reduction`
+        are one subject, and it is this ticket's subject.
+        """
+        return agent_search(self, query, workspace_slug=workspace_slug, limit=limit)
 
     # How much of a body the dedupe key reads. Long enough that two notes
     # sharing an opening paragraph do not collide, short enough that the key
@@ -1436,7 +1448,7 @@ class AgentMemoryService:
         learning is still recalled — it is history, not an error — but it
         should not take a slot its replacement could have had.
         """
-        graph = self._graph_for_workspace(workspace_slug)
+        graph = self.graph_for_workspace(workspace_slug)
         if not graph or not rows:
             return rows
         try:
@@ -1456,13 +1468,17 @@ class AgentMemoryService:
         answer `recall_related` gives, since no hits could have come from it.
         """
         try:
-            graph = self._graph_for_workspace(workspace_slug)
-            return graph.related_nodes(node_ids) if graph else []
+            graph = self.graph_for_workspace(workspace_slug)
+            return (
+                graph.related_nodes(node_ids, workspace_slug=workspace_slug.strip())
+                if graph
+                else []
+            )
         except Exception as exc:
             raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
 
     def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
-        graph = self._graph_for_workspace(workspace_slug)
+        graph = self.graph_for_workspace(workspace_slug)
         if not graph:
             return []
         return [

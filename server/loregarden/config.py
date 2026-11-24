@@ -309,6 +309,7 @@ _prime_cursor_api_key_env()
 prime_gh_user_env(repo_root=settings.repo_root)
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
+from loregarden.services.memory_scope import graph_path_for_workspace  # noqa: E402
 
 # A sandbox's database and memory come from its launcher's environment. The
 # local file could point either back at main's — it is in the checkout, and
@@ -347,13 +348,18 @@ def _memory_sqlite_base_path() -> Path | None:
 
 
 def resolved_memory_sqlite_path(workspace_slug: str = "") -> Path | None:
-    base = _memory_sqlite_base_path()
-    if not base:
-        return None
-    slug = workspace_slug.strip()
-    if not slug:
-        return base
-    return base.parent / slug / base.name
+    """The workspace's graph file, under the one slug rule.
+
+    This was a verbatim second copy of that rule, unguarded: it stripped the
+    slug and joined it raw, so `'/etc'` discarded the vault root entirely,
+    `'   '` collapsed onto the shared multi-tenant base file, and
+    `'./loregarden'` was silently rewritten onto a live workspace's own
+    stores. `AgentMemoryService.status()` reaches it, so one MCP argument
+    handed an agent a path every read and write path refuses. There is one
+    copy now, in `memory_scope`; see `graph_path_for_workspace` for why a
+    refusal beats a rewrite.
+    """
+    return graph_path_for_workspace(_memory_sqlite_base_path(), workspace_slug)
 
 
 def memory_backends_enabled() -> bool:

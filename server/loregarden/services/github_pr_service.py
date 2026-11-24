@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import Artifact, ArtifactKind, Ticket, Workspace
 from loregarden.services.git_subprocess import run_gh, run_git
 from loregarden.services.target_branch import landing_target
@@ -59,7 +60,7 @@ def _refuse_tree_member(session: Session, ticket: Ticket, workspace: Workspace) 
 def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
     workspace = workspace_for_ticket(session, ticket)
     if not workspace:
-        raise ValueError("Workspace not found")
+        raise UnknownWorkspaceSlug(ticket.external_id)
 
     if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")

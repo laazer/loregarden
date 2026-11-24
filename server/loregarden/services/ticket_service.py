@@ -6,6 +6,7 @@ import threading
 from collections.abc import Callable, Sequence
 
 from loregarden.core.event_bus import event_bus
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
@@ -211,7 +212,7 @@ class TicketService:
             validate_workspace_binding(work_item_type, None)
         ws = self.session.exec(select(Workspace).where(Workspace.slug == slug)).first()
         if not ws:
-            raise ValueError(f"Workspace not found: {workspace_slug}")
+            raise UnknownWorkspaceSlug(workspace_slug)
         validate_workspace_binding(work_item_type, ws.id)
         return ws, ws.id
 
@@ -231,7 +232,7 @@ class TicketService:
             return None, None
 
         if ws is None:
-            raise ValueError(f"Workspace not found: {workspace_slug}")
+            raise UnknownWorkspaceSlug(workspace_slug)
         supplied_id = external_id.strip().lower()
         self._reject_taken_supplied_id(workspace_id=ws.id, ticket=ticket, supplied_id=supplied_id)
         assign_external_id(self.session, ticket, ws, supplied_id=supplied_id)

@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from loregarden.mcp.shaped_errors import UnknownTicketExternalId
 from loregarden.models.domain import InitiativeNumberPool, Ticket, WorkItemType, Workspace
 from loregarden.models.domain.initiative_tables import GLOBAL_INITIATIVE_POOL_ID
 from sqlalchemy import func, or_, text
@@ -543,12 +544,25 @@ def respell_external_id(session: Session, ticket: Ticket, workspace: Workspace) 
     return ticket.external_id
 
 
-class TicketNotFound(ValueError):
-    """No ticket answers to the reference. A ``ValueError`` for the MCP error path."""
+class TicketNotFound(UnknownTicketExternalId):
+    """No ticket answers to the reference.
+
+    A ``RecoverableToolCondition`` rather than a bare ``ValueError``: an agent
+    that passed an id from another workspace, or a bare ticket number, can fix
+    the call itself, and used to get `isError` with nothing to act on
+    (lg-code-knowledge-1113). Still a ``ValueError`` by inheritance, so the
+    `api/` handlers that turn one into a 404 or a 400 are unaffected.
+
+    The message is unchanged on purpose — `api/` responses and a dozen tests
+    match it — and the remedy and guidance ride beside it rather than in it.
+    """
 
     def __init__(self, ref: str) -> None:
-        super().__init__(f"Ticket not found: {ref!r}")
+        super().__init__(ref)
         self.ref = ref
+
+    def describe(self, subject: str) -> str:
+        return f"Ticket not found: {subject!r}"
 
 
 class AmbiguousTicketReference(ValueError):

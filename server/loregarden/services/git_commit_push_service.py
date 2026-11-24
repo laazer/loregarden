@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable
 from pathlib import Path
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import Ticket
 from loregarden.services.branch_names import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
@@ -235,7 +236,7 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     """
     workspace = workspace_for_ticket(session, ticket)
     if not workspace:
-        raise ValueError("Workspace not found")
+        raise UnknownWorkspaceSlug(ticket.external_id)
 
     if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")

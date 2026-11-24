@@ -6,6 +6,7 @@ line cap — the route stays a thin HTTP adapter over this service.
 
 from __future__ import annotations
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     Ticket,
     TicketState,
@@ -172,7 +173,7 @@ def finalize_hierarchy(
     """
     ws = session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
     if not ws:
-        raise ValueError(f"Workspace not found: {workspace_slug}")
+        raise UnknownWorkspaceSlug(workspace_slug)
 
     if not hierarchy:
         return []

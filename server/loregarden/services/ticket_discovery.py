@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from loregarden.services.sql_like import like_contains
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from sqlmodel import Session, col, select
@@ -108,12 +109,14 @@ def list_tickets_mcp(
     if roots_only:
         query = query.where(col(Ticket.parent_ticket_id).is_(None))
     if search:
-        term = f"%{search.strip()}%"
+        term = like_contains(search.strip())
         query = query.where(
-            col(Ticket.title).like(term)
-            | col(Ticket.external_id).like(term)
+            col(Ticket.title).like(term.pattern, escape=term.escape)
+            | col(Ticket.external_id).like(term.pattern, escape=term.escape)
             # Someone searching a ticket they knew under its old id should find it.
-            | col(Ticket.legacy_external_id).like(term)
+            # `legacy_external_id` is underscore-dense, so the escape matters on
+            # the data side here as much as on the needle.
+            | col(Ticket.legacy_external_id).like(term.pattern, escape=term.escape)
         )
 
     cap = max(1, min(limit, 100))

@@ -34,6 +34,7 @@ from loregarden.services.initiative_service import (
     milestone_view,
     workspace_slugs,
 )
+from loregarden.services.sql_like import like_contains
 from loregarden.services.ticket_rollup import reconcile_lineage
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from sqlmodel import Session, col, select
@@ -157,10 +158,11 @@ def member_candidates(
     """
     initiative = load_initiative(session, initiative_id)
     covered = initiative_coverage(session, initiative.id).ticket_ids()
-    needle = f"%{search.strip()}%"
+    needle = like_contains(search.strip())
     query = select(Ticket).where(
         Ticket.work_item_type != WorkItemType.INITIATIVE,
-        col(Ticket.title).ilike(needle) | col(Ticket.external_id).ilike(needle),
+        col(Ticket.title).ilike(needle.pattern, escape=needle.escape)
+        | col(Ticket.external_id).ilike(needle.pattern, escape=needle.escape),
     )
     if covered:
         query = query.where(col(Ticket.id).not_in(covered))

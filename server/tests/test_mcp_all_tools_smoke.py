@@ -658,8 +658,21 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
 
 @pytest.mark.parametrize("tool", ["loregarden_get_ticket", "loregarden_complete_stage"])
 def test_unknown_ticket_is_a_clean_error_not_a_crash(client: TestClient, tool: str):
-    """Agents pass bad ids. That must surface as an error, not a 500."""
+    """Agents pass bad ids. That must surface, not be silently accepted or 500.
+
+    `lg-code-knowledge-1113` changed the shape this surfaces in, not whether
+    it surfaces: an unknown ticket id is one of the recoverable conditions,
+    so it now comes back as ordinary content carrying error/remedy/guidance
+    rather than as `isError` with nothing to act on. The property this test
+    exists for is unchanged and is asserted below — the call must never read
+    as a ticket that was found.
+    """
     body = _call(client, tool, {"ticket_id": "does-not-exist", "outcome": "proceed"})
-    assert "error" in body or body["result"].get("isError"), (
+    if "error" in body or body["result"].get("isError"):
+        return
+    payload = json.loads(body["result"]["content"][0]["text"])
+    assert "does-not-exist" in payload.get("error", ""), (
         f"{tool} silently accepted an unknown ticket_id"
     )
+    assert payload["remedy"].strip()
+    assert payload["guidance"].strip()

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from loregarden.core.event_bus import event_bus
 from loregarden.core.stage_groups import group_members, group_would_be_emptied
 from loregarden.core.state_machine import StateMachine
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     AgentRun,
@@ -204,7 +205,7 @@ class OrchestrationCallbackService:
 
             workspace = workspace_for_ticket(self.session, ticket)
             if not workspace:
-                raise ValueError("Workspace not found")
+                raise UnknownWorkspaceSlug(ticket.external_id)
             profile = resolve_orchestration_profile(workspace)
             driver = driver or profile.unattended_driver
             profile_slug = profile_slug or profile.slug

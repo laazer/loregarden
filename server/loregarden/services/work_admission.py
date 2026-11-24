@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     ExternalHarness,
     OrchestrationDriver,
@@ -179,7 +180,7 @@ def start_orchestration_admitted(
 
     ws = workspace_for_ticket(session, ticket)
     if not ws:
-        raise ValueError("Workspace not found")
+        raise UnknownWorkspaceSlug(ticket.external_id)
     profile = resolve_orchestration_profile(ws)
     driver = start.driver or profile.unattended_driver
     if driver not in (OrchestrationDriver.BUILTIN_AUTOPILOT, OrchestrationDriver.EXTERNAL_MCP):

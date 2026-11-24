@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import partial
 
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     VALID_HIERARCHY,
     ArtifactKind,
@@ -280,7 +281,7 @@ def _persist(session: Session, ticket: Ticket, children: list[HierarchyWorkItem]
     """Create the children under ``ticket``, chained so they run in proposal order."""
     workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
-        raise ValueError(f"Workspace not found for ticket {ticket.external_id}")
+        raise UnknownWorkspaceSlug(ticket.external_id)
     # Refs derive from the parent so a model-chosen slug cannot collide with a
     # live ticket; they become the children's legacy ids.
     for index, child in enumerate(children, start=1):
@@ -300,7 +301,7 @@ def _invoke_split_model(session: Session, ticket: Ticket, prompt: str) -> str:
         return stub
     workspace = workspace_for_ticket(session, ticket)
     if workspace is None:
-        raise ValueError(f"Workspace not found for ticket {ticket.external_id}")
+        raise UnknownWorkspaceSlug(ticket.external_id)
     return run_cli_agent_turn(
         TICKET_SPLIT_CLI_PROFILE,
         workspace=workspace,

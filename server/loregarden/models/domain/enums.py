@@ -3,6 +3,23 @@
 from datetime import datetime, timezone
 from enum import Enum, StrEnum
 
+# Re-exported so `models.domain.enums` stays the one address for a domain
+# vocabulary; they live next door only because this module hit its size cap.
+from loregarden.models.domain.memory_enums import (
+    MemoryBriefingAssembly as MemoryBriefingAssembly,
+)
+from loregarden.models.domain.memory_enums import (
+    MemoryBriefingOutcome as MemoryBriefingOutcome,
+)
+from loregarden.models.domain.memory_enums import (
+    MemoryStoreKind as MemoryStoreKind,
+)
+from loregarden.models.domain.memory_enums import (
+    MemoryStoreState as MemoryStoreState,
+)
+from loregarden.models.domain.memory_enums import (
+    RetrievalEmptiness as RetrievalEmptiness,
+)
 from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 
@@ -1259,67 +1276,6 @@ class DevDocsError(StrEnum):
     #: broken docset for a TTL.
     CATALOG_INVALID = "catalog_invalid"
     INDEX_INVALID = "index_invalid"
-
-
-class MemoryBriefingOutcome(str, Enum):
-    """What one inherited-wisdom assembly actually did.
-
-    The distinction the whole briefing-telemetry ticket turns on is
-    ``STORE_ERROR``/``NO_STORE`` versus ``EMPTY``: a vault that would not open
-    and a vault that opened and held nothing produce the same empty prompt
-    section, and collapsing them is how retrieval stayed dead for a month
-    without anyone noticing.
-    """
-
-    BUILT = "built"
-    EMPTY = "empty"
-    STORE_ERROR = "store_error"
-    NO_STORE = "no_store"
-    SKIPPED = "skipped"
-
-
-class MemoryStoreKind(str, Enum):
-    """The stores a briefing reads, plus the factory that builds them.
-
-    ``CHECKPOINTS``, ``VAULT`` and ``GRAPH`` are real stores and are the only
-    keys ever present in ``store_states_json``. ``SERVICE`` is the store-factory
-    pseudo-store: it appears only in ``store_errors``, when
-    ``AgentMemoryService.from_settings()`` itself raised and no store was ever
-    reached.
-    """
-
-    CHECKPOINTS = "checkpoints"
-    VAULT = "vault"
-    GRAPH = "graph"
-    SERVICE = "service"
-
-
-class MemoryStoreState(str, Enum):
-    """What one store *was* during an assembly — never what its row count implies.
-
-    ``NOT_QUERIED`` is load-bearing. ``recall_related`` returns before touching
-    either recall store when the query tokenises to no terms, so neither READ
-    (nothing was read) nor UNCONFIGURED (the store exists) is true of it. It
-    never contributes to ``STORE_ERROR`` and never counts as READ.
-    """
-
-    READ = "read"
-    UNCONFIGURED = "unconfigured"
-    ERRORED = "errored"
-    NOT_QUERIED = "not_queried"
-
-
-class MemoryBriefingAssembly(str, Enum):
-    """Which prompt-assembly path built a briefing.
-
-    ``DISPATCH`` is supervised dispatch; ``RENDER`` is ``render_stage_prompt``,
-    which the terminal handoff also goes through. Two assemblies for one run is
-    a live path, and without this a legitimate pair is indistinguishable from a
-    double write.
-    """
-
-    DISPATCH = "dispatch"
-    RENDER = "render"
 
 
 class ChatSurface(StrEnum):

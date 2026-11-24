@@ -1,6 +1,11 @@
-"""Enums for durable memory: the outcome ladder (178) and the relation vocabulary.
+"""Enums for durable memory: the outcome ladder (178), the relation vocabulary,
+and what one retrieval over the memory layer was able to read.
 
-Split out of `enums.py`, which had reached its size cap.
+Split out of `enums.py`, which had reached its size cap. The briefing/retrieval
+family joined them for the same reason, and because they belong together:
+`MemoryStoreState` is the one leg vocabulary both basis producers read, and
+`RetrievalEmptiness` is why an answer is the size it is. `enums.py` re-exports
+them, so every existing importer is unaffected.
 """
 
 from __future__ import annotations
@@ -102,3 +107,84 @@ class KnowledgeGraphSource(str, Enum):
 
     LIST = "list"  # `list_nodes`: newest first, no text match
     SEARCH = "search"  # `search`: substring match over title, body, tags and aliases
+
+
+class MemoryBriefingOutcome(str, Enum):
+    """What one inherited-wisdom assembly actually did.
+
+    The distinction the whole briefing-telemetry ticket turns on is
+    ``STORE_ERROR``/``NO_STORE`` versus ``EMPTY``: a vault that would not open
+    and a vault that opened and held nothing produce the same empty prompt
+    section, and collapsing them is how retrieval stayed dead for a month
+    without anyone noticing.
+    """
+
+    BUILT = "built"
+    EMPTY = "empty"
+    STORE_ERROR = "store_error"
+    NO_STORE = "no_store"
+    SKIPPED = "skipped"
+
+
+class MemoryStoreKind(str, Enum):
+    """The stores a briefing reads, plus the factory that builds them.
+
+    ``CHECKPOINTS``, ``VAULT`` and ``GRAPH`` are real stores and are the only
+    keys ever present in ``store_states_json``. ``SERVICE`` is the store-factory
+    pseudo-store: it appears only in ``store_errors``, when
+    ``AgentMemoryService.from_settings()`` itself raised and no store was ever
+    reached.
+    """
+
+    CHECKPOINTS = "checkpoints"
+    VAULT = "vault"
+    GRAPH = "graph"
+    SERVICE = "service"
+
+
+class MemoryStoreState(str, Enum):
+    """What one store *was* during an assembly — never what its row count implies.
+
+    ``NOT_QUERIED`` is load-bearing. ``recall_related`` returns before touching
+    either recall store when the query tokenises to no terms, so neither READ
+    (nothing was read) nor UNCONFIGURED (the store exists) is true of it. It
+    never contributes to ``STORE_ERROR`` and never counts as READ.
+    """
+
+    READ = "read"
+    UNCONFIGURED = "unconfigured"
+    ERRORED = "errored"
+    NOT_QUERIED = "not_queried"
+
+
+class RetrievalEmptiness(str, Enum):
+    """Why a retrieval answer holds the hits it holds.
+
+    ``search_prior_work`` returned a bare ``[]`` for three different facts —
+    the query tokenised to no terms, the workspace slug did not resolve, and
+    the scan matched nothing. One value cannot carry three facts, and the
+    most expensive of them (a typo in a slug) read as the cheapest ("nothing
+    like this has been tried").
+
+    ``MATCHED`` is on every non-empty reply, so a reader never has to infer
+    the emptiness from the length of a list.
+    """
+
+    MATCHED = "matched"
+    NO_TERMS = "no_terms"
+    UNRESOLVED_SCOPE = "unresolved_scope"
+    NO_OVERLAP = "no_overlap"
+    STORE_UNAVAILABLE = "store_unavailable"
+
+
+class MemoryBriefingAssembly(str, Enum):
+    """Which prompt-assembly path built a briefing.
+
+    ``DISPATCH`` is supervised dispatch; ``RENDER`` is ``render_stage_prompt``,
+    which the terminal handoff also goes through. Two assemblies for one run is
+    a live path, and without this a legitimate pair is indistinguishable from a
+    double write.
+    """
+
+    DISPATCH = "dispatch"
+    RENDER = "render"
