@@ -44,6 +44,7 @@ than by review.
 from __future__ import annotations
 
 import ast
+import os
 import re
 import shlex
 import shutil
@@ -665,7 +666,16 @@ def test_the_armed_commands_are_in_the_only_form_that_can_execute():
     assert script[0] == "bash" and (REPO_ROOT / script[1]).is_file(), script
     assert shlex.split(JEST_COMMAND)[:3] == ["npm", "--prefix", "client"]
     # The base `_verify_candidate` exports is the one the script narrows by.
-    assert f'"${{{LAND_BASE_ENV}:-}}"' in (REPO_ROOT / script[1]).read_text(encoding="utf-8")
+    assert 'BASE="$(push_base "$ROOT")"' in (REPO_ROOT / script[1]).read_text(encoding="utf-8")
+    push_base = REPO_ROOT / ".lefthook" / "scripts" / "push-base.sh"
+    resolved = subprocess.run(
+        ["bash", "-c", 'source "$1" && push_base "$2"', "_", str(push_base), str(REPO_ROOT)],
+        env={**os.environ, LAND_BASE_ENV: "the-exported-base"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert resolved.stdout == "the-exported-base"
     assert LAND_VERIFY_TIMEOUT_SECONDS > 901, (
         f"the measured suite is 901s and the timeout is {LAND_VERIFY_TIMEOUT_SECONDS}s; "
         "a timeout REFUSES the land"

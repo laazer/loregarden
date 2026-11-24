@@ -22,16 +22,17 @@ source "$SCRIPT_DIR/test-workers.sh"
 source "$SCRIPT_DIR/push-progress.sh"
 # shellcheck source=test-count-guard.sh
 source "$SCRIPT_DIR/test-count-guard.sh"
+# shellcheck source=test-prerequisites.sh
+source "$SCRIPT_DIR/test-prerequisites.sh"
+# shellcheck source=push-base.sh
+source "$SCRIPT_DIR/push-base.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CLIENT_ROOT="$ROOT/client"
 
 cd "$CLIENT_ROOT"
 
-if [ ! -d node_modules ]; then
-  echo "pre-push: client/node_modules missing (cd client && npm ci)." >&2
-  exit 1
-fi
+require_client_modules
 
 # A private temp root for this run, holding the one file jest's own reporter
 # records its suite count in. Removed on exit, never the progress file, and
@@ -48,15 +49,7 @@ npm run lint
 progress_step "tsc -b"
 npx tsc -b
 
-# Base for "what is being pushed": the remote-tracking commit when the branch
-# already exists there, otherwise everything this branch adds to main.
-BASE="${LOREGARDEN_TESTS_BASE:-}"
-if [ -z "$BASE" ]; then
-  BASE="$(git -C "$ROOT" rev-parse --verify --quiet "@{push}" || true)"
-fi
-if [ -z "$BASE" ]; then
-  BASE="$(git -C "$ROOT" rev-parse --verify --quiet origin/main || true)"
-fi
+BASE="$(push_base "$ROOT")"
 
 # Files every client test depends on, and that jest's module graph cannot see:
 # the setup file and the moduleNameMapper mocks under src/test/ are wired in by
