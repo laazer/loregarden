@@ -19,6 +19,8 @@
 # by it only when a hook is not parallel.)
 #
 # pre-push — the CI jobs, with the test runners narrowed, one after the other:
+#   - signed-commits, then server-/client-prerequisites: seconds, no capacity
+#     lease. The first job to fail ends the push (`piped`).
 #   - server-tests: ruff check, ruff format --check (full), then pytest on the
 #     test files that reach the pushed changes through the import graph
 #   - client-tests: oxlint, tsc -b (full), then jest --changedSince
@@ -179,6 +181,10 @@ pre-push:
   # Deliberately sequential — see the note above. Do not restore `parallel: true`
   # without capping both runners' worker counts so they fit on the box together.
   parallel: false
+  # Stop at the first failed job. Without it lefthook runs every later job too:
+  # a push already refused by server-tests queued 40 minutes for client-tests,
+  # and an unsigned commit paid for both suites.
+  piped: true
   # Stream output as it happens: a push queued for capacity prints its place in
   # line, and buffered until exit that reads exactly like a hang.
   follow: true
@@ -193,6 +199,21 @@ pre-push:
       # Every pushed commit is signed
       use_stdin: true
       run: bash .lefthook/scripts/signed-commits.sh
+    # Then whether each suite can start at all, before anything queues. Same
+    # glob and skip as the suite it asks for, so a suite that will not run asks
+    # for nothing.
+    - name: server-prerequisites
+      # Server tests: the venv, and client/node_modules if they need it
+      glob: &server_tests_glob "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+      skip:
+        - run: bash .lefthook/scripts/staged-push.sh server-prerequisites
+      run: bash .lefthook/scripts/push-prerequisites.sh server-tests
+    - name: client-prerequisites
+      # Client tests: node and client/node_modules
+      glob: &client_tests_glob "client/**/*.{ts,tsx,js,jsx,json}"
+      skip:
+        - run: bash .lefthook/scripts/staged-push.sh client-prerequisites
+      run: bash .lefthook/scripts/push-prerequisites.sh client-tests
     # Each runs under a host-capacity lease (capacity-run.sh), so pushes from
     # every repo on this machine queue instead of piling on; the grant sets the
     # worker count. `interactive` hands the terminal to the wrapper's
@@ -201,7 +222,7 @@ pre-push:
       # Server tests (ruff full + pytest on reached tests)
       # The script directories too: their ruff runs here, and their tests live
       # in server/tests (select_pytest_targets.py selects the tests naming them).
-      glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+      glob: *server_tests_glob
       skip:
         - run: bash .lefthook/scripts/staged-push.sh server-tests
       interactive: true
@@ -219,7 +240,7 @@ pre-push:
     # checks the fit.
     - name: client-tests
       # Client tests (oxlint + tsc full + jest --changedSince)
-      glob: "client/**/*.{ts,tsx,js,jsx,json}"
+      glob: *client_tests_glob
       skip:
         - run: bash .lefthook/scripts/staged-push.sh client-tests
       interactive: true

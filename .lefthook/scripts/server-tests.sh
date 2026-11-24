@@ -28,23 +28,17 @@ source "$(cd "$(dirname "$0")" && pwd)/test-workers.sh"
 source "$(cd "$(dirname "$0")" && pwd)/push-progress.sh"
 # shellcheck source=test-count-guard.sh
 source "$(cd "$(dirname "$0")" && pwd)/test-count-guard.sh"
+# shellcheck source=test-prerequisites.sh
+source "$(cd "$(dirname "$0")" && pwd)/test-prerequisites.sh"
+# shellcheck source=push-base.sh
+source "$(cd "$(dirname "$0")" && pwd)/push-base.sh"
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PY_ROOT="$ROOT/server"
 
 cd "$PY_ROOT"
 
-if [ -x ".venv/bin/python" ] && ".venv/bin/python" -c "import pytest" 2>/dev/null; then
-  RUN=(".venv/bin/python" "-m")
-  RUFF_CMD=(".venv/bin/ruff")
-elif command -v uv >/dev/null 2>&1; then
-  RUN=(uv run --extra dev python -m)
-  RUFF_CMD=(uv run --extra dev ruff)
-else
-  echo "pre-push: need server/.venv (with pytest) or uv on PATH." >&2
-  echo "Run: cd server && uv sync --extra dev" >&2
-  exit 1
-fi
+resolve_server_runner
 
 # A private temp root for this run, because pytest's own cleanup is not safe
 # against a concurrent session. `_pytest.tmpdir` garbage-collects the older
@@ -119,15 +113,7 @@ progress_step "ruff on scripts outside server/"
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" check
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" format --check
 
-# Base for "what is being pushed": the remote-tracking commit when the branch
-# already exists there, otherwise everything this branch adds to main.
-BASE="${LOREGARDEN_TESTS_BASE:-}"
-if [ -z "$BASE" ]; then
-  BASE="$(git -C "$ROOT" rev-parse --verify --quiet "@{push}" || true)"
-fi
-if [ -z "$BASE" ]; then
-  BASE="$(git -C "$ROOT" rev-parse --verify --quiet origin/main || true)"
-fi
+BASE="$(push_base "$ROOT")"
 
 progress_step "select tests"
 TARGETS=""

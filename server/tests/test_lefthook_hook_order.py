@@ -6,7 +6,8 @@ lefthook orders by priority only when a hook is not parallel, so every check
 raced the formatter and an import order `ruff check --fix` would have sorted
 failed the commit. pre-push said signed-commits ran "first and cheap", but
 lefthook runs a `commands` map in name order, so it ran after both suites.
-Both are `jobs` lists now, which run as written.
+Both are `jobs` lists now, which run as written. A list alone was still not
+enough for pre-push: without `piped`, lefthook runs every job after a failed one.
 """
 
 from __future__ import annotations
@@ -59,8 +60,35 @@ def test_pre_push_refuses_an_unsigned_commit_before_the_suites_run():
     # Sequential, and a list: a `commands` map would run in name order.
     assert section["parallel"] is False
     assert "commands" not in section
+    # A failed job ends the push. Measured on lefthook 2.1.10: without it the
+    # jobs after a failed one all run, queueing for capacity on the way.
+    assert section["piped"] is True
     assert [job["name"] for job in section["jobs"]] == [
         "signed-commits",
+        "server-prerequisites",
+        "client-prerequisites",
         "server-tests",
         "client-tests",
+    ]
+
+
+def test_nothing_reserves_capacity_before_the_prerequisites_have_passed():
+    jobs = list(hook_jobs(LEFTHOOK, "pre-push").values())
+    reserving = [i for i, job in enumerate(jobs) if "capacity-run.sh" in job["run"]]
+    checks = [i for i, job in enumerate(jobs) if "push-prerequisites.sh" in job["run"]]
+
+    assert len(reserving) == len(checks) == 2
+    assert max(checks) < min(reserving)
+
+
+@pytest.mark.parametrize("suite", ["server", "client"])
+def test_a_prerequisite_check_runs_exactly_when_its_suite_does(suite):
+    jobs = hook_jobs(LEFTHOOK, "pre-push")
+    check, tests = jobs[f"{suite}-prerequisites"], jobs[f"{suite}-tests"]
+
+    assert check["run"].endswith(f"push-prerequisites.sh {suite}-tests")
+    assert check["glob"] == tests["glob"]
+    # The same condition: a staging push skips the suite, so it needs no check.
+    assert [skip["run"].split()[:2] for skip in check["skip"]] == [
+        skip["run"].split()[:2] for skip in tests["skip"]
     ]

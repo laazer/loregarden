@@ -49,6 +49,10 @@ def _mypy(source: str, tmp_path: Path) -> subprocess.CompletedProcess:
             "mypy",
             "--config-file",
             str(REPO_SERVER / "pyproject.toml"),
+            # A private cache: parallel workers creating the shared one at once
+            # crash mypy ("INTERNAL ERROR", exit 2) in a fresh checkout.
+            "--cache-dir",
+            str(tmp_path / "mypy_cache"),
             str(target),
         ],
         capture_output=True,
@@ -62,7 +66,7 @@ def test_the_headline_case_is_caught(tmp_path):
     """547's own example, verbatim. This passed before the ticket."""
     result = _mypy("def f() -> int:\n    return 'definitely not an int'\n", tmp_path)
 
-    assert result.returncode != 0, result.stdout
+    assert result.returncode == 1, f"{result.stdout}{result.stderr}"
     assert "return-value" in result.stdout, result.stdout
 
 
@@ -77,7 +81,8 @@ def test_each_re_enabled_code_actually_fires(code, tmp_path):
     """
     result = _mypy(VIOLATIONS[code], tmp_path)
 
-    assert result.returncode != 0, f"{code} produced no error:\n{result.stdout}"
+    # Exit 1 is "found errors"; a crash exits 2 and says why on stderr.
+    assert result.returncode == 1, f"{code}: {result.stdout}{result.stderr}"
     assert f"[{code}]" in result.stdout, f"expected [{code}] in:\n{result.stdout}"
 
 
@@ -88,4 +93,4 @@ def test_the_checked_tree_is_clean(tmp_path):
     """
     result = _mypy("def f() -> int:\n    return 1\n", tmp_path)
 
-    assert result.returncode == 0, result.stdout
+    assert result.returncode == 0, f"{result.stdout}{result.stderr}"
