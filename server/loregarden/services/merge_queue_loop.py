@@ -19,7 +19,8 @@ lg-milestone-that-969. Advanced once per workspace on the CI poll tick
 3. **Wait.** Read the PR from GitHub: the required contexts come from the
    base's own rules, and each must have passed *on the staged commit*. A
    required check that has not reported, one still running, and GitHub not
-   answering are three different waits (`MergeQueueWait`). A wait past
+   answering are three different waits (`MergeQueueWait`). A check whose runner
+   died with no result is re-run once (`merge_queue_failures`). A wait past
    `merge_queue_check_timeout_seconds` is `TIMED_OUT`, with the elapsed time.
 4. **Land, under the tree-equality assertion.** Fetch the base again. If it
    moved since staging the staged commit is discarded and the entry restages:
@@ -96,7 +97,13 @@ from loregarden.services.merge_queue import (
     retry,
     transition,
 )
+from loregarden.services.merge_queue_failures import (
+    LostVerdict,
+    failed_elsewhere,
+    rerun_lost_checks,
+)
 from loregarden.services.merge_queue_github import (
+    CheckReading,
     GatingChecks,
     GhQueueGitHub,
     QueueGitHub,
@@ -531,16 +538,7 @@ class MergeQueueLoop:
         checks_json = json.dumps([reading.model_dump(mode="json") for reading in readings])
         failing = [r for r in readings if r.outcome is PullRequestCheckOutcome.FAILING]
         if failing:
-            log = self.github.failure_log(pr.checks)
-            return self._stop(
-                entry,
-                MergeQueueState.TESTING,
-                MergeQueueState.FAILED,
-                detail=f"required check(s) failed on {entry.staged_sha[:12]}: "
-                f"{', '.join(r.name for r in failing)}",
-                checks_json=checks_json,
-                log_tail=log,
-            )
+            return self._checks_failed(entry, pr, failing, checks_json)
         missing = unreported(pr.checks, required)
         if missing:
             return self._hold(
@@ -564,6 +562,62 @@ class MergeQueueLoop:
                 + gating_basis(gating),
             )
         return self._land(entry, pr, checks_json, gating)
+
+    def _checks_failed(
+        self,
+        entry: MergeQueueEntry,
+        pr: StagedPullRequest,
+        failing: list[CheckReading],
+        checks_json: str,
+    ) -> bool:
+        """Stop the entry, unless what failed was the runners (`merge_queue_failures`)."""
+        try:
+            lost = rerun_lost_checks(self.github, {r.name: r.url for r in failing})
+        except GitHubReadError as exc:
+            self.report.errors.append(f"PR #{entry.pr_number}: {exc}")
+            return self._hold(
+                entry,
+                MergeQueueState.TESTING,
+                when="while GitHub could not be asked about a failed check",
+                wait=MergeQueueWait.GITHUB_UNREACHABLE,
+                checks_json=checks_json,
+                detail=f"GitHub could not be asked about PR #{entry.pr_number}'s failed check(s): "
+                f"{exc}",
+            )
+        if lost.verdict is LostVerdict.RERUNNING:
+            fields: dict[str, object] = {}
+            if lost.asked:
+                logger.warning("merge queue: PR #%s: %s", entry.pr_number, lost.detail)
+                self.report.actions.append(f"PR #{entry.pr_number}: {lost.detail}")
+                # The re-run gets its own wait: the dead one spent up to an hour of this one's.
+                fields["testing_started_at"] = utcnow()
+            return self._hold(
+                entry,
+                MergeQueueState.TESTING,
+                when="while its lost checks were re-run",
+                wait=MergeQueueWait.CHECKS_RUNNING,
+                checks_json=checks_json,
+                detail=lost.detail,
+                **fields,
+            )
+        log = self.github.failure_log(pr.checks)
+        context = (lost.detail, failed_elsewhere(self.session, entry, log))
+        return self._stop(
+            entry,
+            MergeQueueState.TESTING,
+            MergeQueueState.FAILED,
+            detail="; ".join(
+                part
+                for part in (
+                    f"required check(s) failed on {entry.staged_sha[:12]}: "
+                    f"{', '.join(r.name for r in failing)}",
+                    *context,
+                )
+                if part
+            ),
+            checks_json=checks_json,
+            log_tail=log,
+        )
 
     # -- step 4 and 5: land and clean up -------------------------------------
 

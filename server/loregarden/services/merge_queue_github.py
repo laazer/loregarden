@@ -10,7 +10,9 @@ Three questions and one action:
   head and base commits, the head commit's *tree*, its checks, and once merged
   the merge commit and its tree — so the tree-equality assertion compares
   GitHub's own readings, not ours;
-- the failing jobs' log tails (`failure_log`), from `ci_checks`;
+- the failing jobs' log tails (`failure_log`), from `ci_checks`, and whether a
+  failed job reached a verdict at all (`failed_job`, `merge_queue_failures`);
+- a re-run of a run whose jobs did not (`rerun_failed_jobs`);
 - the merge itself (`merge`), `pull_request_merge.squash_merge`, pinned to the
   staged head;
 - a comment on the pull request (`comment`), where a PR admitted with no ticket
@@ -29,9 +31,15 @@ from pathlib import Path
 from typing import Protocol
 
 from loregarden.models.domain import PullRequestCheckOutcome, PullRequestState
-from loregarden.services.ci_checks import GH_TIMEOUT_SECONDS, check_name, failure_logs
+from loregarden.services.ci_checks import (
+    GH_TIMEOUT_SECONDS,
+    actions_job_id,
+    check_name,
+    failure_logs,
+)
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.github_pr_listing import GitHubReadError, read_gh
+from loregarden.services.merge_queue_failures import ActionsJob
 from loregarden.services.pull_request_merge import squash_merge
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -139,6 +147,10 @@ class _OpenPull(BaseModel):
 _OpenPulls = TypeAdapter(list[_OpenPull])
 
 
+class _ActionsRun(BaseModel):
+    run_attempt: int
+
+
 class CheckReading(BaseModel):
     """One check on the staged commit, as the entry records it."""
 
@@ -200,6 +212,12 @@ class QueueGitHub(Protocol):
     def read_pull_request(self, number: int) -> StagedPullRequest: ...
 
     def failure_log(self, checks: list[GhCheck]) -> str: ...
+
+    def failed_job(self, url: str) -> ActionsJob | None: ...
+
+    def run_attempt(self, run_id: int) -> int: ...
+
+    def rerun_failed_jobs(self, run_id: int) -> str: ...
 
     def merge(self, number: int, head_sha: str) -> str: ...
 
@@ -296,6 +314,44 @@ class GhQueueGitHub:
     def failure_log(self, checks: list[GhCheck]) -> str:
         logs = failure_logs(self.repo_root, checks)
         return "\n\n".join(part for part in (logs.text, *logs.errors) if part)
+
+    def failed_job(self, url: str) -> ActionsJob | None:
+        """The Actions job behind a check's URL; None for a check that is not one."""
+        job_id = actions_job_id(url)
+        if job_id is None:
+            return None
+        raw = read_gh(
+            self.repo_root,
+            ["api", f"repos/{{owner}}/{{repo}}/actions/jobs/{job_id}"],
+            GH_TIMEOUT_SECONDS,
+        )
+        try:
+            return ActionsJob.model_validate_json(raw)
+        except ValidationError as exc:
+            raise GitHubReadError(f"unreadable job {job_id}: {exc}") from exc
+
+    def run_attempt(self, run_id: int) -> int:
+        raw = read_gh(
+            self.repo_root,
+            ["api", f"repos/{{owner}}/{{repo}}/actions/runs/{run_id}"],
+            GH_TIMEOUT_SECONDS,
+        )
+        try:
+            return _ActionsRun.model_validate_json(raw).run_attempt
+        except ValidationError as exc:
+            raise GitHubReadError(f"unreadable run {run_id}: {exc}") from exc
+
+    def rerun_failed_jobs(self, run_id: int) -> str:
+        """Run a finished run's failed jobs again; "" when GitHub took it, else why not."""
+        try:
+            read_gh(
+                self.repo_root,
+                ["run", "rerun", str(run_id), "--failed"],
+                GH_TIMEOUT_SECONDS,
+            )
+        except GitHubReadError as exc:
+            return str(exc)
+        return ""
 
     def merge(self, number: int, head_sha: str) -> str:
         return squash_merge(self.repo_root, number, head_sha)

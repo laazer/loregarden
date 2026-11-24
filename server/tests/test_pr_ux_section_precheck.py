@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.services.git_subprocess import scrubbed_git_env
@@ -115,6 +117,62 @@ def test_an_unreadable_body_is_not_blocked_but_the_agent_is_told(ui_repo):
         decision, message = _decide(command, ui_repo)
         assert decision is None, command
         assert "precheck did not run" in message
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "B={dir}/body.md; gh pr create --body-file $B",
+        'B="{dir}/body.md" && gh pr create --body-file "$B"',
+        "B='{dir}/body.md'\ngh pr create --body-file \"${{B}}\"",
+        "D={dir}; B=$D/body.md; gh pr create -F $B",
+        'D={dir}; gh pr create --body-file "$D/body.md"',
+        "export B={dir}/body.md; gh pr create --body-file=$B",
+        "gh pr create --body-file $PRECHECK_BODY",
+    ],
+)
+def test_a_body_file_in_a_variable_is_read(ui_repo, tmp_path, command):
+    body = tmp_path / "body.md"
+    body.write_text(BARE)
+    command = command.format(dir=tmp_path)
+    with mock.patch.dict(os.environ, {"PRECHECK_BODY": str(body)}):
+        decision, reason = _decide(command, ui_repo)
+        assert decision == "deny"
+        assert "would fail on this description" in reason
+        body.write_text(FILLED)
+        assert _decide(command, ui_repo) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh pr create --body-file $NOT_SET_ANYWHERE",
+        "B=$(mktemp); gh pr create --body-file $B",
+        "B=`mktemp`; gh pr create --body-file $B",
+        "B={dir}/body.md; B={dir}/other.md; gh pr create --body-file $B",
+        "D=$(pwd); B=$D/body.md; gh pr create --body-file $B",
+        'gh pr create --body-file "$(mktemp)"',
+        "PRECHECK_BODY=$(mktemp); gh pr create --body-file $PRECHECK_BODY",
+        "gh pr create --body-file $B; B={dir}/body.md",
+        "gh pr edit 5 --body-file $NOT_SET_ANYWHERE",
+    ],
+)
+def test_a_body_file_only_the_shell_can_name_is_refused(ui_repo, tmp_path, command):
+    """It used to look for a file named `$B`, find none, and let the PR open unchecked."""
+    (tmp_path / "body.md").write_text(FILLED)
+    environment = {"PRECHECK_BODY": str(tmp_path / "body.md")}
+    with mock.patch.dict(os.environ, environment):
+        os.environ.pop("B", None)
+        decision, reason = _decide(command.format(dir=tmp_path), ui_repo)
+    assert decision == "deny"
+    assert "literal path" in reason
+
+
+def test_a_repository_without_the_check_is_not_refused_for_a_variable(tmp_path):
+    repo = tmp_path / "other"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    assert _decide("gh pr create --body-file $NOT_SET_ANYWHERE", repo) is None
 
 
 def test_a_repository_without_the_check_is_ignored(tmp_path):

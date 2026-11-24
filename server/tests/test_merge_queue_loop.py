@@ -32,6 +32,7 @@ from loregarden.services import merge_queue_github, merge_queue_loop
 from loregarden.services.git_merge_noco import MergeOutcome
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import Candidate, enqueue, transition, withdraw
+from loregarden.services.merge_queue_failures import ActionsJob
 from loregarden.services.merge_queue_github import RequiredChecksUnavailable, StagedPullRequest
 from loregarden.services.merge_queue_loop import MergeQueueLoop, MergeVerdict, merge_verdict
 from loregarden.services.pull_request_merge import MergeFailed
@@ -147,6 +148,13 @@ class FakeGitHub:
         self.head_tree_override = ""
         self.merges: list[tuple[int, str]] = []
         self.on_read = None
+        self.log = "E   AssertionError: the tail of the log"
+        #: Actions jobs by check URL; a check with none is not an Actions job.
+        self.jobs: dict[str, ActionsJob] = {}
+        self.jobs_unreachable = False
+        self.attempts: dict[int, int] = {}
+        self.reruns: list[int] = []
+        self.rerun_refused = ""
 
     def open(self, number: int, head_branch: str) -> None:
         self.prs[number] = head_branch
@@ -187,7 +195,21 @@ class FakeGitHub:
         )
 
     def failure_log(self, checks: list[GhCheck]) -> str:
-        return "E   AssertionError: the tail of the log"
+        return self.log
+
+    def failed_job(self, url: str) -> ActionsJob | None:
+        if self.jobs_unreachable:
+            raise GitHubReadError("GitHub did not answer within 30s")
+        return self.jobs.get(url)
+
+    def run_attempt(self, run_id: int) -> int:
+        return self.attempts[run_id]
+
+    def rerun_failed_jobs(self, run_id: int) -> str:
+        self.reruns.append(run_id)
+        if not self.rerun_refused:
+            self.attempts[run_id] += 1
+        return self.rerun_refused
 
     def merge(self, number: int, head_sha: str) -> str:
         """GitHub's squash: the head's tree merged onto the base, as one new commit."""
