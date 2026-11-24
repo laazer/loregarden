@@ -10,12 +10,20 @@ Nothing in this module touches the control-plane database: the module under test
 imports no DB module and must stay that way.
 """
 
+import re
 import time
 from functools import partial
 from unittest.mock import patch
 
 import pytest
-from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
+from loregarden.agents import inherited_wisdom
+from loregarden.agents.inherited_wisdom import (
+    CUT_MARKER,
+    LEARNINGS_SHARE,
+    MAX_WISDOM_CHARS,
+    InheritedWisdom,
+    build_inherited_wisdom,
+)
 from loregarden.models.domain import MemoryStoreKind, MemoryStoreState
 from loregarden.models.domain.enums import MemoryBriefingOutcome
 from loregarden.services.memory_briefing_telemetry import classify
@@ -380,6 +388,121 @@ def test_a_briefing_one_character_over_the_bound_is_truncated(tmp_path):
     assert result.truncated is True
     assert result.pre_truncation_chars == exact
     assert result.chars_injected == exact - 1
+
+
+# ---------------------------------------------------------------------------
+# lg-improved-memory-2772 — long checkpoints cannot push the learnings out, and
+# the counts describe the text rather than what recall found.
+# ---------------------------------------------------------------------------
+
+_LESSONS = 5
+
+
+def _long_checkpoints_and_lessons(
+    tmp_path, *, chars: int, lessons: int = _LESSONS
+) -> AgentMemoryService:
+    memory = _both(tmp_path)
+    for i in range(6):
+        memory.append_checkpoint(
+            ticket_id="42-add-rate-limiting",
+            workspace_slug="lg",
+            run_id=f"run_{i}",
+            entry=f"checkpoint-{i} " + "x" * chars,
+        )
+    for i in range(lessons):
+        memory.upsert_memory(
+            title=f"lesson-{i}", body=f"{_MATCHING_BODY} {'y ' * 60}", workspace_slug="lg"
+        )
+    return memory
+
+
+def _in_text(result, stem: str, count: int) -> int:
+    return sum(f"{stem}-{i}" in result.text for i in range(count))
+
+
+def test_long_checkpoints_do_not_push_learnings_out(tmp_path):
+    memory = _long_checkpoints_and_lessons(tmp_path, chars=5000)
+
+    result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
+
+    assert result.truncated
+    assert _in_text(result, "lesson", _LESSONS) == result.learnings_injected == _LESSONS
+    # The checkpoints take the rest of the cap, newest first, and say they were cut.
+    assert "checkpoint-5" in result.text
+    assert result.chars_injected == MAX_WISDOM_CHARS
+    assert CUT_MARKER in result.text
+    assert result.text.index(CUT_MARKER) < result.text.index("### Related learnings")
+
+
+def test_a_briefing_that_fits_is_not_marked_as_cut(tmp_path):
+    memory = _long_checkpoints_and_lessons(tmp_path, chars=50)
+
+    result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
+
+    assert not result.truncated
+    assert CUT_MARKER not in result.text
+
+
+def test_learnings_take_the_room_short_checkpoints_leave(tmp_path):
+    """The share is a floor, not a ceiling."""
+    memory = _long_checkpoints_and_lessons(tmp_path, chars=20)
+    full = build_inherited_wisdom(_ticket(), "lg", memory=memory, max_chars=100_000)
+    cap = full.pre_truncation_chars - 1
+    assert len(full.text) - full.text.index("### Related learnings") > cap // LEARNINGS_SHARE
+
+    result = build_inherited_wisdom(_ticket(), "lg", memory=memory, max_chars=cap)
+
+    assert (result.learnings_injected, result.checkpoints_injected) == (_LESSONS, 6)
+    assert CUT_MARKER not in result.text
+    assert result.chars_injected == cap
+
+
+def test_long_learnings_are_shortened_and_short_ones_kept_whole(tmp_path):
+    """Real titles reach 1,841 characters; five of them overrun the share."""
+    memory = _long_checkpoints_and_lessons(tmp_path, chars=5000, lessons=3)
+    for i in range(3, _LESSONS):
+        memory.upsert_memory(
+            title=f"lesson-long-{i} " + "z" * 5000, body=_MATCHING_BODY, workspace_slug="lg"
+        )
+
+    result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
+
+    section = result.text[result.text.index("### Related learnings") :].splitlines()[1:]
+    assert len(section) == result.learnings_injected == _LESSONS
+    long = [line for line in section if "lesson-long" in line]
+    short = [line for line in section if "lesson-long" not in line]
+    assert len(long) == 2
+    assert all(line.endswith("…") and len(line) > 800 for line in long)
+    assert not any(line.endswith("…") for line in short)
+    assert len(result.text) <= MAX_WISDOM_CHARS
+
+
+def test_the_section_counts_what_it_shows_at_every_single_cap():
+    """Every cap, so one landing exactly on an entry's boundary is among them."""
+    checkpoints = [f"checkpoint-{i} " + "x" * 60 for i in range(4)]
+    lessons = [f"- **lesson-{i}** " + "y" * 220 for i in range(3)]
+    full = inherited_wisdom._assemble(checkpoints, lessons, 100_000).full_chars
+
+    for cap in range(full + 2):
+        section = inherited_wisdom._assemble(checkpoints, lessons, cap)
+        assert len(section.text) <= cap
+        assert section.learnings == len(re.findall(r"\n- \*\*lesson-", section.text)), cap
+        assert section.checkpoints == len(re.findall(r"\n- (?!\*\*).", section.text)), cap
+
+
+def test_the_counts_are_what_the_text_holds_at_every_cap(tmp_path):
+    memory = _long_checkpoints_and_lessons(tmp_path, chars=300)
+    full = build_inherited_wisdom(_ticket(), "lg", memory=memory, max_chars=100_000)
+
+    for cap in range(0, full.pre_truncation_chars + 50, 37):
+        result = build_inherited_wisdom(_ticket(), "lg", memory=memory, max_chars=cap)
+        assert len(result.text) == result.chars_injected <= cap
+        assert result.learnings_injected == len(result.learning_node_ids)
+        assert result.learnings_injected == _in_text(result, "lesson", _LESSONS), cap
+        # A bullet with at least one character after its marker is a checkpoint shown.
+        shown = re.findall(r"\n- (?!\*\*lesson).", result.text)
+        assert result.checkpoints_injected == len(shown), cap
+        assert result.truncated == (full.pre_truncation_chars > cap)
 
 
 # ---------------------------------------------------------------------------
