@@ -13,6 +13,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ReviewPages } from "./ReviewPages";
 import { ReviewRequests } from "./ReviewRequests";
+import { ReviewShot } from "./ReviewShot";
 
 /**
  * One ticket's review: what to open, what to check, what the agent captured,
@@ -123,19 +124,7 @@ export function ReviewItemPanel({
           <ul className="review-shots">
             {kit.screenshots.map((shot) => {
               const src = captureUrl(ticket.id, shot.capture_id);
-              return (
-                <li key={shot.capture_id}>
-                  <a
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open full size: ${shot.caption || "screenshot"}`}
-                  >
-                    <img src={src} alt={shot.caption || "Screenshot the agent captured"} loading="lazy" />
-                  </a>
-                  {shot.caption ? <span className="review-muted">{shot.caption}</span> : null}
-                </li>
-              );
+              return <ReviewShot key={src} src={src} caption={shot.caption} />;
             })}
           </ul>
         </section>

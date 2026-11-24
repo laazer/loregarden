@@ -974,7 +974,7 @@ describe("the landing after a retry that succeeds", () => {
  */
 describe("the restored surface, from the landing", () => {
   it("reaches the findings by Tab alone from the scope button", async () => {
-    // UX2: "Needs attention" → "Everything" → Refresh → the first TicketLink.
+    // UX2: "Needs attention" → "Everything" → filter → Refresh → the first TicketLink.
     const second = deferred<MonitorFinding[]>();
     monitorFindings
       .mockRejectedValueOnce(new Error("monitor endpoint is down"))
@@ -997,6 +997,8 @@ describe("the restored surface, from the landing", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: /^Everything/ }),
     );
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: /^Filter findings/ }));
     await userEvent.tab();
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Refresh monitor findings" }),

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -83,6 +84,9 @@ describe("Monitor at production volume", () => {
 
     await screen.findByRole("button", { name: /needs attention/i });
 
+    expect(findUsabilityProblems(container)).toEqual([]);
+
+    await userEvent.click(screen.getByRole("button", { name: /everything/i }));
     expect(findUsabilityProblems(container)).toEqual([]);
   });
 });

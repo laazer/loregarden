@@ -27,6 +27,19 @@ def browse_ceiling() -> Path:
     return Path.home().resolve()
 
 
+def in_browse_scope(path: Path) -> bool:
+    """Whether the path browser, importer and editor may reach ``path``.
+
+    Without ``LOREGARDEN_BROWSE_ROOT`` the server's own checkout counts as well
+    as home: ``settings.repo_root`` is the operator's, never a request's, and a
+    checkout outside home otherwise cannot open its own files. A configured root
+    stays the only one, so it can still shrink the surface below the checkout.
+    """
+    if is_under(path, browse_ceiling()):
+        return True
+    return not (settings.browse_root or "").strip() and is_under(path, settings.repo_root)
+
+
 def is_under(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -93,7 +106,7 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
 
 def assert_browse_allowed(path: Path) -> Path:
     resolved = path.resolve()
-    if not is_under(resolved, browse_ceiling()):
+    if not in_browse_scope(resolved):
         raise ValueError("Path is outside the allowed browse scope")
     return resolved
 
@@ -112,7 +125,7 @@ def to_workspace_repo_path(target: Path, *, repo_root: Path) -> str:
 def parent_browse_path(path: Path) -> str | None:
     resolved = path.resolve()
     parent = resolved.parent
-    if parent == resolved or not is_under(parent, browse_ceiling()):
+    if parent == resolved or not in_browse_scope(parent):
         return None
     return str(parent)
 
@@ -123,7 +136,6 @@ def list_browse(path: Path, *, repo_root: Path | None = None) -> dict:
     if not current.is_dir():
         raise ValueError("Not a directory")
 
-    ceiling = browse_ceiling()
     entries: list[dict[str, str]] = []
     try:
         with os.scandir(current) as scan:
@@ -143,7 +155,7 @@ def list_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                     )
                     continue
                 child = Path(entry.path).resolve()
-                if not is_under(child, ceiling):
+                if not in_browse_scope(child):
                     continue
                 entries.append(
                     {
@@ -175,7 +187,6 @@ def list_import_browse(path: Path, *, repo_root: Path | None = None) -> dict:
     if not current.is_dir():
         raise ValueError("Not a directory")
 
-    ceiling = browse_ceiling()
     entries: list[dict[str, str]] = []
     try:
         with os.scandir(current) as scan:
@@ -197,7 +208,7 @@ def list_import_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                 if not is_dir and not (is_file and _is_importable_file(entry.name)):
                     continue
                 child = Path(entry.path).resolve()
-                if not is_under(child, ceiling):
+                if not in_browse_scope(child):
                     continue
                 entries.append(
                     {

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -162,6 +163,27 @@ class _ReviewKitIn(BaseModel):
 
 def captures_root() -> Path:
     return expand_path(settings.review_captures_dir, repo_root=settings.repo_root)
+
+
+def snapshot_captures(target: Path) -> Path:
+    """Copy every stored screenshot to ``target``, for a server on a database copy.
+
+    The database names screenshots by id and the files live outside it, so a
+    copied database without them shows a broken image for each one. ``target``
+    is replaced, and exists (empty) when nothing has been captured, so that
+    server never reads or writes the original's files.
+    """
+    source = captures_root().resolve()
+    resolved = target.resolve()
+    if resolved.is_relative_to(source) or source.is_relative_to(resolved):
+        raise ValueError(f"refusing to replace {target}: it overlaps the live captures in {source}")
+    if target.exists():
+        shutil.rmtree(target)
+    if source.is_dir():
+        shutil.copytree(source, target, symlinks=True)
+    else:
+        target.mkdir(parents=True)
+    return target
 
 
 def _sniff_image(data: bytes) -> tuple[str, str]:

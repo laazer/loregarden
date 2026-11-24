@@ -51,6 +51,7 @@ from lore_eden.instances import (
 from loregarden.config import settings
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_resolve import resolve_sqlite_path, sqlite_url_for_path
+from loregarden.services.review_kit import snapshot_captures
 from loregarden.services.signal_relay import SignalRelay, Terminated
 from loregarden.services.workspace_instance_templates import WorkspaceTemplateSource
 
@@ -167,8 +168,10 @@ class ServerTemplate:
         if not (server_dir / "pyproject.toml").is_file():
             raise TemplateParamError(f"{tree.path} has no server/pyproject.toml to run")
         db_path = ctx.instance_dir / "loregarden.db"
+        captures_dir = ctx.instance_dir / "review-captures"
         if DatabaseMode(values["database"]) == DatabaseMode.SNAPSHOT:
             snapshot_database(db_path)
+            snapshot_captures(captures_dir)
         return LaunchSpec(
             project=PROJECT,
             name=request.name or f"server-{tree.branch or tree.path.name}",
@@ -196,6 +199,7 @@ class ServerTemplate:
                 # inherited these would write its experiments into it.
                 "LOREGARDEN_OBSIDIAN_VAULT_DIR": "",
                 "LOREGARDEN_MEMORY_SQLITE_URL": "",
+                "LOREGARDEN_REVIEW_CAPTURES_DIR": str(captures_dir),
             },
             port_range=SERVER_PORT_RANGE,
             health_path="/health",

@@ -128,6 +128,17 @@ export function isLiveFinding(finding: MonitorFinding): boolean {
   return finding.ticket_state !== "done" && finding.ticket_state !== "wont_do";
 }
 
+export interface FindingLine {
+  key: string;
+  condition: string;
+  stageKey: string;
+  summary: string;
+  /** What is wrong with this ticket in particular. An invariant's summary says
+      only what the rule is and what to do; empty for the other detectors. */
+  detail: string;
+  count: number;
+}
+
 export interface TicketFindings {
   ticketId: string;
   externalId: string;
@@ -135,8 +146,13 @@ export interface TicketFindings {
   state: MonitorFinding["ticket_state"];
   workspaceSlug: string;
   /** One line per (condition, stage), however many runs reported it. */
-  lines: { key: string; condition: string; stageKey: string; summary: string; count: number }[];
+  lines: FindingLine[];
   lastSeen: string | null;
+}
+
+/** A detail opens with the ticket it is about, which is already named beside it. */
+function withoutTicketName(detail: string, externalId: string): string {
+  return externalId && detail.startsWith(`${externalId} `) ? detail.slice(externalId.length + 1) : detail;
 }
 
 /**
@@ -175,6 +191,7 @@ export function groupByTicket(findings: MonitorFinding[]): TicketFindings[] {
         condition: finding.condition,
         stageKey: finding.stage_key,
         summary: finding.summary,
+        detail: withoutTicketName(finding.evidence.detail ?? "", finding.ticket_external_id),
         count: 1,
       });
     }

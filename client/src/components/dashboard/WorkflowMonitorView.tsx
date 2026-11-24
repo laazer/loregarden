@@ -2,15 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api/client";
-import type { MonitorFinding } from "../../api/types";
+import {
+  arrangeFindings,
+  filterArrangement,
+  isEmptyArrangement,
+  type RecurringGroup,
+} from "../../lib/monitorArrangement";
 import {
   conditionLabel,
   conditionMeaning,
-  groupByTicket,
-  groupFindings,
   isAwaitingSamples,
   isLiveFinding,
   type FindingGroup,
+  type FindingLine,
   type TicketFindings,
 } from "../../lib/monitorFindings";
 import { useHeldFailure } from "../../hooks/useHeldFailure";
@@ -21,6 +25,7 @@ import { describeError, endSentence } from "../../state/toastStore";
 import "./WorkflowMonitorView.css";
 import { TicketLink } from "../TicketLink";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { StaleReadNotice } from "../ui/StaleReadNotice";
 
 /**
@@ -36,12 +41,13 @@ import { StaleReadNotice } from "../ui/StaleReadNotice";
  * 1. **On this ticket** — when a ticket is selected, its own findings first.
  * 2. **Recurring** — a condition on the same stage across several tickets is a
  *    pipeline fault, not a ticket's; one row each, the tickets behind it.
- * 3. **By ticket** — every ticket with a finding, named and linked, one line
- *    per condition however many runs reported it.
+ * 3. **By ticket** — what no recurring row already says, under its ticket,
+ *    named and linked, one line per condition however many runs reported it.
  * 4. **Workspace-wide** — findings about a workspace rather than a ticket.
  *
  * "Needs attention" (the default) hides findings on done/won't-do tickets;
- * "Everything" brings them back for a post-mortem. Report-only, like the
+ * "Everything" brings them back for a post-mortem, and the filter narrows
+ * either to a ticket, condition, stage or workspace. Report-only, like the
  * monitor itself: no resolve or dismiss control.
  */
 
@@ -79,6 +85,7 @@ function TicketCard({ ticket }: { ticket: TicketFindings }) {
             </span>
             <span className="wm-line-summary">
               {line.summary}
+              {line.detail && <span className="wm-line-detail">{line.detail}</span>}
               {line.count > 1 && <span className="wm-line-count"> · {line.count} runs</span>}
             </span>
           </li>
@@ -92,32 +99,66 @@ function TicketCard({ ticket }: { ticket: TicketFindings }) {
   );
 }
 
-function RecurringRow({ group, tickets }: { group: FindingGroup; tickets: TicketFindings[] }) {
+/** Live, one invariant names 348 finished tickets; past this many, the operator asks for the rest. */
+const RECURRING_TICKETS_SHOWN = 25;
+
+function RecurringRow({ row }: { row: RecurringGroup }) {
+  const { group, sharedSummary, tickets } = row;
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? tickets : tickets.slice(0, RECURRING_TICKETS_SHOWN);
   const meaning = conditionMeaning(group.condition);
   return (
     <li className="wm-recurring">
-      <details>
+      {/* A filter that kept some of the tickets shows which, unasked. */}
+      <details open={tickets.length < group.tickets || undefined}>
         <summary>
           <span className="wm-recurring-title">
             {conditionLabel(group.condition)}
             {group.stageKey && <code>{group.stageKey}</code>}
           </span>
-          <span className="wm-recurring-count">{group.tickets} tickets</span>
+          <span className="wm-recurring-count">
+            {tickets.length < group.tickets ? `${tickets.length} of ` : ""}
+            {group.tickets} tickets
+          </span>
           {meaning && <span className="wm-meaning">{meaning}</span>}
+          {sharedSummary && <span className="wm-shared-summary">{sharedSummary}</span>}
         </summary>
         <ul className="wm-recurring-tickets">
-          {tickets.map((ticket) => (
+          {visible.map(({ ticket, line }) => (
             <li key={ticket.ticketId}>
               <TicketLink ticketId={ticket.ticketId}>
                 <span className="wm-ticket-id">{ticket.externalId || ticket.ticketId.slice(0, 8)}</span>{" "}
-                {ticket.title}
+                {ticket.title || "Untitled or deleted ticket"}
               </TicketLink>{" "}
               <StatePill state={ticket.state} />
+              <RecurringNote line={line} withSummary={sharedSummary === null} />
             </li>
           ))}
         </ul>
+        {tickets.length > RECURRING_TICKETS_SHOWN && (
+          <Button
+            variant="plain"
+            className="tab-btn wm-show-all"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((shown) => !shown)}
+          >
+            {showAll ? `Show first ${RECURRING_TICKETS_SHOWN}` : `Show all ${tickets.length} tickets`}
+          </Button>
+        )}
       </details>
     </li>
+  );
+}
+
+/** What one ticket adds to its recurring row: what is wrong with it, and its repeats. */
+function RecurringNote({ line, withSummary }: { line: FindingLine; withSummary: boolean }) {
+  const text = [withSummary && line.summary, line.detail].filter(Boolean).join(" ");
+  if (!text && line.count < 2) return null;
+  return (
+    <span className="wm-recurring-note">
+      {text}
+      {line.count > 1 && <span className="wm-line-count"> · {line.count} runs</span>}
+    </span>
   );
 }
 
@@ -172,30 +213,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function arrange(findings: MonitorFinding[], ticketId: string | null) {
-  const ticketFindings = findings.filter((finding) => finding.ticket_id);
-  const workspaceFindings = findings.filter((finding) => !finding.ticket_id);
-  const byTicket = groupByTicket(ticketFindings);
-  const ticketsById = new Map(byTicket.map((ticket) => [ticket.ticketId, ticket]));
-  const recurring = groupFindings(ticketFindings)
-    .filter((group) => group.tickets >= 2)
-    .map((group) => ({
-      group,
-      tickets: [...new Set(group.findings.map((finding) => finding.ticket_id))]
-        .map((id) => ticketsById.get(id))
-        .filter((ticket): ticket is TicketFindings => Boolean(ticket)),
-    }));
-  return {
-    current: ticketId ? (ticketsById.get(ticketId) ?? null) : null,
-    others: byTicket.filter((ticket) => ticket.ticketId !== ticketId),
-    recurring,
-    // One row per condition — forty "timeout floor stale" rows, one per stage,
-    // said the same thing forty times. Inside, WorkspaceRow separates the few
-    // to act on from the many only awaiting data.
-    workspace: groupFindings(workspaceFindings, { byStage: false }),
-  };
-}
-
 export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | null }) {
   const [scope, setScope] = useState<Scope>("attention");
   const findings = useQuery({
@@ -210,7 +227,7 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   // into the loading branch the moment the operator pressed Retry. The subject
   // is the constant this query's key is pinned to — `["monitor-findings",
   // "all"]`, and `api.monitorFindings()` takes no argument — and emphatically
-  // not `ticketId`, which feeds only `arrange()`. Keying it to the selection
+  // not `ticketId`, which feeds only `arrangeFindings()`. Keying it to the selection
   // would drop a still-true failure on a ticket switch that re-reads nothing,
   // and execution would fall through to `!all.length`: the monitor reporting
   // health it never asked about.
@@ -263,7 +280,10 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   const all = useMemo(() => findings.data ?? [], [findings.data]);
   const live = useMemo(() => all.filter(isLiveFinding), [all]);
   const shown = scope === "attention" ? live : all;
-  const view = useMemo(() => arrange(shown, ticketId), [shown, ticketId]);
+  const [filter, setFilter] = useState("");
+  const filterRef = useRef<HTMLInputElement | null>(null);
+  const arranged = useMemo(() => arrangeFindings(shown, ticketId), [shown, ticketId]);
+  const view = useMemo(() => filterArrangement(arranged, filter), [arranged, filter]);
 
   // Error: named, with the reason, and visibly distinct from "nothing to
   // report" — a monitor that renders an empty list when it could not ask is
@@ -349,7 +369,8 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
   }
 
   const finished = all.length - live.length;
-  const nothingShown = !view.current && !view.others.length && !view.workspace.length;
+  const nothingShown = isEmptyArrangement(arranged);
+  const nothingMatches = !nothingShown && isEmptyArrangement(view);
 
   return (
     <div className="wm-root">
@@ -372,6 +393,15 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
             Everything <span className="wm-scope-count">{all.length}</span>
           </button>
         </div>
+        <Input
+          ref={filterRef}
+          type="search"
+          className="wm-filter"
+          aria-label="Filter findings by ticket, condition, stage or workspace"
+          placeholder="Filter findings…"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
         <button
           type="button"
           className="tab-btn"
@@ -410,6 +440,22 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
         </Centred>
       )}
 
+      {nothingMatches && (
+        <div className="wm-centred" role="status">
+          <div className="wm-empty-title">No findings match &ldquo;{filter.trim()}&rdquo;</div>
+          <Button
+            variant="plain"
+            className="tab-btn"
+            onClick={() => {
+              setFilter("");
+              filterRef.current?.focus();
+            }}
+          >
+            Clear filter
+          </Button>
+        </div>
+      )}
+
       {view.current && (
         <Section title="On this ticket">
           <ul className="wm-tickets">
@@ -424,15 +470,18 @@ export function WorkflowMonitorView({ ticketId = null }: { ticketId?: string | n
           hint="The same condition on the same stage in several tickets points at the stage or its agent, not the tickets."
         >
           <ul className="wm-recurring-list">
-            {view.recurring.map(({ group, tickets }) => (
-              <RecurringRow key={group.key} group={group} tickets={tickets} />
+            {view.recurring.map((row) => (
+              <RecurringRow key={row.group.key} row={row} />
             ))}
           </ul>
         </Section>
       )}
 
       {view.others.length > 0 && (
-        <Section title={view.current ? "Other tickets" : "By ticket"}>
+        <Section
+          title={view.current ? "Other tickets" : "By ticket"}
+          hint={view.recurring.length > 0 ? "Findings no recurring row above already covers." : undefined}
+        >
           <ul className="wm-tickets">
             {view.others.map((ticket) => (
               <TicketCard key={ticket.ticketId} ticket={ticket} />

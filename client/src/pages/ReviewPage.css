@@ -230,10 +230,12 @@
 }
 
 .review-shots {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
 }
 
 .review-shots li {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: grid;
   gap: 4px;
 }
@@ -243,6 +245,19 @@
   border: 1px solid var(--bd);
   border-radius: 4px;
   background: var(--bg0);
+}
+
+.review-shot-missing p {
+  margin: 0 0 8px;
+}
+
+.review-shot-missing {
+  padding: 16px;
+  border: 1px dashed var(--bd2);
+  border-radius: 4px;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--txm);
 }
 
 .review-base-row input {

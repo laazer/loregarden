@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import fs from "fs";
 import path from "path";
@@ -54,6 +54,113 @@ it("groups recurrence across tickets and says how many it spans", async () => {
     await screen.findByRole("heading", { name: "Recurring across tickets" }),
   ).toBeInTheDocument();
   expect(screen.getByText("3 tickets")).toBeInTheDocument();
+});
+
+describe("a finding several tickets share", () => {
+  const shared = (id: string, over: Partial<MonitorFinding> = {}) =>
+    finding({
+      ticket_id: id,
+      ticket_external_id: `lor-x-${id}`,
+      ticket_title: `Ticket ${id}`,
+      condition: "invariant_unrepaired",
+      stage_key: "caps",
+      summary: "Split the ticket the finding names.",
+      evidence: { detail: `lor-x-${id} holds 18 criteria` },
+      ...over,
+    });
+
+  it("is said once, with each ticket linked and its own detail beside it", async () => {
+    monitorFindings.mockResolvedValue([shared("1"), shared("2"), shared("3"), shared("3")]);
+    renderView();
+
+    expect(await screen.findAllByText("Split the ticket the finding names.")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "By ticket" })).not.toBeInTheDocument();
+    for (const id of ["1", "2", "3"]) {
+      const row = screen.getByText(new RegExp(`Ticket ${id}`)).closest("li") as HTMLElement;
+      expect(within(row).getByRole("link")).toHaveAttribute("href", expect.stringContaining(`/tickets/${id}`));
+      expect(row.textContent?.match(new RegExp(`lor-x-${id}`, "g"))).toHaveLength(1);
+      expect(row).toHaveTextContent("holds 18 criteria");
+      expect(row).not.toHaveTextContent("Split the ticket");
+    }
+    expect(screen.getByText(/· 2 runs/)).toBeInTheDocument();
+  });
+
+  it("counts a ticket's repeats when it has no detail of its own", async () => {
+    monitorFindings.mockResolvedValue(["1", "2", "2"].map((id) => shared(id, { evidence: {} })));
+    renderView();
+
+    expect((await screen.findByText(/· 2 runs/)).closest("li")).toHaveTextContent("Ticket 2");
+  });
+
+  it("shows each ticket's own sentence when they differ", async () => {
+    monitorFindings.mockResolvedValue([
+      shared("1", { summary: "Dispatched 29 times.", evidence: {} }),
+      shared("2", { summary: "Dispatched 4 times.", evidence: {} }),
+    ]);
+    renderView();
+
+    expect((await screen.findByText(/Ticket 1/)).closest("li")).toHaveTextContent("Dispatched 29 times.");
+    expect(screen.getByText(/Ticket 2/).closest("li")).toHaveTextContent("Dispatched 4 times.");
+  });
+
+  it("lists the first 25 tickets and the rest on request", async () => {
+    monitorFindings.mockResolvedValue(Array.from({ length: 26 }, (_, n) => shared(String(100 + n))));
+    renderView();
+
+    await screen.findByText("26 tickets");
+    expect(screen.getAllByRole("link", { hidden: true })).toHaveLength(25);
+    await userEvent.click(screen.getByText("Show all 26 tickets"));
+    expect(screen.getAllByRole("link", { hidden: true })).toHaveLength(26);
+    await userEvent.click(screen.getByText("Show first 25"));
+    expect(screen.getAllByRole("link", { hidden: true })).toHaveLength(25);
+  });
+
+  it("offers no more when 25 is all there is", async () => {
+    monitorFindings.mockResolvedValue(Array.from({ length: 25 }, (_, n) => shared(String(100 + n))));
+    renderView();
+
+    await screen.findByText("25 tickets");
+    expect(screen.getAllByRole("link", { hidden: true })).toHaveLength(25);
+    expect(screen.queryByText(/^Show all/)).not.toBeInTheDocument();
+  });
+
+  it("is not read as nothing to show when it is all there is", async () => {
+    monitorFindings.mockResolvedValue([shared("1"), shared("2"), shared("9", { ticket_state: "done" })]);
+    renderView();
+
+    await screen.findByText("2 tickets");
+    expect(screen.queryByText("Nothing on live tickets")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 more finding is on finished tickets/)).toBeInTheDocument();
+  });
+
+  it("narrows with the filter without becoming a one-off, and clears back", async () => {
+    monitorFindings.mockResolvedValue([shared("1"), shared("2"), finding({ ticket_id: "8", ticket_title: "Lone" })]);
+    renderView();
+
+    const filter = await screen.findByRole("searchbox", { name: /^Filter findings/ });
+    await userEvent.type(filter, "lor-x-2");
+    expect(screen.getByText("1 of 2 tickets")).toBeInTheDocument();
+    expect(screen.getByText(/Ticket 2/).closest("details")).toHaveAttribute("open");
+    expect(screen.queryByText(/Ticket 1/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Lone")).not.toBeInTheDocument();
+
+    await userEvent.type(filter, "zzz");
+    expect(screen.getByRole("status")).toHaveTextContent(/No findings match .lor-x-2zzz./);
+    expect(screen.queryByText("Nothing on live tickets")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(screen.getByText("2 tickets").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Lone")).toBeInTheDocument();
+    expect(filter).toHaveFocus();
+  });
+});
+
+it("shows a lone finding's own detail with its summary", async () => {
+  monitorFindings.mockResolvedValue([finding({ evidence: { detail: "lor-x-1 holds 18 criteria" } })]);
+
+  renderView();
+
+  expect((await screen.findByText(/attempted 12x/)).closest("li")).toHaveTextContent("holds 18 criteria");
 });
 
 it("names each ticket and links to it", async () => {
