@@ -54,6 +54,10 @@ from loregarden.services.landing_carried_work import done_tickets_that_landed_no
 from loregarden.services.landing_refused import landings_retried_on_refused_tips
 from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
 from loregarden.services.landing_uncommitted import uncommitted_at_landing
+from loregarden.services.learning_ledger_invariants import (
+    BRIEFINGS_COUNT_WHAT_THEY_DELIVERED,
+    CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
+)
 from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
 from loregarden.services.merge_queue_closed_prs import STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR
 from loregarden.services.orchestration_capacity import (
@@ -70,13 +74,10 @@ from loregarden.services.proven_evidence_ledger import PROVEN_EVIDENCE_IS_NOT_HE
 from loregarden.services.queue_repair import held_but_blocked, rearm_held
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
 from loregarden.services.queued_override_invariant import QUEUED_OVERRIDES_APPLY
-from loregarden.services.reference_survey.invariant_checks import (
-    cleared_card_violations,
-    close_cleared_card_violations,
-    finish_carrier_violations,
-    open_carrier_violations,
-    remap_unsplit_violations,
-    unsplit_map_violations,
+from loregarden.services.reference_survey.invariants import (
+    FINISHED_PASSES_CLOSE_THEIR_CARRIER,
+    SURVEY_CARDS_CLOSE,
+    SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD,
 )
 from loregarden.services.rework_cap_checks import REWORK_PAUSES_STAND_ON_CHARGED_ROUNDS
 from loregarden.services.run_failure_invariant import FAILED_RUNS_HAVE_A_FAILURE_KIND
@@ -614,24 +615,6 @@ EVERY_BUSY_LANE_HAS_AN_OCCUPANT = Invariant(
     prevented_by=(
         "server/tests/test_queue_lanes.py"
         "::test_completion_releases_the_slot_the_entry_names_even_with_its_ids_cleared"
-    ),
-)
-
-
-SURVEY_CARDS_CLOSE = Invariant(
-    name="survey_cards_close_with_their_cause",
-    ticket="lg-reference-sources-1613",
-    statement=(
-        "no reference-survey exception card stays pending once a later clone or dispatch "
-        "on its source cleared what it reported"
-    ),
-    detect=cleared_card_violations,
-    repair=close_cleared_card_violations,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 10, 27),
-    prevented_by=(
-        "server/tests/test_survey_card_clearing.py"
-        "::test_every_success_path_closes_the_cards_it_clears"
     ),
 )
 
@@ -1367,42 +1350,6 @@ CAPACITY_BLOCKS_RESUME = Invariant(
 )
 
 
-FINISHED_PASSES_CLOSE_THEIR_CARRIER = Invariant(
-    name="finished_survey_passes_close_their_carrier",
-    ticket="lg-reference-sources-2018",
-    statement=(
-        "no survey carrier stays open, with nothing live behind it, once its pass is "
-        "finished: the pass is the carrier's only deliverable"
-    ),
-    detect=open_carrier_violations,
-    repair=finish_carrier_violations,
-    reentry=InvariantReentry.EXPECTED,
-    since=date(2026, 11, 4),
-    expected_because=(
-        "a carrier's run can die after its agent finished the pass (a lease sweep, a server "
-        "restart, a transition gate that could not run), and only a clean run completion "
-        "finishes the carrier; this repair is that finish"
-    ),
-)
-
-
-SURVEY_MAPS_SPLIT_WHAT_NO_PASS_CAN_HOLD = Invariant(
-    name="survey_maps_split_what_no_pass_can_hold",
-    ticket="lg-reference-sources-2283",
-    statement=(
-        "no admitted survey source's map keeps a directory larger than the pass budget as "
-        "one leaf: no slice can take it, so no pass ever reads it"
-    ),
-    detect=unsplit_map_violations,
-    repair=remap_unsplit_violations,
-    reentry=InvariantReentry.DEFECT,
-    since=date(2026, 11, 6),
-    prevented_by=(
-        "server/tests/test_reference_survey_slicing.py"
-        "::test_every_map_the_feeder_stores_splits_what_no_pass_can_hold"
-    ),
-)
-
 TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS = Invariant(
     name="tickets_are_created_under_the_size_caps",
     ticket="lg-milestone-that-2250",
@@ -1496,4 +1443,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     ORPHANED_SYMBOL_MAP_PARTITION,
+    CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
+    BRIEFINGS_COUNT_WHAT_THEY_DELIVERED,
 )

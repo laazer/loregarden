@@ -51,7 +51,21 @@ logger = logging.getLogger(__name__)
 #:
 #: Truncation is still reported (`truncated`, `pre_truncation_chars`), so the day
 #: this binds again it says so rather than silently shortening the briefing.
+#:
+#: It binds again: since 2026-10-24, 560 of 1668 built briefings overran it (mean
+#: 26k before the cut, longest 46k). Six checkpoints at a few thousand characters
+#: each fill it alone, and cutting the tail took every learning out of 474 of them.
+#: `LEARNINGS_SHARE` is why that cannot happen: checkpoints are what gets cut.
 MAX_WISDOM_CHARS = 16000
+#: Learnings are guaranteed 1/Nth of the cap however long the checkpoints run, and
+#: take whatever the checkpoints leave beyond that. Live learnings run long (the
+#: graph's longest title is 1,841 characters), so five can overrun a quarter of the
+#: cap; the long ones are then shortened rather than any being dropped.
+LEARNINGS_SHARE = 4
+#: A learning shortened below this says too little; the lowest-ranked go instead.
+MIN_LEARNING_CHARS = 200
+#: Ends a checkpoint section that was cut, so the agent knows there is more.
+CUT_MARKER = "\n_(checkpoints cut to fit; read the rest with `loregarden_search_memory`)_"
 _MAX_CHECKPOINTS = 6
 _MAX_MEMORY_HITS = 5
 #: The 1-hop digest's hard caps (179). Per surfaced learning, then per briefing:
@@ -81,6 +95,10 @@ class InheritedWisdom:
     unopenable graph and an empty one cannot report the same thing. Row counts
     are a measurement, not a diagnosis — nothing downstream may infer
     error-versus-empty from them.
+
+    `checkpoints_injected` and `learnings_injected` count what is in `text`, not
+    what recall found; a checkpoint cut partway still counts. The `_saturated`
+    pair is the other half: whether recall hit its cap.
     """
 
     text: str
@@ -374,28 +392,26 @@ def build_inherited_wisdom(
         for line, row in zip(learning_lines, ranked, strict=True)
     ]
 
-    joined = _assemble(checkpoints.entries, learning_blocks)
-    text = joined[:max_chars]
+    section = _assemble(checkpoints.entries, learning_blocks, max_chars)
+    surfaced = [row["id"] for row in ranked[: section.learnings]]
     return InheritedWisdom(
-        text=text,
-        checkpoints_injected=len(checkpoints.entries),
-        learnings_injected=len(hits.entries),
+        text=section.text,
+        checkpoints_injected=section.checkpoints,
+        learnings_injected=len(surfaced),
         checkpoints_saturated=len(checkpoints.entries) == _MAX_CHECKPOINTS,
         learnings_saturated=len(hits.entries) == _MAX_MEMORY_HITS,
         query_had_terms=query_had_terms,
-        chars_injected=len(text),
-        pre_truncation_chars=len(joined),
+        chars_injected=len(section.text),
+        pre_truncation_chars=section.full_chars,
         # Measured against the pre-truncation length. `len(text) == max_chars`
         # would report every briefing that happens to land on the bound as
         # truncated, and the flag would stop meaning "context was lost".
-        truncated=len(joined) > max_chars,
+        truncated=section.full_chars > max_chars,
         store_states=states,
         store_errors=tuple(sorted(errors)),
         elapsed_ms=_elapsed_ms(started),
-        learning_node_ids=tuple(
-            row["id"] for line, row in zip(learning_lines, ranked, strict=True) if line in text
-        ),
-        related_injected=sum(len(lines) for lines in digest.values()),
+        learning_node_ids=tuple(surfaced),
+        related_injected=sum(len(digest.get(node_id, [])) for node_id in surfaced),
         confidence_unavailable=confidence_unavailable,
     )
 
@@ -433,18 +449,85 @@ def _bullet(entry: str) -> str:
     return "\n".join([f"- {head}", *(f"  {line}" if line.strip() else "" for line in rest)])
 
 
-def _assemble(checkpoints: list[str], hits: list[str]) -> str:
-    """The prompt section, or "" when there is nothing to say."""
-    if not checkpoints and not hits:
-        return ""
-    lines = [
+@dataclass(frozen=True, slots=True)
+class _Section:
+    """The assembled text, and how many entries are actually in it."""
+
+    text: str
+    #: Length before any cut, so "was anything lost" is never inferred from `text`.
+    full_chars: int
+    checkpoints: int
+    #: The first this many of the learnings passed in, which are best first.
+    learnings: int
+
+
+_NOTHING_TO_SAY = _Section(text="", full_chars=0, checkpoints=0, learnings=0)
+_INTRO = "\n".join(
+    [
         "Decisions and context already recorded for this ticket. Treat them as",
         "settled unless you find evidence otherwise — do not re-derive them.",
     ]
-    if checkpoints:
-        lines += ["", "### Checkpoints from earlier stages"]
-        lines += [_bullet(entry) for entry in checkpoints]
-    if hits:
-        lines += ["", "### Related learnings"]
-        lines += hits
-    return "\n".join(lines)
+)
+_CHECKPOINTS_HEADING = "\n\n### Checkpoints from earlier stages"
+_LEARNINGS_HEADING = "\n\n### Related learnings"
+
+
+def _assemble(checkpoints: list[str], hits: list[str], max_chars: int) -> _Section:
+    """The prompt section within `max_chars`, or nothing when there is nothing to say.
+
+    When it does not fit, learnings keep their share and the checkpoints are cut.
+    The newest checkpoint comes first, so what goes is the tail of the oldest.
+    """
+    if not checkpoints and not hits:
+        return _NOTHING_TO_SAY
+    bullets = ["\n" + _bullet(entry) for entry in checkpoints]
+    lines = ["\n" + hit for hit in hits]
+    checkpoint_text = _CHECKPOINTS_HEADING + "".join(bullets) if bullets else ""
+    learning_text = _LEARNINGS_HEADING + "".join(lines) if lines else ""
+    full = _INTRO + checkpoint_text + learning_text
+    if len(full) <= max_chars:
+        return _Section(full, len(full), len(bullets), len(lines))
+
+    spare = max_chars - len(_INTRO) - len(checkpoint_text)
+    kept = _shortened(lines, max(max_chars // LEARNINGS_SHARE, spare) - len(_LEARNINGS_HEADING))
+    learning_text = _LEARNINGS_HEADING + "".join(kept) if kept else ""
+    room = max(0, max_chars - len(_INTRO) - len(learning_text))
+    shown, count = _cut_checkpoints(checkpoint_text, bullets, room)
+    # The slice is only for a cap smaller than the intro itself; the parts are
+    # already sized to fit any other.
+    return _Section((_INTRO + shown + learning_text)[:max_chars], len(full), count, len(kept))
+
+
+def _shortened(lines: list[str], budget: int) -> list[str]:
+    """The best lines, shortened so together they fit `budget`.
+
+    Room is shared evenly, and what a short line leaves unused goes to the long
+    ones. Only when an even share says too little are the last-ranked dropped.
+    """
+    kept = lines[: max(0, budget) // MIN_LEARNING_CHARS]
+    shares: dict[int, int] = {}
+    by_length = sorted(range(len(kept)), key=lambda index: len(kept[index]))
+    for done, index in enumerate(by_length):
+        shares[index] = min(len(kept[index]), budget // (len(kept) - done))
+        budget -= shares[index]
+    return [
+        line if len(line) <= shares[index] else line[: shares[index] - 1] + "…"
+        for index, line in enumerate(kept)
+    ]
+
+
+def _cut_checkpoints(text: str, bullets: list[str], room: int) -> tuple[str, int]:
+    """`text` cut to `room`, and how many checkpoints any of it still shows."""
+    if len(text) <= room:
+        return text, len(bullets)
+    marker = CUT_MARKER if room > len(CUT_MARKER) else ""
+    cut = room - len(marker)
+    count = 0
+    offset = len(_CHECKPOINTS_HEADING)
+    for bullet in bullets:
+        # "\n- " opens every bullet; reaching past it means some of it is shown.
+        if offset + len("\n- ") >= cut:
+            break
+        count += 1
+        offset += len(bullet)
+    return text[:cut] + marker, count

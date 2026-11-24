@@ -6,6 +6,8 @@ import json
 import random
 from dataclasses import replace
 from datetime import timedelta
+from functools import partial
+from unittest.mock import patch
 
 import pytest
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
@@ -18,6 +20,7 @@ from loregarden.models.domain import (
     GateOutcome,
     LearningApplication,
     LearningOutcomeRung,
+    MemoryBriefing,
     MemoryBriefingAssembly,
     OrchestratorDecision,
     RunStatus,
@@ -25,11 +28,17 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services import learning_outcomes
+from loregarden.services.invariants import run_invariant
 from loregarden.services.learning_confidence import (
     UNOBSERVED,
     LearningConfidence,
     Observation,
     score,
+)
+from loregarden.services.learning_ledger_invariants import (
+    BRIEFINGS_COUNT_WHAT_THEY_DELIVERED,
+    CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
+    LINKED_SINCE,
 )
 from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.memory_store import AgentMemoryService
@@ -311,23 +320,178 @@ def test_each_surfaced_learning_is_linked_to_the_real_run_once(world):
     assert all(r.settled_at is None and r.outcome is None for r in rows)
 
 
-def test_a_later_briefing_settles_the_earlier_run_and_confidence_reads_it(world):
+def _grade(session) -> int:
+    return run_invariant(session, CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS).repaired
+
+
+def test_the_pass_grades_a_run_its_stage_moved_past_and_confidence_reads_it(world):
     session, workspace, ticket = world
     first = _run(session, workspace, ticket, started=T0)
-    _record(session, first, ticket, ["n-a"])
-    second = _run(session, workspace, ticket, started=T0 + timedelta(hours=1), code="R2")
-    second.status = RunStatus.RUNNING
-    session.add(second)
-    session.commit()
-
+    _record(session, first, ticket, ["n-a", "n-b"])
+    second = _run(
+        session,
+        workspace,
+        ticket,
+        started=T0 + timedelta(hours=1),
+        code="R2",
+        status=RunStatus.RUNNING,
+    )
     _record(session, second, ticket, ["n-a"])
 
-    by_run = {r.run_id: r for r in _applications(session)}
-    assert by_run[first.id].outcome is LearningOutcomeRung.CLEAN_PASS
-    assert by_run[second.id].settled_at is None
+    assert _grade(session) == 1
+
+    by_run = {(r.run_id, r.node_id): r for r in _applications(session)}
+    assert by_run[first.id, "n-a"].outcome is LearningOutcomeRung.CLEAN_PASS
+    assert by_run[first.id, "n-b"].outcome is LearningOutcomeRung.CLEAN_PASS
+    assert by_run[second.id, "n-a"].settled_at is None
     confidence = learning_outcomes.confidence_for(session, ["n-a", "n-unseen"])
     assert confidence["n-a"].observations == 1
     assert confidence["n-unseen"] is UNOBSERVED
+    assert _grade(session) == 0  # and there is nothing left to find
+
+
+def test_runs_that_cannot_be_graded_never_hold_back_those_that_can(world):
+    """The oldest rows were all open, filled the batch, and nothing was graded for 51 days.
+
+    Half of these reach grading and come back pending (the block names another
+    stage), so it is the bound itself that must not count them.
+    """
+    session, workspace, ticket = world
+    for index in range(6):
+        stuck = make_ticket(
+            session,
+            workspace_id=workspace.id,
+            ticket_id=f"t-stuck-{index}",
+            state=TicketState.BLOCKED,
+        )
+        _record(
+            session, _run(session, workspace, stuck, started=T0, code=f"S{index}"), stuck, ["n"]
+        )
+        if index % 2:
+            _event(
+                session,
+                stuck,
+                EventType.ORCHESTRATOR_DECISION,
+                T0 + timedelta(minutes=1),
+                stage_key="review",
+                decision=OrchestratorDecision.CLASSIFIED_BLOCK.value,
+            )
+    ready = _run(session, workspace, ticket, started=T0 + timedelta(hours=1), code="READY")
+    _record(session, ready, ticket, ["n"])
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    found = [run.id for run, _ in learning_outcomes.gradable_runs(session, limit=1)]
+
+    assert found == [ready.id]
+    assert _grade(session) == 1
+
+
+def test_a_backlog_larger_than_one_pass_drains_over_several(world):
+    session, workspace, ticket = world
+    for index in range(5):
+        run = _run(
+            session, workspace, ticket, started=T0 + timedelta(hours=index), code=f"B{index}"
+        )
+        _record(session, run, ticket, ["n"])
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    two_a_pass = partial(learning_outcomes.gradable_runs, limit=2)
+    with patch("loregarden.services.learning_ledger_invariants.gradable_runs", two_a_pass):
+        assert [_grade(session) for _ in range(4)] == [2, 2, 1, 0]
+
+
+@pytest.mark.parametrize(
+    "conclude",
+    ["cancelled", "never_started", "ticket_done", "ticket_wont_do", "reran", "blocked"],
+)
+def test_every_way_a_run_concludes_is_found(world, conclude):
+    """The candidate query must cover every case `derive_settlement` settles."""
+    session, workspace, ticket = world
+    run = _run(session, workspace, ticket, started=T0)
+    _record(session, run, ticket, ["n"])
+    assert list(learning_outcomes.gradable_runs(session)) == []
+    if conclude == "cancelled":
+        run.status = RunStatus.CANCELLED
+    elif conclude == "never_started":
+        run.started_at = None
+    elif conclude == "ticket_done":
+        ticket.state = TicketState.DONE
+    elif conclude == "ticket_wont_do":
+        ticket.state = TicketState.WONT_DO
+    elif conclude == "reran":
+        _run(session, workspace, ticket, started=T0 + timedelta(hours=1), code="R2")
+    else:
+        _event(
+            session,
+            ticket,
+            EventType.ORCHESTRATOR_DECISION,
+            T0 + timedelta(minutes=1),
+            decision=OrchestratorDecision.CLASSIFIED_BLOCK.value,
+        )
+    session.add(run)
+    session.add(ticket)
+    session.commit()
+
+    assert [found.id for found, _ in learning_outcomes.gradable_runs(session)] == [run.id]
+
+
+# ---------------------------------------------------------------------------
+# Counts — a briefing claims the learnings its run was linked to, no more.
+# ---------------------------------------------------------------------------
+
+
+def _claiming(session, run, ticket, *, claimed, linked):
+    return record_briefing(
+        session,
+        run,
+        ticket,
+        replace(
+            InheritedWisdom.not_attempted(),
+            learnings_injected=claimed,
+            learning_node_ids=tuple(linked),
+        ),
+        skipped=False,
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
+    )
+
+
+def _claimed(session, briefing_id) -> int:
+    session.expire_all()
+    return session.get(MemoryBriefing, briefing_id).learnings_injected
+
+
+def test_an_overcounted_briefing_is_corrected_to_what_was_linked(world):
+    session, workspace, ticket = world
+    over = _claiming(
+        session, _run(session, workspace, ticket, started=T0), ticket, claimed=5, linked=["n-a"]
+    )
+    honest_run = _run(session, workspace, ticket, started=T0, code="R2")
+    honest = _claiming(session, honest_run, ticket, claimed=2, linked=["n-a", "n-b"])
+    # The second assembly of one run links nothing new and is still honest.
+    again = _claiming(session, honest_run, ticket, claimed=2, linked=["n-a", "n-b"])
+
+    check = run_invariant(session, BRIEFINGS_COUNT_WHAT_THEY_DELIVERED)
+
+    assert (check.found, check.repaired) == (1, 1)
+    assert [_claimed(session, b) for b in (over, honest, again)] == [1, 2, 2]
+
+
+def test_a_briefing_from_before_linkage_is_left_alone(world):
+    session, workspace, ticket = world
+    briefing = _claiming(
+        session, _run(session, workspace, ticket, started=T0), ticket, claimed=5, linked=[]
+    )
+    row = session.get(MemoryBriefing, briefing)
+    row.created_at = LINKED_SINCE - timedelta(days=1)
+    session.add(row)
+    session.commit()
+
+    assert run_invariant(session, BRIEFINGS_COUNT_WHAT_THEY_DELIVERED).found == 0
+    assert _claimed(session, briefing) == 5
 
 
 # ---------------------------------------------------------------------------

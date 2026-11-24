@@ -6,10 +6,12 @@ Three jobs, one module, because they are one ledger:
    learning a briefing actually injected, keyed by the real `agent_runs.id` and
    the graph `node_id`. Called only from `record_briefing`, the single seam that
    already records every assembly.
-2. **Settle.** `settle_pending` grades concluded runs onto the four-rung ladder
+2. **Settle.** `settle_runs` grades concluded runs onto the four-rung ladder
    from signals the control plane recorded itself — never from anything the
    run's agent reported. There is no self-report path, by construction: nothing
-   here reads a stage report, a verdict, or an agent's text.
+   here reads a stage report, a verdict, or an agent's text. The reconcile pass
+   calls it (`learning_ledger_invariants`); a run concludes without telling
+   anyone, so there is no write to hang this on.
 3. **Read.** `confidence_for` folds settled rows into a Beta posterior via
    `learning_confidence.score`.
 
@@ -38,7 +40,7 @@ the learning, and grading it would be a measurement nobody took.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -70,13 +72,18 @@ from loregarden.services.rework_feedback import (
 )
 from loregarden.services.stage_retry_budget import gate_failure_artifact_title
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import exists, or_
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
 _TERMINAL_RUNS = (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED)
 _FINISHED_TICKETS = (TicketState.DONE, TicketState.WONT_DO)
-#: Settlement runs once per briefing; this bounds what one call can cost.
+#: Runs graded per reconcile pass. It bounds runs *graded*, never runs looked at:
+#: the bound this replaced took the oldest 200 unsettled rows, and once all 200
+#: belonged to runs that could not be graded yet, nothing was ever graded again
+#: (2026-10-03 to 2026-11-23, 8,853 gradable rows waiting behind them).
 SETTLE_BATCH = 200
 _RUNG_ORDER = list(LearningOutcomeRung)
 
@@ -228,32 +235,91 @@ def derive_settlement(session: Session, run: AgentRun) -> Settlement:
     return Settlement(settled=True, rung=max(found, key=_RUNG_ORDER.index))
 
 
-def settle_pending(session: Session, *, limit: int = SETTLE_BATCH) -> int:
-    """Grade every unsettled application whose run has concluded. Returns rows settled.
+def _candidate_run_ids(session: Session) -> Sequence[str]:
+    """Runs with ungraded learnings whose window could have closed, oldest first.
 
-    The caller owns the transaction. Rows whose run is still open are left
-    alone and picked up by a later call.
+    A superset of what `derive_settlement` settles, in SQL, so a run whose
+    window is still open costs no per-run queries. `derive_settlement` decides.
     """
-    rows = session.exec(
-        select(LearningApplication, AgentRun)
-        .join(AgentRun, col(AgentRun.id) == LearningApplication.run_id)
-        .where(col(LearningApplication.settled_at).is_(None))
+    later = aliased(AgentRun)
+    reran = exists().where(
+        later.ticket_id == AgentRun.ticket_id,
+        later.stage_key == AgentRun.stage_key,
+        later.id != AgentRun.id,
+        later.started_at > AgentRun.started_at,
+    )
+    blocked = exists().where(
+        col(DomainEvent.ticket_id) == AgentRun.ticket_id,
+        col(DomainEvent.type) == EventType.ORCHESTRATOR_DECISION,
+        col(DomainEvent.created_at) >= AgentRun.started_at,
+        col(DomainEvent.payload_json).contains(OrchestratorDecision.CLASSIFIED_BLOCK.value),
+    )
+    ungraded = (
+        select(LearningApplication.run_id).where(col(LearningApplication.settled_at).is_(None))
+    ).distinct()
+    return session.exec(
+        select(AgentRun.id)
+        .join(Ticket, col(Ticket.id) == AgentRun.ticket_id, isouter=True)
+        .where(col(AgentRun.id).in_(ungraded))
         .where(col(AgentRun.status).in_(_TERMINAL_RUNS))
-        .order_by(col(LearningApplication.created_at))
-        .limit(limit)
+        .where(
+            or_(
+                AgentRun.status == RunStatus.CANCELLED,
+                col(AgentRun.started_at).is_(None),
+                col(AgentRun.ticket_id).is_(None),
+                col(Ticket.state).in_(_FINISHED_TICKETS),
+                reran,
+                blocked,
+            )
+        )
+        .order_by(col(AgentRun.created_at), col(AgentRun.id))
     ).all()
-    by_run: dict[str, Settlement] = {}
+
+
+def gradable_runs(
+    session: Session, *, limit: int = SETTLE_BATCH
+) -> Iterator[tuple[AgentRun, Settlement]]:
+    """Concluded runs whose learnings are still ungraded, with their grade.
+
+    `limit` counts runs yielded. A run that cannot be graded yet is passed over
+    and never takes a place, so no number of them can hold back the rest.
+    """
+    yielded = 0
+    for run_id in _candidate_run_ids(session):
+        if yielded >= limit:
+            return
+        run = session.get(AgentRun, run_id)
+        if run is None:
+            continue
+        settlement = derive_settlement(session, run)
+        if settlement.settled:
+            yielded += 1
+            yield run, settlement
+
+
+def settle_runs(session: Session, run_ids: Iterable[str]) -> int:
+    """Grade every ungraded learning of these runs. Returns how many runs it settled.
+
+    Each run is graded afresh, so one that reopened since it was listed is left
+    alone. The caller owns the transaction.
+    """
     settled = 0
     now = utcnow()
-    for application, run in rows:
-        if run.id not in by_run:
-            by_run[run.id] = derive_settlement(session, run)
-        outcome = by_run[run.id]
-        if not outcome.settled:
+    for run_id in run_ids:
+        run = session.get(AgentRun, run_id)
+        if run is None:
             continue
-        application.outcome = outcome.rung
-        application.settled_at = now
-        session.add(application)
+        settlement = derive_settlement(session, run)
+        if not settlement.settled:
+            continue
+        for application in session.exec(
+            select(LearningApplication)
+            .where(LearningApplication.run_id == run_id)
+            .where(col(LearningApplication.settled_at).is_(None))
+        ).all():
+            application.outcome = settlement.rung
+            application.settled_at = now
+            session.add(application)
         settled += 1
     return settled
 

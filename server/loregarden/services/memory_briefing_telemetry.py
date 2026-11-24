@@ -27,7 +27,7 @@ from loregarden.models.domain import (
     Ticket,
     utcnow,
 )
-from loregarden.services.learning_outcomes import record_applications, settle_pending
+from loregarden.services.learning_outcomes import record_applications
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -113,33 +113,12 @@ def record_briefing(
                 telemetry, run, briefing_id=row.id, node_ids=result.learning_node_ids
             )
             telemetry.commit()
-            row_id = row.id
+            return row.id
     except Exception:  # noqa: BLE001 - telemetry boundary; logged at warning with the run code
         logger.warning(
             "Memory briefing telemetry write failed for run %s", run.run_code, exc_info=True
         )
         return ""
-    _settle_concluded_runs(session, run)
-    return row_id
-
-
-def _settle_concluded_runs(session: Session, run: AgentRun) -> None:
-    """Grade learnings surfaced into runs that have since concluded (178).
-
-    Here because a new briefing is the moment an earlier run's window can have
-    closed: the next run of a stage starting is what settles the last one. Its
-    own transaction, after the briefing row is committed, so a settlement
-    failure costs the grading and never the briefing's own telemetry row. The
-    rows it could not grade stay unsettled and are retried on the next call.
-    """
-    try:
-        with Session(session.get_bind()) as ledger:
-            settle_pending(ledger)
-            ledger.commit()
-    except Exception:  # noqa: BLE001 - telemetry boundary; unsettled rows retry next briefing
-        logger.warning(
-            "Learning outcome settlement failed after run %s", run.run_code, exc_info=True
-        )
 
 
 class MemoryBriefingStats(BaseModel):

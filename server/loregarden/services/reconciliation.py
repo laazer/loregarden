@@ -55,12 +55,14 @@ from loregarden.services.integration_branch_health import check_integration_bran
 from loregarden.services.invariant_registry import (
     ACTIVE_WORKTREE_ROWS_HAVE_THEIR_CHECKOUT,
     AWAITING_STAGES_ARE_ASKED,
+    BRIEFINGS_COUNT_WHAT_THEY_DELIVERED,
     CAPACITY_BLOCKS_RESUME,
     CAPACITY_WAITS_ARE_NOT_WORK,
     CHECKOUTS_KEEP_THEIR_BRANCH,
     CLEANED_WORKTREE_ROWS_LEAVE_NO_CHECKOUT,
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     CLOSED_TICKETS_TAKE_NO_ANSWERS,
+    CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     EVERY_BLOCK_IS_SETTLED,
@@ -434,6 +436,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # found. Not at startup: it is a filesystem walk that repairs nothing a
     # minute later would not.
     _invariant(ORPHANED_SYMBOL_MAP_PARTITION, at_startup=False),
+    # After everything that settles a run or finishes a ticket this pass, so a run
+    # that concluded a step ago is graded now. Not at startup: the first passes
+    # grade a backlog, and boot should not wait on it (lg-improved-memory-2772).
+    _invariant(CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS, at_startup=False),
+    _invariant(BRIEFINGS_COUNT_WHAT_THEY_DELIVERED, at_startup=False),
 )
 
 
