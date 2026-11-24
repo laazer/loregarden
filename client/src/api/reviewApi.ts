@@ -81,11 +81,21 @@ export interface ReviewTicket {
   checked_criteria: string[];
 }
 
+/** Mirrors `LaunchKind` in `services/review_config.py`: a check's exit code is its answer. */
+export type LaunchKind = "app" | "check";
+
+/** Mirrors `LaunchOffer`: which of the workspace's targets run this ticket's changes. */
+export interface LaunchOffer {
+  match: "matched" | "no_match" | "unknown" | "unconfigured";
+  targets: string[];
+}
+
 export interface ReviewItem {
   approval: Approval;
   ticket: ReviewTicket;
   /** Scene files the ticket changes; null when git could not say. */
   scenes: string[] | null;
+  launch: LaunchOffer;
   kit: TicketReviewKit;
 }
 
@@ -109,6 +119,8 @@ export interface LaunchState {
   workspace_slug: string;
   ref: string;
   sha: string;
+  target: string;
+  kind: LaunchKind;
   scene: string;
   worktree: string;
   phase: LaunchPhase;
@@ -120,7 +132,12 @@ export interface LaunchState {
 }
 
 export interface LaunchView {
-  config: { configured: boolean; path: string; error: string };
+  config: {
+    configured: boolean;
+    path: string;
+    error: string;
+    targets: { name: string; kind: LaunchKind }[];
+  };
   state: LaunchState | null;
 }
 
@@ -141,7 +158,7 @@ export const reviewApi = {
     ),
   launchStatus: (workspaceSlug: string): Promise<LaunchView> =>
     request<LaunchView>(`/api/review/launch/${encodeURIComponent(workspaceSlug)}`),
-  launch: (workspaceSlug: string, body: { ref: string; scene?: string }): Promise<LaunchState> =>
+  launch: (workspaceSlug: string, body: { ref: string; scene?: string; target?: string }): Promise<LaunchState> =>
     request<LaunchState>(`/api/review/launch/${encodeURIComponent(workspaceSlug)}`, {
       method: "POST",
       body: JSON.stringify(body),

@@ -23,7 +23,13 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.branch_names import resolve_ticket_branch
-from loregarden.services.gate_checklist import resolve_review_scenes
+from loregarden.services.gate_checklist import resolve_review_files, review_scenes
+from loregarden.services.review_config import (
+    LaunchOffer,
+    ReviewConfig,
+    launch_offer,
+    readable_config,
+)
 from loregarden.services.review_kit import TicketReviewKit, review_kits_for
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
@@ -44,6 +50,8 @@ class ReviewItem(BaseModel):
     ticket: ReviewTicket
     #: Scene files the ticket's branch changes; None when git could not say.
     scenes: list[str] | None
+    #: What runs this ticket's changes; a build's tickets need not share a target.
+    launch: LaunchOffer
     kit: TicketReviewKit
 
 
@@ -99,19 +107,23 @@ def build_review_queue(session: Session, *, workspace_slug: str = "") -> ReviewQ
 
     kits = review_kits_for(session, [ticket.id for _, ticket, _ in rows])
     builds: dict[tuple[str, str], ReviewBuild] = {}
+    configs: dict[str, ReviewConfig | None] = {}
     for approval, ticket, workspace in rows:
         ref, combined = _build_ref(ticket)
         build = builds.setdefault(
             (workspace.slug, ref),
             ReviewBuild(workspace_slug=workspace.slug, ref=ref, combined=combined),
         )
-        # Empty outside workspaces whose playable unit is a scene file.
-        scenes = resolve_review_scenes(session, ticket)
+        if workspace.id not in configs:
+            configs[workspace.id] = readable_config(workspace)
+        files = resolve_review_files(session, ticket)
         build.items.append(
             ReviewItem(
                 approval=approval_to_view(session, approval),
                 ticket=_review_ticket(ticket),
-                scenes=scenes,
+                # Empty outside workspaces whose playable unit is a scene file.
+                scenes=review_scenes(files),
+                launch=launch_offer(configs[workspace.id], files),
                 kit=kits.get(ticket.id, TicketReviewKit()),
             )
         )

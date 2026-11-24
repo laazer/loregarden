@@ -26,13 +26,9 @@ from loregarden.services.operations.spec import (
 )
 from loregarden.services.organization_gate_service import workspace_for_slug
 from loregarden.services.review_capture import CapturePaths, CaptureResult, capture_pages
+from loregarden.services.review_config import ConfigStatus, config_status
 from loregarden.services.review_kit import capture_path
-from loregarden.services.review_launcher import (
-    ConfigStatus,
-    LaunchState,
-    config_status,
-    review_launcher,
-)
+from loregarden.services.review_launcher import LaunchState, review_launcher
 from loregarden.services.review_preview import PreviewView, preview_status, start_preview
 from loregarden.services.review_queue import ReviewQueue, build_review_queue
 from loregarden.services.review_try import TryRequest, TryResult, send_try_request
@@ -64,6 +60,8 @@ class LaunchRequest(BaseModel):
     workspace_slug: str
     ref: str
     scene: str = ""
+    #: A target named in the workspace's review.yaml; may be empty when it has one.
+    target: str = ""
 
 
 class LaunchView(BaseModel):
@@ -102,7 +100,9 @@ def _launch_status(session: Session, ref: WorkspaceRef, _caller: Caller) -> Laun
 
 def _launch(session: Session, request: LaunchRequest, _caller: Caller) -> LaunchState:
     workspace = workspace_for_slug(session, request.workspace_slug)
-    return review_launcher.launch(workspace, ref=request.ref, scene=request.scene)
+    return review_launcher.launch(
+        workspace, ref=request.ref, scene=request.scene, target=request.target
+    )
 
 
 def _stop(session: Session, ref: WorkspaceRef, _caller: Caller) -> LaunchView:

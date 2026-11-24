@@ -2,10 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 import { api } from "../api/client";
-import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { chatScopeWorkspaceSlug } from "../lib/chatScope";
 import { useChatScopeKey } from "./useChatScope";
+import { useScreenTicket } from "./useScreenTicket";
 
 export interface TerminalTarget {
   /** Empty when the current screen names no single workspace. */
@@ -36,8 +36,8 @@ export function useTerminalTarget(): TerminalTarget {
   const filterWorkspace = useUiStore((s) => s.workspace);
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
-  const pathTicketId = useTicketIdFromPath();
-  const ticketId = onBranchTriage ? null : pathTicketId;
+  const screenTicket = useScreenTicket();
+  const ticketId = onBranchTriage ? null : screenTicket.ticketId;
   const onChat = pathname === "/chat" || pathname.startsWith("/chat/");
   // "" for a global chat, which spans workspaces and so names none of its own.
   const chatWorkspaceSlug = chatScopeWorkspaceSlug(useChatScopeKey());
@@ -55,6 +55,12 @@ export function useTerminalTarget(): TerminalTarget {
 
   if (ticket) {
     return { workspaceSlug: ticket.workspace_slug, agent: ticket.current_stage_agent };
+  }
+
+  // The review page shows a ticket it has not found yet; the filter's workspace
+  // may be another repo.
+  if (screenTicket.resolving) {
+    return { workspaceSlug: "", agent: "" };
   }
 
   // The chat screen names a workspace of its own — the one answering the turns,

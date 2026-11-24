@@ -272,7 +272,7 @@ def test_landed_scenes_come_from_the_landing_merge_even_once_main_holds_it(tmp_p
     """The branch diff goes empty when the integration branch reaches main; the
     landing merge still names exactly the ticket's scenes, not a sibling's."""
     from loregarden.db.session import engine
-    from loregarden.services.gate_checklist import resolve_review_scenes
+    from loregarden.services.gate_checklist import resolve_review_files, review_scenes
 
     repo = tmp_path / "game"
     repo.mkdir()
@@ -310,4 +310,55 @@ def test_landed_scenes_come_from_the_landing_merge_even_once_main_holds_it(tmp_p
         session.add(ticket)
         session.commit()
 
-        assert resolve_review_scenes(session, ticket) == ["mine.tscn"]
+        files = resolve_review_files(session, ticket)
+        assert files == ["mine.tscn", "notes.txt"]
+        assert review_scenes(files) == ["mine.tscn"]
+        assert review_scenes(None) is None
+
+
+def test_the_queue_offers_each_ticket_what_runs_its_own_changes(client: TestClient, tmp_path: Path):
+    """Two tickets on one workspace, one per half of the repository: neither is
+    offered the other's target (181 was offered the game for a backend change)."""
+    from loregarden.db.session import engine
+
+    repo = tmp_path / "mixed"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "README.md").write_text("r")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    for branch, name in (("loregarden/scene", "scenes/a.tscn"), ("loregarden/api", "backend/a.py")):
+        _git(repo, "checkout", "-q", "-b", branch, "main")
+        path = repo / name
+        path.parent.mkdir()
+        path.write_text("x")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-q", "-m", branch)
+    _git(repo, "checkout", "-q", "main")
+    (repo / ".loregarden").mkdir()
+    (repo / ".loregarden" / "review.yaml").write_text(
+        'targets:\n  - {name: game, paths: ["scenes/*"], command: ["true"]}\n'
+        '  - {name: tests, kind: check, paths: ["backend/*"], command: ["true"]}\n'
+    )
+    with Session(engine) as session:
+        workspace = make_workspace(session, slug="mixed-ws", repo_path=str(repo))
+        for name in ("scene", "api"):
+            ticket = make_ticket(session, workspace_id=workspace.id, external_id=f"mixed-{name}")
+            ticket.branch = f"loregarden/{name}"
+            session.add(ticket)
+            session.commit()
+            _gate(session, ticket, workspace)
+
+    body = client.get("/api/review/queue?workspace_slug=mixed-ws").json()
+
+    offers = {
+        item["ticket"]["external_id"]: item["launch"]
+        for build in body["builds"]
+        for item in build["items"]
+    }
+    assert offers == {
+        "mixed-scene": {"match": "matched", "targets": ["game"]},
+        "mixed-api": {"match": "matched", "targets": ["tests"]},
+    }

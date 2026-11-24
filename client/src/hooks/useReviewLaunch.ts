@@ -8,16 +8,23 @@ export function launchStatusKey(workspaceSlug: string) {
   return ["review-launch", workspaceSlug] as const;
 }
 
+/** One launch: a named target, or a scene in whichever target opens scenes. */
+export interface LaunchChoice {
+  target?: string;
+  scene?: string;
+}
+
 /**
  * Launch (or relaunch) a build's review checkout, optionally at one scene.
- * Shared by the build's Launch button and each ticket's Open scene button so
- * both refresh the same status.
+ * Shared by the Launch buttons and each ticket's Open scene button so both
+ * refresh the same status.
  */
 export function useLaunchBuild(build: ReviewBuild, errorTitle: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorTitle },
-    mutationFn: (scene: string) => reviewApi.launch(build.workspace_slug, { ref: build.ref, scene }),
+    mutationFn: (choice: LaunchChoice) =>
+      reviewApi.launch(build.workspace_slug, { ref: build.ref, ...choice }),
     onSettled: () => qc.invalidateQueries({ queryKey: launchStatusKey(build.workspace_slug) }),
   });
 }

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { reviewApi } from "../../api/reviewApi";
 import { useTerminalTarget } from "../useTerminalTarget";
 import { useUiStore } from "../../state/uiStore";
 
@@ -11,6 +12,11 @@ jest.mock("../../api/client", () => ({
   // `workspaces` too: the chat screen resolves its workspace through the same
   // list the picker shows.
   api: { ticket: jest.fn(), workspaces: jest.fn(async () => []) },
+}));
+
+jest.mock("../../api/reviewApi", () => ({
+  ...jest.requireActual("../../api/reviewApi"),
+  reviewApi: { queue: jest.fn() },
 }));
 
 const mockTicket = api.ticket as jest.MockedFunction<typeof api.ticket>;
@@ -117,4 +123,21 @@ it("asks for no ticket when the route has none", () => {
   renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/queue") });
 
   expect(mockTicket).not.toHaveBeenCalled();
+});
+
+it("opens the shell in the workspace of the ticket under review", async () => {
+  useUiStore.setState({ workspace: "loregarden" });
+  (reviewApi.queue as jest.Mock).mockResolvedValue({
+    total: 1,
+    builds: [
+      { workspace_slug: "blobert", ref: "loregarden/b", items: [{ approval: { id: "a-1" }, ticket: { id: "t-1" } }] },
+    ],
+  });
+  mockTicket.mockResolvedValue({ workspace_slug: "blobert", current_stage_agent: "ac_gatekeeper" } as never);
+
+  const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/review") });
+
+  // Not the filter's while the queue loads: a shell there runs in another repo.
+  expect(result.current.workspaceSlug).toBe("");
+  await waitFor(() => expect(result.current).toEqual({ workspaceSlug: "blobert", agent: "ac_gatekeeper" }));
 });

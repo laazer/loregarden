@@ -1,32 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { reviewApi, type ReviewBuild } from "../api/reviewApi";
+import type { ReviewBuild } from "../api/reviewApi";
 import { ReviewItemPanel } from "../components/review/ReviewItemPanel";
 import { ReviewLaunchPanel } from "../components/review/ReviewLaunchPanel";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { Button } from "../components/ui/Button";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
-import { REVIEW_QUEUE_KEY } from "../hooks/useReviewLaunch";
+import { useReviewQueue } from "../hooks/useScreenTicket";
 import { pathForPage } from "../lib/appNavigation";
+import { reviewBuildKey, selectReview } from "../lib/reviewSelection";
 import "./ReviewPage.css";
-
-function buildKey(build: ReviewBuild): string {
-  return `${build.workspace_slug}:${build.ref}`;
-}
-
-function findApproval(
-  builds: ReviewBuild[],
-  approvalId: string | null,
-): { build: ReviewBuild; index: number } | null {
-  if (!approvalId) return null;
-  for (const build of builds) {
-    const index = build.items.findIndex((item) => item.approval.id === approvalId);
-    if (index >= 0) return { build, index };
-  }
-  return null;
-}
 
 /**
  * "What is waiting for me to look at it, and what do I run to look?"
@@ -44,37 +28,17 @@ function findApproval(
 export function ReviewPage() {
   const [params, setParams] = useSearchParams();
   const workspace = params.get("workspace") ?? "";
-  const queue = useQuery({
-    queryKey: [...REVIEW_QUEUE_KEY, workspace],
-    queryFn: () => reviewApi.queue(workspace || undefined),
-    meta: { suppressErrorToast: true },
-  });
+  const queue = useReviewQueue(workspace);
 
   const builds = useMemo(() => queue.data?.builds ?? [], [queue.data]);
-  // `?approval=` (an inbox card's link) names the gate itself and wins over
-  // the positional `build`/`item`; a gate already resolved falls through.
-  const linked = findApproval(builds, params.get("approval"));
-  const selected =
-    linked?.build ??
-    builds.find((b) => buildKey(b) === params.get("build")) ??
-    builds[0] ??
-    null;
+  const { build: selected, index, item } = selectReview(builds, params);
   const itemCount = selected?.items.length ?? 0;
-  const requested = linked?.index ?? Number(params.get("item") ?? 0);
-  const index =
-    itemCount === 0
-      ? 0
-      : Math.min(
-          Math.max(0, Number.isFinite(requested) ? requested : 0),
-          itemCount - 1,
-        );
-  const item = selected?.items[index] ?? null;
 
   const go = (next: { build?: ReviewBuild; item?: number }) => {
     const p = new URLSearchParams(params);
     p.delete("approval");
-    if (!next.build && selected) p.set("build", buildKey(selected));
-    if (next.build) p.set("build", buildKey(next.build));
+    if (!next.build && selected) p.set("build", reviewBuildKey(selected));
+    if (next.build) p.set("build", reviewBuildKey(next.build));
     p.set("item", String(next.item ?? 0));
     setParams(p, { replace: true });
   };
@@ -129,9 +93,9 @@ export function ReviewPage() {
         </h2>
         <ul aria-label="Builds to review">
           {builds.map((build) => {
-            const current = buildKey(build) === buildKey(selected);
+            const current = reviewBuildKey(build) === reviewBuildKey(selected);
             return (
-              <li key={buildKey(build)}>
+              <li key={reviewBuildKey(build)}>
                 <Button
                   variant="plain"
                   className="review-build-button"
@@ -177,7 +141,7 @@ export function ReviewPage() {
               ? `${selected.items.length} tickets in one build`
               : `${selected.items[0]?.ticket.external_id ?? "Ticket"} on its own branch`}
           </h2>
-          <ReviewLaunchPanel build={selected} />
+          {item ? <ReviewLaunchPanel build={selected} item={item} /> : null}
         </section>
 
         <div className="review-walk-body">

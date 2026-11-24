@@ -1,15 +1,10 @@
 """Run the build a reviewer needs, from one button.
 
-A workspace says how its build runs in a committed ``.loregarden/review.yaml``:
-
-    launch:
-      prepare: ["godot", "--headless", "--import", "--path", "{worktree}"]
-      command: ["godot", "--path", "{worktree}"]
-      scene_command: ["godot", "--path", "{worktree}", "res://{scene}"]
-
-``prepare`` runs to completion first (optional); ``command`` starts the build,
-or ``scene_command`` when the reviewer picked a scene. ``{worktree}`` is the
-review checkout and ``{scene}`` a scene path relative to it.
+A workspace says what it can run in ``.loregarden/review.yaml``; its format, and
+which of it fits a ticket, are `review_config`. ``prepare`` runs to completion
+first (optional); ``command`` starts the build, or ``scene_command`` when the
+reviewer picked a scene. ``{worktree}`` is the review checkout and ``{scene}`` a
+scene path relative to it.
 
 The review checkout is one detached worktree per workspace beside the ticket
 worktrees (``.worktrees/review-<slug>``), moved to the requested ref on every
@@ -36,17 +31,23 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 
-import yaml
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_resolve import expand_path
+from loregarden.services.review_config import (
+    CONFIG_FILE,
+    LaunchError,
+    LaunchKind,
+    LaunchSpec,
+    choose_target,
+    load_review_config,
+)
 from loregarden.services.workspace_paths import resolve_workspace_root
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-CONFIG_FILE = Path(".loregarden") / "review.yaml"
 PREPARE_TIMEOUT_SECONDS = 900
 #: A build that exits non-zero this soon after starting failed to start.
 STARTUP_GRACE_SECONDS = 5.0
@@ -55,24 +56,6 @@ _GIT_TIMEOUT_SECONDS = 120
 #: Terminal colour/cursor sequences: Godot and most CLIs colour their output.
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _SCENE = re.compile(r"^(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./ -]*\.(tscn|scn)$")
-
-
-class LaunchError(ValueError):
-    """The launch cannot start; the message says why and what to fix."""
-
-
-class LaunchSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    prepare: list[str] = Field(default_factory=list)
-    command: list[str] = Field(min_length=1)
-    scene_command: list[str] = Field(default_factory=list)
-
-
-class ReviewConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    launch: LaunchSpec
 
 
 class LaunchPhase(StrEnum):
@@ -87,6 +70,8 @@ class LaunchState(BaseModel):
     workspace_slug: str
     ref: str
     sha: str
+    target: str
+    kind: LaunchKind
     scene: str = ""
     worktree: str
     phase: LaunchPhase
@@ -95,39 +80,6 @@ class LaunchState(BaseModel):
     error: str = ""
     log_tail: list[str] = Field(default_factory=list)
     started_at: str
-
-
-class ConfigStatus(BaseModel):
-    """Whether a workspace can launch from the review page, and why not."""
-
-    configured: bool
-    path: str
-    error: str = ""
-
-
-def _config_path(workspace: Workspace) -> Path:
-    return resolve_workspace_root(workspace) / CONFIG_FILE
-
-
-def load_review_config(workspace: Workspace) -> ReviewConfig | None:
-    """The workspace's launch config, None when it has none. Raises on a bad file."""
-    path = _config_path(workspace)
-    if not path.is_file():
-        return None
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return ReviewConfig.model_validate(raw)
-    except (yaml.YAMLError, ValidationError) as exc:
-        raise LaunchError(f"{path} is not a valid review config: {exc}") from exc
-
-
-def config_status(workspace: Workspace) -> ConfigStatus:
-    path = _config_path(workspace)
-    try:
-        config = load_review_config(workspace)
-    except LaunchError as exc:
-        return ConfigStatus(configured=False, path=str(path), error=str(exc))
-    return ConfigStatus(configured=config is not None, path=str(path))
 
 
 def review_worktree_path(workspace: Workspace) -> Path:
@@ -206,7 +158,9 @@ class ReviewLauncher:
             launch.state.log_tail = _tail(launch.log_path)
             return launch.state.model_copy()
 
-    def launch(self, workspace: Workspace, *, ref: str, scene: str = "") -> LaunchState:
+    def launch(
+        self, workspace: Workspace, *, ref: str, scene: str = "", target: str = ""
+    ) -> LaunchState:
         config = load_review_config(workspace)
         if config is None:
             raise LaunchError(
@@ -215,26 +169,24 @@ class ReviewLauncher:
             )
         if scene and not _SCENE.match(scene):
             raise LaunchError(f"{scene!r} is not a scene path inside the project")
-        if scene and not config.launch.scene_command:
-            raise LaunchError(f"{CONFIG_FILE} has no launch.scene_command to open one scene")
+        name, spec = choose_target(config, target, scene)
         self.stop(workspace.slug)
         worktree, sha = checkout_review_worktree(workspace, ref)
 
         log_path = _logs_dir() / f"{workspace.slug}.log"
         log_path.write_text("", encoding="utf-8")
         state = LaunchState(
-            workspace_slug=workspace.slug, ref=ref, sha=sha, scene=scene,
-            worktree=str(worktree),
-            phase=LaunchPhase.PREPARING if config.launch.prepare else LaunchPhase.RUNNING,
+            workspace_slug=workspace.slug, ref=ref, sha=sha, target=name, kind=spec.kind,
+            scene=scene, worktree=str(worktree),
+            phase=LaunchPhase.PREPARING if spec.prepare else LaunchPhase.RUNNING,
             started_at=datetime.now(timezone.utc).isoformat(),
         )  # fmt: skip
         launch = _Launch(state, log_path)
         with self._lock:
             self._launches[workspace.slug] = launch
-        argv = config.launch.scene_command if scene else config.launch.command
         threading.Thread(
             target=self._run,
-            args=(launch, config.launch.prepare, argv, worktree, scene),
+            args=(launch, spec, worktree, scene),
             name=f"review-launch-{workspace.slug}",
             daemon=True,
         ).start()
@@ -261,23 +213,26 @@ class ReviewLauncher:
     def _run(
         self,
         launch: _Launch,
-        prepare: list[str],
-        argv: list[str],
+        spec: LaunchSpec,
         worktree: Path,
         scene: str,
     ) -> None:
+        cwd = worktree / spec.cwd
+        argv = spec.scene_command if scene else spec.command
         try:
-            if prepare:
-                self._prepare(launch, _render(prepare, worktree=worktree, scene=scene), worktree)
+            if not cwd.is_dir():
+                raise LaunchError(f"{spec.cwd} is not a directory at this ref")
+            if spec.prepare:
+                self._prepare(launch, _render(spec.prepare, worktree=worktree, scene=scene), cwd)
                 if launch.stop_requested:
                     self._finish(launch, LaunchPhase.STOPPED)
                     return
-            self._start(launch, _render(argv, worktree=worktree, scene=scene), worktree)
+            self._start(launch, _render(argv, worktree=worktree, scene=scene), cwd)
         except (LaunchError, OSError) as exc:
             logger.warning("review build for %s failed: %s", launch.state.workspace_slug, exc)
             self._finish(launch, LaunchPhase.FAILED, error=str(exc))
 
-    def _prepare(self, launch: _Launch, argv: list[str], worktree: Path) -> None:
+    def _prepare(self, launch: _Launch, argv: list[str], cwd: Path) -> None:
         # Popen rather than run: a stop (or a newer launch) must be able to kill
         # a ten-minute import, not wait it out with the checkout half-moved.
         with launch.log_path.open("a", encoding="utf-8") as log:
@@ -285,7 +240,7 @@ class ReviewLauncher:
             log.flush()
             try:
                 process = subprocess.Popen(  # noqa: S603 - argv from the workspace's committed config
-                    argv, cwd=worktree, stdout=log, stderr=subprocess.STDOUT,
+                    argv, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )  # fmt: skip
             except FileNotFoundError as exc:
@@ -304,13 +259,13 @@ class ReviewLauncher:
         with self._lock:
             launch.state.phase = LaunchPhase.RUNNING
 
-    def _start(self, launch: _Launch, argv: list[str], worktree: Path) -> None:
+    def _start(self, launch: _Launch, argv: list[str], cwd: Path) -> None:
         log = launch.log_path.open("a", encoding="utf-8")
         log.write(f"$ {' '.join(argv)}\n")
         log.flush()
         try:
             process = subprocess.Popen(  # noqa: S603 - argv from the workspace's committed config
-                argv, cwd=worktree, stdout=log, stderr=subprocess.STDOUT,
+                argv, cwd=cwd, stdout=log, stderr=subprocess.STDOUT,
                 start_new_session=True,
             )  # fmt: skip
         except FileNotFoundError as exc:
@@ -325,6 +280,11 @@ class ReviewLauncher:
         log.close()
         if launch.stop_requested:
             self._finish(launch, LaunchPhase.STOPPED, exit_code=code)
+        elif code != 0 and launch.state.kind is LaunchKind.CHECK:
+            self._finish(
+                launch, LaunchPhase.FAILED, exit_code=code,
+                error=f"{launch.state.target} exited {code}; see the log below",
+            )  # fmt: skip
         elif code != 0 and time.monotonic() - started < STARTUP_GRACE_SECONDS:
             self._finish(
                 launch, LaunchPhase.FAILED, exit_code=code,
