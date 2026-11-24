@@ -5,7 +5,6 @@ import { api, type Approval } from "../api/client";
 import type { TicketDetail, TicketSummary, WorkspaceRuntimeSettings } from "../api/client";
 import { initiativeIdFromPath, ticketUuidForRef } from "../lib/appNavigation";
 import { chatScopeInitiativeId, chatScopeWorkspaceSlug, initiativeChatScope } from "../lib/chatScope";
-import { useTicketIdFromPath } from "../lib/useAppNavigation";
 import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatSession } from "../lib/chatSession";
 import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE, workspaceThreadPromptKind } from "../lib/dockChatPrompts";
@@ -19,6 +18,7 @@ import { useBranchChatSession } from "./useBranchChatSession";
 import { chatScopeLabel, useChatScopeKey } from "./useChatScope";
 import { useInitiativeBaxterSession } from "./useInitiativeBaxterSession";
 import { planQueryKey, useInitiativePlanner } from "./useInitiativePlanner";
+import { useScreenTicket } from "./useScreenTicket";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
 
@@ -225,8 +225,9 @@ export interface ScreenPrompts {
  * branch — which is safe because each guards its queries on having an id, so
  * the inactive one issues no requests.
  *
- * The ticket id is read from the path rather than `useParams`: this runs above
- * `<Routes>`, where no route has matched and params are always empty.
+ * The ticket id is read from the location rather than `useParams`: this runs
+ * above `<Routes>`, where no route has matched and params are always empty. The
+ * review page counts as showing a ticket; `useScreenTicket` says which.
  *
  * A screen that owns no conversation of its own — Studio, Queue, the Console —
  * still gets one: the workspace's Baxter thread, the same thread `/chat` shows.
@@ -239,8 +240,8 @@ export function useActiveChatSession(): ActiveChatSession {
   const branch = useUiStore((s) => s.branchTriageBranch);
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
-  const pathTicketId = useTicketIdFromPath();
-  const ticketId = onBranchTriage ? null : pathTicketId;
+  const screenTicket = useScreenTicket();
+  const ticketId = onBranchTriage ? null : screenTicket.ticketId;
   // `/chat` composes for this thread itself, and Home's hero is the way into
   // the same one; a second composer for the same conversation would only open
   // the dock on top of the page already showing it.
@@ -262,7 +263,7 @@ export function useActiveChatSession(): ActiveChatSession {
   // Bound on the chat page too, though the composer half stays hidden there: the
   // model picker lives in the bar on every screen, and it is the same thread.
   const baxterSession = useBaxterChatSession(
-    !onBranchTriage && !ticketId && !plannerOnScreen ? chatScope : "",
+    !onBranchTriage && !ticketId && !screenTicket.resolving && !plannerOnScreen ? chatScope : "",
   );
   const baxterArchive: ChatArchive | null = chatScope
     ? {
@@ -458,6 +459,9 @@ export function useActiveChatSession(): ActiveChatSession {
       branch: ticket?.ships_with ? null : ticket?.branch || null,
       promptKind: ticketSession.kind,
     };
+  }
+  if (screenTicket.resolving) {
+    return { ...none, composerBlocked: "Finding the ticket under review…" };
   }
   if (!chatScope) return none;
   return {

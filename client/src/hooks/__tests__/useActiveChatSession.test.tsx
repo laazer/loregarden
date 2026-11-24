@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { reviewApi } from "../../api/reviewApi";
 import { ticketContext, useActiveChatSession } from "../useActiveChatSession";
 import { INITIATIVE_PLANNING, INITIATIVE_TRIAGE } from "../../lib/dockChatPrompts";
 import { useInitiativeAgentStore } from "../../state/initiativeAgentStore";
@@ -63,6 +64,10 @@ jest.mock("../../api/client", () => ({
     createBaxterChatSession: jest.fn().mockResolvedValue({ id: "thread-1", mode: "general", messages: [] }),
     setBaxterChatMode: jest.fn().mockResolvedValue({ id: "thread-1", mode: "research", messages: [] }),
   },
+}));
+jest.mock("../../api/reviewApi", () => ({
+  ...jest.requireActual("../../api/reviewApi"),
+  reviewApi: { queue: jest.fn() },
 }));
 jest.mock("../../lib/branchTriageApi", () => ({
   fetchBranchChat: jest.fn().mockResolvedValue({ messages: [], run_status: "idle" }),
@@ -383,4 +388,60 @@ it("keeps the archive off a ticket conversation, which has no other thread", () 
   });
 
   expect(result.current.archive).toBeNull();
+});
+
+describe("on the review page", () => {
+  const queue = reviewApi.queue as jest.Mock;
+  const gate = (n: number) => ({ approval: { id: `appr-${n}` }, ticket: { id: `t-${n}` } });
+  const build = (ref: string, ...ns: number[]) => ({ workspace_slug: "blobert", ref, items: ns.map(gate) });
+
+  beforeEach(() => {
+    queue.mockReset();
+    queue.mockResolvedValue({ total: 3, builds: [build("integration/a", 1, 2), build("loregarden/b", 3)] });
+  });
+
+  it.each([
+    ["/review", "t-1"],
+    ["/review?build=blobert%3Aintegration%2Fa&item=1", "t-2"],
+    ["/review?build=blobert%3Aloregarden%2Fb&item=0", "t-3"],
+    ["/review?approval=appr-3", "t-3"],
+  ])("binds to the ticket %s shows", async (path, ticketId) => {
+    const { result } = renderHook(() => useActiveChatSession(), { wrapper: wrapperFor(path) });
+
+    await waitFor(() => expect(result.current.ticketId).toBe(ticketId));
+    expect(result.current.session?.kind).toBe("ticket-triage");
+    expect(result.current.session?.id).toBe(ticketId);
+  });
+
+  it("asks for the queue the page is showing", async () => {
+    const { result } = renderHook(() => useActiveChatSession(), { wrapper: wrapperFor("/review?workspace=blobert") });
+
+    await waitFor(() => expect(result.current.ticketId).toBe("t-1"));
+    expect(queue).toHaveBeenCalledWith("blobert");
+  });
+
+  it("offers no conversation until it knows which ticket is shown", () => {
+    queue.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useActiveChatSession(), { wrapper: wrapperFor("/review") });
+
+    expect(result.current.session).toBeNull();
+    expect(result.current.composerBlocked).toMatch(/under review/);
+  });
+
+  it.each([
+    ["nothing is waiting", () => queue.mockResolvedValue({ total: 0, builds: [] })],
+    ["the queue did not load", () => queue.mockRejectedValue(new Error("down"))],
+  ])("offers the workspace chat when %s", async (_why, arrange) => {
+    arrange();
+    const { result } = renderHook(() => useActiveChatSession(), { wrapper: wrapperFor("/review") });
+
+    await waitFor(() => expect(result.current.session?.kind).toBe("baxter-home"));
+    expect(result.current.ticketId).toBeNull();
+  });
+
+  it("leaves the queue alone on every other screen", () => {
+    renderHook(() => useActiveChatSession(), { wrapper: wrapperFor("/console") });
+
+    expect(queue).not.toHaveBeenCalled();
+  });
 });

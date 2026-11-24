@@ -83,7 +83,7 @@ export function ReviewItemPanel({
                   variant="secondary"
                   compact
                   disabled={openScene.isPending}
-                  onClick={() => openScene.mutate(scene)}
+                  onClick={() => openScene.mutate({ scene })}
                 >
                   Open scene
                 </Button>

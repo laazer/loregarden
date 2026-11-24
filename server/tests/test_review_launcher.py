@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from loregarden.models.domain import Workspace
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.review_config import LaunchError, LaunchKind, config_status
 from loregarden.services.review_launcher import (
-    LaunchError,
     LaunchPhase,
     LaunchState,
     ReviewLauncher,
-    config_status,
     review_worktree_path,
 )
 
@@ -197,6 +197,91 @@ def test_stop_kills_a_running_prepare(repo: Path):
     assert "started" not in state.log_tail
 
 
+TWO_TARGETS = """
+targets:
+  - name: game
+    paths: ["scenes/*"]
+    command: ["echo", "the game"]
+    scene_command: ["echo", "scene={scene}"]
+  - name: backend tests
+    kind: check
+    paths: ["backend/*"]
+    command: ["sh", "-c", "echo the tests"]
+"""
+
+
+def test_a_named_target_is_the_one_that_runs(repo: Path):
+    launcher = ReviewLauncher()
+
+    launcher.launch(_workspace(repo, TWO_TARGETS), ref="main", target="backend tests")
+    state = _settle(launcher, "game")
+
+    assert (state.phase, state.target, state.kind) == (
+        LaunchPhase.EXITED, "backend tests", LaunchKind.CHECK,
+    )  # fmt: skip
+    assert "the tests" in state.log_tail
+    assert "the game" not in state.log_tail
+
+
+def test_a_scene_opens_in_the_target_that_opens_scenes(repo: Path):
+    launcher = ReviewLauncher()
+
+    launcher.launch(_workspace(repo, TWO_TARGETS), ref="main", scene="scenes/a.tscn")
+    state = _settle(launcher, "game")
+
+    assert state.target == "game"
+    assert "scene=scenes/a.tscn" in state.log_tail
+
+
+def test_a_target_runs_in_its_own_directory(repo: Path):
+    (repo / "backend").mkdir()
+    (repo / "backend" / "here.txt").write_text("backend dir\n")
+    _git(repo, "add", "backend")
+    _git(repo, "commit", "-q", "-m", "backend")
+    launcher = ReviewLauncher()
+
+    launcher.launch(
+        _workspace(
+            repo,
+            'launch:\n  cwd: backend\n  prepare: ["test", "-f", "here.txt"]\n'
+            '  command: ["cat", "here.txt"]\n',
+        ),
+        ref="main",
+    )
+    state = _settle(launcher, "game")
+
+    assert state.phase is LaunchPhase.EXITED, state
+    assert "backend dir" in state.log_tail
+
+
+def test_a_directory_the_ref_lacks_is_a_failure_naming_it(repo: Path):
+    launcher = ReviewLauncher()
+
+    launcher.launch(_workspace(repo, 'launch:\n  cwd: backend\n  command: ["true"]\n'), ref="main")
+    state = _settle(launcher, "game")
+
+    assert state.phase is LaunchPhase.FAILED
+    assert "backend is not a directory at this ref" in state.error
+
+
+@pytest.mark.parametrize(
+    ("kind", "phase"), [("check", LaunchPhase.FAILED), ("app", LaunchPhase.EXITED)]
+)
+def test_only_a_check_fails_on_a_late_non_zero_exit(repo: Path, kind: str, phase: LaunchPhase):
+    """A suite that runs a minute and fails is a failure; an app closed after one is not."""
+    launcher = ReviewLauncher()
+
+    with mock.patch("loregarden.services.review_launcher.STARTUP_GRACE_SECONDS", 0):
+        launcher.launch(
+            _workspace(repo, f'launch:\n  kind: {kind}\n  command: ["sh", "-c", "exit 1"]\n'),
+            ref="main",
+        )
+        state = _settle(launcher, "game")
+
+    assert (state.phase, state.exit_code) == (phase, 1)
+    assert bool(state.error) is (phase is LaunchPhase.FAILED)
+
+
 @pytest.mark.parametrize(
     ("config", "kwargs", "message"),
     [
@@ -209,6 +294,21 @@ def test_stop_kills_a_running_prepare(repo: Path):
             {"ref": "main", "scene": "../../etc/passwd.tscn"},
             "not a scene path",
         ),
+        (TWO_TARGETS, {"ref": "main"}, "name a target to launch: game, backend tests"),
+        (TWO_TARGETS, {"ref": "main", "target": "editor"}, "has no target 'editor'"),
+        (
+            TWO_TARGETS,
+            {"ref": "main", "target": "backend tests", "scene": "a.tscn"},
+            "no scene_command",
+        ),
+        ("targets: []\n", {"ref": "main"}, "name something to run"),
+        (
+            TWO_TARGETS.replace("backend tests", "game"),
+            {"ref": "main"},
+            "target names repeat: game",
+        ),
+        ('launch:\n  cwd: ../x\n  command: ["true"]\n', {"ref": "main"}, "inside the repository"),
+        ('launch:\n  cwd: /etc\n  command: ["true"]\n', {"ref": "main"}, "inside the repository"),
         ("launch: [1, 2]\n", {"ref": "main"}, "not a valid review config"),
     ],
 )

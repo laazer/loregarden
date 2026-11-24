@@ -1,8 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { launchIsLive, reviewApi, type LaunchPhase, type ReviewBuild } from "../../api/reviewApi";
+import { Link } from "react-router-dom";
+
+import {
+  launchIsLive,
+  reviewApi,
+  type LaunchKind,
+  type LaunchState,
+  type ReviewBuild,
+  type ReviewItem,
+} from "../../api/reviewApi";
 import { usePolledReadFailure } from "../../hooks/usePolledReadFailure";
 import { launchStatusKey, useLaunchBuild } from "../../hooks/useReviewLaunch";
+import { ticketPath } from "../../lib/appNavigation";
 import type { StatusTone } from "../../lib/statusTone";
 import { describeError } from "../../state/toastStore";
 import { Button } from "../ui/Button";
@@ -11,23 +21,40 @@ import { StatusChip } from "../ui/StatusChip";
 
 const LIVE_POLL_MS = 2000;
 
-const PHASE_CHIP: Record<LaunchPhase, { tone: StatusTone; label: string }> = {
-  preparing: { tone: "run", label: "Preparing" },
-  running: { tone: "run", label: "Running" },
-  exited: { tone: "idle", label: "Exited" },
-  failed: { tone: "bad", label: "Failed" },
-  stopped: { tone: "idle", label: "Stopped" },
-};
+function phaseChip(state: LaunchState): { tone: StatusTone; label: string } {
+  switch (state.phase) {
+    case "preparing":
+      return { tone: "run", label: "Preparing" };
+    case "running":
+      return { tone: "run", label: "Running" };
+    case "exited":
+      // A check that exits at all passed; one that failed is `failed`.
+      return state.kind === "check"
+        ? { tone: "done", label: "Passed" }
+        : { tone: "idle", label: "Exited" };
+    case "failed":
+      return { tone: "bad", label: "Failed" };
+    case "stopped":
+      return { tone: "idle", label: "Stopped" };
+  }
+}
+
+function launchLabel(name: string, kind: LaunchKind, live: boolean): string {
+  if (live) return `Restart ${name}`;
+  return kind === "check" ? `Run ${name}` : `Launch ${name}`;
+}
 
 /**
- * The one button: run the build that holds every ticket in this group.
+ * Run what the ticket under review changes, from the build that holds it.
  *
- * A workspace without `.loregarden/review.yaml` gets the reason and the file
- * to add, not a missing button — the reviewer should learn why there is
- * nothing to press. The launch keeps the pressed button disabled until the
- * server answers, so a double click starts one build.
+ * A workspace can hold several things to run, so the buttons are the targets
+ * whose paths the ticket touches. A ticket that touches none says so and links
+ * its diff: starting some other part of the repository would look like a review
+ * and show nothing. A workspace without `.loregarden/review.yaml` gets the
+ * reason and the file to add, not a missing button. Every button is disabled
+ * until the server answers, so a double click starts one build.
  */
-export function ReviewLaunchPanel({ build }: { build: ReviewBuild }) {
+export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: ReviewItem }) {
   const qc = useQueryClient();
   const key = launchStatusKey(build.workspace_slug);
   const status = useQuery({
@@ -72,8 +99,8 @@ export function ReviewLaunchPanel({ build }: { build: ReviewBuild }) {
             `${build.workspace_slug} has no launch config, so there is no build to start from here.`}
         </p>
         <p className="review-muted">
-          Add <code>{config.path}</code> with a <code>launch.command</code> (and optionally{" "}
-          <code>prepare</code> and <code>scene_command</code>).
+          Add <code>{config.path}</code> with a <code>launch.command</code>, or{" "}
+          <code>targets</code> when the repository holds several things to run.
         </p>
       </div>
     );
@@ -81,18 +108,43 @@ export function ReviewLaunchPanel({ build }: { build: ReviewBuild }) {
 
   const sameRef = state?.ref === build.ref;
   const live = launchIsLive(state) && sameRef;
-  const chip = state ? PHASE_CHIP[state.phase] : null;
+  const chip = state ? phaseChip(state) : null;
+  const kinds = new Map(config.targets.map((target) => [target.name, target.kind]));
+  const matched = item.launch.targets.filter((name) => kinds.has(name));
+  const noMatch = item.launch.match === "no_match";
+  // Unknown changes, or an offer the config has moved on from since the queue
+  // was read: list everything rather than guess.
+  const unsure = !noMatch && (item.launch.match !== "matched" || matched.length === 0);
+  const targets = unsure ? [...kinds.keys()] : matched;
   return (
     <div className="review-launch">
       {staleNotice}
+      {unsure ? (
+        <p className="review-muted">
+          Could not tell which files {item.ticket.external_id} changes, so everything this workspace
+          runs is listed.
+        </p>
+      ) : null}
+      {noMatch ? (
+        <p>
+          Nothing {build.workspace_slug} can launch runs the files {item.ticket.external_id} changes.{" "}
+          <Link to={ticketPath(item.ticket.id, "diff")}>Read its diff</Link>, or add a target for
+          them to <code>{config.path}</code>.
+        </p>
+      ) : null}
       <div className="review-launch-row">
-        <Button
-          variant="primary"
-          disabled={launch.isPending}
-          onClick={() => launch.mutate("")}
-        >
-          {launch.isPending ? "Starting…" : live ? "Restart build" : "Launch build"}
-        </Button>
+        {targets.map((name, i) => (
+          <Button
+            key={name}
+            variant={i === 0 ? "primary" : "secondary"}
+            disabled={launch.isPending}
+            onClick={() => launch.mutate({ target: name })}
+          >
+            {launch.isPending && launch.variables?.target === name
+              ? "Starting…"
+              : launchLabel(name, kinds.get(name) ?? "app", live && state?.target === name)}
+          </Button>
+        ))}
         {live ? (
           <Button variant="secondary" disabled={stop.isPending} onClick={() => stop.mutate()}>
             Stop
@@ -102,26 +154,27 @@ export function ReviewLaunchPanel({ build }: { build: ReviewBuild }) {
           <span className="review-launch-state">
             <StatusChip tone={chip.tone} label={chip.label} />
             <span className="review-mono" title={state.sha}>
-              {state.ref}
+              {state.target} · {state.ref}
               {state.scene ? ` · ${state.scene}` : ""} @ {state.sha.slice(0, 8)}
             </span>
           </span>
-        ) : (
-          <span className="review-muted">Builds {build.ref} in a review checkout.</span>
-        )}
+        ) : targets.length > 0 ? (
+          <span className="review-muted">Runs {build.ref} in a review checkout.</span>
+        ) : null}
       </div>
-      {state?.error ? (
+      {sameRef && state.error ? (
         <p className="review-error" role="alert">
           {state.error}
         </p>
       ) : null}
-      {state && state.log_tail.length > 0 ? (
+      {sameRef && state.log_tail.length > 0 ? (
         <details className="review-log">
-          <summary>Build log (last {state.log_tail.length} lines)</summary>
+          <summary>
+            {state.target} log (last {state.log_tail.length} lines)
+          </summary>
           <pre>{state.log_tail.join("\n")}</pre>
         </details>
       ) : null}
     </div>
   );
 }
-

@@ -70,6 +70,7 @@ function item(n: number, overrides: Partial<ReviewItem> = {}): ReviewItem {
       checked_criteria: [`criterion ${n}a`],
     },
     scenes: [`scenes/level_${n}.tscn`],
+    launch: { match: "matched", targets: ["game"] },
     kit: { screenshots: [], links: [], requests: [], unreadable: [] },
     ...overrides,
   };
@@ -100,6 +101,11 @@ const QUEUE: ReviewQueue = {
   ],
 };
 
+const TARGETS = [
+  { name: "game", kind: "app" },
+  { name: "backend tests", kind: "check" },
+];
+
 const NO_PREVIEW = { ref: "integration/blob-core-131", client: null, server: null, can_start: true, unavailable: "" };
 
 function withPages(links: ReviewItem["kit"]["links"]): ReviewQueue {
@@ -123,7 +129,7 @@ beforeEach(() => {
   reviewApi.preview.mockResolvedValue(NO_PREVIEW);
   reviewApi.queue.mockResolvedValue(QUEUE);
   reviewApi.launchStatus.mockResolvedValue({
-    config: { configured: true, path: "/ws/blobert/.loregarden/review.yaml", error: "" },
+    config: { configured: true, path: "/ws/blobert/.loregarden/review.yaml", error: "", targets: TARGETS },
     state: null,
   });
   localInstancesApi.list.mockResolvedValue({
@@ -150,10 +156,13 @@ describe("ReviewPage", () => {
 
     expect(within(screen.getByRole("list", { name: "Tickets in this build" })).getAllByRole("button")).toHaveLength(2);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Launch build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Launch game" }));
 
     await waitFor(() =>
-      expect(reviewApi.launch).toHaveBeenCalledWith("blobert", { ref: "integration/blob-core-131", scene: "" }),
+      expect(reviewApi.launch).toHaveBeenCalledWith("blobert", {
+        ref: "integration/blob-core-131",
+        target: "game",
+      }),
     );
   });
 
@@ -257,14 +266,129 @@ describe("ReviewPage", () => {
 
   it("explains a workspace with no launch config instead of hiding the button", async () => {
     reviewApi.launchStatus.mockResolvedValue({
-      config: { configured: false, path: "/ws/blobert/.loregarden/review.yaml", error: "" },
+      config: { configured: false, path: "/ws/blobert/.loregarden/review.yaml", error: "", targets: [] },
       state: null,
     });
     renderAt();
 
     expect(await screen.findByText(/has no launch config/)).toBeInTheDocument();
     expect(screen.getByText("/ws/blobert/.loregarden/review.yaml")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Launch build" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Launch game" })).not.toBeInTheDocument();
+  });
+
+  describe("what a ticket can launch", () => {
+    const config = { configured: true, path: "/ws/blobert/.loregarden/review.yaml", error: "", targets: TARGETS };
+
+    function withLaunch(launch: ReviewItem["launch"]): ReviewQueue {
+      return {
+        total: 1,
+        builds: [
+          { workspace_slug: "blobert", ref: "loregarden/blob-181", combined: false, items: [item(181, { scenes: [], launch })] },
+        ],
+      };
+    }
+
+    function ran(overrides: Record<string, unknown>) {
+      reviewApi.launchStatus.mockResolvedValue({
+        config,
+        state: {
+          workspace_slug: "blobert",
+          ref: "loregarden/blob-181",
+          sha: "e53cb38f97fc",
+          target: "backend tests",
+          kind: "check",
+          scene: "",
+          worktree: "/w",
+          phase: "exited",
+          pid: 1,
+          exit_code: 0,
+          error: "",
+          log_tail: [],
+          started_at: "",
+          ...overrides,
+        },
+      });
+    }
+
+    it("offers only the target that runs its changes", async () => {
+      reviewApi.queue.mockResolvedValue(withLaunch({ match: "matched", targets: ["backend tests"] }));
+      reviewApi.launch.mockResolvedValue({ phase: "running" });
+      renderAt();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Run backend tests" }));
+
+      await waitFor(() =>
+        expect(reviewApi.launch).toHaveBeenCalledWith("blobert", {
+          ref: "loregarden/blob-181",
+          target: "backend tests",
+        }),
+      );
+      expect(screen.queryByRole("button", { name: "Launch game" })).not.toBeInTheDocument();
+    });
+
+    it("changes with the ticket inside one build", async () => {
+      reviewApi.queue.mockResolvedValue({
+        total: 2,
+        builds: [
+          {
+            workspace_slug: "blobert",
+            ref: "integration/x",
+            combined: true,
+            items: [item(1), item(2, { launch: { match: "matched", targets: ["backend tests"] } })],
+          },
+        ],
+      });
+      renderAt();
+
+      expect(await screen.findByRole("button", { name: "Launch game" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+      expect(await screen.findByRole("button", { name: "Run backend tests" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Launch game" })).not.toBeInTheDocument();
+    });
+
+    it("links the diff when nothing runs its changes", async () => {
+      reviewApi.queue.mockResolvedValue(withLaunch({ match: "no_match", targets: [] }));
+      renderAt();
+
+      expect(await screen.findByRole("link", { name: "Read its diff" })).toHaveAttribute("href", "/tickets/t-181/diff");
+      expect(screen.queryByRole("button", { name: /^(Launch|Run) / })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["its changes could not be read", { match: "unknown", targets: ["game", "backend tests"] }],
+      ["the config gained targets since the queue was read", { match: "unconfigured", targets: [] }],
+      ["the config dropped the matched target", { match: "matched", targets: ["gone"] }],
+    ] as const)("lists every target when %s", async (_why, launch) => {
+      reviewApi.queue.mockResolvedValue(withLaunch({ match: launch.match, targets: [...launch.targets] }));
+      renderAt();
+
+      expect(await screen.findByRole("button", { name: "Launch game" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Run backend tests" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Read its diff" })).not.toBeInTheDocument();
+    });
+
+    it("calls a check that exits a pass, and an app that exits just exited", async () => {
+      reviewApi.queue.mockResolvedValue(withLaunch({ match: "matched", targets: ["backend tests"] }));
+      ran({});
+      const { unmount } = renderAt();
+      expect(await screen.findByText("Passed")).toBeInTheDocument();
+      unmount();
+
+      ran({ target: "game", kind: "app" });
+      renderAt();
+      expect(await screen.findByText("Exited")).toBeInTheDocument();
+    });
+
+    it("does not show another build's error under this ticket", async () => {
+      reviewApi.queue.mockResolvedValue(withLaunch({ match: "matched", targets: ["backend tests"] }));
+      ran({ ref: "loregarden/other", phase: "failed", error: "other build broke", log_tail: ["boom"] });
+      renderAt();
+
+      expect(await screen.findByText(/loregarden\/other/)).toBeInTheDocument();
+      expect(screen.queryByText("other build broke")).not.toBeInTheDocument();
+      expect(screen.queryByText("boom")).not.toBeInTheDocument();
+    });
   });
 
   it("says nothing is waiting when the queue is empty", async () => {
