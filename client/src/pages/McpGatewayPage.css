@@ -217,6 +217,7 @@
 /* ── switchboard ─────────────────────────────────────────────────────── */
 
 .mcp-switchboard {
+  container: switchboard / inline-size;
   position: relative;
   height: 380px;
   /* The node positions are percentages of this box, so letting the column
@@ -269,11 +270,15 @@
 /* Badges line up in a column either side of the hub, labels facing outward, so
    a wire never crosses a name. */
 .mcp-node--agent {
+  left: 30%;
   flex-direction: row-reverse;
   transform: translate(-100%, -50%);
 }
 
 .mcp-node--server {
+  left: 70%;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
   transform: translate(0, -50%);
   cursor: pointer;
   background: transparent;
@@ -309,13 +314,64 @@
 
 .mcp-node-label {
   font-size: var(--fs-micro);
+  line-height: 1.25;
   color: var(--txm);
-  white-space: nowrap;
+  /* What its column of the plot holds beside the badge: a fixed width ran names
+     off the plot's edge. Three lines fit between two nodes; past that the full
+     name is on the node's title. */
+  max-width: calc(30cqw - 48px);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  /* Long agent names ellipsize rather than running off the plot; the full name
-     is on the node's title. */
-  max-width: 116px;
+  overflow-wrap: break-word;
+}
+
+.mcp-node--agent .mcp-node-label {
+  text-align: right;
+}
+
+.mcp-node--server .mcp-node-label {
+  text-align: left;
+}
+
+/* A phone's plot: the columns move in, the wires with them, and the hub keeps
+   its icon and name. */
+@container switchboard (max-width: 340px) {
+  .mcp-node--agent {
+    left: 38%;
+  }
+
+  .mcp-node--server {
+    left: 62%;
+  }
+
+  .mcp-switchboard-wires {
+    transform: scaleX(0.6);
+  }
+
+  .mcp-node {
+    gap: 5px;
+  }
+
+  .mcp-node-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+  }
+
+  .mcp-node-label {
+    max-width: calc(38cqw - 33px);
+  }
+
+  .mcp-gateway-hub.mcp-gateway-hub {
+    width: 54px;
+    padding: 8px 2px;
+  }
+
+  .mcp-gateway-hub-sub {
+    display: none;
+  }
 }
 
 .mcp-node-label--mono {
@@ -813,6 +869,82 @@
     grid-column: 1 / -1;
     border-left: none;
     border-top: 1px solid var(--bd);
+  }
+}
+
+/* One column that scrolls, in the same order: beside a 260px rail a phone left
+   the routing 19px. */
+@media (max-width: 720px) {
+  .mcp-page-body {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .mcp-servers-rail,
+  .mcp-main,
+  .mcp-detail {
+    overflow: visible;
+    border-right: 0;
+  }
+
+  .mcp-servers-rail {
+    border-bottom: 1px solid var(--bd);
+  }
+
+  /* Four columns do not fit: each rule is a block, its agent and policy on the
+     first line. The header stays for a screen reader. */
+  .mcp-rules {
+    overflow: visible;
+  }
+
+  .mcp-rules-table,
+  .mcp-rules-table tbody {
+    display: block;
+  }
+
+  .mcp-rules-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .mcp-rules-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 10px;
+    padding: 10px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .mcp-rules-row:last-child {
+    border-bottom: none;
+  }
+
+  .mcp-rules-row td {
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .mcp-rules-row .mcp-rules-server {
+    grid-row: 2;
+    font-size: var(--fs-micro);
+  }
+
+  .mcp-rules-row .mcp-rules-scope {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mcp-rules-row td:last-child {
+    grid-row: 1;
+    grid-column: 2;
   }
 }
 

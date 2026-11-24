@@ -1,4 +1,10 @@
+import { Button } from "../ui/Button";
 import type { SwitchboardAgent, SwitchboardServer } from "./mcpRouting";
+
+/** Where the wires leave each column, in percent of the plot: `.mcp-node--agent`
+    and `.mcp-node--server` sit at the same two numbers in McpGatewayPage.css. */
+const AGENT_X = 30;
+const SERVER_X = 70;
 
 /** Where a node sits on the board, in percent of the plot. */
 function place(index: number, count: number): number {
@@ -38,7 +44,7 @@ export function McpSwitchboard({
         {agents.map((agent, index) => (
           <line
             key={agent.key}
-            x1="24"
+            x1={AGENT_X}
             y1={place(index, agents.length)}
             x2="50"
             y2="50"
@@ -51,7 +57,7 @@ export function McpSwitchboard({
             key={server.key}
             x1="50"
             y1="50"
-            x2="78"
+            x2={SERVER_X}
             y2={place(index, servers.length)}
             className={`mcp-wire${server.connected ? "" : " mcp-wire--idle"}`}
             vectorEffect="non-scaling-stroke"
@@ -63,7 +69,7 @@ export function McpSwitchboard({
         <div
           key={agent.key}
           className="mcp-node mcp-node--agent"
-          style={{ left: "24%", top: `${place(index, agents.length)}%` }}
+          style={{ top: `${place(index, agents.length)}%` }}
           title={agent.connected ? agent.label : `${agent.label} — MCP is switched off`}
         >
           <span className={`mcp-node-badge${agent.connected ? "" : " mcp-node-badge--idle"}`}>
@@ -87,11 +93,11 @@ export function McpSwitchboard({
       </div>
 
       {servers.map((server, index) => (
-        <button
+        <Button
           key={server.key}
-          type="button"
+          variant="plain"
           className={`mcp-node mcp-node--server${server.key === selectedServer ? " selected" : ""}`}
-          style={{ left: "78%", top: `${place(index, servers.length)}%` }}
+          style={{ top: `${place(index, servers.length)}%` }}
           onClick={() => onSelectServer(server.key)}
           title={
             server.builtIn
@@ -111,7 +117,7 @@ export function McpSwitchboard({
               }`}
             />
           </span>
-        </button>
+        </Button>
       ))}
     </div>
   );

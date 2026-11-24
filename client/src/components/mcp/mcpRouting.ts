@@ -207,8 +207,8 @@ export function routingRules(
       agent: "Every agent",
       agentSlug: null,
       server: server.name,
-      // No per-agent grant exists for registered servers, and saying otherwise
-      // would show a control the operator does not have.
+      // The default reach. An agent narrowed to named servers is narrowed in
+      // Agent Studio; no row here can grant or revoke one.
       scope: server.tools.length
         ? server.tools.join(", ")
         : server.tools_listed_at
@@ -231,7 +231,7 @@ export const MAX_AGENT_NODES = 8;
  * The agent side of the board.
  *
  * A registry of two dozen agents will not fit as two dozen labelled nodes, and
- * the board's claim — everyone reaches everything — does not need every node to
+ * the board's claim (the default reach) does not need every node to
  * land. The overflow is drawn as its own node and counted in its label rather
  * than dropped: a silently truncated board would read as a complete one.
  */

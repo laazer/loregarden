@@ -154,9 +154,9 @@ it("shows the tools a check actually found", async () => {
   expect(detail.getByText("list_repos")).toBeInTheDocument();
 });
 
-it("states that reach is not per-agent rather than implying grants", async () => {
-  // There is no per-agent grant for a registered server, so the rules table
-  // must not suggest one can be revoked here.
+it("gives a registered server one row for every agent, not a grant per agent", async () => {
+  // A narrower grant is set in Agent Studio; the rules table must not suggest
+  // one can be revoked here.
   mockApi.mcpServers.mockResolvedValue([mcpServer()]);
   mockApi.studioAgents.mockResolvedValue([studioAgent()]);
 

@@ -15,6 +15,9 @@ import { STANDARD_SET, type RoutingRule } from "./mcpRouting";
  * A real table, compared across rows by agent, server and policy. An agent's
  * name opens it in Agent Studio, which is where its grant is changed: a list of
  * thirty-two rules with nowhere to go from any of them was a dead end.
+ *
+ * The roles are spelled out because the phone layout changes the rows' display,
+ * and a browser drops a row's own role with it.
  */
 export function McpRoutingRules({ rules, standard }: { rules: RoutingRule[]; standard: string[] | null }) {
   if (rules.length === 0) {
@@ -37,20 +40,20 @@ export function McpRoutingRules({ rules, standard }: { rules: RoutingRule[]; sta
         past any viewport, and letting it grow pushed the switchboard above it
         off screen. The agent links make it keyboard-reachable. */}
     <div className="mcp-rules">
-      <table className="mcp-rules-table">
+      <table role="table" className="mcp-rules-table">
         <caption className="mcp-sr">Routing rules, {rules.length} rules</caption>
-        <thead>
-          <tr className="mcp-rules-head">
-            <th scope="col">Agent</th>
-            <th scope="col">Server</th>
-            <th scope="col">Allowed tools</th>
-            <th scope="col">Policy</th>
+        <thead role="rowgroup">
+          <tr role="row" className="mcp-rules-head">
+            <th scope="col" role="columnheader">Agent</th>
+            <th scope="col" role="columnheader">Server</th>
+            <th scope="col" role="columnheader">Allowed tools</th>
+            <th scope="col" role="columnheader">Policy</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {rules.map((rule) => (
-            <tr key={rule.key} className="mcp-rules-row">
-              <td className="mcp-rules-agent">
+            <tr key={rule.key} role="row" className="mcp-rules-row">
+              <td role="cell" className="mcp-rules-agent">
                 {rule.agentSlug ? (
                   <Link
                     className="mcp-rules-agent-link"
@@ -63,11 +66,11 @@ export function McpRoutingRules({ rules, standard }: { rules: RoutingRule[]; sta
                   rule.agent
                 )}
               </td>
-              <td className="mcp-rules-server">{rule.server}</td>
-              <td className="mcp-rules-scope" title={rule.scopeTitle || rule.scope}>
+              <td role="cell" className="mcp-rules-server">{rule.server}</td>
+              <td role="cell" className="mcp-rules-scope" title={rule.scopeTitle || rule.scope}>
                 {rule.scope}
               </td>
-              <td>
+              <td role="cell">
                 <span className={`mcp-policy-pill mcp-policy-pill--${rule.policy}`} title={rule.policyTitle}>
                   {rule.policyLabel}
                 </span>

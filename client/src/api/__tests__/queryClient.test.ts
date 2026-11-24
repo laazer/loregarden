@@ -1,8 +1,8 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { QueryObserver, type QueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../client";
 import { useToastStore } from "../../state/toastStore";
-import { createQueryClient } from "../queryClient";
+import { createQueryClient, retryUnlessRefused } from "../queryClient";
 
 async function runFailingMutation(meta?: Record<string, unknown>) {
   const client = createQueryClient();
@@ -34,6 +34,39 @@ it("stays quiet for a mutation that renders its own failure", async () => {
   await runFailingMutation({ suppressErrorToast: true });
 
   expect(useToastStore.getState().toasts).toHaveLength(0);
+});
+
+describe("which failed reads are asked again", () => {
+  afterEach(() => jest.useRealTimers());
+
+  /** How many times an observed query asks before it gives up. */
+  async function timesAsked(error: unknown): Promise<number> {
+    jest.useFakeTimers();
+    const queryFn = jest.fn(async () => Promise.reject(error));
+    const client = createQueryClient();
+    const stop = new QueryObserver(client, { queryKey: ["refs"], queryFn }).subscribe(() => undefined);
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(client.getQueryState(["refs"])?.status).toBe("error");
+    stop();
+    client.clear();
+    return queryFn.mock.calls.length;
+  }
+
+  it.each([400, 401, 403, 404, 409, 422, 499])("asks once when the server refuses with %i", async (status) => {
+    expect(await timesAsked(new ApiError(status, "refused"))).toBe(1);
+  });
+
+  it.each([408, 425, 429, 500, 502, 503])("asks four times when a %i may pass", async (status) => {
+    expect(await timesAsked(new ApiError(status, "busy"))).toBe(4);
+  });
+
+  it("asks four times when the server did not answer", async () => {
+    expect(await timesAsked(new TypeError("Failed to fetch"))).toBe(4);
+  });
+
+  it("does not read a status outside the refusals as one", () => {
+    expect(retryUnlessRefused(0, new ApiError(399, "odd"))).toBe(true);
+  });
 });
 
 async function fetchFailingQuery(

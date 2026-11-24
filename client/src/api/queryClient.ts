@@ -1,6 +1,7 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 
+import { ApiError } from "./http";
 import { toastActionFailed } from "../state/toastStore";
 
 /**
@@ -19,6 +20,7 @@ import { toastActionFailed } from "../state/toastStore";
  */
 export function createQueryClient(): QueryClient {
   const client = new QueryClient({
+    defaultOptions: { queries: { retry: retryUnlessRefused } },
     mutationCache: new MutationCache({
       onError: (error, _variables, _context, mutation) => {
         if (mutation.meta?.suppressErrorToast) return;
@@ -43,6 +45,24 @@ export function createQueryClient(): QueryClient {
     client.setQueryDefaults(queryKey, { staleTime });
   }
   return client;
+}
+
+const MAX_RETRIES = 3;
+
+/** The refusals that pass on their own: timed out, too early, rate limited. */
+const TRANSIENT_REFUSALS = new Set([408, 425, 429]);
+
+/**
+ * Whether a failed read is worth asking again. A 4xx is the server's answer to
+ * this exact request, so asking four times (react-query's default) only held a
+ * page on its loading state for the 7 seconds of back-off before saying so. A
+ * network failure or a 5xx, which a restarting server gives, still retries.
+ */
+export function retryUnlessRefused(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    return TRANSIENT_REFUSALS.has(error.status) && failureCount < MAX_RETRIES;
+  }
+  return failureCount < MAX_RETRIES;
 }
 
 /**
