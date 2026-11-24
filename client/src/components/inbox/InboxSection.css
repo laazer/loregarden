@@ -1,0 +1,83 @@
+/*
+ * The heading row is the control: the button's hit area covers all of it, and
+ * it sticks while its section scrolls, so a long section can be folded from
+ * anywhere inside it. The panel scrolls with 16px of padding, which the row
+ * reaches out to cover so cards do not show beside it as they pass under.
+ */
+.inbox-section-header--toggle {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-height: 36px;
+  margin: 0 -16px 6px;
+  padding: 0 16px;
+  background: var(--bg1);
+}
+
+.inbox-section-header--toggle:hover {
+  background: var(--bg2);
+}
+
+.inbox-section-header--toggle > h2 {
+  color: var(--tx);
+}
+
+/* A workspace steps in to its parent's title and sticks under the section it belongs to. */
+.inbox-section .inbox-section > .inbox-section-header--toggle {
+  top: 36px;
+  z-index: 2;
+  padding-left: 34px;
+}
+
+.inbox-section .inbox-section {
+  scroll-margin-top: 36px;
+  margin-bottom: 8px;
+}
+
+.inbox-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.inbox-section-toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.inbox-section-toggle:focus-visible {
+  outline: none;
+}
+
+.inbox-section-toggle:focus-visible::after {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.inbox-section-chevron {
+  flex: none;
+  color: var(--txl);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.inbox-section-toggle[aria-expanded="false"] .inbox-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.inbox-section-notice {
+  font-size: var(--fs-micro);
+  color: var(--rdl);
+}
+
+/* Above the toggle's hit area, or pressing one would fold the section. */
+.inbox-section-actions {
+  position: relative;
+  z-index: 1;
+  margin-left: auto;
+}

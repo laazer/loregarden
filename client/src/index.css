@@ -1,4 +1,7 @@
 :root {
+  /* One 44px row on every page. The rail's brand block and its cut-out beside
+     the topbar are sized from the same token, so their edges stay one line. */
+  --topbar-h: 44px;
   /* The leaf: round on two opposite corners, nearly square on the others. One
      value for every primary action and every send, so Run and the send arrow
      are visibly the same control. */
@@ -413,7 +416,7 @@ textarea::placeholder {
 }
 
 .topbar {
-  height: 44px;
+  height: var(--topbar-h);
   flex: none;
   display: flex;
   align-items: center;
@@ -745,7 +748,7 @@ textarea::placeholder {
 @media (max-width: 640px) {
   .topbar {
     height: auto;
-    min-height: 44px;
+    min-height: var(--topbar-h);
     flex-wrap: wrap;
     gap: 6px 8px;
     padding: 6px 10px;
@@ -5175,6 +5178,14 @@ button.send-leaf:hover:not(:disabled) {
   box-shadow: -24px 0 60px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+}
+
+.inbox-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* No top padding: a stuck section heading would sit below it, with cards showing above. */
+  padding: 0 16px 16px;
 }
 
 .inbox-section {

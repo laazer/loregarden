@@ -24,18 +24,23 @@ export function scrollableAncestor(node: HTMLElement): HTMLElement | null {
 /**
  * Bring `node`'s top ("start") or bottom ("end") to the matching edge of its
  * nearest scroller. Does nothing when no ancestor scrolls — there is then
- * nothing that *should* move.
+ * nothing that *should* move. Starting, it leaves room for the node's
+ * `scroll-margin-top` (a sticky heading above it); `onlyIfAbove` skips a node
+ * whose top is already showing.
  */
 export function scrollIntoScroller(
   node: HTMLElement,
   block: "start" | "end",
-  behavior: ScrollBehavior = "auto",
+  { behavior = "auto", onlyIfAbove = false }: { behavior?: ScrollBehavior; onlyIfAbove?: boolean } = {},
 ): void {
   const scroller = scrollableAncestor(node);
   if (!scroller) return;
   const nodeRect = node.getBoundingClientRect();
   const scrollerRect = scroller.getBoundingClientRect();
-  const delta = block === "start" ? nodeRect.top - scrollerRect.top : nodeRect.bottom - scrollerRect.bottom;
+  const margin = Number.parseFloat(getComputedStyle(node).scrollMarginTop) || 0;
+  const delta =
+    block === "start" ? nodeRect.top - scrollerRect.top - margin : nodeRect.bottom - scrollerRect.bottom;
+  if (onlyIfAbove && delta >= 0) return;
   // `scrollTo?.` because jsdom implements no element scrolling.
   scroller.scrollTo?.({ top: scroller.scrollTop + delta, behavior });
 }

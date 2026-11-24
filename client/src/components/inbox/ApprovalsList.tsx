@@ -48,6 +48,7 @@ import { describeError } from "../../state/toastStore";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
 import { ApprovalDetailModal } from "../ApprovalDetailModal";
+import { InboxSection } from "./InboxSection";
 
 export interface ApprovalsListProps {
   /**
@@ -69,6 +70,14 @@ export interface ApprovalsListProps {
   onInspect?: (approval: Approval) => void;
   /** Open a stage gate on the review page. Omitted, as above, where there is no route. */
   onOpenReview?: (approval: Approval) => void;
+  /**
+   * The workspace groups folded away, and how to fold one. Omitted where nothing
+   * keeps the choice, which leaves the headings plain.
+   */
+  groupFolding?: {
+    isCollapsed: (workspaceSlug: string) => boolean;
+    onToggle: (workspaceSlug: string) => void;
+  };
 }
 
 /**
@@ -94,7 +103,13 @@ function isColdFailure(query: { data: unknown; errorUpdateCount: number }): bool
   return query.data === undefined && query.errorUpdateCount > 0;
 }
 
-export function ApprovalsList({ workspaceSlug, isActive, onInspect, onOpenReview }: ApprovalsListProps) {
+export function ApprovalsList({
+  workspaceSlug,
+  isActive,
+  onInspect,
+  onOpenReview,
+  groupFolding,
+}: ApprovalsListProps) {
   const qc = useQueryClient();
   const [expandedApproval, setExpandedApproval] = useState<Approval | null>(null);
 
@@ -218,21 +233,21 @@ export function ApprovalsList({ workspaceSlug, isActive, onInspect, onOpenReview
       )}
       {grouped
         ? groups.map((group) => (
-            <section
+            <InboxSection
               // Keyed by the slug, not the index, so a group that changes
               // position re-parents none of its cards.
               key={group.workspaceSlug}
-              className="inbox-section"
-              aria-label={`${group.workspaceSlug} — ${group.approvals.length} pending approval${
+              heading="h3"
+              title={group.workspaceSlug}
+              label={`${group.workspaceSlug} — ${group.approvals.length} pending approval${
                 group.approvals.length === 1 ? "" : "s"
               }`}
+              count={group.approvals.length}
+              collapsed={groupFolding?.isCollapsed(group.workspaceSlug)}
+              onToggle={groupFolding ? () => groupFolding.onToggle(group.workspaceSlug) : undefined}
             >
-              <div className="inbox-section-header">
-                <h3 className="inbox-section-title">{group.workspaceSlug}</h3>
-                <span className="count-pill">{group.approvals.length}</span>
-              </div>
               {group.approvals.map(renderCard)}
-            </section>
+            </InboxSection>
           ))
         : groups.flatMap((group) => group.approvals.map(renderCard))}
       {showEmptyHint ? (

@@ -18,6 +18,9 @@ export type PaneVisibility = Record<PaneId, boolean>;
 
 export type UtilityDockEdge = "bottom" | "right";
 
+/** A foldable part of the inbox drawer: a section, or one workspace's approvals. */
+export type InboxSectionKey = "approvals" | "notifications" | `approvals/${string}`;
+
 export type HiveView = "office" | "map";
 
 export const DEFAULT_COPILOT_HEIGHT = 340;
@@ -130,6 +133,12 @@ interface UiState {
    */
   railDocked: boolean;
   /**
+   * The inbox sections the operator folded: the drawer's own two, and a
+   * workspace's approvals as `approvals/<slug>`. Persisted, so the drawer opens
+   * the way it was left; a workspace not seen before starts open.
+   */
+  inboxCollapsed: InboxSectionKey[];
+  /**
    * Whether the dock is also showing a shell.
    *
    * Off by default and remembered. Opening the first time spawns a real login
@@ -241,6 +250,7 @@ interface UiState {
   setCopilotWidth: (width: number) => void;
   setUtilityDockEdge: (edge: UtilityDockEdge) => void;
   setRailDocked: (docked: boolean) => void;
+  toggleInboxSection: (key: InboxSectionKey) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveView: (view: HiveView) => void;
   setHiveSpeedIndex: (index: number) => void;
@@ -270,6 +280,7 @@ type PersistedUiState = Pick<
   | "copilotWidth"
   | "utilityDockEdge"
   | "railDocked"
+  | "inboxCollapsed"
   | "terminalOpen"
 >;
 
@@ -302,6 +313,7 @@ export const useUiStore = create<UiState>()(
       copilotWidth: DEFAULT_COPILOT_WIDTH,
       utilityDockEdge: "bottom",
       railDocked: true,
+      inboxCollapsed: [],
       terminalOpen: false,
       dockPanelsVisible: false,
       screenDockEdge: null,
@@ -423,6 +435,12 @@ export const useUiStore = create<UiState>()(
         set({ copilotHeight: clampCopilotHeight(height) }),
       setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
       setRailDocked: (railDocked) => set({ railDocked }),
+      toggleInboxSection: (key) =>
+        set(({ inboxCollapsed }) => ({
+          inboxCollapsed: inboxCollapsed.includes(key)
+            ? inboxCollapsed.filter((collapsed) => collapsed !== key)
+            : [...inboxCollapsed, key],
+        })),
       setUtilityDockEdge: (utilityDockEdge) =>
         set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge), screenDockEdge: null }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
@@ -539,6 +557,7 @@ export const useUiStore = create<UiState>()(
         copilotWidth: s.copilotWidth,
         utilityDockEdge: s.utilityDockEdge,
         railDocked: s.railDocked,
+        inboxCollapsed: s.inboxCollapsed,
         terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
         hiveView: s.hiveView,

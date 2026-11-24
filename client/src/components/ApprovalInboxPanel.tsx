@@ -2,8 +2,9 @@ import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { type Approval } from "../api/client";
 import { navigateToReview, navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
-import { useUiStore } from "../state/uiStore";
+import { useUiStore, type InboxSectionKey } from "../state/uiStore";
 import { IconCloseButton } from "./IconCloseButton";
+import { InboxSection } from "./inbox/InboxSection";
 import { ApprovalsList, usePendingApprovalCount } from "./inbox/ApprovalsList";
 
 function toneAccent(tone: string): string {
@@ -38,6 +39,9 @@ function formatWhen(iso: string): string {
 export function ApprovalInboxPanel() {
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
+  const inboxCollapsed = useUiStore((s) => s.inboxCollapsed);
+  const toggleSection = useUiStore((s) => s.toggleInboxSection);
+  const isCollapsed = (key: InboxSectionKey) => inboxCollapsed.includes(key);
   const notifications = useNotificationStore((s) => s.notifications);
   const dismissNotification = useNotificationStore((s) => s.dismiss);
   const clearNotifications = useNotificationStore((s) => s.clear);
@@ -102,28 +106,41 @@ export function ApprovalInboxPanel() {
             <IconCloseButton onClick={() => setInboxOpen(false)} />
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+        <div className="inbox-panel-body">
           {!empty ? (
             <>
-              <section className="inbox-section" aria-label="Pending approvals">
-                <div className="inbox-section-header">
-                  <span className="inbox-section-title">Approvals</span>
-                  <span className="count-pill">{approvalCount}</span>
-                </div>
+              <InboxSection
+                heading="h2"
+                title="Approvals"
+                label="Pending approvals"
+                count={approvalCount}
+                collapsed={isCollapsed("approvals")}
+                onToggle={() => toggleSection("approvals")}
+                // Folded, the list's own error line is out of sight and the
+                // count reads zero.
+                notice={approvalsColdFailure ? "Could not load" : undefined}
+              >
                 <ApprovalsList
                   workspaceSlug=""
                   isActive={inboxOpen}
                   onInspect={inspectApproval}
                   onOpenReview={openReview}
+                  groupFolding={{
+                    isCollapsed: (slug) => isCollapsed(`approvals/${slug}`),
+                    onToggle: (slug) => toggleSection(`approvals/${slug}`),
+                  }}
                 />
-              </section>
+              </InboxSection>
 
-              <section className="inbox-section" aria-label="Run notifications">
-                <div className="inbox-section-header">
-                  <span className="inbox-section-title">Notifications</span>
-                  <span className="count-pill">{notificationCount}</span>
-                  <div style={{ flex: 1 }} />
-                  {notificationCount > 0 ? (
+              <InboxSection
+                heading="h2"
+                title="Notifications"
+                label="Run notifications"
+                count={notificationCount}
+                collapsed={isCollapsed("notifications")}
+                onToggle={() => toggleSection("notifications")}
+                actions={
+                  notificationCount > 0 ? (
                     <button
                       type="button"
                       className="btn-secondary inbox-clear-btn"
@@ -131,8 +148,9 @@ export function ApprovalInboxPanel() {
                     >
                       Clear all
                     </button>
-                  ) : null}
-                </div>
+                  ) : null
+                }
+              >
                 {notifications.map((n) => (
                   <article
                     key={n.id}
@@ -173,7 +191,7 @@ export function ApprovalInboxPanel() {
                 {notifications.length === 0 ? (
                   <div className="inbox-empty-hint">No notifications yet</div>
                 ) : null}
-              </section>
+              </InboxSection>
             </>
           ) : (
             <div style={{ textAlign: "center", color: "var(--txm)", padding: 40 }}>
