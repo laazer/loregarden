@@ -83,6 +83,7 @@ from loregarden.services.invariant_registry import (
     LANDINGS_CARRY_THE_WORK,
     LANDINGS_SURVIVE_THEIR_BRANCH,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
+    NO_STAGE_RUNS_PAST_AN_UNRUN_GATE,
     NO_TICKET_DEPENDS_ON_AN_ANCESTOR,
     NO_TICKET_IS_BLOCKED_BY_A_LIVE_RUN,
     NO_WAIT_LOOP_THROUGH_A_PARENT,
@@ -419,6 +420,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # requeue, a hand move): every answer on it would move a stage it no longer
     # describes (lg-workflow-integrity-2759). Closed as superseded.
     _invariant(STALE_PARKS_ARE_CLOSED),
+    # A stage dispatched past one whose gate never ran: the builtin driver runs an
+    # owed gate before it picks a stage, so one dated after that is a path around
+    # it (lg-workflow-integrity-2777). Report-only; the next gate clears it.
+    _invariant(NO_STAGE_RUNS_PAST_AN_UNRUN_GATE),
     # A ticket created over a write-time size cap: the write guards make that
     # unreachable, so a violation dated after they landed is a writer that
     # walked around one (lg-milestone-that-2250). Report-only — only a person
