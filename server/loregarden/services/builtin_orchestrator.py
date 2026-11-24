@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from loregarden.agents.executors.cli import CliAgentExecutor
@@ -35,12 +36,14 @@ from loregarden.services.criterion_gate import before_next_stage
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.exit_actions import resolve_exit_actions
+from loregarden.services.gate_observability import record_gate_evaluation
 from loregarden.services.gate_recovery import GateDecision, GateRecovery
 from loregarden.services.hold_line import render_hold_line
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.oversized_ticket_split import split_oversized_ticket
+from loregarden.services.owed_gate import owed_gate, unrunnable_owed_gate
 from loregarden.services.parallel_stage import (
     ParallelMemberResult,
     latest_member_run,
@@ -85,6 +88,8 @@ from loregarden.services.workflow_state import (
     set_stage_status,
 )
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 #: Per-stage floors, calibrated 2026-09-11 against the 95th percentile of every
 #: SUCCEEDED run's wall clock, per stage, with the sample size beside each. The
@@ -417,6 +422,11 @@ class BuiltinOrchestrator:
         # (the pause above returns otherwise), so finalize the parent and stop.
         if self._has_child_tickets(ticket):
             return self._finalize_aggregator_parent(orch_run, ticket)
+        # A stage that finished with no driver left to gate it is gated now, before
+        # anything below sends the ticket elsewhere or the loop picks the next one.
+        gated = self._run_owed_gate(ticket, profile, orch_run)
+        if gated is not None:
+            return gated
         # Findings filed against it are decided by its spec before it reaches a
         # gate or finishes; a round reopens the spec stage, which the loop then
         # picks like any pending stage (`scope_round`).
@@ -650,6 +660,44 @@ class BuiltinOrchestrator:
 
         if not next_key:
             return self._pause_orchestration(orch_run, ticket)
+        return None
+
+    def _run_owed_gate(
+        self, ticket: Ticket, profile: OrchestrationProfile, orch_run: OrchestrationRun
+    ) -> OrchestrationRun | None:
+        """Gate the last finished stage if no pass has (`services.owed_gate`).
+
+        Returns the run to hand back when the gate blocked the ticket, or None
+        to go on: it passed, or it sent the stage back and the loop re-runs it.
+        """
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages:
+            return None
+        owed = owed_gate(self.session, ticket, stages, parse_stage_map(instance, stages))
+        if owed is None:
+            return None
+        skip = unrunnable_owed_gate(self.session, ticket, owed)
+        logger.warning(
+            "%s: '%s' finished (%s) without its gate; %s",
+            ticket.external_id,
+            owed.stage.key,
+            owed.run.run_code,
+            skip.message if skip else "running it now",
+        )
+        if skip is None:
+            return self._advance_after_stage(ticket, profile, owed.stage, orch_run, owed.stage.key)
+        route = StateMachine.resolve_next_stage_key(
+            stages, self.orch._resolve_transitions(ticket), owed.stage.key, outcome="pass"
+        )
+        record_gate_evaluation(
+            self.session,
+            self.callbacks,
+            ticket,
+            orch_run,
+            skip,
+            from_stage=owed.stage.key,
+            to_stage=route.to_key if route else "",
+        )
         return None
 
     def _has_child_tickets(self, ticket: Ticket) -> bool:

@@ -118,6 +118,7 @@ from loregarden.services.unavailable_gate_blocks import (
     refile_as_harness,
     work_blocks_from_unavailable_gates,
 )
+from loregarden.services.ungated_stage_invariant import NO_STAGE_RUNS_PAST_AN_UNRUN_GATE
 from loregarden.services.unpublished_trees import publish_trees as _publish_unpublished_trees
 from loregarden.services.unpublished_trees import violations as _unpublished_tree_violations
 from loregarden.services.unresolved_ledger import (
@@ -1308,6 +1309,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT,
     IDLE_TICKETS_ARE_HELD,
     STALE_PARKS_ARE_CLOSED,
+    NO_STAGE_RUNS_PAST_AN_UNRUN_GATE,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     ORPHANED_SYMBOL_MAP_PARTITION,
