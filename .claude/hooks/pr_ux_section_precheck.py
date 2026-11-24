@@ -13,9 +13,12 @@ template that would have shown them the section. Its first run failed on 21 of
 body about to be sent and the branch's changed files, and denies the command
 with the check's own message, so the section is written before the PR opens.
 
-Covers `gh pr create` and `gh pr edit` with a body. A body the hook cannot read
-(`--fill`, `--web`, a `$(...)` substitution, a missing file) is not blocked:
-the agent is told the precheck did not run and CI will check.
+Covers `gh pr create` and `gh pr edit` with a body. A `--body-file` path in a
+shell variable is resolved when the same command sets it to a plain value or the
+environment holds it, and refused otherwise, since the caller can pass the path
+itself. A body the hook cannot read any other way (`--fill`, `--web`, a
+`--body "$(...)"` substitution, a missing file) is not blocked: the agent is
+told the precheck did not run and CI will check.
 
 Standard library only, Python 3.9: hooks run under the system `python3`.
 """
@@ -37,6 +40,11 @@ _FIX_CHECK = Path(".github") / "scripts" / "pr_fix_coverage_check.py"
 _GH_PR = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
 _CD = re.compile(r"(?:^|[;&|\s])cd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)")
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n\2[ \t]*(?:\n|$)", re.DOTALL)
+#: An assignment standing as its own word, unlike `--flag=value`.
+_ASSIGNMENT = re.compile(
+    r"(?:^|[;&|(\s])([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|[^\s;&|()]*)", re.MULTILINE
+)
+_VARIABLE = re.compile(r"\$(?:\{(\w+)\}|(\w+))")
 _STOP = {"&&", "||", ";", "|", "<", "<<", ">", ">>", "&", "\n"}
 #: shlex's own punctuation, plus a newline: outside quotes it ends the command.
 _PUNCTUATION = "();<>|&\n"
@@ -44,6 +52,10 @@ _PUNCTUATION = "();<>|&\n"
 
 class Unreadable(Exception):
     """The body the command would send cannot be known before it runs."""
+
+
+class NeedsLiteral(Exception):
+    """The body is in a shell variable this cannot read; the command can name it outright."""
 
 
 def _emit(decision: str | None, message: str) -> None:
@@ -91,6 +103,48 @@ def _workdir(command: str, match: re.Match, cwd: Path) -> Path:
     return target if target.is_absolute() else cwd / target
 
 
+def _variables(command: str) -> dict[str, str | None]:
+    """What each `NAME=value` in the command sets; None for a value only the shell knows.
+
+    A name set twice is None too: guessing which value reaches `gh` is worse
+    than asking for the path.
+    """
+    values: dict[str, str | None] = {}
+    for name, raw in _ASSIGNMENT.findall(command):
+        literal = raw.startswith("'")
+        value = raw[1:-1] if raw[:1] in ("'", '"') else raw
+        if not literal:
+            value = _expand(value, values)
+        known = name not in values and (literal or not ("$" in value or "`" in value))
+        values[name] = value if known else None
+    return values
+
+
+def _expand(text: str, values: dict[str, str | None]) -> str:
+    """`text` with each variable it can know filled in; the rest stay `$NAME`."""
+
+    def replace(match: re.Match) -> str:
+        name = match.group(1) or match.group(2)
+        value = values[name] if name in values else os.environ.get(name)
+        return match.group(0) if value is None else value
+
+    return _VARIABLE.sub(replace, text)
+
+
+def _resolve_path(path: str, command: str) -> str:
+    """`--body-file`'s path with its variables filled in, or `NeedsLiteral` when one cannot be.
+
+    It used to look for a file named `$B`, find none, and let the command
+    through unchecked.
+    """
+    if "$(" in path or "`" in path:
+        raise NeedsLiteral(path)
+    resolved = _expand(path, _variables(command))
+    if "$" in resolved:
+        raise NeedsLiteral(path)
+    return resolved
+
+
 def _body(command: str, match: re.Match, args: list[str], workdir: Path) -> str | None:
     """The description the command sends; None when it sends none (an edit of other fields)."""
     if any(flag in args for flag in ("--fill", "--fill-first", "--fill-verbose", "--web", "-w")):
@@ -110,7 +164,7 @@ def _body(command: str, match: re.Match, args: list[str], workdir: Path) -> str 
         if heredoc is None:
             raise Unreadable("the body is read from stdin, not a heredoc in the command")
         return heredoc.group(3)
-    file = Path(os.path.expanduser(path or ""))
+    file = Path(os.path.expanduser(_resolve_path(path or "", command[: match.start()])))
     file = file if file.is_absolute() else workdir / file
     try:
         return file.read_text(encoding="utf-8")
@@ -192,6 +246,12 @@ def decide(payload: dict) -> tuple[str | None, str] | None:
             return None
         found = check.problems(body, _changed(workdir, args))
         fix_found = _fix_coverage_problems(root, args, body)
+    except NeedsLiteral as exc:
+        return "deny", (
+            f"The PR description precheck cannot read `{exc}`: it is a shell variable or "
+            "substitution this command does not set to a plain value. Pass --body-file the "
+            "literal path so the description is checked before the PR opens."
+        )
     except (Unreadable, ValueError) as exc:  # ValueError: shlex on unbalanced quotes
         return None, (
             f"The PR description precheck did not run ({exc}). If this PR touches "

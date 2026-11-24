@@ -18,6 +18,9 @@ jobs:
   server:
     name: Server (Python)
     runs-on: ubuntu-latest
+    # 18-28 minutes when it passes (28 runs, 2026-11-23). Without a limit a hung
+    # suite, or a runner that went away, holds the merge queue for an hour.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: server

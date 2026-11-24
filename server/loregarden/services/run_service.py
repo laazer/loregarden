@@ -9,7 +9,10 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
+    BlockKind,
+    BlockOrigin,
     DispatchSurface,
+    HumanActionTier,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -27,9 +30,15 @@ from loregarden.services import (
     operation_split,  # noqa: F401
 )
 from loregarden.services.artifact_service import record_blocking_issue
-from loregarden.services.block_settlement import settle_block
+from loregarden.services.block_settlement import RepairPolicy, settle_block
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
+from loregarden.services.idle_orchestrations import (
+    IDLE_RUN_LIMIT,
+    OPENABLE_STATES,
+    ends_the_limit,
+    idle_hold_message,
+)
 from loregarden.services.interruption_messages import expired_lease_message
 from loregarden.services.orchestration import (
     LIVE_ORCHESTRATION_STATUSES,
@@ -38,6 +47,7 @@ from loregarden.services.orchestration import (
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.process_identity import liveness
 from loregarden.services.run_cancellation import settle_stopped_before_start
 from loregarden.services.run_capacity import run_capacity
@@ -466,11 +476,40 @@ def settle_expired_orchestration_leases(session: Session) -> list[OrchestrationR
             run.last_seen_at or run.started_at or run.created_at,
             message,
         )
-        callbacks.complete_orchestration(
-            run, ticket, status=OrchestrationRunStatus.FAILED, message=message
-        )
+        if ticket.state in OPENABLE_STATES and ends_the_limit(session, run):
+            _hold_idle_ticket(callbacks, run, ticket)
+        else:
+            callbacks.complete_orchestration(
+                run, ticket, status=OrchestrationRunStatus.FAILED, message=message
+            )
         settled.append(run)
     return settled
+
+
+def _hold_idle_ticket(
+    callbacks: OrchestrationCallbackService, run: OrchestrationRun, ticket: Ticket
+) -> None:
+    """Block a ticket whose runs keep opening and doing nothing (`idle_orchestrations`).
+
+    The prepared action puts it in the inbox, which also keeps a lane and the
+    autopilot from retrying it: the next move is a person's.
+    """
+    message = idle_hold_message(run)
+    logger.warning("Holding ticket %s: %s", ticket.external_id or ticket.id, message)
+    callbacks.block_ticket(
+        run,
+        ticket,
+        origin=BlockOrigin.CONTROL_PLANE,
+        repair=RepairPolicy.withheld(
+            "No agent was running this ticket, so an agent turn has nothing to repair."
+        ),
+        message=message,
+        prepared_action=PreparedAction(
+            tier=HumanActionTier.MANUAL,
+            attempted=f"{IDLE_RUN_LIMIT} orchestration runs, each left open for its full lease.",
+        ),
+        declared=BlockKind.HUMAN_ACTION,
+    )
 
 
 AGENT_LEASE_EXPIRED_MESSAGE = (

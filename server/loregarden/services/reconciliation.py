@@ -74,6 +74,7 @@ from loregarden.services.invariant_registry import (
     FOLLOW_UPS_LEAVE_THEIR_SOURCE,
     HELD_REPAIRS_READ_IN_PROGRESS,
     HELD_TICKETS_RESUME,
+    IDLE_TICKETS_ARE_HELD,
     LAND_VERIFICATION_RAN,
     LAND_VERIFICATION_RECEIPT_IS_SERVICE_WRITTEN,
     LANDED_WORK_IS_COMMITTED,
@@ -413,6 +414,7 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # (lg-workflow-integrity-2751). Settled CANCELLED, which leaves the stage
     # PENDING with no block, as the stop would have.
     _invariant(STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT),
+    _invariant(IDLE_TICKETS_ARE_HELD),
     # A park card whose stage left AWAITING without it being answered (a
     # requeue, a hand move): every answer on it would move a stage it no longer
     # describes (lg-workflow-integrity-2759). Closed as superseded.

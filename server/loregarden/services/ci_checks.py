@@ -175,6 +175,12 @@ def check_name(check: GhCheck) -> str:
     return check.name or check.context or "unnamed check"
 
 
+def actions_job_id(url: str) -> str | None:
+    """The GitHub Actions job a check's URL names; None when it is not an Actions job."""
+    match = _ACTIONS_JOB_URL.search(url)
+    return match.group(1) if match else None
+
+
 def failure_logs(repo_root: Path, checks: list[GhCheck]) -> FailureLogs:
     """The failed steps' output of every failing GitHub Actions job in ``checks``.
 
@@ -187,14 +193,14 @@ def failure_logs(repo_root: Path, checks: list[GhCheck]) -> FailureLogs:
     for check in failing_checks(checks):
         name = check_name(check)
         url = check.details_url or check.target_url
-        match = _ACTIONS_JOB_URL.search(url)
-        if match is None:
+        job_id = actions_job_id(url)
+        if job_id is None:
             errors.append(f"{name}: not a GitHub Actions job, no log to read ({url or 'no URL'})")
             continue
         try:
             log = read_gh(
                 repo_root,
-                ["run", "view", "--job", match.group(1), "--log-failed"],
+                ["run", "view", "--job", job_id, "--log-failed"],
                 GH_TIMEOUT_SECONDS,
             )
         except GitHubReadError as exc:
