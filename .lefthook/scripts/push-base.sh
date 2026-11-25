@@ -12,3 +12,12 @@ push_base() {
   fi
   printf '%s' "$base"
 }
+
+# Sourced beside it: the selector flags for this run. A push runs the tests
+# nearest its change, since its PR gets CI's full run. LOREGARDEN_TESTS_BASE is
+# how a landing names its range, and nothing runs after a landing to catch what
+# a nearer selection misses, so a named range gets the whole reach.
+SELECT_REACH=()
+if [ -z "${LOREGARDEN_TESTS_BASE:-}" ]; then
+  SELECT_REACH=(--nearest)
+fi

@@ -1,4 +1,4 @@
-"""Doctor check: did the dev server's last reload land?
+"""Doctor checks on the dev server: its last reload, main, and its Python.
 
 The dev-server supervisor (`loregarden.dev_supervisor`) records each reload's
 outcome in `data/dev-server/status.json` under the checkout it serves. A
@@ -14,7 +14,10 @@ reports the same outcome to whoever asked for the reload.
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import os
+import sys
 from pathlib import Path
 
 from loregarden.config import settings
@@ -86,6 +89,44 @@ def check_dev_server_reload(
         remediation=(
             f"Fix the error, then run ./scripts/reload-backend.sh. Full log: {status.log_file}"
         ),
+    )
+
+
+def is_translated() -> bool:
+    """Whether this process runs through Rosetta. False where the kernel has no such answer."""
+    if sys.platform != "darwin":
+        return False
+    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+    value = ctypes.c_int(0)
+    size = ctypes.c_size_t(ctypes.sizeof(value))
+    # ENOENT is an Intel Mac, which has no Rosetta and nothing to translate.
+    found = libc.sysctlbyname(
+        b"sysctl.proc_translated", ctypes.byref(value), ctypes.byref(size), None, 0
+    )
+    return found == 0 and value.value == 1
+
+
+def check_native_python(
+    _session: Session, _workspace: Workspace, _repo_root: Path
+) -> DoctorFinding:
+    """Is the Python serving this native to the machine?
+
+    The live server was found on an Intel Homebrew Python on Apple silicon: the
+    same benchmark took twice the cpu, on a machine whose suites queue for it.
+    """
+    if not is_translated():
+        return DoctorFinding(
+            check=DoctorCheck.NATIVE_PYTHON,
+            status=DoctorStatus.PASS,
+            finding="The server's Python runs natively.",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.NATIVE_PYTHON,
+        status=DoctorStatus.WARN,
+        finding=f"The server's Python ({sys.executable}) is an Intel build running through "
+        "Rosetta, at about twice the cpu.",
+        remediation="When no agent is running, stop the dev server and start it again: "
+        "scripts/dev-server.sh rebuilds server/.venv with a native Python first.",
     )
 
 

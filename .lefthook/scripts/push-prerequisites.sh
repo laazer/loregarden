@@ -29,7 +29,7 @@ server_tests_need_client() {
   fi
   # Its reason for refusing to narrow is server-tests.sh's to print.
   if ! targets="$(bash "$SCRIPT_DIR/server_python.sh" "$SCRIPT_DIR/select_pytest_targets.py" \
-    --repo "$ROOT" --base "$base" 2>/dev/null)"; then
+    --repo "$ROOT" --base "$base" ${SELECT_REACH[@]+"${SELECT_REACH[@]}"} 2>/dev/null)"; then
     return 0
   fi
   [ -n "$targets" ] || return 0

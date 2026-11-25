@@ -41,8 +41,9 @@ from loregarden.services.discovery_cache import (
     join_probes,
 )
 
-# Short enough that a test measuring the bounded join finishes quickly, long
-# enough that a probe which returns at once wins the race deterministically.
+# For a caller that must not wait: the probe hangs, so missing the join is the
+# point. Never for a probe whose answer the test reads: on a loaded machine its
+# thread starts later than this. That is PATIENT_JOIN, or `_fill`.
 QUICK_JOIN = 0.02
 PATIENT_JOIN = 2.0
 
@@ -65,6 +66,12 @@ def _ok(*found: str, target: str = "the-thing-probed") -> ProbeOutcome[str]:
 
 def _failed(detail: str, *, target: str = "the-thing-probed") -> ProbeOutcome[str]:
     return ProbeOutcome(found=[], ok=False, detail=detail, target=target)
+
+
+def _fill(cache: ProbeCache[str], key: str, outcome: ProbeOutcome[str]) -> None:
+    """File ``outcome`` under ``key``, however late its thread starts."""
+    cache.get(key, lambda: outcome)
+    join_probes(timeout=5.0)
 
 
 class _HangingProbe:
@@ -227,19 +234,22 @@ def test_an_empty_answer_is_retried_sooner_than_a_full_one():
 
 
 def test_a_failed_answer_is_held_on_the_failure_ttl_too():
-    cache = _cache(probe_budget_seconds=0.0, success_ttl_seconds=300.0, failure_ttl_seconds=0.01)
     calls = []
 
     def failing_probe() -> ProbeOutcome[str]:
         calls.append(1)
         return _failed("the CLI is not installed.")
 
-    assert cache.get("k", failing_probe).status == DiscoveryStatus.UNAVAILABLE
-    assert cache.get("k", failing_probe).status == DiscoveryStatus.UNAVAILABLE
+    held = _cache()
+    assert held.get("k", failing_probe).status == DiscoveryStatus.UNAVAILABLE
+    assert held.get("k", failing_probe).status == DiscoveryStatus.UNAVAILABLE
     assert len(calls) == 1, "a held failure must not be re-probed within its TTL"
 
+    calls.clear()
+    expiring = _cache(probe_budget_seconds=0.0, success_ttl_seconds=300.0, failure_ttl_seconds=0.01)
+    assert expiring.get("k", failing_probe).status == DiscoveryStatus.UNAVAILABLE
     time.sleep(0.05)
-    assert cache.get("k", failing_probe).status in {
+    assert expiring.get("k", failing_probe).status in {
         DiscoveryStatus.UNAVAILABLE,
         DiscoveryStatus.PROBING,
     }
@@ -333,11 +343,12 @@ def test_only_one_probe_thread_runs_per_key():
 
 
 def test_a_probe_for_one_key_does_not_block_another():
-    cache = _cache(join_timeout_seconds=QUICK_JOIN)
+    cache = _cache()
     slow = _HangingProbe()
+    waiting = threading.Thread(target=cache.get, args=("first", slow), daemon=True)
 
     try:
-        cache.get("first", slow)
+        waiting.start()
         assert slow.started.wait(timeout=5)
 
         # Two LM Studio servers are two probes; one being slow says nothing
@@ -347,6 +358,7 @@ def test_a_probe_for_one_key_does_not_block_another():
         assert answer.status == DiscoveryStatus.FRESH
     finally:
         slow.finish()
+        waiting.join(timeout=5)
 
 
 def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe():
@@ -430,7 +442,7 @@ def test_a_probe_that_cannot_be_dispatched_does_not_wedge_its_key():
     cache = _cache(
         probe_budget_seconds=0.0,
         failure_ttl_seconds=0.01,
-        join_timeout_seconds=QUICK_JOIN,
+        join_timeout_seconds=PATIENT_JOIN,
     )
     calls: list[str] = []
 
@@ -526,7 +538,7 @@ def test_an_entry_within_its_ttl_and_not_ok_is_unavailable():
 
 def test_an_expired_ok_entry_with_models_is_stale_while_it_refreshes():
     cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
-    assert cache.get("k", lambda: _ok("first")).found == ["first"]
+    _fill(cache, "k", _ok("first"))
 
     refresh = _HangingProbe(_ok("second"))
     try:
@@ -547,7 +559,7 @@ def test_an_expired_ok_entry_with_nothing_in_it_is_probing():
         failure_ttl_seconds=0.01,
         join_timeout_seconds=QUICK_JOIN,
     )
-    assert cache.get("k", lambda: _ok()).found == []
+    _fill(cache, "k", _ok())
     time.sleep(0.05)
 
     refresh = _HangingProbe()
@@ -568,7 +580,7 @@ def test_an_expired_failed_entry_is_probing_not_unavailable():
         failure_ttl_seconds=0.01,
         join_timeout_seconds=QUICK_JOIN,
     )
-    assert cache.get("k", lambda: _failed("LM Studio refused the connection.")).detail
+    _fill(cache, "k", _failed("LM Studio refused the connection."))
     time.sleep(0.05)
 
     refresh = _HangingProbe()
@@ -591,11 +603,12 @@ def test_the_probed_target_is_carried_across_every_status():
     see the per-module tests. What this pins is that once the cache has an
     outcome, every answer derived from it keeps that outcome's target.
     """
-    cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
-
-    fresh = cache.get("k", lambda: _ok("a", target="/opt/homebrew/bin/codex"))
+    outcome = _ok("a", target="/opt/homebrew/bin/codex")
+    fresh = _cache().get("k", lambda: outcome)
     assert fresh.target == "/opt/homebrew/bin/codex"
 
+    cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
+    _fill(cache, "k", outcome)
     refresh = _HangingProbe(_ok("a"))
     try:
         stale = cache.get("k", refresh)
@@ -611,12 +624,13 @@ def test_the_probed_target_is_carried_across_every_status():
 
 def test_a_detail_is_only_set_on_the_unavailable_status():
     """The one rule the UI copy depends on: a non-empty detail means "it failed"."""
+    patient = _cache()
+    assert patient.get("ok", lambda: _ok("a")).detail == ""
+    assert patient.get("empty", lambda: _ok()).detail == ""
+    assert patient.get("bad", lambda: _failed("it broke.")).detail == "it broke."
+
     cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
-
-    assert cache.get("ok", lambda: _ok("a")).detail == ""
-    assert cache.get("empty", lambda: _ok()).detail == ""
-    assert cache.get("bad", lambda: _failed("it broke.")).detail == "it broke."
-
+    _fill(cache, "ok", _ok("a"))
     refresh = _HangingProbe(_ok("b"))
     try:
         assert cache.get("ok", refresh).detail == ""
@@ -775,7 +789,7 @@ def test_simultaneous_callers_on_an_expired_catalogue_are_never_handed_an_empty_
     the TTL rolls over — "what left the picker permanently empty before".
     """
     cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
-    assert cache.get("k", lambda: _ok("first", target="/bin/thing")).found == ["first"]
+    _fill(cache, "k", _ok("first", target="/bin/thing"))
 
     refresh = _HangingProbe(_ok("second"))
     try:

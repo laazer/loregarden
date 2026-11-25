@@ -395,6 +395,8 @@ class DoctorCheck(str, Enum):
     #: The dev server is not following main: its checkout is on another branch,
     #: has diverged, or refused the fast-forward (`services.follow_main`).
     SERVER_FOLLOWS_MAIN = "server_follows_main"
+    #: The server's Python is translated (Rosetta): twice the cpu for the same work.
+    NATIVE_PYTHON = "native_python"
     #: A module kept for a ticket (`kept-for:`) whose ticket is over or unknown.
     KEPT_CODE_TICKETS = "kept_code_tickets"
 

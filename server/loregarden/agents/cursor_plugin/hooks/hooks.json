@@ -5,6 +5,10 @@
       {
         "command": "python3 \"${CURSOR_PLUGIN_ROOT}/../shared_stash_guard.py\" --agent-run --cursor",
         "timeout": 10
+      },
+      {
+        "command": "python3 \"${CURSOR_PLUGIN_ROOT}/../unleased_suite_guard.py\" --cursor",
+        "timeout": 10
       }
     ]
   }

@@ -52,12 +52,14 @@ DockerInvoke = Callable[[Sequence[str]], subprocess.CompletedProcess]
 #: Resolved cost of each named size, as (cpus, memory_mb). Sized against a
 #: developer machine rather than a server: `service` is one container with a
 #: database in it, `stack` is a compose file for an app under test, `heavy` is a
-#: browser-driving end-to-end suite.
+#: browser-driving end-to-end suite. `heavy` was 4 cpus until 2026-11-24: on the
+#: 7-cpu host pool two never fit, so in a day one ran 84% of the time, two never,
+#: and eleven waited. At 3, two fit beside a cpu of standing agent leases.
 CLASS_WEIGHTS: dict[DockerFootprint, tuple[float, int]] = {
     DockerFootprint.LIGHT: (0.5, 512),
     DockerFootprint.SERVICE: (1.0, 1024),
     DockerFootprint.STACK: (2.0, 4096),
-    DockerFootprint.HEAVY: (4.0, 8192),
+    DockerFootprint.HEAVY: (3.0, 8192),
 }
 
 _BYTES_PER_MB = 1024 * 1024

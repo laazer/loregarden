@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
@@ -11,8 +14,13 @@ from unittest import mock
 import pytest
 from loregarden.dev_supervisor import STATUS_FILE, ReloadState, Status
 from loregarden.models.domain import DoctorCheck, DoctorStatus
-from loregarden.services import doctor
-from loregarden.services.doctor_dev_server import STATE_DIR, check_dev_server_reload
+from loregarden.services import doctor, doctor_dev_server
+from loregarden.services.doctor_dev_server import (
+    STATE_DIR,
+    check_dev_server_reload,
+    check_native_python,
+    is_translated,
+)
 
 #: A pid no process holds: above the kernel's default pid_max on macOS and Linux.
 DEAD_PID = 4_194_304 + 7
@@ -76,3 +84,37 @@ def test_an_unreadable_status_warns_rather_than_passing(tmp_path: Path):
 def test_the_check_is_registered_but_does_not_park_dispatch():
     assert doctor.CHECKS[DoctorCheck.DEV_SERVER_RELOAD] is check_dev_server_reload
     assert DoctorCheck.DEV_SERVER_RELOAD not in doctor.DISPATCH_PREFLIGHT_CHECKS
+
+
+def _native_finding(tmp_path: Path, *, translated: bool):
+    with mock.patch.object(doctor_dev_server, "is_translated", return_value=translated):
+        return check_native_python(mock.Mock(), mock.Mock(), tmp_path)
+
+
+def test_a_translated_python_is_reported_with_the_restart_that_fixes_it(tmp_path):
+    finding = _native_finding(tmp_path, translated=True)
+    assert finding.check is DoctorCheck.NATIVE_PYTHON
+    assert finding.status is DoctorStatus.WARN
+    assert "scripts/dev-server.sh" in finding.remediation
+
+
+def test_a_native_python_passes(tmp_path):
+    assert _native_finding(tmp_path, translated=False).status is DoctorStatus.PASS
+
+
+def test_it_agrees_with_an_intel_python_on_apple_silicon():
+    """Whatever Python this suite runs on: Intel here means translated only on an arm64 Mac."""
+    asked = (
+        subprocess.run(
+            ["sysctl", "-n", "hw.optional.arm64"], capture_output=True, text=True, check=False
+        )
+        if sys.platform == "darwin"
+        else None
+    )
+    apple_silicon = asked is not None and asked.stdout.strip() == "1"
+    assert is_translated() is (apple_silicon and platform.machine() == "x86_64")
+
+
+def test_the_doctor_runs_it_and_no_dispatch_waits_on_it():
+    assert doctor.CHECKS[DoctorCheck.NATIVE_PYTHON] is check_native_python
+    assert DoctorCheck.NATIVE_PYTHON not in doctor.DISPATCH_PREFLIGHT_CHECKS

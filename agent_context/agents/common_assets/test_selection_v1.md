@@ -15,14 +15,15 @@ So run only what finishes inside your turn, in the foreground.
   nothing the narrow run does not. One verify run sat 53 minutes in such a sweep
   and was killed with no output.
 - **If the workspace ships a test selector, use it.** In loregarden:
-  `python .lefthook/scripts/select_pytest_targets.py --repo . --base origin/main`
-  prints the server test files the branch's changes reach (the import graph, the
-  same set pre-push runs). Exit 2 means it could not map the change and would run
+  `python .lefthook/scripts/select_pytest_targets.py --repo . --base origin/main --nearest`
+  prints the server test files nearest the branch's changes, closest first (the
+  import graph, the same set pre-push runs). Exit 2 means it could not map the change and would run
   everything; do not, and instead name the test files yourself. For the client,
   `npx jest --changedSince=origin/main`.
 - **Otherwise, name the test files** that cover the changed modules and run those.
 - **Size the capacity request to the run.** A few test files need no reservation.
-  Many files under `-n` take `capacity-run.sh --footprint heavy`. The Bash tool's
+  Many files under `-n` take `capacity-run.sh --footprint heavy`, and an agent run that
+  skips it is refused. The Bash tool's
   ceiling is 10 minutes (`timeout: 600000`), and a few hundred files run in about
   7. If it times out still queued, report `blocked` with `blocked_kind: harness`
   naming the holder it printed. Never wait out your own run timeout.

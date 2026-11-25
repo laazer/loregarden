@@ -7,6 +7,7 @@ from pathlib import PurePath
 from typing import Any
 
 from loregarden.agents.shared_stash_guard import denial as shared_stash_denial
+from loregarden.agents.unleased_suite_guard import denial as unleased_suite_denial
 from loregarden.mcp.tool_ids import (
     ARGUMENT_GATED_MCP_TOOLS,
     AUTO_APPROVED_MCP_TOOLS,
@@ -153,9 +154,9 @@ def denied_cli_tool_message(tool_name: str, tool_input: dict[str, Any]) -> str:
         return ""
     if _git_commit_bypasses_hooks(command):
         return "git commit hook bypass is forbidden; run git commit without --no-verify/-n."
-    # The same answer the shell hook gives (`shared_stash_guard`), for a call that
-    # reaches the bridge: neither this policy nor a click may approve it.
-    return shared_stash_denial(command, agent_run=True)
+    # The same answers the shell hooks give, for a call that reaches the bridge:
+    # neither this policy nor a click may approve it.
+    return shared_stash_denial(command, agent_run=True) or unleased_suite_denial(command)
 
 
 def is_auto_approved_cli_tool(tool_name: str) -> bool:
