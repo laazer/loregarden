@@ -180,7 +180,7 @@ echo '{"serverUrl": "http://127.0.0.1:8123", "appUrl": "http://localhost:5174"}'
 To open the panel in every new session, without typing `/garden`:
 
 ```bash
-echo '{"openOnStart": true}' | claude plugin configure loregarden@loregarden --values-stdin
+echo '{"openOnStart": "true"}' | claude plugin configure loregarden@loregarden --values-stdin
 ```
 
 Options left out keep their values. Restart Claude Code to apply them. `/plugin configure loregarden@loregarden` does the same inside a session.
