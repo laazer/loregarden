@@ -24,7 +24,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services import orchestration_capacity
+from loregarden.services import orchestration_capacity, reload_hold
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.child_readiness import (
@@ -53,6 +53,12 @@ from loregarden.services.parallel_stage import (
     reconcile_parallel_stage,
 )
 from loregarden.services.preflight_ledger import PreflightLedger
+from loregarden.services.reload_yield import (
+    RELOAD_YIELD_MESSAGE,
+    Continuation,
+    queue_continuation,
+    yielded_to_reload,
+)
 from loregarden.services.review_relens import decide_lenses, record_relens_decisions
 from loregarden.services.run_boundary import boundary_block
 from loregarden.services.run_cancellation import (
@@ -221,6 +227,11 @@ class BuiltinOrchestrator:
                 self._renew_lease(orch_run)
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
+                continuation = Continuation.of(
+                    nested=_subtree_budget is not None,
+                    max_stages=max_stages,
+                    stages_run=stages_run,
+                )
 
                 settled = self._settle_subtree_before_stages(
                     ticket,
@@ -229,6 +240,7 @@ class BuiltinOrchestrator:
                     auto_approve=auto_approve,
                     agent_timeout=agent_timeout,
                     budget=budget,
+                    continuation=continuation,
                 )
                 if settled is not None:
                     return settled
@@ -242,27 +254,19 @@ class BuiltinOrchestrator:
                 if not target_key:
                     return self._pause_orchestration(orch_run, ticket)
 
-                if limit > 0 and stages_run >= limit:
-                    return self._pause_orchestration(
-                        orch_run, ticket, message=f"Paused after {stages_run} stage(s)"
-                    )
-
                 stage_def = next(s for s in stages if s.key == target_key)
                 target_is_terminal = is_terminal_stage(stage_def)
-                bound_pause = budget.pause_message(terminal=target_is_terminal)
-                if bound_pause:
-                    return self._pause_orchestration(orch_run, ticket, message=bound_pause)
-
-                budget_block = enforce_stage_retry_budget(
-                    self.session,
-                    self.callbacks,
-                    orch_run,
+                out_of_budget = self._stop_out_of_budget(
                     ticket,
-                    target_key,
-                    profile.retry_budget,
+                    profile,
+                    orch_run,
+                    stage_def,
+                    budget,
+                    reached_limit=limit > 0 and stages_run >= limit,
+                    stages_run=stages_run,
                 )
-                if budget_block is not None:
-                    return budget_block
+                if out_of_budget is not None:
+                    return out_of_budget
 
                 stage_status = stage_map.get(target_key, ticket.workflow_stage_status)
 
@@ -274,6 +278,13 @@ class BuiltinOrchestrator:
                     return self._pause_orchestration(
                         orch_run, ticket, message="Awaiting human approval", awaiting=True
                     )
+
+                # Not a stage recovered from an interruption on this pass: what
+                # makes the next pass a resume is the block this one cleared.
+                if not recovered_stage_key:
+                    yielded = self._yield_to_reload(orch_run, ticket, continuation)
+                    if yielded is not None:
+                        return yielded
 
                 # A pin outranks the stage's own emptiness. The terminal stage
                 # names no agent, so it reads agentless and finalizes — which is
@@ -385,6 +396,7 @@ class BuiltinOrchestrator:
         auto_approve: bool,
         agent_timeout: int | None,
         budget: SubtreeBudget,
+        continuation: Continuation,
     ) -> OrchestrationRun | None:
         """Everything owed before this ticket may run a stage of its own.
 
@@ -409,6 +421,8 @@ class BuiltinOrchestrator:
                 subtree_budget=budget,
             )
         )
+        if child_pause == RELOAD_YIELD_MESSAGE:
+            return self._yield_to_reload(orch_run, ticket, continuation, required=True)
         if child_pause:
             return self._pause_orchestration(orch_run, ticket, message=child_pause)
 
@@ -434,6 +448,44 @@ class BuiltinOrchestrator:
             self.session.refresh(orch_run)
             return orch_run
         return None
+
+    def _stop_out_of_budget(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        orch_run: OrchestrationRun,
+        stage_def: WorkflowStageDef,
+        budget: SubtreeBudget,
+        *,
+        reached_limit: bool,
+        stages_run: int,
+    ) -> OrchestrationRun | None:
+        """The run to hand back when a limit forbids this stage, or None to run it."""
+        if reached_limit:
+            return self._pause_orchestration(
+                orch_run, ticket, message=f"Paused after {stages_run} stage(s)"
+            )
+        bound_pause = budget.pause_message(terminal=is_terminal_stage(stage_def))
+        if bound_pause:
+            return self._pause_orchestration(orch_run, ticket, message=bound_pause)
+        return enforce_stage_retry_budget(
+            self.session, self.callbacks, orch_run, ticket, stage_def.key, profile.retry_budget
+        )
+
+    def _yield_to_reload(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        continuation: Continuation,
+        *,
+        required: bool = False,
+    ) -> OrchestrationRun | None:
+        """Stop before this stage if the server waits to reload (`reload_hold`)."""
+        with reload_hold.yielding(required=required) as stops:
+            if not stops:
+                return None
+            queue_continuation(self.session, orch_run, ticket, continuation)
+            return self._pause_orchestration(orch_run, ticket, message=RELOAD_YIELD_MESSAGE)
 
     def _settle_finished_stage(
         self,
@@ -1168,18 +1220,9 @@ def _orchestrate_incomplete_children(
             child_run = settled
         builtin.session.refresh(ticket)
         builtin.session.refresh(child)
-        if child.state == TicketState.BLOCKED:
-            return f"Child ticket blocked: {child.title}"
-        if child_run.status == OrchestrationRunStatus.BLOCKED:
-            return f"Child workflow blocked: {child.title}"
-        if not ticket_workflow_complete(builtin.orch, child):
-            # Chain the child's own pause reason so a block deeper in the
-            # subtree stays visible at every level above it — otherwise a
-            # grandparent's run reports only "Child workflow paused" and the
-            # blocked grandchild two levels down is invisible from the top.
-            reason = (child_run.error_message or "").strip()
-            suffix = f" — {reason}" if reason else ""
-            return f"Child workflow paused: {child.title}{suffix}"
+        stopped = _child_stop_reason(builtin, child, child_run)
+        if stopped is not None:
+            return stopped
     if waiting:
         # Reported after the loop for the same reason parking is: the rest of the
         # subtree keeps moving, and the parent stays incomplete because the work
@@ -1195,6 +1238,27 @@ def _orchestrate_incomplete_children(
         # point of parking is that the rest of the subtree keeps moving. The
         # parent stays incomplete because the work is still owed.
         return f"Child ticket parked, awaiting a person: {', '.join(parked)}"
+    return None
+
+
+def _child_stop_reason(
+    builtin: BuiltinOrchestrator, child: Ticket, child_run: OrchestrationRun
+) -> str | None:
+    """What its parent reports when ``child`` ended unfinished, or None when it finished."""
+    if child.state == TicketState.BLOCKED:
+        return f"Child ticket blocked: {child.title}"
+    if child_run.status == OrchestrationRunStatus.BLOCKED:
+        return f"Child workflow blocked: {child.title}"
+    if yielded_to_reload(child_run):
+        return RELOAD_YIELD_MESSAGE
+    if not ticket_workflow_complete(builtin.orch, child):
+        # Chain the child's own pause reason so a block deeper in the
+        # subtree stays visible at every level above it — otherwise a
+        # grandparent's run reports only "Child workflow paused" and the
+        # blocked grandchild two levels down is invisible from the top.
+        reason = (child_run.error_message or "").strip()
+        suffix = f" — {reason}" if reason else ""
+        return f"Child workflow paused: {child.title}{suffix}"
     return None
 
 

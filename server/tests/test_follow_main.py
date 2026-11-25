@@ -22,7 +22,7 @@ from loregarden.models.domain import (
     RunStatus,
     Workspace,
 )
-from loregarden.services import doctor, follow_main
+from loregarden.services import doctor, follow_main, reload_hold
 from loregarden.services.doctor_dev_server import check_server_follows_main
 from loregarden.services.follow_main_status import read_follow_status
 from loregarden.services.self_improve_restart import RELOAD_SENTINEL
@@ -106,6 +106,13 @@ def server_settings(repos: Repos):
         yield fake
 
 
+@pytest.fixture(autouse=True)
+def _forget_the_hold():
+    reload_hold.reset()
+    yield
+    reload_hold.reset()
+
+
 def _tick(session: Session, workspace: Workspace):
     return follow_main.follow_main(session, workspace)
 
@@ -177,6 +184,105 @@ def test_in_flight_work_holds_a_server_pull_until_it_finishes(
 
     assert _tick(db_session, workspace).state is FollowMainState.RELOADING
     assert repos.head() == landed
+
+
+@pytest.fixture(name="held_run")
+def held_run_fixture(db_session: Session, workspace: Workspace, repos: Repos):
+    """A landed change that has waited long enough for new work to be held."""
+    run = make_agent_run(db_session, workspace_id=workspace.id, status=RunStatus.RUNNING)
+    repos.land("server/app.py", "VERSION = 2\n")
+    with mock.patch.object(reload_hold, "_now", return_value=1_000.0):
+        assert _tick(db_session, workspace).state is FollowMainState.WAITING_FOR_IDLE
+    with mock.patch.object(reload_hold, "_now", return_value=5_000.0):
+        status = _tick(db_session, workspace)
+        assert status.state is FollowMainState.HOLDING
+        assert reload_hold.holds_starts()
+        yield run
+
+
+def _finish(session: Session, run) -> None:
+    run.status = RunStatus.SUCCEEDED
+    session.add(run)
+    session.commit()
+
+
+def test_a_hold_lasts_through_the_reload_it_was_for(
+    db_session: Session, workspace: Workspace, repos: Repos, held_run
+):
+    _finish(db_session, held_run)
+
+    assert _tick(db_session, workspace).state is FollowMainState.RELOADING
+
+    assert repos.sentinel.exists()
+    assert reload_hold.holds_starts(), "work started now would be killed by the reload"
+
+
+def test_a_hold_ends_when_the_supervisor_refused_the_build(
+    db_session: Session, workspace: Workspace, held_run
+):
+    _finish(db_session, held_run)
+    _tick(db_session, workspace)
+
+    assert _tick(db_session, workspace).state is FollowMainState.RELOADING
+
+    assert not reload_hold.holds_starts()
+
+
+def test_a_hold_ends_when_the_checkout_leaves_main(
+    db_session: Session, workspace: Workspace, repos: Repos, held_run
+):
+    _git(repos.server, "switch", "-q", "-c", "elsewhere")
+
+    assert _tick(db_session, workspace).state is FollowMainState.OFF_BASE
+
+    assert not reload_hold.holds_starts()
+
+
+def test_a_failed_fetch_leaves_the_hold_to_its_deadline(
+    db_session: Session, workspace: Workspace, repos: Repos, held_run
+):
+    repos.origin.rename(repos.origin.with_name("gone.git"))
+
+    assert _tick(db_session, workspace).state is FollowMainState.GIT_FAILED
+
+    assert reload_hold.holds_starts()
+
+
+def test_a_prompt_waiting_on_a_person_ends_the_hold_and_says_so(
+    db_session: Session, workspace: Workspace, held_run
+):
+    held_run.status = RunStatus.AWAITING_PERMISSION
+    db_session.add(held_run)
+    db_session.commit()
+
+    status = _tick(db_session, workspace)
+
+    assert status.state is FollowMainState.WAITING_FOR_IDLE
+    assert held_run.run_code in status.detail
+    assert not reload_hold.holds_starts()
+
+
+def test_a_pulled_change_waiting_to_reload_is_held_for_too(
+    db_session: Session, workspace: Workspace, repos: Repos
+):
+    """The checkout is on main's tip, but the process runs the build before it."""
+    repos.land("server/app.py", "VERSION = 2\n")
+    _git(repos.server, "pull", "-q", "--ff-only")
+    make_agent_run(db_session, workspace_id=workspace.id, status=RunStatus.RUNNING)
+    with mock.patch.object(reload_hold, "_now", return_value=1_000.0):
+        _tick(db_session, workspace)
+
+    with mock.patch.object(reload_hold, "_now", return_value=5_000.0):
+        assert _tick(db_session, workspace).state is FollowMainState.HOLDING
+
+
+def test_holding_is_the_server_keeping_up(
+    db_session: Session, workspace: Workspace, repos: Repos, held_run
+):
+    finding = check_server_follows_main(db_session, workspace, repos.server)
+
+    assert finding.status is DoctorStatus.PASS
+    assert "holding" in finding.finding
 
 
 def test_a_checkout_on_another_branch_is_left_alone(

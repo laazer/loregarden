@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     #: shutdown is worse than the interruption it is trying to avoid. 0 disables
     #: the wait, restoring the pre-drain behaviour of exiting immediately.
     drain_timeout_seconds: float = 20.0
+    #: Reloading onto a landed change while tickets are running (`reload_hold`):
+    #: how long the change waits for the machine to fall idle on its own, how long
+    #: new work is then held back (0 never holds), and how long after a hold that
+    #: did not work before the next.
+    follow_main_hold_after_seconds: float = 600.0
+    follow_main_hold_seconds: float = 2700.0
+    follow_main_hold_cooldown_seconds: float = 7200.0
     #: Files attached to Home chat turns, one directory per conversation.
     #: Relative paths resolve against ``repo_root``, beside the database.
     chat_attachments_dir: Path = Path("data/chat-attachments")

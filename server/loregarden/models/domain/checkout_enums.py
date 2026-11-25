@@ -54,7 +54,7 @@ class DirtyCheckoutCause(StrEnum):
 class FollowMainState(StrEnum):
     """What the dev server did about main moving past the build it serves.
 
-    See `services.follow_main`. The first four are the server keeping up; the
+    See `services.follow_main`. The first five are the server keeping up; the
     rest are why it is not, each one shown by `loregarden_doctor`.
     """
 
@@ -66,6 +66,8 @@ class FollowMainState(StrEnum):
     RELOADING = "reloading"
     #: Main moved, but an agent run or stage is in flight; retried next tick.
     WAITING_FOR_IDLE = "waiting_for_idle"
+    #: As above, and no lane starts new work until it finishes (`reload_hold`).
+    HOLDING = "holding"
     #: The checkout is on another branch, so main is not its to follow.
     OFF_BASE = "off_base"
     #: The checkout has commits main does not; only a person can reconcile them.
