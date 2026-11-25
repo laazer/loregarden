@@ -226,7 +226,12 @@ def _start_orchestration(
         # pool bounds the agents this machine runs, and reserving one would
         # idle it and queue the operator behind capacity nobody uses.
         ticket = svc.resolve_ticket(ticket_id=start.ticket_id)
-        run = start_external_orchestration(session, ticket, harness=start.external_harness)
+        run = start_external_orchestration(
+            session,
+            ticket,
+            harness=start.external_harness,
+            idempotency_key=start.idempotency_key.strip(),
+        )
         return orchestration_run_view(run)
     reservation, run = start_orchestration_admitted(session, svc, start)
     if not reservation.admitted:

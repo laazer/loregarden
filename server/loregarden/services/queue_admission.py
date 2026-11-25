@@ -164,11 +164,12 @@ class QueueAdmissionService:
         driver: str = "",
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
+        idempotency_key: str = "",
     ) -> Reservation:
         """A slot to run the whole ticket in, or a place in line.
 
-        `driver`, `max_stages` and `timeout_seconds` are carried only so a
-        *parked* request still runs what was asked for. An admitted one never
+        `driver`, `max_stages`, `timeout_seconds` and `idempotency_key` are
+        carried only so a *parked* request still runs what was asked for. An admitted one never
         needs them: the caller starts the work itself, which is the point of
         reserving rather than dispatching.
         """
@@ -184,6 +185,7 @@ class QueueAdmissionService:
             driver=driver,
             max_stages=max_stages,
             timeout_seconds=timeout_seconds,
+            idempotency_key=idempotency_key,
         )
 
     def reserve_stage(
@@ -242,6 +244,7 @@ class QueueAdmissionService:
         timeout_seconds: int | None = None,
         force: bool = False,
         orchestration_run_id: str = "",
+        idempotency_key: str = "",
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
 
@@ -304,6 +307,7 @@ class QueueAdmissionService:
             max_stages=max_stages,
             timeout_seconds=timeout_seconds,
             force=force,
+            idempotency_key=idempotency_key,
         )
         position = result.get("position")
         logger.info(

@@ -31,6 +31,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_queue import WAITING_STATUSES
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.queue_waiting import already_queued
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.websocket_events import emit_execution_update
 from sqlalchemy import func
@@ -152,8 +153,11 @@ def release_held_work(session: Session, plan_id: str, held_since: datetime | Non
     released: list[str] = []
     for entry in _lane_entries(session, held, (QueuePosition.PAUSED,)):
         ticket = session.get(Ticket, entry.ticket_id)
-        requeued = lanes.already_queued(
-            ticket_id=entry.ticket_id, entry_kind=entry.entry_kind, stage_key=entry.stage_key
+        requeued = already_queued(
+            session,
+            ticket_id=entry.ticket_id,
+            entry_kind=entry.entry_kind,
+            stage_key=entry.stage_key,
         )
         if ticket is None or ticket.state in RESOLVED_STATES or requeued is not None:
             entry.status = QueuePosition.CANCELLED

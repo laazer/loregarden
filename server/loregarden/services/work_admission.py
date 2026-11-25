@@ -29,9 +29,13 @@ from loregarden.models.domain import (
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.queue_admission import QueueAdmissionService, Reservation
+from loregarden.services.queue_waiting import place_in_line
+from loregarden.services.run_concurrency import OrchestrationAlreadyRunning
+from loregarden.services.start_keys import run_for_key, waiting_entry_for_key
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from pydantic import BaseModel, ConfigDict
-from sqlmodel import Session, col, select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session
 
 
 class WorkQueued(Exception):  # noqa: N818 — reads as the condition, like StopIteration
@@ -70,9 +74,10 @@ class OrchestrationStart(BaseModel):
     #: A retry carrying the same key gets the run its first attempt created.
     idempotency_key: str = ""
     """Optional caller-chosen key. If a start with this key already created a run for this ticket,
-    that run is returned instead of a second one — so a call that failed ambiguously (socket
-    closed, timed out) can be retried without re-reading the ticket first. Choose a new key for a
-    genuinely new start; reusing one replays.
+    that run is returned instead of a second one, running or finished, and one still waiting in a
+    lane reports its place — so a call that failed ambiguously (socket closed, timed out) can be
+    retried without re-reading the ticket first. Choose a new key for a genuinely new start;
+    reusing one replays. Released only when the start failed before anything ran.
     """
     max_stages: int | None = None
     """Optional cap on stages for builtin autopilot."""
@@ -151,6 +156,33 @@ def _run_on_bound_claim(
         raise
 
 
+def _replay(
+    session: Session, ticket: Ticket, idempotency_key: str
+) -> tuple[Reservation, OrchestrationRun | None] | None:
+    """What an earlier start with this key already got, or None if there was none.
+
+    No slot is taken: a replay spawns nothing, so reserving one would idle
+    capacity for work that is already done or running. A start still waiting in
+    a lane is answered with its place even when another lane is free; admitting
+    it there would run the ticket now and again when its own lane reached it.
+    """
+    existing = run_for_key(session, ticket.id, idempotency_key)
+    if existing is not None:
+        return Reservation(admitted=True, message="Replayed by idempotency key"), existing
+    waiting = waiting_entry_for_key(session, ticket.id, idempotency_key)
+    if waiting is None:
+        return None
+    return (
+        Reservation(
+            admitted=False,
+            slot_number=waiting.slot_number,
+            position=waiting.position,
+            message=place_in_line(waiting),
+        ),
+        None,
+    )
+
+
 def start_orchestration_admitted(
     session: Session, svc, start: OrchestrationStart
 ) -> tuple[Reservation, Any]:
@@ -166,17 +198,9 @@ def start_orchestration_admitted(
     # way during one recovery, and both times the only safe move was to re-read
     # the ticket by hand before retrying (lg-workflow-integrity-696).
     idempotency_key = start.idempotency_key.strip()
-    if idempotency_key:
-        existing = session.exec(
-            select(OrchestrationRun).where(
-                col(OrchestrationRun.ticket_id) == ticket.id,
-                col(OrchestrationRun.idempotency_key) == idempotency_key,
-            )
-        ).first()
-        if existing is not None:
-            # No slot is taken: a replay spawns nothing, so reserving one
-            # would idle capacity for work that is already done or running.
-            return Reservation(admitted=True, message="Replayed by idempotency key"), existing
+    replayed = _replay(session, ticket, idempotency_key)
+    if replayed is not None:
+        return replayed
 
     ws = workspace_for_ticket(session, ticket)
     if not ws:
@@ -210,6 +234,7 @@ def start_orchestration_admitted(
         driver=start.driver.value if start.driver else "",
         max_stages=start.max_stages,
         timeout_seconds=start.timeout_seconds,
+        idempotency_key=idempotency_key,
     )
     if not reservation.admitted:
         return reservation, None
@@ -224,10 +249,25 @@ def start_orchestration_admitted(
         **run_options,
         "stop_at_stage_key": start.stop_at_stage_key or "",
         "timeout_override_seconds": start.timeout_seconds,
+        # With the claim, not once the start returns: the builtin driver returns
+        # when the pipeline is over, and until then a retry could not find the
+        # run it was retrying (lg-workflow-integrity-2797). A claim that fails
+        # unstarted gives the key back (`start_keys.release_unstarted`).
+        "idempotency_key": idempotency_key,
     }
-    claim = svc.claim_orchestration_run(
-        ticket, driver=driver, profile_slug=profile.slug, **claim_options
-    )
+    try:
+        claim = svc.claim_orchestration_run(
+            ticket, driver=driver, profile_slug=profile.slug, **claim_options
+        )
+    except (OrchestrationAlreadyRunning, IntegrityError):
+        # Another start of this ticket claimed since the lookups above: the same
+        # call's first attempt, if it carried this key.
+        session.rollback()
+        reservation.release()
+        replayed = _replay(session, ticket, idempotency_key)
+        if replayed is not None:
+            return replayed
+        raise
     reservation.bind(orchestration_run_id=claim.id)
 
     def _start() -> OrchestrationRun:
@@ -245,10 +285,4 @@ def start_orchestration_admitted(
         )
 
     run = _run_on_bound_claim(session, svc, reservation=reservation, claim=claim, start=_start)
-    if idempotency_key and not run.idempotency_key:
-        # Stamped after the run exists, so a start that raised leaves no key
-        # claiming a run that was never created.
-        run.idempotency_key = idempotency_key
-        session.add(run)
-        session.commit()
     return reservation, run

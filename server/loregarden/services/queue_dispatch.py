@@ -46,6 +46,7 @@ from loregarden.services.queue_refusals import (
     record_refusal,
 )
 from loregarden.services.run_service import schedule_agent_run, schedule_orchestration
+from loregarden.services.start_keys import name_run
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,7 @@ class LaneDispatch:
         timeout_seconds: int | None = None,
         approve_design_plans: bool = True,
         auto_repair: bool = True,
+        idempotency_key: str = "",
     ) -> OrchestrationRun | None:
         """Start the ticket's pipeline and return the run that now owns the lane.
 
@@ -131,6 +133,9 @@ class LaneDispatch:
                 ticket.id,
                 active.run_code,
             )
+            # This run is what the parked start became, so its key finds it.
+            name_run(self.session, active, idempotency_key)
+            self.session.commit()
             return active
 
         # An unrecognised driver is the caller's error, not grounds to start
@@ -152,6 +157,10 @@ class LaneDispatch:
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_seconds,
         )
+        # Named before the hand-off. Not when an earlier run of this entry holds
+        # the key already: a repair hold dispatches the same entry again.
+        name_run(self.session, claim, idempotency_key)
+        self.session.commit()
         try:
             schedule_orchestration(
                 ticket.id,

@@ -98,6 +98,9 @@ class QueuedRun(SQLModel, table=True):
     max_stages: int | None = None
     #: Max seconds each agent run in this orchestration may take. Null = agent default.
     timeout_seconds: int | None = None
+    #: The start's key while there is no run to carry it. Kept afterwards as the
+    #: record of what was asked (`services.start_keys`).
+    idempotency_key: str = ""
     #: Spend one dispatch past an exhausted stage retry budget when this entry
     #: starts. Carried for the same reason the overrides above are: the decision
     #: was made when the request was filed, and a lane reaching the entry hours

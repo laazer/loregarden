@@ -67,6 +67,7 @@ from loregarden.services.queue_repair import (
 )
 from loregarden.services.queue_repair_settle import reblock_settled
 from loregarden.services.queue_slot_claims import claim_is_fresh, slot_is_busy_with_nothing
+from loregarden.services.queue_waiting import already_queued, reuse_entry
 from loregarden.services.slot_claim_healing import (
     claim_orphaned_orchestrations,
     release_nested_slot_claims,
@@ -107,6 +108,7 @@ class LaneDispatcher(Protocol):
         auto_repair: bool = True,
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
+        idempotency_key: str = "",
     ) -> OrchestrationRun | None: ...
 
 
@@ -156,24 +158,6 @@ class QueueLaneService:
 
     # ---- writing -------------------------------------------------------
 
-    def already_queued(
-        self, *, ticket_id: str, entry_kind: QueueEntryKind, stage_key: str
-    ) -> QueuedRun | None:
-        """A queued entry for this exact request, if one is already waiting.
-
-        Keyed on (ticket, kind, stage) rather than ticket alone: "run this one
-        stage" and "run everything left" are different asks, and two different
-        stages of one ticket may legitimately both be waiting.
-        """
-        return self.session.exec(
-            select(QueuedRun).where(
-                QueuedRun.ticket_id == ticket_id,
-                QueuedRun.status == QueuePosition.QUEUED,
-                QueuedRun.entry_kind == entry_kind,
-                QueuedRun.stage_key == stage_key,
-            )
-        ).first()
-
     def add_to_lane(
         self,
         *,
@@ -189,6 +173,7 @@ class QueueLaneService:
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
         force: bool = False,
+        idempotency_key: str = "",
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
 
@@ -218,32 +203,11 @@ class QueueLaneService:
                 f"{self.max_concurrent}. Pick a lane from 1 to {self.max_concurrent}."
             )
 
-        existing = self.already_queued(
-            ticket_id=ticket.id, entry_kind=entry_kind, stage_key=stage_key
+        existing = already_queued(
+            self.session, ticket_id=ticket.id, entry_kind=entry_kind, stage_key=stage_key
         )
         if existing is not None:
-            # Retrying a refused request must not append a second entry for work
-            # already in line. Three retries once produced three entries for one
-            # (ticket, stage), and each would later promote and re-run that
-            # stage — one of them dispatched a real agent against a stage that
-            # had been done for 26 minutes, and moved the workflow cursor
-            # backwards onto it (lg-workflow-integrity-568).
-            logger.info(
-                "Admission reusing queued entry %s for ticket %s stage %r",
-                existing.id,
-                ticket.id,
-                stage_key,
-            )
-            return {
-                "status": "queued",
-                "slot_number": existing.slot_number,
-                "entry_id": existing.id,
-                "position": existing.position,
-                "message": (
-                    f"Already queued in slot {existing.slot_number} "
-                    f"at position {existing.position}."
-                ),
-            }
+            return reuse_entry(self.session, existing, idempotency_key=idempotency_key)
 
         waiting = self.waiting_in_lane(slot_number)
         entry = QueuedRun(
@@ -265,6 +229,7 @@ class QueueLaneService:
             max_stages=max_stages,
             timeout_seconds=timeout_seconds,
             force=force,
+            idempotency_key=idempotency_key,
         )
         self.session.add(entry)
         self.session.commit()
@@ -645,6 +610,7 @@ class QueueLaneService:
             auto_repair=head.auto_repair,
             max_stages=head.max_stages,
             timeout_seconds=head.timeout_seconds,
+            idempotency_key=head.idempotency_key,
         )
         if orch_run is None:
             return False

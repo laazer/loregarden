@@ -81,6 +81,7 @@ from loregarden.services.stage_verdict import (
     routing_outcome,
 )
 from loregarden.services.stale_stage_parks import close_stale_parks
+from loregarden.services.start_keys import name_run, release_unstarted
 from loregarden.services.studio_routing import (
     is_prunable_stage,
     prunable_stage_keys,
@@ -179,6 +180,7 @@ class OrchestrationCallbackService:
         auto_repair: bool = True,
         stop_at_stage_key: str = "",
         timeout_override_seconds: int | None = None,
+        idempotency_key: str = "",
     ) -> OrchestrationRun:
         """Reserve this ticket's orchestration before anything executes it.
 
@@ -193,8 +195,13 @@ class OrchestrationCallbackService:
         Claiming here closes the window — the caller has an id before a thread
         exists — and `start_orchestration_run` adopts this row rather than
         opening a second one.
+
+        A keyed claim is one caller's own start, so it never hands back a run it
+        did not open: the caller looks that run up by the key instead.
         """
         active = self.get_active_orchestration_run(ticket.id)
+        if active and idempotency_key:
+            raise OrchestrationAlreadyRunning(active)
         if active:
             return active
 
@@ -223,6 +230,7 @@ class OrchestrationCallbackService:
             auto_repair=auto_repair,
             stop_at_stage_key=stop_at_stage_key or "",
             timeout_override_seconds=timeout_override_seconds,
+            idempotency_key=idempotency_key,
         )
         self.session.add(run)
         self.session.commit()
@@ -266,6 +274,7 @@ class OrchestrationCallbackService:
         badge on the home board after its lane was already empty.
         """
         run.status = status
+        release_unstarted(run)
         run.error_message = truncate_for_storage(message)
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
@@ -294,6 +303,7 @@ class OrchestrationCallbackService:
         stop_at_stage_key: str = "",
         timeout_override_seconds: int | None = None,
         external_harness: ExternalHarness | None = None,
+        idempotency_key: str = "",
     ) -> OrchestrationRun:
         # Starting work is what earns a ticket its workflow instance. This used
         # to happen on the read path — `GET /api/tickets` created one per row as
@@ -316,6 +326,7 @@ class OrchestrationCallbackService:
                 profile_slug=profile_slug,
                 timeout_override_seconds=timeout_override_seconds,
                 external_harness=external_harness,
+                idempotency_key=idempotency_key,
             )
         if active:
             raise OrchestrationAlreadyRunning(active)
@@ -330,6 +341,7 @@ class OrchestrationCallbackService:
                 profile_slug=profile_slug,
                 status=OrchestrationRunStatus.SUCCEEDED,
                 external_harness=external_harness,
+                idempotency_key=idempotency_key,
                 current_stage_key=ticket.workflow_stage_key,
                 error_message="Nothing to orchestrate",
                 started_at=now,
@@ -352,6 +364,7 @@ class OrchestrationCallbackService:
             profile_slug=profile_slug,
             status=OrchestrationRunStatus.RUNNING,
             external_harness=external_harness,
+            idempotency_key=idempotency_key,
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
             approve_design_plans=approve_design_plans,
@@ -382,6 +395,7 @@ class OrchestrationCallbackService:
         profile_slug: str,
         timeout_override_seconds: int | None = None,
         external_harness: ExternalHarness | None = None,
+        idempotency_key: str = "",
     ) -> OrchestrationRun:
         """Turn a claim into the running orchestration it stood for.
 
@@ -398,6 +412,7 @@ class OrchestrationCallbackService:
         run.driver = driver
         run.profile_slug = profile_slug
         run.external_harness = external_harness
+        name_run(self.session, run, idempotency_key)
         run.current_stage_key = ticket.workflow_stage_key
         run.started_at = datetime.now(timezone.utc)
         self.session.add(run)
