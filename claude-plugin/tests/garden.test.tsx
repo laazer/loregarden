@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { BAR_CELLS, failedToday, filledCells, needsYouRows, parseApprovals, parseRuns, parseTickets, readGarden } from '../hooks/garden-data'
 
@@ -124,16 +124,17 @@ type Answer = { status: number; ok: boolean; headers: Record<string, string>; te
 const ok = (body: unknown): Answer => ({ status: 200, ok: true, headers: {}, text: JSON.stringify(body) })
 const down: Answer = { status: 502, ok: false, headers: {}, text: '' }
 
-/** The engine beneath the plugin: a server answering by path, and a record of the status line and toasts. */
-function engine(on: On, answer: (path: string) => Answer) {
-  const seen = { status: [] as (string | undefined)[], toasts: [] as string[] }
+/** The engine beneath the plugin: a server answering by path, and a record of the panes, status line and toasts. */
+function engine(on: On, answer: (path: string) => Answer, paneRefusal = '') {
+  const seen = { opened: [] as string[], status: [] as (string | undefined)[], toasts: [] as string[] }
   on('command.register', () => ({ value: { command: 'garden' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_, e) => {
+    seen.opened.push(e.id)
+    return paneRefusal ? { deny: paneRefusal } : { value: { isPlaced: true } }
+  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('clock.now', () => ({ value: NOW }))
-  // Timers never fire here: each test reads through /garden, so nothing outlives it.
-  on('clock.every', () => ({ deny: 'no timers in a test' }))
-  on('clock.after', () => ({ deny: 'no timers in a test' }))
+  // Held until a test moves it, so no timer outlives a test.
+  const clock = mock.clock(on, { now: NOW })
   on('http.fetch', (_, e) => ({ value: answer(e.url.replace('http://127.0.0.1:8000', '')) }))
   on('ui.status', (_, e) => {
     seen.status.push(e.text)
@@ -143,7 +144,7 @@ function engine(on: On, answer: (path: string) => Answer) {
     seen.toasts.push(e.text)
     return { value: undefined }
   })
-  return seen
+  return { ...seen, clock }
 }
 
 const SERVER = (path: string) => (path in ANSWERS ? ok(ANSWERS[path]) : down)
@@ -209,6 +210,42 @@ test('an unreachable server says so, with a way to retry, and toasts once per ou
   expect(seen.toasts).toHaveLength(1)
   expect(seen.status.at(-1)).toBe('🥀 Loregarden unreachable')
   await ui.unmount()
+})
+
+test('a session start leaves the panel closed by default', async ($, on) => {
+  const seen = engine(on, SERVER)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  expect(seen.opened).toEqual([])
+})
+
+// The desktop app starts a session with nothing attached and nobody at the prompt.
+for (const start of [
+  { surface: 'terminal', isInteractive: true },
+  { surface: null, isInteractive: false },
+] as const) {
+  const where = start.surface ?? 'nothing attached yet'
+  test(`openOnStart opens the panel once, every source read: ${where}`, { options: { openOnStart: true } }, async ($, on) => {
+    const seen = engine(on, SERVER)
+    await $.session.start({ cwd: '/', ...start })
+    await seen.clock.settle()
+
+    expect(seen.opened).toEqual(['loregarden-garden'])
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Link', text: /^#830$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /reference_surveyor/ })).toBeDefined()
+    await ui.unmount()
+  })
+}
+
+test('openOnStart says why a refused panel is missing, and the session still starts', { options: { openOnStart: true } }, async ($, on) => {
+  const seen = engine(on, SERVER, 'another plugin holds it')
+  const started = await $.session.start({ cwd: '/here', surface: 'desktop', isInteractive: true })
+  await seen.clock.settle()
+
+  expect(started).toEqual({ cwd: '/here' })
+  expect(seen.toasts).toHaveLength(1)
+  expect(seen.toasts[0]).toContain('another plugin holds it')
 })
 
 test('one source failing names it and leaves the other sections working', async ($, on) => {
