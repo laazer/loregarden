@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+import resource
 import shutil
 import tempfile
 import threading
@@ -461,6 +462,7 @@ def run_holding(
         env[PROGRESS_ENV] = str(progress_file)
         code: int | None = None
         ran_from = time.monotonic()
+        used_before = _child_cpu_seconds()
         try:
             with (
                 _Heartbeat(session_factory, lease_id, interval, report),
@@ -478,8 +480,29 @@ def run_holding(
         report(
             f"capacity: '{request.label}' exited {code} after waiting {format_seconds(waited)}"
             f" and running {format_seconds(time.monotonic() - ran_from)}"
+            f"{_use_of_grant(used_before, ran_from, reservation.cpus)}"
         )
     return code
+
+
+def _child_cpu_seconds() -> float:
+    """Cpu time of every descendant that has ended and been waited for."""
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
+def _use_of_grant(used_before: float, ran_from: float, granted_cpus: float) -> str:
+    """What the command used of its grant, and a smaller ask when that was under half.
+
+    A grant is what others queue behind. In 3 days 22 of 138 heavy holds ended
+    within two minutes, most of them another repo's push hooks or a docs-only push.
+    """
+    elapsed = time.monotonic() - ran_from
+    if elapsed < 1:
+        return ""
+    average = (_child_cpu_seconds() - used_before) / elapsed
+    said = f", on {average:.1f} of {granted_cpus:g} cpus"
+    return f"{said} (ask for fewer next time: --cpus)" if average < granted_cpus / 2 else said
 
 
 #: Exit statuses with which a shell reports it could not run the command at all:

@@ -36,6 +36,8 @@ LM = "http://lm.test/v1"
 #: (test_list_lmstudio_chat_model_ids_skips_embeddings, 2026-10-23, after 22
 #: minutes queued for capacity). `test_discovery_cache` already joins patiently.
 PATIENT_JOIN = 5.0
+#: How long a hanging server hangs, so how long a caller that waits for it waits.
+HANG_SECONDS = 20.0
 
 
 def _cache(join_timeout_seconds: float) -> ProbeCache[LmStudioChatModel]:
@@ -337,7 +339,7 @@ def test_a_cold_probe_reports_probing_with_the_url_it_is_probing(monkeypatch):
 
     def hanging_client(*args, **kwargs):
         probing.set()
-        assert release.wait(timeout=20), "the probe was never released"
+        assert release.wait(timeout=HANG_SECONDS), "the probe was never released"
         response = MagicMock()
         response.json.return_value = {"data": [{"id": "qwen/qwen3.5-9b", "state": "loaded"}]}
         return _mock_client(response)
@@ -351,7 +353,7 @@ def test_a_cold_probe_reports_probing_with_the_url_it_is_probing(monkeypatch):
         finally:
             release.set()
 
-    assert waited < 1.0, f"a cold render waited {waited:.2f}s for the server"
+    assert waited < HANG_SECONDS, f"a cold render waited {waited:.2f}s for the server"
     assert discovery == {"status": DiscoveryStatus.PROBING, "detail": "", "target": LM}
     assert options == [{"id": "", "label": "Auto (first loaded chat model)"}]
 
@@ -364,7 +366,7 @@ def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe(monkeypatch):
 
     def hanging_client(*args, **kwargs):
         probing.set()
-        assert release.wait(timeout=20), "the second caller never returned"
+        assert release.wait(timeout=HANG_SECONDS), "the second caller never returned"
         response = MagicMock()
         response.json.return_value = {"data": [{"id": "qwen/qwen3.5-9b", "state": "loaded"}]}
         return _mock_client(response)
@@ -380,7 +382,7 @@ def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe(monkeypatch):
         finally:
             release.set()
 
-    assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+    assert waited < HANG_SECONDS, f"the second caller waited {waited:.2f}s behind the probe"
     assert answer.status == DiscoveryStatus.PROBING
 
 

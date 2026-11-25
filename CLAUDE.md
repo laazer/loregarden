@@ -701,9 +701,11 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   package's source or name a changed file; jest runs `--changedSince`. A landing runs
   everything its diff reaches (`LOREGARDEN_TESTS_BASE`). A hook or repo script (`.lefthook/scripts/`,
   `scripts/`) selects the tests that name it, or name a script that runs or imports it. Anything
-  unmappable (`conftest.py`, `pyproject.toml`, `lefthook.yml`, another non-Python file, anything
+  unmappable (`conftest.py`, `pyproject.toml`, another non-Python file, anything
   else outside `server/`/`client/`) falls back to the full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
-  CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
+  CI rather than proving it. Test files that passed on the same committed tree in the last day,
+  by hand or in an earlier push, are not run again (`pass_receipt.py`), so commit before the run
+  you want to count. `LOREGARDEN_FULL_TESTS=1` forces the full run;
   `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
 
 - **Land a PR through the merge queue, not `gh pr merge`.** `loregarden_enqueue_merge

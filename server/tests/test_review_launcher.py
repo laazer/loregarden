@@ -181,8 +181,11 @@ def test_stop_kills_a_running_build(repo: Path):
 
 
 def test_stop_kills_a_running_prepare(repo: Path):
+    prepare_seconds = 60
     workspace = _workspace(
-        repo, 'launch:\n  prepare: ["sleep", "60"]\n  command: ["sh", "-c", "echo started"]\n'
+        repo,
+        f'launch:\n  prepare: ["sleep", "{prepare_seconds}"]\n'
+        '  command: ["sh", "-c", "echo started"]\n',
     )
     launcher = ReviewLauncher()
     launcher.launch(workspace, ref="main")
@@ -192,7 +195,7 @@ def test_stop_kills_a_running_prepare(repo: Path):
     launcher.stop("game")
     state = _settle(launcher, "game")
 
-    assert time.monotonic() - started < 15
+    assert time.monotonic() - started < prepare_seconds
     assert state.phase is LaunchPhase.STOPPED
     assert "started" not in state.log_tail
 

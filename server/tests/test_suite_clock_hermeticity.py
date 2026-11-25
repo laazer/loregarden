@@ -30,7 +30,21 @@ TESTS_DIR = Path(__file__).parent
 #: Identifier fragments that mark a value as a *measured* quantity rather than a
 #: configured one. A bound on `DISCOVERY_TIMEOUT_SECONDS` is an assertion about a
 #: constant and cannot fail under load; a bound on `elapsed` can.
-MEASURED = ("elapsed", "duration", "_ms", "seconds", "secs", "took", "latency", "runtime", "wall")
+MEASURED = (
+    "elapsed",
+    "duration",
+    "_ms",
+    "seconds",
+    "secs",
+    "took",
+    "latency",
+    "runtime",
+    "wall",
+    "waited",
+    "spread",
+    "monotonic",
+    "perf_counter",
+)
 
 #: Bounds that must stay real, with the reason each one does. AC4 of the ticket:
 #: named here so a future blanket clock fixture cannot disable them silently.
@@ -87,6 +101,8 @@ def _identifier(node: ast.expr) -> str:
             return name
         case ast.Attribute(attr=attr):
             return attr
+        case ast.Call(func=ast.Name(id="max" | "min" | "round"), args=[first, *_]):
+            return _identifier(first)
         case ast.Subscript(value=inner) | ast.Call(func=inner):
             return _identifier(inner)
         case ast.BinOp(left=left, right=right):
@@ -188,6 +204,13 @@ def test_the_scan_finds_the_defect_it_was_built_from():
         "def test_x():\n    _assemble(session)\n    assert _rows(db, run.id)[0].elapsed_ms < 250\n"
     )
     assert _bounds_in(regressed) == ["_rows(db, run.id)[0].elapsed_ms < 250"]
+
+
+def test_a_duration_is_seen_under_the_other_names_it_goes_by():
+    """Four shapes the first scan missed, two of which failed a push under load."""
+    bounds = ["waited < 1.0", "spread < 0.75", "max(elapsed) < 10.0", "time.monotonic() - t < 1.0"]
+    for bound in bounds:
+        assert _bounds_in(f"def test_x():\n    assert {bound}\n") == [bound]
 
 
 def test_a_configured_constant_is_not_a_measured_duration():

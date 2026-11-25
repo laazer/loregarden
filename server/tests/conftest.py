@@ -1,10 +1,13 @@
+import importlib.util
 import os
 import shutil
 import subprocess
 import time
 from contextlib import ExitStack
+from pathlib import Path
 from unittest.mock import patch
 
+import loregarden
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -24,6 +27,7 @@ from loregarden.services import (
     orchestration_profile,
     reference_cache,
 )
+from loregarden.services.capacity_progress import PROGRESS_ENV
 from loregarden.services.cli_settings import ADAPTER_BINARIES
 from loregarden.services.git_subprocess import GH_BINARY_ENV, GH_USER_ENV, GIT_LOCATION_ENV_VARS
 from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
@@ -32,9 +36,16 @@ from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
+from tests.repo_paths import REPO_ROOT
 from tests.repo_templates import from_template, set_template_root
 from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
 from tests.worktree_helpers import seed_stage_report_contract
+
+_RECEIPTS = importlib.util.spec_from_file_location(
+    "pass_receipt", REPO_ROOT / ".lefthook" / "scripts" / "pass_receipt.py"
+)
+pass_receipt = importlib.util.module_from_spec(_RECEIPTS)
+_RECEIPTS.loader.exec_module(pass_receipt)
 
 
 def pytest_configure(config):
@@ -44,6 +55,16 @@ def pytest_configure(config):
     seconds and prints the slowest; under xdist only the controller writes.
     """
     pytest_profile.register(config, suite="server")
+    # The queue board's file for this run. `pytest_push_progress` takes it out of
+    # the environment; a run without that plugin (`capacity run -- pytest -n 3`)
+    # left it, and a test running a suite script wrote "1 file, 68/68 (100%)" over
+    # a full run that went on for another 28 minutes.
+    os.environ.pop(PROGRESS_ENV, None)
+    recorder = pass_receipt.recorder_for(
+        config, repo=REPO_ROOT, package=Path(loregarden.__file__).resolve()
+    )
+    if recorder is not None:
+        config.pluginmanager.register(recorder, "pass_receipt")
 
 
 # Every module that binds the DB engine at import time via

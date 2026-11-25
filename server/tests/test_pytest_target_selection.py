@@ -44,7 +44,7 @@ selector = _load()
         "server/tests/worktree_helpers.py",
         "server/pyproject.toml",
         "server/loregarden/data/seed.json",
-        "lefthook.yml",
+        ".gitignore",
         ".lefthook/lefthook-local.yml",
         "agent_context/orchestration/default.yaml",
         "agent_context/workflows/default.yaml",
@@ -53,6 +53,28 @@ selector = _load()
 )
 def test_unmappable_change_runs_everything(path):
     assert selector.full_suite_reason([path]) is not None
+
+
+@pytest.mark.parametrize("name", ["lefthook.yml", "Taskfile.yml"])
+def test_a_repo_file_read_by_name_selects_the_tests_naming_it(chain_repo: Path, name):
+    tests = chain_repo / "server" / "tests"
+    (tests / "test_hook.py").write_text(f'CONFIG = "{name}"\n', encoding="utf-8")
+    scripts = chain_repo / "scripts"
+    scripts.mkdir()
+    (scripts / "gate.sh").write_text(f"grep x {name}\n", encoding="utf-8")
+    (tests / "test_gate.py").write_text('GATE = "gate.sh"\n', encoding="utf-8")
+    assert selector.full_suite_reason([name]) is None
+    assert _names(selector.select(chain_repo, [name])) == {"test_hook.py", "test_gate.py"}
+
+
+def test_the_hook_config_selects_the_tests_that_check_it():
+    selected = _names(selector.select(_ROOT, ["lefthook.yml"]))
+    assert {
+        "test_lefthook_hook_order.py",
+        "test_lefthook_globs.py",
+        "test_capacity_run.py",
+        "test_pass_receipt.py",
+    } <= selected
 
 
 @pytest.mark.parametrize(
@@ -579,18 +601,18 @@ def test_cli_prints_repo_relative_paths(git_repo: Path):
 
 
 def test_cli_signals_full_suite_with_a_reason(git_repo: Path):
-    (git_repo / "lefthook.yml").write_text("x: 1\n", encoding="utf-8")
+    (git_repo / ".gitignore").write_text("x: 1\n", encoding="utf-8")
     _git(git_repo, "add", "-A")
     _git(git_repo, "commit", "-qm", "touch repo config")
 
     result = _run_cli(git_repo, "HEAD~1")
     assert result.returncode == selector.EXIT_RUN_EVERYTHING
-    assert "lefthook.yml" in result.stderr
+    assert ".gitignore" in result.stderr
 
 
 def test_a_full_run_still_names_what_the_mappable_changes_reach(git_repo: Path, tmp_path: Path):
-    """`lefthook.yml` forces the full suite; the leaf change's tests go first in it."""
-    (git_repo / "lefthook.yml").write_text("x: 1\n", encoding="utf-8")
+    """`.gitignore` forces the full suite; the leaf change's tests go first in it."""
+    (git_repo / ".gitignore").write_text("x: 1\n", encoding="utf-8")
     leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
     leaf.write_text("VALUE = 2\n", encoding="utf-8")
     _git(git_repo, "add", "-A")
@@ -600,7 +622,7 @@ def test_a_full_run_still_names_what_the_mappable_changes_reach(git_repo: Path, 
     result = _run_cli(git_repo, "HEAD~1", "--run-first-out", str(out))
 
     assert result.returncode == selector.EXIT_RUN_EVERYTHING, result.stderr
-    assert "lefthook.yml" in result.stderr
+    assert ".gitignore" in result.stderr
     assert result.stdout == ""
     assert out.read_text(encoding="utf-8").split() == [
         "server/tests/test_dynamic.py",
@@ -624,7 +646,7 @@ def test_run_first_puts_the_closest_tests_first(fake_repo: Path):
 
     order = selector.run_first(
         fake_repo,
-        ["lefthook.yml", "server/loregarden/services/leaf.py", "server/tests/test_zzz_changed.py"],
+        [".gitignore", "server/loregarden/services/leaf.py", "server/tests/test_zzz_changed.py"],
     )
 
     assert [path.name for path in order] == [
@@ -664,7 +686,7 @@ def test_a_narrowed_run_names_its_selection_to_run_first(git_repo: Path, tmp_pat
 
 
 def test_an_unmappable_only_diff_names_nothing_to_run_first(git_repo: Path, tmp_path: Path):
-    (git_repo / "lefthook.yml").write_text("x: 1\n", encoding="utf-8")
+    (git_repo / ".gitignore").write_text("x: 1\n", encoding="utf-8")
     _git(git_repo, "add", "-A")
     _git(git_repo, "commit", "-qm", "touch repo config")
     out = tmp_path / "run-first.txt"

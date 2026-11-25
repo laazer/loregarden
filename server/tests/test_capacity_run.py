@@ -38,7 +38,7 @@ from loregarden.models.domain import (
     DockerLeaseEndReason,
     DockerLeaseStatus,
 )
-from loregarden.services import docker_leases, host_capacity
+from loregarden.services import capacity_run, docker_leases, host_capacity
 from loregarden.services.capacity_run import (
     CALLER_REPO_ROOT_ENV,
     REPO_ROOT_ENV,
@@ -526,6 +526,34 @@ def test_a_footprint_bigger_than_the_machine_claims_the_whole_pool(session, host
     assert smaller.granted
     assert smaller.cpus == 2.0
     assert any("more than this machine's whole host pool" in line for line in lines)
+
+
+def _exit_line(isolated_db, command: list[str]) -> str:
+    lines: list[str] = []
+    run_holding(lambda: Session(isolated_db), _request(), command, report=lines.append)
+    return lines[-1]
+
+
+def test_a_run_says_how_little_of_its_grant_it_used(isolated_db, host) -> None:
+    line = _exit_line(isolated_db, ["sleep", "1.2"])
+    assert line.endswith(", on 0.0 of 2 cpus (ask for fewer next time: --cpus)")
+
+
+def test_a_run_that_used_its_grant_is_not_told_to_ask_for_less(isolated_db, host) -> None:
+    spin = "import time\nend = time.time() + 1.5\nwhile time.time() < end: pass"
+    line = _exit_line(isolated_db, [sys.executable, "-c", spin])
+    assert " of 2 cpus" in line
+    with mock.patch.object(capacity_run, "_child_cpu_seconds", side_effect=[0.0, 1e6]):
+        assert "ask for fewer" not in _exit_line(isolated_db, ["sleep", "1.1"])
+
+
+def test_what_an_earlier_child_used_is_not_this_runs(isolated_db, host) -> None:
+    with mock.patch.object(capacity_run, "_child_cpu_seconds", side_effect=[1e6, 1e6]):
+        assert "on 0.0 of 2 cpus" in _exit_line(isolated_db, ["sleep", "1.1"])
+
+
+def test_a_run_too_short_to_measure_says_nothing(isolated_db, host) -> None:
+    assert " cpus" not in _exit_line(isolated_db, ["true"])
 
 
 def test_the_lease_is_renewed_while_the_command_runs(isolated_db, session, host) -> None:
