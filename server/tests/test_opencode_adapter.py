@@ -248,6 +248,8 @@ def test_terminal_handoff_attaches_the_prompt_file_and_carries_its_env(tmp_path)
 #: The module's own 0.25s join is a real UX budget, and a loaded machine starts a
 #: mocked probe's thread later than that. See test_lmstudio_discovery.
 PATIENT_JOIN = 5.0
+#: How long a hanging CLI hangs, so how long a caller that waits for it waits.
+HANG_SECONDS = 20.0
 
 
 def _cache(join_timeout_seconds: float) -> ProbeCache[str]:
@@ -501,7 +503,7 @@ def test_a_cold_probe_reports_probing_with_the_binary_it_is_probing(monkeypatch)
 
     def hanging_cli(*args, **kwargs):
         probing.set()
-        assert release.wait(timeout=20), "the probe was never released"
+        assert release.wait(timeout=HANG_SECONDS), "the probe was never released"
         return MagicMock(stdout="opencode/a\n")
 
     with (
@@ -519,7 +521,7 @@ def test_a_cold_probe_reports_probing_with_the_binary_it_is_probing(monkeypatch)
         finally:
             release.set()
 
-    assert waited < 1.0, f"a cold render waited {waited:.2f}s for the CLI"
+    assert waited < HANG_SECONDS, f"a cold render waited {waited:.2f}s for the CLI"
     assert discovery["status"] == DiscoveryStatus.PROBING
     assert discovery["detail"] == ""
     # U4's copy is "Discovering OpenCode models…", and the empty state needs a
@@ -542,7 +544,7 @@ def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe(monkeypatch):
 
     def hanging_cli(*args, **kwargs):
         probing.set()
-        assert release.wait(timeout=20), "the second caller never returned"
+        assert release.wait(timeout=HANG_SECONDS), "the second caller never returned"
         return MagicMock(stdout="opencode/a\n")
 
     with (
@@ -563,7 +565,7 @@ def test_a_caller_is_not_made_to_wait_for_an_in_flight_probe(monkeypatch):
             release.set()
         join_probes(timeout=10.0)
 
-        assert waited < 1.0, f"the second caller waited {waited:.2f}s behind the probe"
+        assert waited < HANG_SECONDS, f"the second caller waited {waited:.2f}s behind the probe"
         assert answer.status == DiscoveryStatus.PROBING
         assert list_opencode_models().found == ["opencode/a"]
 

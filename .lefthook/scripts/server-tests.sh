@@ -18,7 +18,13 @@
 # Land verification runs this too (agent_context/orchestration/loregarden.yaml),
 # in a detached tree at the candidate merge, with LOREGARDEN_TESTS_BASE set to
 # the target's tip — so a landing runs the tests its own diff reaches.
+#
+# --lint-only stops after the ruff steps: push-server-tests.sh asks for that when
+# every test this would run has already passed on this tree.
 set -euo pipefail
+
+LINT_ONLY=""
+[ "${1:-}" = "--lint-only" ] && LINT_ONLY=1
 
 # shellcheck source=hook-noninteractive.sh
 source "$(cd "$(dirname "$0")" && pwd)/hook-noninteractive.sh"
@@ -73,7 +79,9 @@ RUN_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
 BASETEMP="$RUN_TEMP/pytest"
 mkdir -p "$BASETEMP"
 trap 'rc=$?; progress_finish "$rc"; rm -rf "$RUN_TEMP" 2>/dev/null || true' EXIT
-progress_begin "server-tests" 5
+STEPS=5
+[ -n "$LINT_ONLY" ] && STEPS=3
+progress_begin "server-tests" "$STEPS"
 
 # Fail fast. `-x` stops at the first failure instead of collecting every one,
 # because the first failure is the only one worth reading: a cascade dominates
@@ -115,6 +123,9 @@ progress_step "ruff format --check"
 progress_step "ruff on scripts outside server/"
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" check
 bash "$ROOT/.lefthook/scripts/py-scripts-ruff.sh" format --check
+if [ -n "$LINT_ONLY" ]; then
+  exit 0
+fi
 
 BASE="$(push_base "$ROOT")"
 

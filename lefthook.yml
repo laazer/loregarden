@@ -226,11 +226,13 @@ pre-push:
       # Server tests (ruff full + pytest on reached tests)
       # The script directories too: their ruff runs here, and their tests live
       # in server/tests (select_pytest_targets.py selects the tests naming them).
+      # push-server-tests.sh queues nothing for tests that passed on this tree.
       glob: *server_tests_glob
       skip:
         - run: bash .lefthook/scripts/staged-push.sh server-tests
       interactive: true
       run: >-
+        bash .lefthook/scripts/push-server-tests.sh
         bash .lefthook/scripts/capacity-run.sh "pre-push server-tests"
         --footprint heavy --workspace loregarden
         -- bash .lefthook/scripts/server-tests.sh

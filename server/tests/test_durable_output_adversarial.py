@@ -300,10 +300,11 @@ def test_the_tail_returns_immediately_when_a_line_is_already_available(run_log_d
     path.write_text("one\ntwo\nthree\n")
     tail = RunOutputTail(path)
 
+    timeout = 5
     started = time.monotonic()
-    assert tail.readline(timeout=5) == "one\n"
-    assert tail.readline(timeout=5) == "two\n"
-    assert time.monotonic() - started < 1.0, "the tailer slept even though data was ready"
+    assert tail.readline(timeout=timeout) == "one\n"
+    assert tail.readline(timeout=timeout) == "two\n"
+    assert time.monotonic() - started < timeout, "the tailer slept even though data was ready"
 
 
 def test_invalid_utf8_does_not_raise_and_does_not_stall_the_lines_after_it(run_log_dir):

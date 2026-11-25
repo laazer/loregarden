@@ -19,7 +19,7 @@ from loregarden.services.cli_settings import (
     resolve_effort_for_adapter,
     resolve_runtime_effective,
 )
-from loregarden.services.discovery_cache import ProbeAnswer, join_probes
+from loregarden.services.discovery_cache import ProbeAnswer, ProbeCache, join_probes
 from loregarden.services.runtime_options import runtime_options_payload
 from sqlmodel import select
 
@@ -811,38 +811,34 @@ def test_simultaneous_cold_requests_all_answer_and_share_one_probe_per_cli(
     defect, and it reappears the moment the lock stops being per-key.
     """
     statuses: list[int] = []
-    elapsed: list[float] = []
-    barrier = threading.Barrier(8)
+    # Every caller is told "in flight" once per CLI. Here nobody is told until all
+    # eight are there to hear it, which a queue makes impossible: the callers
+    # behind the first have not got that far. It is counted rather than timed
+    # because a loaded machine stalls callers for seconds (3.32s apart in one run)
+    # with nobody queued behind anybody.
+    together = threading.Barrier(8)
+    in_flight = ProbeCache._in_flight_answer
+
+    def answer_together(entry):
+        together.wait(timeout=20)
+        return in_flight(entry)
 
     def ask() -> None:
-        barrier.wait(timeout=20)
-        started = time.monotonic()
         response = client.get("/api/workspaces/runtime-options?workspace=loregarden")
-        elapsed.append(time.monotonic() - started)
         statuses.append(response.status_code)
 
     threads = [threading.Thread(target=ask, daemon=True) for _ in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=60)
-        assert not thread.is_alive(), "a request thread never returned"
+    with mock.patch.object(ProbeCache, "_in_flight_answer", staticmethod(answer_together)):
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+            assert not thread.is_alive(), "a request thread never returned"
 
-    assert statuses == [200] * 8, f"not every caller was answered: {statuses}"
-    # Each caller waits its own three bounded joins and nothing else — not a
-    # queue behind whoever dispatched first. A queue shows as a spread: the
-    # callers finish one join budget (0.75s) apart. The spread is what is
-    # asserted, not the slowest wall clock, because a loaded CI runner stalls
-    # the whole worker at once: one run measured seven callers at 3.24s, within
-    # 2ms of each other, which is a pause, not a queue (locally all eight finish
-    # in under 0.4s). The wall-clock bound only catches a caller that waits
-    # without a bound at all.
-    spread = max(elapsed) - min(elapsed)
-    assert spread < 0.75, (
-        f"callers finished {spread:.2f}s apart ({sorted(round(e, 2) for e in elapsed)}): "
-        "they queued behind one another"
+    assert not together.broken, (
+        "a caller queued behind another: all eight were never waiting at once"
     )
-    assert max(elapsed) < 10.0, f"the slowest of eight callers waited {max(elapsed):.2f}s"
+    assert statuses == [200] * 8, f"not every caller was answered: {statuses}"
     # One probe per CLI, not one per caller. The fixture's stub is shared by all
     # three modules, so three is the whole cold-cache budget.
     assert three_hanging_clis.calls <= 3, (

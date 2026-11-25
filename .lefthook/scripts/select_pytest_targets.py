@@ -13,7 +13,7 @@ much:
 * Anything it cannot map means the full suite. A changed `conftest.py`, a
   changed `pyproject.toml`, a non-Python file under `server/`, a file outside
   `server/`/`client/` — all of it falls back, because tests here read repo files
-  (`lefthook.yml`, `agent_context/`) that no import graph can see.
+  (`.claude/`, `agent_context/`) that no import graph can see.
 * Selecting *zero* tests means the full suite, not a fast pass. "Nothing reaches
   this module" is more often a hole in the graph than a fact about the code.
 * A change under `client/` selects the server test files that name the client
@@ -122,6 +122,12 @@ NARROWABLE_CONTEXT_TREES = (f"{CONTEXT_DIR}/agents/", f"{CONTEXT_DIR}/skills/")
 NARROWABLE_SCRIPT_DIRS = (".lefthook/scripts/", "scripts/")
 
 
+#: Repo files tests reach by name, as they reach a script. Not how tests run:
+#: lefthook.yml says what a push runs, and a suite cannot check that. 8 of the 15
+#: landed changes that forced a full run in the 14 days to 2026-11-24 edited it.
+NARROWABLE_NAMED_FILES = ("lefthook.yml", "Taskfile.yml")
+
+
 def is_named_doc(path: str) -> bool:
     """Markdown read by name: anywhere but `agent_context/` (its own rule) and `client/`."""
     return path.endswith(".md") and not path.startswith((f"{CONTEXT_DIR}/", f"{CLIENT_DIR}/"))
@@ -163,7 +169,7 @@ def full_suite_reason(paths: list[str]) -> str | None:
             continue  # jest's problem, not pytest's
         if path.startswith(NARROWABLE_CONTEXT_TREES + NARROWABLE_SCRIPT_DIRS):
             continue
-        if is_named_doc(path):
+        if is_named_doc(path) or path in NARROWABLE_NAMED_FILES:
             continue
         if not path.startswith("server/"):
             return f"{path} is outside server/ (tests read repo files no import graph sees)"
@@ -583,7 +589,11 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
             client = True
         elif rel.startswith(NARROWABLE_CONTEXT_TREES):
             context_files.add(rel)
-        elif rel.startswith(NARROWABLE_SCRIPT_DIRS) or is_named_doc(rel):
+        elif (
+            rel.startswith(NARROWABLE_SCRIPT_DIRS)
+            or is_named_doc(rel)
+            or rel in NARROWABLE_NAMED_FILES
+        ):
             # A deleted script still names what used to call it.
             script_files.add(rel)
         elif not rel.startswith("server/") or not rel.endswith(".py"):
@@ -714,7 +724,7 @@ def run_first(repo: Path, paths: list[str], limit: int | None = None) -> list[Pa
     """The selection for the part of the diff that can be narrowed, closest first.
 
     What a narrowed run runs, in the order it runs it, and what a full run caused
-    by one unmappable file (`lefthook.yml`) runs first: such a diff still holds
+    by one unmappable file (`pyproject.toml`) runs first: such a diff still holds
     changes the graph maps, and the tests nearest those are the likeliest to fail.
 
     Closest first, because "reaches" is often most of the suite: the changed
