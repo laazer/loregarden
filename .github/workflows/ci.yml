@@ -15,12 +15,81 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  server:
-    name: Server (Python)
+  already-tested:
+    name: Already tested
+    # Only where a landed commit can repeat the queue's run. Skipped elsewhere,
+    # which leaves its output empty and the suite running.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # 18-28 minutes when it passes (28 runs, 2026-11-23). Without a limit a hung
-    # suite, or a runner that went away, holds the merge queue for an hour.
-    timeout-minutes: 45
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      reused: ${{ steps.tree.outputs.reused }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Look for a run that passed on this tree
+        id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 .github/scripts/tested_tree.py --repo "$GITHUB_REPOSITORY"
+          --sha "$GITHUB_SHA" --output "$GITHUB_OUTPUT"
+
+  server-lint:
+    name: Server lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      # `ruff check .` from server/ never reaches the stdlib scripts outside
+      # it (.claude/hooks, .lefthook/scripts, .github/scripts), which run
+      # under the system python3 — see .lefthook/scripts/py-staged-paths.sh.
+      - name: Ruff lint + format check (scripts outside server/)
+        run: |
+          bash ../.lefthook/scripts/py-scripts-ruff.sh check
+          bash ../.lefthook/scripts/py-scripts-ruff.sh format --check
+
+  server-tests:
+    name: Server tests (${{ matrix.shard }})
+    needs: already-tested
+    # `!cancelled()`: without a status function a skipped need skips this job too.
+    if: ${{ !cancelled() && needs.already-tested.outputs.reused != 'true' }}
+    runs-on: ubuntu-latest
+    # The whole suite took 18-28 minutes on one runner (28 runs, 2026-11-23).
+    # Without a limit a hung suite, or a runner that went away, holds the merge
+    # queue for an hour.
+    timeout-minutes: 30
+    strategy:
+      # Off: a runner that dies would cancel its siblings, which would then read
+      # as failures and not as results nobody has yet.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: server
@@ -57,22 +126,14 @@ jobs:
         working-directory: client
         run: npm ci
 
-      - name: Ruff lint
-        run: uv run ruff check .
-
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
-      # `ruff check .` from server/ never reaches the stdlib scripts outside
-      # it (.claude/hooks, .lefthook/scripts, .github/scripts), which run
-      # under the system python3 — see .lefthook/scripts/py-staged-paths.sh.
-      - name: Ruff lint + format check (scripts outside server/)
-        run: |
-          bash ../.lefthook/scripts/py-scripts-ruff.sh check
-          bash ../.lefthook/scripts/py-scripts-ruff.sh format --check
-
+      # A runner can stop for minutes: on 2026-11-23 all four workers stalled at
+      # once and the four tests they held failed the 120s ceiling together, at
+      # 182-187s. 300s outlasts that and still names a hang.
       - name: Pytest
-        run: uv run pytest -q -n auto
+        run: |
+          files=$(python3 ../.github/scripts/pytest_shard.py \
+            --shard ${{ matrix.shard }} --of ${{ strategy.job-total }})
+          uv run pytest -q -n auto --timeout 300 $files
         env:
           LOREGARDEN_REPO_ROOT: ${{ github.workspace }}
           # Profiling rides on the run that was happening anyway; the artifact
@@ -85,9 +146,35 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: profile-server
+          name: profile-server-${{ matrix.shard }}
           path: .profile/server.json
           if-no-files-found: error
+
+  # The check main's ruleset requires by name. `always()` with no `!cancelled()`:
+  # a skipped required check counts as passed, so a cancelled run has to end in a
+  # failed one. Its step is named GATHER_STEP (services/merge_queue_failures.py),
+  # which is how the queue knows this job has no verdict of its own.
+  server:
+    name: Server (Python)
+    needs: [already-tested, server-lint, server-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs passed
+        env:
+          LINT: ${{ needs.server-lint.result }}
+          TESTS: ${{ needs.server-tests.result }}
+          REUSED: ${{ needs.already-tested.outputs.reused }}
+        run: |
+          echo "lint: $LINT; tests: $TESTS; reused: ${REUSED:-false}"
+          [ "$LINT" = "success" ] || exit 1
+          # Skipped only where these tests already passed on this tree.
+          case "$TESTS" in
+            success) ;;
+            skipped) [ "$REUSED" = "true" ] || exit 1 ;;
+            *) exit 1 ;;
+          esac
 
   client:
     name: Client (TypeScript)

@@ -710,8 +710,9 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
 
 - **Land a PR through the merge queue, not `gh pr merge`.** `loregarden_enqueue_merge
   pr_number=<n> workspace_slug=loregarden` merges it onto main's tip, waits for the required
-  checks on that result, and lands it, so nobody updates a stale branch by hand. A `PreToolUse`
-  hook (`.claude/hooks/pr_merge_queue_precheck.py`) refuses `gh pr merge` and names the call.
+  checks on that result, refuses it if any other check fails there, and lands it, so nobody
+  updates a stale branch by hand. A `PreToolUse` hook
+  (`.claude/hooks/pr_merge_queue_precheck.py`) refuses `gh pr merge` and names the call.
   The queue pushes its staged commit onto the PR's branch, and adopts any push you make there.
   To wait for it, run `./scripts/loregarden-cli.sh merge-queue wait <entry-id>` in the
   background: exit 0 merged, 1 stopped (reason printed), 75 no verdict (its deadline passed, or

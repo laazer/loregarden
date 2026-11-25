@@ -7,6 +7,13 @@ lost communication with the server", 61 minutes in, no test result and no log)
 then landed with the same tree. So a check that produced no verdict is re-run
 once, on the same staged commit, and said so; a check that failed still ejects.
 
+Nothing is judged while the failed check's run is still going. GitHub gives out
+no log until the run ends (five ejections carry "could not read its log: run N
+is still in progress" and nothing else) and refuses a re-run of it.
+
+A job that only gathers others' results (`GATHER_STEP`) fails whenever one of
+them does, so it says nothing of its own: the jobs it gathers are judged.
+
 A test failure is never re-run here. What it gets is context: the tests in its
 log that also failed on other pull requests, which is where to look first.
 """
@@ -35,9 +42,15 @@ _FAILED_TEST = re.compile(r"\b(?:FAILED|ERROR) (tests/\S+::.+?)(?= - |\s*$)", re
 _NAMED_TESTS = 5
 
 
+#: The step of a job that only gathers other jobs' results, in our workflows.
+GATHER_STEP = "All required jobs passed"
+
+
 class JobStep(BaseModel):
     name: str
     status: str
+    #: Null until the step ends.
+    conclusion: str | None = None
 
 
 class ActionsJob(BaseModel):
@@ -60,16 +73,39 @@ class ActionsJob(BaseModel):
             for step in self.steps
         )
 
+    @property
+    def gathers(self) -> bool:
+        """Whether all that failed here is the step reporting other jobs' results."""
+        failed = {
+            step.name
+            for step in self.steps
+            if step.conclusion == "failure"  # py-org: allow-string
+        }
+        return failed == {GATHER_STEP}
+
+
+class ActionsRun(BaseModel):
+    """One GitHub Actions run: which attempt it is on, and whether that has ended."""
+
+    run_attempt: int
+    status: str
+
+    @property
+    def finished(self) -> bool:
+        return self.status == "completed"  # py-org: allow-string
+
 
 class JobReader(Protocol):
     def failed_job(self, url: str) -> ActionsJob | None: ...
 
-    def run_attempt(self, run_id: int) -> int: ...
+    def actions_run(self, run_id: int) -> ActionsRun: ...
 
     def rerun_failed_jobs(self, run_id: int) -> str: ...
 
 
 class LostVerdict(StrEnum):
+    #: The run a failing check belongs to is still going: not judged yet.
+    UNFINISHED = "unfinished"
     #: At least one failing check reached a verdict: the change is judged on it.
     JUDGED = "judged"
     #: Every failing check died, and they are running again.
@@ -91,6 +127,8 @@ _JUDGED = LostChecks(verdict=LostVerdict.JUDGED)
 def rerun_lost_checks(github: JobReader, failing: dict[str, str]) -> LostChecks:
     """Re-run `failing` (check name to its URL) once, if none of them reached a verdict.
 
+    Judged only when the runs they belong to have ended.
+
     Once per run is read from GitHub rather than counted here: the run's own
     attempt number survives a restart and counts a person's re-run too. A job
     from an older attempt than its run's is one whose re-run has been asked for
@@ -98,17 +136,31 @@ def rerun_lost_checks(github: JobReader, failing: dict[str, str]) -> LostChecks:
 
     Raises `GitHubReadError` when GitHub cannot be asked.
     """
-    jobs: dict[str, ActionsJob] = {}
-    for name, url in failing.items():
-        job = github.failed_job(url)
-        if job is None or not job.died:
-            return _JUDGED
-        jobs[name] = job
+    checks = {name: github.failed_job(url) for name, url in failing.items()}
+    found = {name: job for name, job in checks.items() if job is not None}
+    runs = {
+        run_id: github.actions_run(run_id)
+        for run_id in sorted({job.run_id for job in found.values()})
+    }
+    unfinished = sorted(
+        name
+        for name, job in found.items()
+        if runs[job.run_id].run_attempt <= job.run_attempt and not runs[job.run_id].finished
+    )
+    if unfinished:
+        return LostChecks(
+            verdict=LostVerdict.UNFINISHED,
+            detail=f"{', '.join(unfinished)} failed; waiting for the rest of the run to end, "
+            "so its log can be read",
+        )
+    jobs = {name: job for name, job in found.items() if not job.gathers}
+    if not jobs or len(found) < len(checks) or not all(job.died for job in jobs.values()):
+        return _JUDGED
     names = ", ".join(sorted(jobs))
     died = f"{names}: the runner died with no result"
     asked = False
     for run_id, attempt in sorted({(job.run_id, job.run_attempt) for job in jobs.values()}):
-        if github.run_attempt(run_id) > attempt:
+        if runs[run_id].run_attempt > attempt:
             continue
         if attempt > 1:
             return LostChecks(

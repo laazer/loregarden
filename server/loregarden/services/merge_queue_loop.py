@@ -19,8 +19,9 @@ lg-milestone-that-969. Advanced once per workspace on the CI poll tick
 3. **Wait.** Read the PR from GitHub: the required contexts come from the
    base's own rules, and each must have passed *on the staged commit*. A
    required check that has not reported, one still running, and GitHub not
-   answering are three different waits (`MergeQueueWait`). A check whose runner
-   died with no result is re-run once (`merge_queue_failures`). A wait past
+   answering are three different waits (`MergeQueueWait`). A check the base does
+   not require must pass too once it has reported (`read_gating`). A check whose
+   runner died with no result is re-run once (`merge_queue_failures`). A wait past
    `merge_queue_check_timeout_seconds` is `TIMED_OUT`, with the elapsed time.
 4. **Land, under the tree-equality assertion.** Fetch the base again. If it
    moved since staging the staged commit is discarded and the entry restages:
@@ -110,7 +111,7 @@ from loregarden.services.merge_queue_github import (
     StagedPullRequest,
     gating_basis,
     gating_checks,
-    read_required,
+    read_gating,
     unreported,
 )
 from loregarden.services.merge_queue_landed_tickets import close_landed_tickets
@@ -534,7 +535,7 @@ class MergeQueueLoop:
                 detail=f"nothing to verify {entry.staged_sha[:12]} with: {gating.fallback}",
             )
         required = gating.contexts
-        readings = read_required(pr.checks, required)
+        readings = read_gating(pr.checks, required)
         checks_json = json.dumps([reading.model_dump(mode="json") for reading in readings])
         failing = [r for r in readings if r.outcome is PullRequestCheckOutcome.FAILING]
         if failing:
@@ -570,7 +571,7 @@ class MergeQueueLoop:
         failing: list[CheckReading],
         checks_json: str,
     ) -> bool:
-        """Stop the entry, unless what failed was the runners (`merge_queue_failures`)."""
+        """Stop the entry, unless its run is still going or what failed was the runners."""
         try:
             lost = rerun_lost_checks(self.github, {r.name: r.url for r in failing})
         except GitHubReadError as exc:
@@ -584,7 +585,7 @@ class MergeQueueLoop:
                 detail=f"GitHub could not be asked about PR #{entry.pr_number}'s failed check(s): "
                 f"{exc}",
             )
-        if lost.verdict is LostVerdict.RERUNNING:
+        if lost.verdict in (LostVerdict.RERUNNING, LostVerdict.UNFINISHED):
             fields: dict[str, object] = {}
             if lost.asked:
                 logger.warning("merge queue: PR #%s: %s", entry.pr_number, lost.detail)
@@ -594,7 +595,7 @@ class MergeQueueLoop:
             return self._hold(
                 entry,
                 MergeQueueState.TESTING,
-                when="while its lost checks were re-run",
+                when="while its failed run was not over",
                 wait=MergeQueueWait.CHECKS_RUNNING,
                 checks_json=checks_json,
                 detail=lost.detail,
@@ -609,7 +610,7 @@ class MergeQueueLoop:
             detail="; ".join(
                 part
                 for part in (
-                    f"required check(s) failed on {entry.staged_sha[:12]}: "
+                    f"check(s) failed on {entry.staged_sha[:12]}: "
                     f"{', '.join(r.name for r in failing)}",
                     *context,
                 )
@@ -655,8 +656,7 @@ class MergeQueueLoop:
             state=MergeQueueState.MERGING,
             wait=MergeQueueWait.NONE,
             checks_json=checks_json,
-            detail=f"required checks passed on {entry.staged_sha[:12]}; merging"
-            + gating_basis(gating),
+            detail=f"checks passed on {entry.staged_sha[:12]}; merging" + gating_basis(gating),
         ):
             return self._gone(entry, "as it was about to merge")
         self.session.refresh(entry)

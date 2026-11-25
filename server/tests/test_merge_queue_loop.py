@@ -32,7 +32,7 @@ from loregarden.services import merge_queue_github, merge_queue_loop
 from loregarden.services.git_merge_noco import MergeOutcome
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import Candidate, enqueue, transition, withdraw
-from loregarden.services.merge_queue_failures import ActionsJob
+from loregarden.services.merge_queue_failures import ActionsJob, ActionsRun
 from loregarden.services.merge_queue_github import RequiredChecksUnavailable, StagedPullRequest
 from loregarden.services.merge_queue_loop import MergeQueueLoop, MergeVerdict, merge_verdict
 from loregarden.services.pull_request_merge import MergeFailed
@@ -153,6 +153,8 @@ class FakeGitHub:
         self.jobs: dict[str, ActionsJob] = {}
         self.jobs_unreachable = False
         self.attempts: dict[int, int] = {}
+        #: Actions runs that have not ended.
+        self.running: set[int] = set()
         self.reruns: list[int] = []
         self.rerun_refused = ""
 
@@ -202,8 +204,9 @@ class FakeGitHub:
             raise GitHubReadError("GitHub did not answer within 30s")
         return self.jobs.get(url)
 
-    def run_attempt(self, run_id: int) -> int:
-        return self.attempts[run_id]
+    def actions_run(self, run_id: int) -> ActionsRun:
+        status = "in_progress" if run_id in self.running else "completed"
+        return ActionsRun(run_attempt=self.attempts[run_id], status=status)
 
     def rerun_failed_jobs(self, run_id: int) -> str:
         self.reruns.append(run_id)
@@ -503,6 +506,44 @@ def test_a_failing_required_check_fails_the_entry_with_its_log(session, workspac
     assert entry.state is MergeQueueState.FAILED
     assert "Server (Python)" in entry.detail
     assert "the tail of the log" in entry.log_tail
+
+
+def test_a_failing_check_the_base_does_not_require_fails_the_entry(
+    session, workspace, github, entry
+):
+    """#952: Visual QA failed on the staged commit and the queue landed it."""
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    github.checks[entry.staged_sha] = [
+        _check("Visual QA (seeded sandbox)", "FAILURE"),
+        *[_check(name, "SUCCESS") for name in REQUIRED],
+    ]
+
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+
+    assert entry.state is MergeQueueState.FAILED
+    assert "Visual QA (seeded sandbox)" in entry.detail
+    assert github.merges == []
+
+
+def test_a_check_the_base_does_not_require_is_waited_for_then_lands_once_it_passes(
+    session, workspace, github, entry
+):
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    required = [_check(name, "SUCCESS") for name in REQUIRED]
+    github.checks[entry.staged_sha] = [*required, GhCheck(name="Visual QA", status="IN_PROGRESS")]
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.TESTING
+    assert entry.wait is MergeQueueWait.CHECKS_RUNNING
+    assert "Visual QA" in entry.detail
+
+    github.checks[entry.staged_sha] = [*required, _check("Visual QA", "SKIPPED")]
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.MERGED
 
 
 def test_a_merge_check_that_cannot_answer_is_undetermined_never_clean():
