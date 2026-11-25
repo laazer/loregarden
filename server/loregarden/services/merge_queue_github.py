@@ -39,7 +39,7 @@ from loregarden.services.ci_checks import (
 )
 from loregarden.services.git_subprocess import run_gh
 from loregarden.services.github_pr_listing import GitHubReadError, read_gh
-from loregarden.services.merge_queue_failures import ActionsJob
+from loregarden.services.merge_queue_failures import ActionsJob, ActionsRun
 from loregarden.services.pull_request_merge import squash_merge
 from loregarden.services.ticket_pull_request import GhCheck, check_outcome
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -147,10 +147,6 @@ class _OpenPull(BaseModel):
 _OpenPulls = TypeAdapter(list[_OpenPull])
 
 
-class _ActionsRun(BaseModel):
-    run_attempt: int
-
-
 class CheckReading(BaseModel):
     """One check on the staged commit, as the entry records it."""
 
@@ -215,7 +211,7 @@ class QueueGitHub(Protocol):
 
     def failed_job(self, url: str) -> ActionsJob | None: ...
 
-    def run_attempt(self, run_id: int) -> int: ...
+    def actions_run(self, run_id: int) -> ActionsRun: ...
 
     def rerun_failed_jobs(self, run_id: int) -> str: ...
 
@@ -330,14 +326,14 @@ class GhQueueGitHub:
         except ValidationError as exc:
             raise GitHubReadError(f"unreadable job {job_id}: {exc}") from exc
 
-    def run_attempt(self, run_id: int) -> int:
+    def actions_run(self, run_id: int) -> ActionsRun:
         raw = read_gh(
             self.repo_root,
             ["api", f"repos/{{owner}}/{{repo}}/actions/runs/{run_id}"],
             GH_TIMEOUT_SECONDS,
         )
         try:
-            return _ActionsRun.model_validate_json(raw).run_attempt
+            return ActionsRun.model_validate_json(raw)
         except ValidationError as exc:
             raise GitHubReadError(f"unreadable run {run_id}: {exc}") from exc
 
@@ -466,6 +462,20 @@ def read_required(checks: list[GhCheck], required: list[str]) -> list[CheckReadi
             )
         )
     return readings
+
+
+def read_gating(checks: list[GhCheck], required: list[str]) -> list[CheckReading]:
+    """The required checks, then every other check that reported on the commit.
+
+    GitHub lets a pull request merge with a failed check its base does not
+    require, so the queue did too: #952 landed with Visual QA failing
+    (2026-11-23), and main's own Visual QA failed until a fix landed 6.5 hours
+    later. Visual QA cannot be required, because it runs only where a surface
+    can have changed and a required check that never runs blocks the pull
+    request for good. So what did run must pass, whatever the rules say.
+    """
+    others = sorted({check_name(check) for check in checks} - set(required))
+    return read_required(checks, [*required, *others])
 
 
 def unreported(checks: list[GhCheck], required: list[str]) -> list[str]:

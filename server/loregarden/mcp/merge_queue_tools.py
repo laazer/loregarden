@@ -32,7 +32,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.ENQUEUE_MERGE,
         "description": (
             "Put an open pull request in the merge queue, which merges it onto the tip of "
-            "main, waits for the required checks on that result, and lands exactly it. Use "
+            "main, waits for every check that runs on that result, and lands exactly it. Use "
             "this instead of `gh pr merge --auto`. Pass `ticket_id` for a tree's PR (any "
             "ticket in the tree; refused when it has no open PR, so publish it with "
             "loregarden_land_ticket first), or `pr_number` plus `workspace_slug` for any "

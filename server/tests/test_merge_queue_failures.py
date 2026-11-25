@@ -12,7 +12,7 @@ from loregarden.config import settings
 from loregarden.models.domain import MergeQueueEntry, MergeQueueState, MergeQueueWait, utcnow
 from loregarden.services import github_pr_listing
 from loregarden.services.github_pr_listing import GitHubReadError
-from loregarden.services.merge_queue_failures import ActionsJob, failed_tests
+from loregarden.services.merge_queue_failures import GATHER_STEP, ActionsJob, failed_tests
 from loregarden.services.merge_queue_github import GhQueueGitHub
 from loregarden.services.ticket_pull_request import GhCheck
 from tests.test_merge_queue_loop import (  # noqa: F401 - pytest fixtures
@@ -162,6 +162,15 @@ def test_a_check_that_is_not_an_actions_job_is_judged_as_it_stands(
     assert testing.state is MergeQueueState.FAILED
 
 
+def test_a_failed_check_that_is_not_an_actions_job_beside_a_dead_runner_stops_the_entry(
+    session, workspace, github, testing
+):
+    _fail(github, testing, server=_job(died=True), client=None)
+    _advance(session, workspace, github, testing)
+    assert github.reruns == []
+    assert testing.state is MergeQueueState.FAILED
+
+
 def test_two_dead_jobs_of_one_run_are_run_again_together(session, workspace, github, testing):
     _fail(github, testing, server=_job(died=True), client=_job(died=True))
     _advance(session, workspace, github, testing)
@@ -172,6 +181,98 @@ def test_dead_jobs_of_two_runs_are_each_run_again(session, workspace, github, te
     _fail(github, testing, server=_job(died=True), client=_job(died=True, run=OTHER_RUN))
     _advance(session, workspace, github, testing)
     assert github.reruns == [RUN, OTHER_RUN]
+
+
+@pytest.mark.parametrize("died", [True, False])
+def test_a_failure_is_not_judged_or_rerun_while_its_run_is_still_going(
+    session, workspace, github, testing, died
+):
+    """GitHub refuses a run's logs and its re-run until it ends; #920 lost its log to that."""
+    _fail(github, testing, client=_job(died=died))
+    github.running.add(RUN)
+    limit = testing.testing_started_at
+
+    _advance(session, workspace, github, testing)
+
+    assert github.reruns == []
+    assert testing.state is MergeQueueState.TESTING
+    assert testing.wait is MergeQueueWait.CHECKS_RUNNING
+    assert testing.testing_started_at == limit
+    assert "Client (TypeScript)" in testing.detail
+
+    github.running.clear()
+    _advance(session, workspace, github, testing)
+    assert github.reruns == ([RUN] if died else [])
+    assert testing.state is (MergeQueueState.TESTING if died else MergeQueueState.FAILED)
+
+
+def test_a_rerun_in_progress_is_waited_for_as_a_rerun(session, workspace, github, testing):
+    _fail(github, testing, server=_job(died=True))
+    _advance(session, workspace, github, testing)
+    github.running.add(RUN)
+    _advance(session, workspace, github, testing)
+    assert github.reruns == [RUN]
+    assert "running again" in testing.detail
+
+
+def test_one_unfinished_run_holds_a_failure_in_a_finished_one(session, workspace, github, testing):
+    _fail(github, testing, server=_job(died=False, run=OTHER_RUN), client=_job(died=False))
+    github.running.add(RUN)
+    _advance(session, workspace, github, testing)
+    assert testing.state is MergeQueueState.TESTING
+
+
+def _gather() -> ActionsJob:
+    return ActionsJob.model_validate(
+        {
+            "run_id": RUN,
+            "run_attempt": 1,
+            "steps": [
+                {"name": "Set up job", "status": "completed", "conclusion": "success"},
+                {"name": GATHER_STEP, "status": "completed", "conclusion": "failure"},
+            ],
+        }
+    )
+
+
+def _fail_shard(github, testing, shard: ActionsJob) -> None:
+    """`Server (Python)` gathers the shards, so it failed because the shard did."""
+    _fail(github, testing, server=_gather())
+    url = f"https://github.com/o/r/actions/runs/{RUN}/job/shard"
+    github.jobs[url] = shard
+    github.checks[testing.staged_sha].append(
+        GhCheck(name="Server tests (2)", status="COMPLETED", conclusion="FAILURE", detailsUrl=url)
+    )
+
+
+def test_a_dead_shard_is_run_again_though_the_job_gathering_it_failed(
+    session, workspace, github, testing
+):
+    _fail_shard(github, testing, _job(died=True))
+    _advance(session, workspace, github, testing)
+    assert github.reruns == [RUN]
+    assert testing.state is MergeQueueState.TESTING
+    assert "Server tests (2)" in testing.detail and "Server (Python)" not in testing.detail
+
+
+def test_a_failed_shard_ejects(session, workspace, github, testing):
+    _fail_shard(github, testing, _job(died=False))
+    _advance(session, workspace, github, testing)
+    assert github.reruns == []
+    assert testing.state is MergeQueueState.FAILED
+
+
+def test_a_gathering_job_that_fails_alone_ejects(session, workspace, github, testing):
+    _fail(github, testing, server=_gather())
+    _advance(session, workspace, github, testing)
+    assert github.reruns == []
+    assert testing.state is MergeQueueState.FAILED
+
+
+def test_a_job_that_failed_another_step_too_does_not_only_gather():
+    job = _gather()
+    job.steps[0].conclusion = "failure"
+    assert _gather().gathers and not job.gathers
 
 
 def test_a_refused_rerun_stops_the_entry_with_githubs_words(session, workspace, github, testing):
@@ -332,16 +433,18 @@ def test_a_check_with_no_job_url_is_not_read_as_a_job():
     run.assert_not_called()
 
 
-@pytest.mark.parametrize("read", ["failed_job", "run_attempt"])
+@pytest.mark.parametrize("read", ["failed_job", "actions_run"])
 def test_an_unreadable_answer_raises(read):
     argument = "https://github.com/o/r/actions/runs/1/job/2" if read == "failed_job" else 1
     with _gh("{}"), pytest.raises(GitHubReadError):
         getattr(GhQueueGitHub(Path(".")), read)(argument)
 
 
-def test_the_run_attempt_is_the_runs_own():
-    with _gh('{"run_attempt": 2}') as run:
-        assert GhQueueGitHub(Path(".")).run_attempt(45) == 2
+@pytest.mark.parametrize(("status", "finished"), [("completed", True), ("in_progress", False)])
+def test_the_run_is_read_for_its_attempt_and_whether_it_ended(status, finished):
+    with _gh(f'{{"run_attempt": 2, "status": "{status}"}}') as run:
+        answer = GhQueueGitHub(Path(".")).actions_run(45)
+    assert answer.run_attempt == 2 and answer.finished is finished
     assert run.call_args.args[0][-1].endswith("/actions/runs/45")
 
 
