@@ -89,8 +89,9 @@ LAND_BLOCK_LEAD = "Could not land {branch} on {target}: "
 #: How long the configured commands get, in total. A land verification is a
 #: suite — two files of this repo's own take 118s — so this is not the gates'
 #: 300s. A timeout REFUSES: a mitigation that let the land through on expiry
-#: would remove the guard exactly when the suite is slowest.
-LAND_VERIFY_TIMEOUT_SECONDS = 1800
+#: would remove the guard exactly when the suite is slowest. It was 1800 under a
+#: 4-cpu grant; `heavy` is 3 now, and a verification may have a second one beside it.
+LAND_VERIFY_TIMEOUT_SECONDS = 2700
 
 #: How long the capacity lease is held for, with the same reasoning.
 _LEASE_TTL_SECONDS = LAND_VERIFY_TIMEOUT_SECONDS + 300

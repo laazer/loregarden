@@ -101,8 +101,8 @@ def test_gate_commands_run_under_a_host_lease_sized_by_the_profile(
     assert result.ok and result.outcome is GateOutcome.PASSED
     (lease,) = _gate_leases(session)
     workers, lease_id = seen.read_text().split()
-    assert (workers, lease_id) == ("4", lease.id)  # heavy = 4 cpus, while the lease held
-    assert (lease.cpus, lease.memory_mb, lease.pool) == (4.0, 8192, CapacityPool.HOST)
+    assert (workers, lease_id) == ("3", lease.id)  # heavy = 3 cpus, while the lease held
+    assert (lease.cpus, lease.memory_mb, lease.pool) == (3.0, 8192, CapacityPool.HOST)
     assert "implement_to_verify" in lease.holder_label
     assert lease.status is DockerLeaseStatus.RELEASED
     assert load_pool(session, CapacityPool.HOST).held_cpus == 0

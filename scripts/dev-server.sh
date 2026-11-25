@@ -70,6 +70,11 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
+# Before anything serves from it: a translated Python costs twice the cpu.
+# shellcheck source=lib/native-venv.sh
+source "$ROOT/scripts/lib/native-venv.sh"
+ensure_native_venv "$ROOT/server"
+
 if [[ ! -d .venv ]]; then
   uv venv
 fi

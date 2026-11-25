@@ -55,14 +55,26 @@ much:
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
 
+* `--nearest` (a push, whose PR gets CI's full run) keeps the tests within
+  `NEAREST_HOPS` imports of a changed module. 284 of the package's 1019 modules
+  are one import cycle, so "reaches" is most of the suite for almost any service:
+  a median of 611 of 835 files over the 472 commits to 2026-11-24 that changed a
+  module and an existing test with it. 1207 of the 1278 tests changed there that
+  the graph reaches at all were within two hops, at a median of 233 files. A
+  changed module with no test that near keeps its nearest ones, and the tests
+  that read the package's source (`rglob("*.py")`) or name the changed file are
+  kept at any distance. A landing does not pass it: nothing runs after a landing
+  that would catch the miss.
+
 What can still be missed: a test that reaches changed code through a data file,
 a subprocess, or a name assembled at runtime. CI still runs the whole suite on
 every PR, so the cost of a miss is a slower signal, never an unguarded merge.
 
-Usage: select_pytest_targets.py --repo PATH --base REF [--run-first-out FILE]
-Prints one test path per line. Exit 2 means "run the full suite" and the reason
-goes to stderr. --run-first-out also writes, in every case, the tests a full run
-should start with: the selection for the part of the diff that can be narrowed.
+Usage: select_pytest_targets.py --repo PATH --base REF [--nearest] [--run-first-out FILE]
+Prints one test path per line, the closest to the change first. Exit 2 means
+"run the full suite" and the reason goes to stderr. --run-first-out also writes,
+in every case, the tests a full run should start with: the selection for the
+part of the diff that can be narrowed.
 """
 
 from __future__ import annotations
@@ -114,6 +126,10 @@ def is_named_doc(path: str) -> bool:
     """Markdown read by name: anywhere but `agent_context/` (its own rule) and `client/`."""
     return path.endswith(".md") and not path.startswith((f"{CONTEXT_DIR}/", f"{CLIENT_DIR}/"))
 
+
+#: How far `--nearest` follows imports back from a changed module: 1 is the tests
+#: importing it, 2 the tests importing a module that does. See the module docstring.
+NEAREST_HOPS = 2
 
 #: Longest string constant kept as a possible script name; prose is longer.
 _MAX_NAME_LENGTH = 200
@@ -170,11 +186,59 @@ def module_name(path: Path, package_root: Path) -> str | None:
     return ".".join(parts) if parts else None
 
 
-def _imported_modules(tree: ast.AST) -> set[str]:
+def _init_file(package: str) -> str:
+    """The graph's name for a package's `__init__.py` alone, without what it re-exports."""
+    return f"{package}.__init__"
+
+
+#: package -> name it re-exports -> the modules that may define it
+Exports = dict[str, dict[str, set[str]]]
+
+
+def _defined_names(tree: ast.Module) -> set[str]:
+    """What a module's own top-level statements bind, imports aside."""
+    names: set[str] = set()
+    for node in tree.body:
+        if type(node) in (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef):
+            names.add(node.name)
+            continue
+        targets = node.targets if type(node) is ast.Assign else []
+        targets = [node.target] if type(node) is ast.AnnAssign else targets
+        names.update(target.id for target in targets if type(target) is ast.Name)
+    return names
+
+
+def _package_exports(known: dict[str, Path], trees: dict[str, ast.Module]) -> Exports:
+    """What each package's `__init__` re-exports, and from where.
+
+    `loregarden.models.domain` star-imports every table and enum module, and 624
+    of 836 test files import from it. Taken as one node, a change to any of those
+    modules reached every one of them; a test that imports `Ticket` from it does
+    not depend on an enum `Ticket`'s module never mentions.
+    """
+    exports: Exports = {}
+    for name, path in known.items():
+        if path.name != "__init__.py":
+            continue
+        sources = exports.setdefault(name, {})
+        for node in trees[name].body:
+            if type(node) is not ast.ImportFrom or node.module not in known:
+                continue
+            for alias in node.names:
+                star = alias.name == "*"
+                bound = _defined_names(trees[node.module]) if star else {alias.asname or alias.name}
+                for export in bound:
+                    sources.setdefault(export, set()).add(node.module)
+    return exports
+
+
+def _imported_modules(tree: ast.AST, exports: Exports) -> set[str]:
     """Package modules this file names — through imports and through strings.
 
     The string scan is what keeps `importlib.import_module("loregarden.mcp.x")`
-    and the MCP tool registry from being invisible to the graph.
+    and the MCP tool registry from being invisible to the graph. A name imported
+    from a package that re-exports it names the module defining it; one nobody is
+    seen to define names the whole package.
     """
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -184,10 +248,12 @@ def _imported_modules(tree: ast.AST) -> set[str]:
                     found.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.module and node.module.startswith(PACKAGE):
-                found.add(node.module)
+                defined = exports.get(node.module, {})
                 for alias in node.names:
                     # `from loregarden.services import doctor` names a module too.
                     found.add(f"{node.module}.{alias.name}")
+                    found.update(defined.get(alias.name, {node.module}))
+                found.add(_init_file(node.module))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if node.value.startswith(f"{PACKAGE}."):
                 found.add(node.value)
@@ -223,6 +289,8 @@ class _PathNames:
     markdown: frozenset[str] = frozenset()
     #: constants and bare imports that could name a script, by path or module name
     scripts: frozenset[str] = frozenset()
+    #: globs Python files, so it reads source no import of its own names
+    source: bool = False
 
 
 class _PathFinder(ast.NodeVisitor):
@@ -231,6 +299,14 @@ class _PathFinder(ast.NodeVisitor):
         self.context_tree = False
         self.markdown: set[str] = set()
         self.scripts: set[str] = set()
+        self.source = False
+
+    def visit_Call(self, node: ast.Call) -> None:
+        called = node.func.attr if type(node.func) is ast.Attribute else ""
+        if called in ("glob", "rglob"):
+            patterns = [arg.value for arg in node.args if type(arg) is ast.Constant]
+            self.source = self.source or any(str(value).endswith(".py") for value in patterns)
+        self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         # `import select_pytest_targets` after a sys.path insert names the script.
@@ -262,6 +338,7 @@ def _path_names(tree: ast.AST) -> _PathNames:
         context_tree=finder.context_tree,
         markdown=frozenset(finder.markdown),
         scripts=frozenset(finder.scripts),
+        source=finder.source,
     )
 
 
@@ -341,7 +418,7 @@ def scripts_reaching(repo: Path, changed: frozenset[str]) -> set[str]:
     return reached
 
 
-def _parse(path: Path) -> ast.AST:
+def _parse(path: Path) -> ast.Module:
     """The module's AST, or `UnexaminableFileError` naming why there is none.
 
     This used to return ``None`` for a file it could not read or parse, and the
@@ -369,6 +446,8 @@ class ImportGraph:
     client_tests: frozenset[Path]
     #: test files that name the `agent_context` tree themselves
     context_tests: frozenset[Path]
+    #: test files that read the package's source themselves
+    source_tests: frozenset[Path]
     #: module or test file -> the markdown paths its string constants name
     module_markdown: dict[str, frozenset[str]]
     test_markdown: dict[Path, frozenset[str]]
@@ -384,12 +463,14 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
         if name:
             known[name] = py
 
+    trees = {name: _parse(py) for name, py in known.items()}
+    exports = _package_exports(known, trees)
+    nodes = known.keys() | {_init_file(name) for name in exports}
     module_edges: dict[str, set[str]] = {}
     module_markdown: dict[str, frozenset[str]] = {}
     module_scripts: dict[str, frozenset[str]] = {}
-    for name, py in known.items():
-        tree = _parse(py)
-        module_edges[name] = {m for m in _imported_modules(tree) if m in known}
+    for name, tree in trees.items():
+        module_edges[name] = _imported_modules(tree, exports) & nodes
         names = _path_names(tree)
         module_markdown[name] = names.markdown
         module_scripts[name] = names.scripts
@@ -399,9 +480,10 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
     test_scripts: dict[Path, frozenset[str]] = {}
     client_tests: set[Path] = set()
     context_tests: set[Path] = set()
+    source_tests: set[Path] = set()
     for py in sorted(test_root.rglob("test_*.py")):
         tree = _parse(py)
-        test_edges[py] = {m for m in _imported_modules(tree) if m in known}
+        test_edges[py] = _imported_modules(tree, exports) & nodes
         names = _path_names(tree)
         test_markdown[py] = names.markdown
         test_scripts[py] = names.scripts
@@ -409,12 +491,15 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
             client_tests.add(py)
         if names.context_tree:
             context_tests.add(py)
+        if names.source:
+            source_tests.add(py)
 
     return ImportGraph(
         module_edges=module_edges,
         test_edges=test_edges,
         client_tests=frozenset(client_tests),
         context_tests=frozenset(context_tests),
+        source_tests=frozenset(source_tests),
         module_markdown=module_markdown,
         test_markdown=test_markdown,
         module_scripts=module_scripts,
@@ -422,17 +507,51 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
     )
 
 
-def reachable(seeds: set[str], module_edges: dict[str, set[str]]) -> set[str]:
-    """Every package module reachable from these, following imports forward."""
-    seen: set[str] = set()
-    stack = list(seeds)
-    while stack:
-        current = stack.pop()
-        if current in seen:
+def _importers(graph: ImportGraph) -> dict[str, set[str]]:
+    importers: dict[str, set[str]] = {}
+    for name, imported in graph.module_edges.items():
+        for target in imported:
+            importers.setdefault(target, set()).add(name)
+    return importers
+
+
+def _hops_to(graph: ImportGraph, importers: dict[str, set[str]], module: str) -> dict[Path, int]:
+    """Every test file that reaches ``module``, and over how many imports: 1 imports it."""
+    distance = {module: 0}
+    frontier = [module]
+    while frontier:
+        following = []
+        for current in frontier:
+            for name in importers.get(current, ()):
+                if name not in distance:
+                    distance[name] = distance[current] + 1
+                    following.append(name)
+        frontier = following
+    hops = {}
+    for test, imported in graph.test_edges.items():
+        reached = [distance[name] for name in imported if name in distance]
+        if reached:
+            hops[test] = min(reached) + 1
+    return hops
+
+
+def module_hops(graph: ImportGraph, modules: frozenset[str], limit: int | None) -> dict[Path, int]:
+    """The test files within ``limit`` imports of a changed module, and how near each is.
+
+    Per module, so one with no test that near keeps its nearest ones: its
+    neighbours in the diff being well covered says nothing about it.
+    """
+    nearest: dict[Path, int] = {}
+    importers = _importers(graph)
+    for module in modules:
+        hops = _hops_to(graph, importers, module)
+        if not hops:
             continue
-        seen.add(current)
-        stack.extend(module_edges.get(current, ()))
-    return seen
+        within = max(limit, min(hops.values())) if limit is not None else max(hops.values())
+        for test, count in hops.items():
+            if count <= within:
+                nearest[test] = min(count, nearest.get(test, count))
+    return nearest
 
 
 @dataclass(frozen=True)
@@ -475,6 +594,8 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
                 tests.add(repo / rel)
         elif name := module_name(repo / rel, package_root):
             modules.add(name)
+            if rel.endswith("/__init__.py"):
+                modules.add(_init_file(name))
     return ChangeSet(
         tests=frozenset(tests),
         modules=frozenset(modules),
@@ -517,8 +638,18 @@ def _needs_graph(changes: ChangeSet) -> bool:
     return bool(changes.modules or changes.client or changes.context_files or changes.script_files)
 
 
-def _select(repo: Path, changes: ChangeSet, graph: ImportGraph) -> set[Path]:
-    selected = set(changes.tests)
+def _select(
+    repo: Path, changes: ChangeSet, graph: ImportGraph, limit: int | None = None
+) -> dict[Path, int]:
+    """Each selected test file and its distance from the change: 0 is changed itself."""
+    selected = dict.fromkeys(_other_readers(repo, changes, graph), NEAREST_HOPS)
+    selected |= module_hops(graph, changes.modules, limit)
+    return selected | dict.fromkeys(changes.tests, 0)
+
+
+def _other_readers(repo: Path, changes: ChangeSet, graph: ImportGraph) -> set[Path]:
+    """The tests that read a changed file that is not a package module."""
+    selected: set[Path] = set()
     if changes.client:
         selected |= graph.client_tests
     if changes.context_files:
@@ -527,13 +658,26 @@ def _select(repo: Path, changes: ChangeSet, graph: ImportGraph) -> set[Path]:
         selected |= {test for test, imports in graph.test_edges.items() if imports & readers}
     if changes.script_files:
         selected |= _tests_reaching_scripts(graph, scripts_reaching(repo, changes.script_files))
-    if changes.modules:
-        selected |= {
-            test_file
-            for test_file, imports in graph.test_edges.items()
-            if reachable(imports, graph.module_edges) & changes.modules
-        }
     return selected
+
+
+def _source_readers(changes: ChangeSet, graph: ImportGraph) -> dict[Path, int]:
+    """Tests that read package source as text: every one that globs it, at
+    `NEAREST_HOPS`, and those naming a changed module's file, as if importing it."""
+    if not changes.modules:
+        return {}
+    named = {
+        test
+        for test, names in graph.test_scripts.items()
+        if any(names_context_file(names, rel) for rel in _module_files(changes.modules))
+    }
+    return dict.fromkeys(graph.source_tests, NEAREST_HOPS) | dict.fromkeys(named, 1)
+
+
+def _module_files(modules: frozenset[str]) -> list[str]:
+    """Repo-relative. A package's `__init__.py` is left out: every package has one."""
+    own = (name for name in modules if not name.endswith(".__init__"))
+    return [f"server/{name.replace('.', '/')}.py" for name in own]
 
 
 def _modules_naming(graph: ImportGraph, files: frozenset[str]) -> set[str]:
@@ -566,20 +710,19 @@ def _tests_naming(graph: ImportGraph, files: frozenset[str]) -> set[Path]:
     }
 
 
-def run_first(repo: Path, paths: list[str]) -> list[Path]:
-    """The tests to run FIRST when the suite runs in full: the selection for
-    the part of the diff that can be narrowed.
+def run_first(repo: Path, paths: list[str], limit: int | None = None) -> list[Path]:
+    """The selection for the part of the diff that can be narrowed, closest first.
 
-    A full run caused by one unmappable file (`lefthook.yml`) still holds a
-    diff whose other changes the graph maps, and the tests reaching those are
-    the likeliest to fail. Running them first moves a failure from wherever path
-    order put it to near the start; the full run still runs everything.
-    This is an order, never a selection, so a hole in it costs speed only.
+    What a narrowed run runs, in the order it runs it, and what a full run caused
+    by one unmappable file (`lefthook.yml`) runs first: such a diff still holds
+    changes the graph maps, and the tests nearest those are the likeliest to fail.
 
-    Closest first, because "reaches" is often most of the suite: a change to
-    `git_subprocess.py` reaches 691 of ~720 files through the graph. So the
-    changed tests lead, then the files importing a changed module directly
-    (`test_git_subprocess.py`), then everything reaching one transitively.
+    Closest first, because "reaches" is often most of the suite: the changed
+    tests lead, then the files importing a changed module or naming its file,
+    then one import further out at a time. In path order a failure one import
+    away surfaced 23 minutes into a push that had waited 100 for its turn.
+    Empty when nothing reaches the change: a test that reads every source file
+    is no evidence that one does.
     """
     narrowable = [path for path in paths if full_suite_reason([path]) is None]
     if not narrowable:
@@ -588,21 +731,19 @@ def run_first(repo: Path, paths: list[str]) -> list[Path]:
     if not _needs_graph(changes):
         return sorted(changes.tests)
     graph = build_graph(repo / "server" / PACKAGE, repo / "server" / "tests")
-
-    def closeness(test: Path) -> tuple[int, Path]:
-        if test in changes.tests:
-            return (0, test)
-        if graph.test_edges.get(test, set()) & changes.modules:
-            return (1, test)
-        return (2, test)
-
-    return sorted(_select(repo, changes, graph), key=closeness)
+    selected = _select(repo, changes, graph, limit)
+    if not selected:
+        return []
+    for test, hops in _source_readers(changes, graph).items():
+        selected[test] = min(hops, selected.get(test, hops))
+    return sorted(selected, key=lambda test: (selected[test], test))
 
 
 def _write_run_first(out: Path | None, repo: Path, tests: list[Path]) -> None:
     if out is not None:
         out.write_text(
-            "".join(f"{test.relative_to(repo).as_posix()}\n" for test in tests), encoding="utf-8"
+            "".join(f"{test.relative_to(repo).as_posix()}\n" for test in tests),
+            encoding="utf-8",
         )
 
 
@@ -616,6 +757,11 @@ def main() -> int:
         default=None,
         help="also write the tests a full run should start with (see run_first), one per line",
     )
+    parser.add_argument(
+        "--nearest",
+        action="store_true",
+        help=f"keep only the tests within {NEAREST_HOPS} imports of the change (a push)",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
 
@@ -627,7 +773,7 @@ def main() -> int:
 
     reason = full_suite_reason(paths)
     try:
-        selected = run_first(repo, paths) if reason else select(repo, paths)
+        selected = run_first(repo, paths, NEAREST_HOPS if args.nearest else None)
     except UnexaminableError as exc:
         # A module whose imports are unknown may be the only path from a test
         # to the change, so no subset is honest — not even as an order.

@@ -41,7 +41,6 @@ from loregarden.services.opencode_discovery import (
     _parse_models_output,
     list_opencode_models,
     opencode_model_options,
-    reset_model_cache,
 )
 from loregarden.services.run_log_stream import format_stream_payload
 
@@ -51,14 +50,6 @@ def _workspace_picks_the_adapter(monkeypatch):
     """conftest pins LOREGARDEN_CLI_ADAPTER=local session-wide, and the env tier
     outranks everything — clear it so these tests exercise the workspace pin."""
     monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _no_memoized_catalog():
-    """Discovery memoizes across calls; a leaked entry would answer the next test."""
-    reset_model_cache()
-    yield
-    reset_model_cache()
 
 
 def _workspace(**kwargs) -> Workspace:
@@ -254,24 +245,37 @@ def test_terminal_handoff_attaches_the_prompt_file_and_carries_its_env(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _no_memoized_catalog():
-    """The catalog is process-wide; one test's answer must not serve the next."""
-    reset_model_cache()
-    yield
-    join_probes(timeout=5.0)
-    reset_model_cache()
+#: The module's own 0.25s join is a real UX budget, and a loaded machine starts a
+#: mocked probe's thread later than that. See test_lmstudio_discovery.
+PATIENT_JOIN = 5.0
 
 
-def _impatient_cache() -> ProbeCache[str]:
-    """A cache that gives up on the join almost at once, so "in flight" is testable."""
+def _cache(join_timeout_seconds: float) -> ProbeCache[str]:
     return ProbeCache(
         label="opencode",
         probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
         success_ttl_seconds=300.0,
         failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
-        join_timeout_seconds=0.02,
+        join_timeout_seconds=join_timeout_seconds,
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog(monkeypatch):
+    """Each test gets its own cache, which waits for its probe.
+
+    The catalog is process-wide, so one test's answer must not serve the next.
+    `monkeypatch` because the impatient tests swap with it, and one undo stack
+    is the only way both swaps unwind in order.
+    """
+    monkeypatch.setattr("loregarden.services.opencode_discovery._CACHE", _cache(PATIENT_JOIN))
+    yield
+    join_probes(timeout=5.0)
+
+
+def _impatient_cache() -> ProbeCache[str]:
+    """A cache that gives up on the join almost at once, so "in flight" is testable."""
+    return _cache(0.02)
 
 
 def test_parse_models_output_keeps_provider_qualified_ids_only():

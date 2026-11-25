@@ -148,6 +148,165 @@ def test_deleted_test_file_is_not_selected(fake_repo: Path):
 
 
 @pytest.fixture
+def chain_repo(tmp_path: Path) -> Path:
+    """base <- one <- two <- three, each with a test; `far` is reached only from three."""
+    pkg = tmp_path / "server" / "loregarden"
+    tests = tmp_path / "server" / "tests"
+    pkg.mkdir(parents=True)
+    tests.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    imports = {"base": "far", "one": "base", "two": "one", "three": "two", "alone": "", "far": ""}
+    for name, imported in imports.items():
+        body = f"from loregarden import {imported}\n" if imported else ""
+        (pkg / f"{name}.py").write_text(body, encoding="utf-8")
+    for name in ("base", "one", "two", "three"):
+        (tests / f"test_{name}.py").write_text(f"from loregarden import {name}\n", encoding="utf-8")
+    return tmp_path
+
+
+def _selected(repo: Path, *modules: str, limit: int | None = None) -> list[str]:
+    paths = [f"server/loregarden/{name}.py" for name in modules]
+    return [path.name for path in selector.run_first(repo, paths, limit)]
+
+
+def test_the_nearest_tests_are_those_within_two_imports(chain_repo: Path):
+    assert _selected(chain_repo, "base", limit=2) == ["test_base.py", "test_one.py"]
+
+
+def test_without_a_limit_every_test_the_change_reaches_is_kept_closest_first(chain_repo: Path):
+    expected = ["test_base.py", "test_one.py", "test_two.py", "test_three.py"]
+    assert _selected(chain_repo, "base") == expected
+
+
+def test_a_module_with_no_test_that_near_keeps_its_nearest(chain_repo: Path):
+    (chain_repo / "server" / "tests" / "test_base.py").unlink()
+    (chain_repo / "server" / "tests" / "test_one.py").unlink()
+    assert _selected(chain_repo, "base", limit=2) == ["test_two.py"]
+
+
+def test_a_well_covered_module_does_not_hide_one_that_is_not(chain_repo: Path):
+    """`three` has a test of its own; `far`'s nearest is two imports away, and counts."""
+    (chain_repo / "server" / "tests" / "test_base.py").unlink()
+    (chain_repo / "server" / "tests" / "test_one.py").unlink()
+    assert _selected(chain_repo, "far", "three", limit=2) == ["test_three.py", "test_two.py"]
+
+
+def test_a_test_reading_the_packages_source_runs_whatever_module_changed(chain_repo: Path):
+    (chain_repo / "server" / "tests" / "test_tree.py").write_text(
+        'import pathlib\n\nFILES = pathlib.Path("loregarden").rglob("*.py")\n', encoding="utf-8"
+    )
+    assert "test_tree.py" in _selected(chain_repo, "base", limit=2)
+
+
+def test_a_test_globbing_other_files_does_not(chain_repo: Path):
+    (chain_repo / "server" / "tests" / "test_tree.py").write_text(
+        'import pathlib\n\nFILES = pathlib.Path("loregarden").rglob("*.sql")\n', encoding="utf-8"
+    )
+    assert "test_tree.py" not in _selected(chain_repo, "base", limit=2)
+
+
+def test_a_test_naming_the_changed_file_runs_with_its_importers(chain_repo: Path):
+    """test_hold_line reads builtin_orchestrator.py and imports nothing that does."""
+    (chain_repo / "server" / "tests" / "test_about.py").write_text(
+        'SOURCE = "base.py"\n', encoding="utf-8"
+    )
+    assert _selected(chain_repo, "base", limit=2) == [
+        "test_about.py",
+        "test_base.py",
+        "test_one.py",
+    ]
+
+
+def test_a_test_is_as_near_as_its_nearest_import(chain_repo: Path):
+    (chain_repo / "server" / "tests" / "test_wide.py").write_text(
+        "from loregarden import base, three\n", encoding="utf-8"
+    )
+    assert "test_wide.py" in _selected(chain_repo, "base", limit=1)
+
+
+def test_source_readers_alone_are_no_evidence_a_test_reaches_the_change(chain_repo: Path):
+    (chain_repo / "server" / "tests" / "test_tree.py").write_text(
+        'import pathlib\n\nFILES = pathlib.Path("loregarden").rglob("*.py")\n', encoding="utf-8"
+    )
+    assert _selected(chain_repo, "alone", limit=2) == []
+
+
+def test_a_source_reader_is_not_handed_to_mutation_testing(chain_repo: Path):
+    """It fails on any edit to what it reads, which would count as killing every mutant."""
+    (chain_repo / "server" / "tests" / "test_tree.py").write_text(
+        'import pathlib\n\nFILES = pathlib.Path("loregarden").rglob("*.py")\n', encoding="utf-8"
+    )
+    assert "test_tree.py" not in _names(selector.select(chain_repo, ["server/loregarden/base.py"]))
+
+
+@pytest.fixture
+def hub_repo(chain_repo: Path) -> Path:
+    """A package re-exporting two modules, and a test importing a name from each."""
+    hub = chain_repo / "server" / "loregarden" / "hub"
+    hub.mkdir()
+    (hub / "__init__.py").write_text(
+        "from loregarden.hub.cats import *\nfrom loregarden.hub.dogs import Dog, OTHER as KENNEL\n",
+        encoding="utf-8",
+    )
+    (hub / "cats.py").write_text("class Cat: ...\nPURR: str = 'r'\nCLAW = 1\n", encoding="utf-8")
+    (hub / "dogs.py").write_text("class Dog: ...\nOTHER = 2\n", encoding="utf-8")
+    tests = chain_repo / "server" / "tests"
+    for name, imported in {
+        "cat": "Cat",
+        "purr": "PURR",
+        "claw": "CLAW",
+        "dog": "Dog",
+        "kennel": "KENNEL",
+        "unknown": "Elsewhere",
+    }.items():
+        (tests / f"test_{name}.py").write_text(
+            f"from loregarden.hub import {imported}\n", encoding="utf-8"
+        )
+    (tests / "test_whole.py").write_text("import loregarden.hub\n", encoding="utf-8")
+    return chain_repo
+
+
+def test_a_name_from_a_package_reaches_the_module_that_defines_it(hub_repo: Path):
+    """Importing `Ticket` from models.domain is not importing every enum beside it."""
+    cats = {"test_cat.py", "test_purr.py", "test_claw.py", "test_whole.py", "test_unknown.py"}
+    assert set(_selected(hub_repo, "hub/cats")) == cats
+    dogs = {"test_dog.py", "test_kennel.py", "test_whole.py", "test_unknown.py"}
+    assert set(_selected(hub_repo, "hub/dogs")) == dogs
+
+
+def test_a_packages_own_file_reaches_everything_imported_from_it(hub_repo: Path):
+    everyone = {
+        "test_cat.py",
+        "test_purr.py",
+        "test_claw.py",
+        "test_dog.py",
+        "test_kennel.py",
+        "test_whole.py",
+        "test_unknown.py",
+    }
+    assert set(_selected(hub_repo, "hub/__init__")) == everyone
+
+
+@pytest.mark.parametrize(
+    ("named_base", "reach"), [("", "--nearest"), ("origin/main", "")], ids=["push", "landing"]
+)
+def test_a_push_runs_the_nearest_and_a_named_range_runs_the_whole_reach(named_base, reach):
+    result = subprocess.run(
+        ["bash", "-euc", 'source "$0"; printf "%s" "${SELECT_REACH[@]+${SELECT_REACH[*]}}"']
+        + [str(_ROOT / ".lefthook" / "scripts" / "push-base.sh")],
+        capture_output=True,
+        text=True,
+        env=_SCRUBBED_ENV | {"LOREGARDEN_TESTS_BASE": named_base},
+        check=True,
+    )
+    assert result.stdout == reach
+    for script in ("server-tests.sh", "push-prerequisites.sh"):
+        text = (_ROOT / ".lefthook" / "scripts" / script).read_text(encoding="utf-8")
+        calls = [line for line in text.splitlines() if "--repo " in line and "--base " in line]
+        assert calls and all('${SELECT_REACH[@]+"${SELECT_REACH[@]}"}' in line for line in calls)
+
+
+@pytest.fixture
 def client_reader_repo(fake_repo: Path) -> Path:
     """`fake_repo` plus tests that read the client tree, and one that only says the word."""
     tests = fake_repo / "server" / "tests"
@@ -476,6 +635,22 @@ def test_run_first_puts_the_closest_tests_first(fake_repo: Path):
     ]
 
 
+def test_cli_keeps_the_nearest_when_asked(chain_repo: Path):
+    _git(chain_repo, "init", "-q", ".")
+    _git(chain_repo, "config", "user.email", "t@example.com")
+    _git(chain_repo, "config", "user.name", "t")
+    _git(chain_repo, "add", "-A")
+    _git(chain_repo, "commit", "-qm", "base")
+    (chain_repo / "server" / "loregarden" / "base.py").write_text("X = 1\n", encoding="utf-8")
+    _git(chain_repo, "commit", "-aqm", "change base")
+
+    nearest = _run_cli(chain_repo, "HEAD~1", "--nearest")
+    whole = _run_cli(chain_repo, "HEAD~1")
+
+    assert nearest.stdout.split() == ["server/tests/test_base.py", "server/tests/test_one.py"]
+    assert len(whole.stdout.split()) == 4
+
+
 def test_a_narrowed_run_names_its_selection_to_run_first(git_repo: Path, tmp_path: Path):
     leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
     leaf.write_text("VALUE = 2\n", encoding="utf-8")
@@ -682,3 +857,12 @@ def test_client_hook_narrows_jest_and_keeps_the_wide_checks():
     # oxlint and tsc still cover everything.
     assert "npm run lint" in script
     assert "npx tsc -b" in script
+
+
+def test_naming_an_init_file_names_no_package_in_particular(hub_repo: Path):
+    (hub_repo / "server" / "tests" / "test_about.py").write_text(
+        'SOURCE = "__init__.py"\n', encoding="utf-8"
+    )
+    selected = _selected(hub_repo, "hub/__init__")
+    assert "test_whole.py" in selected
+    assert "test_about.py" not in selected

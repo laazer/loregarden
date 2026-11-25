@@ -52,6 +52,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.doctor_dev_server import (
     check_dev_server_reload,
+    check_native_python,
     check_server_follows_main,
 )
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
@@ -734,6 +735,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.BACKEND_RELOAD_SENTINEL: check_backend_reload_sentinel,
     DoctorCheck.DEV_SERVER_RELOAD: check_dev_server_reload,
     DoctorCheck.SERVER_FOLLOWS_MAIN: check_server_follows_main,
+    DoctorCheck.NATIVE_PYTHON: check_native_python,
     DoctorCheck.CLI_CREDENTIALS: check_cli_credentials,
     DoctorCheck.GIT_PORTABILITY: check_git_portability,
     DoctorCheck.STAGE_REPORT_CONTRACT: check_stage_report_contract,

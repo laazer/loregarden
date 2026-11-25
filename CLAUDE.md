@@ -695,9 +695,11 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   `env -u GIT_DIR -u GIT_WORK_TREE` workaround is no longer needed. Still scrub the env if you
   invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook),
   because the server's own git helpers pass the ambient environment through.
-- **Pre-push runs only the tests your commits reach.** `select_pytest_targets.py` walks the
-  import graph (string constants included, so `import_module("loregarden.x")` counts) and pytest
-  runs that subset; jest runs `--changedSince`. A hook or repo script (`.lefthook/scripts/`,
+- **Pre-push runs only the tests nearest your commits, closest first.** `select_pytest_targets.py`
+  walks the import graph (string constants included, so `import_module("loregarden.x")` counts)
+  and pytest runs the tests within two imports of a changed module, plus those that read the
+  package's source or name a changed file; jest runs `--changedSince`. A landing runs
+  everything its diff reaches (`LOREGARDEN_TESTS_BASE`). A hook or repo script (`.lefthook/scripts/`,
   `scripts/`) selects the tests that name it, or name a script that runs or imports it. Anything
   unmappable (`conftest.py`, `pyproject.toml`, `lefthook.yml`, another non-Python file, anything
   else outside `server/`/`client/`) falls back to the full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*

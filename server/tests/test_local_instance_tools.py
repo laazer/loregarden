@@ -6,8 +6,11 @@ through `/mcp` reaches the same manager the Instances panel uses — so one
 real launch goes all the way through here too.
 """
 
+import fcntl
 import json
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,9 +44,25 @@ def test_offered_to_every_stage_and_never_waits_on_the_inbox(tool) -> None:
     assert not is_orchestrated_agent_denied_mcp_tool(tool.value)
 
 
+@pytest.fixture(name="only_launcher")
+def only_launcher_fixture() -> Iterator[None]:
+    """One launching test at a time on this machine, whatever worker or suite it is in.
+
+    A registry's lock keeps two launches off one port, but each test here has its
+    own registry. Two of them choosing while neither server listens yet both took
+    the lowest free port, and the second exited with "Address already in use".
+    """
+    with open(Path(tempfile.gettempdir()) / "loregarden-test-instance-ports.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 @pytest.fixture(name="http_manager")
-def http_manager_fixture(tmp_path: Path):
-    """A manager whose one template serves a directory with the stdlib."""
+def http_manager_fixture(tmp_path: Path, only_launcher: None):
+    """A manager whose one template serves a directory with the stdlib.
+
+    Off the ports real instances take (`SERVER_PORT_RANGE`, `CLIENT_PORT_RANGE`).
+    """
     catalog = TemplateCatalog()
     catalog.register(
         CommandTemplate(
@@ -53,6 +72,7 @@ def http_manager_fixture(tmp_path: Path):
             command=[sys.executable, "-m", "http.server", "{port}", "--bind", "{host}"],
             cwd=str(tmp_path),
             health_path="/",
+            port_range=(8300, 8999),
             ready_timeout_seconds=15,
         )
     )
@@ -94,7 +114,7 @@ def test_an_agent_launches_checks_and_stops_a_real_instance(
     launched = _call(client, "loregarden_launch_instance", template="static", wait_seconds=15)
     assert launched["ok"], launched
     instance = launched["instance"]
-    assert instance["state"] == "ready"
+    assert instance["state"] == "ready", instance
 
     status = _call(client, "loregarden_instance_status", instance_id=instance["id"], log_lines=5)
     assert status["health"]["ok"] is True
@@ -153,7 +173,7 @@ def test_an_agent_restarts_an_instance_in_place(
         launched["id"],
         launched["url"],
     )
-    assert restarted["instance"]["state"] == "ready"
+    assert restarted["instance"]["state"] == "ready", restarted
 
 
 #: About what `git worktree list` returns on the machine this was measured on.

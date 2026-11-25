@@ -40,7 +40,7 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 ORCHESTRATED_ENV = "LOREGARDEN_MCP_ORCHESTRATED"
 
@@ -290,16 +290,29 @@ def _run_as_code(words: list[str]) -> Iterator[str]:
                 break
 
 
-def stash_commands(command: str) -> Iterator[list[str]]:
-    """The arguments of every `git stash` that ``command`` would run."""
+def shell_commands(
+    command: str, *, enters: Callable[[list[str]], bool] = lambda words: True
+) -> Iterator[list[str]]:
+    """The words of every simple command that ``command`` would run.
+
+    The code a command runs for itself (`sh -c '…'`, `eval`) is read too, unless
+    ``enters`` refuses that command.
+    """
     pending = [command]
     while pending:
         reader = _Reader(pending.pop())
         reader.read()
         pending.extend(reader.nested)
         for words in reader.commands:
-            yield from _stash_arguments(words)
-            pending.extend(_run_as_code(words))
+            yield words
+            if enters(words):
+                pending.extend(_run_as_code(words))
+
+
+def stash_commands(command: str) -> Iterator[list[str]]:
+    """The arguments of every `git stash` that ``command`` would run."""
+    for words in shell_commands(command):
+        yield from _stash_arguments(words)
 
 
 # --- the policies ------------------------------------------------------------------
@@ -372,10 +385,14 @@ def stack_is_shared(cwd: str) -> bool:
     return sum(line.startswith("worktree ") for line in result.stdout.splitlines()) > 1
 
 
+def command_of(payload: dict) -> str:
+    """The shell command a hook was asked about, in Claude Code's and cursor's payloads."""
+    return payload.get("command") or (payload.get("tool_input") or {}).get("command") or ""
+
+
 def decide(payload: dict, *, agent_run: bool) -> str:
-    """Why the hook's command is refused, or "". Reads Claude Code's and cursor's payloads."""
-    command = payload.get("command") or (payload.get("tool_input") or {}).get("command") or ""
-    reason = denial(command, agent_run=agent_run)
+    """Why the hook's command is refused, or ""."""
+    reason = denial(command_of(payload), agent_run=agent_run)
     if reason and not agent_run and not stack_is_shared(payload.get("cwd") or os.getcwd()):
         return ""
     return reason
@@ -386,15 +403,16 @@ def _is_agent_run(argv: list[str]) -> bool:
     return marked or "--agent-run" in argv
 
 
-def main(argv: list[str]) -> int:
+def respond(argv: list[str], reason_for: Callable[[dict], str], *, name: str) -> int:
+    """Answer the hook on stdin with ``reason_for`` its payload, in the calling CLI's form."""
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
         # Exit 1 is a non-blocking hook error in both CLIs: it is shown, and the
         # command runs. A hook that cannot read its input must not wedge the shell.
-        print(f"shared_stash_guard: unreadable hook input: {exc}", file=sys.stderr)
+        print(f"{name}: unreadable hook input: {exc}", file=sys.stderr)
         return 1
-    reason = decide(payload, agent_run=_is_agent_run(argv))
+    reason = reason_for(payload)
     if not reason:
         return 0
     if "--cursor" in argv:
@@ -412,6 +430,13 @@ def main(argv: list[str]) -> int:
         )
     )
     return 0
+
+
+def main(argv: list[str]) -> int:
+    agent_run = _is_agent_run(argv)
+    return respond(
+        argv, lambda payload: decide(payload, agent_run=agent_run), name="shared_stash_guard"
+    )
 
 
 if __name__ == "__main__":

@@ -99,6 +99,9 @@ progress_begin "server-tests" 5
 # One at a time, workers take tests in collection order. Measured on 2337 tests
 # at -n 4: 412s vs 408s and 345s vs 362s, i.e. within run-to-run noise.
 #
+# A narrowed run needs no plugin: the selector prints the closest tests first
+# and pytest collects files in the order it is handed them.
+#
 # CI still runs to completion without `-x`, so the total count is never lost —
 # this only changes which report arrives first, and how long a broken push waits
 # to be told.
@@ -130,7 +133,7 @@ else
   set +e
   # The server interpreter, not `python3`: a 3.9 on PATH cannot parse a module
   # using `match`, and an import graph missing its edges selects too little.
-  TARGETS="$(bash "$ROOT/.lefthook/scripts/server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" --run-first-out "$RUN_FIRST_REPO" 2>"$ERR_FILE")"
+  TARGETS="$(bash "$ROOT/.lefthook/scripts/server_python.sh" "$ROOT/.lefthook/scripts/select_pytest_targets.py" --repo "$ROOT" --base "$BASE" ${SELECT_REACH[@]+"${SELECT_REACH[@]}"} --run-first-out "$RUN_FIRST_REPO" 2>"$ERR_FILE")"
   SELECT_STATUS=$?
   set -e
   if [ $SELECT_STATUS -ne 0 ]; then
@@ -186,7 +189,7 @@ else
     FILES+=("$rel")
   done <<< "$TARGETS"
 
-  echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes:"
+  echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes, closest first:"
   printf '  %s\n' "${FILES[@]}"
   echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   progress_step "pytest on ${#FILES[@]} file(s)"

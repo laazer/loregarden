@@ -421,7 +421,8 @@ def test_every_cursor_agent_loads_a_plugin_whose_hook_denies(build, tmp_path):
     assert json.loads((plugin / ".cursor-plugin" / "plugin.json").read_text())["name"]
     config = json.loads((plugin / "hooks" / "hooks.json").read_text())
     assert config["version"] == 1
-    (hook,) = config["hooks"]["beforeShellExecution"]
+    hooks = config["hooks"]["beforeShellExecution"]
+    (hook,) = [hook for hook in hooks if "shared_stash_guard" in hook["command"]]
 
     # cursor substitutes the plugin root into the command and runs it in a shell.
     command = hook["command"].replace("${CURSOR_PLUGIN_ROOT}", str(plugin))

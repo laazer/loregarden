@@ -225,13 +225,14 @@ _SLOWEST_SUITE_SECONDS = 2765
 
 @pytest.fixture(name="busy_host")
 def busy_host_fixture(session, monkeypatch) -> list[str]:
-    """The 2026-10-03 load. Returns the heavy suites' lease ids, oldest first."""
+    """The 2026-10-03 load, one heavy at a time. Its suites' lease ids, oldest first."""
+    # Room for one heavy and the gateway, as 7 cpus were when `heavy` was 4.
     # Pinned in settings too: the waiter's own reap pass re-derives the ceiling.
-    monkeypatch.setattr(settings, "host_capacity_cpus", 7.0)
+    monkeypatch.setattr(settings, "host_capacity_cpus", 5.0)
     monkeypatch.setattr(settings, "host_capacity_memory_mb", 48332)
     monkeypatch.setattr(settings, "host_capacity_max_leases", 16)
     row = load_pool(session, CapacityPool.HOST)
-    row.ceiling_cpus = 7.0
+    row.ceiling_cpus = 5.0
     row.ceiling_memory_mb = 48332
     row.ceiling_leases = 16
     row.ceiling_source = DockerCeilingSource.CONFIG_OVERRIDE
@@ -386,6 +387,34 @@ def test_prepush_footprints_share_the_host(session, monkeypatch) -> None:
     assert client.granted
 
 
+def test_two_heavy_suites_share_the_host_with_the_agents(session, monkeypatch) -> None:
+    """On this machine's pool, beside a cpu of standing agent leases. A third waits."""
+    monkeypatch.setattr(settings, "host_capacity_cpus", 7.0)
+    monkeypatch.setattr(settings, "host_capacity_memory_mb", 48332)
+    monkeypatch.setattr(settings, "host_capacity_max_leases", 6)
+    agents = docker_leases.reserve(
+        session,
+        holder_label="two orchestrations",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=1024,
+        pool=CapacityPool.HOST,
+    )
+    assert agents.granted
+
+    granted = [
+        docker_leases.reserve(
+            session,
+            holder_label=f"suite {number}",
+            footprint=DockerFootprint.HEAVY,
+            pool=CapacityPool.HOST,
+        ).granted
+        for number in range(3)
+    ]
+
+    assert granted == [True, True, False]
+
+
 def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
     """capacity-run.sh tells "still queued" from "the ledger failed" by this code."""
     args = argparse.Namespace(
@@ -479,9 +508,9 @@ def test_a_footprint_bigger_than_the_machine_claims_the_whole_pool(session, host
         report=lines.append,
     )
 
-    # heavy is 4 cpus / 8192 MB; this host books 4 cpus / 8192 MB in all.
+    # heavy is 3 cpus / 8192 MB; this host books 4 cpus / 8192 MB in all.
     assert reservation.granted
-    assert (reservation.cpus, reservation.memory_mb) == (4.0, 8192)
+    assert (reservation.cpus, reservation.memory_mb) == (3.0, 8192)
 
     row = load_pool(session, CapacityPool.HOST)
     row.ceiling_cpus = 2.0

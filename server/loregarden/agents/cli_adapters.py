@@ -209,8 +209,9 @@ def _control_plane_http_hook() -> dict[str, object]:
 
 
 _STASH_GUARD = Path(__file__).with_name("shared_stash_guard.py")
+_SUITE_GUARD = Path(__file__).with_name("unleased_suite_guard.py")
 
-#: The cursor plugin whose ``beforeShellExecution`` hook runs ``_STASH_GUARD``.
+#: The cursor plugin whose ``beforeShellExecution`` hooks run both guards.
 #: cursor-agent takes no settings flag; ``--plugin-dir`` is the one way to hand
 #: it a hook per run, without writing into the workspace or the home directory.
 #: A `git` shim on PATH does not reach it: cursor runs commands in `zsh -ilc`,
@@ -238,26 +239,33 @@ def _warn_if_stash_unguarded(adapter: str) -> None:
         )
 
 
-def _stash_guard_hook() -> dict[str, object]:
-    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(_STASH_GUARD))} --agent-run"
-    return {"matcher": "Bash", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
+def _shell_guard_hooks() -> list[dict[str, object]]:
+    commands = [
+        f"{shlex.quote(sys.executable)} {shlex.quote(str(_STASH_GUARD))} --agent-run",
+        f"{shlex.quote(sys.executable)} {shlex.quote(str(_SUITE_GUARD))}",
+    ]
+    return [
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
+        for command in commands
+    ]
 
 
 def chat_hook_settings() -> str:
-    """``--settings`` JSON for a chat turn: the shared-stash guard and nothing else."""
-    return json.dumps({"hooks": {"PreToolUse": [_stash_guard_hook()]}})
+    """``--settings`` JSON for a chat turn: the two shell guards and nothing else."""
+    return json.dumps({"hooks": {"PreToolUse": _shell_guard_hooks()}})
 
 
 def stage_run_hook_settings(*, stage_report: bool) -> str:
     """``--settings`` JSON for a run this control plane supervises.
 
     Every supervised run gets the ``PreToolUse`` hooks that keep its Bash off
-    this control plane's HTTP API (``agents/control_plane_http_hook``) and off
-    the shared stash stack (``agents/shared_stash_guard``); a stage run also
-    gets the stage-report ``Stop`` hook.
+    this control plane's HTTP API (``agents/control_plane_http_hook``), off the
+    shared stash stack (``agents/shared_stash_guard``), and from running a
+    parallel suite without a lease (``agents/unleased_suite_guard``); a stage run
+    also gets the stage-report ``Stop`` hook.
     """
     hooks: dict[str, list[dict[str, object]]] = {
-        "PreToolUse": [_control_plane_http_hook(), _stash_guard_hook()]
+        "PreToolUse": [_control_plane_http_hook(), *_shell_guard_hooks()]
     }
     if stage_report:
         hooks["Stop"] = [_stage_report_stop_hook()]

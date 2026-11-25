@@ -149,7 +149,7 @@ git:
   #   wrapping this in `capacity-run.sh` would double-book the ledger.
   #
   # `land_verify_capacity_footprint` keeps its `heavy` default, and
-  # LAND_VERIFY_TIMEOUT_SECONDS (1800) was set above the measured 901s suite —
+  # LAND_VERIFY_TIMEOUT_SECONDS (2700) was set above the measured 901s suite —
   # a timeout is UNAVAILABLE, and UNAVAILABLE refuses the land. `default.yaml`
   # keeps its empty list, so no other workspace changes behaviour.
   #

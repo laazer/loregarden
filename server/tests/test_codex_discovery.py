@@ -24,28 +24,39 @@ from loregarden.services.codex_discovery import (
     codex_home,
     codex_model_options,
     list_codex_models,
-    reset_model_cache,
 )
 from loregarden.services.discovery_cache import ProbeAnswer, ProbeCache, join_probes
 
-
-@pytest.fixture(autouse=True)
-def _no_memoized_catalog():
-    """The catalog is process-wide; one test's answer must not serve the next."""
-    reset_model_cache()
-    yield
-    join_probes(timeout=5.0)
-    reset_model_cache()
+#: The module's own 0.25s join is a real UX budget, and a loaded machine starts a
+#: mocked probe's thread later than that. See test_lmstudio_discovery.
+PATIENT_JOIN = 5.0
 
 
-def _impatient_cache() -> ProbeCache[CodexModel]:
+def _cache(join_timeout_seconds: float) -> ProbeCache[CodexModel]:
     return ProbeCache(
         label="codex",
         probe_budget_seconds=DISCOVERY_TIMEOUT_SECONDS,
         success_ttl_seconds=300.0,
         failure_ttl_seconds=FAILURE_CACHE_TTL_SECONDS,
-        join_timeout_seconds=0.02,
+        join_timeout_seconds=join_timeout_seconds,
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog(monkeypatch):
+    """Each test gets its own cache, which waits for its probe.
+
+    The catalog is process-wide, so one test's answer must not serve the next.
+    `monkeypatch` because the impatient tests swap with it, and one undo stack
+    is the only way both swaps unwind in order.
+    """
+    monkeypatch.setattr("loregarden.services.codex_discovery._CACHE", _cache(PATIENT_JOIN))
+    yield
+    join_probes(timeout=5.0)
+
+
+def _impatient_cache() -> ProbeCache[CodexModel]:
+    return _cache(0.02)
 
 
 def _answer(found: list[CodexModel]) -> ProbeAnswer[CodexModel]:
