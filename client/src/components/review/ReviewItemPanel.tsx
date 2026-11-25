@@ -7,10 +7,12 @@ import { approvalVariables, useApprovalResolution } from "../../hooks/useApprova
 import { REVIEW_QUEUE_KEY, useLaunchBuild } from "../../hooks/useReviewLaunch";
 import { useReviewPreview } from "../../hooks/useReviewPreview";
 import { ticketPath } from "../../lib/appNavigation";
+import { checkedScene } from "../../lib/reviewScene";
 import { impactWithoutCriteria } from "../../utils/approvalCriteria";
 import { ApprovalCard } from "../ApprovalCard";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { ReviewGuide } from "./ReviewGuide";
 import { ReviewPages } from "./ReviewPages";
 import { ReviewRequests } from "./ReviewRequests";
 import { ReviewShot } from "./ReviewShot";
@@ -31,8 +33,11 @@ export function ReviewItemPanel({
   onResolved: () => void;
 }) {
   const qc = useQueryClient();
-  const { ticket, kit, scenes, approval } = item;
-  const openScene = useLaunchBuild(build, "Open scene");
+  const { ticket, kit, approval } = item;
+  const play = useLaunchBuild(build, "Play");
+  const scene = checkedScene(item);
+  const otherScenes = (item.scenes ?? []).filter((other) => other !== scene);
+  const guided = kit.steps.length > 0;
   const { status: preview, start: startPreview } = useReviewPreview(
     build.workspace_slug,
     build.ref,
@@ -70,53 +75,7 @@ export function ReviewItemPanel({
         </span>
       </header>
 
-      {scenes === null ? (
-        <p className="review-muted">Could not read which scenes this ticket changes; launch the build and look around.</p>
-      ) : scenes.length > 0 ? (
-        <section className="review-section" aria-label="Scenes to open">
-          <h3 className="review-section-title">Scenes this ticket changes</h3>
-          <ul className="review-scenes">
-            {scenes.map((scene) => (
-              <li key={scene}>
-                <code className="review-mono">{scene}</code>
-                <Button
-                  variant="secondary"
-                  compact
-                  disabled={openScene.isPending}
-                  onClick={() => openScene.mutate({ scene })}
-                >
-                  Open scene
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {ticket.acceptance_criteria.length > 0 ? (
-        <section className="review-section" aria-label="Acceptance criteria">
-          <h3 className="review-section-title">
-            Check each criterion ({checked.size}/{ticket.acceptance_criteria.length})
-          </h3>
-          <ul className="review-criteria">
-            {ticket.acceptance_criteria.map((criterion, index) => {
-              const id = `review-ac-${ticket.id}-${index}`;
-              return (
-                <li key={criterion}>
-                  <Input
-                    id={id}
-                    type="checkbox"
-                    checked={checked.has(criterion)}
-                    disabled={check.isPending}
-                    onChange={() => toggle(criterion)}
-                  />
-                  <label htmlFor={id}>{criterion}</label>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
+      <ReviewGuide build={build} item={item} play={play} />
 
       {kit.screenshots.length > 0 ? (
         <section className="review-section" aria-label="Screenshots">
@@ -124,7 +83,7 @@ export function ReviewItemPanel({
           <ul className="review-shots">
             {kit.screenshots.map((shot) => {
               const src = captureUrl(ticket.id, shot.capture_id);
-              return <ReviewShot key={src} src={src} caption={shot.caption} />;
+              return <ReviewShot key={src} src={src} caption={shot.caption} scene={shot.scene} />;
             })}
           </ul>
         </section>
@@ -145,6 +104,59 @@ export function ReviewItemPanel({
         buildServerUrl={preview.data?.server?.state === "ready" ? preview.data.server.url : undefined}
       />
 
+      {otherScenes.length > 0 ? (
+        <section className="review-section" aria-label="Scenes to open">
+          <h3 className="review-section-title">
+            {scene ? "Other scenes this ticket changes" : "Scenes this ticket changes"}
+          </h3>
+          <ul className="review-scenes">
+            {otherScenes.map((other) => (
+              <li key={other}>
+                <code className="review-mono">{other}</code>
+                <Button
+                  variant="secondary"
+                  compact
+                  disabled={play.isPending}
+                  aria-label={`Open scene ${other}`}
+                  onClick={() => play.mutate({ scene: other })}
+                >
+                  Open scene
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {ticket.acceptance_criteria.length > 0 ? (
+        // Open when nobody wrote steps: then the criteria are all there is to go on.
+        <details className="review-section" open={!guided}>
+          <summary className="review-section-title">
+            Acceptance criteria ({checked.size}/{ticket.acceptance_criteria.length} ticked)
+          </summary>
+          <p className="review-muted">
+            What the agents built and tested to. Ticks are your own notes; approving does not need them.
+          </p>
+          <ul className="review-criteria" aria-label="Acceptance criteria">
+            {ticket.acceptance_criteria.map((criterion, index) => {
+              const id = `review-ac-${ticket.id}-${index}`;
+              return (
+                <li key={criterion}>
+                  <Input
+                    id={id}
+                    type="checkbox"
+                    checked={checked.has(criterion)}
+                    disabled={check.isPending}
+                    onChange={() => toggle(criterion)}
+                  />
+                  <label htmlFor={id}>{criterion}</label>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      ) : null}
+
       {kit.unreadable.length > 0 ? (
         <p className="review-error" role="alert">
           {kit.unreadable.length} attached review kit(s) could not be read; open the ticket's outputs to see them.
@@ -152,7 +164,8 @@ export function ReviewItemPanel({
       ) : null}
 
       <ApprovalCard
-        approval={approval}
+        // The generated checklist says "open the scene and play it"; the steps above say how.
+        approval={guided ? { ...approval, checklist: [] } : approval}
         impactText={ticket.acceptance_criteria.length > 0 ? impactWithoutCriteria(approval.impact) : undefined}
         clampBrief
         showWorkspace={false}

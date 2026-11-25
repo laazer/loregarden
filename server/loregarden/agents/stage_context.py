@@ -177,10 +177,15 @@ def _review_kit_lines() -> list[str]:
         "",
         "Hand the reviewer a review kit, so they can check the change instead of hunting for it. "
         'Call `loregarden_attach_evidence` with `evidence_kind: "real_surface"` and a '
-        "`content_json` carrying a `review` block — include whichever parts apply, at least one:",
+        "`content_json` carrying a `review` block. Always write `steps`; include the other parts "
+        "that apply:",
         "",
         "```json",
         '{"review": {',
+        '  "scene": "scenes/levels/sandbox/latch_3d.tscn",',
+        '  "steps": [{"action": "Walk to the enemy\'s left side and press C",',
+        '             "expect": "Its body flashes pale blue once, and a low cue plays",',
+        '             "wrong_if": "No flash, or a red one"}],',
         '  "screenshots": [{"path": "/abs/path/shot.png", "caption": "What it shows"}],',
         '  "links": [{"path": "/the-page", "label": "Where to look"}],',
         '  "requests": [{"name": "List items", "method": "GET", "path": "/api/items",',
@@ -188,13 +193,25 @@ def _review_kit_lines() -> list[str]:
         "}}",
         "```",
         "",
+        "- **steps**: what the person does, in order, and what they see if it works (12 at most). "
+        "Only what a person has to judge by eye, ear or hand: leave out what a test already "
+        "proves. Plain words, one action each, naming the key, control and place; no ids, class "
+        "names or constants. Each must be able to fail.",
+        "- **scene**: the scene file the steps and screenshots happen in, when the workspace has "
+        "scenes. It becomes the reviewer's launch button. Leave it out when the steps start from "
+        "the build's own start screen.",
         "- **screenshots**: PNG/JPEG/GIF files you captured of the changed screen or scene "
-        "(10 MB each, 12 at most). They are copied in when you attach, so a temp path is fine.",
+        "(10 MB each, 12 at most), at the window size the reviewer's launch opens, never scaled. "
+        "Show the change happening; a picture of the start view says nothing about it. They are "
+        "copied in when you attach, so a temp path is fine. Set `scene` on one taken elsewhere.",
         "- **links**: pages where the change can be seen, as a `path` on the app (`/work-items`). "
         "The review page opens it on whichever instance of this branch is running, and can "
         "capture it; use `url` only for a page outside the app.",
         "- **requests**: endpoints this change added or altered, as a path (never a full URL); "
         "the reviewer sends each against their local server and sees whether the status matches.",
+        "",
+        'Attaching again after rework? Set `"replaces_earlier": true` so the reviewer does not '
+        "get the old pictures and steps beside the new ones.",
         "",
         "A malformed kit is refused whole and the error names the field; fix it and attach again.",
     ]

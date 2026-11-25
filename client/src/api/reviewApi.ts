@@ -13,6 +13,15 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export interface ReviewScreenshot {
   capture_id: string;
   caption: string;
+  /** The scene pictured; empty when it is a page, or nobody said. */
+  scene: string;
+}
+
+/** Mirrors `ReviewStep`: one thing the reviewer does and what they should see. */
+export interface ReviewStep {
+  action: string;
+  expect: string;
+  wrong_if: string;
 }
 
 /**
@@ -64,6 +73,9 @@ export interface ReviewRequest {
 }
 
 export interface TicketReviewKit {
+  /** The scene the steps happen in; empty when they start from the build's own start. */
+  scene: string;
+  steps: ReviewStep[];
   screenshots: ReviewScreenshot[];
   links: ReviewLink[];
   requests: ReviewRequest[];

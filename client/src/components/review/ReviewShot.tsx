@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { sceneName } from "../../lib/reviewScene";
 import { Button } from "../ui/Button";
 
 /**
@@ -7,7 +8,7 @@ import { Button } from "../ui/Button";
  * than in it, so it can be gone while the record remains; that is said in the
  * image's place, since a broken image reads as a page that did not load.
  */
-export function ReviewShot({ src, caption }: { src: string; caption: string }) {
+export function ReviewShot({ src, caption, scene }: { src: string; caption: string; scene: string }) {
   const [missing, setMissing] = useState(false);
   return (
     <li>
@@ -33,6 +34,11 @@ export function ReviewShot({ src, caption }: { src: string; caption: string }) {
           />
         </a>
       )}
+      {scene ? (
+        <span className="review-muted" title={scene}>
+          Scene: <code className="review-mono">{sceneName(scene)}</code>
+        </span>
+      ) : null}
       {caption ? <span className="review-muted">{caption}</span> : null}
     </li>
   );

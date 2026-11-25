@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -142,6 +143,12 @@ def test_content_without_a_review_block_is_untouched():
         ({"links": [{"label": "neither"}]}, "exactly one"),
         ({"links": [{"path": "/x", "url": "http://127.0.0.1:5173/x"}]}, "exactly one"),
         ({"bogus": []}, "malformed"),
+        ({"scene": "../../etc/x.tscn"}, "inside the project"),
+        ({"scene": "--script.tscn"}, "inside the project"),
+        ({"screenshots": [{"path": "/x.png", "scene": "nope.txt"}]}, "inside the project"),
+        ({"steps": [{"action": "Press C"}]}, "expect"),
+        ({"steps": [{"action": "", "expect": "a flash"}]}, "action"),
+        ({"steps": [{"action": "a", "expect": "b"}] * 13}, "at most 12"),
     ],
 )
 def test_ingest_refuses_a_bad_kit_whole(review: dict, message: str):
@@ -186,6 +193,99 @@ def test_attached_kit_reaches_the_queue_and_its_capture_is_served(
     assert served.status_code == 200
     assert served.headers["content-type"] == "image/png"
     assert served.content == PNG
+
+
+def _kit_artifact(ticket_id: str, title: str, review: dict, minute: int) -> None:
+    from loregarden.db.session import engine
+
+    with Session(engine) as session:
+        artifact = make_artifact(
+            session,
+            ticket_id=ticket_id,
+            kind=ArtifactKind.EVIDENCE,
+            title=title,
+            content=ingest_review_kit(ticket_id, {"review": review}),
+        )
+        artifact.created_at = datetime(2026, 11, 1, 12, minute, tzinfo=timezone.utc)
+        session.add(artifact)
+        session.commit()
+
+
+def _queue_kit(client: TestClient, ticket_id: str) -> dict:
+    body = client.get("/api/review/queue?workspace_slug=review-ws").json()
+    items = {item["ticket"]["id"]: item for b in body["builds"] for item in b["items"]}
+    return items[ticket_id]["kit"]
+
+
+def _step(action: str) -> dict:
+    return {"action": action, "expect": "a flash", "wrong_if": ""}
+
+
+def test_the_newest_scene_and_steps_win_whole_and_older_links_stay(client, review_tree):
+    (ticket_id, _), _ = review_tree
+    _kit_artifact(
+        ticket_id,
+        "old",
+        {
+            "scene": "scenes/old.tscn",
+            "steps": [_step("old 1"), _step("old 2")],
+            "links": [{"path": "/old"}],
+        },
+        minute=1,
+    )
+    _kit_artifact(ticket_id, "new", {"scene": "scenes/new.tscn", "steps": [_step("new")]}, minute=2)
+
+    kit = _queue_kit(client, ticket_id)
+
+    assert kit["scene"] == "scenes/new.tscn"
+    assert [step["action"] for step in kit["steps"]] == ["new"]
+    assert [link["path"] for link in kit["links"]] == ["/old"]
+
+
+def test_a_replacing_kit_hides_older_kits_but_not_newer_or_other_tickets(
+    client, review_tree, tmp_path
+):
+    (ticket_id, other_id), _ = review_tree
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(PNG)
+
+    def shots(caption: str, **kit) -> dict:
+        return {"screenshots": [{"path": str(shot), "caption": caption}], **kit}
+
+    _kit_artifact(ticket_id, "stale", shots("stale", scene="scenes/stale.tscn"), minute=1)
+    _kit_artifact(
+        ticket_id, "fresh", shots("fresh", scene="scenes/a.tscn", replaces_earlier=True), minute=2
+    )
+    _kit_artifact(ticket_id, "later", shots("later"), minute=3)
+    _kit_artifact(other_id, "other", shots("other"), minute=1)
+
+    kit = _queue_kit(client, ticket_id)
+
+    assert [shot["caption"] for shot in kit["screenshots"]] == ["later", "fresh"]
+    # A shot without its own scene takes its kit's; one in a kit with none has none.
+    assert [shot["scene"] for shot in kit["screenshots"]] == ["", "scenes/a.tscn"]
+    assert kit["scene"] == "scenes/a.tscn"
+    assert [s["caption"] for s in _queue_kit(client, other_id)["screenshots"]] == ["other"]
+
+
+def test_a_kit_stored_before_steps_existed_still_reads(client, review_tree):
+    from loregarden.db.session import engine
+
+    (ticket_id, _), _ = review_tree
+    stored = {"screenshots": [{"capture_id": f"{'a' * 32}.png", "caption": "c"}]}
+    with Session(engine) as session:
+        make_artifact(
+            session,
+            ticket_id=ticket_id,
+            kind=ArtifactKind.EVIDENCE,
+            title="before",
+            content={"review": {**stored, "links": [], "requests": []}},
+        )
+
+    kit = _queue_kit(client, ticket_id)
+
+    assert (kit["scene"], kit["steps"], kit["unreadable"]) == ("", [], [])
+    assert kit["screenshots"][0]["scene"] == ""
 
 
 @pytest.mark.parametrize("capture_id", ["..%2F..%2Fetc%2Fpasswd", "x.png", "a" * 32 + ".exe"])

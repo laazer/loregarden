@@ -6,11 +6,21 @@ An agent that has just made the change knows all three. It attaches them as
 `real_surface` evidence with a ``review`` block in ``content_json``:
 
     {"review": {
-        "screenshots": [{"path": "/tmp/shot.png", "caption": "Latched marker"}],
+        "scene": "scenes/levels/sandbox/latch_3d.tscn",
+        "steps": [{"action": "Walk to the enemy's left side and press C",
+                   "expect": "The body flashes pale blue for a moment",
+                   "wrong_if": "No flash, or the flash is red"}],
+        "screenshots": [{"path": "/tmp/shot.png", "caption": "Start view"}],
         "links": [{"url": "http://127.0.0.1:5173/work-items", "label": "Work items"}],
         "requests": [{"name": "List", "method": "GET", "path": "/api/tickets",
                       "expect_status": 200}]
     }}
+
+``scene`` is what the reviewer runs: the review page's launch button otherwise
+starts the build at its own start screen, which is rarely the scene the steps
+and screenshots are about. ``steps`` is what they do once it runs. A kit with
+``replaces_earlier`` hides every older kit on the ticket, for when those
+pictures or steps describe a build that no longer exists.
 
 Screenshots are copied into ``settings.review_captures_dir`` when attached and
 the path is replaced by a capture id, so the review page serves only bytes the
@@ -30,6 +40,7 @@ from uuid import uuid4
 from loregarden.config import settings
 from loregarden.models.domain import Artifact, ArtifactKind
 from loregarden.services.path_resolve import expand_path
+from loregarden.services.review_launcher import is_scene_path
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -47,6 +58,8 @@ REVIEW_KEY = "review"
 MAX_CAPTURE_BYTES = 10 * 1024 * 1024
 MAX_SCREENSHOTS = 12
 MAX_REQUESTS = 20
+#: A reviewer works through these by hand; more is a test suite, not a review.
+MAX_STEPS = 12
 
 #: Leading bytes of each image type a browser renders, and its extension.
 _IMAGE_SIGNATURES: tuple[tuple[bytes, str, str], ...] = (
@@ -71,11 +84,30 @@ class HttpMethod(StrEnum):
     DELETE = "DELETE"
 
 
+def _scene_or_blank(value: str) -> str:
+    if value and not is_scene_path(value):
+        raise ValueError("a scene must be a .tscn/.scn path inside the project")
+    return value
+
+
+class ReviewStep(BaseModel):
+    """One thing the reviewer does, and what they see if the change works."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1)
+    expect: str = Field(min_length=1)
+    #: What a broken build would show instead, when that is not just "not that".
+    wrong_if: str = ""
+
+
 class ReviewScreenshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     capture_id: str
     caption: str = ""
+    #: The scene pictured, so the reviewer can open the same one.
+    scene: str = ""
 
 
 def _single_slash_path(value: str) -> str:
@@ -136,9 +168,22 @@ class ReviewRequest(BaseModel):
         return _single_slash_path(value)
 
 
-class ReviewKit(BaseModel):
+class _KitGuide(BaseModel):
+    """The parts of a kit that say what to run and do, as written and as stored."""
+
     model_config = ConfigDict(extra="forbid")
 
+    scene: str = ""
+    steps: list[ReviewStep] = Field(default_factory=list, max_length=MAX_STEPS)
+    replaces_earlier: bool = False
+
+    @field_validator("scene")
+    @classmethod
+    def _playable(cls, value: str) -> str:
+        return _scene_or_blank(value)
+
+
+class ReviewKit(_KitGuide):
     screenshots: list[ReviewScreenshot] = Field(default_factory=list)
     links: list[ReviewLink] = Field(default_factory=list)
     requests: list[ReviewRequest] = Field(default_factory=list)
@@ -149,12 +194,16 @@ class _ScreenshotIn(BaseModel):
 
     path: str
     caption: str = ""
+    scene: str = ""
+
+    @field_validator("scene")
+    @classmethod
+    def _playable(cls, value: str) -> str:
+        return _scene_or_blank(value)
 
 
-class _ReviewKitIn(BaseModel):
+class _ReviewKitIn(_KitGuide):
     """The kit as an agent writes it: screenshots by path, not yet stored."""
-
-    model_config = ConfigDict(extra="forbid")
 
     screenshots: list[_ScreenshotIn] = Field(default_factory=list, max_length=MAX_SCREENSHOTS)
     links: list[ReviewLink] = Field(default_factory=list)
@@ -235,13 +284,21 @@ def ingest_review_kit(ticket_id: str, content: dict[str, Any]) -> dict[str, Any]
             ReviewScreenshot(
                 capture_id=_remember(stored, _store_capture(ticket_id, Path(item.path))),
                 caption=item.caption,
+                scene=item.scene or incoming.scene,
             )
             for item in incoming.screenshots
         ]
     except (ReviewKitError, OSError):
         _discard(ticket_id, stored)
         raise
-    kit = ReviewKit(screenshots=screenshots, links=incoming.links, requests=incoming.requests)
+    kit = ReviewKit(
+        scene=incoming.scene,
+        steps=incoming.steps,
+        replaces_earlier=incoming.replaces_earlier,
+        screenshots=screenshots,
+        links=incoming.links,
+        requests=incoming.requests,
+    )
     return {**content, REVIEW_KEY: kit.model_dump(mode="json")}
 
 
@@ -277,8 +334,14 @@ def capture_mime(capture_id: str) -> str:
 
 
 class TicketReviewKit(BaseModel):
-    """Every kit attached to one ticket, merged, newest artifact first."""
+    """Every kit attached to one ticket, merged, newest artifact first.
 
+    ``scene`` and ``steps`` come whole from the newest kit that has them: two
+    rounds' steps interleaved would describe neither build.
+    """
+
+    scene: str = ""
+    steps: list[ReviewStep] = Field(default_factory=list)
     screenshots: list[ReviewScreenshot] = Field(default_factory=list)
     links: list[ReviewLink] = Field(default_factory=list)
     requests: list[ReviewRequest] = Field(default_factory=list)
@@ -296,7 +359,10 @@ def review_kits_for(session: Session, ticket_ids: list[str]) -> dict[str, Ticket
         .order_by(col(Artifact.created_at).desc())
     ).all()
     kits: dict[str, TicketReviewKit] = {}
+    replaced: set[str] = set()
     for artifact in rows:
+        if artifact.ticket_id in replaced:
+            continue
         if f'"{REVIEW_KEY}"' not in artifact.content_json:
             continue
         merged = kits.setdefault(artifact.ticket_id, TicketReviewKit())
@@ -308,9 +374,13 @@ def review_kits_for(session: Session, ticket_ids: list[str]) -> dict[str, Ticket
             continue
         if kit is None:
             continue
+        merged.scene = merged.scene or kit.scene
+        merged.steps = merged.steps or kit.steps
         merged.screenshots.extend(kit.screenshots)
         merged.links.extend(kit.links)
         merged.requests.extend(kit.requests)
+        if kit.replaces_earlier:
+            replaced.add(artifact.ticket_id)
     return kits
 
 

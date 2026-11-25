@@ -57,6 +57,10 @@ function gate(n: number): Approval {
   };
 }
 
+function emptyKit(): ReviewItem["kit"] {
+  return { scene: "", steps: [], screenshots: [], links: [], requests: [], unreadable: [] };
+}
+
 function item(n: number, overrides: Partial<ReviewItem> = {}): ReviewItem {
   return {
     approval: gate(n),
@@ -71,7 +75,7 @@ function item(n: number, overrides: Partial<ReviewItem> = {}): ReviewItem {
     },
     scenes: [`scenes/level_${n}.tscn`],
     launch: { match: "matched", targets: ["game"] },
-    kit: { screenshots: [], links: [], requests: [], unreadable: [] },
+    kit: emptyKit(),
     ...overrides,
   };
 }
@@ -86,12 +90,12 @@ const QUEUE: ReviewQueue = {
       items: [
         item(1, {
           kit: {
-            screenshots: [{ capture_id: `${"a".repeat(32)}.png`, caption: "Marker pulse" }],
+            ...emptyKit(),
+            screenshots: [{ capture_id: `${"a".repeat(32)}.png`, caption: "Marker pulse", scene: "scenes/level_1.tscn" }],
             links: [{ url: "http://127.0.0.1:5173/x", path: "", label: "Sandbox page" }],
             requests: [
               { name: "List enemies", method: "GET", path: "/api/enemies", body: "", expect_status: 200 },
             ],
-            unreadable: [],
           },
         }),
         item(2),
@@ -116,7 +120,7 @@ function withPages(links: ReviewItem["kit"]["links"]): ReviewQueue {
         workspace_slug: "loregarden",
         ref: "loregarden/lg-9",
         combined: false,
-        items: [item(9, { scenes: [], kit: { screenshots: [], links, requests: [], unreadable: [] } })],
+        items: [item(9, { scenes: [], kit: { ...emptyKit(), links } })],
       },
     ],
   };
@@ -183,11 +187,11 @@ describe("ReviewPage", () => {
     expect(within(tickets).getByRole("button", { current: "step" })).toHaveTextContent("blob-core-1");
   });
 
-  it("opens a ticket's scene against the same build", async () => {
+  it("plays the only scene a ticket changes, against the same build", async () => {
     reviewApi.launch.mockResolvedValue({ phase: "preparing" });
     renderAt();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open scene" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Play level_1" }));
 
     await waitFor(() =>
       expect(reviewApi.launch).toHaveBeenCalledWith("blobert", {
@@ -195,6 +199,120 @@ describe("ReviewPage", () => {
         scene: "scenes/level_1.tscn",
       }),
     );
+  });
+
+  describe("what to do", () => {
+    function oneItem(overrides: Partial<ReviewItem>): ReviewQueue {
+      return {
+        total: 1,
+        builds: [
+          { workspace_slug: "blobert", ref: "integration/blob-core-131", combined: true, items: [item(1, overrides)] },
+        ],
+      };
+    }
+    const STEPS = [
+      { action: "Press C on the enemy's left side", expect: "A pale blue flash", wrong_if: "No flash" },
+      { action: "Press C far away", expect: "A low cue and no flash", wrong_if: "" },
+    ];
+
+    it("lists the steps and plays the scene they happen in, which the ticket need not change", async () => {
+      reviewApi.launch.mockResolvedValue({ phase: "preparing" });
+      reviewApi.queue.mockResolvedValue(
+        oneItem({ scenes: [], kit: { ...emptyKit(), scene: "scenes/sandbox/latch_3d.tscn", steps: STEPS } }),
+      );
+      renderAt();
+
+      const guide = await screen.findByRole("region", { name: "What to do" });
+      const steps = within(guide).getAllByRole("listitem");
+      expect(steps).toHaveLength(2);
+      expect(steps[0]).toHaveTextContent("Press C on the enemy's left side");
+      expect(steps[0]).toHaveTextContent("A pale blue flash");
+      expect(steps[0]).toHaveTextContent("Wrong if No flash");
+      expect(steps[1]).not.toHaveTextContent("Wrong if");
+
+      fireEvent.click(await within(guide).findByRole("button", { name: "Play latch_3d" }));
+      await waitFor(() =>
+        expect(reviewApi.launch).toHaveBeenCalledWith("blobert", {
+          ref: "integration/blob-core-131",
+          scene: "scenes/sandbox/latch_3d.tscn",
+        }),
+      );
+      // The target's own button starts somewhere else, so it says so and is not the primary one.
+      expect(await screen.findByText(/Launching starts from the beginning/)).toHaveTextContent("use Play under What to do");
+      expect(screen.getByRole("button", { name: "Launch game" })).toHaveClass("btn-secondary");
+    });
+
+    it("does not say nothing runs a ticket that has a scene to play", async () => {
+      reviewApi.queue.mockResolvedValue(
+        oneItem({
+          scenes: [],
+          launch: { match: "no_match", targets: [] },
+          kit: { ...emptyKit(), scene: "scenes/sandbox/latch_3d.tscn", steps: STEPS },
+        }),
+      );
+      renderAt();
+
+      expect(await screen.findByRole("button", { name: "Play latch_3d" })).toBeInTheDocument();
+      expect(await screen.findByText(/checked in its own scene/)).not.toHaveTextContent("Launching starts from the beginning");
+      expect(screen.queryByText(/can launch runs the files/)).not.toBeInTheDocument();
+    });
+
+    it("folds the criteria away and drops the generated checklist once there are steps", async () => {
+      const checklist = ["Open `scenes/level_1.tscn` in the editor"];
+      reviewApi.queue.mockResolvedValue(
+        oneItem({ approval: { ...gate(1), checklist }, kit: { ...emptyKit(), steps: STEPS } }),
+      );
+      renderAt();
+
+      await screen.findByRole("region", { name: "What to do" });
+      expect(screen.getByText("Acceptance criteria (1/2 ticked)").closest("details")).not.toHaveAttribute("open");
+      expect(screen.queryByText(/Open `scenes\/level_1/)).not.toBeInTheDocument();
+    });
+
+    it("says nobody wrote steps, and keeps the criteria and checklist open", async () => {
+      const checklist = ["Open `scenes/level_1.tscn` in the editor"];
+      reviewApi.queue.mockResolvedValue(oneItem({ approval: { ...gate(1), checklist } }));
+      renderAt();
+
+      const guide = await screen.findByRole("region", { name: "What to do" });
+      expect(guide).toHaveTextContent("No steps were written for this ticket");
+      expect(screen.getByText("Acceptance criteria (1/2 ticked)").closest("details")).toHaveAttribute("open");
+      expect(screen.getByText(/Open `scenes\/level_1/)).toBeInTheDocument();
+    });
+
+    it("sends the reviewer to the target's button when the steps have no one scene", async () => {
+      reviewApi.launch.mockResolvedValue({ phase: "preparing" });
+      reviewApi.queue.mockResolvedValue(
+        oneItem({ scenes: ["scenes/a.tscn", "scenes/b.tscn"], kit: { ...emptyKit(), steps: STEPS } }),
+      );
+      renderAt();
+
+      const guide = await screen.findByRole("region", { name: "What to do" });
+      expect(guide).toHaveTextContent("Start it with the button at the top of this build");
+      const launch = await screen.findByRole("button", { name: "Launch game" });
+      expect(launch).not.toHaveClass("btn-secondary");
+      fireEvent.click(launch);
+      await waitFor(() =>
+        expect(reviewApi.launch).toHaveBeenCalledWith("blobert", { ref: "integration/blob-core-131", target: "game" }),
+      );
+      // Several changed scenes are a choice, so Play does not guess one.
+      expect(screen.queryByRole("button", { name: /^Play/ })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Open scene scenes/b.tscn" }));
+      await waitFor(() =>
+        expect(reviewApi.launch).toHaveBeenCalledWith("blobert", {
+          ref: "integration/blob-core-131",
+          scene: "scenes/b.tscn",
+        }),
+      );
+      expect(screen.queryByText(/Launching starts from the beginning/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("names the scene a screenshot shows", async () => {
+    renderAt();
+
+    const shot = (await screen.findByRole("img", { name: "Marker pulse" })).closest("li");
+    expect(shot).toHaveTextContent("Scene: level_1");
   });
 
   it("says a screenshot's file did not load, and lets the reviewer try it again", async () => {
