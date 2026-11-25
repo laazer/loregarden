@@ -128,6 +128,16 @@ async function use($: EngineInterface, serverUrl: string, force: boolean): Promi
   if (force || !g || now - g.heavyAt >= HEAVY_STALE_MS) await refresh($, serverUrl, true)
 }
 
+/** The panel opened with the session: nobody asked, so a refusal is a toast, not a command's answer. */
+async function openPanel($: EngineInterface, serverUrl: string): Promise<void> {
+  try {
+    await $.ui.open({ id: PANE, title: TITLE })
+  } catch (err) {
+    $.ui.toast(`🥀 The Loregarden panel did not open: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  await use($, serverUrl, true)
+}
+
 /** Home's greeting, from the local hour. */
 function greeting(now: number): string {
   const hour = new Date(now).getHours()
@@ -149,6 +159,7 @@ export const register: Register = (on, options) => {
   const serverUrl = String(options.serverUrl ?? 'http://127.0.0.1:8000').replace(/\/+$/, '')
   // localhost, not 127.0.0.1: desktop makes links only of https: and http://localhost.
   const appUrl = String(options.appUrl ?? 'http://localhost:5173').replace(/\/+$/, '')
+  const openOnStart = options.openOnStart === true
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -157,7 +168,7 @@ export const register: Register = (on, options) => {
     })
     $.clock.every(POLL_MS, () => void refresh($, serverUrl))
     // After the session has started, not during it: the first read takes about a second.
-    $.clock.after(0, () => void refresh($, serverUrl))
+    $.clock.after(0, () => void (openOnStart ? openPanel($, serverUrl) : refresh($, serverUrl)))
     return next(e)
   })
 
