@@ -86,6 +86,7 @@ class _Dispatcher:
         timeout_seconds=None,
         approve_design_plans=True,
         auto_repair=True,
+        idempotency_key="",
     ):
         if self.refuse:
             return None

@@ -116,7 +116,7 @@ def test_a_replay_takes_no_queue_slot(db_session: Session):
     assert reservation.slot_number is None
 
 
-def test_the_key_is_stamped_only_after_the_run_exists(db_session: Session):
+def test_a_start_that_raised_holds_no_key(db_session: Session):
     """A start that raises must leave no key claiming a run that was never
     created — otherwise the next retry replays a phantom."""
     ticket = make_workspace_ticket(db_session, "idem-6")

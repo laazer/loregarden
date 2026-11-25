@@ -89,6 +89,7 @@ from loregarden.services.invariant_registry import (
     NO_WAIT_LOOP_THROUGH_A_PARENT,
     ORPHANED_SYMBOL_MAP_PARTITION,
     PARENTS_CLOSE_WITH_THEIR_OWN_WORK,
+    PARKED_STARTS_KEEP_THEIR_KEY,
     PROVEN_EVIDENCE_IS_NOT_HELD_OPEN,
     PUBLISH_CARDS_CLOSE,
     QUEUED_OVERRIDES_APPLY,
@@ -108,6 +109,7 @@ from loregarden.services.invariant_registry import (
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
+    UNSTARTED_RUNS_HOLD_NO_START_KEY,
     WAITING_ENTRIES_HAVE_NO_LIVE_WORK,
     WORKTREE_PARKED_AT_NAMES_A_LIVE_PATH,
 )
@@ -416,6 +418,11 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # PENDING with no block, as the stop would have.
     _invariant(STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT),
     _invariant(IDLE_TICKETS_ARE_HELD),
+    # A start's idempotency key on a claim that never ran, or missing from the run
+    # a lane started for it: a retry would replay nothing, or start a second run
+    # (lg-workflow-integrity-2797).
+    _invariant(UNSTARTED_RUNS_HOLD_NO_START_KEY),
+    _invariant(PARKED_STARTS_KEEP_THEIR_KEY),
     # A park card whose stage left AWAITING without it being answered (a
     # requeue, a hand move): every answer on it would move a stage it no longer
     # describes (lg-workflow-integrity-2759). Closed as superseded.

@@ -89,6 +89,7 @@ from loregarden.services.stage_retry_budget import (
     stage_dispatch_marker_ids,
 )
 from loregarden.services.stage_shape import describe_stage_shape
+from loregarden.services.start_keys import run_for_key
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
 from loregarden.services.subtree_auto_run import (
     finalize_aggregator_ticket,
@@ -170,9 +171,15 @@ def _as_utc(value: datetime | None) -> datetime | None:
 
 
 def start_external_orchestration(
-    session: Session, ticket: Ticket, *, harness: ExternalHarness
+    session: Session, ticket: Ticket, *, harness: ExternalHarness, idempotency_key: str = ""
 ) -> OrchestrationRun:
-    """Open an orchestration run driven by ``harness``, without taking a lane."""
+    """Open an orchestration run driven by ``harness``, without taking a lane.
+
+    A retry carrying the key of a run already opened here gets that run.
+    """
+    existing = run_for_key(session, ticket.id, idempotency_key)
+    if existing is not None:
+        return existing
     workspace = _workspace_for(session, ticket)
     profile = resolve_orchestration_profile(workspace)
     return OrchestrationCallbackService(session).start_orchestration_run(
@@ -180,6 +187,7 @@ def start_external_orchestration(
         driver=OrchestrationDriver.EXTERNAL_MCP,
         profile_slug=profile.slug,
         external_harness=harness,
+        idempotency_key=idempotency_key,
     )
 
 

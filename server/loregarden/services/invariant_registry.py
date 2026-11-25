@@ -93,6 +93,10 @@ from loregarden.services.scope_invariants import (
 )
 from loregarden.services.squash_twin_sweep import record_twins, twinned_branches
 from loregarden.services.stale_park_invariant import STALE_PARKS_ARE_CLOSED
+from loregarden.services.start_key_invariants import (
+    PARKED_STARTS_KEEP_THEIR_KEY,
+    UNSTARTED_RUNS_HOLD_NO_START_KEY,
+)
 from loregarden.services.stopped_run_invariant import STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT
 from loregarden.services.symbol_map.partitions import (
     orphaned_partitions,
@@ -1315,4 +1319,6 @@ INVARIANTS: tuple[Invariant, ...] = (
     ORPHANED_SYMBOL_MAP_PARTITION,
     CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
     BRIEFINGS_COUNT_WHAT_THEY_DELIVERED,
+    UNSTARTED_RUNS_HOLD_NO_START_KEY,
+    PARKED_STARTS_KEEP_THEIR_KEY,
 )
