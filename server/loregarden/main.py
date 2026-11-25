@@ -77,6 +77,7 @@ from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.core.open_file_limit import raise_open_file_limit
 from loregarden.db.session import engine, init_db
+from loregarden.services import reload_hold
 from loregarden.services.autopilot_schedule import start_autopilot_loop
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
@@ -228,6 +229,7 @@ async def lifespan(app: FastAPI):
     # tears down many apps in one interpreter, and the flag below outlives the
     # app that set it.
     end_drain()
+    reload_hold.reset()
     init_db()
     with Session(engine) as session:
         seed_database(session)

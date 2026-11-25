@@ -9,6 +9,7 @@ from loregarden.config import settings
 from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     AgentRun,
+    OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
@@ -18,6 +19,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_lease import run_has_renewer
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.studio_routing import is_agentless_stage
 from sqlmodel import Session, col, select
@@ -78,6 +80,30 @@ def _workspace_or_error(session: Session, workspace_slug: str) -> Workspace:
     return workspace
 
 
+def _cannot_yield(runs: list[AgentRun], orchestrations: list[OrchestrationRun]) -> list[str]:
+    """In-flight work that holding new work back would not bring to a stop.
+
+    A prompt waits on a person, and a terminal agent answers to its own session:
+    either can outlast any hold (`reload_hold`).
+    """
+    reasons = [
+        f"{run.run_code} waits for a person's approval"
+        for run in runs
+        if run.status is RunStatus.AWAITING_PERMISSION
+    ]
+    reasons += [
+        f"{run.run_code} runs outside this server"
+        for run in runs
+        if not run_has_renewer(run) or run.handoff_accepted_at is not None
+    ]
+    reasons += [
+        f"{run.run_code} is driven from outside this server ({run.driver.value})"
+        for run in orchestrations
+        if run.driver is not OrchestrationDriver.BUILTIN_AUTOPILOT
+    ]
+    return reasons
+
+
 def _in_flight_state(session: Session) -> dict:
     """Work a restart would kill. Shared by the watcher's poll and the manual reload.
 
@@ -122,6 +148,7 @@ def _in_flight_state(session: Session) -> dict:
 
     return {
         "blockers": blockers,
+        "cannot_yield": _cannot_yield(active_agent_runs, active_orchestrations),
         "active_agent_runs": [
             {
                 "id": run.id,

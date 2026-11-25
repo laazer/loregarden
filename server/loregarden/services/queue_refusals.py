@@ -25,7 +25,9 @@ from loregarden.models.domain import (
     QueuedRun,
     QueueEntryKind,
 )
+from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES, tickets_holding_lanes
+from loregarden.services.reload_hold import RELOAD_HOLD_REASON, holds_starts
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,16 @@ def record_refusal(session: Session, entry: QueuedRun, reason: str, *, commit: b
     if commit:
         session.commit()
     return True
+
+
+def server_stopping_reason() -> str:
+    """Why this process starts nothing now, or "" when it may.
+
+    Shutting down (`drain`), or about to reload onto a landed change (`reload_hold`).
+    """
+    if is_draining():
+        return refuse_reason()
+    return RELOAD_HOLD_REASON if holds_starts() else ""
 
 
 def live_external_orchestration(session: Session, ticket_id: str) -> OrchestrationRun | None:

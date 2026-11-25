@@ -41,7 +41,6 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
-from loregarden.services.drain import is_draining, refuse_reason
 from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     LIVE_RUN_STATUSES,
@@ -55,6 +54,7 @@ from loregarden.services.queue_refusals import (
     record_refusal,
     refuse_second_lane,
     refused_before_claim,
+    server_stopping_reason,
 )
 from loregarden.services.queue_repair import (
     REPAIR_ATTEMPT_CAP,
@@ -335,10 +335,10 @@ class QueueLaneService:
         waiting = next(iter(self.waiting_in_lane(slot_number)), None)
         if waiting is None:
             return None
-        if is_draining():
+        if stopping := server_stopping_reason():
             # Taking a lane for work that will not start is the strand this path
             # was rewritten to avoid.
-            record_refusal(self.session, waiting, refuse_reason())
+            record_refusal(self.session, waiting, stopping)
             return None
         if refused_before_claim(self.session, waiting, slot_number):
             return None
@@ -388,6 +388,9 @@ class QueueLaneService:
             return None
         slot.assigned_at = datetime.now(timezone.utc)
         head.status = QueuePosition.ACTIVE
+        # Why it had not started is over. Kept, it would stand in the history as
+        # the reason the run it started ended.
+        head.failure_reason = ""
         head.promoted_at = datetime.now(timezone.utc)
         head.started_at = datetime.now(timezone.utc)
         self.session.add(slot)

@@ -20,7 +20,8 @@ On each CI poll tick, for the server's own checkout only, `follow_main`:
 
 A pull that changes `server/` and every reload wait until no agent run, stage
 or orchestration is in flight, so neither the venv nor the process changes under
-running work. Each outcome is written beside the supervisor's status and read
+running work. One that has waited a while holds new work back, for a limited time,
+so that moment comes (`reload_hold`). Each outcome is written beside the supervisor's status and read
 by the doctor's `server_follows_main` check; a stuck one is also a tick error,
 which the CI poll logs when it starts and when it clears.
 
@@ -40,6 +41,7 @@ from pathlib import Path
 from loregarden.config import settings
 from loregarden.dev_supervisor import STATE_DIR
 from loregarden.models.domain import FollowMainState, Workspace
+from loregarden.services import reload_hold
 from loregarden.services.follow_main_status import (
     FOLLOW_FILE,
     FollowStatus,
@@ -59,6 +61,11 @@ logger = logging.getLogger(__name__)
 
 #: The tree whose change means the running process is stale.
 SERVER_TREE = "server/"
+
+#: Outcomes that leave the hold as it is.
+_HOLD_KEPT = frozenset(
+    {FollowMainState.WAITING_FOR_IDLE, FollowMainState.HOLDING, FollowMainState.GIT_FAILED}
+)
 
 
 class _GitError(RuntimeError):
@@ -102,10 +109,12 @@ def is_server_checkout(workspace: Workspace) -> bool:
 def follow_main(session: Session, workspace: Workspace) -> FollowStatus:
     """One tick: fast-forward onto main and reload when the server's code moved."""
     repo = settings.repo_root
+    asked_before = _running.reload_requested_for
     try:
         status = _follow(session, workspace, repo)
     except _GitError as exc:
         status = FollowStatus(FollowMainState.GIT_FAILED, str(exc))
+    _settle_hold(status, reload_requested=_running.reload_requested_for != asked_before)
     status = FollowStatus(
         status.state,
         status.detail,
@@ -138,8 +147,10 @@ def _follow(session: Session, workspace: Workspace, repo: Path) -> FollowStatus:
                 f"{base} in the server's checkout has {ahead} commit(s) origin/{base} does not",
                 head=head,
             )
-        if _changes_server(repo, head, tip) and (blockers := _blockers(session, workspace)):
-            return _waiting(f"{base} moved to {tip[:12]}", blockers, head)
+        if _changes_server(repo, head, tip) and (
+            waiting := _waiting(session, workspace, f"{base} moved to {tip[:12]}", head)
+        ):
+            return waiting
         merged = run_git(
             ["merge", "--ff-only", "--quiet", tip],
             cwd=str(repo),
@@ -175,24 +186,41 @@ def _reload_if_stale(
             "dev_server_reload check",
             head,
         )
-    if blockers := _blockers(session, workspace):
-        return _waiting(f"the server runs {running[:12]}, not {head[:12]}", blockers, head)
+    if waiting := _waiting(
+        session, workspace, f"the server runs {running[:12]}, not {head[:12]}", head
+    ):
+        return waiting
     touch_reload_sentinel()
     _running.reload_requested_for = head
     logger.info("follow-main: reloading from %s onto %s", running[:12], head[:12])
     return FollowStatus(FollowMainState.RELOADING, f"reloading onto {head[:12]}", head)
 
 
-def _waiting(what: str, blockers: list[str], head: str) -> FollowStatus:
+def _waiting(session: Session, workspace: Workspace, what: str, head: str) -> FollowStatus | None:
+    """What this tick waits for, starting or keeping a hold; None when nothing is in flight."""
+    in_flight = evaluate_reload_readiness(session, workspace_slug=workspace.slug)
+    if not in_flight["blockers"]:
+        return None
+    hold = reload_hold.note_waiting(in_flight["cannot_yield"])
+    detail = f"{what}; waiting for in-flight work to finish ({', '.join(in_flight['blockers'])})"
     return FollowStatus(
-        FollowMainState.WAITING_FOR_IDLE,
-        f"{what}; waiting for in-flight work to finish ({', '.join(blockers)})",
+        FollowMainState.HOLDING if hold.holding else FollowMainState.WAITING_FOR_IDLE,
+        f"{detail}; {hold.detail}" if hold.detail else detail,
         head,
     )
 
 
-def _blockers(session: Session, workspace: Workspace) -> list[str]:
-    return list(evaluate_reload_readiness(session, workspace_slug=workspace.slug)["blockers"])
+def _settle_hold(status: FollowStatus, *, reload_requested: bool) -> None:
+    """End the hold once nothing waits on it.
+
+    Kept on the tick that asks for the reload, so nothing starts in the seconds
+    before the process goes: a later tick still asking means the supervisor
+    refused the build. Kept over a failed git read, which says nothing about
+    what is waiting; the hold's own deadline bounds that.
+    """
+    if status.state in _HOLD_KEPT or reload_requested:
+        return
+    reload_hold.note_settled()
 
 
 def _current_branch(repo: Path) -> str:
