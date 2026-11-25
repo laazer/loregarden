@@ -159,11 +159,10 @@ def extraction_for(repo_root: Path, path: str) -> FileExtraction:
 
     A file of an unsupported language is NEVER read — which is also why a
     binary path cannot raise a decode error. A supported one is, and git
-    lists paths the filesystem will not produce bytes for: a file deleted but
-    not yet committed as deleted (every mid-edit working tree) and a symlink
-    whose target is gone. A read failure is a parse failure, recorded on the
-    row and counted on the report; the alternative loses the whole map over
-    one path.
+    lists paths the filesystem will not produce bytes for: a symlink whose
+    target is gone, a file without read permission, one deleted since it was
+    listed. A read failure is a parse failure, recorded on the row and counted
+    on the report; the alternative loses the whole map over one path.
     """
     language = detect(path)
     if language is SourceLanguage.OTHER:

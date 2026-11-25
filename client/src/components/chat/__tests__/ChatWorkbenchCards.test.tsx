@@ -840,7 +840,6 @@ describe("ChangesCard", () => {
           branch: "chat/dark-mode",
           parent_branch: "main",
           worktree_path: "/w",
-          has_conflicts: false,
         }}
         runs={[
           {

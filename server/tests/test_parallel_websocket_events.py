@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
-from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
+from loregarden.models.domain import Workspace
 from loregarden.services.event_hub import event_hub
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import QUEUE_TOPIC
@@ -254,73 +254,3 @@ class TestParallelQueueEventEmissions:
             result = await service.queue_run("ws-1", "ticket-1", "run-1")
 
             assert result["status"] == "started"
-
-
-@pytest.mark.asyncio
-class TestConflictDetectorEventEmissions:
-    """Test event emissions in conflict detection endpoints."""
-
-    async def test_check_conflicts_emits_conflict_detected(self, db_session):
-        """Verify conflict_detected event emitted with the worktree/run/conflict data."""
-        from loregarden.api.parallel import check_conflicts
-
-        ws = Workspace(id="ws-conflict-1", slug="ws-conflict-1", name="Test")
-        db_session.add(ws)
-        db_session.commit()
-
-        ticket = Ticket(
-            external_id="TK-conflict-1", workspace_id="ws-conflict-1", title="Test ticket"
-        )
-        db_session.add(ticket)
-        db_session.commit()
-
-        run = AgentRun(
-            run_code="run-conflict-1",
-            ticket_id=ticket.id,
-            workspace_id="ws-conflict-1",
-            agent_id="static_qa",
-        )
-        db_session.add(run)
-        db_session.commit()
-
-        worktree = Worktree(
-            workspace_id="ws-conflict-1",
-            agent_run_id=run.id,
-            worktree_path="/tmp/fake-worktree",
-        )
-        db_session.add(worktree)
-        db_session.commit()
-
-        with (
-            patch("loregarden.api.parallel.emit_conflict_detected") as mock_emit,
-            patch(
-                "loregarden.services.conflict_detector.ConflictDetectorService.get_conflict_preview"
-            ) as mock_preview,
-            patch(
-                "loregarden.services.conflict_detector.ConflictDetectorService.get_conflict_details"
-            ) as mock_details,
-        ):
-            mock_preview.return_value = {
-                "has_conflicts": True,
-                "conflicting_files": ["src/main.py", "tests/test_main.py"],
-                "summary": "Merge conflicts in 2 files",
-                "auto_mergeable": False,
-            }
-            mock_details.return_value = {
-                "conflicts": [{"file": "src/main.py", "ours_lines": 10, "theirs_lines": 5}],
-                "suggestions": ["Resolve manually"],
-                "severity": "high",
-            }
-
-            result = await check_conflicts(worktree.id, "main", db_session)
-
-        mock_emit.assert_called_once()
-        _, kwargs = mock_emit.call_args
-        assert kwargs["worktree_id"] == worktree.id
-        assert kwargs["run_id"] == run.id
-        assert kwargs["conflicts"] == [{"file": "src/main.py", "ours_lines": 10, "theirs_lines": 5}]
-        assert kwargs["severity"] == "high"
-        assert kwargs["preview"]["has_conflicts"] is True
-
-        assert result["has_conflicts"] is True
-        assert result["severity"] == "high"

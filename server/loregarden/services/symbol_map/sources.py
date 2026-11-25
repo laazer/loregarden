@@ -27,6 +27,7 @@ another tree.
 
 from __future__ import annotations
 
+import errno
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -225,12 +226,33 @@ class UnbornHeadError(RuntimeError):
     """
 
 
+def _is_gone(path: Path) -> bool:
+    """Whether *path* is deleted, as opposed to present and unreadable.
+
+    `lstat`, so a symlink whose target is gone still counts as present. Only
+    the two errors that mean "no such entry" are a deletion; any other (a
+    directory that may not be entered) leaves the path in the list, so the read
+    that follows records why it failed.
+    """
+    try:
+        path.lstat()
+    except OSError as exc:
+        return exc.errno in (errno.ENOENT, errno.ENOTDIR)
+    return False
+
+
 def tracked_files(repo_root: Path) -> list[str]:
-    """Every path git tracks in *repo_root*, repo-relative, in git's order.
+    """Every path git tracks in *repo_root* and the working tree still holds,
+    repo-relative, in git's order.
 
     What git tracks, not what the directory holds: walking the filesystem
     would index `node_modules`, `.venv` and every build artifact, and would
     report symbols for files no commit contains.
+
+    `ls-files` reads the index, so it still lists a file deleted but not yet
+    committed as deleted. `changed_paths` calls that one deleted; a full build
+    that kept it would disagree with the refresh about the same tree, and count
+    a file nobody can read as one that failed to parse.
     """
     result = run_git(
         ["ls-files", "-z"],
@@ -239,7 +261,7 @@ def tracked_files(repo_root: Path) -> list[str]:
         capture_output=True,
         text=True,
     )
-    return [path for path in result.stdout.split("\0") if path]
+    return [path for path in result.stdout.split("\0") if path and not _is_gone(repo_root / path)]
 
 
 def head_sha(repo_root: Path) -> str:

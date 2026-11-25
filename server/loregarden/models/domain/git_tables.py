@@ -1,4 +1,4 @@
-"""The tables the git automation pipeline writes: CI, autofix, worktrees, conflicts.
+"""The tables the git automation pipeline writes: CI, autofix, worktrees.
 
 Split out of ``tables`` when the stage-park waiver columns pushed that module
 past its 1500-line cap — the same reason and the same shape as
@@ -6,8 +6,7 @@ past its 1500-line cap — the same reason and the same shape as
 
 This is the group that came out because it is cohesive rather than merely
 adjacent: a ticket's branch is built in a `Worktree`, its push is judged by a
-`CIRunResult`, a red result is retried through an `AutoFixAttempt`, and a merge
-that cannot proceed lands in a `ConflictReport`. They are one pipeline's
+`CIRunResult`, and a red result is retried through an `AutoFixAttempt`. They are one pipeline's
 bookkeeping, written by `services/git_*` and read by nothing else in the model
 layer.
 
@@ -20,10 +19,7 @@ one flush must commit the parent first.
 
 from __future__ import annotations
 
-import json
-import logging
 from datetime import datetime
-from typing import Any
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
@@ -33,10 +29,7 @@ from loregarden.models.domain.enums import (
     str_enum_column,
     utcnow,
 )
-from pydantic import model_validator
 from sqlmodel import Field, SQLModel
-
-logger = logging.getLogger(__name__)
 
 
 class CIRunResult(SQLModel, table=True):
@@ -112,13 +105,10 @@ class Worktree(SQLModel, table=True):
         sa_column=str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
     )
     #: The branch checked out in this worktree, as opposed to `parent_branch`
-    #: (what it was cut from) or the directory name. Merging needs this: the
-    #: directory is named after the run, which is not a ref.
+    #: (what it was cut from) or the directory name, which is named
+    #: after the run and is not a ref.
     branch: str = ""
     merge_base: str | None = None
-    has_conflicts: bool = False
-    conflict_files_json: str = "[]"
-    conflict_summary: str | None = None
     #: The durable claim on this checkout: the pid that cut or reused it, the
     #: process start time that tells a reused pid from the original, and the
     #: boot both were read under. Three columns rather than one blob so a
@@ -142,87 +132,7 @@ class Worktree(SQLModel, table=True):
     #: the bytes under an unguessable name and this is the only record of it.
     parked_at: str = ""
     created_at: datetime = Field(default_factory=utcnow)
-    merged_at: datetime | None = None
     cleaned_at: datetime | None = None
-
-    @property
-    def conflict_files(self) -> list[str]:
-        try:
-            return json.loads(self.conflict_files_json or "[]")
-        except json.JSONDecodeError:
-            # An unreadable blob reads as "no conflicts", which is the one answer
-            # a merge gate must never be given by accident.
-            logger.warning(
-                "Unreadable conflict_files_json on worktree %s; reporting no files",
-                self.id,
-                exc_info=True,
-            )
-            return []
-
-    @conflict_files.setter
-    def conflict_files(self, value: list[str]) -> None:
-        self.conflict_files_json = json.dumps(value)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_conflict_files(cls, data: Any) -> Any:
-        # A mode="before" validator is handed the raw pre-validation payload,
-        # which Pydantic types as Any: a kwargs dict, or an already-built
-        # instance. There is no model to parse it into, because this runs before
-        # the model exists. Moved here unchanged from `tables` — the gate sees it
-        # because the file is new, not because the code is.
-        if isinstance(data, dict) and "conflict_files" in data:  # py-org: allow-isinstance
-            data = dict(data)
-            files = data.pop("conflict_files")
-            data["conflict_files_json"] = json.dumps(files)
-        return data
-
-
-class ConflictReport(SQLModel, table=True):
-    __tablename__ = "conflict_reports"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    worktree_id: str = Field(foreign_key="worktrees.id", index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    merge_attempt_number: int = 1
-    conflict_type: str = "merge_conflict"
-    conflicting_files_json: str = "[]"
-    conflict_details: str = ""
-    resolution_attempted: bool = False
-    resolution_successful: bool = False
-    created_at: datetime = Field(default_factory=utcnow)
-
-    @property
-    def conflicting_files(self) -> list[str]:
-        try:
-            return json.loads(self.conflicting_files_json or "[]")
-        except json.JSONDecodeError:
-            # Same trap as Worktree.conflict_files: empty must mean empty, not
-            # "the column could not be read".
-            logger.warning(
-                "Unreadable conflicting_files_json on conflict report %s; reporting no files",
-                self.id,
-                exc_info=True,
-            )
-            return []
-
-    @conflicting_files.setter
-    def conflicting_files(self, value: list[str]) -> None:
-        self.conflicting_files_json = json.dumps(value)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_conflicting_files(cls, data: Any) -> Any:
-        # A mode="before" validator is handed the raw pre-validation payload,
-        # which Pydantic types as Any: a kwargs dict, or an already-built
-        # instance. There is no model to parse it into, because this runs before
-        # the model exists. Moved here unchanged from `tables` — the gate sees it
-        # because the file is new, not because the code is.
-        if isinstance(data, dict) and "conflicting_files" in data:  # py-org: allow-isinstance
-            data = dict(data)
-            files = data.pop("conflicting_files")
-            data["conflicting_files_json"] = json.dumps(files)
-        return data
 
 
 class IntegrationBranchMove(SQLModel, table=True):

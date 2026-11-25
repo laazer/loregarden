@@ -137,11 +137,6 @@
   white-space: nowrap;
 }
 
-.chat-wb-tag--warn {
-  background: var(--rdl);
-  color: var(--red);
-}
-
 .chat-wb-note {
   margin: 0;
   font-size: var(--fs-micro);

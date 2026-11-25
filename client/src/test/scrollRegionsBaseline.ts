@@ -638,11 +638,6 @@ export const BASELINE: readonly BaselineEntry[] = [
     note: "tab stop in the subtree: <Button> components/studio/gates/GateStudioPanel.tsx:277",
   },
   {
-    selector: ".studio-preview-card-body--compact",
-    reason: "focusable-descendant",
-    note: "tab stop in the subtree: <button> components/chat/MarkdownContent.tsx:114",
-  },
-  {
     selector: ".studio-version-body",
     reason: "tabbable",
   },

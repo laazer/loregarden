@@ -26,5 +26,4 @@ def chat_branch_view(session: Session, chat_session: BaxterChatSession) -> dict 
         "branch": worktree.branch,
         "parent_branch": worktree.parent_branch,
         "worktree_path": worktree.worktree_path,
-        "has_conflicts": worktree.has_conflicts,
     }

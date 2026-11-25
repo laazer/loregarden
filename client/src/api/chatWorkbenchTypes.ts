@@ -93,7 +93,6 @@ export interface ChatBranch {
   branch: string;
   parent_branch: string;
   worktree_path: string;
-  has_conflicts: boolean;
 }
 
 export interface FeatureLoopStartRequest {

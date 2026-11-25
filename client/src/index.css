@@ -1761,11 +1761,6 @@ label:is(
   padding: 18px 17px;
 }
 
-.studio-preview-card-body--compact {
-  max-height: min(62vh, 720px);
-  overflow-y: auto;
-}
-
 .studio-preview-identity {
   display: flex;
   flex-direction: column;

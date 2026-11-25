@@ -34,10 +34,6 @@ def _now_iso() -> str:
 QUEUE_TOPIC = "queue"
 
 
-def _worktree_topic(worktree_id: str) -> str:
-    return f"worktree:{worktree_id}"
-
-
 def emit_execution_update() -> None:
     """The queue changed.
 
@@ -47,39 +43,6 @@ def emit_execution_update() -> None:
     event_hub.publish(
         QUEUE_TOPIC,
         {"type": "execution_update", "timestamp": _now_iso()},
-    )
-
-
-def emit_conflict_detected(
-    worktree_id: str,
-    run_id: str,
-    conflicts: list[dict[str, Any]],
-    preview: dict[str, Any],
-    severity: str,
-) -> None:
-    """A dry-run merge found conflicts in this worktree."""
-    event_hub.publish(
-        _worktree_topic(worktree_id),
-        {
-            "type": "conflict_detected",
-            "worktreeId": worktree_id,
-            "runId": run_id,
-            "timestamp": _now_iso(),
-            "data": {"conflicts": conflicts, "preview": preview, "severity": severity},
-        },
-    )
-
-
-def emit_conflict_resolved(worktree_id: str, run_id: str) -> None:
-    """Conflicts in this worktree are gone — resolved by hand or auto-merged."""
-    event_hub.publish(
-        _worktree_topic(worktree_id),
-        {
-            "type": "conflict_resolved",
-            "worktreeId": worktree_id,
-            "runId": run_id,
-            "timestamp": _now_iso(),
-        },
     )
 
 

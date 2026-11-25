@@ -76,6 +76,7 @@ from loregarden.config import settings
 from loregarden.console_logging import configure_console_logging
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.core.open_file_limit import raise_open_file_limit
+from loregarden.db.retired_tables import drop_retired_tables
 from loregarden.db.session import engine, init_db
 from loregarden.services import reload_hold
 from loregarden.services.autopilot_schedule import start_autopilot_loop
@@ -231,6 +232,7 @@ async def lifespan(app: FastAPI):
     end_drain()
     reload_hold.reset()
     init_db()
+    drop_retired_tables(engine)
     with Session(engine) as session:
         seed_database(session)
         if settings.sandbox:

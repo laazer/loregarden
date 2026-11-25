@@ -138,11 +138,7 @@ orchestration.py::update_workspace_git_automation
 parallel.py::create_parallel_run
 parallel.py::get_parallel_status
 parallel.py::cancel_queued_run
-parallel.py::check_conflicts
-parallel.py::merge_worktree
 parallel.py::cleanup_worktree
-parallel.py::get_worktree_details
-parallel.py::get_conflict_reports
 parallel.py::get_active_runs
 parallel.py::get_queued_runs
 queue_events.py::queue_socket
