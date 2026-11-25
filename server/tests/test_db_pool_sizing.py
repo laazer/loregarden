@@ -1,55 +1,74 @@
-"""How many database connections the application can actually hold at once.
+"""The database pool must never make a request wait for a connection.
 
-The pool was SQLAlchemy's default — five connections with ten overflow — which
-nothing in the application ever chose. Fifteen has to cover every in-flight
-request plus every ``/ws/queue`` snapshot, the reconciliation timer and run
-streaming, so one slow handler holding a connection was enough to starve the
-rest: every endpoint began failing with ``QueuePool limit of size 5 overflow 10
-reached``, ``/health`` included.
+It was SQLAlchemy's default, five connections with ten overflow, and one slow
+handler starved every endpoint. Then it was twenty with forty, sized against the
+forty request threads. That was the wrong quantity: a request holds its
+connection after its endpoint has returned, while it waits for a thread to
+validate its response. Connections held are bounded by requests in flight, so
+any ceiling can deadlock against the threads (``Settings.db_pool_size``).
 """
 
 from __future__ import annotations
 
+import asyncio
 import threading
+from collections import Counter
+from collections.abc import Iterator
 
-import anyio
-import anyio.to_thread
+import httpx
+import pytest
+from fastapi import Depends, FastAPI
 from loregarden.config import settings
-from loregarden.db.session import create_app_engine
+from loregarden.db import session as db_session
+from loregarden.db.session import create_app_engine, get_session
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
+#: Well past the hundred or so (40 threads + 60 connections) where 20 + 40 locks up.
+CONCURRENT_REQUESTS = 300
+#: Only reached on failure: how long a deadlocked request takes to become a 500.
+POOL_TIMEOUT_SECONDS = 1.0
 
-def _request_thread_limit() -> int:
-    """How many sync request handlers AnyIO will run at once.
 
-    FastAPI runs a sync endpoint in this threadpool and gives one request one
-    thread, so this is the ceiling on handlers that can want a connection
-    simultaneously. Read live rather than hardcoded: raising it without raising
-    the pool is the mistake this test exists to catch.
+class _Reading(BaseModel):
+    value: int
+
+
+def _read(session: Session = Depends(get_session)) -> dict[str, int]:
+    return {"value": session.execute(text("select 1")).scalar_one()}
+
+
+@pytest.fixture
+def app_engine(tmp_path, monkeypatch) -> Iterator[Engine]:
+    """The app's own engine, on a scratch file, as ``get_session`` will use it."""
+    engine = create_app_engine(f"sqlite:///{tmp_path / 'pool.db'}")
+    # SQLAlchemy exposes no public setter for a built pool's checkout timeout.
+    engine.pool._timeout = POOL_TIMEOUT_SECONDS
+    monkeypatch.setattr(db_session, "engine", engine)
+    yield engine
+    engine.dispose()
+
+
+async def test_a_burst_of_requests_does_not_deadlock_the_pool_against_the_threads(app_engine):
+    """FastAPI gives an endpoint with a response model two turns on the threadpool.
+
+    Every request arrives before any finishes, so all of them queue for the first
+    turn ahead of anyone's second. No timing is involved: with a finite pool, the
+    finished requests hold every connection and wait behind threads that are
+    waiting for one.
     """
+    app = FastAPI()
+    app.get("/reading", response_model=_Reading)(_read)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
 
-    async def read() -> int:
-        return int(anyio.to_thread.current_default_thread_limiter().total_tokens)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        responses = await asyncio.gather(
+            *(client.get("/reading") for _ in range(CONCURRENT_REQUESTS))
+        )
 
-    return anyio.run(read)
-
-
-def test_the_pool_covers_every_request_thread():
-    capacity = settings.db_pool_size + settings.db_max_overflow
-
-    assert capacity >= _request_thread_limit(), (
-        f"the pool holds {capacity} connections but {_request_thread_limit()} sync requests "
-        "can run at once; the surplus requests will fail on a pool timeout rather than "
-        "queue for a thread"
-    )
-
-
-def test_the_pool_leaves_room_for_the_background_readers():
-    # Snapshots, the reconciliation timer and run streaming all open sessions
-    # outside the request threadpool, so covering requests exactly is not enough.
-    capacity = settings.db_pool_size + settings.db_max_overflow
-
-    assert capacity > _request_thread_limit()
+    assert Counter(r.status_code for r in responses) == {200: CONCURRENT_REQUESTS}
 
 
 def test_the_engine_is_built_with_the_configured_pool(tmp_path):

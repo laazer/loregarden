@@ -28,20 +28,23 @@ class Settings(BaseSettings):
 
     repo_root: Path = _find_repo_root()
     database_url: str = "sqlite:///data/loregarden.db"
-    #: Connections held open for the database pool, and the burst headroom above
-    #: it. Together they must cover everything that can want a connection at
-    #: once: one per in-flight sync request (FastAPI runs those in AnyIO's worker
-    #: threadpool, forty threads by default), plus every ``/ws/queue`` snapshot,
-    #: the reconciliation timer and run streaming.
+    #: Idle connections the database pool keeps, and how many more it may open
+    #: (-1: no limit). A limit deadlocks. FastAPI runs a sync endpoint in AnyIO's
+    #: forty threads, and one with a response model then queues for a *second*
+    #: turn on those threads to validate its response, with its session still
+    #: holding a connection. So connections held are bounded by requests in
+    #: flight, not by threads: at 20 + 40, past about a hundred requests, sixty
+    #: finished endpoints wait for a thread while forty threads wait for a
+    #: connection, and only the thirty-second pool timeout breaks it. On
+    #: 2026-11-25 that stopped the server until it was restarted.
     #:
-    #: Sizing them below that does not shed load, it relocates the queue — from
-    #: the threadpool, where waiting costs latency, to the connection pool, where
-    #: it costs a thirty-second timeout and a failed request. The values these
-    #: replace were SQLAlchemy's defaults, five and ten, which are meant for
-    #: databases where a connection is a server-side process. A SQLite
-    #: connection is a file handle; there is nothing to conserve by rationing it.
+    #: A SQLite connection is two descriptors (database and WAL), and the server
+    #: raises its limit to 65536 (``core.open_file_limit``), so descriptors run
+    #: out past twenty thousand requests in flight. SQLite keeps a closed
+    #: connection's database descriptor for reuse while any other is open, so the
+    #: count after a burst stays at that burst's peak and does not grow.
     db_pool_size: int = 20
-    db_max_overflow: int = 40
+    db_max_overflow: int = -1
     #: Seconds between reconciliation passes. Short enough that a wedged lane or
     #: a stranded stage clears itself well inside the time it takes an operator
     #: to notice; 0 or less turns the timer off and leaves repair to startup,

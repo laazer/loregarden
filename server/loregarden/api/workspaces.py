@@ -151,13 +151,11 @@ def get_runtime_options(
 
     # Hand the connection back before discovery. Everything below shells out to
     # CLIs and calls a local HTTP server, and none of it reads the database: the
-    # payload is built from ``ws`` plus environment and settings. The pool is
-    # sixty connections for the whole process (20 + 40 overflow, raised from
-    # SQLAlchemy's default 5 + 10 in PR #324) — every request, every
-    # ``/ws/queue`` snapshot, the reconciliation timer — and a probe can spend
-    # its entire budget before answering, 45s in OpenCode's case. Holding one
-    # across that is how every endpoint, ``/health`` included, began failing
-    # with ``QueuePool limit of size 5 overflow 10 reached``.
+    # payload is built from ``ws`` plus environment and settings. A probe can
+    # spend its entire budget before answering, 45s in OpenCode's case, and a
+    # connection held across that is one more open for nothing. While the pool
+    # had a ceiling, that is how every endpoint, ``/health`` included, began
+    # failing with ``QueuePool limit of size 5 overflow 10 reached``.
     #
     # ``ws`` is detached from here on, which is safe to read: ``Workspace`` has
     # no relationships, so every attribute was loaded by the select above and

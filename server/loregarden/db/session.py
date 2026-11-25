@@ -41,12 +41,11 @@ def _db_path_from_engine_url(url: str) -> Path | None:
 
 
 def create_app_engine(url: str) -> Engine:
-    """An engine sized for the concurrency this application actually has.
+    """An engine whose pool never makes a request wait for a connection.
 
-    See ``Settings.db_pool_size`` for why the pool is not SQLAlchemy's default.
-    The short version: a pool smaller than the request threadpool turns a slow
-    handler into failed requests everywhere else, which is exactly what happened
-    when model discovery held a connection across a CLI probe.
+    See ``Settings.db_pool_size`` for why: a request that has finished its
+    endpoint still holds its connection while it waits for a thread, so any
+    ceiling can be reached by requests that only a free thread would release.
     """
     return create_engine(
         url,
