@@ -27,7 +27,6 @@ export function ChangesCard({
           <span className="chat-wb-row-main" title={branch.worktree_path}>
             {branch.branch}
           </span>
-          {branch.has_conflicts ? <span className="chat-wb-tag chat-wb-tag--warn">conflicts</span> : null}
           <CopyValueButton value={branch.branch} what="branch name" />
         </div>
       ) : (

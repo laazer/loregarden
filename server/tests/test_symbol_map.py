@@ -28,6 +28,7 @@ import difflib
 import logging
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from unittest import mock
@@ -61,6 +62,7 @@ from loregarden.services.symbol_map import (
 )
 from loregarden.services.symbol_map import extract as extract_module
 from loregarden.services.symbol_map import partitions as partitions_module
+from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map import sources as sources_module
 from loregarden.services.symbol_map import store as store_module
 from loregarden.services.symbol_map.checkout_identity import identify
@@ -1709,20 +1711,27 @@ def awkward_paths_repo_fixture(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(name="unreadable_source_repo")
-def unreadable_source_repo_fixture(tmp_path: Path) -> Path:
-    """Two tracked, *supported* paths that cannot be read.
+def unreadable_source_repo_fixture(tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+    """Tracked, *supported* paths that cannot be read, and two that are deleted.
 
-    Both are reachable without doing anything exotic: `git rm --cached` is
-    rare, but deleting a file without committing the delete is what every
-    working tree looks like mid-edit, and a symlink whose target is gone is
-    an ordinary state of a tree that tracks links.
+    All are reachable without doing anything exotic: deleting a file without
+    committing the delete is what every working tree looks like mid-edit, and a
+    symlink whose target is gone is an ordinary state of a tree that tracks
+    links. `pkg` became a file, so the path under it is gone by another error,
+    and `locked` may not be entered, so nothing can say whether its file is.
     """
     root = _init(tmp_path / "unreadable-source")
     _write(root, "survivor.py", "def survivor():\n    return 1\n")
     _write(root, "deleted.py", "def deleted():\n    return 1\n")
+    _write(root, "pkg/replaced.py", "def replaced():\n    return 1\n")
     (root / "dangling.ts").symlink_to(root / "nowhere.ts")
-    _commit(root, "feat: two supported paths that will not read")
+    _write(root, "locked/inside.py", "def inside():\n    return 1\n")
+    _commit(root, "feat: supported paths that will not read")
     (root / "deleted.py").unlink()
+    shutil.rmtree(root / "pkg")
+    _write(root, "pkg", "a file where a directory was\n")
+    (root / "locked").chmod(0)
+    request.addfinalizer(lambda: (root / "locked").chmod(0o755))
     return root
 
 
@@ -1951,13 +1960,16 @@ def test_an_untracked_or_ignored_file_is_not_in_the_map(session, workspace, mapp
     assert "untracked_symbol" not in names
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root enters a mode-000 directory, so the permission cannot prove the rule",
+)
 def test_a_tracked_source_that_cannot_be_read_is_recorded_rather_than_fatal(
     session, workspace, unreadable_source_repo
 ):
     """R3.3 proves an *unsupported* file is never opened. A supported one is,
-    and git lists paths the filesystem will not produce bytes for: a file
-    deleted but not yet committed as deleted, and a symlink whose target is
-    gone. An unguarded `read_bytes()` raises `FileNotFoundError` out of the
+    and git lists paths the filesystem will not produce bytes for: a symlink
+    whose target is gone, a directory that may not be entered. An unguarded `read_bytes()` raises `FileNotFoundError` out of the
     build loop, so one mid-edit working tree loses the whole map rather than
     one file — and the failure arrives as a traceback from a cache refresh,
     which is the shape 'No silent failures' asks to be a recorded result.
@@ -1967,12 +1979,43 @@ def test_a_tracked_source_that_cannot_be_read_is_recorded_rather_than_fatal(
     rows = _file_rows(session, partition.id)
 
     assert [r.name for r in _symbols_in(session, partition.id, "survivor.py")] == ["survivor"]
-    for path in ("deleted.py", "dangling.ts"):
+    for path in ("dangling.ts", "locked/inside.py"):
         assert rows[path].parse_status == ParseStatus.PARSE_FAILED, path
         assert rows[path].parse_error, path
         assert _symbols_in(session, partition.id, path) == []
     assert report.parse_failures == 2
     assert report.files_seen == len(rows)
+
+
+def test_a_file_deleted_but_not_committed_is_absent_and_not_a_parse_failure(
+    session, workspace, unreadable_source_repo
+):
+    """The refresh calls such a path deleted and holds no row for it. A full
+    build that kept one answered differently about the same tree, and counted a
+    file nobody can read as one that failed to parse."""
+    build_symbol_map(session, workspace.id, unreadable_source_repo)
+    partition = _partition(session, workspace.id, unreadable_source_repo)
+
+    assert not {"deleted.py", "pkg/replaced.py"} & set(_file_rows(session, partition.id))
+
+
+def test_a_full_build_and_a_refresh_agree_on_a_tree_with_deletions(session, workspace, tmp_path):
+    root = _init(tmp_path / "agree")
+    _write(root, "kept.py", "def kept():\n    return 1\n")
+    _write(root, "gone.py", "def gone():\n    return 1\n")
+    _write(root, "gone.bin", "unsupported")
+    _commit(root, "feat: three files")
+    build_symbol_map(session, workspace.id, root)
+    partition = _partition(session, workspace.id, root)
+    (root / "gone.py").unlink()
+    (root / "gone.bin").unlink()
+
+    refresh_module.refresh_symbol_map(session, workspace.id, root)
+    refreshed = set(_file_rows(session, partition.id))
+    report = build_symbol_map(session, workspace.id, root)
+
+    assert set(_file_rows(session, partition.id)) == refreshed == {"kept.py"}
+    assert (report.files_seen, report.unsupported_files, report.parse_failures) == (1, 0, 0)
 
 
 def test_a_tree_with_no_supported_source_is_an_empty_map_not_a_missing_one(

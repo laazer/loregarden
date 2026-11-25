@@ -97,3 +97,27 @@ async def test_a_stale_squash_on_the_remote_is_not_reported_as_a_conflict(
     assert (preview["has_conflicts"], preview["conflicting_files"]) == (False, [])
     status = git(stale_squash_checkout, "status", "--porcelain").stdout
     assert status == "", "the probe leaves the checkout as it found it"
+
+
+@pytest.mark.asyncio
+async def test_a_real_conflict_is_reported_with_its_files_and_left_unmerged(
+    stale_squash_checkout,
+):
+    """The same checkout against a branch that does conflict with it."""
+    repo = stale_squash_checkout.parent / "project"
+    commit_on(repo, INTEGRATION, "shared.txt", "a later version\n")
+    worktree = Worktree(
+        id="wt-1",
+        workspace_id="ws-1",
+        agent_run_id="run-1",
+        branch_name=TICKET,
+        worktree_path=str(stale_squash_checkout),
+    )
+    service = ConflictDetectorService(MagicMock(), repo_path=str(stale_squash_checkout))
+
+    preview = await service.get_conflict_preview(worktree, INTEGRATION)
+
+    assert preview["checked"] is True
+    assert (preview["has_conflicts"], preview["conflicting_files"]) == (True, ["shared.txt"])
+    status = git(stale_squash_checkout, "status", "--porcelain").stdout
+    assert status == "", "the probe's merge was aborted"

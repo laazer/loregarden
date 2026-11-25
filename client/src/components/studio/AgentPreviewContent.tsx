@@ -71,12 +71,10 @@ export function AgentPreviewContent({
   preview,
   loading,
   slug,
-  compact = false,
 }: {
   preview: StudioAgentPreview | undefined;
   loading: boolean;
   slug?: string;
-  compact?: boolean;
 }) {
   const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
 
@@ -102,7 +100,7 @@ export function AgentPreviewContent({
         <div className="studio-preview-card-bar">
           <span className="studio-preview-card-title">{fileLabel}</span>
         </div>
-        <div className={`studio-preview-card-body${compact ? " studio-preview-card-body--compact" : ""}`}>
+        <div className="studio-preview-card-body">
           {loading && <p className="studio-preview-hint studio-preview-hint--inline">Updating preview…</p>}
           {!loading && preview && (preview.name || preview.profile.description) ? (
             <AgentPreviewIdentity preview={preview} />

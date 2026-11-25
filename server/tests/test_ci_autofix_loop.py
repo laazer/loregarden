@@ -686,6 +686,25 @@ def test_a_manual_trigger_with_nothing_failing_says_why(client, session, workspa
     assert res.json()["detail"]
 
 
+def test_the_override_endpoint_skips_the_result_and_status_shows_it(
+    client, session, workspace, repo, done_ticket
+):
+    pr = _pr(done_ticket.branch, _tip(repo, done_ticket.branch), RUNNING)
+    _observe(session, done_ticket, workspace, pr)
+
+    assert client.post(f"/api/ci/manual-override/{done_ticket.id}").status_code == 200
+
+    status = client.get(f"/api/ci/status/{done_ticket.id}").json()
+    assert status["ci_status"]["status"] == CIStatus.SKIPPED.value
+
+
+def test_a_ticket_with_no_ci_result_has_a_null_status_and_nothing_to_skip(client, done_ticket):
+    res = client.get(f"/api/ci/status/{done_ticket.id}")
+    assert (res.status_code, res.json()) == (200, {"ci_status": None, "auto_fix_history": []})
+
+    assert client.post(f"/api/ci/manual-override/{done_ticket.id}").status_code == 404
+
+
 # -- Reachable branches -------------------------------------------------------------
 
 

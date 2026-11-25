@@ -12,7 +12,6 @@ from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
     AgentRun,
     BaxterChatSession,
-    PrimaryCheckoutUse,
     Ticket,
     Workspace,
     Worktree,
@@ -33,14 +32,11 @@ from loregarden.services.directory_release import (
     release_directory,
 )
 from loregarden.services.git_subprocess import run_git
-from loregarden.services.own_tree_files import excluding_own_files
-from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError, require_clean_checkout
 from loregarden.services.process_identity import (
     BootIdentityUnavailable,
     ClaimIdentity,
     claim_fields,
 )
-from loregarden.services.publish_ref import comparison_ref
 from loregarden.services.toolchain_links import link_ignored_toolchains
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -82,15 +78,6 @@ class CleanupRefusal(Enum):
     #: The removal was attempted and raised — a permission error, a file another
     #: process holds open, an NFS stall. Often transient, so retrying is real.
     REMOVE_RAISED = "remove_raised"
-
-
-class ConflictDetectionError(RuntimeError):
-    """The conflict check could not be completed.
-
-    Distinct from "no conflicts" on purpose. `detect_conflicts` used to return
-    ``False`` on any failure, which is the same value it returns for a clean
-    merge — so a broken git call read as permission to merge.
-    """
 
 
 def repo_path_for_workspace(session: Session, workspace_id: str) -> str:
@@ -434,270 +421,6 @@ class WorktreeService:
         except subprocess.CalledProcessError as exc:
             logger.error("git worktree add failed: %s", exc.stderr, exc_info=True)
             return None
-
-    def detect_conflicts(self, worktree: Worktree, target_branch: str = "main") -> bool:
-        """
-        Check if merging worktree back to target branch would cause conflicts.
-
-        Args:
-            worktree: Worktree record
-            target_branch: Branch to merge into (default: main)
-
-        Returns:
-            True if conflicts detected, False otherwise
-
-        Raises:
-            ConflictDetectionError: the check could not be completed. This used
-                to return ``False`` — indistinguishable from "no conflicts", on
-                the one call that decides whether a merge may proceed.
-        """
-        try:
-            worktree_path = Path(worktree.worktree_path)
-
-            # A failed fetch is not fatal, but the merge-base below is then
-            # computed against a stale origin/main — say so rather than
-            # silently comparing against yesterday's remote.
-            fetch = run_git(
-                ["fetch", "origin"],
-                cwd=str(worktree_path),
-                check=False,
-                capture_output=True,
-            )
-            if fetch.returncode != 0:
-                logger.warning(
-                    "fetch origin failed in %s (rc=%s); conflict detection is computed "
-                    "against a possibly stale origin/%s",
-                    worktree_path,
-                    fetch.returncode,
-                    target_branch,
-                )
-
-            # Try dry-run merge to detect conflicts
-            # git merge --no-commit --no-ff <target as comparison_ref names it>
-            result = run_git(
-                ["merge", "--no-commit", "--no-ff", comparison_ref(target_branch)],
-                cwd=str(worktree_path),
-                capture_output=True,
-                text=True,
-            )
-
-            has_conflicts = result.returncode != 0
-            if has_conflicts:
-                # Extract conflicting files from git status
-                conflict_files = self._extract_conflict_files(worktree_path)
-                worktree.has_conflicts = True
-                worktree.conflict_files = conflict_files
-                worktree.conflict_summary = f"Merge conflicts in {len(conflict_files)} files"
-
-                logger.warning(f"Conflicts detected in worktree {worktree.id}: {conflict_files}")
-            else:
-                # Abort the dry-run merge
-                # silent-ok: undoing a merge we only started to probe; if it did
-                # not start there is nothing to abort, and the next probe re-runs
-                run_git(
-                    ["merge", "--abort"],
-                    cwd=str(worktree_path),
-                    check=False,
-                    capture_output=True,
-                )
-
-            self.session.add(worktree)
-            self.session.commit()
-
-            return has_conflicts
-
-        except Exception as e:  # noqa: BLE001 - boundary: any failure means "unknown"
-            logger.exception("Error detecting conflicts for worktree %s", worktree.id)
-            raise ConflictDetectionError(
-                f"Could not determine merge conflicts for worktree {worktree.id}: {e}"
-            ) from e
-
-    def _extract_conflict_files(self, worktree_path: Path) -> list[str]:
-        """Extract list of files with merge conflicts."""
-        try:
-            result = run_git(
-                ["diff", "--name-only", "--diff-filter=U"],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            files = result.stdout.strip().split("\n")
-            return [f for f in files if f]  # Filter empty strings
-        except Exception:
-            # Reached only after the dry-run merge already reported conflicts, so
-            # an empty list here would read as "conflicts in 0 files". Let it
-            # propagate: detect_conflicts turns it into ConflictDetectionError.
-            logger.exception("Error extracting conflict files from %s", worktree_path)
-            raise
-
-    def merge_worktree(
-        self,
-        worktree: Worktree,
-        target_branch: str = "main",
-        auto_resolve: bool = False,
-    ) -> bool:
-        """
-        Merge worktree changes back to target branch.
-
-        Args:
-            worktree: Worktree record
-            target_branch: Branch to merge into
-            auto_resolve: If True, attempt auto-merge with conflict resolution
-
-        Returns:
-            True if merge successful, False if conflicts or error
-        """
-        try:
-            if worktree.state != WorktreeState.ACTIVE:
-                logger.warning(f"Cannot merge worktree {worktree.id} in state {worktree.state}")
-                return False
-
-            worktree_path = Path(worktree.worktree_path)
-
-            # Check if there are changes to commit
-            result = run_git(
-                ["status", "--porcelain", *excluding_own_files(worktree_path)],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-
-            if not result.stdout.strip():
-                logger.info(f"No changes in worktree {worktree.id}")
-                worktree.state = WorktreeState.MERGED
-                worktree.merged_at = datetime.now(timezone.utc)
-                self.session.add(worktree)
-                self.session.commit()
-                return True
-
-            # The merge checks `target_branch` out in the primary checkout below;
-            # refuse first if that checkout holds someone's uncommitted work (864).
-            require_clean_checkout(Path(self.repo_path), use=PrimaryCheckoutUse.MERGE_WORKTREE)
-
-            # Detect conflicts before attempting merge
-            has_conflicts = self.detect_conflicts(worktree, target_branch)
-
-            if has_conflicts:
-                if not auto_resolve:
-                    logger.warning(f"Merge conflicts in {worktree.id}, not auto-resolving")
-                    worktree.state = WorktreeState.FAILED
-                    self.session.add(worktree)
-                    self.session.commit()
-                    return False
-
-                # Attempt auto-resolution (favor changes from worktree)
-                logger.info(f"Attempting auto-resolution for {worktree.id}")
-                if not self._auto_resolve_conflicts(worktree_path):
-                    logger.error(f"Auto-resolution failed for {worktree.id}")
-                    worktree.state = WorktreeState.FAILED
-                    self.session.add(worktree)
-                    self.session.commit()
-                    return False
-
-            # Perform the actual merge back to main repo
-            run_git(
-                ["checkout", target_branch],
-                cwd=str(self.repo_path),
-                check=True,
-                capture_output=True,
-            )
-
-            # Merge the worktree's *branch*. The directory name is not a ref —
-            # merging it resolved nothing and failed on every worktree whose
-            # branch was not coincidentally named after its folder. Prefer the
-            # recorded branch, and fall back to asking the worktree itself for
-            # rows written before the column existed.
-            branch = worktree.branch
-            if not branch:
-                head = run_git(
-                    ["rev-parse", "--abbrev-ref", "HEAD"],
-                    cwd=str(worktree_path),
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                branch = head.stdout.strip()
-
-            result = run_git(
-                ["merge", branch],
-                cwd=str(self.repo_path),
-                capture_output=True,
-                text=True,
-            )
-
-            if result.returncode != 0:
-                logger.error(f"Merge failed: {result.stderr}")
-                worktree.state = WorktreeState.FAILED
-                self.session.add(worktree)
-                self.session.commit()
-                return False
-
-            worktree.state = WorktreeState.MERGED
-            worktree.merged_at = datetime.now(timezone.utc)
-            self.session.add(worktree)
-            self.session.commit()
-
-            logger.info(f"Successfully merged worktree {worktree.id}")
-            return True
-
-        except DirtyPrimaryCheckoutError:
-            # Nothing was touched: the worktree stays ACTIVE and mergeable once
-            # the primary is clean. Raised so the caller names the paths rather
-            # than reading a refusal as a failed merge.
-            raise
-        except Exception:  # noqa: BLE001 - boundary: any failure fails the merge
-            logger.exception("Error merging worktree %s", worktree.id)
-            worktree.state = WorktreeState.FAILED
-            self.session.add(worktree)
-            self.session.commit()
-            return False
-
-    def _auto_resolve_conflicts(self, worktree_path: Path) -> bool:
-        """Attempt to auto-resolve merge conflicts using ours/theirs strategy."""
-        try:
-            # Accept ours (worktree changes) for all conflicts
-            conflict_files = self._extract_conflict_files(worktree_path)
-
-            for file_path in conflict_files:
-                run_git(
-                    ["checkout", "--ours", file_path],
-                    cwd=str(worktree_path),
-                    check=True,
-                    capture_output=True,
-                )
-
-            # Stage resolved files
-            run_git(
-                ["add"] + conflict_files,
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-            )
-
-            # Complete merge
-            run_git(
-                ["commit", "-m", "Auto-resolved merge conflicts"],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-            )
-
-            logger.info(f"Auto-resolved conflicts in {len(conflict_files)} files")
-            return True
-
-        except Exception:  # noqa: BLE001 - boundary: auto-resolution is all-or-nothing
-            # The three git calls above are check=True, so a failure can land
-            # between them: files checked out but not staged, or staged but not
-            # committed. The caller only learns "False", so name the partial
-            # state here — it is what someone debugging the worktree needs.
-            logger.exception(
-                "Error auto-resolving conflicts in %s; the worktree may be left "
-                "part-resolved (checked out and/or staged but not committed)",
-                worktree_path,
-            )
-            return False
 
     def _refuse_if_outside_base(self, worktree: Worktree) -> Path:
         """The recorded path, or a raise saying it is not ours to touch.

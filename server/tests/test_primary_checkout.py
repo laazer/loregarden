@@ -26,7 +26,6 @@ from loregarden.models.domain import (
     RunStatus,
     Ticket,
     Workspace,
-    WorktreeState,
 )
 from loregarden.services import organization_gate_service
 from loregarden.services.chat_worktree import resolve_chat_execution_root
@@ -38,10 +37,9 @@ from loregarden.services.primary_checkout import (
 )
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.workspace_integration import InstallerStatus, InstallState
-from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
-from tests.worktree_helpers import git, head_branch, make_repo, make_ticket
+from tests.worktree_helpers import head_branch, make_repo, make_ticket
 
 _USE = PrimaryCheckoutUse.TICKET_FALLBACK
 
@@ -220,22 +218,6 @@ def test_switching_over_the_tickets_own_work_is_allowed(session, workspace, repo
     assert head_branch(repo) == ticket.branch
 
 
-def test_merging_a_worktree_refuses_a_dirty_primary_and_touches_nothing(session, workspace, repo):
-    ticket = make_ticket(session, workspace)
-    service = WorktreeService(session, repo_path=str(repo))
-    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket).id)
-    (Path(worktree.worktree_path) / "feature.txt").write_text("work\n")
-    git(repo, "checkout", "-q", "-b", "elsewhere")
-    (repo / "operator.txt").write_text("wip\n")
-
-    with pytest.raises(DirtyPrimaryCheckoutError):
-        service.merge_worktree(worktree, target_branch="main")
-
-    session.refresh(worktree)
-    assert worktree.state is WorktreeState.ACTIVE, "a refused merge is not a failed one"
-    assert head_branch(repo) == "elsewhere"
-
-
 def test_hook_install_refuses_only_when_its_own_file_is_dirty(workspace, repo):
     (repo / "unrelated.txt").write_text("operator wip\n")
     status = InstallerStatus(mock.ANY, InstallState.CURRENT, "current")
@@ -368,7 +350,6 @@ def test_exactly_one_use_was_added_and_it_was_appended():
         "ticket_fallback",
         "chat_fallback",
         "ticket_branch_checkout",
-        "merge_worktree",
         "hook_install",
         _TICKET_WORKTREE,
     ]

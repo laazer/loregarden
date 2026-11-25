@@ -15,7 +15,6 @@ from loregarden.api.analytics import get_analytics, get_global_analytics
 from loregarden.models.domain import Worktree
 from loregarden.services.conflict_detector import ConflictDetectorService
 from loregarden.services.permission_allowlist import load_allowlist
-from loregarden.services.worktree_service import ConflictDetectionError, WorktreeService
 
 
 def _worktree(tmp_path) -> Worktree:
@@ -55,26 +54,6 @@ class TestConflictPreviewReportsUnknown:
 
         assert preview["checked"] is True
         assert preview["has_conflicts"] is False
-
-
-class TestDetectConflictsRaisesOnFailure:
-    def test_failure_raises_rather_than_returning_false(self, tmp_path):
-        service = WorktreeService(MagicMock(), repo_path=str(tmp_path))
-
-        with patch(
-            "loregarden.services.worktree_service.run_git",
-            side_effect=OSError("git is not on PATH"),
-        ):
-            with pytest.raises(ConflictDetectionError):
-                service.detect_conflicts(_worktree(tmp_path))
-
-    def test_clean_merge_still_returns_false(self, tmp_path):
-        session = MagicMock()
-        service = WorktreeService(session, repo_path=str(tmp_path))
-        ok = MagicMock(returncode=0, stdout="", stderr="")
-
-        with patch("loregarden.services.worktree_service.run_git", return_value=ok):
-            assert service.detect_conflicts(_worktree(tmp_path)) is False
 
 
 class TestAnalyticsFailsLoudly:

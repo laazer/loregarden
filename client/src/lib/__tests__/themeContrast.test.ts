@@ -90,16 +90,6 @@ describe("the Feature card's status pill and warning line", () => {
       );
     },
   );
-
-  // Out of scope on this ticket, and named as out of scope: the same inversion
-  // (--red on --rdl, 1.35:1) in a class that renders in ChangesCard. Pinned so
-  // a fix that reaches past its ticket is visible rather than silent.
-  it("leaves .chat-wb-tag--warn, which renders on another card, alone", () => {
-    const [tag] = cssRules(WORKBENCH_CSS, /^\.chat-wb-tag--warn$/);
-    expect(tag).toBeDefined();
-    expect(tag.background).toBe("var(--rdl)");
-    expect(tag.color).toBe("var(--red)");
-  });
 });
 
 describe("the contrast helper refuses what it cannot read", () => {

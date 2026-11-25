@@ -70,6 +70,9 @@ LIVE_ORCHESTRATION_STATUSES = (
 #: queue length of zero while lanes were visibly full.
 WAITING_STATUSES = (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
 
+#: Entries a person may still withdraw: the waiting ones, and one held by pausing it.
+CANCELLABLE_STATUSES = (*WAITING_STATUSES, QueuePosition.PAUSED)
+
 
 def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str | None]:
     """Ticket / stage / agent labels for queue toast + inbox notifications."""
@@ -1146,33 +1149,34 @@ class ParallelQueueService:
         """
         Cancel a queued run (remove from queue).
 
+        Only an entry that has not started. A started or settled entry is the
+        record of work that happened; deleting it stopped nothing and lost the
+        record while answering "cancelled".
+
         Args:
             run_id: Agent run ID to cancel
 
         Returns:
-            True if cancelled, False if not found or error
+            True if cancelled, False if nothing is waiting under that run
         """
-        try:
-            queue_stmt = select(QueuedRun).where(QueuedRun.run_id == run_id)
-            queued_run = self.session.exec(queue_stmt).first()
+        queue_stmt = select(QueuedRun).where(
+            QueuedRun.run_id == run_id, col(QueuedRun.status).in_(CANCELLABLE_STATUSES)
+        )
+        queued_run = self.session.exec(queue_stmt).first()
 
-            if not queued_run:
-                logger.warning(f"Queued run not found: {run_id}")
-                return False
-
-            self.session.delete(queued_run)
-            self.session.commit()
-
-            logger.info(f"Cancelled queued run {run_id}")
-
-            # Re-order remaining queue
-            self._reorder_queue_sync()
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error cancelling queued run: {e}", exc_info=True)
+        if not queued_run:
+            logger.warning(f"Queued run not found: {run_id}")
             return False
+
+        self.session.delete(queued_run)
+        self.session.commit()
+
+        logger.info(f"Cancelled queued run {run_id}")
+
+        # Re-order remaining queue
+        self._reorder_queue_sync()
+
+        return True
 
     def get_queue_stats(self) -> dict:
         """

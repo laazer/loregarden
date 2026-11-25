@@ -19,8 +19,6 @@ class PrimaryCheckoutUse(StrEnum):
     CHAT_FALLBACK = "chat_fallback"
     #: `checkout -B` of a ticket branch in the shared checkout.
     TICKET_BRANCH_CHECKOUT = "ticket_branch_checkout"
-    #: Merging a worktree, which checks the target branch out in the primary first.
-    MERGE_WORKTREE = "merge_worktree"
     #: Writing another workspace's hook block into its lefthook config.
     HOOK_INSTALL = "hook_install"
     #: Switching the ticket's own worktree, not the shared checkout, to its branch.
