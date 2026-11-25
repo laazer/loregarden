@@ -18,7 +18,7 @@ import "./ReviewPage.css";
  * Every human gate, grouped by the build that holds it — for a milestone,
  * the integration branch its tickets landed on, so one launch covers them
  * all. The reviewer walks the group ticket by ticket: open the scene or page,
- * tick the criteria, read what the agent captured, decide. Deciding moves on
+ * do the steps, read what the agent captured, decide. Deciding moves on
  * to the next one.
  *
  * `?workspace=` narrows to one workspace; `?build=` and `?item=` hold the

@@ -438,11 +438,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "title": _string_prop("Short description of what was captured."),
                 "content_json": _string_prop(
                     "Captured output as a JSON string. To hand a human reviewer what to "
-                    "look at, add a `review` object: `screenshots` [{path, caption}] "
+                    "look at, add a `review` object: `steps` [{action, expect, wrong_if}] "
+                    "(what they do and see), `scene` (the scene file to run), "
+                    "`screenshots` [{path, caption, scene}] "
                     "(PNG/JPEG/GIF/WebP files on this machine, copied in at attach "
-                    "time), `links` [{url, label}] to a running server, and `requests` "
+                    "time), `links` [{path or url, label}] to open, `requests` "
                     "[{name, method, path, body, expect_status}] the reviewer can send "
-                    "from the review page against a local instance. Use real_surface."
+                    "from the review page against a local instance, and "
+                    "`replaces_earlier` to hide older kits. Use real_surface."
                 ),
             },
             required=["run_id", "evidence_kind", "title"],

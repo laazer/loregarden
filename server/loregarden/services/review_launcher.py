@@ -82,6 +82,11 @@ class LaunchState(BaseModel):
     started_at: str
 
 
+def is_scene_path(value: str) -> bool:
+    """Whether ``value`` is a scene file inside the project, safe to put in an argv."""
+    return _SCENE.match(value) is not None
+
+
 def review_worktree_path(workspace: Workspace) -> Path:
     root = resolve_workspace_root(workspace)
     return root.parent / ".worktrees" / f"review-{workspace.slug}"
@@ -167,7 +172,7 @@ class ReviewLauncher:
                 f"{workspace.slug} has no {CONFIG_FILE}; add one with a launch.command "
                 "to run its build from the review page"
             )
-        if scene and not _SCENE.match(scene):
+        if scene and not is_scene_path(scene):
             raise LaunchError(f"{scene!r} is not a scene path inside the project")
         name, spec = choose_target(config, target, scene)
         self.stop(workspace.slug)

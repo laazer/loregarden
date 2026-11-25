@@ -1,43 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
 import { Link } from "react-router-dom";
 
 import {
   launchIsLive,
   reviewApi,
   type LaunchKind,
-  type LaunchState,
   type ReviewBuild,
   type ReviewItem,
 } from "../../api/reviewApi";
 import { usePolledReadFailure } from "../../hooks/usePolledReadFailure";
 import { launchStatusKey, useLaunchBuild } from "../../hooks/useReviewLaunch";
 import { ticketPath } from "../../lib/appNavigation";
-import type { StatusTone } from "../../lib/statusTone";
+import { checkedScene } from "../../lib/reviewScene";
 import { describeError } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { StaleReadNotice } from "../ui/StaleReadNotice";
-import { StatusChip } from "../ui/StatusChip";
+import { LaunchPhaseChip } from "./LaunchPhaseChip";
 
 const LIVE_POLL_MS = 2000;
-
-function phaseChip(state: LaunchState): { tone: StatusTone; label: string } {
-  switch (state.phase) {
-    case "preparing":
-      return { tone: "run", label: "Preparing" };
-    case "running":
-      return { tone: "run", label: "Running" };
-    case "exited":
-      // A check that exits at all passed; one that failed is `failed`.
-      return state.kind === "check"
-        ? { tone: "done", label: "Passed" }
-        : { tone: "idle", label: "Exited" };
-    case "failed":
-      return { tone: "bad", label: "Failed" };
-    case "stopped":
-      return { tone: "idle", label: "Stopped" };
-  }
-}
 
 function launchLabel(name: string, kind: LaunchKind, live: boolean): string {
   if (live) return `Restart ${name}`;
@@ -53,6 +33,10 @@ function launchLabel(name: string, kind: LaunchKind, live: boolean): string {
  * and show nothing. A workspace without `.loregarden/review.yaml` gets the
  * reason and the file to add, not a missing button. Every button is disabled
  * until the server answers, so a double click starts one build.
+ *
+ * A target starts at its own beginning. When the ticket is checked in a scene,
+ * that is not where its steps or screenshots are, so the panel says so and
+ * leaves the primary button to the ticket's Play.
  */
 export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: ReviewItem }) {
   const qc = useQueryClient();
@@ -108,7 +92,7 @@ export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: R
 
   const sameRef = state?.ref === build.ref;
   const live = launchIsLive(state) && sameRef;
-  const chip = state ? phaseChip(state) : null;
+  const itemScene = checkedScene(item);
   const kinds = new Map(config.targets.map((target) => [target.name, target.kind]));
   const matched = item.launch.targets.filter((name) => kinds.has(name));
   const noMatch = item.launch.match === "no_match";
@@ -125,7 +109,7 @@ export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: R
           runs is listed.
         </p>
       ) : null}
-      {noMatch ? (
+      {noMatch && !itemScene ? (
         <p>
           Nothing {build.workspace_slug} can launch runs the files {item.ticket.external_id} changes.{" "}
           <Link to={ticketPath(item.ticket.id, "diff")}>Read its diff</Link>, or add a target for
@@ -136,7 +120,7 @@ export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: R
         {targets.map((name, i) => (
           <Button
             key={name}
-            variant={i === 0 ? "primary" : "secondary"}
+            variant={i === 0 && !itemScene ? "primary" : "secondary"}
             disabled={launch.isPending}
             onClick={() => launch.mutate({ target: name })}
           >
@@ -150,9 +134,9 @@ export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: R
             Stop
           </Button>
         ) : null}
-        {chip && state ? (
+        {state ? (
           <span className="review-launch-state">
-            <StatusChip tone={chip.tone} label={chip.label} />
+            <LaunchPhaseChip state={state} />
             <span className="review-mono" title={state.sha}>
               {state.target} · {state.ref}
               {state.scene ? ` · ${state.scene}` : ""} @ {state.sha.slice(0, 8)}
@@ -162,6 +146,12 @@ export function ReviewLaunchPanel({ build, item }: { build: ReviewBuild; item: R
           <span className="review-muted">Runs {build.ref} in a review checkout.</span>
         ) : null}
       </div>
+      {itemScene ? (
+        <p className="review-muted">
+          {targets.length > 0 ? "Launching starts from the beginning, not at this ticket. " : ""}
+          This ticket is checked in its own scene: use Play under What to do.
+        </p>
+      ) : null}
       {sameRef && state.error ? (
         <p className="review-error" role="alert">
           {state.error}

@@ -76,6 +76,14 @@ half below the grid because its centre is the origin, two parts intersecting by
 design, a deliberately empty state. Otherwise the human reports it, and you
 spend a round explaining that the thing they found is intended.
 
+## Put the checks where the person is
+
+A check in a stage report or a screenshot caption is not read. When the person
+decides at a human gate, the numbered checks are the review kit's `steps`
+(`loregarden_attach_evidence`, `content_json.review`): `action` is the one thing
+they do, `expect` the observation, `wrong_if` the failure signature. `scene` is
+what their launch button runs. Keep the derivation in the artifact's other keys.
+
 ## Close the loop
 
 End with what a "yes" actually confirms — the AC ids, by number — and what you

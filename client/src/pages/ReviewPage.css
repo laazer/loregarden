@@ -117,6 +117,7 @@
 
 .review-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
   align-content: start;
@@ -174,6 +175,10 @@
 }
 
 
+details.review-section > summary {
+  cursor: pointer;
+}
+
 .review-walk-title {
   font-size: var(--fs-small);
   color: var(--txm);
@@ -185,6 +190,7 @@
 
 .review-walk-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
   align-content: start;
@@ -192,6 +198,7 @@
 
 .review-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -199,6 +206,53 @@
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.review-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ac);
+  border-radius: 8px;
+  background: var(--bg1);
+}
+
+.review-guide > p {
+  margin: 0;
+}
+
+.review-guide-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-weight: 600;
+  font-size: var(--fs-lead);
+}
+
+.review-steps {
+  margin: 0;
+  padding-left: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.review-steps li > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.review-step-action {
+  font-weight: 600;
+}
+
+.review-step-label {
+  color: var(--ac);
+  font-size: var(--fs-small);
+}
+
+.review-step-label--wrong {
+  color: var(--rdl);
 }
 
 .review-item-head {
@@ -218,6 +272,7 @@
   min-width: 0;
 }
 
+.review-guide code,
 .review-scenes code,
 .review-criteria label,
 .review-launch-state .review-mono {
@@ -230,7 +285,7 @@
 }
 
 .review-shots {
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
 }
 
 .review-shots li {
@@ -279,6 +334,6 @@
 
 @media (max-width: 900px) {
   .review-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
