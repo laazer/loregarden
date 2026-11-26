@@ -52,6 +52,12 @@ for. Answering for them is your job. For **each** criterion, by its exact text:
   the defect", run them first: a criterion an earlier reject named is not met
   until its tests pass, and the check before the gate reruns them with whatever
   you name.
+- **A person's judgment:** feel, look, sound, whether it makes sense to someone
+  new, or a choice that is the owner's. `disposition: "person"` with `judges` and
+  `ask`, one plain question they can answer by looking or using it at normal
+  speed. Prove any measurable part first and name that proof in `reason`. It is
+  never for a fact nobody has tested: that is unmet, and the test is owed. The
+  wording is checked, and a fact is refused.
 - **Not met:** do not record it. Refute (`needs_rework`) and name it in
   `unmet_criteria`, word for word, with a blocking finding whose `test` fails
   now (see `findings` in the stage-report contract). Past the ticket's rework budget, criteria

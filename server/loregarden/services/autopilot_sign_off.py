@@ -41,6 +41,7 @@ from loregarden.services.exit_action_ledger import (
     read_gate_resolution,
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.person_gate import is_a_persons_gate
 from sqlmodel import Session, col, select
 
 #: The action key `migrations_exit_actions.legacy_sign_off_action` writes.
@@ -59,6 +60,17 @@ def _gate_is_legacy_sign_off_only(approval: Approval) -> bool:
         return False
     actions = read_gate_resolution(approval).human_required_actions
     return all(action.action_key == LEGACY_SIGN_OFF_KEY for action in actions)
+
+
+def _automation_may_sign(session: Session, ticket: Ticket, approval: Approval) -> bool:
+    """Whether this gate asks only "may it proceed", with no criterion waiting on a person.
+
+    A criterion settled as a person's judgment is answered at this gate; a
+    signature in their place would record an answer nobody gave.
+    """
+    return _gate_is_legacy_sign_off_only(approval) and not is_a_persons_gate(
+        session, ticket, approval.stage_key
+    )
 
 
 def self_and_ancestors(session: Session, ticket: Ticket) -> list[str]:
@@ -96,7 +108,7 @@ def autopilot_may_sign_off(
     session: Session, ticket: Ticket, approval: Approval
 ) -> InitiativePlan | None:
     """The plan that signs this gate off, or None when it waits for a person."""
-    if not _gate_is_legacy_sign_off_only(approval):
+    if not _automation_may_sign(session, ticket, approval):
         return None
     return autopilot_driving(session, ticket)
 
@@ -145,7 +157,7 @@ def signer_for_gate(
     held across the parks automation will resolve and given back at the ones it
     will not (lg-machine-resource-1923).
     """
-    if not _gate_is_legacy_sign_off_only(approval):
+    if not _automation_may_sign(session, ticket, approval):
         return None
     plan = autopilot_driving(session, ticket)
     if plan is not None:

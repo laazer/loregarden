@@ -284,6 +284,12 @@ details.review-section > summary {
   cursor: pointer;
 }
 
+.review-criteria--read li {
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
 .review-shots {
   grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
 }

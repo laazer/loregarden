@@ -72,6 +72,23 @@ UNRESOLVED_SCENES_ITEM = (
     "the branch diff could not be read, so identify them from the ticket's changes"
 )
 
+#: A description can run to 40 KB of spec. The gate quotes what the change is for.
+MAX_INTENT_CHARS = 400
+
+
+def _lead(text: str) -> str:
+    """The first paragraph of prose in ``text``, cut at a word past the limit.
+
+    Skips headings and ``**Label:** value`` lines, which is how an imported
+    description opens; a description made only of those is quoted from its start.
+    """
+    paragraphs = [" ".join(p.split()) for p in text.split("\n\n")]
+    prose = [p for p in paragraphs if p and not p.startswith(("#", "**"))]
+    lead = prose[0] if prose else " ".join(text.split())
+    if len(lead) <= MAX_INTENT_CHARS:
+        return lead
+    return lead[:MAX_INTENT_CHARS].rsplit(" ", 1)[0].rstrip() + " …"
+
 
 def expand_gate_checklist(
     ticket: Ticket, checklist: list[str], *, scenes: list[str] | None = None
@@ -121,7 +138,7 @@ def expand_gate_checklist(
         elif token == TICKET_INTENT_PLACEHOLDER:
             intent = (ticket.description or "").strip()
             expanded.append(
-                f"Play it and judge whether it delivers what the ticket asked for — {intent}"
+                f"Play it and judge whether it delivers what the ticket asked for — {_lead(intent)}"
                 if intent
                 else GENERIC_INTENT_ITEM
             )
@@ -129,11 +146,7 @@ def expand_gate_checklist(
             if scenes is None:
                 expanded.append(UNRESOLVED_SCENES_ITEM)
             else:
-                expanded.extend(
-                    f"Open `{scene}` in the editor, run it, and play through this change — "
-                    "it must reach a playable state with no errors"
-                    for scene in scenes
-                )
+                expanded.extend(f"Open `{scene}` and play through this change" for scene in scenes)
         else:
             expanded.append(item)
     return expanded

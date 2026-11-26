@@ -23,6 +23,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.branch_names import resolve_ticket_branch
+from loregarden.services.criterion_review import ReviewCriterion, review_criteria
 from loregarden.services.gate_checklist import resolve_review_files, review_scenes
 from loregarden.services.review_config import (
     LaunchOffer,
@@ -43,6 +44,8 @@ class ReviewTicket(BaseModel):
     revision: int
     acceptance_criteria: list[str]
     checked_criteria: list[str]
+    #: The same criteria, with who answered for each.
+    criteria: list[ReviewCriterion]
 
 
 class ReviewItem(BaseModel):
@@ -76,7 +79,7 @@ def _build_ref(ticket: Ticket) -> tuple[str, bool]:
     return resolve_ticket_branch(ticket), False
 
 
-def _review_ticket(ticket: Ticket) -> ReviewTicket:
+def _review_ticket(session: Session, ticket: Ticket) -> ReviewTicket:
     criteria = load_criteria(ticket.acceptance_criteria_json)
     return ReviewTicket(
         id=ticket.id,
@@ -86,6 +89,7 @@ def _review_ticket(ticket: Ticket) -> ReviewTicket:
         revision=ticket.revision,
         acceptance_criteria=criteria,
         checked_criteria=load_checked(ticket.checked_criteria_json, criteria),
+        criteria=review_criteria(session, ticket),
     )
 
 
@@ -120,7 +124,7 @@ def build_review_queue(session: Session, *, workspace_slug: str = "") -> ReviewQ
         build.items.append(
             ReviewItem(
                 approval=approval_to_view(session, approval),
-                ticket=_review_ticket(ticket),
+                ticket=_review_ticket(session, ticket),
                 # Empty outside workspaces whose playable unit is a scene file.
                 scenes=review_scenes(files),
                 launch=launch_offer(configs[workspace.id], files),

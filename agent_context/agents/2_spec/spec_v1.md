@@ -135,6 +135,14 @@ stage records it met by naming the tests that prove it, and those tests are reru
 HEAD. So write each criterion as one observable behaviour a test can pin. A criterion
 that bundles three behaviours gets one test that proves one of them.
 
+**A person is not a test rig.** Nothing a test, scripted run or capture can answer is
+written for a person: not "manual playtest notes", not "the operator confirms the count
+updates". A criterion that really is a judgment (feel, look, sound, whether it makes
+sense, a choice that is the owner's) stands alone, one per criterion, worded as a question
+someone can answer in one sitting by looking or using it, with no numbers in it. Put the
+numbers in their own criteria, where a test proves them. If no one could answer it (it
+needs an audience, a second player, a week of use), replace it with something observable.
+
 A criterion that belongs to another ticket (one already filed, or a sibling under the
 same parent) is handed to it with `loregarden_settle_criterion`, `disposition:
 "delegated"` and `target_ticket_id`. The target is given the criterion's exact text and

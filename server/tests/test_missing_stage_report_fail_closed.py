@@ -8,6 +8,7 @@ previously treated that as pass and promoted the ticket into playtest.
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
 from loregarden.models.domain import (
     AgentRun,
+    ArtifactKind,
     RunStatus,
     StageStatus,
     Ticket,
@@ -19,6 +20,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
+from loregarden.testing.factories import make_artifact
 from sqlmodel import Session, select
 
 
@@ -160,6 +162,14 @@ def test_usage_limit_blocks_with_the_provider_reason_not_the_missing_report(
 
 def test_succeeded_with_pass_report_still_advances(db_session: Session):
     ticket, ws, template = _setup_implementation_ticket(db_session, "pass-report-advances")
+    # Implement is the last stage before blobert-tdd's playtest gate, so it owes the gate a kit.
+    make_artifact(
+        db_session,
+        ticket_id=ticket.id,
+        kind=ArtifactKind.EVIDENCE,
+        title="kit",
+        content={"review": {"nothing_to_judge": "Every claim is a state change the tests drive."}},
+    )
 
     run = AgentRun(
         run_code="orch_pass_report",

@@ -92,3 +92,20 @@ will do with it. When the answer comes back, record it as evidence
 as they were confirmed, so the next reader sees what was observed rather than
 that someone approved. A "yes" that leaves no trace is an unverified AC with a
 tick next to it.
+
+## Ask only for a judgment
+
+Before a check reaches a person, ask who could answer it.
+
+- **A test or a scripted run could** (what latched, what a label reads, how much,
+  how long, whether anything errored): do it, and record the result. It is not a
+  step. "Nobody wrote the test" means write it.
+- **Nobody could** (counting frames, comparing numbers on a moving screen, an
+  audience, a second player, a week of use): rewrite it as something observable
+  in one sitting, or measure it.
+- **Only a person could** (feel, look, sound, whether it makes sense, a choice
+  that is the owner's, hardware only they have): that is the step. Say which in
+  `judges` and why in `why_person`. Both are shown to the person.
+
+When nothing is left, the kit says so in `nothing_to_judge`, with what proved the
+change. One honest judgment is worth more than five checks of facts.

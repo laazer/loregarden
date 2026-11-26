@@ -1,4 +1,4 @@
-"""Each acceptance criterion of a ticket, settled met or delegated (`criterion_tables`).
+"""Each acceptance criterion of a ticket, settled met, delegated or a person's (`criterion_tables`).
 
 The writers are here, and so is the question the gate check asks: which of
 this ticket's current criteria are not answered for? A settlement names the
@@ -17,12 +17,14 @@ from loregarden.models.domain import (
     Artifact,
     CriterionDisposition,
     CriterionSettlement,
+    PersonJudgment,
     Ticket,
     TicketState,
     utcnow,
 )
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.evidence import ARTIFACT_KIND
+from loregarden.services.person_judgment import fact_problem, reason_problem
 from pydantic import TypeAdapter
 from sqlmodel import Session, col, select
 
@@ -142,6 +144,54 @@ def settle_met(
     row.commit_sha = commit_sha
     row.delegated_to_ticket_id = None
     row.by_split = False
+    row.judges = None
+    row.person_ask = ""
+    row.settled_by = settled_by
+    row.settled_at = utcnow()
+    row.reason = reason.strip()
+    session.add(row)
+    session.commit()
+    return row
+
+
+def settle_person(
+    session: Session,
+    ticket: Ticket,
+    criterion: str,
+    *,
+    judges: PersonJudgment,
+    ask: str,
+    commit_sha: str,
+    settled_by: str,
+    reason: str,
+) -> CriterionSettlement:
+    """Record ``criterion`` as the judgment of the person at the human gate. Commits.
+
+    ``ask`` is the question they are shown, so it carries the wording check
+    rather than the criterion, which may mix a judgment with constants only an
+    agent reads. The caller has checked that a human gate is still ahead.
+    """
+    text = _current_criterion(ticket, criterion)
+    if not ask.strip():
+        raise ValueError("person needs ask: the question the person answers at the gate")
+    problem = fact_problem(ask)
+    if problem:
+        raise ValueError(
+            f"{problem}. Prove that part with a test and ask the person only for the judgment; "
+            "when nothing else is left, the criterion is met, not a person's"
+        )
+    problem = reason_problem(reason)
+    if problem:
+        raise ValueError(f"reason: {problem}")
+    row = _upsert(session, ticket, text)
+    row.disposition = CriterionDisposition.PERSON
+    row.tests_json = "[]"
+    row.evidence_artifact_id = None
+    row.commit_sha = commit_sha
+    row.delegated_to_ticket_id = None
+    row.by_split = False
+    row.judges = judges
+    row.person_ask = ask.strip()
     row.settled_by = settled_by
     row.settled_at = utcnow()
     row.reason = reason.strip()
@@ -182,6 +232,8 @@ def record_delegation(
     row.commit_sha = ""
     row.delegated_to_ticket_id = target.id
     row.by_split = by_split
+    row.judges = None
+    row.person_ask = ""
     row.settled_by = settled_by
     row.settled_at = utcnow()
     row.reason = reason.strip()
