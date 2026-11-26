@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from loregarden.services import dependency_readiness
 from loregarden.services.dependency_readiness import (
     UnmetReason,
     unmet_prerequisites_for_start,
@@ -101,6 +104,35 @@ def test_a_done_prerequisite_whose_branch_never_landed_is_not_landed(session, wo
     assert [(e.ticket.external_id, e.reason, e.target) for e in unmet] == [
         ("a", UnmetReason.NOT_LANDED, target)
     ]
+
+
+def test_many_prerequisites_read_branch_tips_once(session, workspace, repo):
+    """Every branch the verdicts need is read in one `for-each-ref`, not three per prerequisite."""
+    ms = _ticket(session, workspace, "ms", kind=WorkItemType.MILESTONE)
+    dependent = _ticket(session, workspace, "z", parent=ms)
+    target = resolve_target_branch(session, dependent, workspace, repo_root=repo)
+    for name, state in [
+        ("a", TicketState.DONE),
+        ("b", TicketState.IN_PROGRESS),
+        ("c", TicketState.DONE),
+    ]:
+        prerequisite = _ticket(session, workspace, name, parent=ms, state=state)
+        _depends(session, dependent, prerequisite)
+        if state is TicketState.DONE:
+            git(repo, "branch", prerequisite.branch, target)
+            commit_on(repo, prerequisite.branch, f"{name}.txt", f"{name}'s work\n")
+
+    with mock.patch.object(
+        dependency_readiness, "read_branch_tips", wraps=dependency_readiness.read_branch_tips
+    ) as read:
+        unmet = unmet_prerequisites_for_start(session, dependent, workspace)
+
+    assert sorted((e.ticket.external_id, e.reason) for e in unmet) == [
+        ("a", UnmetReason.NOT_LANDED),
+        ("b", UnmetReason.NOT_DONE),
+        ("c", UnmetReason.NOT_LANDED),
+    ]
+    assert read.call_count == 1
 
 
 def test_a_landed_prerequisite_is_satisfied(session, workspace, repo):

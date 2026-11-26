@@ -34,7 +34,7 @@ from loregarden.models.domain import Ticket, TicketState, Workspace
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.deferral_state import is_deferred
 from loregarden.services.git_automation_config import base_branch
-from loregarden.services.git_subprocess import run_git
+from loregarden.services.git_merge_noco import BranchTips, read_branch_tips
 from loregarden.services.target_branch import target_branch_name
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.work_landed import landing_commit
@@ -60,19 +60,8 @@ class UnmetPrerequisite:
     target: str = ""
 
 
-def _rev(repo_root: Path, ref: str) -> str:
-    result = run_git(
-        ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-        cwd=str(repo_root),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
 def work_is_reachable(
-    repo_root: Path, prerequisite: Ticket, *, target: str, base: str
+    repo_root: Path, prerequisite: Ticket, *, target: str, base: str, tips: BranchTips
 ) -> bool | None:
     """Whether the prerequisite's work is on ``target`` or ``base``.
 
@@ -84,14 +73,35 @@ def work_is_reachable(
 
     None when the prerequisite has no branch in this repository — there is
     nothing to be reachable, and the caller falls back to state.
+
+    ``tips`` holds the prerequisite's branch, ``target`` and ``base``, read
+    together (`_branch_tips`).
     """
-    branch_tip = _rev(repo_root, f"refs/heads/{resolve_ticket_branch(prerequisite)}")
+    branch_tip = tips.of(resolve_ticket_branch(prerequisite))
     if not branch_tip:
         return None
-    return any(
-        _holds(repo_root, branch_tip, _rev(repo_root, f"refs/heads/{ref}"), ref=ref)
-        for ref in (target, base)
+    return any(_holds(repo_root, branch_tip, tips.of(ref), ref=ref) for ref in (target, base))
+
+
+def _branch_tips(
+    repo_root: Path, prerequisites: list[Ticket], *, target: str, base: str
+) -> BranchTips:
+    """Every branch `work_is_reachable` reads for ``prerequisites``, in one git call.
+
+    A branch git could not list reads as missing, which is what a failed
+    per-branch lookup answered: the prerequisite falls back to its state. That
+    is said here, not left for the reader to infer from a released dependent.
+    """
+    tips = read_branch_tips(
+        repo_root, target, base, *(resolve_ticket_branch(p) for p in prerequisites)
     )
+    if tips.error:
+        logger.warning(
+            "Could not read branch tips in %s, so prerequisites are judged by state: %s",
+            repo_root,
+            tips.error,
+        )
+    return tips
 
 
 def _holds(repo_root: Path, branch_tip: str, ref_sha: str, *, ref: str) -> bool:
@@ -118,19 +128,29 @@ def unmet_prerequisites_for_start(
     base = base_branch(workspace)
     target = target_branch_name(session, ticket, workspace)
 
-    unmet: list[UnmetPrerequisite] = []
+    # `None` holds a prerequisite's place until git has answered for it, so the
+    # result keeps the order of `rows`.
+    judged: list[tuple[Ticket, UnmetReason | None]] = []
     for prerequisite in rows:
         if is_deferred(prerequisite):
             # Deferred so this one proceeds without it (`ticket_deferral`).
             continue
         if prerequisite.state not in dependencies.SATISFIED_STATES:
-            unmet.append(UnmetPrerequisite(prerequisite, UnmetReason.NOT_DONE))
+            judged.append((prerequisite, UnmetReason.NOT_DONE))
             continue
         if prerequisite.state is TicketState.WONT_DO:
             continue
         if prerequisite.workspace_id != ticket.workspace_id:
             continue
-        reachable = work_is_reachable(repo_root, prerequisite, target=target, base=base)
-        if reachable is False:
+        judged.append((prerequisite, None))
+    in_git = [prerequisite for prerequisite, reason in judged if reason is None]
+    tips = _branch_tips(repo_root, in_git, target=target, base=base) if in_git else None
+    unmet: list[UnmetPrerequisite] = []
+    for prerequisite, reason in judged:
+        if reason is not None:
+            unmet.append(UnmetPrerequisite(prerequisite, reason))
+        elif tips is not None and (
+            work_is_reachable(repo_root, prerequisite, target=target, base=base, tips=tips) is False
+        ):
             unmet.append(UnmetPrerequisite(prerequisite, UnmetReason.NOT_LANDED, target))
     return unmet

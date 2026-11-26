@@ -263,6 +263,7 @@ def test_git_failing_to_answer_is_not_remembered(tmp_path):
     work_landed._landing_commit.cache_clear()
     with (
         mock.patch.object(work_landed, "is_ancestor", return_value=False),
+        mock.patch.object(work_landed, "merge_base", return_value="f" * 40),
         mock.patch.object(
             work_landed, "superseding_commit", side_effect=[RuntimeError("bad object"), "c" * 40]
         ),
