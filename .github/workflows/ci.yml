@@ -129,11 +129,20 @@ jobs:
       # A runner can stop for minutes: on 2026-11-23 all four workers stalled at
       # once and the four tests they held failed the 120s ceiling together, at
       # 182-187s. 300s outlasts that and still names a hang.
+      # The shard's wall time is written whatever pytest exits with: the Suite time
+      # check holds every shard, and all of them summed, to a 30-minute ceiling.
       - name: Pytest
         run: |
           files=$(python3 ../.github/scripts/pytest_shard.py \
             --shard ${{ matrix.shard }} --of ${{ strategy.job-total }})
+          started=$(date +%s)
+          set +e
           uv run pytest -q -n auto --timeout 300 $files
+          code=$?
+          set -e
+          mkdir -p ../.profile
+          echo "{\"wall_seconds\": $(( $(date +%s) - started ))}" > ../.profile/server-wall.json
+          exit $code
         env:
           LOREGARDEN_REPO_ROOT: ${{ github.workspace }}
           # Profiling rides on the run that was happening anyway; the artifact
@@ -147,7 +156,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: profile-server-${{ matrix.shard }}
-          path: .profile/server.json
+          path: |
+            .profile/server.json
+            .profile/server-wall.json
           if-no-files-found: error
 
   # The check main's ruleset requires by name. `always()` with no `!cancelled()`:
@@ -206,8 +217,107 @@ jobs:
       - name: Unreachable modules
         run: node ../.lefthook/scripts/ts_unreachable_check.cjs --repo .. --scope branch
 
+      # Per-file timings for the suite-timing job; jest still prints its usual
+      # report, and writes the file whether or not the tests passed. jest does not
+      # create the file's directory: without the mkdir it fails after a green run.
       - name: Test
-        run: npm test
+        run: |
+          mkdir -p ../.profile
+          npm test -- --json --outputFile=../.profile/client-jest.json
+
+      - name: Upload the client suite's timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-client
+          path: .profile/client-jest.json
+          if-no-files-found: error
+
+  # Per-file test time on every run, and on a pull request a check that fails when
+  # a suite grew more than 20% over the median of main's last ten runs, naming
+  # the files that grew. The arithmetic is lore_eden.testing.profile_delta;
+  # .github/scripts/suite_timing.py decides which runs it sees. Main's pushes
+  # store the baseline; nothing a pull request uploads is read as one.
+  suite-timing:
+    name: Suite time (vs main)
+    needs: [server-tests, client]
+    # A failed suite's profiles are still recorded (and never baselined), and a
+    # skipped one (main reusing a tested tree) is carried from the run that tested it.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies (lore-eden's profile_delta)
+        working-directory: server
+        run: uv sync
+
+      - name: Download the suites' profiles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: profile-*
+          path: .profile
+
+      - name: Collect this run's profiles
+        run: >-
+          uv run --project server python .github/scripts/suite_timing.py collect
+          --profiles .profile --client-root "$GITHUB_WORKSPACE/client" --out .timing/run
+          --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --event "$GITHUB_EVENT_NAME"
+          --ref "$GITHUB_REF"
+
+      - name: Upload this run's profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-profiles
+          path: .timing/run/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Store main's baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: >-
+          uv run --project server python .github/scripts/suite_timing.py baseline
+          --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --current .timing/run
+          --work .timing/main --out .timing/baseline/baseline.json
+
+      - name: Upload main's baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-timing-baseline
+          path: .timing/baseline/baseline.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Compare with main's baseline
+        if: github.event_name == 'pull_request'
+        run: >-
+          uv run --project server python .github/scripts/suite_timing.py check
+          --repo "$GITHUB_REPOSITORY" --current .timing/run --work .timing/fetched
+          --summary "$GITHUB_STEP_SUMMARY"
+
+      # A hard ceiling, not a trend: every shard's pytest wall time, and all shards
+      # together (about what one runner would take), must stay within 30 minutes.
+      - name: Server wall time (30-minute ceiling)
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run --project server python .github/scripts/suite_timing.py ceiling
+          --profiles .profile
 
   gates:
     name: Workspace gates (PR diff)
