@@ -22,12 +22,12 @@ if [ $# -eq 0 ]; then
   exit 2
 fi
 
-# The files this push would run: the selection, or every test file when the
-# selector says the change cannot be narrowed (exit 2). Nothing on any other
+# The files this push would run: the selection (budgeted, see push-base.sh),
+# or every test file if the selector still says the change cannot be narrowed. Nothing on any other
 # failure, which server-tests.sh then meets and reports.
 wanted_tests() {
   local base targets status=0
-  base="$(push_base "$ROOT")"
+  base="$(select_base "$ROOT")"
   if [ -n "$base" ]; then
     targets="$(bash "$SCRIPT_DIR/server_python.sh" "$SCRIPT_DIR/select_pytest_targets.py" \
       --repo "$ROOT" --base "$base" ${SELECT_REACH[@]+"${SELECT_REACH[@]}"} 2>/dev/null)" || status=$?

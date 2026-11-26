@@ -66,13 +66,26 @@ much:
   kept at any distance. A landing does not pass it: nothing runs after a landing
   that would catch the miss.
 
+* `--budget N` (a push) caps the run at N files, closest first, and never exits
+  2: where the selector would otherwise ask for everything (an unmappable path,
+  nothing reachable, an empty diff, a module it cannot parse) it runs what the
+  mappable part of the change reaches, or, when that is nothing, an even spread
+  of N files across the sorted test files, so a `conftest.py` change still runs
+  a sample. What it leaves out goes to stderr. On 2026-11-25 pre-push suites
+  held this machine's capacity for 1-4 hours each, at load 60-77, while CI ran
+  the same full suite in about 9 minutes on 4 shards; CI and the merge queue
+  require that full run before anything lands, so a push only needs a fast
+  first signal. A landing never passes it.
+
 What can still be missed: a test that reaches changed code through a data file,
 a subprocess, or a name assembled at runtime. CI still runs the whole suite on
 every PR, so the cost of a miss is a slower signal, never an unguarded merge.
 
-Usage: select_pytest_targets.py --repo PATH --base REF [--nearest] [--run-first-out FILE]
+Usage: select_pytest_targets.py --repo PATH --base REF [--nearest] [--budget N]
+                                [--run-first-out FILE]
 Prints one test path per line, the closest to the change first. Exit 2 means
-"run the full suite" and the reason goes to stderr. --run-first-out also writes,
+"run the full suite" and the reason goes to stderr; with --budget it is never
+returned. --run-first-out also writes,
 in every case, the tests a full run should start with: the selection for the
 part of the diff that can be narrowed.
 """
@@ -757,6 +770,51 @@ def _write_run_first(out: Path | None, repo: Path, tests: list[Path]) -> None:
         )
 
 
+def spread(tests: list[Path], count: int) -> list[Path]:
+    """`count` files evenly across `tests` sorted, first included: every k-th.
+
+    Deterministic, so a re-push after a fix runs the same files again.
+    """
+    ordered = sorted(tests)
+    if count >= len(ordered):
+        return ordered
+    return [ordered[i * len(ordered) // count] for i in range(count)]
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return number
+
+
+def _budgeted(repo: Path, selected: list[Path], budget: int, why: str | None) -> list[Path]:
+    """At most `budget` files, and on stderr what that left out and why.
+
+    `why` is the reason a run without a budget would have been the full suite.
+    """
+    if why:
+        print(f"{why}; not running the full suite on a push (CI does)", file=sys.stderr)
+    if not selected:
+        everything = sorted((repo / "server" / "tests").rglob("test_*.py"))
+        sample = spread(everything, budget)
+        print(
+            f"budget: nothing narrower to run, so an even sample of {len(sample)} "
+            f"of {len(everything)} test files; CI runs the rest",
+            file=sys.stderr,
+        )
+        return sample
+    kept = selected[:budget]
+    if len(kept) < len(selected):
+        print(
+            f"budget: running the closest {len(kept)} of {len(selected)} selected "
+            f"test files; left {len(selected) - len(kept)} for CI, the first being "
+            f"{selected[budget].relative_to(repo).as_posix()}",
+            file=sys.stderr,
+        )
+    return kept
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, type=Path)
@@ -772,38 +830,52 @@ def main() -> int:
         action="store_true",
         help=f"keep only the tests within {NEAREST_HOPS} imports of the change (a push)",
     )
+    parser.add_argument(
+        "--budget",
+        type=_positive_int,
+        default=None,
+        help="print at most N files, closest first, and never ask for the full suite (a push)",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
-
-    paths = changed_files(repo, args.base)
-    if not paths:
-        print(f"no diff against {args.base}", file=sys.stderr)
-        _write_run_first(args.run_first_out, repo, [])
-        return EXIT_RUN_EVERYTHING
-
-    reason = full_suite_reason(paths)
-    try:
-        selected = run_first(repo, paths, NEAREST_HOPS if args.nearest else None)
-    except UnexaminableError as exc:
-        # A module whose imports are unknown may be the only path from a test
-        # to the change, so no subset is honest — not even as an order.
-        if reason:
-            print(reason, file=sys.stderr)
-        print(f"cannot map the import graph: {exc}", file=sys.stderr)
-        _write_run_first(args.run_first_out, repo, [])
-        return EXIT_RUN_EVERYTHING
-    _write_run_first(args.run_first_out, repo, selected)
-    if reason:
-        print(reason, file=sys.stderr)
-        return EXIT_RUN_EVERYTHING
-    if not selected:
-        # More often a hole in the graph than a module nothing tests.
-        print("no test file reaches the changed modules", file=sys.stderr)
+    selected, why = _selection(repo, args.base, args.nearest, args.run_first_out)
+    if args.budget is not None:
+        selected = _budgeted(repo, selected, args.budget, why)
+    elif why:
+        print(why, file=sys.stderr)
         return EXIT_RUN_EVERYTHING
 
     for path in selected:
         print(path.relative_to(repo).as_posix())
     return EXIT_SELECTED
+
+
+def _selection(
+    repo: Path, base: str, nearest: bool, run_first_out: Path | None
+) -> tuple[list[Path], str | None]:
+    """The tests to run first, closest first, and why the run should be the
+    full suite instead, if it should."""
+    paths = changed_files(repo, base)
+    if not paths:
+        _write_run_first(run_first_out, repo, [])
+        return [], f"no diff against {base}"
+
+    reason = full_suite_reason(paths)
+    try:
+        selected = run_first(repo, paths, NEAREST_HOPS if nearest else None)
+    except UnexaminableError as exc:
+        # A module whose imports are unknown may be the only path from a test
+        # to the change, so no subset is honest — not even as an order.
+        _write_run_first(run_first_out, repo, [])
+        prefix = f"{reason}\n" if reason else ""
+        return [], f"{prefix}cannot map the import graph: {exc}"
+    _write_run_first(run_first_out, repo, selected)
+    if reason:
+        return selected, reason
+    if not selected:
+        # More often a hole in the graph than a module nothing tests.
+        return [], "no test file reaches the changed modules"
+    return selected, None
 
 
 if __name__ == "__main__":

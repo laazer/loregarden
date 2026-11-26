@@ -310,7 +310,9 @@ def test_a_packages_own_file_reaches_everything_imported_from_it(hub_repo: Path)
 
 
 @pytest.mark.parametrize(
-    ("named_base", "reach"), [("", "--nearest"), ("origin/main", "")], ids=["push", "landing"]
+    ("named_base", "reach"),
+    [("", "--nearest --budget 40"), ("origin/main", "")],
+    ids=["push", "landing"],
 )
 def test_a_push_runs_the_nearest_and_a_named_range_runs_the_whole_reach(named_base, reach):
     result = subprocess.run(
@@ -326,6 +328,30 @@ def test_a_push_runs_the_nearest_and_a_named_range_runs_the_whole_reach(named_ba
         text = (_ROOT / ".lefthook" / "scripts" / script).read_text(encoding="utf-8")
         calls = [line for line in text.splitlines() if "--repo " in line and "--base " in line]
         assert calls and all('${SELECT_REACH[@]+"${SELECT_REACH[@]}"}' in line for line in calls)
+
+
+def _source_push_base(**env: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", "-euc", 'source "$0"; printf "%s" "${SELECT_REACH[*]}"']
+        + [str(_ROOT / ".lefthook" / "scripts" / "push-base.sh")],
+        capture_output=True,
+        text=True,
+        env=_SCRUBBED_ENV | {"LOREGARDEN_TESTS_BASE": ""} | env,
+        check=False,
+    )
+
+
+def test_a_push_takes_its_file_budget_from_the_environment():
+    result = _source_push_base(LOREGARDEN_PUSH_TEST_FILES="7")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "--nearest --budget 7"
+
+
+@pytest.mark.parametrize("budget", ["0", "-3", "forty", "4 0", "1.5"])
+def test_a_bad_push_file_budget_fails_the_push(budget):
+    result = _source_push_base(LOREGARDEN_PUSH_TEST_FILES=budget)
+    assert result.returncode != 0
+    assert "LOREGARDEN_PUSH_TEST_FILES" in result.stderr
 
 
 @pytest.fixture
@@ -737,6 +763,127 @@ def test_cli_runs_everything_when_a_module_cannot_be_parsed(git_repo: Path, body
     assert result.returncode == selector.EXIT_RUN_EVERYTHING, result.stdout
     assert "middle.py" in result.stderr, result.stderr
     assert result.stdout == "", result.stdout
+
+
+# --------------------------------------------------------------------------- #
+# --budget: a push never asks for the full suite
+# --------------------------------------------------------------------------- #
+
+
+def test_a_budget_keeps_the_closest_files(chain_repo: Path):
+    _git(chain_repo, "init", "-q", ".")
+    _git(chain_repo, "config", "user.email", "t@example.com")
+    _git(chain_repo, "config", "user.name", "t")
+    _git(chain_repo, "add", "-A")
+    _git(chain_repo, "commit", "-qm", "base")
+    (chain_repo / "server" / "loregarden" / "base.py").write_text("X = 1\n", encoding="utf-8")
+    _git(chain_repo, "commit", "-aqm", "change base")
+
+    result = _run_cli(chain_repo, "HEAD~1", "--budget", "3")
+
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == [
+        "server/tests/test_base.py",
+        "server/tests/test_one.py",
+        "server/tests/test_two.py",
+    ]
+    assert "3 of 4" in result.stderr and "test_three.py" in result.stderr
+
+
+def test_a_budget_wider_than_the_selection_changes_nothing(git_repo: Path):
+    leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
+    leaf.write_text("VALUE = 2\n", encoding="utf-8")
+    _git(git_repo, "commit", "-aqm", "change leaf")
+
+    result = _run_cli(git_repo, "HEAD~1", "--budget", "40")
+
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == _run_cli(git_repo, "HEAD~1").stdout.split()
+    assert result.stderr == ""
+
+
+def test_an_unmappable_path_runs_what_the_rest_of_the_diff_reaches(git_repo: Path):
+    (git_repo / ".gitignore").write_text("x: 1\n", encoding="utf-8")
+    leaf = git_repo / "server" / "loregarden" / "services" / "leaf.py"
+    leaf.write_text("VALUE = 2\n", encoding="utf-8")
+    _git(git_repo, "add", "-A")
+    _git(git_repo, "commit", "-qm", "touch repo config and leaf")
+
+    result = _run_cli(git_repo, "HEAD~1", "--budget", "1")
+
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == ["server/tests/test_dynamic.py"]
+    assert ".gitignore" in result.stderr
+
+
+def _commit_unmappable(repo: Path) -> str:
+    (repo / ".gitignore").write_text("x: 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "touch repo config")
+    return "HEAD~1"
+
+
+def _commit_orphan(repo: Path) -> str:
+    (repo / "server" / "loregarden" / "services" / "orphan.py").write_text("X = 1\n", "utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add orphan module")
+    return "HEAD~1"
+
+
+def _commit_unparseable(repo: Path) -> str:
+    pkg = repo / "server" / "loregarden" / "services"
+    (pkg / "middle.py").write_text("from loregarden.services.leaf import VALUE\ndef (:\n", "utf-8")
+    (pkg / "leaf.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _git(repo, "commit", "-aqm", "break middle, change leaf")
+    return "HEAD~1"
+
+
+@pytest.mark.parametrize(
+    ("change", "why"),
+    [
+        (_commit_unmappable, ".gitignore"),
+        (_commit_orphan, "no test file reaches"),
+        (lambda repo: "HEAD", "no diff against HEAD"),
+        (_commit_unparseable, "middle.py"),
+    ],
+    ids=["unmappable", "nothing-reachable", "empty-diff", "unparseable"],
+)
+def test_a_budget_samples_the_suite_where_it_would_have_run_everything(git_repo, change, why):
+    for extra in range(3):
+        (git_repo / "server" / "tests" / f"test_extra_{extra}.py").write_text(
+            "def test_e():\n    pass\n", encoding="utf-8"
+        )
+    _git(git_repo, "add", "-A")
+    _git(git_repo, "commit", "-qm", "more tests")
+    base = change(git_repo)
+
+    result = _run_cli(git_repo, base, "--budget", "2")
+
+    assert result.returncode == selector.EXIT_SELECTED, result.stderr
+    assert result.stdout.split() == [
+        "server/tests/test_dynamic.py",
+        "server/tests/test_extra_2.py",
+    ]
+    assert why in result.stderr
+    assert "sample of 2 of 6" in result.stderr
+
+
+def test_the_spread_is_even_deterministic_and_starts_at_the_first():
+    tests = [Path(f"test_{n:02d}.py") for n in range(10)]
+    picked = selector.spread(list(reversed(tests)), 3)
+    assert picked == [tests[0], tests[3], tests[6]]
+    assert selector.spread(tests, 3) == picked
+    assert selector.spread(tests, 10) == tests
+    assert selector.spread(tests, 25) == tests
+    assert selector.spread(tests, 1) == [tests[0]]
+
+
+@pytest.mark.parametrize("budget", ["0", "-1", "x"])
+def test_a_budget_must_be_a_positive_integer(git_repo: Path, budget: str):
+    result = _run_cli(git_repo, "HEAD", "--budget", budget)
+    assert result.returncode == 2
+    assert "--budget" in result.stderr and "unrecognized" not in result.stderr
+    assert result.stdout == ""
 
 
 def test_cli_narrows_a_change_to_agent_prose(prose_repo: Path):

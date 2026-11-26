@@ -6,9 +6,11 @@
 # The lint steps still run over everything; they cost seconds. pytest does not:
 # the full suite is five minutes on an idle machine and worse under load, which
 # is how a pre-push hook teaches people to reach for --no-verify.
-# select_pytest_targets.py walks the import graph and falls back to the full
-# suite whenever it cannot map a change (see its docstring — the bias is toward
-# running too much).
+# select_pytest_targets.py walks the import graph. A push never runs the full
+# suite: it runs at most LOREGARDEN_PUSH_TEST_FILES (default 40) files nearest
+# the change, or an even sample of the suite when it cannot map the change, and
+# says what it left out (push-base.sh). A landing falls back to the full suite
+# whenever it cannot map a change (see the selector's docstring).
 #
 # This means a green push no longer *proves* green CI. CI still runs the whole
 # suite on every PR, so a miss costs a slower signal, not an unguarded merge.
@@ -78,7 +80,42 @@ RUN_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/loregarden-pytest-XXXXXX")"
 # report COULD NOT RUN for a suite that ran.
 BASETEMP="$RUN_TEMP/pytest"
 mkdir -p "$BASETEMP"
-trap 'rc=$?; progress_finish "$rc"; rm -rf "$RUN_TEMP" 2>/dev/null || true' EXIT
+# A push's time budget: what the whole run (lint, selection, pytest) should take
+# under the file budget in push-base.sh. Reported at the end of every push run,
+# never enforced: a slow push under load is the ledger's problem, not a defect.
+PUSH_BUDGET_SECONDS="${LOREGARDEN_PUSH_BUDGET_SECONDS:-300}"
+if ! [[ "$PUSH_BUDGET_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "server-tests: LOREGARDEN_PUSH_BUDGET_SECONDS must be a positive integer, got '$PUSH_BUDGET_SECONDS'" >&2
+  exit 2
+fi
+# The hard ceiling, push or landing: no hook test run passes it. wall_limit.py
+# stops pytest at this many seconds from the start of this script and names
+# the slowest files so far. The push budget above only reports; this one fails.
+TEST_WALL_LIMIT_SECONDS="${LOREGARDEN_TEST_WALL_LIMIT_SECONDS:-1800}"
+if ! [[ "$TEST_WALL_LIMIT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "server-tests: LOREGARDEN_TEST_WALL_LIMIT_SECONDS must be a positive integer, got '$TEST_WALL_LIMIT_SECONDS'" >&2
+  exit 2
+fi
+RUN_STARTED=$SECONDS
+LEFTHOOK_SCRIPTS="$ROOT/.lefthook/scripts"
+RAN_FILES=0
+FULL_SUITE_REASON=""
+# Every push run, however it ends: its time against the budget, and a line in
+# push_run_log.py, which counts the full-suite runs. A landing is not a push.
+push_run_finish() {
+  local rc="$1" elapsed=$((SECONDS - RUN_STARTED)) requested=()
+  [ -z "${LOREGARDEN_TESTS_BASE:-}" ] || return 0
+  echo "pre-push: server-tests took ${elapsed}s of a ${PUSH_BUDGET_SECONDS}s budget"
+  if [ "$elapsed" -gt "$PUSH_BUDGET_SECONDS" ]; then
+    echo "pre-push: over budget by $((elapsed - PUSH_BUDGET_SECONDS))s (push_run_log.py report shows the trend)"
+  fi
+  [ -z "${LOREGARDEN_FULL_TESTS:-}" ] || requested=(--requested)
+  bash "$LEFTHOOK_SCRIPTS/server_python.sh" "$LEFTHOOK_SCRIPTS/push_run_log.py" record \
+    --repo "$ROOT" --elapsed "$elapsed" --budget "$PUSH_BUDGET_SECONDS" --exit "$rc" \
+    --files "$RAN_FILES" --full-suite-reason "$FULL_SUITE_REASON" ${requested[@]+"${requested[@]}"} ||
+    echo "pre-push: WARNING: could not record this run in push_run_log.py; the push itself is unaffected" >&2
+}
+trap 'rc=$?; progress_finish "$rc"; push_run_finish "$rc"; rm -rf "$RUN_TEMP" 2>/dev/null || true' EXIT
 STEPS=5
 [ -n "$LINT_ONLY" ] && STEPS=3
 progress_begin "server-tests" "$STEPS"
@@ -127,7 +164,7 @@ if [ -n "$LINT_ONLY" ]; then
   exit 0
 fi
 
-BASE="$(push_base "$ROOT")"
+BASE="$(select_base "$ROOT")"
 
 progress_step "select tests"
 TARGETS=""
@@ -150,6 +187,9 @@ else
   if [ $SELECT_STATUS -ne 0 ]; then
     TARGETS=""
     SELECT_REASON="$(cat "$ERR_FILE")"
+  elif [ -s "$ERR_FILE" ]; then
+    # A push's budget: what it left out, and why it did not run everything.
+    sed 's/^/pre-push: /' "$ERR_FILE"
   fi
   rm -f "$ERR_FILE"
 fi
@@ -171,8 +211,15 @@ export PYTHONPATH="$ROOT/.lefthook/scripts${PYTHONPATH:+:$PYTHONPATH}"
 # code was, and a run that recorded no count at all fails it differently.
 export LOREGARDEN_TEST_COUNT_FILE="$RUN_TEMP/test-count.json"
 
+# Per-file times so far (pytest_file_durations.py), which wall_limit.py names
+# when it stops a run; and that limit, counted from the start of this script.
+export LOREGARDEN_FILE_DURATIONS_FILE="$RUN_TEMP/file-durations.json"
+WALL_LIMIT=(python3 "$LEFTHOOK_SCRIPTS/wall_limit.py" --seconds "$TEST_WALL_LIMIT_SECONDS"
+  --elapsed "$((SECONDS - RUN_STARTED))" --durations "$LOREGARDEN_FILE_DURATIONS_FILE" --)
+
 if [ -z "$TARGETS" ]; then
-  echo "pre-push: full pytest run — ${SELECT_REASON:-selection unavailable}"
+  FULL_SUITE_REASON="${SELECT_REASON:-selection unavailable}"
+  echo "pre-push: full pytest run — $FULL_SUITE_REASON"
   # pytest runs from server/; the selector names files from the repo root.
   RUN_FIRST="$RUN_TEMP/run-first.txt"
   sed 's#^server/##' "$RUN_FIRST_REPO" > "$RUN_FIRST"
@@ -181,8 +228,8 @@ if [ -z "$TARGETS" ]; then
     echo "pre-push: running first the ${RUN_FIRST_COUNT} test file(s) the change reaches, then the rest"
   fi
   progress_step "pytest, full suite"
-  run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress \
+  run_and_judge pytest -- "${WALL_LIMIT[@]}" env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress -p pytest_file_durations \
     -p pytest_run_first --run-first="$RUN_FIRST"
 else
   # Paths arrive repo-relative; pytest runs from server/.
@@ -200,10 +247,11 @@ else
     FILES+=("$rel")
   done <<< "$TARGETS"
 
+  RAN_FILES=${#FILES[@]}
   echo "pre-push: ${#FILES[@]} test file(s) reach the pushed changes, closest first:"
   printf '  %s\n' "${FILES[@]}"
   echo "pre-push: (CI runs the full suite; LOREGARDEN_FULL_TESTS=1 to run it here)"
   progress_step "pytest on ${#FILES[@]} file(s)"
-  run_and_judge pytest -- env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
-    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress "${FILES[@]}"
+  run_and_judge pytest -- "${WALL_LIMIT[@]}" env LOREGARDEN_REPO_ROOT="$ROOT" "${TEST_NICE[@]}" "${RUN[@]}" \
+    pytest -x --ff -q -n "$TEST_WORKERS" --basetemp="$BASETEMP" --maxschedchunk=1 -p pytest_push_progress -p pytest_file_durations "${FILES[@]}"
 fi

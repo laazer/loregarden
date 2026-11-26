@@ -23,7 +23,7 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # asks; whenever that run would be the full suite, the answer is yes.
 server_tests_need_client() {
   local base targets
-  base="$(push_base "$ROOT")"
+  base="$(select_base "$ROOT")"
   if [ -n "${LOREGARDEN_FULL_TESTS:-}" ] || [ -z "$base" ]; then
     return 0
   fi

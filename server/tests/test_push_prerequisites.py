@@ -157,7 +157,7 @@ def test_the_same_selection_passes_once_installed(checkout):
 
 def test_a_run_that_will_be_the_full_suite_asks_for_the_client(checkout):
     """Selector refuses to narrow, narrows to nothing, names a test that is not
-    there, is told to run everything, or has nothing to diff against."""
+    there, or is told to run everything."""
     assert checkout.check("server-tests", LOREGARDEN_FULL_TESTS="1").returncode == 1
 
     checkout.selects(("test_plain.py", PLAIN), exit_code=2)
@@ -171,9 +171,25 @@ def test_a_run_that_will_be_the_full_suite_asks_for_the_client(checkout):
     assert checkout.check("server-tests").returncode == 1
 
 
-def test_with_no_base_the_server_suite_is_the_full_one(checkout):
+def test_with_no_base_the_selector_samples_from_head_and_its_sample_decides(checkout):
+    """A push never runs the full suite (push-base.sh), so with no base the selector
+    is asked about HEAD, samples, and only what it samples can need the client."""
     git(checkout.root, "update-ref", "-d", "refs/remotes/origin/main")
+    head = git(checkout.root, "rev-parse", "HEAD").stdout.strip()
+    selector = checkout.root / ".lefthook" / "scripts" / "select_pytest_targets.py"
+    (checkout.root / "server/tests/test_gate.py").write_text(NEEDS_CLIENT, encoding="utf-8")
 
+    def sample(name: str) -> None:
+        selector.write_text(
+            "import sys\n"
+            f"base = sys.argv[sys.argv.index('--base') + 1]\n"
+            f"print('server/tests/{name}' if base in ('HEAD', {head!r}) else 'wrong-base')\n",
+            encoding="utf-8",
+        )
+
+    sample("test_plain.py")
+    assert checkout.check("server-tests").returncode == 0
+    sample("test_gate.py")
     assert checkout.check("server-tests").returncode == 1
 
 
