@@ -38,6 +38,7 @@ from loregarden.services.worktree_lifecycle import KeepReason, checkout_loss
 from loregarden.services.worktree_snapshot import read_tree
 from sqlmodel import Session
 from tests.repo_paths import REPO_ROOT
+from tests.source_ast import parse_source
 from tests.worktree_helpers import git, make_repo
 
 LINK = "client/node_modules"
@@ -347,7 +348,7 @@ def _sweeps_a_tree(words: list[str]) -> bool:
 def _unguarded_sweeps(source: str) -> list[int]:
     """Lines of argument lists that read or stage a whole tree without the helper."""
     found = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(parse_source(source)):
         items = getattr(node, "elts", None) or getattr(node, "args", None)
         if type(items) is not list:  # a `def`'s `args` is not a list of expressions
             continue

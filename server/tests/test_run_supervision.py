@@ -37,6 +37,7 @@ from loregarden.services.run_lease import (
 from loregarden.services.run_service import settle_expired_agent_runs
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session
+from tests.source_ast import parse_path
 
 SERVICES = Path(run_service.__file__).resolve().parent.parent
 
@@ -166,7 +167,7 @@ _CAPACITY = {"run_capacity", "host_capacity_for_run"}
 def _direct_capacity_entries(path: Path) -> list[int]:
     """Lines where a `with` enters run capacity itself, not via `supervised`."""
     lines = []
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+    for node in ast.walk(parse_path(path)):
         if not isinstance(node, ast.With | ast.AsyncWith):  # py-org: allow-isinstance
             continue
         for item in node.items:

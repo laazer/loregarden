@@ -50,6 +50,7 @@ from typing import NamedTuple
 
 import pytest
 from loregarden.services import ticket_workspace_binding as binding_module
+from tests.source_ast import parse_path, parse_source
 
 #: The module that owns the answer, and so the one place allowed the raw lookup.
 #: The allowlist holds the accessor module alone: leaving the canonical idiom
@@ -256,7 +257,7 @@ def nullable_workspace_id_classes(source: str) -> frozenset[str]:
     class is picked up without editing a real model module — and what makes it
     accumulable over a directory without knowing any filename.
     """
-    tree = ast.parse(source)
+    tree = parse_source(source)
     nullable: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
@@ -750,7 +751,7 @@ def workspace_lookups(source: str, label: str, index: TypeIndex | None = None) -
     `resolved` is the receiver's class name, or `""` when this walk could not
     resolve it. `""` is a failure, not a pass — see the fail-closed test.
     """
-    tree = ast.parse(source)
+    tree = parse_source(source)
     resolved_index = index if index is not None else _index_for(tree)
     workspace_names = _workspace_spellings(tree)
     lookups: list[Lookup] = []
@@ -848,7 +849,7 @@ def package_scan() -> PackageScan:
     sources = _package_sources()
     index = TypeIndex()
     for _, source in sources:
-        index.add_module(ast.parse(source))
+        index.add_module(parse_source(source))
     lookups: list[Lookup] = []
     scanned = 0
     model_modules = 0
@@ -1215,7 +1216,7 @@ def _scan_over(source: str, label: str, nullable_roots: frozenset[str]) -> Packa
     disk: the derivation and the expansion are the real ones, the sources are
     not.
     """
-    index = _index_for(ast.parse(source))
+    index = _index_for(parse_source(source))
     lookups = workspace_lookups(source, label, index)
     return PackageScan(
         sorted(lookups),
@@ -1301,7 +1302,7 @@ def f(session, row: ArchivedEvent):
 """
     roots = nullable_workspace_id_classes(source)
     assert roots == {"DomainEvent"}, f"the synthetic root did not derive: {sorted(roots)}"
-    index = _index_for(ast.parse(source))
+    index = _index_for(parse_source(source))
     names = nullable_receiver_names(index, roots)
     assert {"ArchivedEvent", "EventRow"} <= names, (
         f"the nullable receiver set is {sorted(names)}: a subclass inherits the nullable "
@@ -1394,7 +1395,7 @@ def test_every_workspace_id_annotation_in_the_model_package_is_readable():
     for path in sorted((_package_root() / MODEL_PACKAGE).rglob("*.py")):
         model_modules += 1
         relative = path.relative_to(_package_root())
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        for node in ast.walk(parse_path(path)):
             if not isinstance(node, ast.ClassDef):
                 continue
             for child in node.body:
@@ -1617,7 +1618,7 @@ class SpecialTicket(Ticket):
 def f(session, ticket: SpecialTicket):
     return session.get(Workspace, ticket.workspace_id)
 """
-    index = _index_for(ast.parse(source))
+    index = _index_for(parse_source(source))
     found = workspace_lookups(source, "subclass", index)
     assert [lookup.resolved for lookup in found] == ["SpecialTicket"]
     assert "SpecialTicket" in index.names_for(TICKET_CLASS), (
@@ -1637,7 +1638,7 @@ TicketRow = Ticket
 def f(session, ticket: TicketRow):
     return session.get(Workspace, ticket.workspace_id)
 """
-    index = _index_for(ast.parse(source))
+    index = _index_for(parse_source(source))
     found = workspace_lookups(source, "alias", index)
     assert [lookup.resolved for lookup in found] == ["TicketRow"]
     assert "TicketRow" in index.names_for(TICKET_CLASS), (

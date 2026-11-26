@@ -25,6 +25,7 @@ import pytest
 from loregarden.mcp.tool_args import FINDING_SCHEMA
 from loregarden.models.domain.provenance import Provenance
 from loregarden.services.operations.run_callbacks import StageFinding
+from tests.source_ast import parse_path
 
 # --------------------------------------------------------------------------- #
 # AC9 — the value
@@ -82,7 +83,7 @@ def test_no_caller_types_a_registration_site_as_a_literal_keyword():
             continue
         calls = [
             node
-            for node in ast.walk(ast.parse(py.read_text(encoding="utf-8")))
+            for node in ast.walk(parse_path(py))
             if type(node) is ast.Call
             and (getattr(node.func, "id", "") or getattr(node.func, "attr", "")) == "Provenance"
         ]
@@ -137,7 +138,7 @@ def test_the_schema_the_tool_actually_advertises_carries_the_same_asymmetry():
 def _provenance_calls(path: Path) -> list[ast.Call]:
     return [
         node
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in ast.walk(parse_path(path))
         if type(node) is ast.Call
         and (getattr(node.func, "id", "") or getattr(node.func, "attr", "")) == "Provenance"
     ]
@@ -172,7 +173,7 @@ def test_no_caller_reaches_the_field_through_a_copy_or_a_dict_update():
     `replace(p, registered_at="...")`, a dict literal fed to the model)."""
     offenders: list[str] = []
     for py in _server_python_files():
-        for node in ast.walk(ast.parse(py.read_text(encoding="utf-8"))):
+        for node in ast.walk(parse_path(py)):
             if type(node) is not ast.Dict:
                 continue
             for key, value in zip(node.keys, node.values):

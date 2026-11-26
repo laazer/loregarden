@@ -68,6 +68,7 @@ from sqlmodel import Session, select
 from tests.factories import make_ticket
 from tests.mcp_helpers import call_mcp
 from tests.repo_paths import REPO_ROOT
+from tests.source_ast import parse_path
 
 SERVER_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = SERVER_ROOT / "loregarden"
@@ -1048,7 +1049,7 @@ def _call_write(node: ast.Call, *, ticket_aware: bool) -> str:
 
 def _module_write_sites(path: pathlib.Path, rel: str) -> dict[str, list[str]]:
     """One module's ticket-content write sites, by `module::function`."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = parse_path(path)
     ticket_aware = _is_ticket_aware(tree)
     owners = _function_owners(tree)
     sites: dict[str, list[str]] = {}
@@ -1085,7 +1086,7 @@ def _content_write_sites(
 
 def _guard_calls(path: pathlib.Path, function: str) -> set[str]:
     """Which growth guards `function` calls, anywhere inside its own body."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = parse_path(path)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function:
             return {

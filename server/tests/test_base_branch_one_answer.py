@@ -59,6 +59,7 @@ from loregarden.services.tree_publish_scheduler import (
     report_publish_failure,
 )
 from sqlmodel import Session, select
+from tests.source_ast import parse_path, parse_source
 from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
 
 LOGGER_NAME = "loregarden.services.git_automation_config"
@@ -123,7 +124,7 @@ def _assignment_targets(node: ast.AST) -> list[ast.AST]:
 
 def resolver_base_branch_reads(source: str, label: str) -> list[str]:
     """Every `base_branch` read that resolves a base, as ``label:lineno``."""
-    tree = ast.parse(source)
+    tree = parse_source(source)
     scopes = [
         node
         for node in ast.walk(tree)
@@ -232,7 +233,7 @@ def test_overridable_is_the_model_fields_minus_the_deliberate_exclusions():
 
     [assignment] = [
         node
-        for node in ast.parse(Path(gac_module.__file__).read_text(encoding="utf-8")).body
+        for node in parse_path(Path(gac_module.__file__)).body
         if isinstance(node, ast.Assign)
         and any(
             isinstance(target, ast.Name) and target.id == "OVERRIDABLE" for target in node.targets
@@ -603,7 +604,7 @@ def _string_spelling(node: ast.AST) -> bool:
 
 def base_branch_reads_not_handed_in(source: str, label: str) -> list[str]:
     """Every `base_branch` read whose config was not handed to the reader."""
-    tree = ast.parse(source)
+    tree = parse_source(source)
     reads: list[str] = []
 
     def walk(scope: ast.AST, handed_in: set[str], tainted: set[str]) -> None:
@@ -628,7 +629,7 @@ def base_branch_reads_not_handed_in(source: str, label: str) -> list[str]:
 def _all_base_branch_attribute_reads(source: str) -> int:
     return sum(
         1
-        for node in ast.walk(ast.parse(source))
+        for node in ast.walk(parse_source(source))
         if isinstance(node, ast.Attribute)
         and node.attr == "base_branch"
         and isinstance(node.ctx, ast.Load)
@@ -729,7 +730,7 @@ def _exclusion_set_name() -> str:
     """The name of the deliberate-exclusion set, read off the `OVERRIDABLE` line."""
     [assignment] = [
         node
-        for node in ast.parse(Path(gac_module.__file__).read_text(encoding="utf-8")).body
+        for node in parse_path(Path(gac_module.__file__)).body
         if isinstance(node, ast.Assign)
         and any(
             isinstance(target, ast.Name) and target.id == "OVERRIDABLE" for target in node.targets

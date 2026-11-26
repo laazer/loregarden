@@ -25,6 +25,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.source_ast import parse_source
+
 TESTS_DIR = Path(__file__).parent
 
 #: Identifier fragments that mark a value as a *measured* quantity rather than a
@@ -165,7 +167,7 @@ def _caps_a_duration(comparison: ast.Compare) -> bool:
 def _bounds_in(source: str) -> list[str]:
     """Every `assert` that caps a measured duration with a numeric literal."""
     found: list[str] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(parse_source(source)):
         if not isinstance(node, ast.Assert):  # py-org: allow-isinstance
             continue
         for comparison in ast.walk(node.test):

@@ -40,6 +40,7 @@ from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds, decision_payloads
+from tests.source_ast import parse_path
 
 IMPLEMENT = "implement"
 REVIEW = "review"
@@ -612,7 +613,7 @@ def test_only_arm_repair_turn_pins_the_repair_agent():
     root = Path(__file__).resolve().parents[1] / "loregarden"
     pinning: list[str] = []
     for path in root.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        for node in ast.walk(parse_path(path)):
             if not isinstance(node, ast.Call):  # py-org: allow-isinstance — AST node dispatch
                 continue
             for keyword in node.keywords:

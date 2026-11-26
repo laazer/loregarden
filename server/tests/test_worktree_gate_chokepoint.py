@@ -42,6 +42,7 @@ from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import KeepReason
 from loregarden.services.worktree_service import WorktreeRefreshError, WorktreeService
 from sqlmodel import Session, select
+from tests.source_ast import parse_path
 from tests.worktree_helpers import git, grant_receipt, make_repo
 
 SERVER = Path(__file__).resolve().parents[1] / "loregarden"
@@ -112,7 +113,7 @@ def _row(session, ticket) -> Worktree:
 
 
 def _calls_named(path: Path, name: str) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = parse_path(path)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue

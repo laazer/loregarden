@@ -40,6 +40,7 @@ from loregarden.services.reference_survey.passes import (
 )
 from loregarden.services.reference_survey.schemas import ReadIn
 from sqlmodel import Session
+from tests.source_ast import parse_path
 from tests.survey_support import build_world, running_pass, write_tree
 
 BUDGET = 4
@@ -198,7 +199,7 @@ def test_a_directory_of_loose_files_splits_into_its_loose_leaf(tmp_path) -> None
 def _store_map_calls() -> list[ast.Call]:
     calls = []
     for path in Path(loregarden.__file__).parent.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(parse_path(path)):
             if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "store_map":
                 calls.append(node)
     return calls

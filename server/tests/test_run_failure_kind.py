@@ -28,6 +28,7 @@ from loregarden.services.run_failure_invariant import (
 )
 from sqlmodel import Session
 from tests.factories import make_agent_run, make_workspace
+from tests.source_ast import parse_path, parse_source
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[1] / "loregarden"
 _HELPER = "services/run_failure.py"
@@ -114,8 +115,7 @@ def failed_status_writes(tree: ast.Module) -> list[str]:
 
 
 def _parse(relative: str) -> ast.Module:
-    path = _SOURCE_ROOT / relative
-    return ast.parse(path.read_text(), filename=str(path))
+    return parse_path(_SOURCE_ROOT / relative)
 
 
 @pytest.fixture(name="trees", scope="module")
@@ -158,7 +158,7 @@ def test_the_scan_sees_the_helpers_own_write():
     ],
 )
 def test_the_scan_catches_each_shape_of_direct_write(source: str):
-    assert failed_status_writes(ast.parse(source)), source
+    assert failed_status_writes(parse_source(source)), source
 
 
 @pytest.mark.parametrize(("relative", "function"), _KNOWN_WRITERS)

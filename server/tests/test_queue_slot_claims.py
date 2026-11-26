@@ -187,26 +187,38 @@ def test_the_shared_predicate_does_not_close_an_import_cycle():
     now has to import back. Function-local imports are not the way out of that
     (CLAUDE.md: fix the cycle), so this imports each module first in a fresh
     interpreter — the order that fails is the one a real entry point hits.
+    The interpreters are independent, so they start together rather than one
+    after another.
     """
-    for first in (
-        "loregarden.services.parallel_queue",
-        "loregarden.services.queue_slot_claims",
-        "loregarden.services.queue_lanes",
-        "loregarden.services.invariant_registry",
-        "loregarden.services.reconciliation",
-    ):
-        done = subprocess.run(  # noqa: S603
+    started = {
+        first: subprocess.Popen(  # noqa: S603
             [
                 sys.executable,
                 "-c",
                 f"import {first}; import loregarden.services.queue_lanes",
             ],
             cwd=REPO_ROOT / "server",
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
         )
-        assert done.returncode == 0, f"importing {first} first fails:\n{done.stderr}"
+        for first in (
+            "loregarden.services.parallel_queue",
+            "loregarden.services.queue_slot_claims",
+            "loregarden.services.queue_lanes",
+            "loregarden.services.invariant_registry",
+            "loregarden.services.reconciliation",
+        )
+    }
+    failures = {
+        first: stderr
+        for first, process in started.items()
+        for _stdout, stderr in [process.communicate()]
+        if process.returncode != 0
+    }
+    assert not failures, "".join(
+        f"importing {first} first fails:\n{stderr}\n" for first, stderr in failures.items()
+    )
 
 
 # ---- the truth table, every corner (test-break) -----------------------------

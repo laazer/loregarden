@@ -30,6 +30,7 @@ from loregarden.services.run_service import RunService
 from loregarden.services.work_admission import OrchestrationStart, start_orchestration_admitted
 from sqlmodel import Session, select
 from tests.factories import make_ticket, make_workspace
+from tests.source_ast import parse_path
 
 PACKAGE = Path(__file__).resolve().parents[1] / "loregarden"
 BUILTIN = OrchestrationDriver.BUILTIN_AUTOPILOT
@@ -57,7 +58,7 @@ def test_no_start_path_reads_the_profiles_stated_driver():
     """Every start resolves through `unattended_driver`; a new one must too."""
     readers = set()
     for path in PACKAGE.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        for node in ast.walk(parse_path(path)):
             if (
                 isinstance(node, ast.Attribute)
                 and node.attr == "driver"

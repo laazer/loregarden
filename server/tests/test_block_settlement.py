@@ -40,6 +40,7 @@ from loregarden.services.repair_brief import repair_brief_for
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
+from tests.source_ast import parse_source
 
 PARALLEL_STAGE = "script_review"
 
@@ -422,7 +423,7 @@ def _sources() -> dict[str, str]:
 
 @functools.cache
 def _tree(relative: str) -> ast.Module:
-    return ast.parse(_sources()[relative], filename=relative)
+    return parse_source(_sources()[relative], relative)
 
 
 def _trees_mentioning(*needles: str) -> list[tuple[str, ast.Module]]:

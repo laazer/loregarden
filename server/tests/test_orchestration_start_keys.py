@@ -47,6 +47,7 @@ from loregarden.services.start_key_invariants import (
 from loregarden.services.work_admission import OrchestrationStart, start_orchestration_admitted
 from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
+from tests.source_ast import parse_path
 
 PACKAGE = Path(loregarden.__file__).parent
 EXECUTE = "loregarden.services.builtin_orchestrator.BuiltinOrchestrator.execute"
@@ -226,7 +227,7 @@ def test_only_one_place_ends_an_orchestration_run():
     """
     writers = set()
     for path in PACKAGE.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        for node in ast.walk(parse_path(path)):
             if not isinstance(node, ast.Assign):
                 continue
             value = ast.unparse(node.value)

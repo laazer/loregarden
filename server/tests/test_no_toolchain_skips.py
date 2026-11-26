@@ -11,6 +11,7 @@ import ast
 from pathlib import Path
 
 import pytest
+from tests.source_ast import parse_source
 
 # A registry check: runs on pre-commit (.lefthook/scripts/registry-checks.sh).
 pytestmark = pytest.mark.registry
@@ -24,7 +25,7 @@ _SKIPS = {"skip", "skipif", "importorskip"}
 
 def toolchain_skips(source: str) -> list[int]:
     """Lines where a pytest skip mentions a required tool."""
-    tree = ast.parse(source)
+    tree = parse_source(source)
     lines = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):  # py-org: allow-isinstance

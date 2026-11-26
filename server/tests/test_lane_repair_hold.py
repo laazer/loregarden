@@ -42,6 +42,7 @@ from loregarden.services.queue_repair import (
 from loregarden.services.run_interruption import INTERRUPTED_RUN_MESSAGE
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
+from tests.source_ast import parse_path
 from tests.test_block_repair import (  # noqa: F401 - fixtures are used by name
     REVIEWER,
     WORKER,
@@ -496,7 +497,7 @@ def test_every_lane_hold_re_arms_its_stage():
     callers = sorted(
         f"{path.relative_to(services)}::{func.name}"
         for path in services.rglob("*.py")
-        for func in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for func in ast.walk(parse_path(path))
         if type(func) is ast.FunctionDef
         for node in ast.walk(func)
         if type(node) is ast.Call
