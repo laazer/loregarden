@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import yaml
 from loregarden.config import settings
+from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     Ticket,
     WorkflowStageDef,
@@ -220,19 +221,40 @@ def get_template_stages_at_version(
     in-flight ticket runs against the definition it started under even if the
     template is later edited. Falls back to the live template when unpinned
     (pre-versioning rows) or when the snapshot is missing."""
-    if version is None or version == template.version:
+    snap = _pinned_snapshot(session, template, version)
+    if snap is None:
         return get_template_stages(template)
+    raw = json.loads(snap.get("stages_json") or "[]")
+    return [WorkflowStageDef.model_validate(item) for item in raw]
+
+
+def get_template_transitions_at_version(
+    session: Session, template: WorkflowTemplate, version: int | None
+) -> list[dict[str, str]]:
+    """The transitions that go with `get_template_stages_at_version`'s stages.
+
+    The two must come from the same version. Transitions used to be read from the
+    live template whatever the pin, so an edit that added a stage (`implement` →
+    `verify`) sent every ticket pinned before it to a stage it does not have.
+    """
+    snap = _pinned_snapshot(session, template, version)
+    raw = template.transitions_json if snap is None else snap.get("transitions_json") or "[]"
+    return StateMachine.parse_transitions(raw)
+
+
+def _pinned_snapshot(
+    session: Session, template: WorkflowTemplate, version: int | None
+) -> dict | None:
+    """The snapshot a pin resolves to, or None where the live template answers."""
+    if version is None or version == template.version:
+        return None
     row = session.exec(
         select(WorkflowTemplateVersion).where(
             WorkflowTemplateVersion.template_id == template.id,
             WorkflowTemplateVersion.version == version,
         )
     ).first()
-    if not row:
-        return get_template_stages(template)
-    snap = json.loads(row.snapshot_json or "{}")
-    raw = json.loads(snap.get("stages_json") or "[]")
-    return [WorkflowStageDef.model_validate(item) for item in raw]
+    return json.loads(row.snapshot_json or "{}") if row else None
 
 
 def stage_display_name(template: WorkflowTemplate, stage_key: str) -> str:

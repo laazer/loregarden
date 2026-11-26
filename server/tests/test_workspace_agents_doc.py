@@ -147,7 +147,8 @@ def test_an_explicit_slug_overrides_the_recorded_one(tmp_path: Path):
     assert _install(target, slug="lore-eden") == 0
     text = target.read_text()
     assert "workspace_slug=lore-eden" in text
-    assert "blobert" not in text
+    # The slug, not the bare word: the rendered paths name this checkout, which may contain it.
+    assert "workspace_slug=blobert" not in text
 
 
 def test_paths_point_into_the_loregarden_checkout(tmp_path: Path):

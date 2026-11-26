@@ -63,6 +63,7 @@ CHECKED_AGENTS = frozenset(
         "static_qa",
         "security_reviewer",
         "gdscript_reviewer",
+        "python_reviewer",
         "verifier",
         "gatekeeper",
         "ac_gatekeeper",

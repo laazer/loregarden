@@ -120,6 +120,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "python_reviewer": {
+        "name": "Python Reviewer",
+        "role_file": "agents/misc_agents/python_reviewer_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
     "verifier": {
         "name": "Verifier",
         "role_file": "agents/misc_agents/verifier_v1.md",

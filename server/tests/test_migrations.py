@@ -483,7 +483,10 @@ def test_backfill_runs_against_a_populated_db(tmp_path):
             text("SELECT created_by, change_note, created_at FROM studio_agent_versions")
         ).fetchall()
         tpl_versions = conn.execute(
-            text("SELECT created_by, change_note, created_at FROM workflow_template_versions")
+            text(
+                "SELECT created_by, change_note, created_at FROM workflow_template_versions "
+                "WHERE template_id='tpl-1'"
+            )
         ).fetchall()
 
     assert len(agent_versions) == 1

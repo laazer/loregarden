@@ -426,8 +426,12 @@ def _pin_reject_agent(
 
 
 def normalize_transitions_for_api(transitions_json: str) -> list[dict[str, str]]:
-    """Normalize template transitions for API/UI (handles YAML `when` and legacy `on` quirks)."""
-    items = StateMachine.parse_transitions(transitions_json)
+    """Normalize a template's stored transitions for API/UI."""
+    return normalize_transitions(StateMachine.parse_transitions(transitions_json))
+
+
+def normalize_transitions(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Normalize parsed transitions for API/UI (handles YAML `when` and legacy `on` quirks)."""
     normalized: list[dict[str, str]] = []
     for item in items:
         when = StateMachine._transition_when(item)
