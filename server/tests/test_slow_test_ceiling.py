@@ -31,8 +31,17 @@ def pytest_configure(config):
 
 FIXTURE_TESTS = """
 import time
+from pathlib import Path
 
 import pytest
+
+
+def _first_time(name):
+    marker = Path(name)
+    if marker.exists():
+        return False
+    marker.write_text("seen")
+    return True
 
 
 @pytest.fixture
@@ -83,10 +92,21 @@ def test_slow_and_inherited():
 def test_slow_and_already_failing():
     time.sleep(0.3)
     assert False, "its own failure"
+
+
+def test_slow_only_the_first_time():
+    if _first_time("slow-once"):
+        time.sleep(0.3)
+
+
+def test_failing_only_the_first_time():
+    assert not _first_time("fail-once"), "a flaky assertion"
 """
 
 
-def _run(tmp_path: Path, extra_env: dict[str, str]) -> tuple[dict[str, ET.Element], str]:
+def _run(
+    tmp_path: Path, extra_env: dict[str, str], extra_args: tuple[str, ...] = ()
+) -> tuple[dict[str, ET.Element], str]:
     (tmp_path / "conftest.py").write_text(FIXTURE_CONFTEST)
     (tmp_path / "test_fixture.py").write_text(FIXTURE_TESTS)
     junit = tmp_path / "junit.xml"
@@ -103,6 +123,7 @@ def _run(tmp_path: Path, extra_env: dict[str, str]) -> tuple[dict[str, ET.Elemen
             "-p",
             "no:xdist",
             f"--junitxml={junit}",
+            *extra_args,
             "--rootdir",
             str(tmp_path),
             str(tmp_path),
@@ -114,6 +135,8 @@ def _run(tmp_path: Path, extra_env: dict[str, str]) -> tuple[dict[str, ET.Elemen
         check=False,
         timeout=120,
     )
+    if not junit.exists():
+        return {}, run.stdout + run.stderr
     cases = ET.parse(junit).getroot().iter("testcase")
     return {case.get("name"): case for case in cases}, run.stdout
 
@@ -202,3 +225,18 @@ def test_off_ci_a_blank_reason_still_fails(local):
     cases, _ = local
 
     assert "needs a non-empty reason" in (_failure(cases["test_marked_with_a_blank_reason"]) or "")
+
+
+def test_a_breach_that_does_not_repeat_on_the_warm_rerun_passes(enforced):
+    assert _failure(enforced["test_slow_only_the_first_time"]) is None
+
+
+def test_only_a_breach_is_rerun_never_a_failing_assertion(enforced):
+    assert "a flaky assertion" in (_failure(enforced["test_failing_only_the_first_time"]) or "")
+
+
+def test_ci_refuses_to_enforce_without_the_rerun(tmp_path):
+    cases, output = _run(tmp_path, {"CI": "true"}, ("-p", "no:rerunfailures"))
+
+    assert cases == {}
+    assert "pytest-rerunfailures is not installed" in output
