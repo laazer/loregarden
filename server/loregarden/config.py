@@ -196,6 +196,10 @@ class Settings(BaseSettings):
     merge_queue_check_timeout_seconds: float = 5400.0
     # Restages one entry may take (base moved, push refused) before it fails.
     merge_queue_max_attempts: int = 6
+    # While a queue's head is testing or merging, its cycle also runs this often
+    # (`ci_poll_scheduler.run_merge_queue_fast_tick`): the head's own PR is read,
+    # never `gh pr list`, so it lands seconds after its last check. 0 disables.
+    merge_queue_fast_poll_seconds: float = 15.0
     # The dev server fast-forwards its own checkout onto landed main and reloads
     # (`services.follow_main`). Off by default so no test, sandbox or ad-hoc
     # server moves a checkout; `scripts/dev-server.sh` turns it on.

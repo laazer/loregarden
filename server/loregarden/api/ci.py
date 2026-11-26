@@ -17,7 +17,11 @@ from loregarden.api.github_signature import verify_github_signature
 from loregarden.config import settings
 from loregarden.db.session import engine, get_session
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.ci_poll_scheduler import WorkspacePoll, poll_workspace
+from loregarden.services.ci_poll_scheduler import (
+    WorkspacePoll,
+    advance_merge_queue_now,
+    poll_workspace,
+)
 from loregarden.services.ci_service import CIService
 from sqlmodel import Session, or_, select
 
@@ -38,7 +42,10 @@ def _poll_now(workspace_ref: str) -> WorkspacePoll | None:
         ).first()
         if workspace is None:
             return None
-        return poll_workspace(session, workspace)
+        poll = poll_workspace(session, workspace)
+        # A run finishing is what the queue's head waits on: land it now, not next tick.
+        advance_merge_queue_now(session, workspace, poll)
+        return poll
 
 
 @router.post("/webhook/{workspace_id}")
@@ -48,7 +55,7 @@ async def receive_ci_webhook(
     x_github_event: str | None = Header(None),
     x_hub_signature_256: str | None = Header(None),
 ):
-    """A GitHub `workflow_run` delivery: poll ``workspace_id`` (id or slug) now."""
+    """A GitHub `workflow_run` delivery: poll ``workspace_id`` (id or slug) and its queue now."""
     body = await request.body()
     if not x_github_event:
         raise HTTPException(

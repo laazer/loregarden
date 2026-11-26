@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from loregarden.models.domain import MergeQueueEntry, MergeQueueState, MergeQueueWait, utcnow
+from loregarden.services.merge_queue_behind import relabel_behind
 
 
 class MergeQueueShape(BaseModel):
@@ -163,8 +164,10 @@ def add_merge_queue_shape(
         )
     )
     for n in range(live + 1, live + MERGE_QUEUE_CALIBRATION.live):
-        rows.append(entry(n, MergeQueueState.QUEUED, 5, wait=MergeQueueWait.BEHIND))
+        rows.append(entry(n, MergeQueueState.QUEUED, 5))
     for row in rows:
         session.merge(row)
     session.commit()
+    # Labelled by the queue's own writer, so they read what a cycle leaves.
+    relabel_behind(session, workspace_id)
     return len(rows)
