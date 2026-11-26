@@ -185,3 +185,32 @@ def test_one_gate_run_asks_each_question_once(repo: Path) -> None:
     )
     assert all(count == 1 for count in asked.values()), asked
     assert not [argv for argv in asked if "--name-only" in argv], asked
+    # HEAD and the base in one batch, the merge base, one raw+numstat diff, the
+    # untracked list and the `-U0` diff: five launches, down from seven.
+    assert sum(asked.values()) == 5, asked
+
+
+def test_numstat_from_the_raw_call_matches_gits_own_numstat(repo: Path) -> None:
+    """`--raw --numstat` in one call reads the same counts `--numstat` alone gives."""
+    for scope, base in _scopes(repo):
+        expected = diff._parse_numstat(
+            _git(repo, "diff", *diff._scope_args(scope, base), "--numstat", "--")
+        )
+        assert diff._RunQueries(repo).numstat(scope, base) == expected, scope
+
+
+def test_batched_revision_checks_agree_with_rev_parse(repo: Path) -> None:
+    """One `cat-file --batch-check` answers each name as `rev-parse --verify` does."""
+    names = ["HEAD", "main^{commit}", "no-such-ref^{commit}", "HEAD^{tree}", "HEAD:nope"]
+    batched = diff.git_revs_exist(repo, names)
+    assert batched == {name: diff._rev_parse_verifies(repo, name) for name in names}
+    assert batched["HEAD"] and not batched["no-such-ref^{commit}"]
+
+
+def test_a_name_the_batch_cannot_carry_is_asked_of_rev_parse(repo: Path) -> None:
+    """Whitespace (`@{1 second ago}`) is left out of the batch, then answered on its own."""
+    name = "HEAD@{1 second ago}"
+    assert name not in diff.git_revs_exist(repo, [name, "HEAD"])
+    queries = diff._RunQueries(repo)
+    queries.known_revs(name)
+    assert queries._resolves(name) == diff._rev_parse_verifies(repo, name)

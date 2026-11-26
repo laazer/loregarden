@@ -67,13 +67,15 @@ def _landing_commit(repo: str, branch_sha: str, ref_sha: str) -> str:
     repo_root = Path(repo)
     if branch_sha == ref_sha or is_ancestor(repo_root, branch_sha, ref_sha):
         return branch_sha
-    holder = superseding_commit(repo_root, branch_sha, ref_sha)
+    # Asked once: `superseding_commit` diffs from it, and the fallback below
+    # merges onto it. A failure raises here, as it did inside the former.
+    fork = merge_base(repo_root, branch_sha, ref_sha)
+    holder = superseding_commit(repo_root, branch_sha, ref_sha, fork=fork)
     if holder:
         return holder
     # `superseding_commit` only tries base commits touching a path the branch
     # changed, so a branch whose commits cancel out has no candidate at all,
     # though it adds nothing. The fork point holds that nothing.
-    fork = merge_base(repo_root, branch_sha, ref_sha)
     if fork and adds_nothing(repo_root, fork, branch_sha):
         return fork
     return ""

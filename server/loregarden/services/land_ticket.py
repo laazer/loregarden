@@ -35,6 +35,7 @@ from loregarden.services.git_merge_noco import (
     is_ancestor,
     merge_preview,
     merge_without_checkout,
+    read_branch_tips,
     rev,
 )
 from loregarden.services.git_subprocess import run_git
@@ -313,8 +314,7 @@ def _refusal_standing(
     four times in an hour. Checked here, after both refreshes, on the exact tips
     the candidate merge would be made from. No receipt is owed: nothing ran.
     """
-    target_sha = rev(repo_root, f"refs/heads/{target}")
-    source_sha = rev(repo_root, f"refs/heads/{branch}")
+    target_sha, source_sha = _tips(repo_root, target, branch)
     if not target_sha or not source_sha:
         return None
     if not refused_at_tips(
@@ -379,8 +379,7 @@ def landing_would_succeed(session: Session, ticket: Ticket, workspace: Workspace
     if target == base_branch(workspace):
         return False
     branch = resolve_ticket_branch(ticket)
-    source_sha = rev(repo_root, f"refs/heads/{branch}")
-    target_sha = rev(repo_root, f"refs/heads/{target}")
+    source_sha, target_sha = _tips(repo_root, branch, target)
     if not source_sha or not target_sha:
         return False
     if _uncommitted(session, ticket, workspace) is not None:
@@ -454,9 +453,9 @@ def _held_without_shared_history(
     (lg-milestone-that-1419).
     """
     branch, target = landing.branch, landing.target
-    branch_sha = rev(repo_root, f"refs/heads/{branch}")
+    branch_sha, target_sha = _tips(repo_root, branch, target)
     try:
-        holder = landing_commit(repo_root, branch_sha, rev(repo_root, f"refs/heads/{target}"))
+        holder = landing_commit(repo_root, branch_sha, target_sha)
     except RuntimeError as exc:
         return LandResult(
             ok=False,
@@ -628,6 +627,19 @@ def _stale(branch: str, path: str, words: str) -> str:
         f"refreshing {branch} left the worktree at {path} stale "
         f"and it could not be brought into line: {words}"
     )
+
+
+def _tips(repo_root: Path, *branches: str) -> list[str]:
+    """Each branch's tip, "" for one that does not exist, read in one git call.
+
+    A listing git refused reads every branch as missing, which is what a
+    refused per-branch `rev` answered; the refusal is logged rather than left
+    to look like absent branches.
+    """
+    tips = read_branch_tips(repo_root, *branches)
+    if tips.error:
+        logger.warning("Could not read branch tips in %s: %s", repo_root, tips.error)
+    return [tips.of(branch) for branch in branches]
 
 
 def _git(cwd: Path, *args: str):

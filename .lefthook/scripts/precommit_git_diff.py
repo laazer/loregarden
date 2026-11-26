@@ -421,11 +421,7 @@ def git_diff_cached(repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
     scope is ever added where an unborn HEAD does not imply untracked, it must
     not reach this branch.
     """
-    if unborn_worktree(repo, diff_scope):
-        return ""
-    # The trailing `--` ends the revision list, so nothing derived from a ref can
-    # be read as a pathspec.
-    return _run_git([*_scope_args(diff_scope, base_ref), "--no-color", "-U0", "--"], repo)
+    return _RunQueries(repo).unified(diff_scope, base_ref)
 
 
 def git_untracked_paths(repo: Path) -> list[str]:
@@ -473,8 +469,13 @@ def git_has_head(repo: Path) -> bool:
     worktree scope already collects. Exit 1 from `rev-parse --verify` is that
     command's answer to the question, not a failure being swallowed.
     """
+    return _rev_parse_verifies(repo, "HEAD")
+
+
+def _rev_parse_verifies(repo: Path, name: str) -> bool:
+    """Whether `git rev-parse --verify --quiet <name>` resolves it. Exit 1 is the "no"."""
     proc = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+        ["git", "rev-parse", "--verify", "--quiet", name],
         cwd=repo,
         env=scrubbed_git_env(),
         capture_output=True,
@@ -482,6 +483,46 @@ def git_has_head(repo: Path) -> bool:
         check=False,
     )
     return proc.returncode == 0
+
+
+def _commit_rev(ref: str) -> str:
+    return f"{_validated_ref(ref)}^{{commit}}"
+
+
+#: `cat-file --batch-check` answers a name it resolved with `<oid> <type> <size>`.
+_BATCH_CHECK_FOUND = re.compile(r"^[0-9a-f]{40,64} \S+ \d+$")
+
+
+def git_revs_exist(repo: Path, names: Sequence[str]) -> dict[str, bool]:
+    """Whether each of ``names`` resolves, as `rev-parse --verify` would say, in one call.
+
+    `cat-file --batch-check` resolves each input line with the same machinery
+    `rev-parse` uses, and answers `<name> missing` (or `ambiguous`) where it
+    cannot. A name it cannot carry intact on one line — whitespace, which
+    `@{2 days ago}` has — is left out of the batch, as is every name when
+    cat-file itself fails: the result then holds no answer for them, and
+    `_RunQueries` asks `rev-parse` itself, so no question goes unanswered or is
+    answered differently.
+    """
+    batchable = [
+        name for name in dict.fromkeys(names) if name and not any(c.isspace() for c in name)
+    ]
+    if not batchable:
+        return {}
+    proc = subprocess.run(
+        ["git", "cat-file", "--batch-check"],
+        cwd=repo,
+        env=scrubbed_git_env(),
+        input="".join(f"{name}\n" for name in batchable),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    answers = proc.stdout.splitlines()
+    if proc.returncode != 0 or len(answers) != len(batchable):
+        # Not a verdict on any name; each is asked of `rev-parse` on its own instead.
+        return {}
+    return {name: bool(_BATCH_CHECK_FOUND.match(line)) for name, line in zip(batchable, answers)}
 
 
 def git_paths_at_head(repo: Path | None, paths: Iterable[Path]) -> set[Path]:
@@ -555,19 +596,40 @@ class _RunQueries:
     Changed paths (`--name-only --diff-filter=ACMR`), added paths
     (`--diff-filter=A`) and submodule pointers all come from one `--raw` diff:
     the same paths, quoted the same way, with the status and modes alongside.
-    `test_gate_raw_queries.py` holds the derivations to git's own answers.
+    `test_gate_raw_queries.py` holds the derivations to git's own answers. The
+    same call carries `--numstat`, whose lines git prints after the raw ones and
+    which never start with the raw format's `:`. (`-p` cannot join them: its
+    `-U0` changes how git aligns hunks, and with it the counts.)
+
+    Whether revisions exist — HEAD, the base — is asked in one
+    `cat-file --batch-check` where the caller knows the questions up front
+    (`known_revs`), and answered from that thereafter.
     """
 
     def __init__(self, repo: Path) -> None:
         self.repo = repo
-        self._has_head: bool | None = None
         self._untracked: list[str] | None = None
         self._raw: dict[tuple[str, str], list[_RawEntry]] = {}
+        self._numstat: dict[tuple[str, str], DiffNumstat] = {}
+        self._unified: dict[tuple[str, str], str] = {}
+        #: `rev-parse --verify` names (`HEAD`, `<ref>^{commit}`) -> whether they resolve.
+        self._revs: dict[str, bool] = {}
+
+    def known_revs(self, *names: str) -> None:
+        """Answer whether each of ``names`` resolves, in one git call, for later asking."""
+        self._revs.update(git_revs_exist(self.repo, [n for n in names if n not in self._revs]))
+
+    def _resolves(self, name: str) -> bool:
+        if name not in self._revs:
+            self._revs[name] = _rev_parse_verifies(self.repo, name)
+        return self._revs[name]
 
     def has_head(self) -> bool:
-        if self._has_head is None:
-            self._has_head = git_has_head(self.repo)
-        return self._has_head
+        return self._resolves("HEAD")
+
+    def rev_exists(self, ref: str) -> bool:
+        """`git_rev_exists`, answered once per run."""
+        return self._resolves(_commit_rev(ref))
 
     def unborn(self, diff_scope: str) -> bool:
         """`unborn_worktree`, answered from this run's `has_head`."""
@@ -578,17 +640,40 @@ class _RunQueries:
             self._untracked = git_untracked_paths(self.repo)
         return list(self._untracked)
 
-    def raw(self, diff_scope: str, base_ref: str) -> list[_RawEntry]:
+    def _raw_and_numstat(self, diff_scope: str, base_ref: str) -> None:
         key = (diff_scope, base_ref)
-        if key not in self._raw:
-            self._raw[key] = (
-                []
+        if key in self._raw:
+            return
+        if self.unborn(diff_scope):
+            self._raw[key], self._numstat[key] = [], DiffNumstat({}, frozenset())
+            return
+        out = _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--numstat", "--"], self.repo)
+        self._raw[key] = _parse_raw(out)
+        self._numstat[key] = _parse_numstat(out)
+
+    def raw(self, diff_scope: str, base_ref: str) -> list[_RawEntry]:
+        self._raw_and_numstat(diff_scope, base_ref)
+        return self._raw[(diff_scope, base_ref)]
+
+    def numstat(self, diff_scope: str, base_ref: str) -> DiffNumstat:
+        """`git_diff_numstat`, from the same call as `raw`."""
+        self._raw_and_numstat(diff_scope, base_ref)
+        return self._numstat[(diff_scope, base_ref)]
+
+    def unified(self, diff_scope: str, base_ref: str) -> str:
+        """`git_diff_cached`'s `-U0` diff, asked once per run."""
+        key = (diff_scope, base_ref)
+        if key not in self._unified:
+            # The trailing `--` ends the revision list, so nothing derived from a
+            # ref can be read as a pathspec.
+            self._unified[key] = (
+                ""
                 if self.unborn(diff_scope)
-                else _parse_raw(
-                    _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], self.repo)
+                else _run_git(
+                    [*_scope_args(diff_scope, base_ref), "--no-color", "-U0", "--"], self.repo
                 )
             )
-        return self._raw[key]
+        return self._unified[key]
 
     def changed_paths(self, diff_scope: str, base_ref: str) -> list[str]:
         if self.unborn(diff_scope):
@@ -655,15 +740,7 @@ def git_rev_exists(repo: Path, ref: str) -> bool:
     reported an orphan branch as an unresolvable trunk — a message that sent
     readers to trunk detection while every stage transition blocked.
     """
-    proc = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"{_validated_ref(ref)}^{{commit}}"],
-        cwd=repo,
-        env=scrubbed_git_env(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return proc.returncode == 0
+    return _rev_parse_verifies(repo, _commit_rev(ref))
 
 
 def git_empty_tree(repo: Path) -> str:
@@ -729,11 +806,17 @@ def effective_base_ref(repo: Path, base_ref: str) -> str:
     ref or a loud failure — silently grading against a different base than the
     one asked for is the same class of bug the scope work exists to close.
     """
-    if base_ref != DEFAULT_BASE_REF or git_rev_exists(repo, base_ref):
+    return _effective_base_ref(_RunQueries(repo), base_ref)
+
+
+def _effective_base_ref(queries: _RunQueries, base_ref: str) -> str:
+    """`effective_base_ref`, asking git through one run's queries."""
+    if base_ref != DEFAULT_BASE_REF or queries.rev_exists(base_ref):
         return base_ref
-    candidates = [ref for ref in (git_origin_head(repo), *_TRUNK_REF_CANDIDATES) if ref]
+    candidates = [ref for ref in (git_origin_head(queries.repo), *_TRUNK_REF_CANDIDATES) if ref]
+    queries.known_revs(*(_commit_rev(c) for c in candidates if c != base_ref))
     for candidate in candidates:
-        if candidate != base_ref and git_rev_exists(repo, candidate):
+        if candidate != base_ref and queries.rev_exists(candidate):
             return candidate
     return base_ref
 
@@ -767,7 +850,11 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
 def _resolve_scope(queries: _RunQueries, diff_scope: str, base_ref: str) -> ResolvedScope:
     """`resolve_scope`, asking git through one run's queries."""
     repo = queries.repo
-    base_ref = effective_base_ref(repo, base_ref)
+    if diff_scope == WORKTREE:
+        # Both questions this scope opens with, in one git call. A ref that reads
+        # as an option is left to raise where it always has, at its first use.
+        queries.known_revs("HEAD", *([] if base_ref.startswith("-") else [_commit_rev(base_ref)]))
+    base_ref = _effective_base_ref(queries, base_ref)
     if diff_scope != WORKTREE:
         return ResolvedScope(
             diff_scope,
@@ -785,7 +872,7 @@ def _resolve_scope(queries: _RunQueries, diff_scope: str, base_ref: str) -> Reso
             "worktree changes (no commits yet)",
         )
     merge_base = git_merge_base(repo, base_ref)
-    if merge_base is None and git_rev_exists(repo, base_ref):
+    if merge_base is None and queries.rev_exists(base_ref):
         # The ref resolves; the histories are disjoint (orphan branch,
         # re-initialised repo, shallow clone). There is no fork point to diff
         # from, but there is no unknown either — every commit on this branch is
@@ -1104,12 +1191,12 @@ def resolve_gate_scope(
     numstat = DiffNumstat({}, frozenset())
     if queries is not None and files:
         repo = queries.repo
-        diff = git_diff_cached(repo, scope.diff_scope, scope.base_ref)
+        diff = queries.unified(scope.diff_scope, scope.base_ref)
         additions = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
         untracked = frozenset(queries.untracked()) if scope.includes_untracked else frozenset()
-        numstat = git_diff_numstat(repo, scope.diff_scope, scope.base_ref)
+        numstat = queries.numstat(scope.diff_scope, scope.base_ref)
         # Asked only of the files this gate grades: a path outside them is
         # never looked up, and a deleted path (no `+++ b/`, real counts) would
         # otherwise be marked graded-whole and then fail to read.
@@ -1283,12 +1370,16 @@ def git_diff_numstat(repo: Path, diff_scope: str = STAGED, base_ref: str = "main
     untracked and graded whole. Absent counts read as `(0, 0)` — a new file is
     judged on its own size rather than on growth it cannot have.
     """
-    if unborn_worktree(repo, diff_scope):
-        return DiffNumstat({}, frozenset())
-    out = _run_git([*_scope_args(diff_scope, base_ref), "--numstat", "--"], repo)
+    return _RunQueries(repo).numstat(diff_scope, base_ref)
+
+
+def _parse_numstat(out: str) -> DiffNumstat:
+    """`--numstat` lines; `--raw` lines from the same call (they start with `:`) are skipped."""
     counts: dict[str, tuple[int, int]] = {}
     undiffable: set[str] = set()
     for line in out.splitlines():
+        if line.startswith(":"):
+            continue
         parts = line.split("\t")
         if len(parts) != 3:
             continue
