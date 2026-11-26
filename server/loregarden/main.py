@@ -88,7 +88,7 @@ from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.chat_wait_watch import resume_chat_waits
-from loregarden.services.ci_poll_scheduler import start_ci_poll_loop
+from loregarden.services.ci_poll_scheduler import start_ci_poll_loop, start_merge_queue_fast_loop
 from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.follow_main import remember_running_build
 from loregarden.services.github_push_on_edit import start_push_worker
@@ -212,6 +212,7 @@ def _start_background_loops() -> list[asyncio.Task]:
         start_push_worker(),
         start_autopilot_loop(),
         start_ci_poll_loop(),
+        start_merge_queue_fast_loop(),
         start_survey_loop(),
         start_research_schedule_loop(),
     ]

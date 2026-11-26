@@ -93,6 +93,7 @@ from loregarden.services.invariant_registry import (
     PARKED_STARTS_KEEP_THEIR_KEY,
     PROVEN_EVIDENCE_IS_NOT_HELD_OPEN,
     PUBLISH_CARDS_CLOSE,
+    QUEUED_ENTRIES_NAME_THE_CURRENT_HEAD,
     QUEUED_OVERRIDES_APPLY,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     REWORK_PAUSES_STAND_ON_CHARGED_ROUNDS,
@@ -449,6 +450,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # queue after its entry stopped leaves nothing for anyone to do
     # (lg-milestone-that-2641).
     _invariant(STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR, at_startup=False),
+    # A queued entry still naming a head that left the line (lg-milestone-that-2808).
+    # DB only; at startup too, so labels a dead process left behind are right at boot.
+    _invariant(QUEUED_ENTRIES_NAME_THE_CURRENT_HEAD),
     # A map partition whose checkout is gone. Inert when it ships: nothing
     # builds the map in production yet (lg-code-knowledge-281), so the table
     # is empty and the detector reports nothing to judge rather than nothing

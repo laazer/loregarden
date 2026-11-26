@@ -94,10 +94,10 @@ from loregarden.services.merge_preservation import target_preserved
 from loregarden.services.merge_queue import (
     entry_ticket,
     head_entry,
-    live_entries,
     retry,
     transition,
 )
+from loregarden.services.merge_queue_behind import relabel_behind
 from loregarden.services.merge_queue_failures import (
     LostVerdict,
     failed_elsewhere,
@@ -205,9 +205,11 @@ class MergeQueueLoop:
             if entry is None or entry.id in seen:
                 break
             seen.add(entry.id)
-            self._mark_behind(entry)
             if not self._step(entry):
                 break
+        # After the steps, not before: whichever entry is the head once this
+        # cycle is done is the one the entries behind it name.
+        relabel_behind(self.session, self.workspace.id)
         return self.report
 
     def _step(self, entry: MergeQueueEntry) -> bool:
@@ -220,20 +222,6 @@ class MergeQueueLoop:
         if state is MergeQueueState.MERGING:
             return self._resume_merging(entry)
         return True
-
-    def _mark_behind(self, head: MergeQueueEntry) -> None:
-        for entry in live_entries(self.session, self.workspace.id):
-            if entry.id != head.id and entry.state is MergeQueueState.QUEUED:
-                if entry.wait is not MergeQueueWait.BEHIND:
-                    # A label only: an entry withdrawn meanwhile matches nothing,
-                    # and there is nothing to report about not labelling it.
-                    transition(
-                        self.session,
-                        entry,
-                        MergeQueueState.QUEUED,
-                        wait=MergeQueueWait.BEHIND,
-                        detail=f"behind PR #{head.pr_number}",
-                    )
 
     def _remind_blocked(self) -> None:
         """Conflict tickets still open are re-reported at notice level; done ones retry."""
