@@ -17,8 +17,14 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from loregarden.models.domain import BinaryArch
 from loregarden.services import git_subprocess, native_git
-from loregarden.services.native_git import GitChoice, has_arm64_slice, resolve_git
+from loregarden.services.native_git import (
+    GitChoice,
+    has_arm64_slice,
+    inspect_binary,
+    resolve_git,
+)
 from tests.repo_paths import REPO_ROOT
 
 NATIVE_GIT_SH = REPO_ROOT / ".lefthook" / "scripts" / "native-git.sh"
@@ -219,6 +225,58 @@ def _mach_o(path: Path, data: bytes) -> Path:
 )
 def test_the_mach_o_header_decides_native(tmp_path, header: bytes, native: bool):
     assert has_arm64_slice(_mach_o(tmp_path / "bin", header)) is native
+
+
+_X86 = struct.pack(">iiIII", 0x01000007, 3, 0, 0, 0)
+_ARM = struct.pack(">iiIII", 0x0100000C, 0, 0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("data", "arch"),
+    [
+        (struct.pack("<Ii", 0xFEEDFACF, 0x0100000C) + b"\0" * 24, BinaryArch.ARM64),
+        (struct.pack("<Ii", 0xFEEDFACF, 0x01000007) + b"\0" * 24, BinaryArch.X86_64_ONLY),
+        (struct.pack(">II", 0xCAFEBABE, 2) + _X86 + _ARM, BinaryArch.ARM64),
+        (struct.pack(">II", 0xCAFEBABE, 1) + _X86, BinaryArch.X86_64_ONLY),
+        (struct.pack(">II", 0xCAFEBABF, 1) + _X86 + b"\0" * 12, BinaryArch.X86_64_ONLY),
+        (struct.pack(">II", 0xCAFEBABE, 2) + _X86, BinaryArch.UNKNOWN),
+        (struct.pack(">II", 0xCAFEBABE, 0x34), BinaryArch.UNKNOWN),
+        (struct.pack("<Ii", 0xFEEDFACF, 0x00000012) + b"\0" * 24, BinaryArch.UNKNOWN),
+        (b"#!/bin/sh\nexec git\n", BinaryArch.UNKNOWN),
+        (b"\xca\xfe", BinaryArch.UNKNOWN),
+    ],
+    ids=[
+        "thin-arm64",
+        "thin-x86_64",
+        "universal",
+        "fat-x86_64-only",
+        "fat64-x86_64-only",
+        "fat-truncated-table",
+        "java-class-file",
+        "thin-other-cpu",
+        "script",
+        "truncated",
+    ],
+)
+def test_inspect_binary_tells_intel_from_unknown(tmp_path, data: bytes, arch: BinaryArch):
+    inspection = inspect_binary(_mach_o(tmp_path / "bin", data))
+    assert inspection.arch is arch
+    assert inspection.detail
+
+
+def test_a_symlink_is_judged_by_the_binary_it_points_at(tmp_path):
+    """A PATH dir of links (`~/.local/opt/native/bin/git -> CLT git`) reads as its target."""
+    target = _mach_o(tmp_path / "clt-git", struct.pack(">II", 0xCAFEBABE, 2) + _X86 + _ARM)
+    link = tmp_path / "native-bin" / "git"
+    link.parent.mkdir()
+    link.symlink_to(target)
+    assert inspect_binary(link).arch is BinaryArch.ARM64
+
+
+def test_a_binary_that_cannot_be_opened_is_unknown_naming_why(tmp_path):
+    inspection = inspect_binary(tmp_path / "missing")
+    assert inspection.arch is BinaryArch.UNKNOWN
+    assert "unreadable" in inspection.detail
 
 
 class TestApplying:

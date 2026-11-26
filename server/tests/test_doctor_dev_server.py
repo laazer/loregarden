@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 from loregarden.dev_supervisor import STATUS_FILE, ReloadState, Status
-from loregarden.models.domain import DoctorCheck, DoctorStatus
+from loregarden.models.domain import BinaryArch, DoctorCheck, DoctorStatus
 from loregarden.services import doctor, doctor_dev_server
 from loregarden.services.doctor_dev_server import (
     STATE_DIR,
@@ -22,7 +22,7 @@ from loregarden.services.doctor_dev_server import (
     check_native_python,
     is_translated,
 )
-from loregarden.services.native_git import GitChoice
+from loregarden.services.native_git import BinaryInspection, GitChoice
 
 #: A pid no process holds: above the kernel's default pid_max on macOS and Linux.
 DEAD_PID = 4_194_304 + 7
@@ -123,31 +123,80 @@ def test_the_doctor_runs_it_and_no_dispatch_waits_on_it():
 
 
 _NATIVE = GitChoice(binary="/clt/git", native=True, reason="PATH's git is not native; /clt/git is")
+_TRANSLATED = GitChoice(binary="git", native=False, reason="no native git >= 2.38 found")
+_ARM64 = BinaryInspection(arch=BinaryArch.ARM64, detail="x86_64, arm64")
+_INTEL = BinaryInspection(arch=BinaryArch.X86_64_ONLY, detail="x86_64")
+_UNREADABLE = BinaryInspection(arch=BinaryArch.UNKNOWN, detail="unreadable: Permission denied")
 
 
-def _git_finding(tmp_path: Path, *, apple: bool, choice: GitChoice, bash_native: bool = True):
+def _git_finding(
+    tmp_path: Path,
+    *,
+    apple: bool,
+    choice: GitChoice,
+    git: BinaryInspection = _INTEL,
+    bash: BinaryInspection = _ARM64,
+    on_path: dict[str, str | None] | None = None,
+):
+    """The check with the machine stubbed: which `git`/`bash` PATH has, and what each header says."""
+    found = {"git": "/usr/local/bin/git", "bash": "/some/bash", **(on_path or {})}
+    inspected = {Path(found["git"] or "-"): git, Path(found["bash"] or "-"): bash}
     with (
         mock.patch.object(doctor_dev_server, "apple_silicon", return_value=apple),
         mock.patch.object(doctor_dev_server, "git_choice", return_value=choice),
-        mock.patch.object(doctor_dev_server.shutil, "which", return_value="/some/bash"),
-        mock.patch.object(doctor_dev_server, "has_arm64_slice", return_value=bash_native),
+        mock.patch.object(doctor_dev_server.shutil, "which", side_effect=found.get),
+        mock.patch.object(doctor_dev_server, "inspect_binary", side_effect=inspected.__getitem__),
     ):
         return check_native_git(mock.Mock(), mock.Mock(), tmp_path)
 
 
-def test_a_translated_git_is_reported_with_what_to_install(tmp_path):
-    choice = GitChoice(binary="git", native=False, reason="no native git >= 2.38 found")
-    finding = _git_finding(tmp_path, apple=True, choice=choice)
+def test_a_translated_git_is_reported_with_its_path_and_a_native_alternative(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_TRANSLATED)
     assert finding.check is DoctorCheck.NATIVE_GIT
     assert finding.status is DoctorStatus.WARN
+    assert "/usr/local/bin/git" in finding.finding
+    assert "x86_64" in finding.finding
+    assert "/Library/Developer/CommandLineTools/usr/bin/git" in finding.remediation
     assert "xcode-select --install" in finding.remediation
 
 
+def test_a_git_that_cannot_be_inspected_is_reported_not_read_as_native(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_TRANSLATED, git=_UNREADABLE)
+    assert finding.status is DoctorStatus.WARN
+    assert "could not be inspected" in finding.finding
+    assert "Permission denied" in finding.finding
+
+
+def test_no_git_on_path_and_none_native_is_reported(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_TRANSLATED, on_path={"git": None})
+    assert finding.status is DoctorStatus.WARN
+    assert "no git on PATH" in finding.finding
+
+
 def test_a_native_git_under_an_intel_bash_names_the_bash(tmp_path):
-    finding = _git_finding(tmp_path, apple=True, choice=_NATIVE, bash_native=False)
+    finding = _git_finding(tmp_path, apple=True, choice=_NATIVE, bash=_INTEL)
     assert finding.status is DoctorStatus.WARN
     assert "/some/bash" in finding.finding
     assert "bash" in finding.remediation
+
+
+def test_a_bash_that_cannot_be_inspected_is_reported_not_read_as_native(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_NATIVE, bash=_UNREADABLE)
+    assert finding.status is DoctorStatus.WARN
+    assert "/some/bash" in finding.finding
+    assert "could not be inspected" in finding.finding
+
+
+def test_no_bash_on_path_is_reported(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_NATIVE, on_path={"bash": None})
+    assert finding.status is DoctorStatus.WARN
+    assert "no bash on PATH" in finding.finding
+
+
+def test_an_intel_git_and_an_intel_bash_are_both_named(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_TRANSLATED, bash=_INTEL)
+    assert "/usr/local/bin/git" in finding.finding
+    assert "/some/bash" in finding.finding
 
 
 def test_a_native_git_and_bash_pass(tmp_path):

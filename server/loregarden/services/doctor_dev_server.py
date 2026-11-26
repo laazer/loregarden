@@ -24,6 +24,7 @@ from pathlib import Path
 from loregarden.config import settings
 from loregarden.dev_supervisor import STATE_DIR, ReloadState, read_status
 from loregarden.models.domain import (
+    BinaryArch,
     DoctorCheck,
     DoctorFinding,
     DoctorStatus,
@@ -32,10 +33,12 @@ from loregarden.models.domain import (
 )
 from loregarden.services.follow_main_status import read_follow_status
 from loregarden.services.native_git import (
+    NATIVE_GIT_CANDIDATES,
     NATIVE_GIT_REMEDY,
+    GitChoice,
     apple_silicon,
     git_choice,
-    has_arm64_slice,
+    inspect_binary,
 )
 from sqlmodel import Session
 
@@ -145,6 +148,56 @@ _HOOK_BASH_REMEDY = (
 )
 
 
+#: Where the doctor tells a person to look for a native git, by absolute path.
+_NATIVE_GIT_PATHS = ", ".join(str(path) for path in NATIVE_GIT_CANDIDATES)
+
+
+def _git_problem(choice: GitChoice) -> tuple[str, str] | None:
+    """What is wrong with the git the server spawns, and what to do; None when native."""
+    if choice.native:
+        return None
+    remedy = (
+        f"{NATIVE_GIT_REMEDY} Native gits are looked for at {_NATIVE_GIT_PATHS}. Then restart "
+        "the dev server when no agent is running; the hooks pick it up on their next run."
+    )
+    on_path = shutil.which("git")
+    if on_path is None:
+        return "There is no git on PATH, and no native git was found.", remedy
+    inspection = inspect_binary(Path(on_path))
+    if inspection.arch is BinaryArch.UNKNOWN:
+        return (
+            f"PATH's git ({on_path}) could not be inspected ({inspection.detail}), so it is not "
+            "assumed native, and no native git was found.",
+            remedy,
+        )
+    return (
+        f"Every git the server and its tests run goes through Rosetta, at about twice the cost: "
+        f"{choice.reason} ({on_path}: {inspection.detail}).",
+        remedy,
+    )
+
+
+def _bash_problem() -> tuple[str, str] | None:
+    """What is wrong with the bash the hooks run on, and what to do; None when native."""
+    bash = shutil.which("bash")
+    if bash is None:
+        return "There is no bash on PATH, so the hook scripts cannot run.", _HOOK_BASH_REMEDY
+    inspection = inspect_binary(Path(bash))
+    if inspection.arch is BinaryArch.ARM64:
+        return None
+    if inspection.arch is BinaryArch.UNKNOWN:
+        return (
+            f"The hooks' bash ({bash}) could not be inspected ({inspection.detail}), so it is "
+            "not assumed native.",
+            _HOOK_BASH_REMEDY,
+        )
+    return (
+        f"The hooks' bash ({bash}) is an Intel build ({inspection.detail}), so the git a hook "
+        "script runs itself still starts translated.",
+        _HOOK_BASH_REMEDY,
+    )
+
+
 def check_native_git(_session: Session, _workspace: Workspace, _repo_root: Path) -> DoctorFinding:
     """Do the git the server spawns, and the bash the hooks run on, run natively?
 
@@ -154,6 +207,9 @@ def check_native_git(_session: Session, _workspace: Workspace, _repo_root: Path)
     reports when none was, and when the hooks' bash is Intel: a translated
     process starts the x86_64 slice of a universal git, so a hook script's own
     git calls stay translated (pytest and the Python gates are unaffected).
+
+    A binary whose header cannot be read is reported as that, never as native:
+    the check exists because a translated toolchain was silent once already.
     """
     if not apple_silicon():
         return DoctorFinding(
@@ -162,28 +218,18 @@ def check_native_git(_session: Session, _workspace: Workspace, _repo_root: Path)
             finding="Not Apple silicon; PATH's git and bash run natively.",
         )
     choice = git_choice()
-    if not choice.native:
+    problems = [problem for problem in (_git_problem(choice), _bash_problem()) if problem]
+    if problems:
         return DoctorFinding(
             check=DoctorCheck.NATIVE_GIT,
             status=DoctorStatus.WARN,
-            finding=f"Every git the server and its tests run goes through Rosetta, at about "
-            f"twice the cost: {choice.reason}.",
-            remediation=f"{NATIVE_GIT_REMEDY} Then restart the dev server when no agent is "
-            "running; the hooks pick it up on their next run.",
-        )
-    bash = shutil.which("bash")
-    if bash is not None and not has_arm64_slice(Path(bash)):
-        return DoctorFinding(
-            check=DoctorCheck.NATIVE_GIT,
-            status=DoctorStatus.WARN,
-            finding=f"git: {choice.binary} ({choice.reason}). But the hooks' bash ({bash}) is "
-            "an Intel build, so the git a hook script runs itself still starts translated.",
-            remediation=_HOOK_BASH_REMEDY,
+            finding=" ".join(finding for finding, _ in problems),
+            remediation=" ".join(remedy for _, remedy in problems),
         )
     return DoctorFinding(
         check=DoctorCheck.NATIVE_GIT,
         status=DoctorStatus.PASS,
-        finding=f"git: {choice.binary} ({choice.reason}); bash: {bash}.",
+        finding=f"git: {choice.binary} ({choice.reason}); bash: {shutil.which('bash')}.",
     )
 
 
