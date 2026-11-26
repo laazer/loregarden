@@ -33,7 +33,9 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from typing import BinaryIO
 
+from loregarden.models.domain.toolchain_enums import BinaryArch
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,10 @@ NATIVE_GIT_REMEDY = (
 _VERSION_TIMEOUT_SECONDS = 10
 
 _CPU_TYPE_ARM64 = 0x0100000C
+_CPU_TYPE_X86_64 = 0x01000007
+_CPU_NAMES = {_CPU_TYPE_ARM64: "arm64", _CPU_TYPE_X86_64: "x86_64"}
+#: More slices than any real universal binary carries; past it the header is not one.
+_MAX_FAT_SLICES = 16
 _MH_MAGIC_64 = 0xFEEDFACF
 _FAT_MAGIC = 0xCAFEBABE
 _FAT_MAGIC_64 = 0xCAFEBABF
@@ -97,26 +103,73 @@ def apple_silicon() -> bool:
     return found == 0 and value.value == 1
 
 
-def has_arm64_slice(path: Path) -> bool:
-    """Whether the Mach-O at `path` (symlinks followed) can run natively on Apple silicon."""
+class BinaryInspection(BaseModel):
+    """What `inspect_binary` read from a file's Mach-O header."""
+
+    arch: BinaryArch
+    #: Why the arch is UNKNOWN, or the slices found; written for a doctor finding.
+    detail: str
+
+
+def _cpu_name(cputype: int) -> str:
+    return _CPU_NAMES.get(cputype, f"cpu type {cputype:#x}")
+
+
+def _judge(cputypes: list[int]) -> BinaryInspection:
+    names = ", ".join(_cpu_name(cputype) for cputype in cputypes)
+    if _CPU_TYPE_ARM64 in cputypes:
+        return BinaryInspection(arch=BinaryArch.ARM64, detail=names)
+    if all(cputype == _CPU_TYPE_X86_64 for cputype in cputypes):
+        return BinaryInspection(arch=BinaryArch.X86_64_ONLY, detail=names)
+    return BinaryInspection(arch=BinaryArch.UNKNOWN, detail=f"no arm64 or x86_64 slice ({names})")
+
+
+def _inspect_fat(handle: BinaryIO, magic: int, count: int) -> BinaryInspection:
+    if not 0 < count <= _MAX_FAT_SLICES:
+        # Java class files share 0xCAFEBABE; their "count" is a version number.
+        return BinaryInspection(
+            arch=BinaryArch.UNKNOWN, detail=f"a fat header claiming {count} slices"
+        )
+    entry = 32 if magic == _FAT_MAGIC_64 else 20
+    table = handle.read(entry * count)
+    if len(table) < entry * count:
+        return BinaryInspection(arch=BinaryArch.UNKNOWN, detail="a truncated fat header")
+    return _judge([struct.unpack(">i", table[i * entry : i * entry + 4])[0] for i in range(count)])
+
+
+def inspect_binary(path: Path) -> BinaryInspection:
+    """The architectures of the Mach-O at `path` (symlinks followed).
+
+    A file that cannot be read, or is not a Mach-O we can parse (a script, a
+    truncated file), is UNKNOWN with the reason: the doctor reports it as such
+    rather than guessing native or Intel.
+    """
     try:
         with open(path, "rb") as handle:
             header = handle.read(8)
             if len(header) < 8:
-                return False
-            (magic,) = struct.unpack(">I", header[:4])
+                return BinaryInspection(arch=BinaryArch.UNKNOWN, detail="shorter than a header")
+            (magic, count) = struct.unpack(">II", header)
             if magic in (_FAT_MAGIC, _FAT_MAGIC_64):
-                (count,) = struct.unpack(">I", header[4:8])
-                entry = 32 if magic == _FAT_MAGIC_64 else 20
-                table = handle.read(entry * count)
-                return any(
-                    struct.unpack(">I", table[i * entry : i * entry + 4])[0] == _CPU_TYPE_ARM64
-                    for i in range(min(count, len(table) // entry))
-                )
-            (thin_magic, cputype) = struct.unpack("<Ii", header)
-            return thin_magic == _MH_MAGIC_64 and cputype == _CPU_TYPE_ARM64
-    except OSError:  # silent-ok: an unreadable candidate is not a candidate; the rule moves on
-        return False
+                return _inspect_fat(handle, magic, count)
+    except OSError as exc:
+        return BinaryInspection(arch=BinaryArch.UNKNOWN, detail=f"unreadable: {exc}")
+    (thin_magic, cputype) = struct.unpack("<Ii", header)
+    if thin_magic != _MH_MAGIC_64:
+        return BinaryInspection(
+            arch=BinaryArch.UNKNOWN,
+            detail=f"not a 64-bit Mach-O executable (starts {header[:4].hex()})",
+        )
+    return _judge([cputype])
+
+
+def has_arm64_slice(path: Path) -> bool:
+    """Whether the Mach-O at `path` can run natively on Apple silicon.
+
+    False for UNKNOWN too: an uninspectable candidate is not a candidate, and the
+    rule moves on. The doctor asks `inspect_binary` to tell the two apart.
+    """
+    return inspect_binary(path).arch is BinaryArch.ARM64
 
 
 def git_version(binary: str) -> tuple[int, int] | None:
