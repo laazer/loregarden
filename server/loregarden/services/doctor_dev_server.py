@@ -17,6 +17,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -30,6 +31,12 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.follow_main_status import read_follow_status
+from loregarden.services.native_git import (
+    NATIVE_GIT_REMEDY,
+    apple_silicon,
+    git_choice,
+    has_arm64_slice,
+)
 from sqlmodel import Session
 
 #: Traceback lines carried in the finding; the log holds the rest.
@@ -127,6 +134,56 @@ def check_native_python(
         "Rosetta, at about twice the cpu.",
         remediation="When no agent is running, stop the dev server and start it again: "
         "scripts/dev-server.sh rebuilds server/.venv with a native Python first.",
+    )
+
+
+#: Bash 4.4 is where `"${empty[@]}"` stops failing under `set -u`; /bin/bash is 3.2.
+_HOOK_BASH_REMEDY = (
+    "Install a native bash >= 4.4 ahead of /usr/local/bin on PATH, e.g. an arm64 Homebrew's "
+    "(`/opt/homebrew/bin/brew install bash`). /bin/bash is native but 3.2, which the hook "
+    "scripts do not run on."
+)
+
+
+def check_native_git(_session: Session, _workspace: Workspace, _repo_root: Path) -> DoctorFinding:
+    """Do the git the server spawns, and the bash the hooks run on, run natively?
+
+    An Intel git on Apple silicon took 98ms a call against 50ms native, and test
+    workers spent half their time waiting on child processes. `run_git` and the
+    hooks pick a native git when one is installed (`services.native_git`); this
+    reports when none was, and when the hooks' bash is Intel: a translated
+    process starts the x86_64 slice of a universal git, so a hook script's own
+    git calls stay translated (pytest and the Python gates are unaffected).
+    """
+    if not apple_silicon():
+        return DoctorFinding(
+            check=DoctorCheck.NATIVE_GIT,
+            status=DoctorStatus.PASS,
+            finding="Not Apple silicon; PATH's git and bash run natively.",
+        )
+    choice = git_choice()
+    if not choice.native:
+        return DoctorFinding(
+            check=DoctorCheck.NATIVE_GIT,
+            status=DoctorStatus.WARN,
+            finding=f"Every git the server and its tests run goes through Rosetta, at about "
+            f"twice the cost: {choice.reason}.",
+            remediation=f"{NATIVE_GIT_REMEDY} Then restart the dev server when no agent is "
+            "running; the hooks pick it up on their next run.",
+        )
+    bash = shutil.which("bash")
+    if bash is not None and not has_arm64_slice(Path(bash)):
+        return DoctorFinding(
+            check=DoctorCheck.NATIVE_GIT,
+            status=DoctorStatus.WARN,
+            finding=f"git: {choice.binary} ({choice.reason}). But the hooks' bash ({bash}) is "
+            "an Intel build, so the git a hook script runs itself still starts translated.",
+            remediation=_HOOK_BASH_REMEDY,
+        )
+    return DoctorFinding(
+        check=DoctorCheck.NATIVE_GIT,
+        status=DoctorStatus.PASS,
+        finding=f"git: {choice.binary} ({choice.reason}); bash: {bash}.",
     )
 
 

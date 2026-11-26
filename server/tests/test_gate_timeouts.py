@@ -172,8 +172,10 @@ def test_a_failure_and_a_missing_tool_are_not_timeouts(gate):
 def test_a_timed_out_commands_last_output_is_kept(gate):
     result = gate(
         'sh -c \'head -c 5000 /dev/zero | tr "\\0" x; echo; echo LAST-WORDS; '
-        "echo on-stderr >&2; sleep 5'",
-        timeout=1,
+        "echo on-stderr >&2; sleep 30'",
+        # Room for sh, head and tr to write before the kill: at load 74 under
+        # xdist they wrote nothing inside 1s and stdout came back empty.
+        timeout=3,
     )
 
     assert result.outcome is GateOutcome.TIMEOUT

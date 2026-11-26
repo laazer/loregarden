@@ -24,3 +24,10 @@ export GH_PROMPT_DISABLED=1
 export NPM_CONFIG_YES="${NPM_CONFIG_YES:-true}"
 export NPX_YES="${NPX_YES:-true}"
 export DEBIAN_FRONTEND=noninteractive
+
+# A native git first on PATH on Apple silicon when PATH's runs under Rosetta;
+# a no-op elsewhere. After git's own libexec/git-core, which git prepends
+# before the hook starts. See native-git.sh.
+# shellcheck source=native-git.sh
+source "${BASH_SOURCE[0]%/*}/native-git.sh"
+loregarden_use_native_git

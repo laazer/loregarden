@@ -18,9 +18,11 @@ from loregarden.services import doctor, doctor_dev_server
 from loregarden.services.doctor_dev_server import (
     STATE_DIR,
     check_dev_server_reload,
+    check_native_git,
     check_native_python,
     is_translated,
 )
+from loregarden.services.native_git import GitChoice
 
 #: A pid no process holds: above the kernel's default pid_max on macOS and Linux.
 DEAD_PID = 4_194_304 + 7
@@ -118,3 +120,45 @@ def test_it_agrees_with_an_intel_python_on_apple_silicon():
 def test_the_doctor_runs_it_and_no_dispatch_waits_on_it():
     assert doctor.CHECKS[DoctorCheck.NATIVE_PYTHON] is check_native_python
     assert DoctorCheck.NATIVE_PYTHON not in doctor.DISPATCH_PREFLIGHT_CHECKS
+
+
+_NATIVE = GitChoice(binary="/clt/git", native=True, reason="PATH's git is not native; /clt/git is")
+
+
+def _git_finding(tmp_path: Path, *, apple: bool, choice: GitChoice, bash_native: bool = True):
+    with (
+        mock.patch.object(doctor_dev_server, "apple_silicon", return_value=apple),
+        mock.patch.object(doctor_dev_server, "git_choice", return_value=choice),
+        mock.patch.object(doctor_dev_server.shutil, "which", return_value="/some/bash"),
+        mock.patch.object(doctor_dev_server, "has_arm64_slice", return_value=bash_native),
+    ):
+        return check_native_git(mock.Mock(), mock.Mock(), tmp_path)
+
+
+def test_a_translated_git_is_reported_with_what_to_install(tmp_path):
+    choice = GitChoice(binary="git", native=False, reason="no native git >= 2.38 found")
+    finding = _git_finding(tmp_path, apple=True, choice=choice)
+    assert finding.check is DoctorCheck.NATIVE_GIT
+    assert finding.status is DoctorStatus.WARN
+    assert "xcode-select --install" in finding.remediation
+
+
+def test_a_native_git_under_an_intel_bash_names_the_bash(tmp_path):
+    finding = _git_finding(tmp_path, apple=True, choice=_NATIVE, bash_native=False)
+    assert finding.status is DoctorStatus.WARN
+    assert "/some/bash" in finding.finding
+    assert "bash" in finding.remediation
+
+
+def test_a_native_git_and_bash_pass(tmp_path):
+    assert _git_finding(tmp_path, apple=True, choice=_NATIVE).status is DoctorStatus.PASS
+
+
+def test_off_apple_silicon_the_git_check_passes_without_asking(tmp_path):
+    choice = GitChoice(binary="git", native=False, reason="unreachable")
+    assert _git_finding(tmp_path, apple=False, choice=choice).status is DoctorStatus.PASS
+
+
+def test_the_doctor_runs_the_git_check_and_no_dispatch_waits_on_it():
+    assert doctor.CHECKS[DoctorCheck.NATIVE_GIT] is check_native_git
+    assert DoctorCheck.NATIVE_GIT not in doctor.DISPATCH_PREFLIGHT_CHECKS

@@ -28,6 +28,7 @@ COPIED = (
     "test-prerequisites.sh",
     "push-base.sh",
     "hook-noninteractive.sh",
+    "native-git.sh",
     "ensure-node.sh",
     "server_python.sh",
 )

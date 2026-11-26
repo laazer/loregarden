@@ -22,6 +22,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from loregarden.services.native_git import git_binary
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -88,12 +89,18 @@ def run_git(
     *index_file* is the one binding a caller may set, and only by naming it
     here: an inherited GIT_INDEX_FILE is scrubbed because nobody chose it, while
     a scratch index is how a tree is snapshotted without touching the real one.
+
+    The binary is `native_git.git_binary()`: PATH's git, unless that runs under
+    Rosetta on Apple silicon and a native one is installed. It goes in as
+    `executable`, so argv[0] stays `git` for everything that reads the argv.
     """
     child_env = scrubbed_git_env(env)
     if index_file is not None:
         child_env["GIT_INDEX_FILE"] = str(index_file)
+    binary = git_binary()
     return subprocess.run(
         ["git", *args],
+        executable=binary if binary != "git" else None,
         cwd=str(cwd) if cwd is not None else None,
         env=child_env,
         **kwargs,
