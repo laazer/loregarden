@@ -18,17 +18,18 @@ from loregarden.cli import mcp_tools
 from loregarden.cli import merge_queue as merge_queue_cli
 from loregarden.cli.errors import EXIT_USAGE
 from loregarden.cli.main import main as cli_main
-from loregarden.db import migrations
+from loregarden.db import migrations, shared_database_guard
 from loregarden.db import session as db_session
 from loregarden.db.shared_database_guard import (
     UnshippedMigrationError,
+    assert_may_create_tables,
     assert_may_migrate,
     primary_checkout,
 )
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import MergeQueueEntry, MergeQueueState
 from loregarden.services.git_subprocess import run_git
-from sqlalchemy import Engine
+from sqlalchemy import Engine, inspect
 from sqlmodel import Session, SQLModel, create_engine
 from tests.db_templates import copy_database
 from tests.factories import make_workspace
@@ -226,10 +227,8 @@ def test_the_guard_module_still_imports_on_its_own():
 # the guard refused a command that had nothing to write.
 
 
-@pytest.fixture
-def live_from_worktree(checkouts, schema_template) -> Iterator[Engine]:
-    """Live data in the primary, migrated to main; a worktree build that also carries UNSHIPPED."""
-    primary, worktree = checkouts
+def _live_at_main(primary: Path, schema_template: Path) -> Engine:
+    """The primary's live database: every table, every migration this build knows applied."""
     database = primary / "data/loregarden.db"
     database.unlink()
     copy_database(schema_template, database)
@@ -241,6 +240,14 @@ def live_from_worktree(checkouts, schema_template) -> Iterator[Engine]:
         )
         for mid, _ in migrations.MIGRATIONS:
             conn.exec_driver_sql("INSERT INTO schema_migrations (id) VALUES (?)", (mid,))
+    return engine
+
+
+@pytest.fixture
+def live_from_worktree(checkouts, schema_template) -> Iterator[Engine]:
+    """Live data in the primary, migrated to main; a worktree build that also carries UNSHIPPED."""
+    primary, worktree = checkouts
+    engine = _live_at_main(primary, schema_template)
     branch = [*migrations.MIGRATIONS, (UNSHIPPED, lambda conn: None)]
     with ExitStack() as stack:
         stack.enter_context(mock.patch.object(migrations, "MIGRATIONS", branch))
@@ -343,3 +350,87 @@ def test_wait_with_no_database_exits_unreadable_and_creates_none(tmp_path):
 def test_wait_on_an_unknown_entry_is_a_usage_error_not_stopped(live_from_worktree):
     with mock.patch.object(merge_queue_cli, "_server_up", return_value=True):
         assert cli_main(["merge-queue", "wait", "no-such-entry"]) == EXIT_USAGE
+
+
+# --- create_all is guarded too ----------------------------------------------
+#
+# `init_db` runs `create_all` before `apply_migrations`, so a branch that adds a
+# model created its table in the live database before the migration guard was
+# asked, and a branch that adds a model with no migration was never asked.
+
+NEW_TABLE = "path_claims"
+
+
+def test_a_worktree_may_not_create_tables_in_live(checkouts):
+    primary, worktree = checkouts
+
+    with pytest.raises(UnshippedMigrationError, match=NEW_TABLE):
+        assert_may_create_tables(primary / "data/loregarden.db", [NEW_TABLE], code_root=worktree)
+
+
+def test_the_primary_and_the_worktrees_own_copies_create_tables_freely(checkouts, tmp_path):
+    primary, worktree = checkouts
+    assert_may_create_tables(primary / "data/loregarden.db", [NEW_TABLE], code_root=primary)
+    assert_may_create_tables(tmp_path / "copy/loregarden.db", [NEW_TABLE], code_root=worktree)
+    assert_may_create_tables(
+        worktree / "data/sandbox/loregarden.db", [NEW_TABLE], code_root=worktree
+    )
+
+
+@pytest.fixture
+def live_missing_a_table(checkouts, schema_template) -> Iterator[Engine]:
+    """Live data in the primary, migrated to main, lacking a table this build models."""
+    primary, _ = checkouts
+    engine = _live_at_main(primary, schema_template)
+    with engine.begin() as conn:
+        conn.exec_driver_sql(f"DROP TABLE {NEW_TABLE}")
+    with mock.patch.object(db_session, "engine", engine):
+        yield engine
+    engine.dispose()
+
+
+def _tables(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        return set(inspect(conn).get_table_names())
+
+
+def test_init_db_from_a_worktree_refuses_before_create_all_adds_a_table(
+    checkouts, live_missing_a_table
+):
+    _, worktree = checkouts
+    before = _tables(live_missing_a_table)
+
+    with mock.patch.object(migrations, "_CODE_ROOT", worktree):
+        with pytest.raises(UnshippedMigrationError, match=NEW_TABLE):
+            db_session.init_db()
+
+    assert _tables(live_missing_a_table) == before
+
+
+def test_init_db_from_a_worktree_refuses_an_unshipped_migration_before_create_all(
+    checkouts, live_missing_a_table
+):
+    """The convention-following branch: a new table *and* its migration. Nothing is written."""
+    _, worktree = checkouts
+    before = _tables(live_missing_a_table)
+    branch = [*migrations.MIGRATIONS, (UNSHIPPED, lambda conn: None)]
+
+    with (
+        mock.patch.object(migrations, "_CODE_ROOT", worktree),
+        mock.patch.object(migrations, "MIGRATIONS", branch),
+        mock.patch.object(shared_database_guard, "assert_may_create_tables"),
+    ):
+        with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
+            db_session.init_db()
+
+    assert _tables(live_missing_a_table) == before
+
+
+def test_init_db_from_the_primary_still_creates_the_table(checkouts, live_missing_a_table):
+    """The control: the same database, opened by the primary's own build, is created as before."""
+    primary, _ = checkouts
+
+    with mock.patch.object(migrations, "_CODE_ROOT", primary):
+        db_session.init_db()
+
+    assert NEW_TABLE in _tables(live_missing_a_table)

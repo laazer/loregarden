@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -1459,11 +1460,21 @@ from loregarden.db.migrations_runner import (  # noqa: E402
     apply_pending,
     pending_migration_ids,
 )
-from loregarden.db.shared_database_guard import assert_may_migrate  # noqa: E402
+from loregarden.db.shared_database_guard import (  # noqa: E402
+    assert_may_change_shared_schema,
+    assert_may_migrate,
+)
 
 #: The checkout this registry was loaded from — `server/loregarden/db/` is three
 #: levels below it.
 _CODE_ROOT = Path(__file__).resolve().parents[3]
+
+
+def assert_may_change_schema(engine: Engine, tables: Iterable[str]) -> None:
+    """Refuse a worktree build's change to the shared schema before `init_db` writes anything."""
+    assert_may_change_shared_schema(
+        engine, tables, [mid for mid, _ in MIGRATIONS], code_root=_CODE_ROOT
+    )
 
 
 def apply_migrations(engine: Engine) -> list[str]:
@@ -1478,4 +1489,4 @@ def apply_migrations(engine: Engine) -> list[str]:
     return apply_pending(engine, MIGRATIONS)
 
 
-__all__ = ["MIGRATIONS", "apply_migrations"]
+__all__ = ["MIGRATIONS", "apply_migrations", "assert_may_change_schema"]

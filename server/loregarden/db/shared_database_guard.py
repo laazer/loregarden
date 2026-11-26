@@ -20,11 +20,14 @@ exists to stop.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from pathlib import Path
 
 from loregarden.db.migration_registry import ids_declared_in_source
+from loregarden.db.migrations_runner import pending_migration_ids
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.git_trees import main_working_tree
+from sqlalchemy import Engine, inspect
 
 #: The ref whose ledger decides what has shipped.
 SHIPPED_REF = "origin/main"
@@ -99,19 +102,43 @@ def shipped_migration_ids(code_root: Path, ref: str = SHIPPED_REF) -> frozenset[
     return _frozen_ledger_ids(code_root, ref) | _versioned_ids(code_root, ref)
 
 
-def assert_may_migrate(database: Path | None, pending: list[str], *, code_root: Path) -> None:
-    """Raise if applying ``pending`` here would migrate live data ahead of main."""
-    if not pending or database is None:
-        return
+def _shared_from_worktree(database: Path, code_root: Path) -> bool:
+    """Whether ``database`` is the primary checkout's, opened by a linked worktree's build."""
     primary = primary_checkout(code_root)
     worktree = code_root.resolve()
     if primary == worktree:
-        return
+        return False
     target = database.resolve()
     # Claude Code nests worktrees inside the primary (`.claude/worktrees/<name>`),
     # so a path under the primary is not enough to call it live: the worktree's
     # own files, such as the `task sandbox` copy in its data/, are the branch's.
-    if not target.is_relative_to(primary) or target.is_relative_to(worktree):
+    return target.is_relative_to(primary) and not target.is_relative_to(worktree)
+
+
+def assert_may_create_tables(database: Path | None, missing: list[str], *, code_root: Path) -> None:
+    """Raise if ``create_all`` here would add tables to live data from a worktree build.
+
+    `init_db` runs `create_all` before any migration, so without this a branch
+    that adds a model created its table in the live database before
+    `assert_may_migrate` was ever asked; and a branch that adds a model with no
+    migration was never asked at all. Unlike migration ids, which tables main
+    ships cannot be read from its source reliably, so any table refuses: main's
+    own server creates every table main models when it starts.
+    """
+    if not missing or database is None or not _shared_from_worktree(database, code_root):
+        return
+    raise UnshippedMigrationError(
+        f"Refusing to create {', '.join(sorted(missing))} in the shared database {database}: "
+        f"this build runs from the worktree {code_root}, and only main's server creates "
+        "tables there. If main ships them, restart main's server (`./scripts/reload-backend.sh` "
+        "from the primary checkout); otherwise use the MCP tools, run the CLI from a checkout "
+        "of main, or test against a copy (`task sandbox`)."
+    )
+
+
+def assert_may_migrate(database: Path | None, pending: list[str], *, code_root: Path) -> None:
+    """Raise if applying ``pending`` here would migrate live data ahead of main."""
+    if not pending or database is None or not _shared_from_worktree(database, code_root):
         return
     unshipped = [mid for mid in pending if mid not in shipped_migration_ids(code_root)]
     if not unshipped:
@@ -124,3 +151,26 @@ def assert_may_migrate(database: Path | None, pending: list[str], *, code_root: 
         "(served by main's server), run the CLI from a checkout of main, or test against "
         "a copy (`task sandbox`). If it has merged, `git fetch origin` and retry."
     )
+
+
+def assert_may_change_shared_schema(
+    engine: Engine, tables: Iterable[str], registered: list[str], *, code_root: Path
+) -> None:
+    """Refuse before anything is written: both `create_all` and the migrations.
+
+    `init_db` calls this first. Guarding only `apply_migrations` left
+    `create_all`, which runs before it, free to add a branch's new tables to the
+    shared database from a worktree.
+    """
+    database = Path(engine.url.database) if engine.url.database else None
+    if database is None:
+        return
+    present: set[str] = set()
+    # No file is a database with no tables; connecting would create it.
+    if database.is_file():
+        with engine.connect() as conn:
+            present = set(inspect(conn).get_table_names())
+    assert_may_create_tables(
+        database, [table for table in tables if table not in present], code_root=code_root
+    )
+    assert_may_migrate(database, pending_migration_ids(engine, registered), code_root=code_root)
