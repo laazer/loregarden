@@ -1,18 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { CreateInitiativeForm } from "../components/initiatives/CreateInitiativeForm";
 import { InitiativeCard } from "../components/initiatives/InitiativeCard";
+import { InitiativeOverview } from "../components/initiatives/InitiativeOverview";
 import { UnassignedMilestones } from "../components/initiatives/UnassignedMilestones";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { Button } from "../components/ui/Button";
+import { sortByAttention } from "../lib/initiativeAttention";
 import { navigateToInitiativeSuggestions } from "../lib/useAppNavigation";
 import { describeError } from "../state/toastStore";
 import "../components/initiatives/Initiatives.css";
 
 const INITIATIVES_KEY = ["initiatives"] as const;
 const ATTACHABLE_KEY = ["initiatives", "attachable-milestones"] as const;
+/** The search param naming the initiative whose card is open below the overview. */
+const OPEN_PARAM = "open";
+const OPEN_CARD_ID = "initiative-open-card";
 
 /**
  * Initiatives span workspaces, so this page ignores the workspace switcher: an
@@ -23,6 +29,7 @@ export function InitiativesPage() {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [params, setParams] = useSearchParams();
 
   const initiatives = useQuery({
     queryKey: INITIATIVES_KEY,
@@ -101,7 +108,22 @@ export function InitiativesPage() {
     },
   });
 
-  const list = initiatives.data ?? [];
+  const list = sortByAttention(initiatives.data ?? []);
+  // The card the URL names, by external id or id; else the one needing attention most.
+  // A stale name (deleted, or a typo) falls back the same way rather than opening nothing.
+  const wanted = params.get(OPEN_PARAM);
+  const open = list.find((i) => i.external_id === wanted || i.id === wanted) ?? list[0];
+  const openInitiative = (id: string) => {
+    const target = list.find((i) => i.id === id);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set(OPEN_PARAM, target?.external_id || id);
+        return next;
+      },
+      { replace: true },
+    );
+  };
   // Every milestone a sprint's work could go back to: unclaimed ones and those in an initiative.
   // Done ones included — a milestone a sprint emptied rolled up as done, and reopens when work returns.
   const milestoneChoices = [
@@ -163,19 +185,32 @@ export function InitiativesPage() {
           </p>
         )
       ) : (
-        list.map((initiative) => (
-          <InitiativeCard
-            key={initiative.id}
-            initiative={initiative}
-            attachable={attachable.data ?? []}
-            busyId={busyId}
-            onAttach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: initiative.id })}
-            onDetach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: null })}
-            milestoneChoices={milestoneChoices}
-            onMoveWork={(ticketId, parentId) => moveWork.mutate({ ticketId, parentId })}
-            onDelete={() => remove.mutate(initiative.id)}
-          />
-        ))
+        open && (
+          <>
+            {/* One initiative needs no overview: its card already says all of it. */}
+            {list.length > 1 ? (
+              <InitiativeOverview
+                initiatives={list}
+                openId={open.id}
+                cardId={OPEN_CARD_ID}
+                onOpen={openInitiative}
+              />
+            ) : null}
+            <div id={OPEN_CARD_ID}>
+              <InitiativeCard
+                key={open.id}
+                initiative={open}
+                attachable={attachable.data ?? []}
+                busyId={busyId}
+                onAttach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: open.id })}
+                onDetach={(milestoneId) => reparent.mutate({ milestoneId, initiativeId: null })}
+                milestoneChoices={milestoneChoices}
+                onMoveWork={(ticketId, parentId) => moveWork.mutate({ ticketId, parentId })}
+                onDelete={() => remove.mutate(open.id)}
+              />
+            </div>
+          </>
+        )
       )}
 
       {attachable.isError ? (

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { api, type InitiativeMilestone, type InitiativeView } from "../../api/client";
 import { useReaderStore } from "../../state/readerStore";
@@ -39,11 +40,13 @@ function initiative(overrides: Partial<InitiativeView> = {}): InitiativeView {
   };
 }
 
-function renderPage() {
+function renderPage(url = "/initiatives") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <InitiativesPage />
+      <MemoryRouter initialEntries={[url]}>
+        <InitiativesPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -362,5 +365,103 @@ describe("an initiative at volume", () => {
     expect(await screen.findByRole("button", { name: "lg-m-13 actions" })).toBeInTheDocument();
     expect(screen.queryByRole("group")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /^lg-m-\d+ actions$/ })).toHaveLength(14);
+  });
+});
+
+describe("several initiatives", () => {
+  const quiet = initiative({
+    id: "q",
+    external_id: "init-quiet-1",
+    title: "Quiet backlog",
+    state: "backlog",
+    priority: 1,
+    milestones: [milestone({ id: "qm", title: "Someday", state: "backlog" })],
+    progress: { resolved: 0, total: 1 },
+  });
+  const busy = initiative({
+    id: "b",
+    external_id: "init-busy-2",
+    title: "Busy rollout",
+    priority: 3,
+    milestones: [
+      milestone({ id: "bm1", title: "Rolling now", state: "in_progress" }),
+      milestone({ id: "bm2", title: "Stuck part", state: "blocked" }),
+    ],
+    progress: { resolved: 0, total: 2 },
+  });
+  // More in flight than `busy`, but nothing blocked: blocked work still sorts first.
+  const rush = initiative({
+    id: "r",
+    external_id: "init-rush-4",
+    title: "Rush job",
+    priority: 2,
+    milestones: [
+      milestone({ id: "rm1", title: "Rush one", state: "in_progress" }),
+      milestone({ id: "rm2", title: "Rush two", state: "in_progress" }),
+      milestone({ id: "rm3", title: "Rush three", state: "in_progress" }),
+    ],
+    progress: { resolved: 0, total: 3 },
+  });
+  const done = initiative({
+    id: "d",
+    external_id: "init-done-3",
+    title: "Shipped thing",
+    state: "done",
+    priority: 0,
+    milestones: [milestone({ id: "dm", title: "Shipped half", state: "done" })],
+    progress: { resolved: 1, total: 1 },
+  });
+
+  test("lists every initiative in one table, blocked work first, and opens only that one's card", async () => {
+    mockApi.initiatives.mockResolvedValue([quiet, done, rush, busy]);
+    renderPage();
+
+    const table = await screen.findByRole("table", { name: /Initiatives/ });
+    const names = within(table)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(names).toEqual([
+      "init-busy-2Busy rollout",
+      "init-rush-4Rush job",
+      "init-quiet-1Quiet backlog",
+      "init-done-3Shipped thing",
+    ]);
+    expect(within(table).getByRole("row", { name: /Busy rollout/ })).toHaveTextContent("1 blocked · 1 in progress");
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Busy rollout" })).toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: /Busy rollout/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("heading", { name: "Quiet backlog" })).not.toBeInTheDocument();
+  });
+
+  test("choosing a row swaps the open card", async () => {
+    mockApi.initiatives.mockResolvedValue([quiet, busy]);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Quiet backlog/ }));
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Quiet backlog" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Quiet backlog/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /Busy rollout/ })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("the URL names the open card, and an unknown name falls back to the top row", async () => {
+    mockApi.initiatives.mockResolvedValue([quiet, busy]);
+    const first = renderPage("/initiatives?open=init-quiet-1");
+    expect(await screen.findByRole("heading", { name: "Quiet backlog" })).toBeInTheDocument();
+    first.unmount();
+
+    renderPage("/initiatives?open=init-gone-9");
+    expect(await screen.findByRole("heading", { name: "Busy rollout" })).toBeInTheDocument();
+  });
+
+  test("a lone initiative shows its card with no overview table", async () => {
+    mockApi.initiatives.mockResolvedValue([busy]);
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Busy rollout" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });
