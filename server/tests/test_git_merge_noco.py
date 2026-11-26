@@ -24,10 +24,13 @@ it would pass every other test in this file.
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
-from loregarden.services.git_merge_noco import first_containing, is_ancestor, rev
+from loregarden.services import git_merge_noco
+from loregarden.services.git_merge_noco import first_containing, is_ancestor, merge_base, rev
 from tests.worktree_helpers import commit_on, git, make_repo
 
 NOCO_LOGGER = "loregarden.services.git_merge_noco"
@@ -360,3 +363,59 @@ def test_a_path_that_is_not_a_repository_answers_nothing_and_says_so(
 
     assert answer == "", f"'' means 'could not answer'; got {answer!r}"
     assert _warnings(caplog), "a git failure with no log is a landing recorded blind"
+
+
+# --- commit-pair answers are remembered ----------------------------------------
+
+
+def _merge_base_launches(calls: list[tuple[str, ...]]) -> list[tuple[str, ...]]:
+    return [args for args in calls if args[:1] == ("merge-base",)]
+
+
+def test_a_commit_pairs_ancestry_and_merge_base_are_asked_of_git_once(
+    diverged: tuple[Path, str, str],
+) -> None:
+    """Two commit ids name a fixed history, so asking again launches no git.
+
+    A ref name can move between asks, so it is asked every time.
+    """
+    repo, branch_tip, target_tip = diverged
+    fork = _sha(repo, "main")
+    real = git_merge_noco._git
+    calls: list[tuple[str, ...]] = []
+
+    def recording(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return real(repo_root, *args)
+
+    with mock.patch.object(git_merge_noco, "_git", side_effect=recording):
+        answers = [
+            (is_ancestor(repo, fork, branch_tip), merge_base(repo, branch_tip, target_tip))
+            for _ in range(3)
+        ]
+        by_name = [is_ancestor(repo, "main", f"refs/heads/{BRANCH}") for _ in range(2)]
+
+    assert answers == [(True, fork)] * 3
+    assert by_name == [True, True]
+    assert len(_merge_base_launches(calls)) == 4, calls
+
+
+def test_git_failing_on_a_commit_pair_is_not_remembered(
+    merged: tuple[Path, str, str],
+) -> None:
+    """A failure is not an answer: the next ask goes to git and gets the real one."""
+    repo, branch_tip, merge = merged
+    real = git_merge_noco._git
+
+    def failing(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[:1] == ("merge-base",):
+            return subprocess.CompletedProcess(list(args), 128, "", "fatal: simulated")
+        return real(repo_root, *args)
+
+    with mock.patch.object(git_merge_noco, "_git", side_effect=failing):
+        assert is_ancestor(repo, branch_tip, merge) is False
+        with pytest.raises(RuntimeError, match="simulated"):
+            merge_base(repo, branch_tip, merge)
+
+    assert is_ancestor(repo, branch_tip, merge) is True
+    assert merge_base(repo, branch_tip, merge) == branch_tip
