@@ -385,7 +385,9 @@ def landed_prefix(repo_root: Path, base_sha: str, tip_sha: str) -> str:
 SUPERSEDE_SCAN_LIMIT = 200
 
 
-def superseding_commit(repo_root: Path, branch_sha: str, base_sha: str) -> str:
+def superseding_commit(
+    repo_root: Path, branch_sha: str, base_sha: str, *, fork: str | None = None
+) -> str:
     """A commit on ``base_sha``'s history that already holds everything
     ``branch_sha`` adds, or "" when there is none.
 
@@ -400,17 +402,15 @@ def superseding_commit(repo_root: Path, branch_sha: str, base_sha: str) -> str:
 
     Only base commits the branch lacks and that touch a path the branch
     changed can answer yes, so those are the ones tried, oldest first.
+
+    ``fork`` is `merge_base` of the two, when the caller already asked it
+    (`work_landed` needs it again afterwards); "" means unrelated histories.
     """
-    merge_base = _git(repo_root, "merge-base", base_sha, branch_sha)
-    if merge_base.returncode == 1:
+    if fork is None:
+        fork = merge_base(repo_root, base_sha, branch_sha)
+    if not fork:
         return ""  # unrelated histories: nothing shared, so nothing superseded
-    if merge_base.returncode != 0:
-        raise RuntimeError(
-            f"git merge-base failed: {(merge_base.stderr or merge_base.stdout).strip()}"
-        )
-    changed = _git(
-        repo_root, "diff", "--name-only", "--no-renames", merge_base.stdout.strip(), branch_sha
-    )
+    changed = _git(repo_root, "diff", "--name-only", "--no-renames", fork, branch_sha)
     if changed.returncode != 0:
         raise RuntimeError(f"git diff failed: {(changed.stderr or changed.stdout).strip()}")
     paths = [line for line in changed.stdout.splitlines() if line]
