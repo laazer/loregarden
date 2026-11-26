@@ -117,6 +117,38 @@ def test_completed_assistant_message_is_used_when_no_deltas_arrive(db_session: S
     assert "· Bash · pytest -q" in frame["content"]
 
 
+def _assistant(*blocks) -> str:
+    return json.dumps({"type": "assistant", "message": {"content": list(blocks)}})
+
+
+def test_without_deltas_the_completed_message_carries_the_reply(db_session: Session):
+    """No partial messages: the finished text block is the reply, not reasoning."""
+    sink = ChatTurnThinkingSink("turn-no-deltas")
+    sink.append_stream_line(
+        _assistant(
+            "not a block",
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": "Ship it."},
+        )
+    )
+    sink.close()
+
+    frame = read_chat_turn_thinking(db_session, "turn-no-deltas")
+    assert (frame["answer"], frame["content"]) == ("Ship it.", "")
+    assert frame["activity"] == "Writing the reply"
+
+
+def test_without_deltas_reasoning_alone_says_it_is_thinking(db_session: Session):
+    sink = ChatTurnThinkingSink("turn-thinking-only")
+    sink.append_stream_line(
+        _assistant({"type": "thinking", "thinking": "Weighing it."}, {"type": "text", "text": ""})
+    )
+    sink.close()
+
+    frame = read_chat_turn_thinking(db_session, "turn-thinking-only")
+    assert (frame["content"], frame["answer"]) == ("Weighing it.", "")
+
+
 def test_the_bridge_contributes_refusals_and_steers_only(db_session: Session):
     """An approval that went through is already visible as the tool call it
     approved; a refusal changes what happens next and is not visible anywhere

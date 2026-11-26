@@ -445,6 +445,8 @@ def test_miss_fetches_extracts_and_caches(session, resolver):
     )
 
     assert len(requests) == 1
+    assert "if-none-match" not in requests[0].headers, "nothing held, so nothing to revalidate"
+    assert "if-modified-since" not in requests[0].headers
     assert payload.cache == ReferenceCacheOutcome.MISS
     assert payload.error == ""
     assert "map()" in payload.markdown
