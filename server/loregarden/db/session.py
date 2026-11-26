@@ -8,7 +8,7 @@ from loregarden.config import settings
 # Same side effect, on every session's flush: a closed ticket's stages are closed.
 from loregarden.db.closed_workflow_guard import CLOSED_WITH_TICKET  # noqa: F401
 from loregarden.db.enum_integrity import report_unreadable_enum_values
-from loregarden.db.migrations import MIGRATIONS, apply_migrations
+from loregarden.db.migrations import MIGRATIONS, apply_migrations, assert_may_change_schema
 
 # Imported for its side effect: registering the WorkflowInstance mapper events
 # that refuse a pin to a template version with no terminal stage. Kept here so
@@ -125,6 +125,9 @@ def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
 
 
 def init_db() -> None:
+    # Before `create_all`, which would otherwise add a worktree branch's new
+    # tables to the shared database ahead of the guard in `apply_migrations`.
+    assert_may_change_schema(engine, SQLModel.metadata.tables)
     SQLModel.metadata.create_all(engine)
     apply_migrations(engine)
     # After migrations, so a value the migrations were meant to convert is not
