@@ -700,10 +700,17 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
   and pytest runs the tests within two imports of a changed module, plus those that read the
   package's source or name a changed file; jest runs `--changedSince`. A landing runs
   everything its diff reaches (`LOREGARDEN_TESTS_BASE`). A hook or repo script (`.lefthook/scripts/`,
-  `scripts/`) selects the tests that name it, or name a script that runs or imports it. Anything
-  unmappable (`conftest.py`, `pyproject.toml`, another non-Python file, anything
-  else outside `server/`/`client/`) falls back to the full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
-  CI rather than proving it. Test files that passed on the same committed tree in the last day,
+  `scripts/`) selects the tests that name it, or name a script that runs or imports it. A push
+  never runs the full server suite: it runs at most `LOREGARDEN_PUSH_TEST_FILES` (default 40)
+  files, closest first, and a change it cannot map (`conftest.py`, `pyproject.toml`, anything
+  outside `server/`/`client/`) or that reaches nothing runs what the rest of the diff reaches, or
+  an even sample. A landing still falls back to the full suite there. CI and the merge queue run
+  everything before anything lands, so a green push *predicts* CI rather than proving it. Each
+  push prints its time against `LOREGARDEN_PUSH_BUDGET_SECONDS` (default 300) and logs it, with
+  any full-suite reason; `.lefthook/scripts/push_run_log.py report --repo .` gives the 7-day
+  median and fallback count. Any hook pytest run, push or landing, is stopped at
+  `LOREGARDEN_TEST_WALL_LIMIT_SECONDS` (default 1800) and fails, naming the slowest files and
+  the tests still running (`wall_limit.py`). Test files that passed on the same committed tree in the last day,
   by hand or in an earlier push, are not run again (`pass_receipt.py`), so commit before the run
   you want to count. `LOREGARDEN_FULL_TESTS=1` forces the full run;
   `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.

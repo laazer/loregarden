@@ -667,10 +667,10 @@ def test_the_armed_commands_are_in_the_only_form_that_can_execute():
     assert script[0] == "bash" and (REPO_ROOT / script[1]).is_file(), script
     assert shlex.split(JEST_COMMAND)[:3] == ["npm", "--prefix", "client"]
     # The base `_verify_candidate` exports is the one the script narrows by.
-    assert 'BASE="$(push_base "$ROOT")"' in (REPO_ROOT / script[1]).read_text(encoding="utf-8")
+    assert 'BASE="$(select_base "$ROOT")"' in (REPO_ROOT / script[1]).read_text(encoding="utf-8")
     push_base = REPO_ROOT / ".lefthook" / "scripts" / "push-base.sh"
     resolved = subprocess.run(
-        ["bash", "-c", 'source "$1" && push_base "$2"', "_", str(push_base), str(REPO_ROOT)],
+        ["bash", "-c", 'source "$1" && select_base "$2"', "_", str(push_base), str(REPO_ROOT)],
         env={**os.environ, LAND_BASE_ENV: "the-exported-base"},
         capture_output=True,
         text=True,

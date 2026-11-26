@@ -28,9 +28,16 @@
 #     first failure is the one worth reading — a cascade dominates the output and
 #     picks the wrong suspect — and it bounds what a broken push costs on a
 #     loaded box. CI runs to completion, so the full count is never lost.
-#   - Both fall back to the full suite for any change they cannot map, and CI
-#     still runs everything on every PR — a green push predicts CI, it no longer
-#     proves it. LOREGARDEN_FULL_TESTS=1 runs the full suites here.
+#   - pytest never runs the full suite on a push: at most
+#     LOREGARDEN_PUSH_TEST_FILES (default 40) files nearest the change, or an
+#     even sample when it cannot map the change (push-base.sh). jest falls back
+#     to its full suite for a change it cannot map. CI and the merge queue run
+#     everything before anything lands — a green push predicts CI, it does not
+#     prove it. LOREGARDEN_FULL_TESTS=1 runs the full suites here. server-tests
+#     prints its time against LOREGARDEN_PUSH_BUDGET_SECONDS and logs every run,
+#     full-suite reason included (push_run_log.py report). A hard ceiling,
+#     LOREGARDEN_TEST_WALL_LIMIT_SECONDS (default 1800), stops and fails any hook
+#     pytest run, push or landing, naming the slowest files (wall_limit.py).
 #   - They run one after the other, NOT in parallel. server-tests is an xdist
 #     run that takes every core it can get; jest sharing those cores with it
 #     lost roughly 2x on wall-clock, and the stress tests that inherit jest's
