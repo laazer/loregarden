@@ -74,7 +74,7 @@ def refresh_role_from_seed(
             marker,
         )
         return False
-    path = settings.agent_context_dir / role_file
+    path = settings.seed_context_dir / role_file
     if not path.is_file():
         logger.warning("%s: %s is missing; cannot refresh %r", migration_id, path, slug)
         return False

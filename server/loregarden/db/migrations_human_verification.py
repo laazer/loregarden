@@ -53,7 +53,7 @@ def _seed_skill(conn: Connection) -> None:
         logger.info("0116: %r already present; leaving it alone", SKILL_SLUG)
         return
 
-    path = settings.agent_context_dir / "skills" / SKILL_SLUG / "SKILL.md"
+    path = settings.seed_context_dir / "skills" / SKILL_SLUG / "SKILL.md"
     if not path.is_file():
         logger.warning("0116: %s is missing; cannot seed %r", path, SKILL_SLUG)
         return
@@ -138,7 +138,7 @@ def _refresh_role_body(conn: Connection, *, slug: str, role_file: str) -> None:
         )
         return
 
-    path = settings.agent_context_dir / role_file
+    path = settings.seed_context_dir / role_file
     if not path.is_file():
         logger.warning("0116: %s is missing; cannot refresh %r", path, slug)
         return

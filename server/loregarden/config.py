@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     #: operator's `kill-server` or `~/.tmux.conf` cannot reach the agents on it.
     agent_tmux_socket: str = "loregarden"
     agent_context_dir: Path = Path("agent_context")
+    #: The agent_context/ of the checkout this code runs from, which `repo_root`
+    #: may not be: the CLI points `repo_root` at the primary checkout to reach the
+    #: shared database. A migration copies seed files that ship in its own commit,
+    #: so it reads them here; set below, never from the environment.
+    seed_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"
     claude_model: str = ""
@@ -301,6 +306,7 @@ class Settings(BaseSettings):
 settings = Settings()
 settings.run_log_dir = settings.repo_root / settings.run_log_dir
 settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
+settings.seed_context_dir = _find_repo_root() / "agent_context"
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 
 

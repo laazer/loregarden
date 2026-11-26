@@ -72,7 +72,7 @@ def m_agent_tool_grants(conn: Connection) -> None:
         )
         return
 
-    path = settings.agent_context_dir / _REFRESH_ROLE_FILE
+    path = settings.seed_context_dir / _REFRESH_ROLE_FILE
     if not path.is_file():
         logger.warning("0100: %s is missing; cannot refresh %r", path, _REFRESH_SLUG)
         return

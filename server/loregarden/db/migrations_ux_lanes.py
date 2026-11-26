@@ -171,7 +171,7 @@ def _repair_design_agent(conn: Connection) -> None:
         )
         return
 
-    path = settings.agent_context_dir / _UX_DESIGN_ROLE_FILE
+    path = settings.seed_context_dir / _UX_DESIGN_ROLE_FILE
     if not path.is_file():
         logger.warning("0123: %s is missing; cannot refresh %r", path, _UX_DESIGN_AGENT)
         return
