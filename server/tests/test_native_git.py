@@ -368,5 +368,7 @@ def test_on_this_mac_the_shimmed_git_finds_its_own_helpers(tmp_path):
     assert shim_git.is_symlink(), "the hooks should run git through the shim"
     # The target's own git-core, not one that only happens to exist: this Mac
     # has Xcode.app too, whose git-core is where the unexported fallback looks.
-    assert exec_path == shim_git.resolve().parent.parent / "libexec" / "git-core"
+    # Resolved: the path may run through a link to that git-core, which is the
+    # same directory.
+    assert exec_path.resolve() == shim_git.resolve().parent.parent / "libexec" / "git-core"
     assert (exec_path / "git-submodule").is_file(), exec_path

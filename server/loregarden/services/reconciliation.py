@@ -63,6 +63,7 @@ from loregarden.services.invariant_registry import (
     CLOSED_TICKETS_HAVE_CLOSED_WORKFLOWS,
     CLOSED_TICKETS_TAKE_NO_ANSWERS,
     CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,
+    DIFFS_SHOW_NO_DELETED_FILE_HEADER,
     DONE_TICKET_SHIP_IS_OBSERVABLE,
     DONE_TICKETS_HAVE_SETTLED_CRITERIA,
     EVERY_BLOCK_IS_SETTLED,
@@ -459,6 +460,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # grade a backlog, and boot should not wait on it (lg-improved-memory-2772).
     _invariant(CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS, at_startup=False),
     _invariant(BRIEFINGS_COUNT_WHAT_THEY_DELIVERED, at_startup=False),
+    # Stored diffs a parser fixed since rendered wrongly. Not at startup: it
+    # reads every diff artifact naming the bad row, and nothing waits on it.
+    _invariant(DIFFS_SHOW_NO_DELETED_FILE_HEADER, at_startup=False),
 )
 
 

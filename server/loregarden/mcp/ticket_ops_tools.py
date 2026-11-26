@@ -93,12 +93,12 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
     detach_parent = bool(arguments.get("detach_parent"))
     if new_parent:
         parent = svc.resolve_ticket(ticket_id=new_parent)
+        # The parent must already be in the destination, so it is never the
+        # ticket itself, which is not.
         if parent.workspace_id != destination.id:
             raise ValueError(
                 f"New parent {parent.external_id!r} is not in workspace {destination.slug!r}."
             )
-        if parent.id == ticket.id:
-            raise ValueError("A ticket cannot be its own parent.")
         refuse_reparent_onto_a_prerequisite(session, ticket.id, parent.id)
         ticket.parent_ticket_id = parent.id
     elif ticket.parent_ticket_id:

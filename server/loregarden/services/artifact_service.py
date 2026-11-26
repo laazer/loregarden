@@ -29,14 +29,13 @@ from loregarden.services.parent_ref import live_diff_base
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_worktree import resolve_ticket_checkout
+from loregarden.services.unified_diff import MAX_DIFF_LINE_CHARS, MAX_DIFF_LINES, parse_unified_diff
 from loregarden.services.workspace_paths import resolve_workspace_root
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-MAX_DIFF_LINES = 400
-MAX_DIFF_LINE_CHARS = 500
 MAX_UNTRACKED_FILE_BYTES = 512_000
 MAX_UNTRACKED_FILES = 20
 
@@ -44,8 +43,10 @@ _artifact_upsert_lock = threading.Lock()
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # quotepath off: a path with a non-ASCII character is printed as itself,
+    # not as a quoted octal escape no file on disk or in a manifest is named.
     return run_git(
-        ["-C", str(cwd), *args],
+        ["-c", "core.quotepath=off", "-C", str(cwd), *args],
         capture_output=True,
         text=True,
         timeout=30,
@@ -243,13 +244,28 @@ def _branch_diff_context(
     )
 
 
+def _untracked_paths(cwd: Path) -> list[str]:
+    """Untracked, not ignored paths, exactly as named on disk.
+
+    `-z` because a name may start with a space or hold a newline, and only a
+    NUL cannot be part of one.
+    """
+    proc = _git(cwd, "ls-files", "-z", "--others", "--exclude-standard")
+    if proc.returncode != 0:
+        logger.warning(
+            "untracked files omitted from the diff artifact; git ls-files failed in %s: %s",
+            cwd,
+            (proc.stderr or "").strip(),
+        )
+        return []
+    return [path for path in (proc.stdout or "").split("\0") if path]
+
+
 def _untracked_manifest_entries(cwd: Path) -> list[dict[str, Any]]:
-    proc = _git(cwd, "ls-files", "--others", "--exclude-standard")
     entries: list[dict[str, Any]] = []
-    for raw_path in (proc.stdout or "").splitlines():
-        path = raw_path.strip()
-        if not path or len(entries) >= MAX_UNTRACKED_FILES:
-            continue
+    for path in _untracked_paths(cwd):
+        if len(entries) >= MAX_UNTRACKED_FILES:
+            break
         full_path = cwd / path
         if not full_path.is_file():
             continue
@@ -325,8 +341,8 @@ def capture_branch_file_diff(
     if not ctx:
         return None
 
-    file_path = file_path.strip()
-    if not file_path:
+    # Not stripped: a file may be named with a leading or trailing space.
+    if not file_path.strip():
         return None
 
     entries = _manifest_entries_for_context(ctx)
@@ -340,14 +356,11 @@ def capture_branch_file_diff(
     patch = _git(ctx.git_cwd, "diff", *ctx.patch_args, "--", file_path)
     sections: list[dict[str, Any]] = []
     if patch.returncode == 0 and (patch.stdout or "").strip():
-        sections = _parse_unified_diff(patch.stdout or "", stat_overrides=stat_override)
+        sections = parse_unified_diff(patch.stdout or "", stat_overrides=stat_override)
 
     if not sections and ctx.mode in {"unstaged", "uncommitted"}:
-        sections = _untracked_diff_sections(ctx.git_cwd, only_path=file_path)
-        if sections:
-            section = sections[0]
-            section["add"] = stat_override[file_path][0]
-            section["del"] = stat_override[file_path][1]
+        untracked = _untracked_file_section(ctx.git_cwd, file_path)
+        sections = [untracked] if untracked else []
 
     if not sections:
         return None
@@ -394,157 +407,57 @@ def capture_branch_diff(
     return result
 
 
-def _capture_worktree_diff(cwd: Path, *, branch: str, mode: str) -> dict[str, Any] | None:
-    if mode == "unstaged":
-        range_label = "unstaged changes"
-        base = "working tree"
-        stat_args: list[str] = []
-        patch_args: list[str] = []
-    else:
-        range_label = "uncommitted changes"
-        base = "HEAD"
-        stat_args = ["HEAD"]
-        patch_args = ["HEAD"]
+def _untracked_file_section(cwd: Path, path: str) -> dict[str, Any] | None:
+    """The diff section of one untracked file: every line added.
 
-    artifact = _artifact_from_git_diff(
-        cwd,
-        branch=branch,
-        base=base,
-        range_label=range_label,
-        stat_args=stat_args,
-        patch_args=patch_args,
-    )
-    untracked = _untracked_diff_sections(cwd)
-    if artifact is None and not untracked:
+    Only a path git lists as untracked is read, so a request cannot name a
+    file outside the checkout or one it ignores.
+    """
+    if path not in _untracked_paths(cwd):
         return None
-    if artifact is None:
-        return _artifact_from_sections(
-            branch=branch,
-            base=base,
-            range_label=range_label,
-            sections=untracked,
-        )
-    if untracked:
-        sections = list(artifact.get("sections") or []) + untracked
-        return _artifact_from_sections(
-            branch=branch,
-            base=base,
-            range_label=range_label,
-            sections=sections,
-        )
-    return artifact
-
-
-def _untracked_diff_sections(cwd: Path, *, only_path: str | None = None) -> list[dict[str, Any]]:
-    proc = _git(cwd, "ls-files", "--others", "--exclude-standard")
-    sections: list[dict[str, Any]] = []
-    total_lines = 0
-
-    for raw_path in (proc.stdout or "").splitlines():
-        path = raw_path.strip()
-        if not path or len(sections) >= MAX_UNTRACKED_FILES:
-            continue
-        if only_path and path != only_path:
-            continue
-        full_path = cwd / path
-        if not full_path.is_file():
-            continue
-        try:
-            size = full_path.stat().st_size
-        except OSError as exc:
-            logger.warning(
-                "untracked file %s omitted from the diff artifact; stat failed: %s",
-                full_path,
-                exc,
-                exc_info=True,
-            )
-            continue
-        if size > MAX_UNTRACKED_FILE_BYTES:
-            sections.append(
-                {
-                    "path": path,
-                    "add": 1,
-                    "del": 0,
-                    "lines": [
-                        {
-                            "type": "c",
-                            "ln": "",
-                            "text": f"… file omitted ({size:,} bytes exceeds review limit) …",
-                        }
-                    ],
-                }
-            )
-            total_lines += 1
-            continue
-
-        try:
-            text = full_path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            logger.warning(
-                "untracked file %s omitted from the diff artifact; read failed: %s",
-                full_path,
-                exc,
-                exc_info=True,
-            )
-            continue
-
-        lines: list[dict[str, str]] = []
-        truncated = False
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if total_lines >= MAX_DIFF_LINES:
-                truncated = True
-                break
-            lines.append(
-                {
-                    "type": "a",
-                    "ln": str(line_no),
-                    "text": line[:MAX_DIFF_LINE_CHARS],
-                }
-            )
-            total_lines += 1
-
-        if truncated:
-            lines.append({"type": "c", "ln": "", "text": "… diff truncated …"})
-
-        if not lines:
-            continue
-
-        sections.append(
-            {
-                "path": path,
-                "add": len(lines),
-                "del": 0,
-                "lines": lines,
-            }
-        )
-
-    return sections
-
-
-def _artifact_from_sections(
-    *,
-    branch: str,
-    base: str,
-    range_label: str,
-    sections: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    if not sections:
+    full_path = cwd / path
+    if not full_path.is_file():
         return None
-    add = sum(int(section.get("add") or 0) for section in sections)
-    delete = sum(int(section.get("del") or 0) for section in sections)
-    primary_file = sections[0]["path"]
-    file_count = len(sections)
-    summary = f"{file_count} file{'s' if file_count != 1 else ''} changed, {add} insertions(+), {delete} deletions(-)"
-    return {
-        "file": primary_file,
-        "add": f"+{add}",
-        "del": f"−{delete}",
-        "files": summary,
-        "range": range_label,
-        "branch": branch,
-        "base": base,
-        "sections": sections,
-    }
+    try:
+        size = full_path.stat().st_size
+    except OSError as exc:
+        logger.warning(
+            "untracked file %s omitted from the diff artifact; stat failed: %s",
+            full_path,
+            exc,
+            exc_info=True,
+        )
+        return None
+    if size > MAX_UNTRACKED_FILE_BYTES:
+        omitted = f"… file omitted ({size:,} bytes exceeds review limit) …"
+        return {
+            "path": path,
+            "add": 1,
+            "del": 0,
+            "lines": [{"type": "c", "ln": "", "text": omitted}],
+        }
+
+    try:
+        text = full_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        logger.warning(
+            "untracked file %s omitted from the diff artifact; read failed: %s",
+            full_path,
+            exc,
+            exc_info=True,
+        )
+        return None
+
+    rows = text.splitlines()
+    lines = [
+        {"type": "a", "ln": str(line_no), "text": line[:MAX_DIFF_LINE_CHARS]}
+        for line_no, line in enumerate(rows[:MAX_DIFF_LINES], start=1)
+    ]
+    if len(rows) > MAX_DIFF_LINES:
+        lines.append({"type": "c", "ln": "", "text": "… diff truncated …"})
+    if not lines:
+        return None
+    return {"path": path, "add": len(rows), "del": 0, "lines": lines}
 
 
 def _artifact_from_git_diff(
@@ -576,7 +489,7 @@ def _artifact_from_git_diff(
     delete = f"−{del_match.group(1)}" if del_match else "−0"
 
     patch = _git(cwd, "diff", *patch_args)
-    sections = _parse_unified_diff(patch.stdout or "", stat_overrides=stat_map)
+    sections = parse_unified_diff(patch.stdout or "", stat_overrides=stat_map)
 
     return {
         "file": primary_file,
@@ -661,7 +574,7 @@ def capture_git_diff(
     add = f"+{add_match.group(1)}" if add_match else "+0"
     delete = f"−{del_match.group(1)}" if del_match else "−0"
 
-    sections = _parse_unified_diff(patch_text)
+    sections = parse_unified_diff(patch_text)
 
     return {
         "file": primary_file,
@@ -671,93 +584,6 @@ def capture_git_diff(
         "range": diff_ref,
         "sections": sections,
     }
-
-
-def _path_from_diff_git(line: str) -> str:
-    parts = line.split()
-    if len(parts) >= 4 and parts[3].startswith("b/"):
-        return parts[3][2:]
-    if len(parts) >= 3 and parts[2].startswith("a/"):
-        return parts[2][2:]
-    return line.removeprefix("diff --git ").strip()
-
-
-def _parse_unified_diff(
-    text: str,
-    *,
-    stat_overrides: dict[str, tuple[int, int]] | None = None,
-) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-    current: dict[str, Any] | None = None
-    total_lines = 0
-
-    def finalize() -> None:
-        nonlocal current
-        if current and current.get("lines"):
-            path = current["path"]
-            add = int(current.get("add") or 0)
-            delete = int(current.get("del") or 0)
-            if stat_overrides and path in stat_overrides:
-                add, delete = stat_overrides[path]
-            sections.append(
-                {
-                    "path": path,
-                    "add": add,
-                    "del": delete,
-                    "lines": current["lines"],
-                    "truncated": bool(current.get("_truncated")),
-                }
-            )
-        current = None
-
-    def start_section(path: str) -> None:
-        nonlocal current
-        finalize()
-        current = {"path": path, "add": 0, "del": 0, "lines": []}
-
-    def push_line(row: dict[str, str]) -> None:
-        nonlocal total_lines
-        if current is None:
-            return
-        if total_lines >= MAX_DIFF_LINES:
-            if not current.get("_truncated"):
-                current["lines"].append({"type": "c", "ln": "", "text": "… diff truncated …"})
-                current["_truncated"] = True
-            return
-        current["lines"].append(row)
-        total_lines += 1
-        if row["type"] == "a":
-            current["add"] += 1
-        elif row["type"] == "d":
-            current["del"] += 1
-
-    for raw in text.splitlines():
-        if raw.startswith("diff --git "):
-            start_section(_path_from_diff_git(raw))
-            continue
-        if raw.startswith("+++ b/"):
-            path = raw[6:]
-            if current is None or current["path"] != path:
-                start_section(path)
-            continue
-        if raw.startswith("--- "):
-            continue
-        if current is None:
-            continue
-        if raw.startswith("@@"):
-            push_line({"type": "h", "ln": "", "text": raw[:MAX_DIFF_LINE_CHARS]})
-            continue
-        if raw.startswith("+"):
-            push_line({"type": "a", "ln": "", "text": raw[1:][:MAX_DIFF_LINE_CHARS]})
-            continue
-        if raw.startswith("-"):
-            push_line({"type": "d", "ln": "", "text": raw[1:][:MAX_DIFF_LINE_CHARS]})
-            continue
-        if raw.startswith(" "):
-            push_line({"type": "c", "ln": "", "text": raw[1:][:MAX_DIFF_LINE_CHARS]})
-
-    finalize()
-    return sections
 
 
 _PYTEST_ROW = re.compile(
