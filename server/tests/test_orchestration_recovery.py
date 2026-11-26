@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import call, patch
 
-from loregarden.main import lifespan
+from loregarden.main import app, lifespan
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRun,
@@ -225,7 +225,7 @@ def test_lifespan_scans_for_resumes_after_reconciliation(isolated_db):
     order: list[str] = []
 
     async def run_lifespan():
-        async with lifespan(None):
+        async with lifespan(app):
             pass
 
     with (

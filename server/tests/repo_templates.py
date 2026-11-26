@@ -8,17 +8,24 @@ Only for a self-contained repository. One that records an absolute path — a
 remote, a worktree, an alternates file — would point back at the template once
 copied, so those keep building their own.
 
-A copy is followed by ``git update-index --refresh``. The index records each
-file's inode and ctime, which a copy changes; without the refresh the next
-``git status`` would rewrite ``.git/index``, and a test asserting that a check
-leaves the repository untouched would see a write the old repo never had.
+A copy runs no git at all. The index records each file's inode and ctime,
+which a copy changes, so each copy used to run ``git update-index --refresh``
+(about 90ms on a loaded machine, once per ``client`` test). Instead each
+template is settled once (`settle_template`): ``core.checkStat=minimal``
+compares only mtime and size, which ``copytree`` preserves, and its tracked
+files are backdated so no index entry is racily clean. A copy's next
+``git status`` then neither re-hashes nor rewrites ``.git/index``, so a test
+asserting that a check leaves the repository untouched sees no write the old
+repo never had.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 _template_root: Path | None = None
@@ -44,6 +51,7 @@ def from_template(destination: Path, key: str, build: Callable[[Path], None]) ->
         if staging.exists():
             shutil.rmtree(staging)
         build(staging)
+        settle_template(staging)
         staging.rename(template)
     copy_repo(template, destination)
     return destination
@@ -57,12 +65,30 @@ def from_template(destination: Path, key: str, build: Callable[[Path], None]) ->
 _TRANSIENT_GIT_FILES = shutil.ignore_patterns("*.lock")
 
 
+#: How far `settle_template` backdates tracked files: past the index's own
+#: mtime by more than git's whole-second racy-clean window.
+_BACKDATE_SECONDS = 10
+
+
+def settle_template(repo: Path, env: Mapping[str, str] | None = None) -> None:
+    """Make ``repo``'s index valid for every byte-for-byte copy of it; see the module docstring."""
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args], cwd=repo, env=env, check=True, capture_output=True, text=True
+        )
+
+    git("config", "core.checkStat", "minimal")
+    past = time.time() - _BACKDATE_SECONDS
+    for relpath in git("ls-files", "-z").stdout.split("\0"):
+        path = repo / relpath
+        # A submodule entry is a directory, a symlink is stamped rather than
+        # followed, and a file the build deleted has nothing to stamp.
+        if relpath and os.path.lexists(path) and not path.is_dir():
+            os.utime(path, (past, past), follow_symlinks=False)
+    git("update-index", "-q", "--really-refresh")
+
+
 def copy_repo(source: Path, destination: Path) -> None:
-    """Copy a repository and refresh its index's stat data for the new files."""
+    """Copy a settled template (`settle_template`); its index is valid as copied."""
     shutil.copytree(source, destination, symlinks=True, ignore=_TRANSIENT_GIT_FILES)
-    subprocess.run(
-        ["git", "update-index", "-q", "--refresh"],
-        cwd=destination,
-        check=True,
-        capture_output=True,
-    )

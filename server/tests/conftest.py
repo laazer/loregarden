@@ -12,9 +12,10 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from lore_eden.testing import pytest_profile
+from loregarden import main as main_module
 from loregarden.config import settings
 from loregarden.db.session import get_session, init_db
-from loregarden.main import app
+from loregarden.main import BootMode, app
 from loregarden.models.domain import Workspace
 from loregarden.services import (
     codex_discovery,
@@ -37,7 +38,7 @@ from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.repo_paths import REPO_ROOT
-from tests.repo_templates import from_template, set_template_root
+from tests.repo_templates import from_template, set_template_root, settle_template
 from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
 from tests.worktree_helpers import seed_stage_report_contract
 
@@ -377,7 +378,7 @@ def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
     them. See `tests/db_templates.py`.
     """
     database = tmp_path / "pytest.db"
-    seeded = "client" in request.fixturenames
+    seeded = bool({"client", "booted_client"} & set(request.fixturenames))
     source = request.getfixturevalue("seeded_template").database if seeded else schema_template
     copy_database(source, database)
     request.node.stash[_SEEDED_FROM_TEMPLATE] = seeded
@@ -393,24 +394,30 @@ def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
     # write concurrently instead of serialising on the whole file.
     with engine.connect() as conn:
         conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-    for target in _ENGINE_BINDINGS:
-        monkeypatch.setattr(target, engine)
+    _bind_engine(monkeypatch, engine)
     # Chat attachments are files beside the database; keep them beside this one.
     monkeypatch.setattr(settings, "chat_attachments_dir", tmp_path / "chat-attachments")
     monkeypatch.setattr(settings, "review_captures_dir", tmp_path / "review-captures")
     return engine
 
 
+def _bind_engine(monkeypatch, engine) -> None:
+    for target in _ENGINE_BINDINGS:
+        monkeypatch.setattr(target, engine)
+
+
 @pytest.fixture(name="seeded_template", scope="session")
 def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate:
-    """The database `client` starts from, built once per process: seeded, repointed, migrated.
+    """The database `client` starts from, built once per process: the state a first boot leaves.
 
     In the order the fixture and the app's lifespan always applied them — seed,
     repoint the workspace, then ``init_db`` — because two migrations read
-    ``Workspace.repo_path``. Built on its own engine, with every module-global
-    engine binding pointed at it for the duration, so nothing reaches a test's
-    database or the real one. The lifespan still runs ``init_db`` and
-    ``seed_database`` on every copy; on this database both are near no-ops.
+    ``Workspace.repo_path``. Then the boot's recovery pass, once: `client` boots
+    ``PREPARED_TEST_DATABASE`` and skips it, and the seed alone is not what a
+    server serves (it writes the bootstrap milestone and features DONE over
+    leaf tasks still IN_PROGRESS, which the parent reconcile reopens). Built on
+    its own engine, with every module-global engine binding pointed at it for
+    the duration, so nothing reaches a test's database or the real one.
     """
     root = tmp_path_factory.mktemp("seeded-template")
     template = SeededTemplate(database=root / "seeded.db", repo=root / "seeded-repo")
@@ -425,6 +432,9 @@ def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate
                 seed_database(session)
                 _repoint_seeded_workspace(session, template.repo)
             init_db()
+            with Session(engine) as session:
+                main_module._recover_previous_boot(session)
+                session.commit()
     finally:
         engine.dispose()
     return template
@@ -480,6 +490,7 @@ def _init_seeded_workspace_repo(repo) -> None:
     seed_stage_report_contract(repo)
     git("add", ".")
     git("commit", "-m", "init")
+    settle_template(repo, env)
 
 
 @pytest.fixture(name="seeded_orchestration_profiles", scope="session")
@@ -529,6 +540,55 @@ def _use_seeded_orchestration_profiles(monkeypatch, tmp_path, profiles) -> None:
 def client_fixture(
     isolated_db, tmp_path, seeded_template, seeded_orchestration_profiles, monkeypatch, request
 ):
+    """The app on this test's seeded database, booted without recovery or build discovery.
+
+    `BootMode.PREPARED_TEST_DATABASE`: the database is already migrated and
+    seeded, and no previous process left anything to recover, so the lifespan
+    skips `init_db`, `seed_database`, `_recover_previous_boot` and
+    `remember_running_build`. A test whose subject is boot asks for
+    ``booted_client`` instead.
+    """
+    yield from _enter_client(
+        BootMode.PREPARED_TEST_DATABASE,
+        isolated_db,
+        tmp_path,
+        seeded_template,
+        seeded_orchestration_profiles,
+        monkeypatch,
+        seeded=request.node.stash.get(_SEEDED_FROM_TEMPLATE, False),
+    )
+
+
+@pytest.fixture(name="booted_client")
+def booted_client_fixture(
+    isolated_db, tmp_path, seeded_template, seeded_orchestration_profiles, monkeypatch, request
+):
+    """``client``, but through the full production boot: migrate, seed, recover, build discovery.
+
+    For tests whose subject is what boot does — reaping, reattaching, resuming,
+    startup sweeps, follow-main's running build. Everything else uses ``client``.
+    """
+    yield from _enter_client(
+        BootMode.FULL,
+        isolated_db,
+        tmp_path,
+        seeded_template,
+        seeded_orchestration_profiles,
+        monkeypatch,
+        seeded=request.node.stash.get(_SEEDED_FROM_TEMPLATE, False),
+    )
+
+
+def _enter_client(
+    boot_mode,
+    isolated_db,
+    tmp_path,
+    seeded_template,
+    seeded_orchestration_profiles,
+    monkeypatch,
+    *,
+    seeded: bool,
+):
     _use_seeded_orchestration_profiles(monkeypatch, tmp_path, seeded_orchestration_profiles)
 
     def override_session():
@@ -540,12 +600,49 @@ def client_fixture(
         # Requested dynamically, after `isolated_db` chose the bare schema:
         # seed here, as this fixture always did, rather than hand over an
         # empty database that looks like a seeded one.
-        if not request.node.stash.get(_SEEDED_FROM_TEMPLATE, False):
+        if not seeded:
             seed_database(session)
         _isolate_seeded_workspace_repo(session, tmp_path, seeded_template)
-    with TestClient(app) as client:
-        yield client
-    app.dependency_overrides.clear()
+    app.state.boot_mode = boot_mode
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        # The app is module-global: a test that builds its own TestClient after
+        # this one must get the production default back.
+        app.state.boot_mode = BootMode.FULL
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture(name="enter_client")
+def enter_client_fixture(seeded_template, seeded_orchestration_profiles):
+    """What ``client`` and ``isolated_db`` do for one test, as a callable a test can repeat.
+
+    ``enter_client(root, monkeypatch)`` copies the seeded template under
+    ``root``, binds every module-global engine to it, and returns the
+    generator ``client`` yields from: ``next()`` sets it up, ``close()`` tears
+    it down. For a test that measures setting ``client`` up many times.
+    """
+
+    def enter(root, monkeypatch):
+        copy_database(seeded_template.database, root / "pytest.db")
+        engine = create_engine(
+            f"sqlite:///{root / 'pytest.db'}",
+            connect_args={"check_same_thread": False, "timeout": 30},
+        )
+        monkeypatch.setattr(settings, "chat_attachments_dir", root / "chat-attachments")
+        _bind_engine(monkeypatch, engine)
+        return _enter_client(
+            BootMode.PREPARED_TEST_DATABASE,
+            engine,
+            root,
+            seeded_template,
+            seeded_orchestration_profiles,
+            monkeypatch,
+            seeded=True,
+        )
+
+    return enter
 
 
 @pytest.fixture(name="isolate_seeded_repo")
