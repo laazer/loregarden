@@ -28,16 +28,19 @@ from loregarden.main import app
 from loregarden.models.domain import AgentRun, Artifact, Ticket
 from loregarden.models.domain.enums import utcnow
 from loregarden.services import initiative_suggestions
-from loregarden.services.memory_store import AgentMemoryService
 from loregarden.testing.prod_shape import (
     CALIBRATION,
-    build_prod_shape,
     ci_history_ticket,
     prod_shape_id,
 )
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
 from sqlalchemy import func
 from sqlmodel import Session, col, select
+from tests.prod_shape_templates import (
+    ProdShapeTemplate,
+    build_prod_shape_template,
+    restore_prod_shape,
+)
 from tests.repo_paths import REPO_ROOT
 
 FIXTURES = REPO_ROOT / "client" / "src" / "test" / "fixtures" / "prod-shape"
@@ -148,16 +151,22 @@ def _pin(value):
     return value
 
 
+@pytest.fixture(name="bare_prod_shape", scope="module")
+def bare_prod_shape_fixture(tmp_path_factory, schema_template) -> ProdShapeTemplate:
+    """The scenario alone, over the bare schema, built once per module; see
+    `tests/prod_shape_templates.py`."""
+    return build_prod_shape_template(tmp_path_factory.mktemp("bare-prod-shape"), schema_template)
+
+
 @pytest.fixture(name="api")
-def api_fixture(isolated_db):
+def api_fixture(isolated_db, bare_prod_shape):
     """The real app over the scenario alone — no bootstrap seed, whose ids are random."""
 
     def session_override():
         with Session(isolated_db) as session:
             yield session
 
-    with Session(isolated_db) as session:
-        build_prod_shape(session, graph_path=AgentMemoryService.from_settings().graph_path)
+    restore_prod_shape(bare_prod_shape, isolated_db, graphs=True)
     app.dependency_overrides[get_session] = session_override
     try:
         yield TestClient(app)
@@ -219,10 +228,9 @@ def test_fixture_matches_the_api(api, isolated_db, name):
     )
 
 
-def test_worked_ticket_matches_its_calibration(isolated_db):
+def test_worked_ticket_matches_its_calibration(bare_prod_shape):
     """The history the Timeline and Outputs fixtures are recorded from is the
     live p90 — a drifted scenario is a fixture again."""
-    with Session(isolated_db) as session:
-        summary = build_prod_shape(session)
+    summary = bare_prod_shape.summary
     assert summary.worked_runs == CALIBRATION.worked_runs
     assert summary.worked_artifacts == CALIBRATION.worked_artifacts

@@ -25,7 +25,11 @@ one costs.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 import pytest
 from loregarden.models.domain import (
@@ -37,6 +41,8 @@ from loregarden.models.domain import (
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.symbol_map import (
+    BuildReport,
+    RefreshReport,
     build_symbol_map,
     definitions_for,
     map_status,
@@ -45,8 +51,11 @@ from loregarden.services.symbol_map import (
 )
 from loregarden.services.symbol_map import refresh as refresh_module
 from loregarden.services.symbol_map.checkout_identity import identify
-from sqlmodel import Session, select
+from sqlmodel import Session, create_engine, select
+from tests.db_templates import copy_database
 from tests.repo_paths import REPO_ROOT
+
+R = TypeVar("R")
 
 #: MEASURED, not estimated. One partition built on this repository at HEAD
 #: ca54966801 on 2026-11-17, into a scratch SQLite carrying the final schema
@@ -79,34 +88,68 @@ EXPECTED_MAX_SECONDS = 60.0
 EXPECTED_MAX_PARTITION_BYTES = 60 * 1024 * 1024
 
 
-@pytest.fixture(name="session")
-def session_fixture(isolated_db):
-    with Session(isolated_db) as session:
-        yield session
+@dataclass(frozen=True)
+class MappedDatabase:
+    """A database a real operation over this checkout has run in, once per module.
 
-
-@pytest.fixture(name="workspace")
-def workspace_fixture(session: Session) -> Workspace:
-    ws = Workspace(slug="this-checkout", name="this-checkout", repo_path="")
-    session.add(ws)
-    session.commit()
-    session.refresh(ws)
-    return ws
-
-
-@pytest.fixture(name="other_workspace")
-def other_workspace_fixture(session: Session) -> Workspace:
-    """A second workspace, so the AC10 measurement can hold an ancestor
-    partition for the seeded case without the unseeded case finding it.
-
-    Seeding looks for a partition of the SAME workspace, so "no ancestor" and
-    "an ancestor at this commit" are two workspaces and not two moments.
+    Each full parse of this checkout costs ~14s on CI and every test here used
+    to run its own, seven in all. The assertions read either the operation's
+    own report, the measurements taken around it, or the rows it wrote, so one
+    run per module serves them all; each test still reads its own copy of the
+    database.
     """
-    ws = Workspace(slug="this-checkout-ancestor", name="this-checkout-ancestor", repo_path="")
+
+    database: Path
+    workspace_id: str
+    #: `git status --porcelain` of the operated-on tree, before and after.
+    porcelain_before: list[str]
+    porcelain_after: list[str]
+    #: The database's size before and after, in bytes.
+    bytes_before: int
+    bytes_after: int
+
+
+def _new_workspace(session: Session, slug: str) -> Workspace:
+    ws = Workspace(slug=slug, name=slug, repo_path="")
     session.add(ws)
     session.commit()
     session.refresh(ws)
     return ws
+
+
+def _map_once(
+    root: Path, schema_template: Path, tree: Path, operation: Callable[[Session, str, Path], R]
+) -> tuple[MappedDatabase, R]:
+    """Run ``operation`` over ``tree`` in a fresh database under ``root``, measuring around it."""
+    database = root / "mapped.db"
+    copy_database(schema_template, database)
+    engine = create_engine(f"sqlite:///{database}")
+    try:
+        with Session(engine) as session:
+            workspace_id = _new_workspace(session, "this-checkout").id
+            porcelain_before = _porcelain(tree)
+            bytes_before = _database_bytes(session)
+            report = operation(session, workspace_id, tree)
+            bytes_after = _database_bytes(session)
+            porcelain_after = _porcelain(tree)
+    finally:
+        engine.dispose()
+    mapped = MappedDatabase(
+        database=database,
+        workspace_id=workspace_id,
+        porcelain_before=porcelain_before,
+        porcelain_after=porcelain_after,
+        bytes_before=bytes_before,
+        bytes_after=bytes_after,
+    )
+    return mapped, report
+
+
+def _restore(mapped: MappedDatabase, engine) -> Session:
+    """A session over this test's copy of ``mapped``'s database."""
+    engine.dispose()
+    copy_database(mapped.database, Path(engine.url.database))
+    return Session(engine)
 
 
 #: The checkout holding THIS file: `server/tests/x.py` -> up three.
@@ -127,11 +170,38 @@ def other_workspace_fixture(session: Session) -> Workspace:
 THIS_CHECKOUT = REPO_ROOT
 
 
-@pytest.fixture(name="repo_root")
-def repo_root_fixture() -> Path:
+def _this_checkout() -> Path:
     if not (THIS_CHECKOUT / ".git").exists():
         pytest.skip("this checkout is not a git repository")
     return THIS_CHECKOUT
+
+
+@pytest.fixture(name="repo_root")
+def repo_root_fixture() -> Path:
+    return _this_checkout()
+
+
+@dataclass(frozen=True)
+class BuiltMap:
+    """One `build_symbol_map` over this checkout, and what was measured around it."""
+
+    mapped: MappedDatabase
+    report: BuildReport
+
+
+@pytest.fixture(name="built_map", scope="module")
+def built_map_fixture(tmp_path_factory, schema_template) -> BuiltMap:
+    mapped, report = _map_once(
+        tmp_path_factory.mktemp("built-map"), schema_template, _this_checkout(), build_symbol_map
+    )
+    return BuiltMap(mapped=mapped, report=report)
+
+
+@pytest.fixture(name="built_session")
+def built_session_fixture(isolated_db, built_map: BuiltMap):
+    """This test's copy of the built map."""
+    with _restore(built_map.mapped, isolated_db) as session:
+        yield session
 
 
 def _porcelain(root: Path) -> list[str]:
@@ -155,9 +225,7 @@ def _database_bytes(session: Session) -> int:
     return int(page_count) * int(page_size)
 
 
-def test_a_build_in_this_checkout_leaves_git_status_exactly_as_it_found_it(
-    session, workspace, repo_root
-):
+def test_a_build_in_this_checkout_leaves_git_status_exactly_as_it_found_it(built_map: BuiltMap):
     """AC5 / R7.2. A delta, not an empty status: during the implement stage
     this worktree legitimately holds the implementer's own new files, and a
     test that demanded a clean tree would be deleted rather than satisfied.
@@ -166,15 +234,11 @@ def test_a_build_in_this_checkout_leaves_git_status_exactly_as_it_found_it(
     cannot dirty the status. What this catches is a cache, a temp file or a
     log the build decides to write beside the source it is reading.
     """
-    before = _porcelain(repo_root)
-
-    build_symbol_map(session, workspace.id, repo_root)
-
-    assert _porcelain(repo_root) == before
+    assert built_map.mapped.porcelain_after == built_map.mapped.porcelain_before
 
 
 def test_the_build_over_this_checkout_reproduces_the_recorded_measurement(
-    session, workspace, repo_root
+    built_map: BuiltMap, repo_root
 ):
     """AC11 / R7.1, R7.3. The numbers attached as evidence, asserted where
     they cannot go stale. Each bound fails on a different regression: a
@@ -182,29 +246,28 @@ def test_the_build_over_this_checkout_reproduces_the_recorded_measurement(
     build slow enough to be felt on a run's critical path, and a row width
     that would make per-checkout keying the wrong trade.
     """
-    bytes_before = _database_bytes(session)
-
-    report = build_symbol_map(session, workspace.id, repo_root)
+    report = built_map.report
 
     assert report.files_seen >= EXPECTED_MIN_FILES
     assert report.symbol_rows >= EXPECTED_MIN_SYMBOLS
     assert report.elapsed_seconds < EXPECTED_MAX_SECONDS
     assert report.head_sha
     assert report.checkout_identity == identify(repo_root)
-    assert _database_bytes(session) - bytes_before < EXPECTED_MAX_PARTITION_BYTES
+    mapped = built_map.mapped
+    assert mapped.bytes_after - mapped.bytes_before < EXPECTED_MAX_PARTITION_BYTES
 
 
 def test_the_stored_rows_agree_with_the_report_on_this_checkouts_scale(
-    session, workspace, repo_root
+    built_map: BuiltMap, built_session: Session, repo_root
 ):
     """The same counts, read back from the database rather than from the
     object the build returned. A report computed from the extraction and never
     compared to the write cannot tell a successful build from a partial one.
     """
-    report = build_symbol_map(session, workspace.id, repo_root)
+    session, report = built_session, built_map.report
     partition = session.exec(
         select(SymbolMapPartition).where(
-            SymbolMapPartition.workspace_id == workspace.id,
+            SymbolMapPartition.workspace_id == built_map.mapped.workspace_id,
             SymbolMapPartition.checkout_identity == identify(repo_root),
         )
     ).one()
@@ -227,17 +290,19 @@ def test_the_stored_rows_agree_with_the_report_on_this_checkouts_scale(
     )
 
 
-def test_a_symbol_this_suite_can_name_is_findable_at_its_real_line(session, workspace, repo_root):
+def test_a_symbol_this_suite_can_name_is_findable_at_its_real_line(
+    built_map: BuiltMap, built_session: Session, repo_root
+):
     """The end-to-end claim, stated against a definition the test can verify
     independently: the map's line number must be the line the file actually
     holds. A map that is confidently wrong about a line is worse than no map,
     which is the whole reason the sha stamp exists.
     """
-    build_symbol_map(session, workspace.id, repo_root)
     target = "server/loregarden/services/symbol_map/checkout_identity.py"
+    workspace_id = built_map.mapped.workspace_id
 
-    read = definitions_for(session, workspace.id, repo_root, "identify")
-    outline = outline_for(session, workspace.id, repo_root, target)
+    read = definitions_for(built_session, workspace_id, repo_root, "identify")
+    outline = outline_for(built_session, workspace_id, repo_root, target)
 
     sites = [row for row in read.rows if row.path == target]
     assert len(sites) == 1
@@ -290,17 +355,15 @@ WARM_INCREMENTAL_BUDGET_SECONDS = 10.0
 WARM_CHANGED_FILES = 12
 
 
-@pytest.fixture(name="measurement_worktree")
-def measurement_worktree_fixture(tmp_path: Path, repo_root: Path):
+@contextmanager
+def _cut_worktree(target: Path, repo_root: Path):
     """A second checkout of THIS repository, detached at the same commit.
 
     Two checkouts is the only way to measure the seeded cold path honestly:
     seeding is keyed on `checkout_identity`, so one root cannot play both
-    parts. Built in a fixture and removed in its teardown — a `git worktree
-    add` that leaks leaves an entry in this checkout's admin data that every
-    later `git worktree list` carries.
+    parts. Removed on exit — a `git worktree add` that leaks leaves an entry
+    in this checkout's admin data that every later `git worktree list` carries.
     """
-    target = tmp_path / "measured-checkout"
     added = run_git(
         ["worktree", "add", "-q", "--detach", str(target), "HEAD"],
         cwd=repo_root,
@@ -320,6 +383,31 @@ def measurement_worktree_fixture(tmp_path: Path, repo_root: Path):
             capture_output=True,
             text=True,
         )
+
+
+@pytest.fixture(name="measurement_worktree")
+def measurement_worktree_fixture(tmp_path: Path, repo_root: Path):
+    """A worktree of this checkout of the test's own, for a test that edits it."""
+    with _cut_worktree(tmp_path / "measured-checkout", repo_root) as target:
+        yield target
+
+
+@dataclass(frozen=True)
+class RefreshedWorktree:
+    """One cold, unseeded `refresh_symbol_map` of a fresh worktree of this checkout."""
+
+    worktree: Path
+    mapped: MappedDatabase
+    report: RefreshReport
+
+
+@pytest.fixture(name="refreshed_worktree", scope="module")
+def refreshed_worktree_fixture(tmp_path_factory, schema_template):
+    """A cold refresh is a full parse, so the tests that only read one share it."""
+    root = tmp_path_factory.mktemp("refreshed-worktree")
+    with _cut_worktree(root / "measured-checkout", _this_checkout()) as worktree:
+        mapped, report = _map_once(root, schema_template, worktree, refresh_symbol_map)
+        yield RefreshedWorktree(worktree=worktree, mapped=mapped, report=report)
 
 
 def _touch_sources(root: Path, count: int) -> list[str]:
@@ -349,7 +437,10 @@ def _touch_sources(root: Path, count: int) -> list[str]:
 
 
 def test_the_three_refresh_latencies_on_this_checkout_stay_inside_their_budgets(
-    session, workspace, other_workspace, repo_root, measurement_worktree
+    built_map: BuiltMap,
+    built_session: Session,
+    refreshed_worktree: RefreshedWorktree,
+    measurement_worktree,
 ):
     """AC10. The measurement, asserted where it cannot go stale.
 
@@ -358,13 +449,17 @@ def test_the_three_refresh_latencies_on_this_checkout_stay_inside_their_budgets(
     copying; and a warm pass whose cost scales with the repository rather than
     with the diff. The last is the one that would be felt, because it is paid
     on every stage of every ticket.
+
+    The cold refresh is the shared one, over another worktree cut at the same
+    commit in a database holding no partition; the seed's ancestor is the
+    shared build of this checkout, under its own workspace.
     """
-    cold = refresh_symbol_map(session, workspace.id, measurement_worktree)
+    cold = refreshed_worktree.report
     assert cold.ok is True
     assert cold.cold is True and cold.seeded is False
 
-    build_symbol_map(session, other_workspace.id, repo_root)
-    seeded = refresh_symbol_map(session, other_workspace.id, measurement_worktree)
+    session, ancestor = built_session, built_map.mapped.workspace_id
+    seeded = refresh_symbol_map(session, ancestor, measurement_worktree)
     assert seeded.ok is True
     assert seeded.cold is True and seeded.seeded is True
     assert seeded.files_reanalyzed == 0, (
@@ -373,7 +468,7 @@ def test_the_three_refresh_latencies_on_this_checkout_stay_inside_their_budgets(
     )
 
     edited = _touch_sources(measurement_worktree, WARM_CHANGED_FILES)
-    warm = refresh_symbol_map(session, other_workspace.id, measurement_worktree)
+    warm = refresh_symbol_map(session, ancestor, measurement_worktree)
 
     assert warm.ok is True
     assert warm.files_reanalyzed == len(edited)
@@ -388,7 +483,7 @@ def test_the_three_refresh_latencies_on_this_checkout_stay_inside_their_budgets(
 
 
 def test_a_refresh_of_this_checkout_leaves_git_status_exactly_as_it_found_it(
-    session, workspace, measurement_worktree
+    refreshed_worktree: RefreshedWorktree,
 ):
     """AC8, on a real checkout and as a DELTA rather than an empty status.
 
@@ -396,28 +491,26 @@ def test_a_refresh_of_this_checkout_leaves_git_status_exactly_as_it_found_it(
     this half catches a cache, a temp file or a log the refresh decides to
     write beside the source it is reading, at this repository's scale.
     """
-    before = _porcelain(measurement_worktree)
-
-    refresh_symbol_map(session, workspace.id, measurement_worktree)
-
-    assert _porcelain(measurement_worktree) == before
+    mapped = refreshed_worktree.mapped
+    assert mapped.porcelain_after == mapped.porcelain_before
 
 
 def test_a_refreshed_checkout_reads_back_as_fresh_at_its_real_lines(
-    session, workspace, measurement_worktree
+    refreshed_worktree: RefreshedWorktree, isolated_db
 ):
     """The end-to-end claim for the writer, stated against a definition the
     test verifies independently: after a refresh the map must say MATCHES and
     the line it names must be the line the file holds."""
-    refresh_symbol_map(session, workspace.id, measurement_worktree)
     target = "server/loregarden/services/symbol_map/checkout_identity.py"
+    worktree, workspace_id = refreshed_worktree.worktree, refreshed_worktree.mapped.workspace_id
 
-    assert map_status(session, workspace.id, measurement_worktree).freshness is (Freshness.MATCHES)
-    sites = [
-        row
-        for row in definitions_for(session, workspace.id, measurement_worktree, "identify").rows
-        if row.path == target
-    ]
+    with _restore(refreshed_worktree.mapped, isolated_db) as session:
+        assert map_status(session, workspace_id, worktree).freshness is (Freshness.MATCHES)
+        sites = [
+            row
+            for row in definitions_for(session, workspace_id, worktree, "identify").rows
+            if row.path == target
+        ]
     assert len(sites) == 1
-    source_lines = (measurement_worktree / target).read_text(encoding="utf-8").splitlines()
+    source_lines = (worktree / target).read_text(encoding="utf-8").splitlines()
     assert source_lines[sites[0].line - 1].startswith("def identify(")
