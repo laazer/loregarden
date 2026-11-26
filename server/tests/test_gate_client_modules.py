@@ -231,3 +231,87 @@ def test_exit_code_agrees_with_the_gate_runner():
     match = re.search(r"const EX_UNAVAILABLE = (\d+);", source)
     assert match is not None
     assert int(match.group(1)) == GATE_EX_UNAVAILABLE
+
+
+# --------------------------------------------------------------------------- #
+# The organization gate loads the parser while its scope resolver runs
+# --------------------------------------------------------------------------- #
+
+_ORG_GATE = "ts_organization_check.cjs"
+_PARSER = "@typescript-eslint/typescript-estree"
+
+
+@pytest.fixture
+def preloading_workspace(workspace: Path) -> Path:
+    """A workspace whose source root sits beside a `tsconfig.json`, which is what
+    makes the organization gate load the parser before its resolver answers."""
+    (workspace / "client" / "tsconfig.json").write_text("{}\n")
+    _git(workspace, "add", "-A")
+    _git(workspace, "commit", "-qm", "tsconfig")
+    return workspace
+
+
+def _stub_parser_that_records_its_load(checkout: Path, marker: Path, *, then: str) -> None:
+    """A parser whose load leaves `marker` behind, so a test can tell the
+    preload ran rather than pass because the gate never tried it."""
+    _stub_package(
+        checkout,
+        _PARSER,
+        engines=None,
+        index=f"require('fs').appendFileSync({json.dumps(str(marker))}, 'loaded\\n');\n{then}\n",
+    )
+
+
+@pytest.mark.parametrize(
+    ("then", "with_change", "expected"),
+    [
+        # A preload that fails says nothing; only a run that parses reports it.
+        pytest.param("throw new Error('boom');", False, 0, id="failing-load-nothing-to-parse"),
+        pytest.param(
+            "throw new Error('boom');",
+            True,
+            GATE_EX_UNAVAILABLE,
+            id="failing-load-with-a-change",
+        ),
+        # A preload that succeeds is the parser the run then uses.
+        pytest.param(
+            "module.exports = { parse: () => ({ type: 'Program', body: [] }) };",
+            True,
+            0,
+            id="loaded-parser-is-used",
+        ),
+    ],
+)
+def test_the_parser_preload_never_changes_the_verdict(
+    scripts_without_client, preloading_workspace, tmp_path, then, with_change, expected
+):
+    checkout = scripts_without_client.parents[1]
+    marker = tmp_path / "parser-loads"
+    _stub_parser_that_records_its_load(checkout, marker, then=then)
+    if with_change:
+        (preloading_workspace / "client" / "src" / "A.ts").write_text("export const a = 1;\n")
+
+    result = _run(scripts_without_client, _ORG_GATE, preloading_workspace)
+
+    assert result.returncode == expected, result.stdout + result.stderr
+    loads = marker.read_text().splitlines() if marker.exists() else []
+    # The preload ran (once), and a failed one was retried by the parse that needed it.
+    assert loads == ["loaded"] * (2 if expected == GATE_EX_UNAVAILABLE else 1), loads
+
+
+def test_the_parser_preload_respects_the_engines_range(
+    scripts_with_unsupported_node, preloading_workspace, tmp_path
+):
+    """A Node outside the range never loads the parser, not even speculatively
+    (under Node 14 a load is what read every file as clean): with nothing to
+    parse the run passes, as it does without a preload."""
+    marker = tmp_path / "parser-loads"
+    (
+        scripts_with_unsupported_node.parents[1] / "client" / "node_modules" / _PARSER / "index.js"
+    ).write_text(
+        f"require('fs').appendFileSync({json.dumps(str(marker))}, 'loaded\\n');\nmodule.exports = {{}};\n"
+    )
+    result = _run(scripts_with_unsupported_node, _ORG_GATE, preloading_workspace)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "needs Node" not in result.stderr
+    assert not marker.exists(), marker.read_text()
