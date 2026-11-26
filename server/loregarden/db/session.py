@@ -8,7 +8,7 @@ from loregarden.config import settings
 # Same side effect, on every session's flush: a closed ticket's stages are closed.
 from loregarden.db.closed_workflow_guard import CLOSED_WITH_TICKET  # noqa: F401
 from loregarden.db.enum_integrity import report_unreadable_enum_values
-from loregarden.db.migrations import apply_migrations
+from loregarden.db.migrations import MIGRATIONS, apply_migrations
 
 # Imported for its side effect: registering the WorkflowInstance mapper events
 # that refuse a pin to a template version with no terminal stage. Kept here so
@@ -23,7 +23,7 @@ from loregarden.services.path_resolve import (
     resolve_sqlite_path,
     sqlite_url_for_path,
 )
-from sqlalchemy import Connection, event
+from sqlalchemy import Connection, event, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -131,6 +131,40 @@ def init_db() -> None:
     # reported as corruption. Logs and continues: refusing to boot over one bad
     # row would take the control plane down harder than the bad row does.
     report_unreadable_enum_values(engine)
+
+
+class DatabaseNotReadable(RuntimeError):
+    """The database a read-only command opened has no schema this build can read."""
+
+
+def open_db_for_read() -> list[str]:
+    """Check the database can be read, creating and migrating nothing.
+
+    For commands that only read. `init_db` migrates whatever it opens, so a read
+    from a worktree whose branch adds a migration reached `shared_database_guard`
+    and was refused, though it had nothing to write. Reading needs no migration:
+    a column the read needs and the database lacks fails the query itself, loudly.
+
+    Raises `DatabaseNotReadable` when there is no database file or it was never
+    migrated, rather than creating one: an empty schema would answer every read
+    with "nothing", which is not the same answer as "there is no database here".
+    Returns the migration ids this build carries that the database has not
+    applied, for the caller to report.
+    """
+    database = _db_path_from_engine_url(str(engine.url))
+    if database is not None and not database.is_file():
+        raise DatabaseNotReadable(f"no database at {database}")
+    with engine.connect() as conn:
+        has_ledger = conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
+        ).first()
+        if has_ledger is None:
+            raise DatabaseNotReadable(
+                f"{engine.url.database} has never been migrated (no schema_migrations "
+                "table); start the server or run `loregarden db init` first"
+            )
+        applied = {row[0] for row in conn.execute(text("SELECT id FROM schema_migrations"))}
+    return [mid for mid, _ in MIGRATIONS if mid not in applied]
 
 
 def get_session() -> Generator[Session, None, None]:

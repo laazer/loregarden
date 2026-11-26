@@ -4,9 +4,13 @@
 
 Prints each change of state to stderr as it happens and the outcome to stdout.
 Exit 0 when it merged; 1 when it failed, timed out or was withdrawn (the reason
-is printed); `EXIT_WAIT_STOPPED` (75) when the wait ended with no verdict,
-because its deadline passed or the server that runs the queue stopped
-answering. Run it in the background and read its exit code, instead of writing
+is printed); 2 for an entry id the queue does not have; `EXIT_WAIT_STOPPED`
+(75) when the wait ended with no verdict, because its deadline passed or the
+server that runs the queue stopped answering; `EXIT_WAIT_UNREADABLE` (78) when
+this build cannot read the queue from the database.
+
+It only reads, so it opens the database without migrating it: run from a
+worktree whose branch adds a migration main does not ship yet, it still waits. Run it in the background and read its exit code, instead of writing
 a polling loop. See `services/merge_queue_wait.py`.
 """
 
@@ -19,14 +23,28 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from loregarden.cli.errors import EXIT_ERROR, UsageError
 from loregarden.db import session as db_session
+from loregarden.services.merge_queue import QueueNotFound
 from loregarden.services.merge_queue_requests import EntryDetail, entry_detail
-from loregarden.services.merge_queue_wait import WaitPolicy, WaitStopped, wait_for_entry
+from loregarden.services.merge_queue_wait import (
+    EntryDidNotMerge,
+    WaitPolicy,
+    WaitStopped,
+    wait_for_entry,
+)
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 #: No verdict: still live at the deadline, or no server moving the queue.
 #: EX_TEMPFAIL, as `loregarden capacity run` uses it for a stalled line.
 EXIT_WAIT_STOPPED = 75
+
+#: No verdict because this build cannot read the queue: no database, one never
+#: migrated, or a query over a schema this build disagrees with. EX_CONFIG: a
+#: retry from the same checkout fails the same way. Kept off 1, which a caller
+#: reads as "the entry stopped".
+EXIT_WAIT_UNREADABLE = 78
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:8000"
 
@@ -55,7 +73,22 @@ def _read(entry_id: str) -> EntryDetail:
 
 
 def _wait(args: argparse.Namespace) -> str:
-    db_session.init_db()
+    try:
+        return _wait_readable(args)
+    except (db_session.DatabaseNotReadable, SQLAlchemyError) as unreadable:
+        print(f"cannot read the merge queue: {unreadable}", file=sys.stderr)
+        raise SystemExit(EXIT_WAIT_UNREADABLE) from unreadable
+
+
+def _wait_readable(args: argparse.Namespace) -> str:
+    pending = db_session.open_db_for_read()
+    if pending:
+        _report(
+            f"reading without migrating: the database has not applied {len(pending)} "
+            f"migration(s) this build carries ({', '.join(pending[:3])}"
+            + (", …" if len(pending) > 3 else "")
+            + ")"
+        )
     url = args.server_url.rstrip("/")
     policy = WaitPolicy(
         poll_seconds=args.poll_seconds,
@@ -66,6 +99,11 @@ def _wait(args: argparse.Namespace) -> str:
         entry = wait_for_entry(
             lambda: _read(args.entry_id), lambda: _server_up(url), _report, policy
         )
+    except QueueNotFound as missing:
+        raise UsageError(str(missing)) from missing
+    except EntryDidNotMerge as stopped:
+        print(f"did not merge: {stopped}", file=sys.stderr)
+        raise SystemExit(EXIT_ERROR) from stopped
     except WaitStopped as stopped:
         print(f"stopped waiting: {stopped}", file=sys.stderr)
         raise SystemExit(EXIT_WAIT_STOPPED) from stopped
