@@ -16,7 +16,6 @@ reached `ac_gate` with zero reviewer runs. Same rule, every path.
 from __future__ import annotations
 
 import json
-import logging
 
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
@@ -32,6 +31,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services.criteria_sign_off import held_gate_note
+from loregarden.services.criterion_review import gate_criteria_lines
 from loregarden.services.exit_action_ledger import outstanding_exit_actions
 from loregarden.services.exit_actions import (
     allowed_resolution_actions,
@@ -43,27 +43,13 @@ from loregarden.services.workflow_service import resolve_ticket_stages, workflow
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, col, select
 
-logger = logging.getLogger(__name__)
 
-
-def build_gate_impact(ticket: Ticket, stage_name: str) -> str:
+def build_gate_impact(session: Session, ticket: Ticket, stage_name: str) -> str:
     lines = [f"Stage '{stage_name}' requires human sign-off before completion."]
     lines.append(f"What's being tested: {ticket.title}")
     if ticket.description.strip():
         lines.append(ticket.description.strip())
-    try:
-        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
-    except json.JSONDecodeError:
-        logger.warning(
-            "Unparseable acceptance_criteria_json on ticket %s; the %s gate brief omits it",
-            ticket.external_id,
-            stage_name,
-            exc_info=True,
-        )
-        criteria = []
-    if criteria:
-        lines.append("Acceptance criteria:")
-        lines.extend(f"- {item}" for item in criteria)
+    lines.extend(gate_criteria_lines(session, ticket))
     return "\n".join(lines)
 
 
@@ -121,7 +107,8 @@ def create_workflow_gate_approval(
         title=title or f"Resolve {stage_name} exit actions",
         level="high" if ticket.priority == 1 else "medium",
         stage_key=stage_key,
-        impact=impact or _with_held_note(session, ticket, build_gate_impact(ticket, stage_name)),
+        impact=impact
+        or _with_held_note(session, ticket, build_gate_impact(session, ticket, stage_name)),
         checklist_json=json.dumps(checklist),
         tool_input_json=json.dumps(
             {

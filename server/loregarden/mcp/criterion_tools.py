@@ -28,15 +28,18 @@ from loregarden.mcp.tool_schemas import (
 from loregarden.models.domain import (
     AgentRun,
     CriterionDisposition,
+    CriterionSettlement,
+    PersonJudgment,
     Ticket,
     UpdateTicketRequest,
 )
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.criterion_gate_stages import settler_of
-from loregarden.services.criterion_ledger import record_delegation, settle_met
+from loregarden.services.criterion_ledger import record_delegation, settle_met, settle_person
 from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.person_gate import ticket_person_gate
 from loregarden.services.workflow_service import resolve_ticket_stages
 
 CRITERION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -49,8 +52,11 @@ CRITERION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "(pytest node id) or 'path::\"exact jest name\"'; they are rerun at HEAD before the "
             "gate. Use evidence_artifact_id instead only for a criterion a test cannot show. "
             "delegated (spec stage, or an operator): hand it to target_ticket_id, which is given "
-            "the criterion's exact text and which the parent waits for. Settle by the "
-            "criterion's exact current text. A reason is always required."
+            "the criterion's exact text and which the parent waits for. person "
+            "(verify stage, or an operator): only a judgment no test or capture can make; give "
+            "judges and ask, the plain question the person answers at the human gate, which is "
+            "then never signed by automation. Anything measurable in the criterion must already "
+            "be proven, and the reason says by what. Settle by the criterion's exact current text. A reason is always required."
         ),
         "inputSchema": tool_schema(
             properties={
@@ -66,7 +72,15 @@ CRITERION_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "met without a test: the evidence artifact (loregarden_attach_evidence) that shows it."
                 ),
                 "target_ticket_id": string_prop("delegated: the ticket that takes it on."),
-                "reason": string_prop("How the tests prove it, or why it is the target's work."),
+                "judges": enum_string_prop(
+                    "person: the kind of judgment.", [j.value for j in PersonJudgment]
+                ),
+                "ask": string_prop(
+                    "person: the question, answerable by looking, listening or playing."
+                ),
+                "reason": string_prop(
+                    "How the tests prove it, why it is the target's work, or why only a person can."
+                ),
             },
             required=["ticket_id", "criterion", "disposition", "reason"],
         ),
@@ -111,6 +125,28 @@ def _settler(
     return f"run:{run.id}"
 
 
+def _settle_for_a_person(
+    session: Session, ticket: Ticket, arguments: dict[str, Any], *, settled_by: str
+) -> CriterionSettlement:
+    if ticket_person_gate(session, ticket) is None:
+        raise ValueError(
+            f"{ticket.external_id} has no human gate ahead, so nobody would answer this. Prove it, "
+            "or report it unmet."
+        )
+    if not arguments.get("judges"):
+        raise ValueError("person needs judges: the kind of judgment")
+    return settle_person(
+        session,
+        ticket,
+        arguments.get("criterion") or "",
+        judges=PersonJudgment(arguments["judges"]),
+        ask=arguments.get("ask") or "",
+        commit_sha=resolve_head_sha(session, ticket),
+        settled_by=settled_by,
+        reason=arguments.get("reason") or "",
+    )
+
+
 def _give_target(session: Session, target: Ticket, criterion: str) -> None:
     """Add the criterion to the target's own criteria, word for word, if it lacks it."""
     criteria = load_criteria(target.acceptance_criteria_json)
@@ -142,6 +178,8 @@ def settle_criterion_tool(
             settled_by=settled_by,
             reason=reason,
         )
+    elif disposition is CriterionDisposition.PERSON:
+        row = _settle_for_a_person(session, ticket, arguments, settled_by=settled_by)
     else:
         if not arguments.get("target_ticket_id"):
             raise ValueError("delegated needs target_ticket_id: the ticket that takes it on")

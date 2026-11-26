@@ -9,7 +9,16 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, ArtifactKind
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    ArtifactKind,
+    CriterionDisposition,
+    CriterionSettlement,
+    PersonJudgment,
+    Ticket,
+)
 from loregarden.services.review_kit import ReviewKitError, ingest_review_kit
 from loregarden.services.review_try import TryRequest, send_try_request
 from loregarden.testing.factories import make_artifact, make_ticket, make_workspace
@@ -131,6 +140,19 @@ def test_content_without_a_review_block_is_untouched():
     assert ingest_review_kit("0f0f0f0f-aaaa", content) is content
 
 
+NOTHING = "Every claim is a state change; the attach tests drive the scene and pass."
+
+
+def _judgment(**overrides) -> dict:
+    return {
+        "action": "Press C",
+        "expect": "You can tell you were rejected",
+        "judges": "clarity",
+        "why_person": "Only a player can say it reads",
+        **overrides,
+    }
+
+
 @pytest.mark.parametrize(
     ("review", "message"),
     [
@@ -148,7 +170,17 @@ def test_content_without_a_review_block_is_untouched():
         ({"screenshots": [{"path": "/x.png", "scene": "nope.txt"}]}, "inside the project"),
         ({"steps": [{"action": "Press C"}]}, "expect"),
         ({"steps": [{"action": "", "expect": "a flash"}]}, "action"),
-        ({"steps": [{"action": "a", "expect": "b"}] * 13}, "at most 12"),
+        ({"steps": [_judgment()] * 13}, "at most 12"),
+        ({"steps": [_judgment(judges="vibes")]}, "judges"),
+        ({"steps": [{k: v for k, v in _judgment().items() if k != "judges"}]}, "judges"),
+        ({"steps": [{k: v for k, v in _judgment().items() if k != "why_person"}]}, "why_person"),
+        ({"steps": [_judgment(expect="HP falls about 2 points")]}, "a measurement"),
+        ({"steps": [_judgment(expect='The text says "failed"')]}, "a readout"),
+        ({"steps": [_judgment(expect="No errors in the console")]}, "run it"),
+        ({"steps": [_judgment(why_person="There is no test for this yet")]}, "still owes"),
+        ({"steps": [_judgment(why_person="n/a")]}, "say in a sentence"),
+        ({"nothing_to_judge": "fine"}, "what was checked"),
+        ({"steps": [_judgment()], "nothing_to_judge": NOTHING}, "never both"),
     ],
 )
 def test_ingest_refuses_a_bad_kit_whole(review: dict, message: str):
@@ -218,7 +250,13 @@ def _queue_kit(client: TestClient, ticket_id: str) -> dict:
 
 
 def _step(action: str) -> dict:
-    return {"action": action, "expect": "a flash", "wrong_if": ""}
+    return {
+        "action": action,
+        "expect": "You notice the flash",
+        "wrong_if": "",
+        "judges": "clarity",
+        "why_person": "Only a player can say it reads",
+    }
 
 
 def test_the_newest_scene_and_steps_win_whole_and_older_links_stay(client, review_tree):
@@ -266,6 +304,57 @@ def test_a_replacing_kit_hides_older_kits_but_not_newer_or_other_tickets(
     assert [shot["scene"] for shot in kit["screenshots"]] == ["", "scenes/a.tscn"]
     assert kit["scene"] == "scenes/a.tscn"
     assert [s["caption"] for s in _queue_kit(client, other_id)["screenshots"]] == ["other"]
+
+
+def test_a_kit_with_nothing_to_judge_replaces_older_steps(client, review_tree):
+    (ticket_id, _), _ = review_tree
+    _kit_artifact(ticket_id, "old", {"steps": [_step("old")]}, minute=1)
+    _kit_artifact(ticket_id, "new", {"nothing_to_judge": NOTHING}, minute=2)
+
+    kit = _queue_kit(client, ticket_id)
+
+    assert kit["nothing_to_judge"] == NOTHING
+    assert kit["steps"] == []
+
+
+def test_each_criterion_says_who_answers_for_it(client, review_tree):
+    from loregarden.db.session import engine
+
+    (ticket_id, _), _ = review_tree
+    with Session(engine) as session:
+        ticket = session.get(Ticket, ticket_id)
+        ticket.acceptance_criteria_json = json.dumps(["proven", "felt", "unproven"])
+        for text, disposition, extra in (
+            ("proven", CriterionDisposition.MET, {"reason": "test_x pins it"}),
+            (
+                "felt",
+                CriterionDisposition.PERSON,
+                {"judges": PersonJudgment.FEEL, "person_ask": "Does it feel fair?"},
+            ),
+        ):
+            session.add(
+                CriterionSettlement(
+                    ticket_id=ticket_id, criterion=text, disposition=disposition, **extra
+                )
+            )
+        session.add(ticket)
+        session.commit()
+
+    body = client.get("/api/review/queue?workspace_slug=review-ws").json()
+    (view,) = [
+        item["ticket"]["criteria"]
+        for build in body["builds"]
+        for item in build["items"]
+        if item["ticket"]["id"] == ticket_id
+    ]
+
+    assert [(c["text"], c["disposition"]) for c in view] == [
+        ("proven", "met"),
+        ("felt", "person"),
+        ("unproven", None),
+    ]
+    assert view[0]["reason"] == "test_x pins it"
+    assert (view[1]["ask"], view[1]["judges"]) == ("Does it feel fair?", "feel")
 
 
 def test_a_kit_stored_before_steps_existed_still_reads(client, review_tree):

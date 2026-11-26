@@ -52,6 +52,7 @@ from loregarden.services.hold_line import truncate_for_storage
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_children import fail_in_flight_children
 from loregarden.services.path_claims import validate_plan_files
+from loregarden.services.person_gate import refuse_skipping_a_persons_gate
 from loregarden.services.prepared_action import (
     PreparedAction,
     assess_handover,
@@ -716,6 +717,7 @@ class OrchestrationCallbackService:
             )
         if current == StageStatus.DONE:
             raise ValueError(f"Stage '{stage_key}' already ran and cannot be skipped")
+        refuse_skipping_a_persons_gate(self.session, ticket, stage_key)
 
         emptied = group_would_be_emptied(stages, stage_map, stage_key)
         if emptied:

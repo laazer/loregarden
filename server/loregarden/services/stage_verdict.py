@@ -26,6 +26,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.fix_coverage import missing_fix_coverage
+from loregarden.services.gate_prep import missing_review_kit
 from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.operation_criteria import pending_operation_criteria
 from loregarden.services.operator_questions import gate_hold_detail, is_gate_stage
@@ -56,6 +57,7 @@ _TOOL_REJECT_NAME = "tool:reject"
 _UNJUDGEABLE_EVIDENCE_NAME = "evidence:unjudgeable"
 _UX_ANSWERS_NAME = "ux_answers missing"
 _FIX_COVERAGE_NAME = "fix_coverage missing"
+_REVIEW_KIT_NAME = "review_kit missing"
 _OPERATION_CRITERIA_NAME = "operation_criteria pending"
 _OPERATOR_QUESTIONS_NAME = "operator_questions unanswered"
 #: A waiver in the run's report does not clear these: the signal is live, read
@@ -587,6 +589,18 @@ def _folded_pass_held_signals(
                 producer_agent_id=agent_id,
                 producer_stage_key=stage_key,
                 detail=coverage_missing,
+            )
+        )
+    kit_missing = missing_review_kit(session, ticket, stage_key=stage_key)
+    if kit_missing:
+        signals.append(
+            VerdictSignal(
+                source="review_kit",
+                item_key=_REVIEW_KIT_NAME,
+                outcome=StageReportStatus.NEEDS_REWORK,
+                producer_agent_id=agent_id,
+                producer_stage_key=stage_key,
+                detail=kit_missing,
             )
         )
     signals.extend(_read_evidence_signals(session, ticket, agent_id, stage_key=stage_key))

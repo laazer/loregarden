@@ -93,8 +93,7 @@ def test_expansion_names_the_scenes_the_branch_changes(db_session: Session):
     )
 
     assert checklist == [
-        "Open `scenes/levels/sandbox/dash.tscn` in the editor, run it, and play through this "
-        "change — it must reach a playable state with no errors",
+        "Open `scenes/levels/sandbox/dash.tscn` and play through this change",
         "Check for regressions",
     ]
 

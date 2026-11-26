@@ -11,7 +11,7 @@ import { checkedScene } from "../../lib/reviewScene";
 import { impactWithoutCriteria } from "../../utils/approvalCriteria";
 import { ApprovalCard } from "../ApprovalCard";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { ReviewCriteria } from "./ReviewCriteria";
 import { ReviewGuide } from "./ReviewGuide";
 import { ReviewPages } from "./ReviewPages";
 import { ReviewRequests } from "./ReviewRequests";
@@ -37,7 +37,7 @@ export function ReviewItemPanel({
   const play = useLaunchBuild(build, "Play");
   const scene = checkedScene(item);
   const otherScenes = (item.scenes ?? []).filter((other) => other !== scene);
-  const guided = kit.steps.length > 0;
+  const guided = kit.steps.length > 0 || kit.nothing_to_judge !== "";
   const { status: preview, start: startPreview } = useReviewPreview(
     build.workspace_slug,
     build.ref,
@@ -56,9 +56,8 @@ export function ReviewItemPanel({
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: REVIEW_QUEUE_KEY }),
   });
-  const checked = new Set(ticket.checked_criteria);
   const toggle = (criterion: string) => {
-    const next = new Set(checked);
+    const next = new Set(ticket.checked_criteria);
     if (next.has(criterion)) next.delete(criterion);
     else next.add(criterion);
     check.mutate(ticket.acceptance_criteria.filter((c) => next.has(c)));
@@ -128,34 +127,7 @@ export function ReviewItemPanel({
         </section>
       ) : null}
 
-      {ticket.acceptance_criteria.length > 0 ? (
-        // Open when nobody wrote steps: then the criteria are all there is to go on.
-        <details className="review-section" open={!guided}>
-          <summary className="review-section-title">
-            Acceptance criteria ({checked.size}/{ticket.acceptance_criteria.length} ticked)
-          </summary>
-          <p className="review-muted">
-            What the agents built and tested to. Ticks are your own notes; approving does not need them.
-          </p>
-          <ul className="review-criteria" aria-label="Acceptance criteria">
-            {ticket.acceptance_criteria.map((criterion, index) => {
-              const id = `review-ac-${ticket.id}-${index}`;
-              return (
-                <li key={criterion}>
-                  <Input
-                    id={id}
-                    type="checkbox"
-                    checked={checked.has(criterion)}
-                    disabled={check.isPending}
-                    onChange={() => toggle(criterion)}
-                  />
-                  <label htmlFor={id}>{criterion}</label>
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      ) : null}
+      <ReviewCriteria ticket={ticket} saving={check.isPending} onToggle={toggle} />
 
       {kit.unreadable.length > 0 ? (
         <p className="review-error" role="alert">
@@ -164,7 +136,7 @@ export function ReviewItemPanel({
       ) : null}
 
       <ApprovalCard
-        // The generated checklist says "open the scene and play it"; the steps above say how.
+        // The generated checklist says "open the scene and play it"; the guide above says what to judge.
         approval={guided ? { ...approval, checklist: [] } : approval}
         impactText={ticket.acceptance_criteria.length > 0 ? impactWithoutCriteria(approval.impact) : undefined}
         clampBrief

@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Approval } from "../../api/client";
-import type { ReviewItem, ReviewQueue } from "../../api/reviewApi";
+import type { ReviewCriterion, ReviewItem, ReviewQueue, ReviewStep } from "../../api/reviewApi";
 import { renderWithRouter } from "../../test/renderWithRouter";
 import { ReviewPage } from "../ReviewPage";
 
@@ -58,7 +58,11 @@ function gate(n: number): Approval {
 }
 
 function emptyKit(): ReviewItem["kit"] {
-  return { scene: "", steps: [], screenshots: [], links: [], requests: [], unreadable: [] };
+  return { scene: "", steps: [], nothing_to_judge: "", screenshots: [], links: [], requests: [], unreadable: [] };
+}
+
+function persons(text: string, ask: string): ReviewCriterion {
+  return { text, disposition: "person", ask, judges: "feel", reason: "Only a player can say" };
 }
 
 function item(n: number, overrides: Partial<ReviewItem> = {}): ReviewItem {
@@ -72,6 +76,7 @@ function item(n: number, overrides: Partial<ReviewItem> = {}): ReviewItem {
       revision: 4,
       acceptance_criteria: [`criterion ${n}a`, `criterion ${n}b`],
       checked_criteria: [`criterion ${n}a`],
+      criteria: [persons(`criterion ${n}a`, `Judge ${n}a?`), persons(`criterion ${n}b`, `Judge ${n}b?`)],
     },
     scenes: [`scenes/level_${n}.tscn`],
     launch: { match: "matched", targets: ["game"] },
@@ -210,9 +215,16 @@ describe("ReviewPage", () => {
         ],
       };
     }
-    const STEPS = [
-      { action: "Press C on the enemy's left side", expect: "A pale blue flash", wrong_if: "No flash" },
-      { action: "Press C far away", expect: "A low cue and no flash", wrong_if: "" },
+    const STEPS: ReviewStep[] = [
+      {
+        action: "Press C on the enemy's left side",
+        expect: "A pale blue flash",
+        wrong_if: "No flash",
+        judges: "look",
+        why_person: "Tests prove it plays, not that it reads",
+      },
+      // Stored before a step had to say why it is a person's.
+      { action: "Press C far away", expect: "A low cue and no flash", wrong_if: "", judges: null, why_person: "" },
     ];
 
     it("lists the steps and plays the scene they happen in, which the ticket need not change", async () => {
@@ -229,6 +241,8 @@ describe("ReviewPage", () => {
       expect(steps[0]).toHaveTextContent("A pale blue flash");
       expect(steps[0]).toHaveTextContent("Wrong if No flash");
       expect(steps[1]).not.toHaveTextContent("Wrong if");
+      expect(steps[0]).toHaveTextContent("Why you How it looks. Tests prove it plays, not that it reads");
+      expect(steps[1]).not.toHaveTextContent("Why you");
 
       fireEvent.click(await within(guide).findByRole("button", { name: "Play latch_3d" }));
       await waitFor(() =>
@@ -257,7 +271,7 @@ describe("ReviewPage", () => {
       expect(screen.queryByText(/can launch runs the files/)).not.toBeInTheDocument();
     });
 
-    it("folds the criteria away and drops the generated checklist once there are steps", async () => {
+    it("drops the generated checklist once there are steps", async () => {
       const checklist = ["Open `scenes/level_1.tscn` in the editor"];
       reviewApi.queue.mockResolvedValue(
         oneItem({ approval: { ...gate(1), checklist }, kit: { ...emptyKit(), steps: STEPS } }),
@@ -265,19 +279,71 @@ describe("ReviewPage", () => {
       renderAt();
 
       await screen.findByRole("region", { name: "What to do" });
-      expect(screen.getByText("Acceptance criteria (1/2 ticked)").closest("details")).not.toHaveAttribute("open");
       expect(screen.queryByText(/Open `scenes\/level_1/)).not.toBeInTheDocument();
     });
 
-    it("says nobody wrote steps, and keeps the criteria and checklist open", async () => {
+    it("says nobody wrote steps, and keeps the checklist", async () => {
       const checklist = ["Open `scenes/level_1.tscn` in the editor"];
       reviewApi.queue.mockResolvedValue(oneItem({ approval: { ...gate(1), checklist } }));
       renderAt();
 
       const guide = await screen.findByRole("region", { name: "What to do" });
       expect(guide).toHaveTextContent("No steps were written for this ticket");
-      expect(screen.getByText("Acceptance criteria (1/2 ticked)").closest("details")).toHaveAttribute("open");
+      expect(guide).not.toHaveTextContent("acceptance criteria");
       expect(screen.getByText(/Open `scenes\/level_1/)).toBeInTheDocument();
+    });
+
+    it("says when nothing needs a person, and what answered it instead", async () => {
+      const checklist = ["Open `scenes/level_1.tscn` in the editor"];
+      reviewApi.queue.mockResolvedValue(
+        oneItem({
+          approval: { ...gate(1), checklist },
+          kit: { ...emptyKit(), nothing_to_judge: "The attach tests drive the scene." },
+        }),
+      );
+      renderAt();
+
+      const guide = await screen.findByRole("region", { name: "What to do" });
+      expect(guide).toHaveTextContent("Nothing here needs your judgment. The attach tests drive the scene.");
+      expect(screen.queryByText(/Open `scenes\/level_1/)).not.toBeInTheDocument();
+    });
+
+    it("offers a tick only for a criterion that is the person's", async () => {
+      const plain = { ask: "", judges: null };
+      reviewApi.queue.mockResolvedValue(
+        oneItem({
+          ticket: {
+            ...item(1).ticket,
+            acceptance_criteria: ["criterion 1a", "proven", "open"],
+            criteria: [
+              persons("criterion 1a", "Does it feel fair?"),
+              { ...plain, text: "proven", disposition: "met", reason: "test_x pins it" },
+              { ...plain, text: "open", disposition: null, reason: "" },
+            ],
+          },
+        }),
+      );
+      renderAt();
+
+      const yours = await screen.findByRole("region", { name: "Criteria for you to judge" });
+      expect(within(yours).getByRole("checkbox", { name: /Does it feel fair\?/ })).toBeChecked();
+      expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+
+      const fold = screen.getByText("Acceptance criteria: 1 answered for by agents, 1 without recorded proof");
+      expect(fold.closest("details")).not.toHaveAttribute("open");
+      expect(screen.getByText("test_x pins it")).toBeInTheDocument();
+      expect(screen.getByText("No proof recorded")).toBeInTheDocument();
+    });
+
+    it("shows no criteria sections when a ticket has none", async () => {
+      reviewApi.queue.mockResolvedValue(
+        oneItem({ ticket: { ...item(1).ticket, acceptance_criteria: [], checked_criteria: [], criteria: [] } }),
+      );
+      renderAt();
+
+      await screen.findByRole("region", { name: "What to do" });
+      expect(screen.queryByText(/^Acceptance criteria/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Criteria for you to judge" })).not.toBeInTheDocument();
     });
 
     it("sends the reviewer to the target's button when the steps have no one scene", async () => {
@@ -361,7 +427,7 @@ describe("ReviewPage", () => {
     api.updateTicket.mockResolvedValue({});
     renderAt();
 
-    fireEvent.click(await screen.findByLabelText("criterion 1b"));
+    fireEvent.click(await screen.findByLabelText(/^Judge 1b\?/));
 
     await waitFor(() =>
       expect(api.updateTicket).toHaveBeenCalledWith("t-1", {

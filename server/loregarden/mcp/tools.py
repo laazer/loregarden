@@ -438,8 +438,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "title": _string_prop("Short description of what was captured."),
                 "content_json": _string_prop(
                     "Captured output as a JSON string. To hand a human reviewer what to "
-                    "look at, add a `review` object: `steps` [{action, expect, wrong_if}] "
-                    "(what they do and see), `scene` (the scene file to run), "
+                    "look at, add a `review` object: `steps` [{action, expect, wrong_if, judges, "
+                    "why_person}] (only judgments no test or capture can make; a step that "
+                    "states a fact is refused) or `nothing_to_judge` (what proved it "
+                    "instead), `scene` (the scene file to run), "
                     "`screenshots` [{path, caption, scene}] "
                     "(PNG/JPEG/GIF/WebP files on this machine, copied in at attach "
                     "time), `links` [{path or url, label}] to open, `requests` "

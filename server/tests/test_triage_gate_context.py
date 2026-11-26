@@ -154,10 +154,8 @@ def test_expand_gate_checklist_names_each_changed_scene():
         checklist,
         scenes=["scenes/levels/sandbox/dash.tscn", "scenes/levels/sandbox/hub.tscn"],
     ) == [
-        "Open `scenes/levels/sandbox/dash.tscn` in the editor, run it, and play through this "
-        "change — it must reach a playable state with no errors",
-        "Open `scenes/levels/sandbox/hub.tscn` in the editor, run it, and play through this "
-        "change — it must reach a playable state with no errors",
+        "Open `scenes/levels/sandbox/dash.tscn` and play through this change",
+        "Open `scenes/levels/sandbox/hub.tscn` and play through this change",
         "Check for regressions",
     ]
 

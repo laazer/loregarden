@@ -8,8 +8,10 @@ An agent that has just made the change knows all three. It attaches them as
     {"review": {
         "scene": "scenes/levels/sandbox/latch_3d.tscn",
         "steps": [{"action": "Walk to the enemy's left side and press C",
-                   "expect": "The body flashes pale blue for a moment",
-                   "wrong_if": "No flash, or the flash is red"}],
+                   "expect": "You notice the rejection without reading any text",
+                   "wrong_if": "It passes for a hit, or you missed it",
+                   "judges": "clarity",
+                   "why_person": "Tests prove the flash plays; only a player can say it reads"}],
         "screenshots": [{"path": "/tmp/shot.png", "caption": "Start view"}],
         "links": [{"url": "http://127.0.0.1:5173/work-items", "label": "Work items"}],
         "requests": [{"name": "List", "method": "GET", "path": "/api/tickets",
@@ -18,7 +20,10 @@ An agent that has just made the change knows all three. It attaches them as
 
 ``scene`` is what the reviewer runs: the review page's launch button otherwise
 starts the build at its own start screen, which is rarely the scene the steps
-and screenshots are about. ``steps`` is what they do once it runs. A kit with
+and screenshots are about. ``steps`` is what they do once it runs: judgments
+only, each saying which kind and why no agent can make it, and refused when it
+states a fact a tool measures (`person_judgment`). A change that leaves a
+person nothing to judge says so in ``nothing_to_judge`` instead. A kit with
 ``replaces_earlier`` hides every older kit on the ticket, for when those
 pictures or steps describe a build that no longer exists.
 
@@ -40,6 +45,7 @@ from uuid import uuid4
 from loregarden.config import settings
 from loregarden.models.domain import Artifact, ArtifactKind
 from loregarden.services.path_resolve import expand_path
+from loregarden.services.person_judgment import PersonJudgment, fact_problem, reason_problem
 from loregarden.services.review_launcher import is_scene_path
 from pydantic import (
     BaseModel,
@@ -60,6 +66,8 @@ MAX_SCREENSHOTS = 12
 MAX_REQUESTS = 20
 #: A reviewer works through these by hand; more is a test suite, not a review.
 MAX_STEPS = 12
+#: A kit that leaves the person nothing says what was checked instead, in words.
+MIN_NOTHING_CHARS = 40
 
 #: Leading bytes of each image type a browser renders, and its extension.
 _IMAGE_SIGNATURES: tuple[tuple[bytes, str, str], ...] = (
@@ -91,7 +99,7 @@ def _scene_or_blank(value: str) -> str:
 
 
 class ReviewStep(BaseModel):
-    """One thing the reviewer does, and what they see if the change works."""
+    """One thing the reviewer does, and the answer that means the change works."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -99,6 +107,40 @@ class ReviewStep(BaseModel):
     expect: str = Field(min_length=1)
     #: What a broken build would show instead, when that is not just "not that".
     wrong_if: str = ""
+    #: Both are missing only on a kit stored before they were required.
+    judges: PersonJudgment | None = None
+    why_person: str = ""
+
+
+class _ReviewStepIn(ReviewStep):
+    """A step as an agent writes it: a judgment, with the reason it is a person's."""
+
+    judges: PersonJudgment
+
+    @field_validator("expect")
+    @classmethod
+    def _not_a_fact(cls, value: str) -> str:
+        problem = fact_problem(value)
+        if problem:
+            raise ValueError(
+                f"{problem}. Check it yourself (a test, a scripted run, a capture) and leave it "
+                "out of the steps; if a judgment is left over, ask only for that"
+            )
+        return value
+
+    @field_validator("why_person")
+    @classmethod
+    def _a_real_reason(cls, value: str) -> str:
+        problem = reason_problem(value)
+        if problem:
+            raise ValueError(f"why_person: {problem}")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _has_reason(self) -> _ReviewStepIn:
+        if not self.why_person:
+            raise ValueError("why_person is required: why no test or capture can answer this")
+        return self
 
 
 class ReviewScreenshot(BaseModel):
@@ -175,6 +217,8 @@ class _KitGuide(BaseModel):
 
     scene: str = ""
     steps: list[ReviewStep] = Field(default_factory=list, max_length=MAX_STEPS)
+    #: Why this change leaves a person nothing to judge, and what answered it instead.
+    nothing_to_judge: str = ""
     replaces_earlier: bool = False
 
     @field_validator("scene")
@@ -205,9 +249,24 @@ class _ScreenshotIn(BaseModel):
 class _ReviewKitIn(_KitGuide):
     """The kit as an agent writes it: screenshots by path, not yet stored."""
 
+    steps: list[_ReviewStepIn] = Field(default_factory=list, max_length=MAX_STEPS)
     screenshots: list[_ScreenshotIn] = Field(default_factory=list, max_length=MAX_SCREENSHOTS)
     links: list[ReviewLink] = Field(default_factory=list)
     requests: list[ReviewRequest] = Field(default_factory=list, max_length=MAX_REQUESTS)
+
+    @field_validator("nothing_to_judge")
+    @classmethod
+    def _says_what_answered_it(cls, value: str) -> str:
+        stripped = value.strip()
+        if stripped and len(stripped) < MIN_NOTHING_CHARS:
+            raise ValueError("nothing_to_judge must say what was checked and how, in a sentence")
+        return stripped
+
+    @model_validator(mode="after")
+    def _steps_or_nothing(self) -> _ReviewKitIn:
+        if self.steps and self.nothing_to_judge:
+            raise ValueError("a kit has steps or nothing_to_judge, never both")
+        return self
 
 
 def captures_root() -> Path:
@@ -293,7 +352,8 @@ def ingest_review_kit(ticket_id: str, content: dict[str, Any]) -> dict[str, Any]
         raise
     kit = ReviewKit(
         scene=incoming.scene,
-        steps=incoming.steps,
+        steps=[ReviewStep.model_validate(step.model_dump()) for step in incoming.steps],
+        nothing_to_judge=incoming.nothing_to_judge,
         replaces_earlier=incoming.replaces_earlier,
         screenshots=screenshots,
         links=incoming.links,
@@ -337,11 +397,13 @@ class TicketReviewKit(BaseModel):
     """Every kit attached to one ticket, merged, newest artifact first.
 
     ``scene`` and ``steps`` come whole from the newest kit that has them: two
-    rounds' steps interleaved would describe neither build.
+    rounds' steps interleaved would describe neither build. ``nothing_to_judge``
+    answers the same question as ``steps``, so the newest of either wins.
     """
 
     scene: str = ""
     steps: list[ReviewStep] = Field(default_factory=list)
+    nothing_to_judge: str = ""
     screenshots: list[ReviewScreenshot] = Field(default_factory=list)
     links: list[ReviewLink] = Field(default_factory=list)
     requests: list[ReviewRequest] = Field(default_factory=list)
@@ -375,7 +437,9 @@ def review_kits_for(session: Session, ticket_ids: list[str]) -> dict[str, Ticket
         if kit is None:
             continue
         merged.scene = merged.scene or kit.scene
-        merged.steps = merged.steps or kit.steps
+        if not merged.steps and not merged.nothing_to_judge:
+            merged.steps = kit.steps
+            merged.nothing_to_judge = kit.nothing_to_judge
         merged.screenshots.extend(kit.screenshots)
         merged.links.extend(kit.links)
         merged.requests.extend(kit.requests)

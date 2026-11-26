@@ -17,11 +17,17 @@ export interface ReviewScreenshot {
   scene: string;
 }
 
+/** Mirrors `PersonJudgment` in `models/domain/criterion_tables.py`. */
+export type PersonJudgment = "feel" | "look" | "sound" | "clarity" | "choice" | "physical";
+
 /** Mirrors `ReviewStep`: one thing the reviewer does and what they should see. */
 export interface ReviewStep {
   action: string;
   expect: string;
   wrong_if: string;
+  /** Null on a kit stored before a step had to say why it is a person's. */
+  judges: PersonJudgment | null;
+  why_person: string;
 }
 
 /**
@@ -76,11 +82,23 @@ export interface TicketReviewKit {
   /** The scene the steps happen in; empty when they start from the build's own start. */
   scene: string;
   steps: ReviewStep[];
+  /** Why a person has nothing to judge here, and what answered it instead. */
+  nothing_to_judge: string;
   screenshots: ReviewScreenshot[];
   links: ReviewLink[];
   requests: ReviewRequest[];
   /** Evidence artifacts whose kit no longer parses. */
   unreadable: string[];
+}
+
+/** Mirrors `ReviewCriterion` in `services/criterion_review.py`. */
+export interface ReviewCriterion {
+  text: string;
+  /** Null when nobody recorded how it was answered for. */
+  disposition: "met" | "delegated" | "person" | null;
+  ask: string;
+  judges: PersonJudgment | null;
+  reason: string;
 }
 
 export interface ReviewTicket {
@@ -91,6 +109,7 @@ export interface ReviewTicket {
   revision: number;
   acceptance_criteria: string[];
   checked_criteria: string[];
+  criteria: ReviewCriterion[];
 }
 
 /** Mirrors `LaunchKind` in `services/review_config.py`: a check's exit code is its answer. */

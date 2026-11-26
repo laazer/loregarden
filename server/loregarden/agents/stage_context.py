@@ -5,6 +5,8 @@ from __future__ import annotations
 from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import AgentRun, StageReportStatus, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
+from loregarden.services.gate_prep import gate_prep_target
+from loregarden.services.person_judgment import PersonJudgment
 from loregarden.services.recheck_round import recheck_context_lines
 from loregarden.services.repair_brief import gate_fix_brief_for, repair_brief_for
 from loregarden.services.rework_feedback import render_rework_feedback
@@ -15,40 +17,10 @@ from loregarden.services.stage_verdict import (
     handoff_expected_for,
     unresolved_section_lines,
 )
-from loregarden.services.studio_routing import is_agentless_stage, is_prunable_stage
+from loregarden.services.studio_routing import is_prunable_stage
 from loregarden.services.ticket_deferral import deferral_context_lines
 from loregarden.services.unresolved_ledger import LedgerActor, visible_unresolved
 from sqlmodel import Session
-
-#: Stage types whose agent authors the code — the ones that can still build
-#: whatever a downstream human gate will need to run.
-AUTHORING_STAGE_TYPES = frozenset({"agent", "classify"})
-
-
-def gate_prep_target(
-    stages: list[WorkflowStageDef] | None, stage_key: str
-) -> WorkflowStageDef | None:
-    """The human gate this stage is the last chance to prepare for, if any.
-
-    A human gate is a sign-off, not a build step: whatever it needs in order to
-    be run — a test scene, a level, a harness, a fixture — has to exist before
-    the operator gets there. That work belongs to the last stage that authors
-    code ahead of the gate, so the brief goes to that stage and to no other.
-    Reviews and gates sitting between the two are not authoring stages and are
-    skipped over.
-    """
-    ordered = sorted(stages or [], key=lambda s: s.order)
-    authoring: WorkflowStageDef | None = None
-    for stage in ordered:
-        if is_agentless_stage(stage) and stage.checklist:
-            if authoring is not None and authoring.key == stage_key:
-                return stage
-            # A later gate is prepared by a later authoring stage, not this one.
-            authoring = None
-            continue
-        if stage.stage_type in AUTHORING_STAGE_TYPES and stage.agent_id:
-            authoring = stage
-    return None
 
 
 def build_orchestration_context(
@@ -177,15 +149,17 @@ def _review_kit_lines() -> list[str]:
         "",
         "Hand the reviewer a review kit, so they can check the change instead of hunting for it. "
         'Call `loregarden_attach_evidence` with `evidence_kind: "real_surface"` and a '
-        "`content_json` carrying a `review` block. Always write `steps`; include the other parts "
-        "that apply:",
+        "`content_json` carrying a `review` block. Always write `steps` or `nothing_to_judge` (this "
+        "stage does not pass without one); include the other parts that apply:",
         "",
         "```json",
         '{"review": {',
         '  "scene": "scenes/levels/sandbox/latch_3d.tscn",',
         '  "steps": [{"action": "Walk to the enemy\'s left side and press C",',
-        '             "expect": "Its body flashes pale blue once, and a low cue plays",',
-        '             "wrong_if": "No flash, or a red one"}],',
+        '             "expect": "You notice the rejection without reading any text",',
+        '             "wrong_if": "It passes for a hit, or you missed it",',
+        '             "judges": "clarity",',
+        '             "why_person": "Tests prove the flash plays; only a player can say it reads"}],',
         '  "screenshots": [{"path": "/abs/path/shot.png", "caption": "What it shows"}],',
         '  "links": [{"path": "/the-page", "label": "Where to look"}],',
         '  "requests": [{"name": "List items", "method": "GET", "path": "/api/items",',
@@ -193,10 +167,19 @@ def _review_kit_lines() -> list[str]:
         "}}",
         "```",
         "",
-        "- **steps**: what the person does, in order, and what they see if it works (12 at most). "
-        "Only what a person has to judge by eye, ear or hand: leave out what a test already "
-        "proves. Plain words, one action each, naming the key, control and place; no ids, class "
-        "names or constants. Each must be able to fail.",
+        "- **steps**: the judgments only a person can make, and nothing else (usually 1 to 3; 12 at "
+        "most). Does it feel right, look right, sound right, make sense to someone new to it? "
+        "`judges` is one of " + ", ".join(f"`{j.value}`" for j in PersonJudgment) + ", and "
+        "`why_person` says why no test or capture can answer it; the reviewer sees both. A fact is "
+        "your work, not a step: what latched, what a counter or label reads, how long or how much, "
+        "what a key does, whether anything errored. Prove it with a test or a scripted run before "
+        "you pass. A step stating a fact is refused.",
+        "- A person must be able to answer it by looking, listening or playing, at normal speed, "
+        "in one sitting: no counting frames or seconds, no comparing numbers, no second player, no "
+        "audience, no log. `action` gets them there in plain words, naming the key, control and "
+        "place; no ids, class names or constants. Each must be able to fail.",
+        "- **nothing_to_judge**: instead of steps, when every claim this change makes is a fact: "
+        "what you checked and how. Do not invent a step to fill the kit.",
         "- **scene**: the scene file the steps and screenshots happen in, when the workspace has "
         "scenes. It becomes the reviewer's launch button. Leave it out when the steps start from "
         "the build's own start screen.",

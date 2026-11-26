@@ -5,6 +5,7 @@ import { launchStatusKey, type LaunchChoice } from "../../hooks/useReviewLaunch"
 import { checkedScene, sceneName } from "../../lib/reviewScene";
 import { Button } from "../ui/Button";
 import { LaunchPhaseChip } from "./LaunchPhaseChip";
+import { WhyYou } from "./ReviewCriteria";
 
 /**
  * "What do I, the person, actually do here?"
@@ -50,24 +51,28 @@ export function ReviewGuide({
                     <span className="review-step-label review-step-label--wrong">Wrong if</span> {step.wrong_if}
                   </span>
                 ) : null}
+                <WhyYou judges={step.judges} reason={step.why_person} />
               </li>
             ))}
           </ol>
           <p className="review-muted">
             Every step as expected: <strong>Approve</strong>. Anything else: <strong>Reject</strong> and say which step
-            and what you saw.
+            and what you saw. A step an agent could check, or that you cannot do, is also a reason to reject.
           </p>
         </>
+      ) : kit.nothing_to_judge ? (
+        <p>
+          <strong>Nothing here needs your judgment.</strong> {kit.nothing_to_judge}
+        </p>
       ) : (
         <p>
-          No steps were written for this ticket.{" "}
-          {opensPages
-            ? "Open the pages below"
-            : kit.screenshots.length > 0
-              ? "Do what the screenshot captions below describe"
-              : "Try the change"}{" "}
-          and judge it against the acceptance criteria. If you cannot tell what to check, reject it and ask for review
-          steps.
+          No steps were written for this ticket, so nothing says what you are asked to judge.{" "}
+          {kit.screenshots.length > 0 && !opensPages
+            ? "The screenshot captions below are all there is. "
+            : opensPages
+              ? "The pages below are all there is. "
+              : ""}
+          If you cannot tell, <strong>Reject</strong> and ask for review steps.
         </p>
       )}
       {scenes === null && !scene ? (

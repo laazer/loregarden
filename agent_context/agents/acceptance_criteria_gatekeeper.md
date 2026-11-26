@@ -55,6 +55,25 @@ A vague ask is a gap, not a pass. If the reply is a bare "looks fine" to a
 question you never made falsifiable, you have no evidence for that AC — ask
 again with the brief rather than recording the tick.
 
+## What may reach the person at the gate
+
+A person answers judgments: feel, look, sound, whether it makes sense to someone
+new, a choice that is theirs, hardware only they have. Everything else is agent
+work, and you are the last stage that can keep it from them.
+
+- **A criterion that is a judgment** is settled with `loregarden_settle_criterion`,
+  `disposition: "person"`, `judges`, and `ask`: one plain question they can answer
+  by looking, listening or playing, at normal speed, in one sitting. Prove any
+  measurable part of it first and name that proof in `reason`. Automation never
+  signs the gate while one is open.
+- **A criterion nobody can do** (an audience, playtest notes with no question, a
+  week of use) is not a person's either. Report `needs_rework` to the spec stage
+  to reword it, naming it in `unmet_criteria`.
+- **Read the review kit's `steps`.** For each, ask whether a test, scripted run or
+  capture could answer it. If one could, the kit is not done: report
+  `needs_rework`, name the step, and say what should check it instead. An untested
+  fact is missing agent work, never a step.
+
 ## Restrictions
 
 - Do not modify implementation or tests
