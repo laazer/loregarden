@@ -180,6 +180,7 @@ def test_the_decision_kind_is_closed(db_session: Session):
         "criteria_checked",
         "deferred_undecided_findings",
         "signed_off_on_criteria",
+        "signed_off_nothing_to_judge",
         "stage_inputs_missing",
         "carried_forward_pass",
         # Normal (client tone()): a review passed with what it read on record.

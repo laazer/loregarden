@@ -42,6 +42,7 @@ from loregarden.services.exit_action_ledger import (
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.person_gate import is_a_persons_gate
+from loregarden.services.unjudged_gates import nothing_to_judge, record_unjudged_sign_off
 from sqlmodel import Session, col, select
 
 #: The action key `migrations_exit_actions.legacy_sign_off_action` writes.
@@ -62,7 +63,7 @@ def _gate_is_legacy_sign_off_only(approval: Approval) -> bool:
     return all(action.action_key == LEGACY_SIGN_OFF_KEY for action in actions)
 
 
-def _automation_may_sign(session: Session, ticket: Ticket, approval: Approval) -> bool:
+def automation_may_sign(session: Session, ticket: Ticket, approval: Approval) -> bool:
     """Whether this gate asks only "may it proceed", with no criterion waiting on a person.
 
     A criterion settled as a person's judgment is answered at this gate; a
@@ -108,7 +109,7 @@ def autopilot_may_sign_off(
     session: Session, ticket: Ticket, approval: Approval
 ) -> InitiativePlan | None:
     """The plan that signs this gate off, or None when it waits for a person."""
-    if not _automation_may_sign(session, ticket, approval):
+    if not automation_may_sign(session, ticket, approval):
         return None
     return autopilot_driving(session, ticket)
 
@@ -123,6 +124,9 @@ class GateSignerKind(StrEnum):
     #: The ticket's criteria check, which answered for every criterion at the
     #: commit the ticket is at (`criteria_sign_off`).
     CRITERIA_CHECKED = "criteria_checked"
+    #: The ticket's review kit, which says nothing in the change is a person's
+    #: to judge and what proved it instead (`unjudged_gates`).
+    NOTHING_TO_JUDGE = "nothing_to_judge"
 
 
 @dataclass(frozen=True)
@@ -132,12 +136,14 @@ class GateSigner:
     `plan` rides along because `record_autopilot_sign_off` cannot write its
     `AutopilotEvent` without the initiative id; `basis` because
     `record_criteria_sign_off` names the check it signed on. Each is None for
-    the other signers.
+    the other signers. `proof` is the kit's ``nothing_to_judge``, which
+    `record_unjudged_sign_off` quotes, and "" for the others.
     """
 
     kind: GateSignerKind
     plan: InitiativePlan | None = None
     basis: CriteriaBasis | None = None
+    proof: str = ""
 
 
 def signer_for_gate(
@@ -157,7 +163,7 @@ def signer_for_gate(
     held across the parks automation will resolve and given back at the ones it
     will not (lg-machine-resource-1923).
     """
-    if not _automation_may_sign(session, ticket, approval):
+    if not automation_may_sign(session, ticket, approval):
         return None
     plan = autopilot_driving(session, ticket)
     if plan is not None:
@@ -167,6 +173,9 @@ def signer_for_gate(
     basis = criteria_basis(session, ticket, approval)
     if basis is not None:
         return GateSigner(kind=GateSignerKind.CRITERIA_CHECKED, basis=basis)
+    proof = nothing_to_judge(session, ticket)
+    if proof:
+        return GateSigner(kind=GateSignerKind.NOTHING_TO_JUDGE, proof=proof)
     return None
 
 
@@ -182,6 +191,8 @@ def record_sign_off(
         record_autopilot_sign_off(session, ticket, signer.plan, approval)
     elif signer.basis is not None:
         record_criteria_sign_off(session, ticket, approval, signer.basis)
+    elif signer.proof:
+        record_unjudged_sign_off(session, ticket, approval, signer.proof)
     elif orch_run is not None:
         record_auto_approve_sign_off(session, ticket, orch_run, approval)
 

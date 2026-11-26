@@ -111,6 +111,7 @@ from loregarden.services.invariant_registry import (
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     UNAVAILABLE_GATES_ARE_NOT_WORK,
     UNDECIDED_FINDINGS_DO_NOT_RUN,
+    UNJUDGED_GATES_CLOSE,
     UNRESOLVED_OPEN_SHRINK_IS_AUDITED,
     UNSTARTED_RUNS_HOLD_NO_START_KEY,
     WAITING_ENTRIES_HAVE_NO_LIVE_WORK,
@@ -430,6 +431,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # requeue, a hand move): every answer on it would move a stage it no longer
     # describes (lg-workflow-integrity-2759). Closed as superseded.
     _invariant(STALE_PARKS_ARE_CLOSED),
+    # A stage sign-off waiting on a person whose ticket's review kit says nothing
+    # is theirs to judge: opened outside a run, or the kit came later
+    # (lg-gate-studio-2810). Approved, with the kit's proof on the history.
+    _invariant(UNJUDGED_GATES_CLOSE),
     # A stage dispatched past one whose gate never ran: the builtin driver runs an
     # owed gate before it picks a stage, so one dated after that is a path around
     # it (lg-workflow-integrity-2777). Report-only; the next gate clears it.
