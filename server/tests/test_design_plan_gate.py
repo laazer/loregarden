@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    ExitActionResolution,
     OrchestrationRun,
     OrchestrationRunStatus,
     ParallelAgentSpec,
@@ -30,6 +31,7 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WorkflowExitAction,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowTemplate,
@@ -37,6 +39,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.design_plan_gate import is_design_plan_stage, orchestrator_may_sign_off
+from loregarden.services.exit_actions import resolve_exit_actions
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.subtree_auto_run import resolve_gate_if_permitted
 from loregarden.services.workflow_state import initial_stages_json
@@ -233,6 +236,7 @@ def test_the_run_signs_off_a_design_plan_and_says_so(db_session, gated):
     db_session.refresh(approval)
     assert approval.status is ApprovalStatus.APPROVED
     assert approval.resolved_by == "automation"
+    assert approval.resolving_orchestration_run_id == run.id
     assert decision_kinds(db_session, ticket.id) == ["approved_design_plan"]
 
 
@@ -366,3 +370,39 @@ def test_migration_gates_the_live_templates_and_their_drafts(isolated_db):
             text("SELECT stages_json FROM studio_workflows WHERE slug=:s"), {"s": slug}
         ).scalar_one()
         assert {s["key"] for s in json.loads(draft) if s.get("exit_actions_enabled")} == gated
+
+
+_AUTHORITY = {"kind": "authority", "authority_scope": "git.force_push"}
+_RECHECK = {"kind": "runtime_capability", "capability_id": "ci.status"}
+
+
+@pytest.mark.parametrize("requirement", [_AUTHORITY, _RECHECK], ids=["authority", "recheck"])
+def test_a_design_plan_gate_that_asks_more_than_a_decision_waits_for_a_person(
+    db_session, gated, requirement
+):
+    """The design-plan flag answers operator judgment only, never a grant or a recheck."""
+    ticket, park = gated
+    run, approval = park(DESIGN.key, approve_design_plans=True)
+    stage = DESIGN.model_copy(
+        update={
+            "exit_actions": [
+                *DESIGN.exit_actions,
+                WorkflowExitAction.model_validate(
+                    {"key": "more", "label": "More", "requirement": requirement}
+                ),
+            ]
+        }
+    )
+    resolution = resolve_exit_actions(stage, None)
+    approval.tool_input_json = ExitActionResolution(
+        human_required_actions=resolution.human_required_actions,
+        allowed_actions=resolution.allowed_actions,
+    ).model_dump_json()
+    db_session.add(approval)
+    db_session.commit()
+
+    assert not resolve_gate_if_permitted(db_session, ticket, run, DESIGN, auto_approve=False)
+
+    db_session.refresh(approval)
+    assert approval.status is ApprovalStatus.PENDING
+    assert decision_kinds(db_session, ticket.id) == []
