@@ -125,6 +125,10 @@ class OrchestratorDecision(StrEnum):
     #: criterion answered for at the ticket's HEAD and nothing under it
     #: decided in a person's place (`criteria_sign_off`).
     SIGNED_OFF_ON_CRITERIA = "signed_off_on_criteria"
+    #: The gate was closed without a person because the ticket's review kit
+    #: says nothing in the change is a person's to judge, and says what proved
+    #: it instead (`unjudged_gates`).
+    SIGNED_OFF_NOTHING_TO_JUDGE = "signed_off_nothing_to_judge"
     #: A stage's declared inputs (`required_inputs`) were missing, so it was not
     #: started: the ticket blocked, or a start by hand was refused, naming them
     #: (`stage_readiness`). The evidence carries an estimate of the tokens spared.

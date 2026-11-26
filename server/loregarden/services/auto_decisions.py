@@ -30,6 +30,7 @@ REVIEWABLE = (
     OrchestratorDecision.SPLIT_CRITERIA,
     OrchestratorDecision.DEFERRED_UNDECIDED_FINDINGS,
     OrchestratorDecision.SIGNED_OFF_ON_CRITERIA,
+    OrchestratorDecision.SIGNED_OFF_NOTHING_TO_JUDGE,
 )
 _REVIEWABLE_VALUES = frozenset(d.value for d in REVIEWABLE)
 
