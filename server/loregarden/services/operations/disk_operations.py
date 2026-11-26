@@ -101,7 +101,10 @@ class DiskUsageRequest(BaseModel):
 
 
 class DiskTreeQuery(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
     path: str = ""
+    """A node's path; empty for every root."""
     depth: int = Field(default=2, ge=1, le=MAX_DEPTH)
     limit: int = Field(default=80, ge=1, le=MAX_LIMIT)
 

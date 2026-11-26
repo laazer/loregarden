@@ -11,7 +11,7 @@ ticket the initiative tracks without parenting it (`initiative_membership`).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (

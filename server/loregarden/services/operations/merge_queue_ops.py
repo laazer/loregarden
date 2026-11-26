@@ -69,6 +69,7 @@ class QueueRead(BaseModel):
     """
     #: Finished entries the board asks for; an agent always gets STATUS_HISTORY.
     limit: int = Field(default=50, ge=1, le=500)
+    """Finished entries to include."""
 
 
 class EnqueueArgs(BaseModel):

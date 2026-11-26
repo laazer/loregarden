@@ -1,8 +1,9 @@
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody, OperationQuery
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
@@ -182,40 +183,21 @@ def ticket_tree(
     )
 
 
+class TicketListQuery(
+    OperationQuery,
+    operation=OperationId.TICKET_SUMMARIES,
+    # The page repeats `?state=` and `?work_item_type=`, one value each.
+    renamed={"states": "state", "work_item_types": "work_item_type"},
+):
+    """Which tickets the board lists."""
+
+
 @router.get("", response_model=list[TicketSummary])
 def list_tickets(
-    *,
-    workspace: str | None = None,
-    state: list[TicketState] | None = Query(default=None),
-    work_item_type: list[WorkItemType] | None = Query(default=None),
-    parent_ticket_id: str | None = None,
-    ancestor_ticket_id: str | None = None,
-    roots_only: bool = False,
-    blocked_on: list[BlockedOn] | None = Query(default=None),
-    milestone: str | None = None,
-    search: str | None = None,
-    limit: int | None = Query(default=None, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    session: Session = Depends(get_session),
+    query: Annotated[TicketListQuery, Query()], session: Session = Depends(get_session)
 ) -> list[TicketSummary]:
     """The board's ticket list; see `services.ticket_summaries`."""
-    return run_rest_operation(
-        session,
-        OperationId.TICKET_SUMMARIES,
-        {
-            "workspace": workspace,
-            "states": state,
-            "work_item_types": work_item_type,
-            "parent_ticket_id": parent_ticket_id,
-            "ancestor_ticket_id": ancestor_ticket_id,
-            "roots_only": roots_only,
-            "blocked_on": blocked_on,
-            "milestone": milestone,
-            "search": search,
-            "limit": limit,
-            "offset": offset,
-        },
-    )
+    return run_rest_operation(session, OperationId.TICKET_SUMMARIES, query.model_dump())
 
 
 @router.get("/status-summary", response_model=TicketStatusSummary)
@@ -442,10 +424,16 @@ def get_ticket_ledger(
     return ledger_payload(runs, failed_run_error_tails(session, runs), capacity_wait=waits)
 
 
+class ArtifactFeedQuery(
+    OperationQuery, operation=OperationId.ARTIFACT_FEED, supplied={"ticket_id"}
+):
+    """How much of the ticket's artifact feed to read."""
+
+
 @router.get("/{ticket_id}/artifacts", response_model=dict)
 def get_ticket_artifacts(
     ticket_id: str,
-    limit: int = 200,
+    query: Annotated[ArtifactFeedQuery, Query()],
     session: Session = Depends(get_session),
 ) -> dict:
     """Raw artifact feed for this ticket (newest first).
@@ -454,21 +442,34 @@ def get_ticket_artifacts(
     attach — including ad-hoc kinds that never map to Diff/Logs/Context tabs.
     """
     return run_rest_operation(
-        session, OperationId.ARTIFACT_FEED, {"ticket_id": ticket_id, "limit": limit}
+        session, OperationId.ARTIFACT_FEED, {**query.model_dump(), "ticket_id": ticket_id}
     )
+
+
+class OperatorQuestionsQuery(
+    OperationQuery,
+    operation=OperationId.OPERATOR_QUESTION_LIST,
+    supplied={"ticket_id"},
+    # One ticket's questions; the workspace-wide list is an agent's.
+    hidden={"workspace_slug"},
+    # The ticket panel shows the answered questions too, as the history of
+    # what the operator decided; an agent asks for them by name.
+    defaults={"include_settled": True},
+):
+    """Which of the ticket's operator questions to list."""
 
 
 @router.get("/{ticket_id}/operator-questions", response_model=dict)
 def get_ticket_operator_questions(
     ticket_id: str,
-    include_settled: bool = True,
+    query: Annotated[OperatorQuestionsQuery, Query()],
     session: Session = Depends(get_session),
 ) -> dict:
     """The questions agents asked the operator on this ticket, open ones first."""
     return run_rest_operation(
         session,
         OperationId.OPERATOR_QUESTION_LIST,
-        {"ticket_id": ticket_id, "include_settled": include_settled},
+        {**query.model_dump(), "ticket_id": ticket_id},
     )
 
 

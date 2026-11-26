@@ -12,8 +12,10 @@ is merging) is a 409 carrying the queue's own reason.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody, OperationQuery
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import MergeQueueAction, Ticket, Workspace
@@ -32,6 +34,21 @@ from loregarden.services.pr_cycle import PrCycleView, pr_cycle_view
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/merge-queue", tags=["merge-queue"])
+
+
+class QueueListQuery(
+    OperationQuery,
+    operation=OperationId.MERGE_QUEUE_READ,
+    supplied={"workspace_slug"},
+    only={"limit"},
+):
+    """How many finished entries to list after the live ones."""
+
+
+class EntryReadQuery(
+    OperationQuery, operation=OperationId.MERGE_QUEUE_READ, supplied={"entry_id"}, only={"live"}
+):
+    """Whether to read a testing entry's checks from GitHub now."""
 
 
 class EnqueueRequest(
@@ -78,24 +95,24 @@ def read_ticket_merge_queue(
 @router.get("/{slug}", response_model=QueueView)
 def read_merge_queue(
     slug: str,
-    limit: int = Query(50, ge=1, le=500, description="Finished entries to include."),
+    query: Annotated[QueueListQuery, Query()],
     session: Session = Depends(get_session),
 ) -> QueueView:
     """The live entries in queue order, then the most recent finished ones."""
     return run_rest_operation(
-        session, OperationId.MERGE_QUEUE_READ, {"workspace_slug": slug, "limit": limit}
+        session, OperationId.MERGE_QUEUE_READ, {**query.model_dump(), "workspace_slug": slug}
     )
 
 
 @router.get("/entries/{entry_id}", response_model=EntryDetail)
 def read_merge_queue_entry(
     entry_id: str,
-    live: bool = Query(True, description="Read a testing entry's checks from GitHub now."),
+    query: Annotated[EntryReadQuery, Query()],
     session: Session = Depends(get_session),
 ) -> EntryDetail:
     """One entry, with the required checks it is waiting on."""
     return run_rest_operation(
-        session, OperationId.MERGE_QUEUE_READ, {"entry_id": entry_id, "live": live}
+        session, OperationId.MERGE_QUEUE_READ, {**query.model_dump(), "entry_id": entry_id}
     )
 
 
