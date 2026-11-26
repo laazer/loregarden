@@ -393,6 +393,17 @@ describe("DockerQueueBoard", () => {
     expect(screen.queryByTestId("docker-progress-lease-2")).not.toBeInTheDocument();
   });
 
+  it("marks a holder that looks hung, and not one that is only idle for now", () => {
+    const hung = lease({ lease_id: "hung", activity: { idle_seconds: 1325, looks_hung: true } });
+    const idling = lease({ lease_id: "idling", activity: { idle_seconds: 300, looks_hung: false } });
+    render(<DockerQueueBoard status={status({ holders: [hung, idling] })} {...idle} />);
+
+    const card = screen.getByTestId("docker-slot-hung");
+    expect(within(card).getByText("may be hung")).toBeInTheDocument();
+    expect(within(card).getByText(/no CPU or progress for 22m/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("docker-slot-idling")).getByText("holding")).toBeInTheDocument();
+  });
+
   it("links a lease to its ticket only when it names one", () => {
     render(
       <DockerQueueBoard

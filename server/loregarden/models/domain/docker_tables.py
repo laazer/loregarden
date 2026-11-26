@@ -237,5 +237,11 @@ class DockerLease(SQLModel, table=True):
     progress_total: int | None = None
     progress_at: datetime | None = None
 
+    #: When the held command's process tree was last sampled, and when a sample
+    #: last found it using CPU (`services/capacity_activity.py`). Null on a lease
+    #: nothing samples, which says nothing about whether it is working.
+    cpu_sampled_at: datetime | None = None
+    cpu_active_at: datetime | None = None
+
     note: str = ""
     created_at: datetime = Field(default_factory=utcnow)

@@ -366,13 +366,24 @@ export const register: Register = (on, options) => {
 
     // ── Running now ──
     const holders = g.capacity?.holders ?? []
-    /** What a held command last said, or how long it has been silent. */
+    /**
+     * What a held command last said. An old report alone is not a hang: a suite
+     * that reports once, or whose file a test overwrote, goes quiet and works on.
+     */
     const saying = (l: Lease) => {
-      const quiet = quietSeconds(l, now)
-      if (quiet !== null && quiet >= QUIET_SECONDS) {
+      const last = l.progress ? ` · last: ${l.progress.summary}` : ''
+      if (l.looksHung) {
         return (
           <Text color={RED} wrap="wrap">
-            ⚠ silent for {span(quiet)}, still holding · last: {l.progress?.summary}
+            ⚠ no CPU or progress for {span(l.idleSeconds ?? 0)}, may be hung{last}
+          </Text>
+        )
+      }
+      const quiet = quietSeconds(l, now)
+      if (l.idleSeconds === null && quiet !== null && quiet >= QUIET_SECONDS) {
+        return (
+          <Text color={AMBER} wrap="wrap">
+            no report for {span(quiet)}, CPU use not measured{last}
           </Text>
         )
       }
@@ -517,8 +528,7 @@ export const register: Register = (on, options) => {
           {c.holders.length === 0 ? empty('☀️ Nothing holds the machine.') : null}
           {onLanes.size ? <Text dimColor>{onLanes.size} held by running tickets, on their cards above.</Text> : null}
           {loose.map(l => {
-            const quiet = quietSeconds(l, now)
-            const stuck = quiet !== null && quiet >= QUIET_SECONDS
+            const stuck = l.looksHung
             return (
               <Box
                 key={`holder-${l.id}`}

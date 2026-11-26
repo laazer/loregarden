@@ -152,6 +152,7 @@ function parseLease(l: Json): Lease {
   const label = str(l.holder_label)
   const place = [str(holder.worktree), str(holder.branch)].filter(Boolean).join(' @ ')
   const progress = obj(l.progress)
+  const activity = obj(l.activity)
   return {
     id: str(l.lease_id),
     what: str(holder.what) || label.split(' · ')[0] || 'unnamed holder',
@@ -170,6 +171,8 @@ function parseLease(l: Json): Lease {
     progress: str(progress.summary)
       ? { summary: str(progress.summary), reportedAt: str(progress.reported_at) }
       : null,
+    idleSeconds: numOrNull(activity.idle_seconds),
+    looksHung: activity.looks_hung === true,
     pollStalled: l.poll_stalled === true,
   }
 }
@@ -467,7 +470,7 @@ export const leaseFor = (lane: Lane, holders: Lease[]): Lease | undefined =>
   holders.find(h => h.runId !== '' && h.runId === lane.runId) ??
   holders.find(h => h.ticketId !== '' && h.ticketId === lane.ticketId)
 
-/** A held command that has not reported progress for this long is drawn as possibly hung. */
+/** A report this old is said to be old, on a holder whose CPU use the server does not measure. */
 export const QUIET_SECONDS = 15 * 60
 
 /** Seconds since the holder last reported progress, or null when it never reports any. */

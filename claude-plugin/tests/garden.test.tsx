@@ -77,7 +77,7 @@ const queue = {
 const capacity = {
   host: { ceiling: { cpus: 7, memory_mb: 48332 }, in_use: { cpus: 6, memory_mb: 12288 } },
   holders: [
-    // The live case: a suite that reported FAILED 75 minutes ago and still holds 4 CPUs.
+    // A suite that reported FAILED 75 minutes ago, has used no CPU for 22, and still holds 4.
     {
       lease_id: 'h1',
       holder_label: '2490 full server suite (2) · paper-review-2610@claude/dispatch-idempotency · pid 79180',
@@ -87,6 +87,31 @@ const capacity = {
       memory_mb: 8192,
       held_seconds: 7200,
       progress: { summary: 'FAILED: pytest on 1 file(s) (5/5)', reported_at: '2026-11-09T14:45:00+00:00' },
+      activity: { idle_seconds: 1325, looks_hung: true },
+    },
+    // Live on 2026-11-25: a test overwrote the suite's report, and the suite went on working.
+    {
+      lease_id: 'h3',
+      holder_label: 'server baseline · vacwt · pid 18683',
+      holder: { what: 'server baseline', worktree: 'vacwt', pid: 18683 },
+      footprint: 'heavy',
+      cpus: 3,
+      memory_mb: 8192,
+      held_seconds: 6600,
+      progress: { summary: 'passed: the test step · 7/7 (100%)', reported_at: '2026-11-09T15:40:00+00:00' },
+      activity: { idle_seconds: 30, looks_hung: false },
+    },
+    // Held by a build that samples nothing: an old report, and no verdict to draw.
+    {
+      lease_id: 'h4',
+      holder_label: 'landing 12 · pid 400',
+      holder: { what: 'landing 12', pid: 400 },
+      footprint: 'heavy',
+      cpus: 3,
+      memory_mb: 8192,
+      held_seconds: 2400,
+      progress: { summary: 'pytest (1/2)', reported_at: '2026-11-09T15:30:00+00:00' },
+      activity: null,
     },
     // Held by the run on lane 1: drawn on that ticket's card, not as its own.
     { lease_id: 'h2', holder_label: 'run r9', agent_run_id: 'r9', ticket_id: 't9', footprint: 'stack', cpus: 2, memory_mb: 4096, held_seconds: 300 },
@@ -189,7 +214,11 @@ test("the panel's sections, capacity first, answer from the server on every surf
     expect(await ui.find({ type: 'Text', text: /CPU 6\/7/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /run r9/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /pid 79180/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /silent for 1h, still holding/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /no CPU or progress for 22m, may be hung · last: FAILED/ })).toBeDefined()
+    // Only that one: a working command with an old report is not called hung.
+    expect(await ui.find({ type: 'Text', text: /hung · last: (passed|pytest)/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /passed: the test step · 7\/7 \(100%\) · 20m/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /no report for 30m, CPU use not measured · last: pytest/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Waiting for capacity · 1/ })).toBeDefined()
 
     // Recent activity.

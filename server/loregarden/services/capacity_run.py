@@ -12,7 +12,9 @@ when the control-plane server, whose timer normally does that, is not running.
 
 **Holding is a heartbeat.** A background thread renews the lease well inside
 its TTL. The lease also names this process's pid, so a SIGKILL that skips the
-`finally` still frees the capacity on the next sweep rather than at TTL.
+`finally` still frees the capacity on the next sweep rather than at TTL. The
+heartbeat vouches for this process, not for the command, so `capacity_activity`
+samples the command's CPU beside it and a hung one is named to whoever waits.
 
 **Waiting has no deadline; a stalled line does.** Six heavy suites queued
 behind a seventh is an orderly line that takes hours to drain, and giving up the
@@ -51,6 +53,7 @@ from loregarden.models.domain import (
     DockerLeaseEndReason,
     DockerLeaseStatus,
 )
+from loregarden.services.capacity_activity import CpuSync, describe_hang
 from loregarden.services.capacity_children import reserve_child
 
 # `child_environment` and the variable names it writes moved to
@@ -333,15 +336,15 @@ def _stall_message(
     ahead = sum(1 for other in front.values() if other.status is DockerLeaseStatus.WAITING)
     estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
     now = datetime.now(timezone.utc)
-    holders = sorted(
-        (other for other in front.values() if other.status in OCCUPYING),
-        key=lambda other: as_utc(other.granted_at) or now,
-    )
+    holders = _holders_suspect_first(front.values(), now=now)
     if holders:
-        oldest = holders[0]
-        granted = as_utc(oldest.granted_at)
+        suspect = holders[0]
+        granted = as_utc(suspect.granted_at)
         held = f" for {(now - granted).total_seconds():.0f}s" if granted else ""
-        holding = f"'{oldest.holder_label}' has held {oldest.cpus:g} cpus{held}"
+        hang = describe_hang(suspect, now=now)
+        holding = f"'{suspect.holder_label}' has held {suspect.cpus:g} cpus{held}" + (
+            f", {hang}" if hang else ""
+        )
     else:
         holding = "nothing is holding capacity"
     return (
@@ -349,6 +352,14 @@ def _stall_message(
         f"{estimate.describe()} — but nothing ahead has finished for {stalled:.0f}s "
         f"({holding}); gave up the place in line. The ledger is answering: the line "
         "stopped moving."
+    )
+
+
+def _holders_suspect_first(front: Iterable[DockerLease], *, now: datetime) -> list[DockerLease]:
+    """Who is holding: any that looks hung first, as the likely reason, then the oldest."""
+    return sorted(
+        (lease for lease in front if lease.status in OCCUPYING),
+        key=lambda lease: (not describe_hang(lease, now=now), as_utc(lease.granted_at) or now),
     )
 
 
@@ -382,12 +393,9 @@ def _sweep_line(session: Session, lease: DockerLease) -> str | None:
 
 
 def _holder_lines(front: Iterable[DockerLease]) -> list[str]:
-    """What the line is waiting on: the oldest holders, and how far each has got."""
+    """What the line is waiting on, and how far each holder has got."""
     now = datetime.now(timezone.utc)
-    holders = sorted(
-        (lease for lease in front if lease.status in OCCUPYING),
-        key=lambda lease: as_utc(lease.granted_at) or now,
-    )
+    holders = _holders_suspect_first(front, now=now)
     lines = []
     for holder in holders[:_HOLDERS_NAMED]:
         granted = as_utc(holder.granted_at)
@@ -395,9 +403,10 @@ def _holder_lines(front: Iterable[DockerLease]) -> list[str]:
         progress = describe_progress(
             holder.progress_step, holder.progress_done, holder.progress_total
         )
+        said = ", ".join(part for part in (progress, describe_hang(holder, now=now)) if part)
         lines.append(
             f"capacity:   ahead: '{holder.holder_label or 'unlabelled'}' {held}"
-            + (f" — {progress}" if progress else "")
+            + (f" — {said}" if said else "")
         )
     if len(holders) > _HOLDERS_NAMED:
         lines.append(f"capacity:   … and {len(holders) - _HOLDERS_NAMED} more holding")
@@ -489,6 +498,7 @@ def run_holding(
             with (
                 _Heartbeat(session_factory, lease_id, interval, report),
                 ProgressSync(session_factory, lease_id, progress_file, report),
+                CpuSync(session_factory, lease_id, report),
             ):
                 if started_file is not None:
                     started_file.touch()

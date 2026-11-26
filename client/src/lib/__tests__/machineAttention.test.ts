@@ -32,6 +32,18 @@ describe("machineAttention", () => {
     expect(items.map((item) => item.id)).toEqual(["held-b"]);
   });
 
+  it("flags a lease whose command looks hung, once, and not one that is only quiet", () => {
+    const hung = lease({
+      lease_id: "a",
+      held_seconds: 13 * 3600,
+      activity: { idle_seconds: 1300, looks_hung: true },
+    });
+    const quiet = lease({ lease_id: "b", activity: { idle_seconds: 600, looks_hung: false } });
+    const unmeasured = lease({ lease_id: "c", activity: null });
+    const items = machineAttention(capacityStatus({ holders: [quiet, unmeasured, hung] }), null);
+    expect(items.map((item) => [item.id, item.tone])).toEqual([["hung-a", "bad"]]);
+  });
+
   it("names an orphaned lease once, as orphaned, however long it has been held", () => {
     const orphan = lease({ status: "orphaned", held_seconds: 20 * 3600 });
     expect(kinds(machineAttention(capacityStatus({ holders: [orphan] }), null))).toEqual([
