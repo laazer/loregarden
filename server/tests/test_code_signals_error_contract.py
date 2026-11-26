@@ -35,6 +35,7 @@ from loregarden.services.code_signals import (
 )
 from loregarden.services.code_signals.git_history import parse_log_stream
 from loregarden.services.git_subprocess import run_git
+from tests.repo_templates import from_template
 from tests.test_code_signals import (  # noqa: F401 - fixtures are used by name
     ALICE,
     _commit,
@@ -97,7 +98,15 @@ def overflow_timestamp_repo_fixture(tmp_path: Path) -> Path:
     `_parse_record` is the only thing standing between the stream and the
     caller.
     """
-    root = _init(tmp_path / "overflow")
+    return from_template(
+        tmp_path / "overflow",
+        "test_code_signals_error_contract_overflow_timestamp_repo",
+        _build_overflow_overflow_timestamp_repo,
+    )
+
+
+def _build_overflow_overflow_timestamp_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/base.py", _lines(3, "base"))
     _commit(root, "feat: base", author=ALICE, days_ago=30)
 
@@ -113,7 +122,6 @@ def overflow_timestamp_repo_fixture(tmp_path: Path) -> Path:
     ).encode()
     sha = _git_bytes(root, "hash-object", "-t", "commit", "-w", "--stdin", "--literally", stdin=obj)
     _git(root, "update-ref", "refs/heads/main", sha.decode().strip())
-    return root
 
 
 @pytest.fixture(name="non_utf8_path_repo")
@@ -124,7 +132,15 @@ def non_utf8_path_repo_fixture(tmp_path: Path) -> Path:
     at all and so cannot be produced by `git add`. Under `-z` git emits the raw
     bytes with no quoting, so the parser meets `b"bad\\xff.py"` directly.
     """
-    root = _init(tmp_path / "non_utf8")
+    return from_template(
+        tmp_path / "non_utf8",
+        "test_code_signals_error_contract_non_utf8_path_repo",
+        _build_non_utf8_non_utf8_path_repo,
+    )
+
+
+def _build_non_utf8_non_utf8_path_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/base.py", _lines(3, "base"))
     _commit(root, "feat: base", author=ALICE, days_ago=30)
 
@@ -143,7 +159,6 @@ def non_utf8_path_repo_fixture(tmp_path: Path) -> Path:
         author=ALICE,
     ).stdout.strip()
     _git(root, "update-ref", "refs/heads/main", commit)
-    return root
 
 
 def test_an_unconvertible_committer_timestamp_raises_parse_error_naming_it(
@@ -317,7 +332,15 @@ def hostile_author_repo_fixture(tmp_path: Path) -> Path:
     present in the stream: it wins `top_author` and is written to
     `file_git_signals.top_author` by the only writer in the package.
     """
-    root = _init(tmp_path / "hostile_author")
+    return from_template(
+        tmp_path / "hostile_author",
+        "test_code_signals_error_contract_hostile_author_repo",
+        _build_hostile_author_hostile_author_repo,
+    )
+
+
+def _build_hostile_author_hostile_author_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/base.py", _lines(2, "base"))
     _commit(root, "feat: base", author=ALICE, days_ago=30)
 
@@ -332,7 +355,6 @@ def hostile_author_repo_fixture(tmp_path: Path) -> Path:
         header=header,
         message=b"fix: an author no decoder accepts",
     )
-    return root
 
 
 @pytest.fixture(name="latin1_subject_repo")
@@ -342,7 +364,15 @@ def latin1_subject_repo_fixture(tmp_path: Path) -> Path:
     Commit messages in a legacy encoding are ordinary in real history — git
     itself only warns — so the package must keep reading this repository.
     """
-    root = _init(tmp_path / "latin1_subject")
+    return from_template(
+        tmp_path / "latin1_subject",
+        "test_code_signals_error_contract_latin1_subject_repo",
+        _build_latin1_subject_latin1_subject_repo,
+    )
+
+
+def _build_latin1_subject_latin1_subject_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/base.py", _lines(2, "base"))
     _commit(root, "feat: base", author=ALICE, days_ago=30)
 
@@ -357,7 +387,6 @@ def latin1_subject_repo_fixture(tmp_path: Path) -> Path:
         header=header,
         message=LATIN1_SUBJECT_BYTES,
     )
-    return root
 
 
 def test_the_author_email_is_a_field_the_package_persists_and_must_decode(hostile_author_repo):

@@ -31,12 +31,17 @@ from loregarden.services import (
 from loregarden.services.capacity_progress import PROGRESS_ENV
 from loregarden.services.cli_settings import ADAPTER_BINARIES
 from loregarden.services.git_subprocess import GH_BINARY_ENV, GH_USER_ENV, GIT_LOCATION_ENV_VARS
-from loregarden.services.memory_store import MemoryGraphStore, ObsidianMemoryStore
+from loregarden.services.memory_store import (
+    AgentMemoryService,
+    MemoryGraphStore,
+    ObsidianMemoryStore,
+)
 from loregarden.services.run_output_files import tmux_argv
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, create_engine, select
 from tests.db_templates import SeededTemplate, build_schema_template, copy_database
 from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
+from tests.prod_shape_templates import ProdShapeTemplate, build_prod_shape_template
 from tests.repo_paths import REPO_ROOT
 from tests.repo_templates import from_template, set_template_root, settle_template
 from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
@@ -378,8 +383,14 @@ def isolated_db_fixture(tmp_path, monkeypatch, request, schema_template):
     them. See `tests/db_templates.py`.
     """
     database = tmp_path / "pytest.db"
-    seeded = bool({"client", "booted_client"} & set(request.fixturenames))
-    source = request.getfixturevalue("seeded_template").database if seeded else schema_template
+    fixtures = set(request.fixturenames)
+    seeded = bool({"client", "booted_client"} & fixtures)
+    if PROD_SHAPE_SESSION in fixtures:
+        source = request.getfixturevalue("prod_shape_template").database
+    elif seeded:
+        source = request.getfixturevalue("seeded_template").database
+    else:
+        source = schema_template
     copy_database(source, database)
     request.node.stash[_SEEDED_FROM_TEMPLATE] = seeded
     engine = create_engine(
@@ -438,6 +449,48 @@ def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate
     finally:
         engine.dispose()
     return template
+
+
+#: The fixture that starts a test from `prod_shape_template`; `isolated_db` copies it.
+PROD_SHAPE_SESSION = "prod_shape_session"
+
+
+@pytest.fixture(name="prod_shape_template", scope="session")
+def prod_shape_template_fixture(tmp_path_factory, seeded_template) -> ProdShapeTemplate:
+    """`build_prod_shape` once per process, over a copy of the seeded template.
+
+    It took ~2.9s per test, and `test_invariants` alone builds it for each of 59
+    invariants. Deterministic (fixed ids, seeded RNG, a fixed epoch), so a copy
+    is the same database a per-test build would have been. Session scope, so it
+    may be minutes old when read: a test that measures the scenario's timestamps
+    against its own clock wants a module template from
+    `tests/prod_shape_templates.py` instead.
+    """
+    root = tmp_path_factory.mktemp("prod-shape-template")
+    return build_prod_shape_template(root, seeded_template.database)
+
+
+@pytest.fixture(name=PROD_SHAPE_SESSION)
+def prod_shape_session_fixture(
+    isolated_db, prod_shape_template: ProdShapeTemplate, isolate_seeded_repo
+):
+    """A session on the seeded database with production's proportions on top.
+
+    `isolated_db` already copied the scenario's database; this points the
+    seeded workspace at this test's own repository (what `client` would do,
+    without booting the app) and copies the memory graphs to where this test's
+    memory store reads them.
+    """
+    with Session(isolated_db) as session:
+        isolate_seeded_repo(session)
+    memory = AgentMemoryService.from_settings()
+    for slug, source in prod_shape_template.graphs.items():
+        destination = memory.graph_path(slug)
+        assert destination is not None, "the test's memory store names no graph base"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        copy_database(source, destination)
+    with Session(isolated_db) as session:
+        yield session
 
 
 def _isolate_seeded_workspace_repo(

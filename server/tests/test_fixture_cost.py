@@ -7,6 +7,7 @@ migration and seeding. About 3,500 tests use it. Each repo copy also ran
 not as a slower suite nobody traces back to it.
 """
 
+import sqlite3
 import statistics
 import subprocess
 import time
@@ -17,6 +18,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.testing.prod_shape import build_prod_shape
+from sqlmodel import Session
 from tests.repo_templates import from_template
 
 #: Process launches `client` setup may make. None today; a step that needs one
@@ -133,3 +136,30 @@ def test_a_template_copy_is_clean_untouched_and_still_sees_edits(
     (repo / "a.txt").write_text("z\n", encoding="utf-8")
     assert _git(repo, "status", "--porcelain").stdout == " M a.txt\n"
     assert _git(repo, "diff-index", "--quiet", "HEAD").returncode == 1
+
+
+def _row_counts(database: Path) -> dict[str, int]:
+    conn = sqlite3.connect(database)
+    try:
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        return {t: conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
+    finally:
+        conn.close()
+
+
+def test_the_prod_shape_template_is_what_a_fresh_build_writes(
+    client: TestClient, isolated_db, prod_shape_template
+) -> None:
+    """`prod_shape_session` copies a scenario built once per process; it must
+    hold what building the scenario over this test's seeded database writes."""
+    with Session(isolated_db) as session:
+        build_prod_shape(session)
+    isolated_db.dispose()
+    fresh = _row_counts(Path(isolated_db.url.database))
+    assert fresh["tickets"] > 100, fresh
+    assert _row_counts(prod_shape_template.database) == fresh

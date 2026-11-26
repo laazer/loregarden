@@ -16,6 +16,7 @@ from loregarden.services.review_launcher import (
     ReviewLauncher,
     review_worktree_path,
 )
+from tests.repo_templates import from_template
 
 TERMINAL = {LaunchPhase.EXITED, LaunchPhase.FAILED, LaunchPhase.STOPPED}
 
@@ -29,8 +30,12 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     from loregarden.config import settings
 
     monkeypatch.setattr(settings, "repo_root", tmp_path)
-    root = tmp_path / "ws" / "game"
-    root.mkdir(parents=True)
+    (tmp_path / "ws").mkdir()
+    return from_template(tmp_path / "ws" / "game", "review_launcher_repo", _build_repo)
+
+
+def _build_repo(root: Path) -> None:
+    root.mkdir()
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "t")
@@ -41,7 +46,6 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "marker.txt").write_text("integration\n")
     _git(root, "commit", "-q", "-am", "integration")
     _git(root, "checkout", "-q", "main")
-    return root
 
 
 def _workspace(root: Path, config: str | None) -> Workspace:

@@ -18,6 +18,7 @@ from unittest import mock
 import pytest
 from loregarden.services.git_subprocess import scrubbed_git_env
 from tests.repo_paths import REPO_ROOT
+from tests.repo_templates import from_template
 
 _ROOT = REPO_ROOT
 _HOOK = _ROOT / ".claude" / "hooks" / "pr_ux_section_precheck.py"
@@ -43,7 +44,14 @@ def _git(args: list[str], cwd: Path) -> None:
 
 
 def _repo(tmp_path: Path, touched: str) -> Path:
-    repo = tmp_path / "repo"
+    return from_template(
+        tmp_path / "repo",
+        "pr_ux_precheck-" + touched.replace("/", "_"),
+        lambda repo: _build_repo(repo, touched),
+    )
+
+
+def _build_repo(repo: Path, touched: str) -> None:
     (repo / ".github" / "scripts").mkdir(parents=True)
     shutil.copy(
         _ROOT / ".github" / "scripts" / "pr_ux_section_check.py", repo / ".github" / "scripts"
@@ -59,7 +67,6 @@ def _repo(tmp_path: Path, touched: str) -> Path:
     path.write_text("x\n")
     _git(["add", "."], repo)
     _git(["commit", "-m", "change"], repo)
-    return repo
 
 
 @pytest.fixture(name="ui_repo")

@@ -17,12 +17,13 @@ the point: a test's own fixtures write into ``isolated_db`` before ``client``
 is set up (the docker-capacity tests pin a ceiling that way), so restoring any
 later would silently erase them.
 
-The SQLite backup API rather than a file copy: it is consistent even if a
-source was left in WAL mode with frames not yet checkpointed.
+A file copy where the source has nothing pending beside it, else the SQLite
+backup API, which is consistent even with WAL frames not yet checkpointed.
 """
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,8 +59,21 @@ def build_schema_template(path: Path) -> Path:
     return path
 
 
+#: Files beside a database that hold writes its main file does not have yet.
+_PENDING_WRITE_SUFFIXES = ("-wal", "-journal")
+
+
 def copy_database(source: Path, destination: Path) -> None:
-    """Copy one SQLite database to a path no engine has opened yet."""
+    """Copy one SQLite database to a path no engine has opened yet.
+
+    A file copy when nothing is pending beside the source: the main file is then
+    the whole database, and copying it is ~1ms against ~7ms for the backup API,
+    paid by every test. With a WAL or rollback journal beside it (a database
+    something still has open), the backup API, which reads through it.
+    """
+    if not any(source.with_name(source.name + s).exists() for s in _PENDING_WRITE_SUFFIXES):
+        shutil.copyfile(source, destination)
+        return
     src = sqlite3.connect(source)
     try:
         dst = sqlite3.connect(destination)

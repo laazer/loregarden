@@ -33,6 +33,7 @@ from loregarden.services.target_branch import (
     target_branch_name,
 )
 from sqlmodel import Session, select
+from tests.repo_templates import from_template
 
 
 def _git(args: list[str], *, cwd: Path) -> str:
@@ -48,7 +49,11 @@ def _git(args: list[str], *, cwd: Path) -> str:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    path = tmp_path / "repo"
+    """A one-commit repository on `main`, copied from a per-process template."""
+    return from_template(tmp_path / "repo", "target_branch_repo", _build_repo)
+
+
+def _build_repo(path: Path) -> None:
     path.mkdir()
     _git(["init", "-b", "main"], cwd=path)
     _git(["config", "user.email", "test@example.com"], cwd=path)
@@ -56,7 +61,6 @@ def repo(tmp_path: Path) -> Path:
     (path / "README.md").write_text("# test\n", encoding="utf-8")
     _git(["add", "."], cwd=path)
     _git(["commit", "-m", "init"], cwd=path)
-    return path
 
 
 @pytest.fixture

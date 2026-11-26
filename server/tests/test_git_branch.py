@@ -23,6 +23,7 @@ from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.primary_checkout import DirtyPrimaryCheckoutError
 from sqlmodel import Session, select
+from tests.repo_templates import from_template
 from tests.worktree_helpers import grant_receipt
 
 
@@ -131,6 +132,16 @@ def _git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _init_repo(path: Path) -> None:
+    """Fill the empty directory ``path`` with a one-commit repository on `main`.
+
+    A copy of one built once per process; see `tests/repo_templates.py`.
+    """
+    path.rmdir()  # every caller hands an empty directory, and the copy makes its own
+    from_template(path, "git_branch_init", _build_init_repo)
+
+
+def _build_init_repo(path: Path) -> None:
+    path.mkdir()
     _git(["init", "-b", "main"], cwd=path)
     _git(["config", "user.email", "test@example.com"], cwd=path)
     _git(["config", "user.name", "Test"], cwd=path)

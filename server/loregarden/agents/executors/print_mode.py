@@ -165,6 +165,60 @@ class _Budgets:
         self.idle_deadline = time.time() + self.timeout
 
 
+#: How long the supervising loop waits between reads while the agent is quiet.
+IDLE_BEAT_SECONDS = 0.5
+#: How often a tmux beat asks whether the wrapper is gone.
+EXIT_CHECK_SECONDS = 0.05
+
+
+def _await_output_or_exit(spawned: SpawnedAgent, seconds: float) -> None:
+    """Wait one idle beat, returning early when the wrapper exits.
+
+    Every run used to pay up to a whole beat on its way out. The FILE
+    transport's wrapper is our child, so the beat waits on it and ends the
+    moment it exits. tmux owns its pane, so there is no process to wait on: the
+    beat is cut into short sleeps, each followed by `_pane_visibly_gone`, a file
+    read and a signal-0 probe rather than a launch. Without a pid only tmux can
+    answer, so that beat stays a plain sleep. The loop's own `_wrapper_exited`
+    still decides; this only stops sleeping once there is something to see.
+    Output is still read at the beat either way.
+    """
+    if spawned.handle is None:
+        if spawned.pid is None:
+            time.sleep(seconds)
+            return
+        deadline = time.monotonic() + seconds
+        while (remaining := deadline - time.monotonic()) > 0:
+            time.sleep(min(EXIT_CHECK_SECONDS, remaining))
+            if _pane_visibly_gone(spawned.pid, spawned.paths):
+                return
+        return
+    try:
+        spawned.handle.wait(timeout=seconds)
+    except (
+        subprocess.TimeoutExpired
+    ):  # silent-ok: the beat elapsed with the agent still running, which is the normal case
+        return
+
+
+def _pane_visibly_gone(pid: int, paths: RunOutputPaths) -> bool:
+    """A tmux wrapper that has recorded its exit code or whose pid is gone.
+
+    The cheap half of `_wrapper_exited`, safe to ask many times a beat: any
+    other answer, including a pid we may no longer signal, is "keep waiting",
+    and the next `_wrapper_exited` judges it (and reports it) properly.
+    """
+    if _exit_code_recorded(paths):
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:  # silent-ok: not an exit; _wrapper_exited reports it on the next beat
+        return False
+    return False
+
+
 def _wrapper_exited(spawned: SpawnedAgent) -> bool:
     """Whether the wrapper is gone, on either transport.
 
@@ -323,9 +377,7 @@ def run_print_mode(
                 cancelled = True
                 break
             exited = _wrapper_exited(spawned)
-            # A short poll after exit: the file is complete, so there is nothing
-            # to wait for, only the rest of it to read.
-            line = tail.readline(timeout=0 if exited else 0.5)
+            line = tail.readline(timeout=0)
             if line is None:
                 # EOF is NOT the end. Only the wrapper being gone is, and the
                 # drain below is what keeps the last lines of the transcript.
@@ -339,6 +391,7 @@ def run_print_mode(
                     break
                 if now - budgets.start >= MAX_HOLD_SECONDS:
                     launch_slot.release()
+                _await_output_or_exit(spawned, IDLE_BEAT_SECONDS)
                 continue
             _record_print_line(
                 line,

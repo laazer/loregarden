@@ -25,12 +25,12 @@ from loregarden.services.publish_ref import publish_ref_for
 from loregarden.services.publish_tree import publish_tree
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session, select
+from tests.tree_publish_helpers import repo_with_remote
 from tests.worktree_helpers import (
     at_terminal_stage,
     blocking_text,
     commit_on,
     git,
-    make_repo,
     make_tree_ticket,
 )
 
@@ -43,12 +43,7 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path):
-    repo = make_repo(tmp_path)
-    remote = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(remote))
-    git(repo, "remote", "add", "origin", str(remote))
-    git(repo, "push", "-q", "-u", "origin", "main")
-    return repo
+    return repo_with_remote(tmp_path)
 
 
 @pytest.fixture(name="workspace")

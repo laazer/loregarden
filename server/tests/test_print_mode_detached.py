@@ -594,3 +594,55 @@ def test_the_kill_signals_the_group_the_pid_leads_never_the_one_it_sits_in(run_k
     finally:
         os.killpg(leader.pid, signal.SIGKILL)
         leader.wait(timeout=10)
+
+
+#: A beat far longer than any exit takes to be seen.
+LONG_BEAT = 30.0
+
+
+def _beat_paths(tmp_path: Path):
+    return print_mode.RunOutputPaths(
+        out=tmp_path / "r.out",
+        err=tmp_path / "r.err",
+        rc=tmp_path / "r.rc",
+        prompt=tmp_path / "r.prompt",
+        env=tmp_path / "r.env",
+    )
+
+
+def test_an_idle_beat_ends_when_a_file_transport_wrapper_exits(tmp_path: Path) -> None:
+    """Every run paid up to a whole beat on its way out; waiting on our child ends it."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    spawned = SpawnedAgent(
+        pid=proc.pid, transport_used=AgentTransport.FILE, paths=_beat_paths(tmp_path), handle=proc
+    )
+    started = time.monotonic()
+    print_mode._await_output_or_exit(spawned, LONG_BEAT)
+    # Ended by the exit, not by the beat running out.
+    assert time.monotonic() - started < LONG_BEAT
+    assert proc.returncode is not None
+
+
+def test_an_idle_beat_ends_when_a_tmux_wrapper_records_its_exit(tmp_path: Path) -> None:
+    """No child to wait on: the beat sees the `.rc` the wrapper writes last."""
+    paths = _beat_paths(tmp_path)
+    paths.rc.write_text("0\n")
+    spawned = SpawnedAgent(
+        pid=os.getpid(), transport_used=AgentTransport.TMUX, paths=paths, handle=None
+    )
+    started = time.monotonic()
+    print_mode._await_output_or_exit(spawned, LONG_BEAT)
+    # Ended by the exit, not by the beat running out.
+    assert time.monotonic() - started < LONG_BEAT
+
+
+def test_an_idle_beat_lasts_the_beat_while_a_tmux_wrapper_runs(tmp_path: Path) -> None:
+    spawned = SpawnedAgent(
+        pid=os.getpid(),
+        transport_used=AgentTransport.TMUX,
+        paths=_beat_paths(tmp_path),
+        handle=None,
+    )
+    started = time.monotonic()
+    print_mode._await_output_or_exit(spawned, 0.3)
+    assert time.monotonic() - started >= 0.3

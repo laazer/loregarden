@@ -38,6 +38,7 @@ from loregarden.services.merge_queue_loop import MergeQueueLoop, MergeVerdict, m
 from loregarden.services.pull_request_merge import MergeFailed
 from loregarden.services.ticket_pull_request import GhCheck
 from sqlmodel import Session
+from tests.repo_templates import from_template
 
 REQUIRED = ["Server (Python)", "Client (TypeScript)", "PR UX section", "PR fix coverage"]
 
@@ -60,18 +61,24 @@ def commit_file(repo: Path, branch: str, name: str, content: str) -> str:
 
 @pytest.fixture(name="origin")
 def origin_fixture(tmp_path):
-    origin = tmp_path / "origin.git"
-    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    """A bare origin holding the clone's seed commit; the clone is beside it as `repo`.
+
+    Built once per process (`tests/repo_templates.py`): the pair took nine git
+    launches per test.
+    """
+    pair = from_template(tmp_path / "mq", "merge_queue_pair", _build_pair, repos=("repo",))
+    return pair / "origin.git"
+
+
+def _build_pair(root: Path) -> None:
+    root.mkdir()
+    origin = root / "origin.git"
+    git(root, "init", "-q", "--bare", "-b", "main", str(origin))
     # The fake GitHub commits its squash here; a CI runner has no ambient identity.
     git(origin, "config", "user.email", "github@example.com")
     git(origin, "config", "user.name", "GitHub")
-    return origin
-
-
-@pytest.fixture(name="repo")
-def repo_fixture(tmp_path, origin):
-    repo = tmp_path / "repo"
-    git(tmp_path, "init", "-q", "-b", "main", str(repo))
+    repo = root / "repo"
+    git(root, "init", "-q", "-b", "main", str(repo))
     git(repo, "config", "user.email", "t@example.com")
     git(repo, "config", "user.name", "Test")
     git(repo, "config", "commit.gpgsign", "false")
@@ -80,6 +87,13 @@ def repo_fixture(tmp_path, origin):
     git(repo, "commit", "-q", "-m", "seed")
     git(repo, "remote", "add", "origin", str(origin))
     git(repo, "push", "-q", "origin", "main")
+
+
+@pytest.fixture(name="repo")
+def repo_fixture(origin):
+    repo = origin.parent / "repo"
+    # The template's clone names the template's origin; point it at this copy.
+    git(repo, "remote", "set-url", "origin", str(origin))
     return repo
 
 

@@ -16,6 +16,7 @@ from loregarden.models.domain import SymbolKind, Workspace
 from loregarden.services.git_subprocess import run_git
 from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine
+from tests.repo_templates import from_template
 
 # --------------------------------------------------------------------------
 # Repository scaffolding. Used only by fixtures.
@@ -172,7 +173,11 @@ export function Thing({ label }: { label: string }) {
 @pytest.fixture(name="mapped_repo")
 def mapped_repo_fixture(tmp_path: Path) -> Path:
     """Every supported and unsupported shape in one tracked tree."""
-    root = _init(tmp_path / "mapped")
+    return from_template(tmp_path / "mapped", "symbol_map_mapped", _build_mapped_mapped_repo)
+
+
+def _build_mapped_mapped_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "pkg/__init__.py", "")
     _write(root, "pkg/widget.py", PY_MODULE)
     _write(root, "pkg/other.py", "def render():\n    return 2\n")
@@ -183,7 +188,6 @@ def mapped_repo_fixture(tmp_path: Path) -> Path:
     _write(root, "README.md", "# fixture\n")
     _write_bytes(root, "assets/blob.bin", bytes(range(256)))
     _commit(root, "feat: the mapped tree")
-    return root
 
 
 @pytest.fixture(name="broken_repo")
@@ -194,12 +198,17 @@ def broken_repo_fixture(tmp_path: Path) -> Path:
     HEAD a4d45f9f8f, no real file in `server/loregarden` fails to parse under
     the 3.11 this suite runs on.
     """
-    root = _init(tmp_path / "broken")
+    return from_template(
+        tmp_path / "broken", "symbol_map_repos_broken_repo", _build_broken_broken_repo
+    )
+
+
+def _build_broken_broken_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "good.py", "def good():\n    return 1\n")
     _write(root, "bad.py", "def oops(:\n")
     _write_bytes(root, "undecodable.ts", b"export const A = 1;\n\xff\xfe not utf-8\n")
     _commit(root, "feat: one of each failure")
-    return root
 
 
 @pytest.fixture(name="unreadable_repo")
@@ -228,12 +237,17 @@ def suggest_repo_fixture(tmp_path: Path) -> Path:
     [ceil(3*20/7), floor(7*20/3)] = [9, 46]; the eight names shorter than nine
     characters are the ones the SQL must never fetch.
     """
-    root = _init(tmp_path / "suggest")
+    return from_template(
+        tmp_path / "suggest", "symbol_map_repos_suggest_repo", _build_suggest_suggest_repo
+    )
+
+
+def _build_suggest_suggest_repo(root: Path) -> None:
+    root = _init(root)
     lines = [f"def {'a' * n}():\n    return {n}\n" for n in range(1, 31)]
     lines.append("def calculate_total_price():\n    return 0\n")
     _write(root, "names.py", "\n".join(lines))
     _commit(root, "feat: a spread of name lengths")
-    return root
 
 
 @pytest.fixture(name="worktree_pair")
@@ -352,7 +366,11 @@ def refresh_repo_fixture(tmp_path: Path) -> Path:
     asserts survives a refresh, and an id is only meaningful as a control if
     nothing in the test ever writes that path.
     """
-    root = _init(tmp_path / "refresh")
+    return from_template(tmp_path / "refresh", "symbol_map_refresh", _build_refresh_refresh_repo)
+
+
+def _build_refresh_refresh_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "pkg/__init__.py", "")
     _write(root, "pkg/alpha.py", ALPHA_MODULE)
     _write(root, "pkg/beta.py", BETA_MODULE)
@@ -360,7 +378,6 @@ def refresh_repo_fixture(tmp_path: Path) -> Path:
     _write(root, "web/delta.ts", DELTA_MODULE)
     _write(root, "README.md", "# refresh\n")
     _commit(root, "feat: the tree a refresh starts from")
-    return root
 
 
 @pytest.fixture(name="unborn_repo")
@@ -371,9 +388,14 @@ def unborn_repo_fixture(tmp_path: Path) -> Path:
     through every reader. AC11 closes it, so this shape needs a fixture rather
     than an inline `git init` in one test body.
     """
-    root = _init(tmp_path / "unborn")
+    return from_template(
+        tmp_path / "unborn", "symbol_map_repos_unborn_repo", _build_unborn_unborn_repo
+    )
+
+
+def _build_unborn_unborn_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "pkg/thing.py", ALPHA_MODULE)
-    return root
 
 
 @pytest.fixture(name="ancestor_checkouts")
@@ -463,7 +485,15 @@ def hostile_paths_repo_fixture(tmp_path: Path) -> Path:
     vendored files on every run entry, and a scan that descends into a nested
     checkout indexes another repository's sources under this one's identity.
     """
-    root = _init(tmp_path / "hostile")
+    return from_template(
+        tmp_path / "hostile",
+        "symbol_map_repos_hostile_paths_repo",
+        _build_hostile_hostile_paths_repo,
+    )
+
+
+def _build_hostile_hostile_paths_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, ".gitignore", "vendor/\n*.generated.py\n")
     _write(root, "pkg/plain.py", "def plain():\n    return 1\n")
     _write(root, SPACED_PATH, "def with_space():\n    return 1\n")
@@ -479,7 +509,6 @@ def hostile_paths_repo_fixture(tmp_path: Path) -> Path:
     nested = _init(root / "nested")
     _write(nested, "inner.py", "def inner():\n    return 1\n")
     _commit(nested, "feat: another repository entirely")
-    return root
 
 
 @pytest.fixture(name="empty_tree_repo")
@@ -491,6 +520,13 @@ def empty_tree_repo_fixture(tmp_path: Path) -> Path:
     empty commit is not exotic — it is every repository on its first day, and
     `map_status` is specified to never refuse.
     """
-    root = _init(tmp_path / "empty-tree")
+    return from_template(
+        tmp_path / "empty-tree",
+        "symbol_map_repos_empty_tree_repo",
+        _build_empty_tree_empty_tree_repo,
+    )
+
+
+def _build_empty_tree_empty_tree_repo(root: Path) -> None:
+    root = _init(root)
     _git(root, "commit", "-q", "--allow-empty", "-m", "chore: nothing yet")
-    return root

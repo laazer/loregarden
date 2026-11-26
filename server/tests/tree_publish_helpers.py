@@ -11,6 +11,7 @@ from loregarden.services import base_delivery, tree_publish_scheduler, unpublish
 from loregarden.services.land_ticket import land_ticket
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session
+from tests.repo_templates import from_template
 from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
 
 PR = "https://github.com/example/repo/pull/7"
@@ -19,12 +20,26 @@ NO_PUSH_CHAIN = {"commit": True, "push": False}
 
 
 def repo_with_remote(tmp_path: Path) -> Path:
-    repo = make_repo(tmp_path)
-    remote = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(remote))
+    """`make_repo`'s repository, pushed to a bare `origin` beside it.
+
+    The pair is copied from a per-process template; only the remote's URL,
+    which is absolute, is pointed at this copy's `remote.git`.
+    """
+    root = from_template(
+        tmp_path / "with-remote", "repo_with_remote", _build_with_remote, repos=("project",)
+    )
+    repo = root / "project"
+    git(repo, "remote", "set-url", "origin", str(root / "remote.git"))
+    return repo
+
+
+def _build_with_remote(root: Path) -> None:
+    root.mkdir()
+    repo = make_repo(root)
+    remote = root / "remote.git"
+    git(root, "init", "-q", "--bare", str(remote))
     git(repo, "remote", "add", "origin", str(remote))
     git(repo, "push", "-q", "-u", "origin", "main")
-    return repo
 
 
 def make_workspace(session: Session, repo: Path, slug: str) -> Workspace:

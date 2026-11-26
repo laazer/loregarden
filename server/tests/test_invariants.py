@@ -48,9 +48,7 @@ from loregarden.services.parallel_queue import ParallelQueueService, claim_free_
 from loregarden.services.queue_slot_claims import RESERVATION_GRACE
 from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.testing.factories import make_ticket
-from loregarden.testing.prod_shape import build_prod_shape
-from sqlmodel import Session, col, create_engine, select
-from tests.db_templates import SeededTemplate, copy_database
+from sqlmodel import Session, col, select
 from tests.repo_paths import REPO_ROOT
 
 #: A ticket named by external id, never by a bare number (`ticket_ids.resolve_one`).
@@ -688,40 +686,6 @@ def test_every_ghost_in_a_full_pool_is_found_in_one_pass(db_session: Session, pr
 
 
 # ---- convergence on production's shape ---------------------------------------
-
-
-@pytest.fixture(name="prod_shape_template", scope="session")
-def prod_shape_template_fixture(tmp_path_factory, seeded_template: SeededTemplate) -> Path:
-    """The seeded database with production's shape built in, once per process.
-
-    Building the scenario costs ~6.5s; the convergence test below is parametrized
-    over every invariant (~60), so building it per test was 388s of the CI suite's
-    setup time on its own. No invariant reads the memory graphs, so the template
-    is the database alone.
-    """
-    database = tmp_path_factory.mktemp("prod-shape-template") / "prod-shape.db"
-    copy_database(seeded_template.database, database)
-    engine = create_engine(f"sqlite:///{database}")
-    try:
-        with Session(engine) as session:
-            build_prod_shape(session)
-    finally:
-        engine.dispose()
-    return database
-
-
-@pytest.fixture(name="prod_shape_session")
-def prod_shape_session_fixture(isolated_db, prod_shape_template: Path, isolate_seeded_repo):
-    """A copy of the template in this test's database, its workspace on its own repo."""
-    isolated_db.dispose()
-    copy_database(prod_shape_template, Path(isolated_db.url.database))
-    # Outside any transaction, where SQLite honours it (as `isolated_db` sets it).
-    with isolated_db.connect() as conn:
-        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
-    with Session(isolated_db) as session:
-        isolate_seeded_repo(session)
-    with Session(isolated_db) as session:
-        yield session
 
 
 @pytest.mark.parametrize("invariant", INVARIANTS, ids=lambda i: i.name)

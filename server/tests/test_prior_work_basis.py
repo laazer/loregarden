@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
 from loregarden.models.domain.enums import MemoryStoreState, RetrievalEmptiness
 from loregarden.services.prior_work import _MAX_SCANNED, search_prior_work
-from loregarden.testing.prod_shape import build_prod_shape
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
@@ -267,14 +265,6 @@ def test_search_prior_work_no_longer_returns_a_bare_list(tmp_path):
 
 
 # --- AC8 the ceiling, at prod_shape volume ----------------------------------
-
-
-@pytest.fixture(name="prod_shape_session")
-def prod_shape_session_fixture(client, isolated_db):
-    with Session(isolated_db) as session:
-        build_prod_shape(session)
-    with Session(isolated_db) as session:
-        yield session
 
 
 def test_the_ceiling_drops_an_overcommon_term_at_prod_shape_volume(prod_shape_session):
