@@ -141,18 +141,20 @@ def wait_while_line_moves(
         if ahead - front.keys():
             moved_at = clock()
         ahead = set(front)
-        if clock() - moved_at >= stall_seconds:
-            reservation.message = (
-                f"nothing ahead in the line finished for {clock() - moved_at:.0f}s; still "
-                f"holding: {', '.join(sorted(row.holder_label for row in front.values()))}"
-            )
-            return reservation
+        # Before the stall check: a waiter that polled is alive, even when its
+        # first poll outlasted the whole budget and it is about to give up.
         if beat_at is None or clock() - beat_at >= HEARTBEAT_SECONDS:
             beat_at = clock()
             note_poll(session, lease, min_interval=0)
             if on_poll is not None:
                 on_poll()
         session.commit()  # end any read transaction before sleeping on it
+        if clock() - moved_at >= stall_seconds:
+            reservation.message = (
+                f"nothing ahead in the line finished for {clock() - moved_at:.0f}s; still "
+                f"holding: {', '.join(sorted(row.holder_label for row in front.values()))}"
+            )
+            return reservation
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
 
 
