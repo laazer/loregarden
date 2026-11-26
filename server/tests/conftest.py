@@ -44,6 +44,8 @@ from tests.memory_guard import forbidden_memory_roots, reject_if_forbidden
 from tests.prod_shape_templates import ProdShapeTemplate, build_prod_shape_template
 from tests.repo_paths import REPO_ROOT
 from tests.repo_templates import from_template, set_template_root, settle_template
+from tests.slow_test_ceiling import register as register_slow_test_ceiling
+from tests.slow_test_ratchet import INHERITED as INHERITED_SLOW_TESTS
 from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
 from tests.worktree_helpers import seed_stage_report_contract
 
@@ -61,6 +63,7 @@ def pytest_configure(config):
     seconds and prints the slowest; under xdist only the controller writes.
     """
     pytest_profile.register(config, suite="server")
+    register_slow_test_ceiling(config, INHERITED_SLOW_TESTS)
     # The queue board's file for this run. `pytest_push_progress` takes it out of
     # the environment; a run without that plugin (`capacity run -- pytest -n 3`)
     # left it, and a test running a suite script wrote "1 file, 68/68 (100%)" over

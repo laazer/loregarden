@@ -1,0 +1,19 @@
+{
+  "inherited": [
+    "src/components/__tests__/AppSidebar.test.tsx",
+    "src/components/__tests__/AppSidebarScrolling.test.tsx",
+    "src/components/__tests__/AppSidebarViewActions.test.tsx",
+    "src/components/__tests__/RunLogModal.test.tsx",
+    "src/components/__tests__/scrollRegionsCensusTracksDetector.test.ts",
+    "src/components/__tests__/scrollRegionsMeasuredReachability.test.ts",
+    "src/components/machine/__tests__/DiskUsageView.test.tsx",
+    "src/components/memory/__tests__/ReferenceLibraryTab.test.tsx",
+    "src/pages/__tests__/BaxterChatPage.test.tsx",
+    "src/pages/__tests__/InitiativePlanPage.test.tsx",
+    "src/pages/__tests__/ViewPageGrid.test.tsx",
+    "src/pages/__tests__/WorkItemsPage.test.tsx",
+    "src/pages/__tests__/WorkspacesPage.test.tsx",
+    "src/state/__tests__/toastStoreClaimBounds.test.ts",
+    "src/test/__tests__/prodShapeUsability.test.tsx"
+  ]
+}

@@ -1,6 +1,7 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  testEnvironment: "jsdom",
+  // jsdom, plus the per-test ceiling: src/test/slowTestEnvironment.cjs.
+  testEnvironment: "<rootDir>/src/test/slowTestEnvironment.cjs",
   // jsdom render tests are slow enough that the 5000 ms default leaves no
   // headroom: on a *passing* full run, five tests measured 4.2-4.9 s — 85-97%
   // of the budget — and any load on the box tips them over. They then fail on
