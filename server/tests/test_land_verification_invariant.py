@@ -51,7 +51,6 @@ from loregarden.services import git_subprocess, invariant_registry
 from loregarden.services.git_automation_config import resolve_git_automation
 from loregarden.services.invariant_registry import INVARIANTS, LAND_VERIFICATION_RAN
 from loregarden.services.invariants import run_invariant
-from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.testing.factories import (
     make_agent_run,
@@ -59,7 +58,6 @@ from loregarden.testing.factories import (
     make_ticket,
     make_workspace,
 )
-from loregarden.testing.prod_shape import build_prod_shape
 from sqlmodel import Session, col, select
 
 #: The receipt's three verdict words; only the first clears the invariant.
@@ -351,14 +349,6 @@ def _done_and_landed(session: Session) -> list[Ticket]:
             )
         ).all()
     )
-
-
-@pytest.fixture(name="prod_shape_session")
-def prod_shape_session_fixture(client, isolated_db):
-    with Session(isolated_db) as session:
-        build_prod_shape(session, graph_path=AgentMemoryService.from_settings().graph_path)
-    with Session(isolated_db) as session:
-        yield session
 
 
 def test_the_first_pass_over_productions_shape_reports_nothing(prod_shape_session: Session):

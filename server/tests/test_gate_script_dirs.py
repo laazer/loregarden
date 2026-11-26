@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 from loregarden.testing.lefthook_config import hook_jobs
 from tests.repo_paths import REPO_ROOT
+from tests.repo_templates import from_template
 from tests.toolchain import UV_SYNC, require_path
 
 _ROOT = REPO_ROOT
@@ -138,7 +139,10 @@ def hook_repo(tmp_path: Path) -> Path:
     themselves, so the copy carries both — the venv as a link, not a rebuild.
     """
     require_path(_VENV / "bin" / "ruff", UV_SYNC)
-    repo = tmp_path / "repo"
+    return from_template(tmp_path / "repo", "gate_script_dirs_hook_repo", _build_hook_repo)
+
+
+def _build_hook_repo(repo: Path) -> None:
     shutil.copytree(_SCRIPTS, repo / ".lefthook" / "scripts")
     (repo / "server").mkdir()
     shutil.copy(_ROOT / "server" / "pyproject.toml", repo / "server" / "pyproject.toml")
@@ -149,7 +153,6 @@ def hook_repo(tmp_path: Path) -> Path:
     _git(repo, "config", "user.name", "t")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "base")
-    return repo
 
 
 def _stage(repo: Path, relpath: str, body: str) -> None:

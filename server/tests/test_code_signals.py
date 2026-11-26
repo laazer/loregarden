@@ -58,6 +58,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, create_engine, select
 from tests.import_scan import imported_names
+from tests.repo_templates import from_template
 
 PACKAGE_ROOT = Path(git_history.__file__).parent
 
@@ -150,7 +151,11 @@ def authored_repo_fixture(tmp_path: Path) -> Path:
     three lines first, alice adds three later, so insertion order and
     last-writer order both point at bob and only the tie rule points at alice.
     """
-    root = _init(tmp_path / "authored")
+    return from_template(tmp_path / "authored", "code_signals_authored", _build_authored)
+
+
+def _build_authored(root: Path) -> None:
+    root = _init(root)
 
     _write(root, "src/core.py", _lines(5, "core"))
     _write(root, "README.md", _lines(2, "readme"))
@@ -180,8 +185,6 @@ def authored_repo_fixture(tmp_path: Path) -> Path:
     _append(root, "src/tie.py", 3, "tie")
     _commit(root, "feat: tie part two", author=ALICE, days_ago=10)
 
-    return root
-
 
 #: path -> (churn_commits, churn_added, churn_deleted, top_author, share,
 #:          distinct_authors, bugfix_commits)
@@ -201,11 +204,18 @@ def commitless_repo_fixture(tmp_path: Path) -> Path:
 @pytest.fixture(name="uncommitted_repo")
 def uncommitted_repo_fixture(tmp_path: Path) -> Path:
     """History, plus one file added to the working copy and never committed."""
-    root = _init(tmp_path / "uncommitted")
+    return from_template(
+        tmp_path / "uncommitted",
+        "test_code_signals_uncommitted_repo",
+        _build_uncommitted_uncommitted_repo,
+    )
+
+
+def _build_uncommitted_uncommitted_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/committed.py", _lines(3, "c"))
     _commit(root, "feat: committed", author=ALICE, days_ago=5)
     _write(root, "src/never_committed.py", _lines(3, "n"))
-    return root
 
 
 @pytest.fixture(name="not_a_repo")
@@ -227,32 +237,49 @@ def not_a_repo_fixture(tmp_path: Path) -> Path:
 @pytest.fixture(name="outside_window_repo")
 def outside_window_repo_fixture(tmp_path: Path) -> Path:
     """One commit, dated well outside the default 180-day window."""
-    root = _init(tmp_path / "outside")
+    return from_template(
+        tmp_path / "outside",
+        "test_code_signals_outside_window_repo",
+        _build_outside_outside_window_repo,
+    )
+
+
+def _build_outside_outside_window_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/ancient.py", _lines(3, "a"))
     _commit(root, "feat: ancient", author=ALICE, days_ago=400)
-    return root
 
 
 @pytest.fixture(name="window_repo")
 def window_repo_fixture(tmp_path: Path) -> Path:
     """One commit outside the default window and one inside it."""
-    root = _init(tmp_path / "window")
+    return from_template(
+        tmp_path / "window", "test_code_signals_window_repo", _build_window_window_repo
+    )
+
+
+def _build_window_window_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/ancient.py", _lines(3, "a"))
     _commit(root, "feat: ancient", author=ALICE, days_ago=400)
     _write(root, "src/recent.py", _lines(2, "r"))
     _commit(root, "feat: recent", author=ALICE, days_ago=5)
-    return root
 
 
 @pytest.fixture(name="deletion_repo")
 def deletion_repo_fixture(tmp_path: Path) -> Path:
     """A path whose only in-window history is a deletion: zero added lines."""
-    root = _init(tmp_path / "deletion")
+    return from_template(
+        tmp_path / "deletion", "test_code_signals_deletion_repo", _build_deletion_deletion_repo
+    )
+
+
+def _build_deletion_deletion_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "src/doomed.py", _lines(4, "d"))
     _commit(root, "feat: doomed", author=ALICE, days_ago=400)
     (root / "src/doomed.py").unlink()
     _commit(root, "chore: drop doomed", author=BOB, days_ago=5)
-    return root
 
 
 @pytest.fixture(name="kindwise_fix_repo")
@@ -263,7 +290,15 @@ def kindwise_fix_repo_fixture(tmp_path: Path) -> Path:
     ZERO doc-only fix commits, so a test against real history would pass
     without exercising anything (spec R11).
     """
-    root = _init(tmp_path / "kindwise")
+    return from_template(
+        tmp_path / "kindwise",
+        "test_code_signals_kindwise_fix_repo",
+        _build_kindwise_kindwise_fix_repo,
+    )
+
+
+def _build_kindwise_kindwise_fix_repo(root: Path) -> None:
+    root = _init(root)
 
     _write(root, "src/app.py", _lines(2, "app"))
     _write(root, "docs/guide.md", _lines(2, "doc"))
@@ -287,8 +322,6 @@ def kindwise_fix_repo_fixture(tmp_path: Path) -> Path:
     _append(root, "docs/guide.md", 1, "doc")
     _commit(root, "fix(core): mixed source and doc", author=ALICE, days_ago=10)
 
-    return root
-
 
 @pytest.fixture(name="cochange_repo")
 def cochange_repo_fixture(tmp_path: Path) -> Path:
@@ -299,7 +332,11 @@ def cochange_repo_fixture(tmp_path: Path) -> Path:
     from (c, d), and `max_files_per_commit` at 5 vs 6 separates the sweep from
     everything else.
     """
-    root = _init(tmp_path / "cochange")
+    return from_template(tmp_path / "cochange", "code_signals_cochange", _build_cochange)
+
+
+def _build_cochange(root: Path) -> None:
+    root = _init(root)
 
     for index, days in enumerate((60, 50, 40)):
         _append(root, "a.py", 1, "a")
@@ -315,20 +352,25 @@ def cochange_repo_fixture(tmp_path: Path) -> Path:
         _write(root, f"s{n}.py", _lines(1, f"s{n}"))
     _commit(root, "chore: sweep six files", author=ALICE, days_ago=10)
 
-    return root
-
 
 @pytest.fixture(name="hostile_path_repo")
 def hostile_path_repo_fixture(tmp_path: Path) -> Path:
     """A space, a double quote, a non-ASCII character, and a binary file."""
-    root = _init(tmp_path / "hostile")
+    return from_template(
+        tmp_path / "hostile",
+        "test_code_signals_hostile_path_repo",
+        _build_hostile_hostile_path_repo,
+    )
+
+
+def _build_hostile_hostile_path_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, 'dir with space/a "quoted" café.txt', _lines(2, "q"))
     _write(root, "plain.py", _lines(1, "p"))
     _commit(root, "feat: hostile paths", author=ALICE, days_ago=30)
     (root / "asset.bin").write_bytes(b"\x00\x01\x02\x03\x00\xff")
     _commit(root, "fix(assets): binary", author=BOB, days_ago=20)
     _git(root, "commit", "-q", "--allow-empty", "-m", "chore: nothing changed", when=_when(10))
-    return root
 
 
 @pytest.fixture(name="session")
@@ -1336,7 +1378,13 @@ def merge_repo_fixture(tmp_path: Path) -> Path:
     the flag `base.py` is (3 commits, 5 added); without it the merge appears as
     a fourth record.
     """
-    root = _init(tmp_path / "merge")
+    return from_template(
+        tmp_path / "merge", "test_code_signals_merge_repo", _build_merge_merge_repo
+    )
+
+
+def _build_merge_merge_repo(root: Path) -> None:
+    root = _init(root)
 
     _write(root, "base.py", "1\n2\n3\n")
     _commit(root, "feat: base", author=ALICE, days_ago=60)
@@ -1364,7 +1412,6 @@ def merge_repo_fixture(tmp_path: Path) -> Path:
         when=_when(30),
         author=ZOE,
     )
-    return root
 
 
 @pytest.fixture(name="weird_path_repo")
@@ -1376,14 +1423,19 @@ def weird_path_repo_fixture(tmp_path: Path) -> Path:
     obvious parser. `core.quotePath` is turned ON to prove `-z` is what keeps
     the bytes raw: with the flag and without `-z`, git escapes them instead.
     """
-    root = _init(tmp_path / "weird")
+    return from_template(
+        tmp_path / "weird", "test_code_signals_weird_path_repo", _build_weird_weird_path_repo
+    )
+
+
+def _build_weird_weird_path_repo(root: Path) -> None:
+    root = _init(root)
     _git(root, "config", "core.quotePath", "true")
 
     _write(root, TAB_PATH, _lines(2, "t"))
     _write(root, NEWLINE_PATH, _lines(1, "n"))
     _write(root, "plain.py", _lines(1, "p"))
     _commit(root, HOSTILE_SUBJECT, author=ALICE, days_ago=30)
-    return root
 
 
 @pytest.fixture(name="churn_mix_repo")
@@ -1396,7 +1448,13 @@ def churn_mix_repo_fixture(tmp_path: Path) -> Path:
     that anyone authored, so a reducer that swapped the two columns, or that
     counted deletions toward ownership, passes all of them.
     """
-    root = _init(tmp_path / "churnmix")
+    return from_template(
+        tmp_path / "churnmix", "test_code_signals_churn_mix_repo", _build_churnmix_churn_mix_repo
+    )
+
+
+def _build_churnmix_churn_mix_repo(root: Path) -> None:
+    root = _init(root)
 
     _write(root, "src/m.py", "a\nb\nc\nd\n")
     _commit(root, "feat: m", author=ALICE, days_ago=60)
@@ -1406,7 +1464,6 @@ def churn_mix_repo_fixture(tmp_path: Path) -> Path:
 
     _write(root, "src/m.py", "a\n")
     _commit(root, "chore: shrink", author=ZOE, days_ago=20)
-    return root
 
 
 @pytest.fixture(name="nodiff_repo")
@@ -1420,7 +1477,13 @@ def nodiff_repo_fixture(tmp_path: Path) -> Path:
     produces, and the one that breaks a reducer which infers "no adds means
     nothing happened here".
     """
-    root = _init(tmp_path / "nodiff")
+    return from_template(
+        tmp_path / "nodiff", "test_code_signals_nodiff_repo", _build_nodiff_nodiff_repo
+    )
+
+
+def _build_nodiff_nodiff_repo(root: Path) -> None:
+    root = _init(root)
 
     _write(root, ".gitattributes", "src/opaque.py -diff\n")
     _write(root, "src/opaque.py", _lines(3, "o"))
@@ -1429,7 +1492,6 @@ def nodiff_repo_fixture(tmp_path: Path) -> Path:
 
     _append(root, "src/opaque.py", 1, "o")
     _commit(root, "fix: opaque bug", author=BOB, days_ago=30)
-    return root
 
 
 # ==========================================================================

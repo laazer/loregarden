@@ -38,7 +38,8 @@ from loregarden.services.tree_publish_scheduler import (
 )
 from loregarden.services.tree_ux_section import missing_card_title, report_missing_ux_answers
 from sqlmodel import Session, select
-from tests.worktree_helpers import commit_on, git, make_repo, make_tree_ticket
+from tests.tree_publish_helpers import repo_with_remote
+from tests.worktree_helpers import commit_on, git, make_tree_ticket
 
 PR = "https://github.com/example/repo/pull/7"
 QUEUE_IT = "./scripts/loregarden-cli.sh mcp call loregarden_enqueue_merge ticket_id={}"
@@ -53,12 +54,7 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path):
-    repo = make_repo(tmp_path)
-    remote = tmp_path / "remote.git"
-    git(tmp_path, "init", "-q", "--bare", str(remote))
-    git(repo, "remote", "add", "origin", str(remote))
-    git(repo, "push", "-q", "-u", "origin", "main")
-    return repo
+    return repo_with_remote(tmp_path)
 
 
 @pytest.fixture(name="workspace")

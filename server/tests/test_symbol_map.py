@@ -72,6 +72,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from tests.import_scan import imported_names
+from tests.repo_templates import from_template
 from tests.symbol_map_repos import (  # noqa: F401 - fixtures resolved by name
     BARREL_MODULE,
     OVERLOAD_MODULE,
@@ -1683,13 +1684,16 @@ export const real = 1;
 def rich_repo_fixture(tmp_path: Path) -> Path:
     """Decorated Python, the TypeScript shapes this repo really uses, and the
     declarations that only look like declarations."""
-    root = _init(tmp_path / "rich")
+    return from_template(tmp_path / "rich", "test_symbol_map_rich_repo", _build_rich_rich_repo)
+
+
+def _build_rich_rich_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "pkg/decorated.py", DECORATED_MODULE)
     _write(root, "pkg/stub.pyi", "def stubbed() -> int: ...\n")
     _write(root, "web/shapes.ts", TS_REAL_SHAPES)
     _write(root, "web/ghosts.ts", TS_GHOSTS)
     _commit(root, "feat: the shapes the first fixture does not hold")
-    return root
 
 
 @pytest.fixture(name="awkward_paths_repo")
@@ -1702,12 +1706,19 @@ def awkward_paths_repo_fixture(tmp_path: Path) -> Path:
     that splits the output into lines and opens what it finds records a
     parse failure for a file that parses, under a path nothing can look up.
     """
-    root = _init(tmp_path / "awkward")
+    return from_template(
+        tmp_path / "awkward",
+        "test_symbol_map_awkward_paths_repo",
+        _build_awkward_awkward_paths_repo,
+    )
+
+
+def _build_awkward_awkward_paths_repo(root: Path) -> None:
+    root = _init(root)
     _write(root, "pkg/ascii.py", "def plain():\n    return 1\n")
     _write(root, "pkg/omega_Ω.py", "def omega():\n    return 1\n")
     _write(root, "web/with space.ts", "export const SPACED = 1;\n")
     _commit(root, "feat: paths git does not print verbatim")
-    return root
 
 
 @pytest.fixture(name="unreadable_source_repo")
@@ -1742,13 +1753,20 @@ def duplicate_names_repo_fixture(tmp_path: Path) -> Path:
     `a_b.py` and `axb.py` differ by one character, and that character is
     `LIKE`'s single-character wildcard.
     """
-    root = _init(tmp_path / "dupes")
+    return from_template(
+        tmp_path / "dupes",
+        "test_symbol_map_duplicate_names_repo",
+        _build_dupes_duplicate_names_repo,
+    )
+
+
+def _build_dupes_duplicate_names_repo(root: Path) -> None:
+    root = _init(root)
     for n in range(3):
         _write(root, f"pkg/mod{n}.py", "def calculate_total_price():\n    return 0\n")
     _write(root, "pkg/a_b.py", "def underscored():\n    return 1\n")
     _write(root, "pkg/axb.py", "def crossed():\n    return 1\n")
     _commit(root, "feat: one name, three sites")
-    return root
 
 
 @pytest.fixture(name="window_repo")
@@ -1762,7 +1780,13 @@ def window_repo_fixture(tmp_path: Path) -> Path:
     any narrower window an implementer might reach for instead — a length
     delta of +-5, say, which looks reasonable and silently loses them.
     """
-    root = _init(tmp_path / "window")
+    return from_template(
+        tmp_path / "window", "test_symbol_map_window_repo", _build_window_window_repo
+    )
+
+
+def _build_window_window_repo(root: Path) -> None:
+    root = _init(root)
     _write(
         root,
         "edges.py",
@@ -1770,7 +1794,6 @@ def window_repo_fixture(tmp_path: Path) -> Path:
     )
     _write(root, "other.py", "def wholly_unrelated_identifier():\n    return 3\n")
     _commit(root, "feat: both window edges")
-    return root
 
 
 def _source_line(root: Path, path: str, line: int) -> str:

@@ -79,9 +79,9 @@ def _cards(session, root) -> list[Approval]:
     )
 
 
-def _refuse_publish_pushes(tmp_path) -> None:
+def _refuse_publish_pushes(repo) -> None:
     """The remote takes the base but refuses every publish ref, as a pull-only account does."""
-    hook = tmp_path / "remote.git" / "hooks" / "pre-receive"
+    hook = repo.parent / "remote.git" / "hooks" / "pre-receive"
     hook.write_text(
         "#!/bin/sh\nwhile read old new ref; do\n"
         '  case "$ref" in refs/heads/publish/*) echo "denied" >&2; exit 1;; esac\n'
@@ -127,7 +127,7 @@ ENDINGS = {
     ),
     "open_pr refused": (lambda tmp_path, repo: None, fake_gh(failing="create"), lambda repo: None),
     "push refused": (
-        lambda tmp_path, repo: _refuse_publish_pushes(tmp_path),
+        lambda tmp_path, repo: _refuse_publish_pushes(repo),
         fake_gh(),
         lambda repo: None,
     ),
@@ -186,7 +186,7 @@ def test_a_landing_nothing_published_is_found_and_published(session, workspace, 
 
 def test_a_failed_repair_leaves_a_card_and_stops_reporting(session, workspace, repo, tmp_path):
     ms, _, _ = landed_tree(session, workspace, repo)
-    _refuse_publish_pushes(tmp_path)
+    _refuse_publish_pushes(repo)
 
     with mock.patch.object(git_automation, "_gh", side_effect=fake_gh()):
         assert publish_trees(session, violations(session)) == 1
@@ -198,7 +198,7 @@ def test_a_failed_repair_leaves_a_card_and_stops_reporting(session, workspace, r
 def test_a_card_closed_around_the_guard_is_found_again(session, workspace, repo, tmp_path):
     """A card closed with the work still unpublished was how 854 and 133 were lost."""
     ms, _, _ = landed_tree(session, workspace, repo)
-    _refuse_publish_pushes(tmp_path)
+    _refuse_publish_pushes(repo)
     with mock.patch.object(git_automation, "_gh", side_effect=fake_gh()):
         publish_trees(session, violations(session))
     [card] = _cards(session, ms)

@@ -28,6 +28,7 @@ from loregarden.services.follow_main_status import read_follow_status
 from loregarden.services.self_improve_restart import RELOAD_SENTINEL
 from sqlmodel import Session
 from tests.factories import make_agent_run, make_workspace
+from tests.repo_templates import from_template
 
 _ENV = {k: v for k, v in os.environ.items() if k not in {"GIT_DIR", "GIT_WORK_TREE"}}
 
@@ -54,15 +55,16 @@ def _commit(repo: Path, rel: str, text: str) -> str:
 
 class Repos:
     def __init__(self, root: Path) -> None:
-        self.origin = root / "origin.git"
-        self.server = root / "server-checkout"
-        self.upstream = root / "upstream"
-        _git(root, "init", "-q", "--bare", "-b", "main", str(self.origin))
-        _git(root, "clone", "-q", str(self.origin), str(self.upstream))
-        _commit(self.upstream, "server/app.py", "VERSION = 1\n")
-        _commit(self.upstream, "docs/notes.md", "notes\n")
-        _git(self.upstream, "push", "-q", "origin", "HEAD:main")
-        _git(root, "clone", "-q", str(self.origin), str(self.server))
+        """Copied from a per-process template; each clone's absolute
+        `origin` URL is then pointed at this copy's bare repository."""
+        tree = from_template(
+            root / "repos", "follow_main_repos", _build_repos, repos=("upstream", "server-checkout")
+        )
+        self.origin = tree / "origin.git"
+        self.server = tree / "server-checkout"
+        self.upstream = tree / "upstream"
+        for clone in (self.upstream, self.server):
+            _git(clone, "remote", "set-url", "origin", str(self.origin))
 
     def land(self, rel: str, text: str) -> str:
         """What the merge queue does: a new commit on origin's main."""
@@ -76,6 +78,18 @@ class Repos:
     @property
     def sentinel(self) -> Path:
         return self.server / RELOAD_SENTINEL
+
+
+def _build_repos(tree: Path) -> None:
+    tree.mkdir()
+    origin = tree / "origin.git"
+    upstream = tree / "upstream"
+    _git(tree, "init", "-q", "--bare", "-b", "main", str(origin))
+    _git(tree, "clone", "-q", str(origin), str(upstream))
+    _commit(upstream, "server/app.py", "VERSION = 1\n")
+    _commit(upstream, "docs/notes.md", "notes\n")
+    _git(upstream, "push", "-q", "origin", "HEAD:main")
+    _git(tree, "clone", "-q", str(origin), str(tree / "server-checkout"))
 
 
 @pytest.fixture(name="repos")

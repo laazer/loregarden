@@ -141,25 +141,55 @@ def make_tree_ticket(session, workspace, external_id, *, parent=None, kind=None,
 def commit_on(repo: Path, branch: str, filename: str, content: str) -> str:
     """One commit adding `filename` to `branch`, without disturbing the checkout.
 
-    Goes through a throwaway worktree, or straight into the repository when
-    `branch` is what it has checked out (git refuses a second checkout of it).
+    Straight into the repository when `branch` is what it has checked out;
+    otherwise written onto the branch by `git fast-import`, with no checkout.
     Returns the new commit.
     """
+    message = f"{filename} on {branch}"
     if branch == git(repo, "branch", "--show-current").stdout.strip():
         (repo / filename).parent.mkdir(parents=True, exist_ok=True)
         (repo / filename).write_text(content)
         git(repo, "add", "-A")
-        git(repo, "commit", "-q", "-m", f"{filename} on {branch}")
+        git(repo, "commit", "-q", "-m", message)
         return git(repo, "rev-parse", "HEAD").stdout.strip()
-    tree = repo.parent / f"tmp-{branch.replace('/', '-')}"
-    git(repo, "worktree", "add", "-q", str(tree), branch)
-    (tree / filename).parent.mkdir(parents=True, exist_ok=True)
-    (tree / filename).write_text(content)
-    git(tree, "add", "-A")
-    git(tree, "commit", "-q", "-m", f"{filename} on {branch}")
-    sha = git(tree, "rev-parse", "HEAD").stdout.strip()
-    git(repo, "worktree", "remove", "--force", str(tree))
-    return sha
+    return _import_commit(repo, branch, filename, content.encode(), message)
+
+
+def _import_commit(repo: Path, branch: str, filename: str, data: bytes, message: str) -> str:
+    """One commit on `branch` setting `filename` to `data`, as a regular file.
+
+    A throwaway worktree did the same with a full checkout, an add, a commit
+    and a removal: 250-500ms on a loaded machine against about 90ms here, and
+    `commit_on` runs in a couple of hundred tests. Author and committer are
+    the repository's own (`git var`), as a commit there would record them.
+    """
+    idents = dict(
+        line.split("=", 1)
+        for line in git(repo, "var", "-l").stdout.splitlines()
+        if line.startswith(("GIT_AUTHOR_IDENT=", "GIT_COMMITTER_IDENT="))
+    )
+    body = message.encode()
+    stream = b"".join(
+        [
+            f"commit refs/heads/{branch}\nmark :1\n".encode(),
+            f"author {idents['GIT_AUTHOR_IDENT']}\n".encode(),
+            f"committer {idents['GIT_COMMITTER_IDENT']}\n".encode(),
+            f"data {len(body)}\n".encode(),
+            body,
+            f"\nfrom refs/heads/{branch}^0\nM 100644 inline {filename}\n".encode(),
+            f"data {len(data)}\n".encode(),
+            data,
+            b"\n\nget-mark :1\n",
+        ]
+    )
+    imported = subprocess.run(
+        ["git", "fast-import", "--quiet", "--cat-blob-fd=1"],
+        cwd=repo,
+        input=stream,
+        check=True,
+        capture_output=True,
+    )
+    return imported.stdout.decode().strip()
 
 
 def delete_on(repo: Path, branch: str, filename: str) -> str:

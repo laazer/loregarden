@@ -25,7 +25,7 @@ import os
 import shutil
 import subprocess
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 _template_root: Path | None = None
@@ -37,8 +37,18 @@ def set_template_root(root: Path) -> None:
     _template_root = root
 
 
-def from_template(destination: Path, key: str, build: Callable[[Path], None]) -> Path:
+def from_template(
+    destination: Path,
+    key: str,
+    build: Callable[[Path], None],
+    *,
+    repos: Sequence[str] = (".",),
+) -> Path:
     """Put a copy of the ``key`` repo at ``destination``, building the template on first use.
+
+    ``repos`` names the working trees inside the template to settle, relative to
+    it: the template itself by default, or the clones in a tree that holds
+    several (a bare repository has no index and needs none).
 
     Outside pytest — nothing set a template root — this simply builds in place.
     """
@@ -51,7 +61,8 @@ def from_template(destination: Path, key: str, build: Callable[[Path], None]) ->
         if staging.exists():
             shutil.rmtree(staging)
         build(staging)
-        settle_template(staging)
+        for relpath in repos:
+            settle_template(staging / relpath)
         staging.rename(template)
     copy_repo(template, destination)
     return destination
