@@ -152,6 +152,10 @@ def _row_counts(database: Path) -> dict[str, int]:
         conn.close()
 
 
+@pytest.mark.slow(
+    reason="builds the full prod-shape scenario from scratch on purpose: that fresh build "
+    "is the reference the per-process template is checked against"
+)
 def test_the_prod_shape_template_is_what_a_fresh_build_writes(
     client: TestClient, isolated_db, prod_shape_template
 ) -> None:
