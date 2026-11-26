@@ -266,6 +266,32 @@ def _parent(session: Session, orch_run: OrchestrationRun, workspace):
     )
 
 
+def test_a_wait_that_stalls_on_its_first_poll_still_renews_its_orchestration(session) -> None:
+    """A first poll slower than the whole stall budget (a loaded machine, a short
+    gate budget) gave up before the heartbeat ever ran, so the orchestration that
+    was faithfully waiting kept its stale lease: the merge-queue failure of
+    `test_a_gate_waiting_in_line_keeps_its_orchestration_alive`."""
+    _set_ceiling(session, CapacityPool.HOST, cpus=4, memory_mb=8192, leases=6)
+    holder = _reserve(session, CapacityPool.HOST, label="pre-push server-tests", cpus=4)
+    ours = _reserve(session, CapacityPool.HOST, label="gates survey_to_done", cpus=2)
+    assert holder.granted and not ours.granted
+    readings = iter([0.0])
+    beats: list[str] = []
+
+    stalled = capacity_line.wait_while_line_moves(
+        session,
+        ours,
+        stall_seconds=0.3,
+        on_poll=lambda: beats.append("renewed"),
+        # Started at 0; every later reading is past the budget.
+        clock=lambda: next(readings, 5.0),
+        sleep=lambda _seconds: None,
+    )
+
+    assert not stalled.granted
+    assert beats == ["renewed"]
+
+
 def test_a_long_wait_writes_its_heartbeat_once_a_minute_not_every_poll(session) -> None:
     """The wait reads its place in line every poll, but stamping the lease and
     renewing the orchestration took SQLite's write lock each time: one per

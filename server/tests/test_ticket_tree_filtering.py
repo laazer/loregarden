@@ -10,6 +10,7 @@ they never depend on the shape of seed data.
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.worktree_helpers import make_repo
 
 WORKSPACE = "tree-filter-fixture"
 
@@ -57,7 +58,7 @@ def _set_state(client: TestClient, ticket_id: str, state: str) -> None:
 
 
 @pytest.fixture
-def hierarchy(client: TestClient) -> dict[str, str]:
+def hierarchy(client: TestClient, tmp_path) -> dict[str, str]:
     """A full-depth tree, following VALID_HIERARCHY (milestone > feature > capability > task).
 
     milestone_root (milestone, backlog)
@@ -69,10 +70,17 @@ def hierarchy(client: TestClient) -> dict[str, str]:
 
     task_leaf sits three ancestors deep, so a filter matching only it exercises the whole
     upward walk rather than a single parent hop.
+
+    The workspace has its own throwaway repository. Without one its tickets resolve to
+    the real checkout, and each ticket created reads that checkout's diff.
     """
     resp = client.post(
         "/api/workspaces",
-        json={"slug": WORKSPACE, "name": "Tree Filter Fixture"},
+        json={
+            "slug": WORKSPACE,
+            "name": "Tree Filter Fixture",
+            "repo_path": str(make_repo(tmp_path)),
+        },
     )
     assert resp.status_code == 201, resp.text
 

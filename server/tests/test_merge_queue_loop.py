@@ -60,13 +60,19 @@ def commit_file(repo: Path, branch: str, name: str, content: str) -> str:
 
 
 @pytest.fixture(name="origin")
-def origin_fixture(tmp_path):
+def origin_fixture(tmp_path, request):
     """A bare origin holding the clone's seed commit; the clone is beside it as `repo`.
 
     Built once per process (`tests/repo_templates.py`): the pair took nine git
-    launches per test.
+    launches per test. A test that takes `entry` gets the pair with that entry's
+    branch already committed and published, which took nine more.
     """
-    pair = from_template(tmp_path / "mq", "merge_queue_pair", _build_pair, repos=("repo",))
+    if "entry" in request.fixturenames:
+        pair = from_template(
+            tmp_path / "mq", "merge_queue_pair_entry", _build_pair_with_entry, repos=("repo",)
+        )
+    else:
+        pair = from_template(tmp_path / "mq", "merge_queue_pair", _build_pair, repos=("repo",))
     return pair / "origin.git"
 
 
@@ -87,6 +93,17 @@ def _build_pair(root: Path) -> None:
     git(repo, "commit", "-q", "-m", "seed")
     git(repo, "remote", "add", "origin", str(origin))
     git(repo, "push", "-q", "origin", "main")
+
+
+#: The PR and branch the `entry` fixture admits.
+ENTRY_PR = 7
+ENTRY_BRANCH = "integration/lg-1"
+ENTRY_FILE = "feature.txt"
+
+
+def _build_pair_with_entry(root: Path) -> None:
+    _build_pair(root)
+    _publish(root / "repo", ENTRY_BRANCH, ENTRY_FILE)
 
 
 @pytest.fixture(name="repo")
@@ -251,13 +268,26 @@ def github_fixture(origin):
         yield fake
 
 
+def _publish(repo: Path, branch: str, name: str) -> str:
+    """Commit ``name`` on a new ``branch`` off main and push it as the PR head."""
+    git(repo, "branch", branch, "main")
+    head = commit_file(repo, branch, name, f"{name} work\n")
+    git(repo, "push", "-q", "origin", f"{head}:refs/heads/publish/{branch}")
+    return head
+
+
 def _admit(
     session, workspace, repo, github, ticket, *, pr: int, branch: str, name: str
 ) -> MergeQueueEntry:
-    git(repo, "branch", branch, "main")
-    head = commit_file(repo, branch, name, f"{name} work\n")
+    return _enqueue(
+        session, workspace, github, ticket, pr=pr, branch=branch, head=_publish(repo, branch, name)
+    )
+
+
+def _enqueue(
+    session, workspace, github, ticket, *, pr: int, branch: str, head: str
+) -> MergeQueueEntry:
     publish = f"publish/{branch}"
-    git(repo, "push", "-q", "origin", f"{head}:refs/heads/{publish}")
     github.open(pr, publish)
     admission = enqueue(
         session,
@@ -288,17 +318,10 @@ def _move_main(repo: Path, name: str) -> str:
 
 @pytest.fixture(name="entry")
 def entry_fixture(session, workspace, repo, github):
+    # The origin fixture copied a pair whose clone already published the branch.
     ticket = _ticket(session, workspace, "lg-1")
-    return _admit(
-        session,
-        workspace,
-        repo,
-        github,
-        ticket,
-        pr=7,
-        branch="integration/lg-1",
-        name="feature.txt",
-    )
+    head = git(repo, "rev-parse", f"refs/heads/{ENTRY_BRANCH}")
+    return _enqueue(session, workspace, github, ticket, pr=ENTRY_PR, branch=ENTRY_BRANCH, head=head)
 
 
 def test_a_staged_commit_whose_checks_pass_lands_its_own_tree(
