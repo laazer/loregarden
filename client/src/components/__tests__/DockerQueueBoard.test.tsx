@@ -220,6 +220,63 @@ describe("DockerQueueBoard", () => {
     expect(within(screen.getByTestId("docker-waiting-w2")).getByText("2")).toBeInTheDocument();
   });
 
+  it("shows the range a wait is likely to fall in, beside the figure", () => {
+    render(
+      <DockerQueueBoard
+        status={status({
+          waiting: [
+            lease({
+              lease_id: "w1",
+              status: "waiting",
+              position: 1,
+              estimated_wait_seconds: 2400,
+              estimated_wait_low_seconds: 720,
+              estimated_wait_high_seconds: 5400,
+              estimate_basis: "history",
+            }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    const row = within(screen.getByTestId("docker-waiting-w1"));
+    expect(row.getByText("starts in ≈ 40m")).toBeInTheDocument();
+    expect(row.getByText("likely 12m–1.5h")).toBeInTheDocument();
+  });
+
+  it("states no range where there is none, or where both ends read the same", () => {
+    render(
+      <DockerQueueBoard
+        status={status({
+          waiting: [
+            lease({
+              lease_id: "w1",
+              status: "waiting",
+              position: 1,
+              estimated_wait_seconds: 900,
+              estimate_basis: "ttl_bound",
+            }),
+            lease({
+              lease_id: "w2",
+              status: "waiting",
+              position: 2,
+              estimated_wait_seconds: 600,
+              estimated_wait_low_seconds: 590,
+              estimated_wait_high_seconds: 605,
+              estimate_basis: "history",
+            }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(screen.getByText("starts in ≤ 15m")).toBeInTheDocument();
+    expect(screen.getByText("starts in ≈ 10m")).toBeInTheDocument();
+    expect(screen.queryByText(/likely/)).not.toBeInTheDocument();
+  });
+
   it("says a wait is unknown rather than guessing", () => {
     render(
       <DockerQueueBoard

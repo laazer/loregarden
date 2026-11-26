@@ -126,6 +126,8 @@ def _waiting_estimate(board: dict, lease_id: str) -> WaitEstimate:
         if entry.get("lease_id") == lease_id:
             return WaitEstimate(
                 seconds=entry.get("estimated_wait_seconds"),
+                low_seconds=entry.get("estimated_wait_low_seconds"),
+                high_seconds=entry.get("estimated_wait_high_seconds"),
                 basis=DockerWaitBasis(entry.get("estimate_basis", DockerWaitBasis.UNKNOWN.value)),
             )
     return UNKNOWN_WAIT

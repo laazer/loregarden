@@ -98,6 +98,9 @@ export interface DockerLeaseRow {
   expires_in_seconds: number | null;
   /** Null when nothing on record can predict it — unknown, not soon. */
   estimated_wait_seconds: number | null;
+  /** The range about eight waits in ten fall in; null where none can be stated. */
+  estimated_wait_low_seconds: number | null;
+  estimated_wait_high_seconds: number | null;
   estimate_basis: EstimateBasis;
   poll_count: number;
   /** ISO-8601: when the claim was made. */

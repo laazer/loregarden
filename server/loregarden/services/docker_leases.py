@@ -127,12 +127,10 @@ class DockerReservation:
     cpus: float = 0.0
     memory_mb: int = 0
     expires_at: datetime | None = None
-    #: Seconds until this claim is expected to start, or None when nothing
-    #: on record can predict it. Never a stand-in constant — see
-    #: `docker_wait_estimate`.
-    estimated_wait_seconds: int | None = None
-    #: Whether the estimate above is a forecast or an upper bound.
-    estimate_basis: DockerWaitBasis = DockerWaitBasis.UNKNOWN
+    #: When this claim is expected to start, and what kind of number that is.
+    #: Unknown when nothing on record can predict it, never a stand-in
+    #: constant — see `docker_wait_estimate`.
+    estimate: WaitEstimate = UNKNOWN_WAIT
     #: When the caller should ask again, scaled to the wait above.
     poll_after_seconds: int = 0
     message: str = ""
@@ -194,8 +192,7 @@ class DockerReservation:
             "cpus": self.cpus,
             "memory_mb": self.memory_mb,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "estimated_wait_seconds": self.estimated_wait_seconds,
-            "estimate_basis": self.estimate_basis.value,
+            **self.estimate.as_dict(),
             "poll_after_seconds": self.poll_after_seconds or None,
             "renew_after_seconds": None,
             "message": self.message,
@@ -900,8 +897,7 @@ def _queued_reservation(
         ahead=ahead,
         cpus=lease.cpus,
         memory_mb=lease.memory_mb,
-        estimated_wait_seconds=estimate.seconds,
-        estimate_basis=estimate.basis,
+        estimate=estimate,
         poll_after_seconds=poll_interval_for(estimate),
         message=(
             f"{lease.pool.value.capitalize()} capacity is full. This claim is{already} "
@@ -919,17 +915,10 @@ def _wait_note(estimate: WaitEstimate) -> str:
         return " Nothing on record can predict the wait yet."
     if estimate.basis is DockerWaitBasis.TTL_BOUND:
         return (
-            f" No history yet, so at most {_humanise(estimate.seconds)} — the holder's "
+            f" No history yet, so {estimate.describe()} — the holder's "
             "remaining TTL, which it will probably beat."
         )
-    return f" Expected to start in about {_humanise(estimate.seconds)}."
-
-
-def _humanise(seconds: int) -> str:
-    if seconds < 90:
-        return f"{seconds}s"
-    minutes = seconds / 60
-    return f"{minutes:.0f} minutes" if minutes < 90 else f"{minutes / 60:.1f} hours"
+    return f" Expected to start in {estimate.describe()}."
 
 
 def _clamp_ttl(ttl_seconds: int | None) -> int:

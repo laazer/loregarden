@@ -28,7 +28,8 @@ from loregarden.models.domain import (
 from loregarden.services import docker_leases
 from loregarden.services.docker_leases import REJECT_DOCKER_UNAVAILABLE
 from loregarden.services.docker_ledger import load_pool
-from loregarden.services.docker_wait_estimate import HoldStats, estimate_waits
+from loregarden.services.docker_wait_estimate import estimate_waits
+from loregarden.services.hold_history import HoldStats
 from sqlalchemy import text
 from sqlmodel import Session, select
 

@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { BAR_CELLS, failedToday, filledCells, needsYouRows, parseApprovals, parseRuns, parseTickets, readGarden } from '../hooks/garden-data'
+import { BAR_CELLS, failedToday, filledCells, needsYouRows, parseApprovals, parseRuns, parseTickets, readGarden, waitText } from '../hooks/garden-data'
 
 const PANE = {
   plugin: 'loregarden',
@@ -357,4 +357,13 @@ test('a meter fills in proportion and stays inside its cells, even past the ceil
   expect(filledCells(0, 7)).toBe(0)
   expect(filledCells(9, 7)).toBe(BAR_CELLS)
   expect(filledCells(3, 0)).toBe(0)
+})
+
+test('a capacity wait shows the range it likely falls in, and only where there is one', () => {
+  const wait = (seconds: number | null, low: number | null, high: number | null) =>
+    waitText({ waitSeconds: seconds, waitLowSeconds: low, waitHighSeconds: high })
+  expect(wait(2400, 720, 5400)).toBe('~40m, 12m–1h')
+  expect(wait(600, null, null)).toBe('~10m')
+  expect(wait(600, 605, 610)).toBe('~10m')
+  expect(wait(null, null, null)).toBe('')
 })

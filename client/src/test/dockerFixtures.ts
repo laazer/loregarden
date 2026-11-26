@@ -24,6 +24,8 @@ export function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     expires_at: null,
     expires_in_seconds: 600,
     estimated_wait_seconds: null,
+    estimated_wait_low_seconds: null,
+    estimated_wait_high_seconds: null,
     estimate_basis: "unknown",
     poll_count: 0,
     requested_at: null,
