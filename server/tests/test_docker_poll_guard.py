@@ -167,6 +167,62 @@ def test_a_throttled_poll_still_reports_the_real_state(client) -> None:
     )
 
 
+def _room_for_one_more(isolated_db) -> None:
+    """Free capacity without a release, which would promote the waiter itself."""
+    with Session(isolated_db) as session:
+        pool = docker_leases.load_pool(session)
+        pool.ceiling_cpus += 1
+        pool.ceiling_memory_mb += 1024
+        pool.ceiling_leases += 1
+        session.add(pool)
+        session.commit()
+
+
+def _poll(client, lease_id: str) -> dict:
+    return _payload(call_mcp(client, McpTool.DOCKER_CAPACITY_STATUS.value, {"lease_id": lease_id}))
+
+
+def test_a_served_poll_advances_the_queue(isolated_db, client) -> None:
+    """A caller with no timer of its own is promoted by its own poll."""
+    _, queued_id = _seed(client)
+    _room_for_one_more(isolated_db)
+
+    board = _poll(client, queued_id)
+
+    assert board["poll"]["throttled"] is False
+    assert "message" not in board["poll"], "nothing to slow down from"
+    assert board["lease"]["status"] == DockerLeaseStatus.HELD.value
+
+
+def test_a_throttled_poll_is_served_from_the_row_without_a_promotion_pass(
+    isolated_db, client
+) -> None:
+    _, queued_id = _seed(client)
+    _poll(client, queued_id)
+    _room_for_one_more(isolated_db)
+
+    board = _poll(client, queued_id)
+
+    assert board["poll"]["throttled"] is True
+    assert board["lease"]["status"] == DockerLeaseStatus.WAITING.value
+    assert board["poll"]["message"], "a throttled caller is told when to ask again"
+
+
+def test_the_queue_can_be_left_off_the_board(client) -> None:
+    _seed(client)
+
+    def board(args: dict) -> dict:
+        return _payload(call_mcp(client, McpTool.DOCKER_CAPACITY_STATUS.value, args))
+
+    assert board({})["waiting"], "the queue is on the board by default"
+    assert "waiting" not in board({"include_waiting": False})
+    assert "lease" not in board({}), "a board read names no lease"
+    assert board({"lease_id": "no-such-lease"})["lease"] == {
+        "lease_id": "no-such-lease",
+        "found": False,
+    }
+
+
 def test_a_board_read_with_no_lease_is_not_throttled(client) -> None:
     """Reading the board is not polling for a lease; an operator refreshing a
     dashboard is not a retry loop."""

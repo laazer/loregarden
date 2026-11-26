@@ -524,3 +524,43 @@ def test_a_carrier_that_closes_mid_pass_abandons_it_visibly(ctx):
     assert session.exec(
         select(Approval).where(Approval.title.contains("Survey pass abandoned"))
     ).one()
+
+
+def _dispatch_now_held(session, source, survey_pass) -> str:
+    """`dispatch_now`'s answer when it must not dispatch, checking it did not."""
+    with mock.patch.object(feeder, "_dispatch") as dispatch:
+        result = feeder.dispatch_now(session, survey_pass, source)
+    dispatch.assert_not_called()
+    return result.waiting
+
+
+def test_dispatch_now_rechecks_the_limit_under_the_lock(ctx):
+    """Its caller checked first; a tick may have dispatched in between."""
+    session, world, tree = ctx
+    running_pass(session, world, tree, url="https://github.com/acme/other")
+    source, survey_pass = _queued_source(session, world)
+
+    assert "at the limit" in _dispatch_now_held(session, source, survey_pass)
+    session.refresh(survey_pass)
+    assert survey_pass.status is SurveyPassStatus.QUEUED
+
+
+def test_dispatch_now_dispatches_nothing_on_a_sandbox_server(ctx):
+    session, world, _ = ctx
+    source, survey_pass = _queued_source(session, world)
+
+    with mock.patch.object(feeder.settings, "sandbox", True):
+        assert _dispatch_now_held(session, source, survey_pass) == feeder.SANDBOX_WAITING
+
+
+def test_dispatch_now_reads_the_pass_again_before_dispatching_it(ctx):
+    """A pass another session already dispatched is not dispatched twice."""
+    session, world, _ = ctx
+    source, survey_pass = _queued_source(session, world)
+    with Session(session.get_bind()) as other:
+        elsewhere = other.get(SurveyPass, survey_pass.id)
+        elsewhere.status = SurveyPassStatus.DISPATCHED
+        other.add(elsewhere)
+        other.commit()
+
+    assert _dispatch_now_held(session, source, survey_pass).endswith("dispatched, not queued")

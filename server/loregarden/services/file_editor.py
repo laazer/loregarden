@@ -78,45 +78,46 @@ def _is_git_repo(path: Path) -> bool:
 
 
 def _parse_worktrees(repo_root: Path) -> list[dict[str, str]]:
-    proc = _git(repo_root, "worktree", "list", "--porcelain")
-    if proc.returncode != 0:
-        return [
-            {
-                "path": str(repo_root.resolve()),
-                "branch": _current_branch(repo_root),
-                "label": "workspace",
-            }
-        ]
+    """Every worktree git knows for ``repo_root``, the workspace's own first.
 
+    Read with ``-z``: a worktree path is whatever the directory is called, and a
+    line-split, stripped reading lost one ending in a space. When git cannot
+    list them, the workspace alone is still a valid place to edit, so that is
+    what is offered, and the failure is logged.
+    """
+    main = str(repo_root.resolve())
+    proc = _git(repo_root, "worktree", "list", "--porcelain", "-z")
+    if proc.returncode != 0:
+        logger.warning(
+            "git worktree list failed in %s (exit %s): %s; offering only the workspace",
+            repo_root,
+            proc.returncode,
+            (proc.stderr or "").strip(),
+        )
+        return [_worktree_entry(main, _current_branch(repo_root), main)]
     worktrees: list[dict[str, str]] = []
-    current_path = ""
-    current_branch = ""
-    for line in (proc.stdout or "").splitlines():
-        if line.startswith("worktree "):
-            current_path = line.removeprefix("worktree ").strip()
-        elif line.startswith("branch "):
-            current_branch = line.removeprefix("branch refs/heads/").strip()
-        elif line == "detached":
-            current_branch = "(detached)"
-        elif line == "" and current_path:
-            label = current_branch or current_path
-            if current_path == str(repo_root.resolve()):
-                label = f"{current_branch or 'workspace'} (main)"
-            worktrees.append(
-                {
-                    "path": current_path,
-                    "branch": current_branch,
-                    "label": label,
-                }
-            )
-            current_path = ""
-            current_branch = ""
-    if current_path:
-        label = current_branch or current_path
-        if current_path == str(repo_root.resolve()):
-            label = f"{current_branch or 'workspace'} (main)"
-        worktrees.append({"path": current_path, "branch": current_branch, "label": label})
+    for record in (proc.stdout or "").split("\0\0"):
+        fields = [field for field in record.split("\0") if field]
+        path = next((f.removeprefix("worktree ") for f in fields if f.startswith("worktree ")), "")
+        if not path:
+            continue
+        branch = next(
+            (
+                f.removeprefix("branch ").removeprefix("refs/heads/")
+                for f in fields
+                if f.startswith("branch ")
+            ),
+            "",
+        )
+        if "detached" in fields:
+            branch = "(detached)"
+        worktrees.append(_worktree_entry(path, branch, main))
     return worktrees
+
+
+def _worktree_entry(path: str, branch: str, main: str) -> dict[str, str]:
+    label = f"{branch or 'workspace'} (main)" if path == main else (branch or path)
+    return {"path": path, "branch": branch, "label": label}
 
 
 def _list_branches(repo_root: Path) -> list[str]:
@@ -140,7 +141,8 @@ def _allowed_worktree_paths(workspace_root: Path) -> set[str]:
 
 def resolve_editor_root(workspace: Workspace, context_root: str | None = None) -> Path:
     workspace_root = resolve_workspace_root(workspace)
-    raw = (context_root or ".").strip() or "."
+    # Not stripped: a worktree directory may end in a space.
+    raw = context_root or "."
     if raw == ".":
         return assert_browse_allowed(workspace_root)
 
@@ -161,12 +163,13 @@ def resolve_editor_root(workspace: Workspace, context_root: str | None = None) -
 
 
 def resolve_editor_file(root: Path, rel_path: str) -> Path:
-    text = (rel_path or "").strip()
-    if not text or text.startswith("/") or ".." in Path(text).parts:
+    text = rel_path or ""
+    if not text.strip() or text.startswith("/") or ".." in Path(text).parts:
         raise ValueError("Invalid file path")
     target = (root / text).resolve()
     assert_browse_allowed(target)
-    if not str(target).startswith(str(root.resolve())):
+    # By path parts, not string prefix: a link to a sibling `wt2` starts with `wt`.
+    if not target.is_relative_to(root.resolve()):
         raise ValueError("Path escapes editor root")
     return target
 

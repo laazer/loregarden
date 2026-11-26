@@ -46,6 +46,36 @@ def test_list_browse_lists_sibling_directories(tmp_path, monkeypatch):
     assert loregarden_payload["entries"][0]["repo_path"] == "client"
 
 
+def test_list_browse_sorts_by_name_ignoring_case_and_skips_links_and_files(tmp_path, monkeypatch):
+    for name in ("beta", "Alpha", "gamma"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "notes.txt").write_text("", encoding="utf-8")
+    (tmp_path / "a-link").symlink_to(tmp_path / "beta")
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
+
+    payload = list_browse(tmp_path, repo_root=tmp_path)
+
+    assert [entry["name"] for entry in payload["entries"]] == ["Alpha", "beta", "gamma"]
+
+
+def test_list_browse_refuses_a_file(tmp_path, monkeypatch):
+    (tmp_path / "notes.txt").write_text("", encoding="utf-8")
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
+
+    with pytest.raises(ValueError, match="Not a directory"):
+        list_browse(tmp_path / "notes.txt", repo_root=tmp_path)
+
+
+def test_list_browse_names_a_directory_it_may_not_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
+
+    with (
+        patch("loregarden.services.path_browser.os.scandir", side_effect=PermissionError),
+        pytest.raises(ValueError, match=f"Permission denied: {tmp_path.resolve()}"),
+    ):
+        list_browse(tmp_path, repo_root=tmp_path)
+
+
 def test_resolve_browse_target_defaults_to_repo_root(tmp_path):
     repo = tmp_path / "loregarden"
     repo.mkdir()

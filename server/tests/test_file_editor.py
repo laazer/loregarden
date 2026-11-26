@@ -6,6 +6,7 @@ import pytest
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
 from loregarden.models.domain.enums import EditorChangeStatus
+from loregarden.services import file_editor
 from loregarden.services.editor_changes import EditorChangesError, list_editor_changes
 from loregarden.services.file_editor import (
     checkout_editor_branch,
@@ -105,6 +106,46 @@ def test_list_editor_refs_includes_branches_and_worktrees(editor_workspace, edit
     assert "main" in branch_names or "master" in branch_names
     assert "feature/editor" in branch_names
     assert len(refs["worktrees"]) >= 1
+
+
+def _named(worktrees: list[dict]) -> list[dict]:
+    return [{key: item[key] for key in ("path", "branch", "label")} for item in worktrees]
+
+
+def test_every_worktree_is_listed_by_its_exact_path_and_branch(
+    editor_workspace, editor_repo, tmp_path
+):
+    spaced = tmp_path / "wt ends in a space "
+    detached = tmp_path / "wt-detached"
+    _git(editor_repo, "worktree", "add", "-q", "-b", "ticket/spaced", str(spaced))
+    _git(editor_repo, "worktree", "add", "-q", "--detach", str(detached))
+
+    worktrees = _named(list_editor_refs(editor_workspace)["worktrees"])
+
+    assert worktrees == [
+        {"path": str(editor_repo.resolve()), "branch": "main", "label": "main (main)"},
+        {"path": str(spaced.resolve()), "branch": "ticket/spaced", "label": "ticket/spaced"},
+        {"path": str(detached.resolve()), "branch": "(detached)", "label": "(detached)"},
+    ]
+    assert resolve_editor_root(editor_workspace, str(spaced)) == spaced.resolve()
+
+
+def test_when_git_cannot_list_worktrees_the_workspace_alone_is_offered(
+    editor_workspace, editor_repo, caplog
+):
+    failed = subprocess.CompletedProcess([], 128, stdout="", stderr="fatal: broken")
+    real_git = file_editor._git
+
+    def git(cwd, *args):
+        return failed if args[:2] == ("worktree", "list") else real_git(cwd, *args)
+
+    with mock.patch.object(file_editor, "_git", side_effect=git):
+        worktrees = _named(list_editor_refs(editor_workspace)["worktrees"])
+
+    assert worktrees == [
+        {"path": str(editor_repo.resolve()), "branch": "main", "label": "main (main)"}
+    ]
+    assert "fatal: broken" in caplog.text
 
 
 def test_editor_api_round_trip(client, editor_repo, db_session):
@@ -241,3 +282,22 @@ def test_editor_changes_api(client, changed_branch, db_session):
         refused = client.get(f"/api/workspaces/{ws.slug}/editor/changes")
     assert refused.status_code == 409
     assert "No base branch" in refused.json()["detail"]
+
+
+def test_a_link_to_a_sibling_sharing_the_roots_name_is_refused(
+    editor_workspace, editor_repo, tmp_path
+):
+    """`loregarden2` starts with `loregarden`; a string-prefix check let it through."""
+    sibling = tmp_path / f"{editor_repo.name}2"
+    sibling.mkdir()
+    (sibling / "secret.txt").write_text("not yours\n", encoding="utf-8")
+    (editor_repo / "link").symlink_to(sibling)
+
+    with pytest.raises(ValueError, match="escapes editor root"):
+        read_editor_file(editor_workspace, "link/secret.txt")
+
+
+def test_a_file_whose_name_starts_with_a_space_opens(editor_workspace, editor_repo):
+    (editor_repo / " lead.txt").write_text("kept\n", encoding="utf-8")
+
+    assert read_editor_file(editor_workspace, " lead.txt")["content"] == "kept\n"

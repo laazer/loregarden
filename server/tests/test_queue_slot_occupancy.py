@@ -391,7 +391,8 @@ def test_nested_slot_claims_are_released_when_ancestor_holds_a_lane(session, wor
     grand_orch = _orch(session, grandchild, "orch_grand", status=OrchestrationRunStatus.RUNNING)
     _occupy(session, 1, current_orchestration_run_id=parent_orch.id)
     _occupy(session, 2, current_orchestration_run_id=child_orch.id)
-    _occupy(session, 3, current_orchestration_run_id=grand_orch.id)
+    grand_run = _run(session, grandchild, "run_grand", status=RunStatus.RUNNING)
+    _occupy(session, 3, current_orchestration_run_id=grand_orch.id, current_run_id=grand_run.id)
 
     freed = lanes.reconcile_lanes()
     assert set(freed) == {2, 3}
@@ -405,6 +406,7 @@ def test_nested_slot_claims_are_released_when_ancestor_holds_a_lane(session, wor
     assert slot2.current_orchestration_run_id is None
     assert slot3.is_available is True
     assert slot3.current_orchestration_run_id is None
+    assert (slot3.current_run_id, slot3.assigned_at) == (None, None), "a freed slot names no one"
 
 
 def test_a_slot_release_survives_a_failing_completion_tail(session, workspace):
