@@ -3,7 +3,8 @@
 Three questions and one action:
 
 - which checks the base branch requires (`required_contexts`) — read from the
-  branch's own rules, not inferred from the checks that happen to have run,
+  branch's own rules, in both places GitHub keeps them (rulesets and classic
+  branch protection), not inferred from the checks that happen to have run,
   because a required check that has not reported yet is absent from the
   commit's rollup and a rollup over what is present would pass without it;
 - what GitHub holds for the staged pull request (`read_pull_request`): its
@@ -147,6 +148,21 @@ class _OpenPull(BaseModel):
 _OpenPulls = TypeAdapter(list[_OpenPull])
 
 
+class _ProtectedChecks(BaseModel):
+    contexts: list[str]
+
+
+class _Protection(BaseModel):
+    required_status_checks: _ProtectedChecks
+
+
+class _Branch(BaseModel):
+    """A branch's classic protection. GitHub sends it, empty, for an unprotected branch
+    too, so an answer without it is unreadable rather than "nothing required"."""
+
+    protection: _Protection
+
+
 class CheckReading(BaseModel):
     """One check on the staged commit, as the entry records it."""
 
@@ -229,6 +245,18 @@ class GhQueueGitHub:
         self.repo_root = repo_root
 
     def required_contexts(self, base_branch: str) -> list[str]:
+        """Every check GitHub requires on ``base_branch``; empty when it requires none.
+
+        GitHub enforces rulesets and classic branch protection together and
+        neither endpoint reports the other's, so this is their union: laazer/lore-eden
+        requires six checks through protection alone, which read as none
+        here. Raises `RequiredChecksUnavailable` when the plan has neither, and
+        `GitHubReadError` when either could not be read; half an answer is not one.
+        """
+        ruleset = self._ruleset_contexts(base_branch)
+        return sorted({*ruleset, *self._protection_contexts(base_branch)})
+
+    def _ruleset_contexts(self, base_branch: str) -> list[str]:
         try:
             raw = read_gh(
                 self.repo_root,
@@ -252,7 +280,21 @@ class GhQueueGitHub:
                 continue
             for check in rule.get("parameters", {}).get("required_status_checks", []):
                 contexts.append(check["context"])
-        return sorted(set(contexts))
+        return contexts
+
+    def _protection_contexts(self, base_branch: str) -> list[str]:
+        # Not `branches/<base>/protection`: that one is for admins, and answers
+        # anyone else with a 404 that reads like an unprotected branch's.
+        raw = read_gh(
+            self.repo_root,
+            ["api", f"repos/{{owner}}/{{repo}}/branches/{base_branch}"],
+            GH_TIMEOUT_SECONDS,
+        )
+        try:
+            branch = _Branch.model_validate_json(raw)
+        except ValidationError as exc:
+            raise GitHubReadError(f"unreadable protection for {base_branch}: {exc}") from exc
+        return branch.protection.required_status_checks.contexts
 
     def commit_checks(self, sha: str) -> list[GhCheck]:
         raw = read_gh(
@@ -439,6 +481,19 @@ def gating_checks(github: QueueGitHub, base_branch: str, pr_head_sha: str) -> Ga
 def gating_basis(gating: GatingChecks) -> str:
     """The stand-in, appended to what the entry says, so the operator reads it."""
     return f" ({gating.fallback})" if gating.fallback else ""
+
+
+def gating_refusal(gating: GatingChecks, base_branch: str) -> str:
+    """Why nothing gates the staged commit, for an empty ``gating.contexts``.
+
+    With a ``fallback`` the plan cannot require checks and the PR's head
+    reported none. Without one GitHub answered, and its answer is "none".
+    """
+    return gating.fallback or (
+        f"GitHub requires no status checks on {base_branch} (neither a ruleset nor branch "
+        f"protection names one); require the repository's checks on {base_branch}, then "
+        "enqueue it again"
+    )
 
 
 def read_required(checks: list[GhCheck], required: list[str]) -> list[CheckReading]:
