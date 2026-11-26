@@ -18,14 +18,14 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn } = require("child_process");
 const os = require("os");
 const crypto = require("crypto");
 
 // Loaded the first time something actually parses: top-level, this `require`
 // cost 455ms of every run — including the common stage transition that grades
 // no `.ts`/`.tsx` file at all (808). gate_client_modules.cjs keeps it lazy.
-const { EX_UNAVAILABLE, parse } = require("./gate_client_modules.cjs");
+const { EX_UNAVAILABLE, parse, preloadParser } = require("./gate_client_modules.cjs");
 
 const MAX_FILE_LINES = 1200;
 const MAX_TSX_FILE_LINES = 1200;
@@ -383,6 +383,47 @@ const TRUNK_REF_CANDIDATES = ["master", "trunk", "develop"];
  * `resolve_gate_scope` / `GateRun`.
  */
 /**
+ * `spawnSync`'s answer — `{ error, status, stdout, stderr }` — without blocking,
+ * so the caller can do its own work while the child runs.
+ */
+function runResolver(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.setEncoding("utf8").on("data", (chunk) => stdout.push(chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk) => stderr.push(chunk));
+    // A child that could not start emits `error`, and may or may not emit
+    // `close` after it; the first answer is the one that counts.
+    child.on("error", (error) =>
+      resolve({ error, status: null, stdout: stdout.join(""), stderr: stderr.join("") }),
+    );
+    child.on("close", (status) =>
+      resolve({ error: null, status, stdout: stdout.join(""), stderr: stderr.join("") }),
+    );
+  });
+}
+
+/**
+ * Whether this run could have a TypeScript file to grade, asked before the
+ * resolver answers so the parser can load meanwhile. Only a guess about where
+ * to spend the wait, and neither wrong answer changes what is graded: a wrong
+ * no loads the parser after the resolver, as before; a wrong yes spends half a
+ * second of CPU on a parser nothing uses, which on a busy host is wall time.
+ * So a source root counts only beside a `tsconfig.json`: `src/` alone is as
+ * likely to be a Python package.
+ */
+function mayGradeTypeScript(repoRoot, files) {
+  if (files.length > 0) return true;
+  const root = repoRoot ?? process.cwd();
+  return TS_SOURCE_ROOT_CANDIDATES.some(
+    (dir) =>
+      fs.existsSync(path.join(root, dir)) &&
+      fs.existsSync(path.join(root, path.dirname(dir), "tsconfig.json")),
+  );
+}
+
+/**
  * Ask `gate_scope_json.py` what this run should examine.
  *
  * This used to be ~560 lines of hand-ported Python living in this file: the
@@ -403,10 +444,15 @@ const TRUNK_REF_CANDIDATES = ["master", "trunk", "develop"];
  *
  * Run through `server_python.sh` rather than a bare `python3`: the gate scripts
  * need 3.11 and refuse (exit 69) on anything older rather than grading (657).
+ *
+ * The resolver runs while this process loads the parser: each takes about half
+ * a second, and a run that grades anything needs both, one after the other
+ * when the spawn was synchronous (`preloadParser` explains why that is safe
+ * for a run that grades nothing).
  */
-function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
+async function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
   const scriptDir = __dirname;
-  const emitted = spawnSync(
+  const pending = runResolver(
     "bash",
     [
       path.join(scriptDir, "server_python.sh"),
@@ -430,8 +476,9 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files }) {
       ...TS_SOURCE_ROOT_CANDIDATES.flatMap((dir) => ["--select-root-candidate", dir]),
       ...files.map((f) => path.resolve(f)),
     ],
-    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
+  if (mayGradeTypeScript(repoRoot, files)) preloadParser();
+  const emitted = await pending;
 
   if (emitted.error) {
     throw new ScopeResolverUnavailableError(
@@ -722,7 +769,7 @@ function parseArgv(argv) {
  * narrowing it again would silently drop files that caller meant to have
  * graded.
  */
-function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
+async function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
   // `repoRoot` below is the one the resolver settled on, not the one this
   // process asked for — those differ whenever `--repo` was omitted (594).
   const {
@@ -731,7 +778,7 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
     repoRoot,
     sourceRoot,
     sourceFiles,
-  } = resolveGateScope({
+  } = await resolveGateScope({
     label,
     repoRoot: requestedRoot,
     diffScope,
@@ -778,12 +825,17 @@ function run({ files, repoRoot: requestedRoot, diffScope, baseRef, label }) {
 }
 
 const invocation = parseArgv(process.argv.slice(2));
-try {
-  process.exit(run(invocation));
-} catch (err) {
-  if (!(err instanceof UnexaminableError)) throw err;
-  // One handler for the one invariant: a scope this run could not resolve, and
-  // a file it could not read, are both things it did not examine.
-  console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
-  process.exit(err instanceof ScopeResolverUnavailableError ? EX_UNAVAILABLE : 1);
-}
+run(invocation).then(
+  (code) => process.exit(code),
+  (err) => {
+    if (!(err instanceof UnexaminableError)) {
+      // What an uncaught throw did before `run` was async: the stack, exit 1.
+      console.error(err);
+      process.exit(1);
+    }
+    // One handler for the one invariant: a scope this run could not resolve, and
+    // a file it could not read, are both things it did not examine.
+    console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
+    process.exit(err instanceof ScopeResolverUnavailableError ? EX_UNAVAILABLE : 1);
+  },
+);
