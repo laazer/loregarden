@@ -35,6 +35,9 @@ dev = [
     # Per-test wall-clock ceiling; see [tool.pytest.ini_options] for the value
     # and why a hang needs catching rather than waiting out.
     "pytest-timeout>=2.3.0",
+    # One warm rerun for a test over the per-test ceiling, and nothing else
+    # (tests/slow_test_ceiling.py): a single noisy CI timing must not fail a build.
+    "pytest-rerunfailures>=15",
     "ruff>=0.9.0",
     # Pre-commit: function size (too-many-statements / R0915); see [tool.pylint].
     "pylint>=3.3",
@@ -55,6 +58,7 @@ dev = [
     "pylint>=3.3",
     "mypy>=1.14",
     "mutmut==3.8.1",
+    "pytest-rerunfailures>=15",
 ]
 # Only pulled in by scripts/build-backend.sh when packaging the desktop
 # sidecar — not part of the default dev sync, so `uv run`/tests stay fast.

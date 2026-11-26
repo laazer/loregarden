@@ -10,8 +10,11 @@ Remove an entry when its test gets fast (or is deleted, or is marked). Nothing
 else may edit this file.
 
 Built 2026-11-26 from the CI server-suite profiles of runs 45819701261,
-45818593089 and 45817899729, all after the test speedups (#980, #981, #987):
-every collected test whose slowest setup+call across the three exceeded 3.0 s.
+45818593089 and 45817899729, after the test speedups (#980, #981, #987), and of
+run 45717770597 from before them, which the build read by mistake: every
+collected test whose slowest setup+call across the four exceeded 3.0 s. The
+older run only adds entries (tests that were slow before the speedups), so the
+list exempts more than it needs to, never less; it shrinks as they are removed.
 That is 60% of the 5 s ceiling, not the ceiling itself, so a test that measured
 4.5 s once does not fail at random on a noisier runner. The trailing comment is
 that slowest measurement.
