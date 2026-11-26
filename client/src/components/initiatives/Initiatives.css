@@ -597,3 +597,130 @@ details[open] > .initiative-group-summary::before {
   align-self: flex-start;
   font-size: var(--fs-small);
 }
+
+/* The overview: every initiative on one screen, the open one's card below it. */
+.initiative-table-wrap {
+  /* The page is a flex column; with overflow set, flex would shrink this to nothing. */
+  flex-shrink: 0;
+  overflow-x: auto;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+}
+
+.initiative-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.initiative-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  color: var(--txl);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.initiative-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+.initiative-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.initiative-table tr.is-open td {
+  background: color-mix(in srgb, var(--ac) 8%, transparent);
+}
+
+.initiative-table tr.is-open td:first-child {
+  box-shadow: inset 2px 0 0 var(--ac);
+}
+
+.initiative-table .initiative-num {
+  text-align: right;
+}
+
+.initiative-table td[data-label="State"],
+.initiative-table td[data-label="Needs you"] {
+  white-space: nowrap;
+}
+
+.initiative-table-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  font-size: var(--fs-small);
+}
+
+.initiative-table-title {
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.initiative-table-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.initiative-table-progress .initiative-progress {
+  display: block;
+  width: 72px;
+}
+
+.initiative-table-progress .initiative-progress-fill {
+  display: block;
+}
+
+/* A list again at phone width: each row a card, each cell labelled. */
+@media (max-width: 640px) {
+  .initiative-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .initiative-table,
+  .initiative-table tbody,
+  .initiative-table tr,
+  .initiative-table td {
+    display: block;
+  }
+
+  .initiative-table tr {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  .initiative-table td {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    border: 0;
+  }
+
+  .initiative-table td::before {
+    content: attr(data-label);
+    flex: 0 0 96px;
+    font-size: var(--fs-micro);
+    color: var(--txl);
+  }
+
+  .initiative-table .initiative-num {
+    text-align: left;
+  }
+}
