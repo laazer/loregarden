@@ -23,8 +23,10 @@ helper or in each gate, and these should not care which.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import importlib.util
+import io
 import os
 import re
 import subprocess
@@ -152,10 +154,30 @@ def _require_ts_parser() -> None:
     require_path(_TS_PARSER, NPM_CI)
 
 
+#: The Python gates' importable names, for running them in-process.
+_IN_PROCESS_MODULES = {
+    id(PY_ORGANIZATION_GATE): "py_organization_check",
+    id(PY_SILENT_EXCEPT_GATE): "py_silent_except_check",
+}
+
+
 def _run_gate(
-    gate: list[str], repo: Path, *extra: str, scope: str = "worktree", timeout: float | None = None
+    gate: list[str],
+    repo: Path,
+    *extra: str,
+    scope: str = "worktree",
+    timeout: float | None = None,
+    black_box: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run a gate against `repo`.
+
+    A Python gate runs in-process, through the same `main(argv)` its
+    `__main__` block calls, with its stdout, stderr and exit code captured
+    exactly as a launch would report them. That saves an interpreter start per
+    run, which was most of this file's 3-8 minutes across about 180 cases. The
+    `.cjs` gate is always launched. So is any run with ``black_box=True``, which
+    keeps the scripts themselves covered end to end (`test_*_black_box`), and
+    any run with a `timeout`.
 
     `timeout` is for the cases where hanging *is* the failure: a gate that
     follows a graded path into a character device never returns, and without a
@@ -163,13 +185,43 @@ def _run_gate(
     """
     if gate is TS_ORGANIZATION_GATE:
         _require_ts_parser()
+    argv = ["--repo", str(repo), "--scope", scope, *extra]
+    module = _IN_PROCESS_MODULES.get(id(gate))
+    if module is not None and not black_box and timeout is None:
+        return _run_in_process(module, argv)
     return subprocess.run(
-        [*gate, "--repo", str(repo), "--scope", scope, *extra],
+        [*gate, *argv],
         capture_output=True,
         text=True,
         env=_scrubbed_env(),
         timeout=timeout,
     )
+
+
+def _exit_status(code: object) -> int:
+    """What a process ending in `SystemExit(code)` exits with: `sys.exit("why")` prints and exits 1."""
+    if code is None:
+        return 0
+    try:
+        return int(str(code))
+    except ValueError:
+        sys.stderr.write(f"{code}\n")
+        return 1
+
+
+def _run_in_process(module_name: str, argv: list[str]) -> subprocess.CompletedProcess:
+    """`python <script> argv…`, minus the interpreter start.
+
+    The ambient git variables a launch would have had scrubbed are already gone
+    from this process (`scrub_ambient_git_env` in conftest).
+    """
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        try:
+            code = _load_script(module_name).main(argv)
+        except SystemExit as exit_:
+            code = _exit_status(exit_.code)
+    return subprocess.CompletedProcess(argv, code, stdout.getvalue(), stderr.getvalue())
 
 
 def _assert_no_vacuous_pass(result: subprocess.CompletedProcess) -> None:
@@ -215,6 +267,46 @@ def test_committed_work_is_still_examined_at_worktree_scope(
 
     assert result.returncode == 1, _out(result)
     assert Path(relpath).name in _out(result)
+
+
+#: The Python transition gates with a violating and a clean body, for the black-box runs.
+PYTHON_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, PY_ORGANIZATION_VIOLATION, id="py-org"),
+    pytest.param(PY_SILENT_EXCEPT_GATE, PY_SILENT_EXCEPT_VIOLATION, id="py-silent-except"),
+]
+
+
+@pytest.mark.parametrize(("gate", "violation"), PYTHON_GATES)
+def test_a_launched_gate_reports_exactly_what_the_in_process_run_reports_black_box(
+    repo: Path, gate: list[str], violation: str
+) -> None:
+    """The scripts themselves, launched, on the three outcomes every case reduces to.
+
+    The rest of this file runs the Python gates in-process (`_run_gate`). That
+    is a claim that a launch would say the same thing, so this checks it, byte
+    for byte, over a run that read nothing, one that passed, and one that failed.
+    """
+    relpath = "src/pkg/new_mod.py"
+
+    def both() -> tuple[subprocess.CompletedProcess, subprocess.CompletedProcess]:
+        return (
+            _run_gate(gate, repo, "--base", "main", black_box=True),
+            _run_gate(gate, repo, "--base", "main"),
+        )
+
+    outcomes = []
+    for body in (None, "y = 2\n", violation):
+        if body is not None:
+            _commit_agent_work(repo, relpath, body)
+        launched, in_process = both()
+        assert (launched.returncode, launched.stdout, launched.stderr) == (
+            in_process.returncode,
+            in_process.stdout,
+            in_process.stderr,
+        )
+        outcomes.append(launched.returncode)
+    # Read nothing (the gate's own verdict), passed, failed.
+    assert outcomes[1:] == [0, 1], outcomes
 
 
 @pytest.mark.parametrize(("gate", "relpath", "body"), CLEAN_TRANSITION_GATES)

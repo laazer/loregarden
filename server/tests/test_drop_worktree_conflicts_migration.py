@@ -101,11 +101,11 @@ def test_a_locked_database_does_not_stop_the_boot(old_schema, caplog):
     assert "conflict_reports" in caplog.text
 
 
-def test_the_server_drops_it_at_boot(client, isolated_db):
+def test_the_server_drops_it_at_boot(booted_client, isolated_db):
     with isolated_db.begin() as conn:
         conn.execute(text(REPORTS))
 
-    with client:
+    with booted_client:
         pass
 
     with isolated_db.connect() as conn:

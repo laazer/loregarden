@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+from enum import Enum
 
 import httpx
 from fastapi import FastAPI, Request
@@ -216,21 +218,8 @@ def _start_background_loops() -> list[asyncio.Task]:
     return [task for task in started if task is not None]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    configure_console_logging()
-    raise_open_file_limit()
-    if not settings.api_token:
-        logger.warning(
-            "LOREGARDEN_API_TOKEN is not set — the API (which writes files and "
-            "runs agents) is reachable by any local process. Set a token to "
-            "require authentication on shared machines."
-        )
-    # A fresh app is never draining. Matters because a test process builds and
-    # tears down many apps in one interpreter, and the flag below outlives the
-    # app that set it.
-    end_drain()
-    reload_hold.reset()
+def _prepare_database_and_recover() -> None:
+    """Migrate, seed, settle what the last process left, and note the build now running."""
     init_db()
     drop_retired_tables(engine)
     with Session(engine) as session:
@@ -245,9 +234,58 @@ async def lifespan(app: FastAPI):
             )
         else:
             _recover_previous_boot(session)
-
     if not settings.sandbox:
         remember_running_build()
+
+
+class BootMode(Enum):
+    """How much of the boot sequence the lifespan runs. Read from ``app.state.boot_mode``.
+
+    ``FULL`` is the only mode a server runs in. ``PREPARED_TEST_DATABASE`` is the
+    test suite's: the caller hands over a database that is already migrated and
+    seeded (`tests/db_templates.py`), and no previous process exists to recover
+    from, so migrating, seeding, crash recovery and build discovery are skipped.
+    That was about 1.5s and five or more git launches per `client` test. Tests
+    whose subject is boot use the ``booted_client`` fixture, which runs ``FULL``.
+    """
+
+    FULL = "full"
+    PREPARED_TEST_DATABASE = "prepared_test_database"
+
+
+#: pytest sets this for every test phase; no server process has it.
+_PYTEST_PHASE_ENV = "PYTEST_CURRENT_TEST"
+
+
+def _boot_mode(app: FastAPI) -> BootMode:
+    mode: BootMode = app.state.boot_mode
+    if mode is not BootMode.FULL and _PYTEST_PHASE_ENV not in os.environ:
+        # A server that skipped recovery would leave dead runs RUNNING and their
+        # lanes claimed forever. Only a test may ask for it.
+        raise RuntimeError(
+            f"boot mode {mode.value!r} is for the test suite only; refusing to start"
+        )
+    return mode
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    boot_mode = _boot_mode(app)
+    configure_console_logging()
+    raise_open_file_limit()
+    if not settings.api_token:
+        logger.warning(
+            "LOREGARDEN_API_TOKEN is not set — the API (which writes files and "
+            "runs agents) is reachable by any local process. Set a token to "
+            "require authentication on shared machines."
+        )
+    # A fresh app is never draining. Matters because a test process builds and
+    # tears down many apps in one interpreter, and the flag below outlives the
+    # app that set it.
+    end_drain()
+    reload_hold.reset()
+    if boot_mode is BootMode.FULL:
+        _prepare_database_and_recover()
     background_loops = _start_background_loops()
     # After boot, so nothing finds this server before it can answer.
     advertised = register_main()
@@ -279,6 +317,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Loregarden Control Plane", version="0.1.0", lifespan=lifespan)
+app.state.boot_mode = BootMode.FULL
 
 # Order matters: the last-added middleware is outermost. CORS is added last so it
 # wraps auth — it answers preflight and attaches CORS headers even to 401s. Auth
