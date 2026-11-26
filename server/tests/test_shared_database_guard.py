@@ -8,15 +8,19 @@ in between. These build a real primary checkout with a linked worktree and an
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Iterator
 from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
 import pytest
-from loregarden.cli import mcp_tools
+from loregarden.cli import capacity as capacity_cli
+from loregarden.cli import mcp_server, mcp_tools
 from loregarden.cli import merge_queue as merge_queue_cli
 from loregarden.cli.errors import EXIT_USAGE
+from loregarden.cli.main import build_parser
 from loregarden.cli.main import main as cli_main
 from loregarden.db import migrations, shared_database_guard
 from loregarden.db import session as db_session
@@ -143,8 +147,8 @@ def test_apply_migrations_consults_the_guard_before_migrating(tmp_path):
     database, pending = guard.call_args.args
     assert database == tmp_path / "fresh.db"
     assert pending == [mid for mid, _ in migrations.MIGRATIONS]
-    with engine.connect() as conn:
-        assert conn.exec_driver_sql("SELECT count(*) FROM schema_migrations").scalar() == 0
+    # Refused before anything was written: not even the ledger exists.
+    assert "schema_migrations" not in _tables(engine)
 
 
 @pytest.fixture
@@ -434,3 +438,81 @@ def test_init_db_from_the_primary_still_creates_the_table(checkouts, live_missin
         db_session.init_db()
 
     assert NEW_TABLE in _tables(live_missing_a_table)
+
+
+# --- writers that must work from such a worktree open it unmigrated ---------
+#
+# `capacity run` holds the machine for a push, and in-process `mcp serve`
+# answers an agent's tools. Both called `init_db`, so from a worktree whose
+# branch adds a migration they died on the guard, though the rows they write
+# are in tables main already has.
+
+
+def test_open_db_from_a_worktree_opens_unmigrated_and_says_so(live_from_worktree):
+    reports: list[str] = []
+
+    db_session.open_db(reports.append)
+
+    assert UNSHIPPED not in _applied(live_from_worktree)
+    assert len(reports) == 1 and UNSHIPPED in reports[0]
+
+
+def test_open_db_from_the_primary_still_migrates(checkouts, live_from_worktree):
+    primary, _ = checkouts
+    reports: list[str] = []
+
+    with mock.patch.object(migrations, "_CODE_ROOT", primary):
+        db_session.open_db(reports.append)
+
+    assert UNSHIPPED in _applied(live_from_worktree)
+    assert reports == []
+
+
+def test_open_db_still_refuses_a_database_it_cannot_read(live_from_worktree):
+    with live_from_worktree.begin() as conn:
+        conn.exec_driver_sql("DROP TABLE schema_migrations")
+
+    with pytest.raises(db_session.DatabaseNotReadable):
+        db_session.open_db(lambda line: None)
+
+    assert "schema_migrations" not in _tables(live_from_worktree)
+
+
+def test_capacity_run_holds_the_machine_from_a_worktree_with_an_unshipped_migration(
+    live_from_worktree, tmp_path, capsys
+):
+    args = build_parser().parse_args(
+        ["capacity", "run", "--footprint", "light", "--label", "pytest", "--", "true"]
+    )
+
+    with (
+        mock.patch.dict(os.environ, {capacity_cli.CALLER_CWD_ENV: str(tmp_path)}),
+        mock.patch.object(capacity_cli, "run_holding", return_value=0) as held,
+        pytest.raises(SystemExit) as exited,
+    ):
+        capacity_cli._run(args)
+
+    assert exited.value.code == 0
+    assert held.called
+    assert UNSHIPPED in capsys.readouterr().err
+    assert UNSHIPPED not in _applied(live_from_worktree)
+
+
+def test_inprocess_mcp_serve_answers_from_a_worktree_and_opens_the_database_once(
+    live_from_worktree, capsys
+):
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    mcp_server._open_db_once.cache_clear()
+
+    with (
+        mock.patch.object(mcp_server, "USE_INPROCESS", True),
+        mock.patch.object(db_session, "open_db", wraps=db_session.open_db) as opened,
+    ):
+        first = mcp_server._handle_stdio_line(request)
+        second = mcp_server._handle_stdio_line(request)
+    mcp_server._open_db_once.cache_clear()
+
+    assert first["result"]["tools"] and second["result"]["tools"]
+    assert opened.call_count == 1
+    assert UNSHIPPED in capsys.readouterr().err
+    assert UNSHIPPED not in _applied(live_from_worktree)

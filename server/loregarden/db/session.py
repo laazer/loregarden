@@ -1,5 +1,5 @@
 import sqlite3
-from collections.abc import Generator, Iterator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -9,6 +9,7 @@ from loregarden.config import settings
 from loregarden.db.closed_workflow_guard import CLOSED_WITH_TICKET  # noqa: F401
 from loregarden.db.enum_integrity import report_unreadable_enum_values
 from loregarden.db.migrations import MIGRATIONS, apply_migrations, assert_may_change_schema
+from loregarden.db.shared_database_guard import UnshippedMigrationError
 
 # Imported for its side effect: registering the WorkflowInstance mapper events
 # that refuse a pin to a template version with no terminal stage. Kept here so
@@ -168,6 +169,31 @@ def open_db_for_read() -> list[str]:
             )
         applied = {row[0] for row in conn.execute(text("SELECT id FROM schema_migrations"))}
     return [mid for mid, _ in MIGRATIONS if mid not in applied]
+
+
+def open_db(report: Callable[[str], None]) -> None:
+    """Migrate what this build may; where the guard refuses, open the database as it is.
+
+    For commands that write and must still work from a worktree whose branch
+    adds a migration main does not ship: `capacity run` (a push holding the
+    machine) and in-process `mcp serve`. `init_db` refuses them there, though
+    the rows they write are in tables main already has. The guard runs before
+    anything is written (`assert_may_change_schema`), so a refusal leaves the
+    database untouched; this then opens it unmigrated through
+    `open_db_for_read`, which still refuses a database it cannot read, and says
+    so through ``report``. A statement that needs an unapplied migration fails
+    on its own, loudly.
+    """
+    try:
+        init_db()
+    except UnshippedMigrationError as refused:
+        pending = open_db_for_read()
+        report(
+            "opened the shared database without migrating it: this worktree build "
+            f"carries {len(pending)} migration(s) main does not ship "
+            f"({', '.join(pending[:3])}{', …' if len(pending) > 3 else ''}), and a "
+            f"statement that needs them will fail. Guard: {refused}"
+        )
 
 
 def get_session() -> Generator[Session, None, None]:
