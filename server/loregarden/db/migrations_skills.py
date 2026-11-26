@@ -99,7 +99,7 @@ def m_skill_versioning(conn: Connection) -> None:
 
 
 def _seed_builtin_skills_for_migration(conn: Connection) -> None:
-    root = settings.agent_context_dir / "skills"
+    root = settings.seed_context_dir / "skills"
     if not root.is_dir():
         logger.warning("skill migration seed directory missing: %s", root)
         return

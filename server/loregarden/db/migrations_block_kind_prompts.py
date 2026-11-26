@@ -65,7 +65,7 @@ def _refresh_from_seed(conn: Connection, slug: str, role_file: str) -> None:
             ", ".join(sorted(editors)),
         )
         return
-    path = settings.agent_context_dir / role_file
+    path = settings.seed_context_dir / role_file
     if not path.is_file():
         logger.warning("%s: %s is missing; cannot refresh %r", MIGRATION_ID, path, slug)
         return

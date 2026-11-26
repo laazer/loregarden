@@ -164,7 +164,7 @@ def test_skill_migration_preserves_existing_non_skill_data(tmp_path, monkeypatch
     """R1.AC2: operator DBs gain skill tables without rewriting existing data."""
     agent_context = tmp_path / "agent_context"
     _write_seed(agent_context, "seeded", "---\nname: Seeded\n---\nbody")
-    monkeypatch.setattr("loregarden.config.settings.agent_context_dir", agent_context)
+    monkeypatch.setattr("loregarden.config.settings.seed_context_dir", agent_context)
 
     engine = create_engine(f"sqlite:///{tmp_path / 'operator.db'}")
     SQLModel.metadata.create_all(engine)
@@ -284,7 +284,7 @@ def test_skill_migration_seeds_builtins_once_and_preserves_existing_rows(tmp_pat
     _write_seed(agent_context, "longseed", "---\nname: Long Seed\n---\n" + long_body)
     _write_seed(agent_context, "refactor", "# Refactor\n\nBody")
     _write_seed(agent_context, "empty", "  \n\t")
-    monkeypatch.setattr("loregarden.config.settings.agent_context_dir", agent_context)
+    monkeypatch.setattr("loregarden.config.settings.seed_context_dir", agent_context)
 
     engine = create_engine(f"sqlite:///{tmp_path / 'seed-skills.db'}")
     SQLModel.metadata.create_all(engine)
