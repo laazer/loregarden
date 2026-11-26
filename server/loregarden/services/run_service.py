@@ -185,7 +185,6 @@ def fail_interrupted_runs(
     *,
     ticket_id: str | None = None,
     stage_key: str | None = None,
-    exclude_run_id: str | None = None,
     message: str = INTERRUPTED_RUN_MESSAGE,
 ) -> list[AgentRun]:
     """Mark orphaned in-flight runs as failed so stages do not stay stuck running.
@@ -244,8 +243,6 @@ def fail_interrupted_runs(
             query = query.where(col(AgentRun.id).not_in(survivors))
     if stage_key:
         query = query.where(AgentRun.stage_key == stage_key)
-    if exclude_run_id:
-        query = query.where(AgentRun.id != exclude_run_id)
 
     orch = OrchestrationService(session)
     failed: list[AgentRun] = []

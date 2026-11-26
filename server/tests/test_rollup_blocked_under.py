@@ -9,7 +9,14 @@ ticket was the cause. The operator asked on four dates (10-10, 10-12, 10-27,
 from __future__ import annotations
 
 import pytest
-from loregarden.models.domain import BlockKind, Ticket, TicketState, WorkItemType, Workspace
+from loregarden.models.domain import (
+    BlockKind,
+    InitiativeMember,
+    Ticket,
+    TicketState,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services.ticket_rollup import (
     BLOCKED_UNDER_NOTE,
     reconcile_all_parents,
@@ -139,3 +146,70 @@ def test_a_long_reason_is_shortened(session, workspace):
 
     assert parent.blocking_issues.endswith("…)"), parent.blocking_issues
     assert len(parent.blocking_issues) < 200
+
+
+def test_a_second_blocker_alone_is_a_change(session, workspace):
+    """Only the note moves: the parent is already blocked by its tickets."""
+    parent = _ticket(session, workspace, "lg-p-1", kind=WorkItemType.FEATURE)
+    first = _ticket(session, workspace, "lg-c-1", parent=parent)
+    second = _ticket(session, workspace, "lg-c-2", parent=parent)
+    _block(session, first, BlockKind.WORK, "tests fail")
+    reconcile_parent(session, parent)
+    session.add(parent)
+    session.commit()
+
+    _block(session, second, BlockKind.CONFLICT, "")
+
+    assert reconcile_parent(session, parent) is True
+    assert "lg-c-2 (conflict)" in parent.blocking_issues
+
+
+def test_a_parent_blocked_for_its_own_reason_keeps_its_words(session, workspace):
+    """Not blocked by its tickets, so there is no rollup note to write or clear."""
+    parent = _ticket(session, workspace, "lg-p-1", kind=WorkItemType.FEATURE)
+    child = _ticket(session, workspace, "lg-c-2", parent=parent)
+    _block(session, child, BlockKind.WORK, "tests fail")
+    reconcile_parent(session, parent)
+    child.state = TicketState.IN_PROGRESS
+    child.block_kind = None
+    session.add(child)
+    _block(session, parent, BlockKind.HUMAN_ACTION, "Waiting on the operator's key.")
+
+    reconcile_parent(session, parent)
+
+    assert parent.blocking_issues == "Waiting on the operator's key."
+
+
+def test_a_ticket_reached_twice_is_named_once(session, workspace):
+    """A member of an initiative that also sits under one of its children."""
+    initiative = Ticket(
+        external_id="lg-i-1", title="lg-i-1", work_item_type=WorkItemType.INITIATIVE
+    )
+    session.add(initiative)
+    session.commit()
+    feature = _ticket(session, workspace, "lg-f-2", parent=initiative, kind=WorkItemType.FEATURE)
+    leaf = _ticket(session, workspace, "lg-t-3", parent=feature)
+    session.add(InitiativeMember(initiative_id=initiative.id, ticket_id=leaf.id))
+    session.commit()
+    _block(session, leaf, BlockKind.WORK, "tests fail")
+
+    reconcile_all_parents(session)
+
+    session.refresh(initiative)
+    assert initiative.blocking_issues == f"{BLOCKED_UNDER_NOTE}lg-t-3 (work: tests fail)"
+
+
+def test_a_stale_blocked_child_leaves_no_empty_note(session, workspace):
+    """The feature still reads blocked, but nothing under it is any more."""
+    milestone = _ticket(session, workspace, "lg-m-1", kind=WorkItemType.MILESTONE)
+    feature = _ticket(session, workspace, "lg-f-2", parent=milestone, kind=WorkItemType.FEATURE)
+    leaf = _ticket(session, workspace, "lg-t-3", parent=feature)
+    _block(session, feature, BlockKind.TICKETS, "")
+    leaf.state = TicketState.IN_PROGRESS
+    session.add(leaf)
+    session.commit()
+
+    reconcile_parent(session, milestone)
+
+    assert milestone.state is TicketState.BLOCKED
+    assert milestone.blocking_issues == ""

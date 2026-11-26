@@ -54,6 +54,7 @@ def test_should_fire_rejects_impossible_and_empty_inputs():
     assert _should_fire(0, 5, min_failures=10, share_threshold=0.5) is False
     assert _should_fire(-1, 0, min_failures=10, share_threshold=0.5) is False
     assert _should_fire(10, -1, min_failures=10, share_threshold=0.5) is False
+    assert _should_fire(10, 11, min_failures=10, share_threshold=0.5) is False
 
 
 # --- Non-FAILED status pollution ---------------------------------------------

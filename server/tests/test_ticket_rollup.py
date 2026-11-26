@@ -311,8 +311,12 @@ def test_a_parent_cycle_does_not_hang(session, workspace):
     a.parent_ticket_id = b.id
     session.add(a)
     session.commit()
+    # A parent hanging off the loop, so a walk up from it never meets itself.
+    c = _ticket(session, workspace, "C", state=TicketState.IN_PROGRESS, parent=b)
+    _ticket(session, workspace, "D", state=TicketState.IN_PROGRESS, parent=c)
 
     reconcile_ancestors(session, b)  # must return rather than loop
+    reconcile_all_parents(session)  # its depth walk too
 
 
 # ---- the startup sweep -------------------------------------------------
