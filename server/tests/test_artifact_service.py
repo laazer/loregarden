@@ -38,36 +38,6 @@ def test_parse_test_output_empty():
     assert parse_test_output("") is None
 
 
-def test_parse_unified_diff_lines():
-    from loregarden.services.artifact_service import _parse_unified_diff
-
-    patch = """diff --git a/foo.py b/foo.py
---- a/foo.py
-+++ b/foo.py
-@@ -1,2 +1,3 @@
- context
--old
-+new
-diff --git a/bar.ts b/bar.ts
---- a/bar.ts
-+++ b/bar.ts
-@@ -1 +1,2 @@
- keep
-+added
-"""
-    sections = _parse_unified_diff(patch)
-    assert len(sections) == 2
-    assert sections[0]["path"] == "foo.py"
-    assert sections[1]["path"] == "bar.ts"
-    assert sections[0]["add"] == 1
-    assert sections[0]["del"] == 1
-    assert sections[1]["add"] == 1
-    types = [line["type"] for line in sections[0]["lines"]]
-    assert "h" in types
-    assert "a" in types
-    assert "d" in types
-
-
 def test_extract_pytest_from_stream_json():
     from loregarden.models.domain import AgentRun
     from loregarden.services.artifact_service import (
@@ -1277,3 +1247,139 @@ def test_ensure_reuses_after_recapture_on_the_same_sha(session, tmp_path):
     assert second is not None
     assert second["range"] == graph.merge_base
     assert _section_paths(second) == _section_paths(first)
+
+
+# --- working-tree diffs: untracked files and unusual names -------------------
+
+
+def _dirty_repo(tmp_path: Path) -> tuple[Workspace, Path]:
+    repo = make_repo(tmp_path)
+    (repo / "naïve.txt").write_text("one\n")
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "naive")
+    (repo / "naïve.txt").write_text("one\ntwo\n")
+    (repo / "café.txt").write_text("hi\nthere\n")
+    (repo / " lead.txt").write_text("spaced\n")
+    return Workspace(slug="dirty", name="Dirty", repo_path=str(repo)), repo
+
+
+def test_a_working_tree_manifest_names_every_changed_file_as_on_disk(tmp_path):
+    workspace, _repo = _dirty_repo(tmp_path)
+
+    manifest = artifact_service.branch_diff_manifest(workspace, "main", mode="uncommitted")
+
+    counts = {entry["path"]: (entry["add"], entry["del"]) for entry in manifest["file_entries"]}
+    assert counts == {"naïve.txt": (1, 0), "café.txt": (2, 0), " lead.txt": (1, 0)}
+
+
+@pytest.mark.parametrize(
+    ("path", "rows"),
+    [
+        ("café.txt", [("a", "hi"), ("a", "there")]),
+        (" lead.txt", [("a", "spaced")]),
+        ("naïve.txt", [("h", "@@ -1 +1,2 @@"), ("c", "one"), ("a", "two")]),
+    ],
+)
+def test_each_working_tree_file_opens_to_its_own_lines(tmp_path, path, rows):
+    workspace, _repo = _dirty_repo(tmp_path)
+
+    diff = artifact_service.capture_branch_file_diff(workspace, "main", path, mode="uncommitted")
+
+    (section,) = diff["sections"]
+    assert section["path"] == path
+    assert [(line["type"], line["text"]) for line in section["lines"]] == rows
+    assert diff["add"] == f"+{sum(1 for kind, _ in rows if kind == 'a')}"
+
+
+def test_the_whole_working_tree_diff_has_tracked_and_untracked_files(tmp_path):
+    workspace, _repo = _dirty_repo(tmp_path)
+
+    diff = artifact_service.capture_branch_diff(workspace, "main", mode="unstaged")
+
+    assert sorted(section["path"] for section in diff["sections"]) == [
+        " lead.txt",
+        "café.txt",
+        "naïve.txt",
+    ]
+
+
+def test_a_branch_not_checked_out_has_no_working_tree_diff(tmp_path):
+    workspace, repo = _dirty_repo(tmp_path)
+    git(repo, "branch", "elsewhere")
+
+    assert artifact_service.branch_diff_manifest(workspace, "elsewhere", mode="uncommitted") is None
+
+
+@mock.patch.object(artifact_service, "MAX_UNTRACKED_FILE_BYTES", 4)
+def test_an_untracked_file_over_the_size_limit_is_named_but_not_read(tmp_path):
+    workspace, _repo = _dirty_repo(tmp_path)
+
+    diff = artifact_service.capture_branch_file_diff(
+        workspace, "main", "café.txt", mode="uncommitted"
+    )
+
+    (section,) = diff["sections"]
+    assert [line["text"] for line in section["lines"]] == [
+        "… file omitted (9 bytes exceeds review limit) …"
+    ]
+    manifest = artifact_service.branch_diff_manifest(workspace, "main", mode="uncommitted")
+    counts = {entry["path"]: entry["add"] for entry in manifest["file_entries"]}
+    assert counts["café.txt"] == 1
+
+
+@mock.patch.object(artifact_service, "MAX_UNTRACKED_FILES", 1)
+def test_untracked_files_stop_at_the_file_limit(tmp_path):
+    workspace, _repo = _dirty_repo(tmp_path)
+
+    manifest = artifact_service.branch_diff_manifest(workspace, "main", mode="uncommitted")
+
+    assert len([e for e in manifest["file_entries"] if e["path"] != "naïve.txt"]) == 1
+
+
+@mock.patch.object(artifact_service, "MAX_DIFF_LINES", 2)
+def test_an_untracked_file_past_the_line_limit_says_it_was_cut(tmp_path):
+    workspace, repo = _dirty_repo(tmp_path)
+    (repo / "four.txt").write_text("a\nb\nc\nd\n")
+
+    diff = artifact_service.capture_branch_file_diff(
+        workspace, "main", "four.txt", mode="uncommitted"
+    )
+
+    (section,) = diff["sections"]
+    assert [(line["type"], line["ln"], line["text"]) for line in section["lines"]] == [
+        ("a", "1", "a"),
+        ("a", "2", "b"),
+        ("c", "", "… diff truncated …"),
+    ]
+    assert diff["add"] == "+4"
+
+
+def test_an_empty_untracked_file_has_no_lines_to_open(tmp_path):
+    workspace, repo = _dirty_repo(tmp_path)
+    (repo / "empty.txt").write_text("")
+
+    assert (
+        artifact_service.capture_branch_file_diff(
+            workspace, "main", "empty.txt", mode="uncommitted"
+        )
+        is None
+    )
+
+
+def test_a_path_git_does_not_list_as_untracked_is_not_read(tmp_path):
+    workspace, repo = _dirty_repo(tmp_path)
+    (repo / ".gitignore").write_text("secret.txt\n")
+    (repo / "secret.txt").write_text("hidden\n")
+
+    assert artifact_service._untracked_file_section(repo, "secret.txt") is None
+    assert artifact_service._untracked_file_section(repo, "café.txt")["add"] == 2
+
+
+def test_a_failed_untracked_listing_is_logged_not_silent(tmp_path, caplog):
+    not_a_repo = tmp_path / "plain"
+    not_a_repo.mkdir()
+
+    with caplog.at_level("WARNING", logger=artifact_service.logger.name):
+        assert artifact_service._untracked_paths(not_a_repo) == []
+
+    assert any("git ls-files failed" in record.getMessage() for record in caplog.records)

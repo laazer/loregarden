@@ -11,7 +11,14 @@ import json
 
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
-from loregarden.models.domain import StageStatus, Ticket, TicketState, WorkItemType, Workspace
+from loregarden.models.domain import (
+    StageStatus,
+    Ticket,
+    TicketDependency,
+    TicketState,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.models.domain.schemas import UpdateTicketRequest
 from loregarden.services.acceptance_criteria import load_criteria
 from loregarden.services.orchestration import OrchestrationService
@@ -19,10 +26,12 @@ from loregarden.services.stage_retry_budget import (
     count_stage_dispatches,
     record_stage_dispatch,
 )
+from loregarden.services.ticket_dependencies import REPARENT_ONTO_PREREQUISITE_REFUSED
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 from tests.history_helpers import decision_payloads
+from tests.worktree_helpers import make_tree_ticket
 
 
 def _call(session, name: str, args: dict) -> dict:
@@ -170,6 +179,117 @@ def test_move_detaches_when_told_to(db_session, other_workspace):
     # None, not "": the column references tickets.id, so a detached ticket has
     # no parent rather than a parent whose id is the empty string.
     assert child.parent_ticket_id is None
+
+
+def _feature_in(session, workspace: Workspace, external_id: str) -> Ticket:
+    milestone = make_tree_ticket(
+        session, workspace, f"{external_id}-m", kind=WorkItemType.MILESTONE
+    )
+    return make_tree_ticket(
+        session, workspace, external_id, parent=milestone, kind=WorkItemType.FEATURE
+    )
+
+
+def test_move_reparents_under_a_ticket_in_the_destination(db_session, other_workspace):
+    capability, task = _new_subtree(db_session, "Capability that moves")
+    new_parent = _feature_in(db_session, other_workspace, "els-feature-1")
+    old_ids = {capability.id: capability.external_id, task.id: task.external_id}
+    old_revisions = {capability.id: capability.revision, task.id: task.revision}
+
+    _call(
+        db_session,
+        "loregarden_move_ticket_workspace",
+        {
+            "ticket_id": capability.id,
+            "workspace_slug": "elsewhere",
+            "new_parent_ticket_id": new_parent.external_id,
+        },
+    )
+    # The move is committed: nothing is left for a rollback to undo.
+    db_session.rollback()
+
+    for item in (capability, task):
+        db_session.refresh(item)
+        assert item.workspace_id == other_workspace.id
+        assert item.revision == old_revisions[item.id] + 1
+        assert item.last_updated_by == "triage"
+        assert item.legacy_external_id == old_ids[item.id]
+        assert item.external_id != old_ids[item.id]
+    assert capability.parent_ticket_id == new_parent.id
+    assert task.parent_ticket_id == capability.id
+
+
+def test_move_refuses_a_new_parent_outside_the_destination(db_session, other_workspace):
+    capability, _task_row = _new_subtree(db_session, "Capability with a wrong parent")
+    stays_home = _feature_in(db_session, _workspace(db_session, "loregarden"), "lg-feature-home-1")
+    parent_before = capability.parent_ticket_id
+
+    with pytest.raises(ValueError, match="is not in workspace 'elsewhere'"):
+        _call(
+            db_session,
+            "loregarden_move_ticket_workspace",
+            {
+                "ticket_id": capability.id,
+                "workspace_slug": "elsewhere",
+                "new_parent_ticket_id": stays_home.id,
+            },
+        )
+
+    db_session.refresh(capability)
+    assert capability.workspace_id == stays_home.workspace_id
+    assert capability.parent_ticket_id == parent_before
+
+
+def test_move_refuses_a_new_parent_the_subtree_waits_for(db_session, other_workspace):
+    capability, task = _new_subtree(db_session, "Capability that waits on its new parent")
+    new_parent = _feature_in(db_session, other_workspace, "els-feature-2")
+    db_session.add(TicketDependency(ticket_id=task.id, depends_on_ticket_id=new_parent.id))
+    db_session.commit()
+
+    with pytest.raises(ValueError, match=REPARENT_ONTO_PREREQUISITE_REFUSED):
+        _call(
+            db_session,
+            "loregarden_move_ticket_workspace",
+            {
+                "ticket_id": capability.id,
+                "workspace_slug": "elsewhere",
+                "new_parent_ticket_id": new_parent.id,
+            },
+        )
+
+    db_session.refresh(capability)
+    assert capability.workspace_id != other_workspace.id
+
+
+def test_move_of_a_top_level_ticket_needs_no_detach(db_session, other_workspace):
+    capability, _task_row = _new_subtree(db_session, "Subtree under a milestone")
+    feature = db_session.get(Ticket, capability.parent_ticket_id)
+    milestone = db_session.get(Ticket, feature.parent_ticket_id)
+
+    _call(
+        db_session,
+        "loregarden_move_ticket_workspace",
+        {"ticket_id": milestone.id, "workspace_slug": "elsewhere"},
+    )
+
+    db_session.refresh(milestone)
+    assert milestone.workspace_id == other_workspace.id
+    assert milestone.parent_ticket_id is None
+
+
+def test_move_refuses_the_workspace_the_ticket_is_in(db_session):
+    task = _task(db_session)
+    revision = task.revision
+
+    with pytest.raises(ValueError, match="already in workspace 'loregarden'"):
+        _call(
+            db_session,
+            "loregarden_move_ticket_workspace",
+            {"ticket_id": task.id, "workspace_slug": "loregarden", "detach_parent": True},
+        )
+
+    db_session.refresh(task)
+    assert task.revision == revision
 
 
 def test_move_rejects_an_unknown_workspace(db_session):
