@@ -42,6 +42,7 @@ from uuid import uuid4
 
 from loregarden.models.domain.enums import str_enum_column, utcnow
 from loregarden.models.domain.enums_capacity import (
+    CapacityClass,
     CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
@@ -165,6 +166,16 @@ class DockerLease(SQLModel, table=True):
         default=DockerFootprint.CUSTOM,
         sa_column=str_enum_column(DockerFootprint, DockerFootprint.CUSTOM),
     )
+    #: A sweep holds the one sweep slot of `repo_key`'s repository; see
+    #: `services/sweep_limit.py`. The column's DEFAULT reads a lease written by a
+    #: build that predates it back as ordinary work.
+    capacity_class: CapacityClass = Field(
+        default=CapacityClass.ORDINARY,
+        sa_column=str_enum_column(CapacityClass, CapacityClass.ORDINARY),
+    )
+    #: The repository the work runs in, as its git common directory, so every
+    #: worktree of one repository shares one key. Empty when the caller named none.
+    repo_key: str = ""
     #: The RESOLVED price, not re-derived from `footprint` later. Retuning the
     #: weights table must not retroactively change what a live lease is
     #: accounted at.
