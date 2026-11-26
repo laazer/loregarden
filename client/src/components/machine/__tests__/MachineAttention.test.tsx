@@ -64,6 +64,19 @@ describe("MachineAttention", () => {
     );
   });
 
+  it("says how long a hung command has been idle, and ends its lease", async () => {
+    const hung = lease({
+      activity: { idle_seconds: 1325, looks_hung: true },
+      holder: { what: "server suite", branch: "vacwt", worktree: null, pid: 18683 },
+    });
+    const props = renderBand({ items: machineAttention(capacityStatus({ holders: [hung] }), null) });
+    const item = screen.getByTestId("attention-hung-lease-1");
+    expect(item).toHaveTextContent("22 minutes");
+    expect(item).toHaveTextContent("pid 18683");
+    await userEvent.click(within(item).getByRole("button", { name: "Release…: server suite" }));
+    expect(props.onEndLease).toHaveBeenCalledWith(hung);
+  });
+
   it("ends a long-held lease through the caller's confirm, and links its run", async () => {
     const held = lease({
       held_seconds: 53.8 * 3600,

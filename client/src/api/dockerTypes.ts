@@ -68,6 +68,12 @@ export interface LeaseProgress {
   reported_at: string | null;
 }
 
+/** How long since a held command last used CPU or reported progress. */
+export interface LeaseActivity {
+  idle_seconds: number;
+  looks_hung: boolean;
+}
+
 export interface DockerLeaseRow {
   lease_id: string;
   status: "waiting" | "held" | "released" | "orphaned";
@@ -117,6 +123,8 @@ export interface DockerLeaseRow {
   held_seconds: number | null;
   /** How far the held command says it has got; null if it never reported. */
   progress: LeaseProgress | null;
+  /** Null when nothing recent measured it: unknown, not idle. */
+  activity: LeaseActivity | null;
   /** How long a waiter has been in line; null for a holder. */
   waiting_seconds: number | null;
   /** Since a waiter last polled (or was queued); null for a holder. */

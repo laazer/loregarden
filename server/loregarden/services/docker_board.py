@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     DockerLeaseStatus,
     DockerProbeOutcome,
 )
+from loregarden.services.capacity_activity import lease_activity
 from loregarden.services.capacity_label import parse_holder_label
 from loregarden.services.capacity_progress import describe_progress
 from loregarden.services.docker_capacity import Ceiling, DockerInvoke
@@ -126,6 +127,7 @@ def _lease_payload(
     expires_at = as_utc(lease.expires_at)
     requested_at = as_utc(lease.requested_at)
     granted_at = as_utc(lease.granted_at) if lease.status is not DockerLeaseStatus.WAITING else None
+    activity = lease_activity(lease, now=now)
     prioritized_at = as_utc(lease.prioritized_at)
     return {
         "lease_id": lease.id,
@@ -163,6 +165,8 @@ def _lease_payload(
         # from minute forty.
         "held_seconds": (int((now - granted_at).total_seconds()) if granted_at else None),
         "progress": _progress_payload(lease),
+        # How long since the command used CPU or reported; None when unmeasured.
+        "activity": activity.as_dict() if activity else None,
         **(
             _waiting_payload(lease, now=now)
             if lease.status is DockerLeaseStatus.WAITING

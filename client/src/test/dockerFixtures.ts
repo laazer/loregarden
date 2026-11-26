@@ -33,6 +33,7 @@ export function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     requested_at: null,
     held_seconds: null,
     progress: null,
+    activity: null,
     waiting_seconds: null,
     last_seen_seconds_ago: null,
     poll_stalled: false,

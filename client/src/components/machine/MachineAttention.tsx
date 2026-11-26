@@ -21,6 +21,11 @@ function formatHours(seconds: number): string {
   return `${Math.round((seconds / 3600) * 10) / 10} hours`;
 }
 
+function formatMinutes(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 120 ? `${minutes} minutes` : formatHours(seconds);
+}
+
 function formatCpus(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return `${rounded} ${rounded === 1 ? "cpu" : "cpus"}`;
@@ -130,6 +135,29 @@ function ItemBody({ item, ...props }: { item: AttentionItem } & Omit<Props, "ite
         </>
       );
     }
+    case "hung":
+      return (
+        <>
+          <div className="machine-attention-copy">
+            <div className="machine-attention-title">
+              {item.lease.holder.what || item.lease.holder_label || "A command"} may be hung
+            </div>
+            <div className="machine-attention-detail">
+              It has used no CPU and reported no progress for{" "}
+              {formatMinutes(item.lease.activity?.idle_seconds ?? 0)}, and still holds its
+              capacity. Releasing the lease lets the line move; it does not stop the process.
+            </div>
+            <div className="machine-attention-detail">{describeLease(item.lease)}</div>
+          </div>
+          <div className="machine-attention-actions">
+            <LeaseEnd
+              lease={item.lease}
+              pending={props.pendingLeaseId === item.lease.lease_id}
+              onEnd={props.onEndLease}
+            />
+          </div>
+        </>
+      );
     case "long_held":
       return (
         <>

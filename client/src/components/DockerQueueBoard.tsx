@@ -142,6 +142,7 @@ function liveChildren(row: DockerLeaseRow, holders: readonly DockerLeaseRow[]): 
 function holderStatus(row: DockerLeaseRow, children: readonly DockerLeaseRow[]): string {
   if (row.status === "orphaned") return "orphaned";
   if (row.last_probe_outcome && row.last_probe_outcome !== "ok") return "unverified";
+  if (row.activity?.looks_hung) return "may be hung";
   if (isRunParent(row) && children.length === 0) return "reserved, idle";
   return "holding";
 }
@@ -409,6 +410,11 @@ function HolderSlot({
           </div>
         ) : null}
         <HolderProgress row={row} />
+        {row.activity?.looks_hung ? (
+          <div className="docker-slot-error">
+            no CPU or progress for {formatDuration(row.activity.idle_seconds)}
+          </div>
+        ) : null}
         <div className="docker-slot-foot">
           <span className="docker-slot-expiry">
             {holderTiming(row, status === "reserved, idle")}

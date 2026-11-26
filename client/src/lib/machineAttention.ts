@@ -11,7 +11,9 @@
  * number: past 90% the disk is a cleanup away from failing builds and worktree
  * checkouts. Of 4,596 finished leases measured in October 2026, 6 ran past an
  * hour and one past 12, and that one ended by expiring rather than by a release,
- * so a holder past 12 hours is a process that has hung or lost its release.
+ * so a holder past 12 hours is a process that has hung or lost its release. A
+ * command that stops using CPU is named sooner than that, by the server's own
+ * sampling of it (`looks_hung`): everything behind it in line is waiting on it.
  */
 
 import type {
@@ -30,6 +32,7 @@ export type AttentionTone = "bad" | "warn" | "info";
 
 export type AttentionItem =
   | { kind: "disk"; id: string; tone: AttentionTone; volume: DiskVolume }
+  | { kind: "hung"; id: string; tone: AttentionTone; lease: DockerLeaseRow }
   | { kind: "long_held"; id: string; tone: AttentionTone; lease: DockerLeaseRow }
   | { kind: "orphaned"; id: string; tone: AttentionTone; lease: DockerLeaseRow }
   | { kind: "unverified"; id: string; tone: AttentionTone; entry: DockerUnverifiable }
@@ -102,6 +105,8 @@ export function machineAttention(
     for (const lease of status.holders) {
       if (lease.status === "orphaned") {
         items.push({ kind: "orphaned", id: `orphaned-${lease.lease_id}`, tone: "bad", lease });
+      } else if (lease.activity?.looks_hung) {
+        items.push({ kind: "hung", id: `hung-${lease.lease_id}`, tone: "bad", lease });
       } else if ((lease.held_seconds ?? 0) > LONG_HELD_SECONDS) {
         items.push({ kind: "long_held", id: `held-${lease.lease_id}`, tone: "warn", lease });
       }

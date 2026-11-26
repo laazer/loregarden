@@ -113,6 +113,10 @@ export type Lease = {
   ticketId: string
   runId: string
   progress: Progress | null
+  /** Since the held command last used CPU or reported; null when the server does not measure it. */
+  idleSeconds: number | null
+  /** The server's verdict: no CPU and no progress for long enough to say so. */
+  looksHung: boolean
   /** A waiter that stopped asking: it will be dropped from the line. */
   pollStalled: boolean
 }
