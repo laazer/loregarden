@@ -529,6 +529,19 @@ def test_loregarden_reruns_a_criterions_jest_tests_through_the_client_runner():
     assert (orchestration_dir().parents[1] / argv[1]).is_file()
 
 
+def test_loremaker_reruns_a_criterions_server_tests_by_id():
+    commands = load_profile_from_path(orchestration_dir() / "loremaker.yaml").gates
+    test_id = "server/loremaker/loremaker/terminus/tests/unit/test_ledger.py::test_appends"
+
+    runner = _runner_for(test_id, commands.criterion_test_commands)
+
+    assert runner is not None
+    assert shlex.split(_render(runner, [test_id])) == ["sh", "ci/scripts/pytest_by_id.sh", test_id]
+    # No jest-by-name runner there yet: a client test is only checked to exist.
+    client = 'client/src/a.test.ts::"renders"'
+    assert _runner_for(client, commands.criterion_test_commands) is None
+
+
 ACQUIRE = "loregarden.services.named_tests.acquire_gate_capacity"
 
 

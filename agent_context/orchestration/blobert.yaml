@@ -49,3 +49,11 @@ git:
   # behind and would merge at once, untested (loregarden PR #150, 2026-08-12, is
   # that failure). Turn this on only once `main` requires CI checks.
   tree_auto_merge: false
+  # The suites the landing's diff reaches, on the candidate merge, before its ref
+  # moves: the only test run a landing gets. One command per group, so each has its
+  # own time limit (the Python suite alone takes about 12 minutes). A candidate cut
+  # before the script existed is refused, not passed: merge main into it.
+  land_verify_commands:
+    - bash ci/scripts/land_verify.sh editor
+    - bash ci/scripts/land_verify.sh godot
+    - bash ci/scripts/land_verify.sh python
