@@ -28,13 +28,18 @@ from loregarden.models.domain import (
 from loregarden.services import docker_leases
 from loregarden.services.docker_wait_estimate import (
     UNKNOWN_WAIT,
-    HoldStats,
     WaitEstimate,
     estimate_waits,
-    observed_hold_times,
     poll_interval_for,
 )
-from sqlmodel import Session
+from loregarden.services.hold_history import (
+    RECENT_HOLDS,
+    Hold,
+    HoldForecast,
+    HoldStats,
+    observed_hold_times,
+)
+from sqlmodel import Session, select
 
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -88,6 +93,29 @@ def _history(session, *, footprint, held_seconds, count=3) -> None:
     session.commit()
 
 
+def _predict(
+    stats: HoldStats,
+    label: str,
+    *,
+    footprint: DockerFootprint = DockerFootprint.HEAVY,
+    held_for: float = 0.0,
+) -> HoldForecast | None:
+    return stats.predict(CapacityPool.DOCKER, footprint, label, held_for=held_for)
+
+
+def _expected(stats: HoldStats, footprint: DockerFootprint) -> float | None:
+    """What a claim whose label nothing on record shares is predicted to hold for."""
+    forecast = _predict(stats, "unheard-of", footprint=footprint)
+    return forecast.expected if forecast else None
+
+
+def _holds(label: str, *seconds: float, footprint=DockerFootprint.HEAVY) -> list[Hold]:
+    return [
+        Hold(pool=CapacityPool.DOCKER, footprint=footprint, label=label, seconds=each)
+        for each in seconds
+    ]
+
+
 # ---- history ------------------------------------------------------------
 
 
@@ -109,24 +137,176 @@ def test_only_clean_releases_teach_the_estimator(session) -> None:
 
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 3
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK, held_for=0.0) == pytest.approx(
-        120
-    )
+    assert _expected(stats, DockerFootprint.STACK) == pytest.approx(120)
 
 
 def test_no_history_predicts_nothing(session) -> None:
     stats = observed_hold_times(session, now=NOW)
     assert stats.samples == 0
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.STACK, held_for=0.0) is None
+    assert _predict(stats, "anything", footprint=DockerFootprint.STACK) is None
 
 
-def test_a_footprint_with_no_history_falls_back_to_the_overall_median(session) -> None:
+def test_a_footprint_with_no_history_falls_back_to_everything(session) -> None:
     """Less than it knows about `stack`, more than nothing."""
     _history(session, footprint=DockerFootprint.STACK, held_seconds=200)
     stats = observed_hold_times(session, now=NOW)
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY, held_for=0.0) == pytest.approx(
-        200
+    assert _expected(stats, DockerFootprint.HEAVY) == pytest.approx(200)
+
+
+def test_a_suite_is_predicted_from_suites_not_from_pushes_of_its_size() -> None:
+    """The footprint alone told the waiter behind a two-hour suite eight minutes:
+    most `heavy` holds are six-minute pushes."""
+    stats = HoldStats.of(
+        _holds("pre-push server-tests · claude/a · pid 1", 2700, 2700, 2700)
+        + _holds("dawnbringer pre-push · claude/b · pid 2", *[360] * 20)
     )
+
+    suite = _predict(stats, "pre-push server-tests · claude/c · pid 9")
+    push = _predict(stats, "dawnbringer pre-push · claude/d · pid 8")
+
+    assert suite is not None and suite.expected == pytest.approx(2700)
+    assert push is not None and push.expected == pytest.approx(360)
+
+
+def test_a_label_seen_once_is_matched_by_the_words_it_leads_with() -> None:
+    stats = HoldStats.of(
+        _holds("dawnbringer push: plaid zero values", 300)
+        + _holds("dawnbringer push: fix main", 360)
+        + _holds("dawnbringer push: rename", 420)
+        + _holds("server suite", 2700, 2700, 2700)
+    )
+
+    forecast = _predict(stats, "dawnbringer push: something new")
+
+    assert forecast is not None and forecast.expected == pytest.approx(360)
+
+
+def test_a_pr_number_does_not_make_it_different_work() -> None:
+    stats = HoldStats.of(
+        _holds("dawnbringer pre-push 1368", 300)
+        + _holds("dawnbringer pre-push 1376", 300)
+        + _holds("dawnbringer pre-push 1378", 300)
+        + _holds("dawnbringer mutants", 9000, 9000, 9000)
+    )
+
+    forecast = _predict(stats, "dawnbringer pre-push 1401")
+
+    assert forecast is not None and forecast.expected == pytest.approx(300)
+
+
+def test_where_it_runs_is_not_part_of_what_it_is() -> None:
+    """Keying by branch was tried, and predicted no better from far fewer holds."""
+    stats = HoldStats.of(
+        _holds("suite · claude/a · pid 1", *[100] * 3)
+        + _holds("suite · claude/b · pid 2", *[900] * RECENT_HOLDS)
+    )
+
+    forecast = _predict(stats, "suite · claude/a · pid 7")
+
+    assert forecast is not None and forecast.expected == pytest.approx(900)
+
+
+def test_a_label_never_shares_history_across_pools() -> None:
+    on_host = [Hold(CapacityPool.HOST, DockerFootprint.HEAVY, "suite", 9.0)] * 3
+    stats = HoldStats.of(_holds("suite", 60, 60, 60) + on_host)
+
+    forecast = _predict(stats, "suite")
+
+    assert forecast is not None and forecast.expected == pytest.approx(60)
+
+
+def test_only_the_latest_like_holds_count() -> None:
+    """A suite that took 20 minutes two weeks ago takes 45 now."""
+    stats = HoldStats.of(_holds("suite", *[1200] * 50, *[2700] * RECENT_HOLDS))
+
+    forecast = _predict(stats, "suite")
+
+    assert forecast is not None and forecast.expected == pytest.approx(2700)
+
+
+def test_the_expected_hold_is_the_mean_because_waits_are_sums() -> None:
+    """Ten in line, one in three of them a suite: the line takes 8000s, and the
+    median of each hold would have promised it in 1000s."""
+    stats = HoldStats.of(_holds("server-tests", 100, 100, 2200))
+
+    forecast = _predict(stats, "server-tests")
+
+    assert forecast is not None and forecast.expected == pytest.approx(800)
+
+
+def test_a_forecast_carries_the_spread_of_its_history() -> None:
+    stats = HoldStats.of(_holds("suite", 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000))
+
+    forecast = _predict(stats, "suite", held_for=0)
+
+    assert forecast == HoldForecast(expected=550, low=200, high=1000)
+
+
+def test_a_label_with_too_few_holds_defers_to_its_footprint() -> None:
+    """Two runs of a new command are a worse guess than every claim its size."""
+    stats = HoldStats.of(
+        _holds("horizon build", 60, 60) + _holds("server suite", *[2700] * RECENT_HOLDS)
+    )
+
+    forecast = _predict(stats, "horizon build")
+
+    assert forecast is not None and forecast.expected == pytest.approx(2700)
+
+
+def test_too_little_history_has_no_spread() -> None:
+    """Two holds of the same length are not evidence that the third will match."""
+    stats = HoldStats.of(_holds("suite", 100, 100))
+
+    assert _predict(stats, "suite") == HoldForecast(expected=100, low=None, high=None)
+
+
+def test_a_holder_past_its_like_is_predicted_from_broader_work_that_ran_longer() -> None:
+    stats = HoldStats.of(
+        _holds("pre-push server-tests", 300, 300, 300)
+        + _holds("pre-push everything", 4000, 4000, 4000)
+    )
+
+    forecast = _predict(stats, "pre-push server-tests", held_for=1000)
+
+    assert forecast is not None and forecast.expected == pytest.approx(3000)
+
+
+def test_history_is_read_in_release_order(session) -> None:
+    """Rows come back in insertion order unless asked otherwise, and the latest
+    holds are the ones that count."""
+    for hours_ago, held in [*((1, 2700) for _ in range(RECENT_HOLDS)), *((300, 60),) * 20]:
+        session.add(
+            DockerLease(
+                status=DockerLeaseStatus.RELEASED,
+                holder_label="suite",
+                footprint=DockerFootprint.HEAVY,
+                end_reason=DockerLeaseEndReason.RELEASED,
+                granted_at=NOW - timedelta(hours=hours_ago, seconds=held),
+                released_at=NOW - timedelta(hours=hours_ago),
+            )
+        )
+    session.commit()
+
+    forecast = _predict(observed_hold_times(session, now=NOW), "suite")
+
+    assert forecast is not None and forecast.expected == pytest.approx(2700)
+
+
+def test_a_hold_from_before_the_lookback_teaches_nothing(session) -> None:
+    for days_ago in (29, 31):
+        session.add(
+            DockerLease(
+                status=DockerLeaseStatus.RELEASED,
+                holder_label="suite",
+                footprint=DockerFootprint.HEAVY,
+                end_reason=DockerLeaseEndReason.RELEASED,
+                granted_at=NOW - timedelta(days=days_ago, seconds=60),
+                released_at=NOW - timedelta(days=days_ago),
+            )
+        )
+    session.commit()
+
+    assert observed_hold_times(session, now=NOW).samples == 1
 
 
 # ---- projection ---------------------------------------------------------
@@ -194,9 +374,7 @@ def test_a_command_that_never_ran_teaches_nothing(session) -> None:
     stats = observed_hold_times(session, now=NOW)
 
     assert stats.samples == 3
-    assert stats.predict(CapacityPool.DOCKER, DockerFootprint.HEAVY, held_for=0.0) == pytest.approx(
-        1200
-    )
+    assert _expected(stats, DockerFootprint.HEAVY) == pytest.approx(1200)
 
 
 def test_with_no_history_the_wait_is_unknown_rather_than_invented(session) -> None:
@@ -257,6 +435,189 @@ def test_a_waiter_is_never_projected_ahead_of_the_one_in_front_of_it(session) ->
 
     estimates = estimate_waits(session, now=NOW)
     assert estimates[small.lease_id].seconds >= estimates[big.lease_id].seconds
+
+
+# ---- the range ----------------------------------------------------------
+
+
+def _one_holder_one_waiter(session, label="suite") -> str:
+    holder = _reserve(session, label, cpus=4.0, memory_mb=4096)
+    waiter = _reserve(session, "waiter", cpus=4.0, memory_mb=4096)
+    _granted_at(session, holder.lease_id, seconds_ago=0)
+    return waiter.lease_id
+
+
+def test_a_wait_carries_the_range_its_holders_history_spans(session) -> None:
+    waiter = _one_holder_one_waiter(session)
+    stats = HoldStats.of(_holds("suite", 600, 700, 800, 900, 4000))
+
+    estimate = estimate_waits(session, now=NOW, stats=stats)[waiter]
+
+    assert (estimate.low_seconds, estimate.seconds, estimate.high_seconds) == (600, 1400, 4000)
+    assert estimate.as_dict() == {
+        "estimated_wait_seconds": 1400,
+        "estimated_wait_low_seconds": 600,
+        "estimated_wait_high_seconds": 4000,
+        "estimate_basis": "history",
+    }
+
+
+def test_the_range_widens_down_the_line(session) -> None:
+    _reserve(session, "suite", cpus=4.0, memory_mb=4096)
+    first = _reserve(session, "suite", cpus=4.0, memory_mb=4096)
+    second = _reserve(session, "suite", cpus=4.0, memory_mb=4000)
+    for lease in session.exec(select(DockerLease).where(DockerLease.status == "held")):
+        _granted_at(session, lease.id, seconds_ago=0)
+    stats = HoldStats.of(_holds("suite", 600, 900, 1500))
+
+    estimates = estimate_waits(session, now=NOW, stats=stats)
+
+    near, far = estimates[first.lease_id], estimates[second.lease_id]
+    assert (near.low_seconds, near.high_seconds) == (600, 1500)
+    assert (far.low_seconds, far.high_seconds) == (1200, 3000)
+
+
+def test_a_wait_resting_on_too_little_history_has_no_range(session) -> None:
+    waiter = _one_holder_one_waiter(session)
+    stats = HoldStats.of(_holds("suite", 600, 700))
+
+    estimate = estimate_waits(session, now=NOW, stats=stats)[waiter]
+
+    assert estimate == WaitEstimate(seconds=650, basis=DockerWaitBasis.HISTORY)
+
+
+def test_a_bound_has_no_range(session) -> None:
+    """ "Likely 7m–15m" about a TTL would present a ceiling as a forecast."""
+    waiter = _one_holder_one_waiter(session)
+
+    estimate = estimate_waits(session, now=NOW)[waiter]
+
+    assert estimate.basis is DockerWaitBasis.TTL_BOUND
+    assert (estimate.low_seconds, estimate.high_seconds) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("estimate", "said"),
+    [
+        (UNKNOWN_WAIT, "no estimate yet"),
+        (WaitEstimate(seconds=900, basis=DockerWaitBasis.TTL_BOUND), "at most 15m"),
+        (WaitEstimate(seconds=45, basis=DockerWaitBasis.HISTORY), "about 45s"),
+        (
+            WaitEstimate(
+                seconds=2405, basis=DockerWaitBasis.HISTORY, low_seconds=722, high_seconds=5400
+            ),
+            "about 40m (likely 12m–1h30m)",
+        ),
+        (
+            WaitEstimate(
+                seconds=600, basis=DockerWaitBasis.HISTORY, low_seconds=600, high_seconds=600
+            ),
+            "about 10m",
+        ),
+    ],
+)
+def test_a_wait_is_said_to_the_minute_with_its_range(estimate, said) -> None:
+    assert estimate.describe() == said
+
+
+# ---- outside load -------------------------------------------------------
+
+
+@pytest.fixture(name="busy_machine")
+def busy_machine_fixture(session):
+    """Room in the ledger for everything here, and the cores busy with something else."""
+    host = docker_leases.load_pool(session, CapacityPool.HOST)
+    host.ceiling_cpus = 7.0
+    host.ceiling_memory_mb = 16384
+    host.ceiling_leases = 6
+    host.ceiling_source = DockerCeilingSource.CONFIG_OVERRIDE
+    host.external_cpus = 6.0
+    session.add(host)
+    session.commit()
+
+
+def _queue_on_host(session, label, *, cpus=2.0, waited: float = 0.0) -> str:
+    """A waiter written directly: `reserve` would drain it against today's clock."""
+    lease = DockerLease(
+        status=DockerLeaseStatus.WAITING,
+        holder_label=label,
+        pool=CapacityPool.HOST,
+        cpus=cpus,
+        memory_mb=512,
+        position=1,
+        requested_at=NOW - timedelta(seconds=waited),
+    )
+    session.add(lease)
+    session.commit()
+    return lease.id
+
+
+def _hold_on_host(session, label, *, cpus=1.0, held: float = 0.0) -> None:
+    host = docker_leases.load_pool(session, CapacityPool.HOST)
+    host.held_cpus += cpus
+    host.held_memory_mb += 512
+    host.held_count += 1
+    session.add(host)
+    session.add(
+        DockerLease(
+            status=DockerLeaseStatus.HELD,
+            holder_label=label,
+            pool=CapacityPool.HOST,
+            cpus=cpus,
+            memory_mb=512,
+            granted_at=NOW - timedelta(seconds=held),
+            expires_at=NOW + timedelta(seconds=900),
+        )
+    )
+    session.commit()
+
+
+def _long_holds() -> HoldStats:
+    return HoldStats.of([Hold(CapacityPool.HOST, DockerFootprint.CUSTOM, "suite", 5000.0)] * 3)
+
+
+def test_a_claim_with_room_still_waits_out_outside_load(session, busy_machine) -> None:
+    """It was told "0s" and then waited the ten minutes the load rule holds it back."""
+    _hold_on_host(session, "suite")
+    waiter = _queue_on_host(session, "waiter", waited=150)
+
+    estimate = estimate_waits(session, now=NOW, stats=_long_holds())[waiter]
+
+    assert estimate.seconds == 450
+
+
+def test_the_load_rule_stops_counting_when_the_ledger_empties(session, busy_machine) -> None:
+    _hold_on_host(session, "suite", held=4900)
+    waiter = _queue_on_host(session, "waiter")
+
+    estimate = estimate_waits(session, now=NOW, stats=_long_holds())[waiter]
+
+    assert estimate.seconds == 100
+
+
+def test_a_small_claim_is_not_projected_to_wait_for_load(session, busy_machine) -> None:
+    _hold_on_host(session, "suite")
+    waiter = _queue_on_host(session, "agent", cpus=0.25)
+
+    assert estimate_waits(session, now=NOW, stats=_long_holds())[waiter].seconds == 0
+
+
+def test_a_claim_past_its_patience_is_judged_on_room_alone(session, busy_machine) -> None:
+    _hold_on_host(session, "suite")
+    waiter = _queue_on_host(session, "waiter", waited=700)
+
+    assert estimate_waits(session, now=NOW, stats=_long_holds())[waiter].seconds == 0
+
+
+def test_load_the_claim_fits_beside_does_not_hold_it_back(session, busy_machine) -> None:
+    host = docker_leases.load_pool(session, CapacityPool.HOST)
+    host.external_cpus = 3.0
+    session.add(host)
+    session.commit()
+    _hold_on_host(session, "suite")
+    waiter = _queue_on_host(session, "waiter", cpus=2.0)
+
+    assert estimate_waits(session, now=NOW, stats=_long_holds())[waiter].seconds == 0
 
 
 # ---- poll interval ------------------------------------------------------

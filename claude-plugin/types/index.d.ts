@@ -106,6 +106,9 @@ export type Lease = {
   heldSeconds: number
   position: number | null
   waitSeconds: number | null
+  /** The range the wait likely falls in; null when there is none to state. */
+  waitLowSeconds: number | null
+  waitHighSeconds: number | null
   /** Set when the lease belongs to a ticket's run; it is then drawn on that lane's card. */
   ticketId: string
   runId: string

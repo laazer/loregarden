@@ -116,17 +116,33 @@ def load_gate_cpus(
     One function, so the drain's booking and the board's "N free" cannot
     disagree about whether load counted.
     """
-    if name is not CapacityPool.HOST or not settings.host_load_aware:
+    if name is not CapacityPool.HOST:
         return 0.0
-    if pool.external_cpus <= 0 or pool.held_cpus <= 0:
+    patience = load_patience_seconds(
+        lease,
+        external_cpus=pool.external_cpus,
+        held_cpus=pool.held_cpus,
+        now=now or datetime.now(timezone.utc),
+    )
+    return pool.external_cpus if patience > 0 else 0.0
+
+
+def load_patience_seconds(
+    lease: DockerLease, *, external_cpus: float, held_cpus: float, now: datetime
+) -> float:
+    """How much longer outside load counts against `lease`; 0 once it does not.
+
+    Takes the figures rather than the pool so the wait estimate can ask it of a
+    pool projected forward, and no estimate disagrees with the drain about when
+    a claim stops being held back.
+    """
+    if not settings.host_load_aware or external_cpus <= 0 or held_cpus <= 0:
         return 0.0
     if lease.cpus < settings.host_load_gate_min_cpus:
         return 0.0
     requested = as_utc(lease.requested_at)
-    waited = ((now or datetime.now(timezone.utc)) - requested).total_seconds() if requested else 0
-    if waited >= settings.host_load_patience_seconds:
-        return 0.0
-    return pool.external_cpus
+    waited = (now - requested).total_seconds() if requested else 0.0
+    return max(0.0, settings.host_load_patience_seconds - waited)
 
 
 def shortfalls(

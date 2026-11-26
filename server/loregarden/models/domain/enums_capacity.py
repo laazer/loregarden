@@ -183,7 +183,7 @@ class DockerWaitBasis(StrEnum):
     Collapsing the two would make the second look like the first.
     """
 
-    #: Median of what leases of this footprint have actually cost here.
+    #: Projected from what work like it has actually cost here.
     HISTORY = "history"
     #: Nothing has been measured yet, so the holder's remaining TTL stands in.
     #: An upper bound, not a forecast.

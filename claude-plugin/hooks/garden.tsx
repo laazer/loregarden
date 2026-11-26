@@ -22,6 +22,7 @@ import {
   statusText,
   stopped,
   type Tone,
+  waitText,
 } from './garden-data'
 
 const PANE = 'loregarden-garden'
@@ -560,7 +561,7 @@ export const register: Register = (on, options) => {
                   <Text wrap="truncate">{w.what}</Text>
                   <Text color={w.pollStalled ? RED : undefined} dimColor={!w.pollStalled}>
                     {w.footprint}
-                    {w.waitSeconds === null ? '' : ` · ~${span(w.waitSeconds)}`}
+                    {waitText(w) ? ` · ${waitText(w)}` : ''}
                     {w.pollStalled ? ' · stopped asking' : ''}
                   </Text>
                 </Box>

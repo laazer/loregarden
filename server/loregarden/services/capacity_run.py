@@ -49,7 +49,6 @@ from loregarden.models.domain import (
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
-    DockerWaitBasis,
 )
 from loregarden.services.capacity_children import reserve_child
 
@@ -329,19 +328,10 @@ def _stall_message(
         holding = "nothing is holding capacity"
     return (
         f"still queued for {lease.pool.value} capacity — {ahead} ahead, "
-        f"{_describe_wait(estimate)} — but nothing ahead has finished for {stalled:.0f}s "
+        f"{estimate.describe()} — but nothing ahead has finished for {stalled:.0f}s "
         f"({holding}); gave up the place in line. The ledger is answering: the line "
         "stopped moving."
     )
-
-
-def _describe_wait(estimate: WaitEstimate) -> str:
-    if estimate.seconds is None:
-        return "no estimate yet"
-    if estimate.basis is DockerWaitBasis.TTL_BOUND:
-        # A bound from the holders' TTLs, which they almost always beat.
-        return f"at most {estimate.seconds}s"
-    return f"about {estimate.seconds}s"
 
 
 def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) -> str:
@@ -354,8 +344,7 @@ def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) ->
         )
     ).one()
     return (
-        f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, "
-        f"{_describe_wait(estimate)}"
+        f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, {estimate.describe()}"
     )
 
 

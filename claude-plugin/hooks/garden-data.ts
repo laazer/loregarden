@@ -163,6 +163,8 @@ function parseLease(l: Json): Lease {
     heldSeconds: num(l.held_seconds),
     position: numOrNull(l.position),
     waitSeconds: numOrNull(l.estimated_wait_seconds),
+    waitLowSeconds: numOrNull(l.estimated_wait_low_seconds),
+    waitHighSeconds: numOrNull(l.estimated_wait_high_seconds),
     ticketId: str(l.ticket_id),
     runId: str(l.agent_run_id),
     progress: str(progress.summary)
@@ -494,6 +496,15 @@ export function span(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
   return `${Math.floor(seconds / 86400)}d`
+}
+
+/** "~40m, 12m–1h": the expected wait and the range it likely falls in, or "" when it is unknown. */
+export function waitText(lease: Pick<Lease, 'waitSeconds' | 'waitLowSeconds' | 'waitHighSeconds'>): string {
+  if (lease.waitSeconds === null) return ''
+  const about = `~${span(lease.waitSeconds)}`
+  if (lease.waitLowSeconds === null || lease.waitHighSeconds === null) return about
+  const [low, high] = [span(lease.waitLowSeconds), span(lease.waitHighSeconds)]
+  return low === high ? about : `${about}, ${low}–${high}`
 }
 
 /** The bar's width in cells. */

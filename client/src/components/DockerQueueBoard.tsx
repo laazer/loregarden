@@ -67,14 +67,36 @@ function formatDuration(seconds: number): string {
 /**
  * A projected wait, carrying how much it is worth.
  *
- * `≈` is a median of what these leases have actually cost; `≤` is a TTL nobody
- * has beaten yet. Rendering them identically would present a ceiling as a
- * prediction.
+ * `≈` is projected from what work like this has actually cost; `≤` is a TTL
+ * nobody has beaten yet. Rendering them identically would present a ceiling as
+ * a prediction.
  */
 function describeWait(row: DockerLeaseRow): string {
   if (row.estimated_wait_seconds === null) return "wait unknown";
   const amount = formatDuration(row.estimated_wait_seconds);
   return row.estimate_basis === "ttl_bound" ? `starts in ≤ ${amount}` : `starts in ≈ ${amount}`;
+}
+
+/**
+ * The range the wait is likely to fall in, or null when there is none to state
+ * or it is too narrow to read as one.
+ */
+function describeLikely(row: DockerLeaseRow): string | null {
+  const { estimated_wait_low_seconds: low, estimated_wait_high_seconds: high } = row;
+  if (low === null || high === null) return null;
+  const [from, to] = [formatDuration(low), formatDuration(high)];
+  return from === to ? null : `likely ${from}–${to}`;
+}
+
+/** When a waiter is expected to start: the figure, and how far off it may be. */
+function WaitForecast({ row }: { row: DockerLeaseRow }) {
+  const likely = describeLikely(row);
+  return (
+    <div className="queue-lane-item-timing">
+      <span>{describeWait(row)}</span>
+      {likely ? <span>{likely}</span> : null}
+    </div>
+  );
 }
 
 const POOL_PLACE: Record<CapacityShortfall["pool"], string> = {
@@ -681,7 +703,7 @@ export function DockerQueueBoard({
                 ) : null}
               </div>
               <div className="docker-waiting-side">
-                <div className="queue-lane-item-timing">{describeWait(row)}</div>
+                <WaitForecast row={row} />
                 <WaitingAge row={row} />
               </div>
               <LeaseActions

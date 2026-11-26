@@ -155,6 +155,20 @@
   text-align: right;
 }
 
+/* A phone has no width for the forecast beside the label: it goes under it. */
+@media (max-width: 640px) {
+  .docker-queue-list .queue-lane-item {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .docker-waiting-side {
+    grid-column: 2;
+    grid-row: 2;
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
 .docker-waiting-age {
   font-size: var(--fs-micro);
   color: var(--txl);

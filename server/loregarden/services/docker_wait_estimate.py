@@ -15,37 +15,37 @@ honest answer walks the queue the way the drain does — head-of-line, releasing
 holders in the order they are predicted to finish — and reports where this
 waiter comes out.
 
-**What predicts a holder's release.** The median of the observed holds of its
-footprint *that ran longer than this one already has*, less the time it has
-already held. A plain median says nothing about a holder already past it: the
-board once predicted a 40-minute suite, 30 minutes in, would finish in 0s, and
-every waiter behind it "≈ 0s". When no recorded hold ran that long, its
-remaining TTL stands in, which is a bound rather than an estimate and is marked
-as such by producing a coarser answer. A holder with neither makes
-every waiter behind it unknown, rather than being skipped — skipping it would
-quietly predict a queue that cannot move.
+**What predicts a holder's release.** The holds of work like it that ran longer
+than this one already has (`hold_history`), less the time it has already held.
+When no recorded hold ran that long, its remaining TTL stands in, which is a bound
+rather than an estimate and is marked as such by producing a coarser answer. A
+holder with neither makes every waiter behind it unknown, rather than being
+skipped — skipping it would quietly predict a queue that cannot move.
 
-**Only clean releases count as history.** A lease reclaimed at `TTL_EXPIRED` or
-`ABANDONED` records the moment the reaper noticed, not the moment the work
-finished, so folding those in would teach the estimator that every claim lasts
-exactly one TTL. `COMMAND_NOT_RUN` is excluded for the opposite reason: a command
-the shell could not start releases in a fraction of a second, and sixteen of
-those once dragged the `heavy` median for a test suite down to seconds.
+**A range, because one number is not honest here.** Replayed over 2026-11-16..25
+the estimate was within 30% (or 5 minutes) of the real wait 55% of the time; how
+long a suite takes depends on what else the machine is doing, and no history says
+what that will be. So the line is walked three times — every hold at its expected
+length, at the short end of its history and at the long end. All at once, rather
+than each hold drawn on its own, because a busy machine slows them together:
+independent draws covered 65% of replayed waits where this covers 80%.
+
+**Outside load is part of the wait.** The drain holds a claim of a core or more back
+for up to `host_load_patience_seconds` while the machine is busy with something the
+ledger does not hold. Left out, the first claim in an unoccupied line was told "0s"
+and then waited ten minutes. The load is taken to last, since nothing predicts it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from statistics import median
 
 from loregarden.config import settings
 from loregarden.models.domain import (
     CapacityPool,
-    DockerFootprint,
     DockerLease,
-    DockerLeaseEndReason,
     DockerLeaseStatus,
     DockerWaitBasis,
 )
@@ -55,93 +55,36 @@ from loregarden.services.capacity_passing import (
     may_pass_head,
     passing_leaves_head_alone,
 )
+from loregarden.services.capacity_progress import format_seconds
 from loregarden.services.docker_ledger import (
     CHARGED_POOLS,
     OCCUPYING,
     as_utc,
     booked,
+    load_patience_seconds,
     load_pool,
 )
+from loregarden.services.hold_history import HoldForecast, HoldStats, observed_hold_times
 from sqlmodel import Session, col, select
 
-#: End reasons whose `released_at` marks the work finishing rather than the
-#: reaper noticing it had not. Only these teach the estimator anything.
-CLEAN_RELEASES = (DockerLeaseEndReason.RELEASED, DockerLeaseEndReason.RUN_COMPLETED)
+#: Seconds too few to wait for. The projected clock is a float sum, so a wait that
+#: is over can read as a hair short of it, and advancing by that hair goes nowhere.
+_A_MOMENT = 0.001
+
+#: Which end of a forecast a projection assumes for every hold it waits on.
+Assume = Callable[[HoldForecast], float]
 
 
-@dataclass(frozen=True)
-class HoldStats:
-    """Seconds leases were actually held, by footprint and overall.
-
-    The observations themselves rather than their medians, because the useful
-    question about a holder already part-way through is conditional: of the
-    holds that lasted at least this long, how long did they last?
-    """
-
-    #: Keyed by pool as well as footprint: a `heavy` test suite and a `heavy`
-    #: docker stack share a size, not a duration.
-    by_footprint: dict[tuple[CapacityPool, DockerFootprint], tuple[float, ...]] = field(
-        default_factory=dict
-    )
-    overall: tuple[float, ...] = ()
-
-    @property
-    def samples(self) -> int:
-        return len(self.overall)
-
-    def predict(
-        self, pool: CapacityPool, footprint: DockerFootprint, *, held_for: float
-    ) -> float | None:
-        """Seconds still to go for a lease already held `held_for` seconds, or None.
-
-        The median of the recorded holds longer than `held_for`, less `held_for`
-        — zero for a claim not yet started. None when nothing recorded ran that
-        long: the history has nothing to say about a holder that has outlived
-        all of it, and "any moment now" is the one answer it certainly cannot
-        support.
-
-        Falls back to the overall history rather than to a constant: a machine
-        with history for `stack` and none for `heavy` knows more than nothing
-        about `heavy`, and less than it does about `stack`.
-        """
-        history = self.by_footprint.get((pool, footprint)) or self.overall
-        longer = [held for held in history if held > held_for]
-        if not longer:
-            return None
-        return median(longer) - held_for
+def _expected(forecast: HoldForecast) -> float:
+    return forecast.expected
 
 
-def observed_hold_times(session: Session, *, now: datetime | None = None) -> HoldStats:
-    """Hold times per footprint, from leases their holders actually released."""
-    stamp = now or datetime.now(timezone.utc)
-    cutoff = stamp - timedelta(days=settings.docker_wait_lookback_days)
+def _short(forecast: HoldForecast) -> float:
+    return forecast.expected if forecast.low is None else forecast.low
 
-    rows = session.exec(
-        select(DockerLease).where(
-            DockerLease.status == DockerLeaseStatus.RELEASED,
-            col(DockerLease.end_reason).in_(CLEAN_RELEASES),
-            col(DockerLease.granted_at).is_not(None),
-            col(DockerLease.released_at).is_not(None),
-        )
-    ).all()
 
-    per_footprint: dict[tuple[CapacityPool, DockerFootprint], list[float]] = {}
-    everything: list[float] = []
-    for lease in rows:
-        granted = as_utc(lease.granted_at)
-        released = as_utc(lease.released_at)
-        if granted is None or released is None or released < cutoff:
-            continue
-        held = (released - granted).total_seconds()
-        if held <= 0:
-            continue
-        per_footprint.setdefault((lease.pool, lease.footprint), []).append(held)
-        everything.append(held)
-
-    return HoldStats(
-        by_footprint={key: tuple(values) for key, values in per_footprint.items()},
-        overall=tuple(everything),
-    )
+def _long(forecast: HoldForecast) -> float:
+    return forecast.expected if forecast.high is None else forecast.high
 
 
 @dataclass(frozen=True)
@@ -152,13 +95,45 @@ class WaitEstimate:
     and "at most fifteen, because that is the TTL nobody has beaten yet", and the
     two call for different polling. `basis` says which, and `UNKNOWN` keeps
     `seconds` at None rather than letting a stand-in constant in.
+
+    `low_seconds` and `high_seconds` are the range it is likely to fall in, about
+    eight waits in ten. None where there is none to state: the answer is a bound,
+    or too little history stands behind some part of it.
     """
 
     seconds: int | None
     basis: DockerWaitBasis
+    low_seconds: int | None = None
+    high_seconds: int | None = None
 
     def as_dict(self) -> dict:
-        return {"estimated_wait_seconds": self.seconds, "estimate_basis": self.basis.value}
+        return {
+            "estimated_wait_seconds": self.seconds,
+            "estimated_wait_low_seconds": self.low_seconds,
+            "estimated_wait_high_seconds": self.high_seconds,
+            "estimate_basis": self.basis.value,
+        }
+
+    def describe(self) -> str:
+        """ "about 40m (likely 12m–1h30m)", "at most 15m", or "no estimate yet"."""
+        if self.seconds is None:
+            return "no estimate yet"
+        if self.basis is DockerWaitBasis.TTL_BOUND:
+            # A bound from the holders' TTLs, which they almost always beat.
+            return f"at most {_rough(self.seconds)}"
+        about = f"about {_rough(self.seconds)}"
+        if self.low_seconds is None or self.high_seconds is None:
+            return about
+        low, high = _rough(self.low_seconds), _rough(self.high_seconds)
+        return about if low == high else f"{about} (likely {low}–{high})"
+
+
+def _rough(seconds: int) -> str:
+    """A wait to the minute once it is minutes: the seconds are not known."""
+    if seconds < 90:
+        return format_seconds(seconds)
+    minutes = round(seconds / 60)
+    return f"{minutes}m" if minutes < 60 else format_seconds(minutes * 60)
 
 
 UNKNOWN_WAIT = WaitEstimate(seconds=None, basis=DockerWaitBasis.UNKNOWN)
@@ -182,26 +157,32 @@ class _Holder:
     basis: DockerWaitBasis = DockerWaitBasis.UNKNOWN
     #: Held for a run's lifetime rather than for work that finishes.
     standing: bool = False
+    #: Whether enough history stands behind `releases_in` to say how far off it
+    #: may be. A waiter's range needs this of every holder it waited for.
+    spread_known: bool = False
 
 
-def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Holder]:
-    leases = session.exec(select(DockerLease).where(col(DockerLease.status).in_(OCCUPYING))).all()
-
+def _holders(
+    leases: Sequence[DockerLease], stats: HoldStats, *, now: datetime, assume: Assume
+) -> list[_Holder]:
     holders: list[_Holder] = []
     for lease in leases:
         booking = booked(lease)
         granted = as_utc(lease.granted_at)
-        remaining = (
+        forecast = (
             stats.predict(
-                lease.pool, lease.footprint, held_for=max(0.0, (now - granted).total_seconds())
+                lease.pool,
+                lease.footprint,
+                lease.holder_label,
+                held_for=max(0.0, (now - granted).total_seconds()),
             )
             if granted is not None
             else None
         )
         releases_in: float | None = None
         basis = DockerWaitBasis.UNKNOWN
-        if remaining is not None:
-            releases_in = remaining
+        if forecast is not None:
+            releases_in = assume(forecast)
             basis = DockerWaitBasis.HISTORY
         else:
             expires = as_utc(lease.expires_at)
@@ -217,6 +198,7 @@ def _holders(session: Session, stats: HoldStats, *, now: datetime) -> list[_Hold
                 releases_in=releases_in,
                 basis=basis,
                 standing=is_standing(lease),
+                spread_known=forecast is not None and forecast.low is not None,
             )
         )
     return holders
@@ -245,21 +227,54 @@ def estimate_waits(
         .where(DockerLease.status == DockerLeaseStatus.WAITING)
         .order_by(col(DockerLease.position))
     ).all()
-    projection = _Projection(
-        stats=hold_stats,
-        waiters=waiters,
-        holders=_holders(session, hold_stats, now=stamp),
-        free={
-            name: _Free(
-                cpus=row.ceiling_cpus - row.held_cpus,
-                memory_mb=row.ceiling_memory_mb - row.held_memory_mb,
-                leases=row.ceiling_leases - row.held_count,
-            )
-            for name, row in rows.items()
-        },
-        host_ceiling=Room(host.ceiling_cpus, host.ceiling_memory_mb),
-    )
-    return projection.run()
+    holding = session.exec(select(DockerLease).where(col(DockerLease.status).in_(OCCUPYING))).all()
+
+    def project(assume: Assume) -> _Projection:
+        projection = _Projection(
+            stats=hold_stats,
+            waiters=waiters,
+            holders=_holders(holding, hold_stats, now=stamp, assume=assume),
+            free={
+                name: _Free(
+                    cpus=row.ceiling_cpus - row.held_cpus,
+                    memory_mb=row.ceiling_memory_mb - row.held_memory_mb,
+                    leases=row.ceiling_leases - row.held_count,
+                )
+                for name, row in rows.items()
+            },
+            host_ceiling=Room(host.ceiling_cpus, host.ceiling_memory_mb),
+            external_cpus=host.external_cpus,
+            started_at=stamp,
+            assume=assume,
+        )
+        projection.run()
+        return projection
+
+    expected, short, long = project(_expected), project(_short), project(_long)
+    return {
+        lease_id: _with_range(
+            estimate,
+            short.estimates[lease_id],
+            long.estimates[lease_id],
+            spread_known=not any(lease_id in p.spread_unknown for p in (expected, short, long)),
+        )
+        for lease_id, estimate in expected.estimates.items()
+    }
+
+
+def _with_range(
+    expected: WaitEstimate, short: WaitEstimate, long: WaitEstimate, *, spread_known: bool
+) -> WaitEstimate:
+    """`expected` with its range, where every projection has an honest end to give.
+
+    A bound has none: the holder it rests on has no spread. Releases can come in a
+    different order at the long end, so a later holder may let a claim in sooner
+    there; the ends are taken as they fall.
+    """
+    ends = [each.seconds for each in (expected, short, long) if each.seconds is not None]
+    if not spread_known or len(ends) < 3:
+        return expected
+    return replace(expected, low_seconds=min(ends), high_seconds=max(ends))
 
 
 @dataclass
@@ -292,6 +307,10 @@ class _Projection:
     holders: list[_Holder]
     free: dict[CapacityPool, _Free]
     host_ceiling: Room
+    #: Busy cores outside the ledger, taken to stay as they are now.
+    external_cpus: float
+    started_at: datetime
+    assume: Assume
     clock: float = 0.0
     #: Degrades to TTL_BOUND the moment any holder we wait on was predicted from
     #: a TTL. A chain is only as strong as its weakest link, and presenting a
@@ -301,41 +320,82 @@ class _Projection:
     #: can be estimated either. Sticky rather than per-waiter: the queue is
     #: ordered, so an unpredictable blocker blocks everything after it.
     blind: bool = False
+    #: Set once a holder with too little history to have a spread was waited on.
+    #: Sticky for the same reason `blind` is.
+    thin: bool = False
     estimates: dict[str, WaitEstimate] = field(default_factory=dict)
+    #: Waiters whose estimate rests on a holder with no spread.
+    spread_unknown: set[str] = field(default_factory=set)
 
-    def run(self) -> dict[str, WaitEstimate]:
+    def run(self) -> None:
         for waiter in self.waiters:
             if waiter.id in self.estimates:
                 continue  # already projected past an earlier head
             while not self.blind and not self._fits(waiter):
                 for passing in self._passing(waiter):
                     self._start(passing)
-                self._release_soonest()
+                self._advance(waiter)
             if self.blind:
                 self.estimates[waiter.id] = UNKNOWN_WAIT
             else:
                 self._start(waiter)
-        return self.estimates
 
     def _fits(self, waiter: DockerLease) -> bool:
+        return self._has_room(waiter) and self._held_back_for(waiter) < _A_MOMENT
+
+    def _has_room(self, waiter: DockerLease) -> bool:
         return all(self.free[name].fits(waiter) for name in CHARGED_POOLS[waiter.pool])
+
+    def _held_back_for(self, waiter: DockerLease) -> float:
+        """Seconds from the projected now that outside load keeps `waiter` out."""
+        free_cpus = self.free[CapacityPool.HOST].cpus
+        if waiter.cpus + self.external_cpus <= free_cpus:
+            return 0.0
+        return load_patience_seconds(
+            waiter,
+            external_cpus=self.external_cpus,
+            held_cpus=self.host_ceiling.cpus - free_cpus,
+            now=self.started_at + timedelta(seconds=self.clock),
+        )
+
+    def _advance(self, head: DockerLease) -> None:
+        """Move to whatever may let `head` in next: a release, or the load rule's patience.
+
+        Only a head with room is waiting on load alone. If something releases
+        first it is taken first: an empty ledger lets the head in at any load.
+        """
+        if self._has_room(head):
+            patience_ends = self.clock + self._held_back_for(head)
+            next_release = min(
+                (h.releases_in for h in self.holders if h.releases_in is not None),
+                default=patience_ends,
+            )
+            if patience_ends <= next_release:
+                self.clock = patience_ends
+                return
+        self._release_soonest()
 
     def _start(self, waiter: DockerLease) -> None:
         self.estimates[waiter.id] = WaitEstimate(seconds=int(round(self.clock)), basis=self.basis)
+        if self.thin:
+            self.spread_unknown.add(waiter.id)
         # This waiter now occupies capacity, and the ones behind it must wait for
         # it too — the head-of-line rule, carried into the projection.
         for name in CHARGED_POOLS[waiter.pool]:
             self.free[name].add(-waiter.cpus, -waiter.memory_mb, -booked(waiter).count)
-        predicted = self.stats.predict(waiter.pool, waiter.footprint, held_for=0.0)
+        forecast = self.stats.predict(
+            waiter.pool, waiter.footprint, waiter.holder_label, held_for=0.0
+        )
         self.holders.append(
             _Holder(
                 cpus=waiter.cpus,
                 memory_mb=waiter.memory_mb,
                 count=booked(waiter).count,
                 pools=CHARGED_POOLS[waiter.pool],
-                releases_in=None if predicted is None else self.clock + predicted,
-                basis=(DockerWaitBasis.UNKNOWN if predicted is None else DockerWaitBasis.HISTORY),
+                releases_in=None if forecast is None else self.clock + self.assume(forecast),
+                basis=(DockerWaitBasis.UNKNOWN if forecast is None else DockerWaitBasis.HISTORY),
                 standing=is_standing(waiter),
+                spread_known=forecast is not None and forecast.low is not None,
             )
         )
 
@@ -354,6 +414,7 @@ class _Projection:
         self.clock = max(self.clock, soonest.releases_in or 0.0)
         if soonest.basis is DockerWaitBasis.TTL_BOUND:
             self.basis = DockerWaitBasis.TTL_BOUND
+        self.thin = self.thin or not soonest.spread_known
         for name in soonest.pools:
             self.free[name].add(soonest.cpus, soonest.memory_mb, soonest.count)
         self.holders.remove(soonest)

@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass
 
 _SEPARATOR = " · "
 _PID = re.compile(r"^pid (\d+)$")
+_WORD = re.compile(r"[a-z_-]+")
 
 
 @dataclass(frozen=True)
@@ -69,3 +70,12 @@ def parse_holder_label(label: str, *, pid: int | None = None) -> HolderLabel:
         worktree=worktree,
         pid=found_pid,
     )
+
+
+def label_words(label: str) -> tuple[str, ...]:
+    """What a label says is running, as words to match it to other labels by.
+
+    Numbers are dropped, so "dawnbringer pre-push 1376" and "… 1378" are the same
+    work. Where it runs and which process are not part of what it is.
+    """
+    return tuple(_WORD.findall(parse_holder_label(label).what.lower()))
