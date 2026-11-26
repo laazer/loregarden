@@ -145,6 +145,7 @@ class FakeGitHub:
         self.unreachable = False
         #: GitHub refuses the rules read, as for a private repo on the free plan.
         self.no_rulesets = False
+        self.required = list(REQUIRED)
         self.head_tree_override = ""
         self.merges: list[tuple[int, str]] = []
         self.on_read = None
@@ -167,7 +168,7 @@ class FakeGitHub:
             raise GitHubReadError("GitHub did not answer within 30s")
         if self.no_rulesets:
             raise RequiredChecksUnavailable("GitHub will not show main's rules on this plan")
-        return list(REQUIRED)
+        return list(self.required)
 
     def commit_checks(self, sha: str) -> list[GhCheck]:
         return list(self.checks.get(sha, []))
@@ -456,6 +457,23 @@ def test_a_repo_that_cannot_require_checks_and_ran_none_never_lands_unverified(
 
     assert entry.state is MergeQueueState.FAILED
     assert "nothing to verify" in entry.detail
+    assert "this plan" in entry.detail
+    assert github.merges == []
+
+
+def test_a_base_that_requires_nothing_never_lands_unverified_and_says_why(
+    session, workspace, github, entry
+):
+    """GitHub answered "none", so there is no stand-in reason to borrow; the refusal has its own."""
+    github.required = []
+    github.pass_everything = True
+    _cycle(session, workspace, github)
+    _cycle(session, workspace, github)
+    session.refresh(entry)
+
+    assert entry.state is MergeQueueState.FAILED
+    assert "requires no status checks on main" in entry.detail
+    assert "this plan" not in entry.detail
     assert github.merges == []
 
 

@@ -111,6 +111,7 @@ from loregarden.services.merge_queue_github import (
     StagedPullRequest,
     gating_basis,
     gating_checks,
+    gating_refusal,
     read_gating,
     unreported,
 )
@@ -532,7 +533,8 @@ class MergeQueueLoop:
                 entry,
                 MergeQueueState.TESTING,
                 MergeQueueState.FAILED,
-                detail=f"nothing to verify {entry.staged_sha[:12]} with: {gating.fallback}",
+                detail=f"nothing to verify {entry.staged_sha[:12]} with: "
+                f"{gating_refusal(gating, entry.base_branch)}",
             )
         required = gating.contexts
         readings = read_gating(pr.checks, required)
