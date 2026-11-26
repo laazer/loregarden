@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections import Counter
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -73,6 +75,31 @@ def test_building_twice_changes_nothing(prod_shape, isolated_db):
     with Session(isolated_db) as session:
         again = build_prod_shape(session, graph_path=AgentMemoryService.from_settings().graph_path)
     assert again == prod_shape
+
+
+def _row_counts(database: Path) -> dict[str, int]:
+    conn = sqlite3.connect(database)
+    try:
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        return {t: conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
+    finally:
+        conn.close()
+
+
+def test_the_session_template_is_what_a_fresh_build_writes(seeded_prod_shape, prod_shape_template):
+    """`prod_shape_session` copies a scenario built once per process; it must hold
+    what this module's own build over the same seeded database wrote. That build
+    is already paid for by this module's tests, so the check costs no third one."""
+    fresh = _row_counts(seeded_prod_shape.database)
+
+    assert fresh["tickets"] > 100, fresh
+    assert _row_counts(prod_shape_template.database) == fresh
+    assert prod_shape_template.summary == seeded_prod_shape.summary
 
 
 def test_the_monitor_sees_mostly_finished_tickets(prod_shape, client):
